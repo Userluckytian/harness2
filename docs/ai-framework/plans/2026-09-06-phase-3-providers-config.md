@@ -1,6 +1,6 @@
 # 阶段 3：真实 Provider + 配置体系 + 审批细化
 
-> **状态：** 实施完成（Task 1–7 全部执行，171 passed + 1 skipped；待独立验收 `/accept-phase`。真实端点实机验证待用户 key，登记于 OPEN.md）
+> **状态：** ✅ 已完成——2026-09-06 编排者验收通过（独立审查 pass-with-fixes → 2 P1 + 6 P2 已修复 +11 回归测试；重跑证据：pnpm test 182 passed + 1 skipped、typecheck 0 错、config check 冒烟正确、密钥/真实端点红线核查通过；真实端点实机验证待用户 key，见 OPEN.md）
 > **For agentic workers:** 按 Task 顺序执行；每 Task 测完再进下一 Task。
 > **交接提示词**见文末「给接手 AI 的完整提示词」。
 > **元规范:** `docs/ai-framework/phased-plan-driven.md`
