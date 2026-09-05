@@ -10,7 +10,7 @@ import { computeProjection, loadSession, type LoadedSession } from '../session/r
 import { SessionWriter } from '../session/writer.js';
 import { SESSION_LOG_FILE } from '../session/types.js';
 import type { ChatMessage, ChatRequest, ProviderUsage, ToolCallRequest, ToolSpec } from '../provider/types.js';
-import { ToolExecutor, type ToolExecutionRequest } from '../tools/executor.js';
+import { ToolExecutor, type ExecutedToolResult, type ToolExecutionRequest } from '../tools/executor.js';
 import type { ToolRegistry } from '../tools/registry.js';
 import type { TurnOptions, TurnResult, TurnStopReason } from './types.js';
 
@@ -96,6 +96,12 @@ function parseToolArgs(raw: string): { args: unknown; parseError?: string } {
   }
 }
 
+/** abort 原因归一为可读消息（reason 可能是 Error/DOMException/任意值/缺省） */
+function abortReasonMessage(signal: AbortSignal): string {
+  const reason: unknown = signal.reason;
+  return reason instanceof Error ? reason.message : reason !== undefined ? String(reason) : 'aborted';
+}
+
 async function runTurnWithWriter(writer: SessionWriter, options: TurnOptions): Promise<TurnResult> {
   const turnId = randomUUID();
   const maxSteps = Math.max(1, options.maxSteps ?? DEFAULT_MAX_STEPS);
@@ -142,18 +148,10 @@ async function runTurnWithWriter(writer: SessionWriter, options: TurnOptions): P
     let text = '';
     let usage: ProviderUsage | undefined;
     const calls: ToolCallRequest[] = [];
-    try {
-      for await (const chunk of provider.streamChat(request, { signal })) {
-        if (chunk.type === 'text-delta') text += chunk.text;
-        else if (chunk.type === 'tool-call') calls.push(chunk.call);
-        else if (chunk.type === 'usage') usage = chunk.usage;
-      }
-    } catch (e) {
-      const msg = (e as Error)?.message ?? String(e);
-      const cancelled = signal?.aborted === true;
-      // 失败/取消的尝试以追加事件记录（append-only）
+    // 取消分类公共出口：半截尝试以 assistant/attempt 记录（append-only），绝不冒充 assistant/message
+    const finishCancelled = (msg: string): TurnResult => {
       writer.append('assistant/attempt', {
-        error: cancelled ? `cancelled: ${msg}` : msg,
+        error: `cancelled: ${msg}`,
         model: provider.name,
         turnId,
       });
@@ -163,13 +161,45 @@ async function runTurnWithWriter(writer: SessionWriter, options: TurnOptions): P
         durationMs: Math.round(performance.now() - stepStartedAt),
       });
       return {
-        stopReason: cancelled ? 'cancelled' : 'error',
+        stopReason: 'cancelled',
+        steps,
+        toolCalls: toolCallsTotal,
+        durationMs: elapsed(),
+        error: msg,
+      };
+    };
+    try {
+      for await (const chunk of provider.streamChat(request, { signal })) {
+        if (chunk.type === 'text-delta') text += chunk.text;
+        else if (chunk.type === 'tool-call') calls.push(chunk.call);
+        else if (chunk.type === 'usage') usage = chunk.usage;
+      }
+    } catch (e) {
+      const msg = (e as Error)?.message ?? String(e);
+      if (signal?.aborted === true) return finishCancelled(msg);
+      // 失败的尝试以追加事件记录（append-only）
+      writer.append('assistant/attempt', {
+        error: msg,
+        model: provider.name,
+        turnId,
+      });
+      writer.append('step/end', {
+        stepId,
+        turnId,
+        durationMs: Math.round(performance.now() - stepStartedAt),
+      });
+      return {
+        stopReason: 'error',
         steps,
         toolCalls: toolCallsTotal,
         durationMs: elapsed(),
         error: msg,
       };
     }
+
+    // provider 契约允许 abort 时正常结束迭代而非抛错：这里补检信号再分类（P2-1），
+    // 半截文本不得落 assistant/message 被记成 end_turn。
+    if (signal?.aborted) return finishCancelled(abortReasonMessage(signal));
 
     writer.append('assistant/message', {
       text,
@@ -199,13 +229,26 @@ async function runTurnWithWriter(writer: SessionWriter, options: TurnOptions): P
     }
 
     const runnable = pending.filter((p): p is PendingCall & { parseError: undefined } => p.parseError === undefined);
-    const results =
-      runnable.length > 0
-        ? await executor.runWave(
-            runnable.map((p): ToolExecutionRequest => ({ callId: p.callId, tool: p.tool, args: p.args })),
-            { signal: envSignal, cwd: options.cwd },
-          )
-        : [];
+    let results: ExecutedToolResult[];
+    try {
+      results =
+        runnable.length > 0
+          ? await executor.runWave(
+              runnable.map((p): ToolExecutionRequest => ({ callId: p.callId, tool: p.tool, args: p.args })),
+              { signal: envSignal, cwd: options.cwd },
+            )
+          : [];
+    } catch (e) {
+      // 兜底（P2-2）：执行器意外 reject 时也必须落齐 tool/result + step/end
+      // （tools/types.ts 的无悬挂承诺）；回调异常正常已在 executor 内转为 ok:false。
+      const msg = (e as Error)?.message ?? String(e);
+      results = runnable.map((p) => ({
+        callId: p.callId,
+        ok: false,
+        error: `executor crashed: ${msg}`,
+        durationMs: 0,
+      }));
+    }
     const byCallId = new Map(results.map((r) => [r.callId, r]));
     for (const p of pending) {
       if (p.parseError !== undefined) {

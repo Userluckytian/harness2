@@ -1,4 +1,4 @@
-// edit 工具：唯一子串替换（old_text 必须恰好出现 1 次）。unsafe，lockKey=目标路径。
+// edit 工具：唯一子串替换（old_text 必须恰好出现 1 次）。unsafe（独占执行，天然串行）。
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import type { ToolDefinition } from '../types.js';
@@ -18,10 +18,8 @@ export const editTool: ToolDefinition = {
     },
     required: ['file_path', 'old_text', 'new_text'],
   },
-  lockKey: (rawArgs) => {
-    const rec = rawArgs as { file_path?: unknown };
-    return typeof rec?.file_path === 'string' ? rec.file_path : '<unknown>';
-  },
+  // lockKey 不声明：unsafe 调用本就独占执行（串行），按路径加锁是无效实现（P2-7）；
+  // lockKey 字段为 Ph3 并发模型预留（见 tools/types.ts）。
   execute: async (rawArgs, ctx) => {
     const args = expectObject(rawArgs, 'edit');
     const filePath = resolve(ctx.cwd, expectString(args, 'file_path', 'edit'));

@@ -6,11 +6,15 @@ import { expectObject, expectString, optionalString } from './common.js';
 
 export const MAX_GLOB_ENTRIES = 1000;
 
+// 与 grep 对齐：无条件排除 node_modules/.git（P2-5）——含目录本身与其子树
+const EXCLUDED_GLOBS = ['**/node_modules', '**/node_modules/**', '**/.git', '**/.git/**'];
+
 export const globTool: ToolDefinition = {
   name: 'glob',
   description:
     'List paths matching a glob pattern (e.g. "src/**/*.ts", "*" for top level) relative to `path` or cwd. ' +
-    'Includes dotfiles; results are sorted; capped at 1000 entries. Safe for parallel execution.',
+    'Includes dotfiles (except node_modules/.git, which are always excluded); results are sorted; ' +
+    'capped at 1000 entries. Safe for parallel execution.',
   parameters: {
     type: 'object',
     properties: {
@@ -28,7 +32,7 @@ export const globTool: ToolDefinition = {
 
     let entries: string[];
     try {
-      entries = await fg(pattern, { cwd: searchDir, dot: true, suppressErrors: true });
+      entries = await fg(pattern, { cwd: searchDir, dot: true, suppressErrors: true, ignore: EXCLUDED_GLOBS });
     } catch (e) {
       return { error: `glob failed: ${(e as Error).message}` };
     }

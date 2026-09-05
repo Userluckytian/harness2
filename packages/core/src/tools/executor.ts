@@ -22,6 +22,11 @@ export interface ExecutionEnv {
 
 export const DENIED_MESSAGE = 'denied by approval policy';
 
+/** 任意抛出值归一为可读错误串 */
+function errorMessage(e: unknown): string {
+  return (e as Error | undefined)?.message ?? String(e);
+}
+
 /** 与 signal 竞速：即使工具实现不观察 signal，超时/取消也能短路（不遗漏其后续 rejection） */
 function raceAbort<T>(signal: AbortSignal, p: Promise<T>): Promise<T> {
   if (signal.aborted) return Promise.reject(signal.reason ?? new Error('aborted'));
@@ -54,11 +59,22 @@ export class ToolExecutor {
     const def = this.registry.get(req.tool);
     if (!def) return { ok: false, error: `unknown tool: ${req.tool}`, durationMs: elapsed() };
 
-    // 审批管线：allow / deny / ask（ask 无 onAsk 回调时按拒绝处理）
-    const decision = (await this.approval?.decide({ tool: req.tool, args: req.args })) ?? 'allow';
+    // 审批管线：allow / deny / ask（ask 无 onAsk 回调时按拒绝处理）。
+    // 回调异常不击穿 turn（P2-2）：转为该调用的失败结果。
+    let decision: 'allow' | 'deny' | 'ask';
+    try {
+      decision = (await this.approval?.decide({ tool: req.tool, args: req.args })) ?? 'allow';
+    } catch (e) {
+      return { ok: false, error: `approval callback threw: ${errorMessage(e)}`, durationMs: elapsed() };
+    }
     if (decision === 'deny') return { ok: false, error: DENIED_MESSAGE, durationMs: elapsed() };
     if (decision === 'ask') {
-      const allowed = this.approval?.onAsk ? await this.approval.onAsk({ tool: req.tool, args: req.args }) : false;
+      let allowed: boolean;
+      try {
+        allowed = this.approval?.onAsk ? await this.approval.onAsk({ tool: req.tool, args: req.args }) : false;
+      } catch (e) {
+        return { ok: false, error: `approval callback threw: ${errorMessage(e)}`, durationMs: elapsed() };
+      }
       if (!allowed) return { ok: false, error: DENIED_MESSAGE, durationMs: elapsed() };
     }
 
@@ -110,7 +126,13 @@ export class ToolExecutor {
       const settled = await Promise.all(
         batch.map(async (item): Promise<ExecutedToolResult> => {
           const def = this.registry.get(item.tool);
-          const key = def?.lockKey?.(item.args);
+          // lockKey 回调异常同样不击穿波次（P2-2）：转为该调用的失败结果，不执行工具
+          let key: string | undefined;
+          try {
+            key = def?.lockKey?.(item.args);
+          } catch (e) {
+            return { callId: item.callId, ok: false, error: `lockKey callback threw: ${errorMessage(e)}`, durationMs: 0 };
+          }
           const run = async (): Promise<ExecutedToolResult> =>
             ({ ...(await this.execute(item, env)), callId: item.callId });
           if (key === undefined) return run();

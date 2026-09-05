@@ -37,7 +37,11 @@ export interface ToolDefinition {
   concurrencySafe?: boolean;
   /** 单次执行超时 ms（缺省不限时；由执行器与外部 signal 组合） */
   timeoutMs?: number;
-  /** 可选锁键：同键调用彼此串行（如按文件路径防写冲突） */
+  /**
+   * 可选锁键：safe 并行批内同键调用彼此串行。
+   * **Ph3 并发模型预留**：阶段 2 的 unsafe 调用独占执行（本就串行）不会消费本字段，
+   * 因此 unsafe 工具（如 write/edit）不声明它；待 Ph3 引入新的并发模型时再启用。
+   */
   lockKey?(args: unknown): string;
 }
 

@@ -13,10 +13,10 @@
 | 默认分支 | `master`（注意：不是 main） |
 | 开发分支 | `feat/phase-2-agent-loop-tools`（阶段 2 全部工作在此；阶段 1 在 `feat/phase-1-session-core`） |
 | 阶段 1 | ✅ 已完成并验收（事件溯源会话内核 + 轨迹，33 测试） |
-| 阶段 2 | ✅ 已完成自验（Agent loop + 工具系统 + MockProvider + CI 骨架 + P2 消化；98 测试）；独立验收 `/accept-phase` 待做 |
+| 阶段 2 | ✅ 自验 + 阶段 2 独立审查 P1/P2 全部修复（Agent loop + 工具系统 + MockProvider + CI 骨架）；独立验收 `/accept-phase` 待做 |
 | 阶段 3 | ⬜ 未开始：Provider 真实实现 + 配置体系 + 审批细化（ROADMAP P0-7/8/9） |
 | 未关闭事项 | 读 `docs/issue-log/OPEN.md`（保持为零上下文第一读） |
-| 测试 | `pnpm test`（含 build）—— core 95 + cli 3 = 98 例（2026-09-06） |
+| 测试 | `pnpm test`（含 build）—— core 106 passed + 1 skipped（`H2_GEN_LOOP_DEMO` 门控的 fixture 生成器，非用例失败）+ cli 3 passed = 109 passed + 1 skipped（2026-09-06，审查修复后；此前文档误记为「98 全绿」） |
 | 远程 | 无（未配置 origin；push 需人类授权） |
 
 ## 3. 文档地图（按阅读顺序）

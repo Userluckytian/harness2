@@ -222,6 +222,18 @@ describe('write 工具', () => {
     expect(r.ok).toBe(false);
     expect(r.error).toMatch(/content/);
   });
+
+  it('P2-4 回归：成功消息 cwd 内显示相对路径、cwd 外回退绝对路径', async () => {
+    const dir = tmpDir();
+    const inside = await run(writeTool, { file_path: join(dir, 'a', 'b.txt'), content: 'x' }, dir);
+    expect(inside.ok).toBe(true);
+    expect(inside.output).toBe(`wrote 1 bytes to ${join('a', 'b.txt')}`);
+
+    const other = tmpDir(); // cwd 之外（另一个临时目录）
+    const outside = await run(writeTool, { file_path: join(other, 'x.txt'), content: 'y' }, dir);
+    expect(outside.ok).toBe(true);
+    expect(outside.output).toBe(`wrote 1 bytes to ${join(other, 'x.txt')}`);
+  });
 });
 
 describe('edit 工具', () => {
@@ -279,6 +291,23 @@ describe('glob 工具', () => {
     expect(r.ok).toBe(true);
     expect(r.output).toBe('blob.bin');
   });
+
+  it('P2-5 回归：排除 node_modules/.git（目录本身与子树）', async () => {
+    const dir = tmpDir();
+    mkdirSync(join(dir, 'node_modules', 'pkg'), { recursive: true });
+    mkdirSync(join(dir, '.git'), { recursive: true });
+    writeFileSync(join(dir, 'real.ts'), 'export {};', 'utf8');
+    writeFileSync(join(dir, 'node_modules', 'pkg', 'dep.ts'), 'export {};', 'utf8');
+    writeFileSync(join(dir, '.git', 'hook.ts'), 'export {};', 'utf8');
+    const r = await run(globTool, { pattern: '**/*.ts' }, dir);
+    expect(r.ok).toBe(true);
+    expect(r.output?.split('\n')).toEqual(['real.ts']);
+    // 顶层列举时目录名本身也不出现
+    const top = await run(globTool, { pattern: '*' }, dir);
+    expect(top.ok).toBe(true);
+    expect(top.output).not.toContain('node_modules');
+    expect(top.output).not.toContain('.git');
+  });
 });
 
 describe('grep 工具', () => {
@@ -327,5 +356,44 @@ describe('grep 工具', () => {
     const r = await run(grepTool, { pattern: '[unclosed' }, realTree);
     // rg 视为错误退出；回退扫描报 invalid regex —— 两者都必须 ok:false
     expect(r.ok).toBe(false);
+  });
+
+  it('P2-3 回归：回退扫描跳过隐藏文件/目录与 .env（与 rg 默认行为对齐）', async () => {
+    const dir = tmpDir();
+    mkdirSync(join(dir, '.hidden'));
+    writeFileSync(join(dir, 'visible.txt'), 'needle visible', 'utf8');
+    writeFileSync(join(dir, '.env'), 'SECRET=needle', 'utf8');
+    writeFileSync(join(dir, '.hidden', 'x.txt'), 'needle hidden', 'utf8');
+
+    const fallback = scanTextFiles('needle', dir, dir, new AbortController().signal);
+    expect(fallback.error).toBeUndefined();
+    expect(fallback.output).toBe('visible.txt:1:needle visible'); // .env / .hidden 不出现（隐藏规则覆盖 .env*）
+
+    const viaTool = await run(grepTool, { pattern: 'needle' }, dir);
+    expect(viaTool.ok).toBe(true);
+    // 双实现一致：rg 可用时此断言走 rg 路径；rg 缺失时工具自动回退（仅覆盖回退路径，显式注明）
+    expect(viaTool.output).toBe(fallback.output);
+    if (!rgAvailable) console.warn('[grep P2-3] rg unavailable — only the JS fallback path is covered');
+  });
+
+  it('P2-3 回归：仅路径段归一化分隔符——匹配文本中的反斜杠/冒号保持原样', async () => {
+    const dir = tmpDir();
+    const line = 'const p = "C:\\Users\\tmp" /* note a:1:b */';
+    writeFileSync(join(dir, 'winpath.txt'), `${line}\n`, 'utf8');
+    const r = await run(grepTool, { pattern: 'Users' }, dir);
+    expect(r.ok).toBe(true);
+    // 旧实现整行 \→/ 会把文本篡改为 C:/Users/tmp；修复后文本必须逐字保留
+    expect(r.output).toBe(`winpath.txt:1:${line}`);
+  });
+
+  it('P2-3 回归：两实现默认大小写敏感', async () => {
+    const dir = tmpDir();
+    writeFileSync(join(dir, 'lower.txt'), 'needle here', 'utf8');
+    writeFileSync(join(dir, 'upper.txt'), 'NEEDLE here', 'utf8');
+    const r = await run(grepTool, { pattern: 'needle' }, dir);
+    expect(r.ok).toBe(true);
+    expect(r.output).toBe('lower.txt:1:needle here'); // 不匹配 NEEDLE
+    const fallbackUpper = scanTextFiles('NEEDLE', dir, dir, new AbortController().signal);
+    expect(fallbackUpper.output).toBe('upper.txt:1:NEEDLE here'); // 不匹配 needle
   });
 });

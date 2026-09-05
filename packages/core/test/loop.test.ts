@@ -7,7 +7,7 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { MockProvider } from '../src/provider/mock.js';
-import type { ChatMessage } from '../src/provider/types.js';
+import type { ChatMessage, ChatProvider } from '../src/provider/types.js';
 import { computeProjection, loadSession } from '../src/session/reader.js';
 import { SessionWriter } from '../src/session/writer.js';
 import { SESSION_LOG_FILE, type AnySessionEvent } from '../src/session/types.js';
@@ -294,6 +294,56 @@ describe('runTurn 取消语义', () => {
     const types = loadEvents(dir).map((e) => e.type);
     expect(types.filter((t) => t === 'step/end')).toHaveLength(1);
   }, 8000);
+
+  it('P2-1 回归：provider 按契约在 abort 时正常结束迭代而非抛错——半截文本不冒充 end_turn', async () => {
+    const dir = tmpDir();
+    const ac = new AbortController();
+    const provider: ChatProvider = {
+      name: 'mock',
+      async *streamChat() {
+        yield { type: 'text-delta', text: '半截回复' };
+        // 契约允许：感知 abort 后正常收尾迭代（不抛错）——loop 必须自行补检信号
+        while (!ac.signal.aborted) await sleep(10);
+      },
+    };
+    const pending = runTurn(dir, { provider, tools: new ToolRegistry(), cwd: dir, userText: 'hi', signal: ac.signal });
+    setTimeout(() => ac.abort(), 60);
+    const result = await pending;
+
+    expect(result.stopReason).toBe('cancelled');
+    const events = loadEvents(dir);
+    // 半截文本不得落 assistant/message（否则会被下一请求当 end_turn 回复重建）
+    expect(events.some((e) => e.type === 'assistant/message')).toBe(false);
+    const attempt = events.find((e) => e.type === 'assistant/attempt');
+    expect(attempt && attempt.type === 'assistant/attempt' ? attempt.payload.error : '').toContain('cancelled');
+    expect(events.at(-1)?.type).toBe('step/end');
+  }, 8000);
+
+  it('P2-2 回归：审批回调抛错 → 该调用 ok:false，turn 正常完成且日志无悬挂', async () => {
+    const dir = tmpDir();
+    const provider = new MockProvider([
+      { text: '触发审批', toolCalls: [{ id: 'call-e', name: 'guarded', arguments: '{}' }] },
+      { text: '审批回调异常，操作未执行。' },
+    ]);
+    const registry = new ToolRegistry();
+    let executed = 0;
+    registry.register(makeTool('guarded', () => { executed += 1; return { output: 'done' }; }));
+    const approval: ApprovalHandler = { decide: () => { throw new Error('approval storage down'); } };
+    const result = await runTurn(dir, { provider, tools: registry, approval, cwd: dir, userText: 'go' });
+
+    expect(executed).toBe(0);
+    expect(result.stopReason).toBe('end_turn'); // 回调异常不击穿 turn
+    const events = loadEvents(dir);
+    const types = events.map((e) => e.type);
+    expect(types.filter((t) => t === 'step/start')).toHaveLength(2);
+    expect(types.filter((t) => t === 'step/end')).toHaveLength(2); // step/start+end 成对必落盘
+    const logged = events.find((e) => e.type === 'tool/result');
+    expect(logged && logged.type === 'tool/result' ? logged.payload : null).toMatchObject({ callId: 'call-e', ok: false });
+    expect(logged && logged.type === 'tool/result' ? logged.payload.error : '').toContain('approval callback threw');
+    // 模型在下一请求看到该失败结果（而不是整个 turn 抛出）
+    const toolMsg = provider.requests[1]?.messages.find((m) => m.role === 'tool');
+    expect(toolMsg?.content).toContain('approval callback threw');
+  });
 });
 
 describe('Model-visible ⟺ logged 不变量', () => {

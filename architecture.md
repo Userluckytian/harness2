@@ -51,6 +51,9 @@ packages/
 - **Model-visible ⟺ logged 的结构性保证**：loop 的模型请求上下文唯一来源是
   `buildChatMessages(loadSession(dir))`（投影 + 活动工具事件重建），无内存旁路；
   不变量测试用独立回放断言 `mock.requests` 与日志逐步重建序列完全一致。
+- **不变量边界**：Model-visible ⟺ logged 当前覆盖 **messages**（user/assistant/tool 消息）；
+  `ChatRequest.tools`（工具 schema 列表）暂不在日志重建范围内——阶段 2 工具集固定，
+  Ph3 工具配置化时再评估是否把 tools 也纳入重建。
 - **append-only**：取消与失败都是追加事件——模型失败/取消记 `assistant/attempt`，
   被取消的工具调用记 `ok:false` 的 `tool/result`；无任何 update/delete 路径。
 - 用户输入同样 logged：`userText` 由 loop 先写 `user/message` 再进循环。
@@ -64,8 +67,11 @@ packages/
 - 并发波次 `runWave`：按提交顺序——unsafe（默认）独占执行；连续 safe 并行；
   批内 `lockKey` 相同按键串行；结果与请求顺序一一对应。
 - 基础工具集：bash / read / write / edit / glob / grep（全部 Windows 兼容，`node:path`
-  解析；write/edit 原子写 tmp+rename 且按路径 lockKey 串行；grep 优先 spawn ripgrep、
-  ENOENT 回退纯 JS 扫描，无条件跳过 node_modules/.git 与二进制文件）。
+  解析；write/edit 原子写 tmp+rename，unsafe 独占执行天然串行——lockKey 为 Ph3 预留，
+  当前不声明；bash 超时/取消按平台杀整棵进程树（Windows `taskkill /T /F`、POSIX
+  进程组击杀，守护进程化进程除外）；grep 优先 spawn ripgrep、ENOENT 回退纯 JS 扫描，
+  两条路径无条件跳过 node_modules/.git、隐藏文件/目录（含 .env*）与二进制文件；
+  glob 同样排除 node_modules/.git）。
 
 ## 会话事件日志（阶段 1 交付）
 

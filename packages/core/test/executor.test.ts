@@ -104,6 +104,28 @@ describe('ToolExecutor.execute', () => {
     expect(r.error).toBe('boom inside');
   });
 
+  it('P2-2 回归：decide 抛异常 → 该调用 ok:false，不执行工具、不击穿调用方', async () => {
+    let executed = 0;
+    const reg = new ToolRegistry();
+    reg.register(makeTool({ name: 'guarded', execute: async () => { executed += 1; return { output: 'x' }; } }));
+    const approval: ApprovalHandler = { decide: () => { throw new Error('approval storage down'); } };
+    const r = await new ToolExecutor(reg, approval).execute(req('c1', 'guarded'), env);
+    expect(executed).toBe(0);
+    expect(r.ok).toBe(false);
+    expect(r.error).toBe('approval callback threw: approval storage down');
+  });
+
+  it('P2-2 回归：onAsk 抛异常 → 该调用 ok:false，不执行工具', async () => {
+    let executed = 0;
+    const reg = new ToolRegistry();
+    reg.register(makeTool({ name: 'asked', execute: async () => { executed += 1; return { output: 'x' }; } }));
+    const approval: ApprovalHandler = { decide: () => 'ask', onAsk: () => { throw new Error('ui gone'); } };
+    const r = await new ToolExecutor(reg, approval).execute(req('c1', 'asked'), env);
+    expect(executed).toBe(0);
+    expect(r.ok).toBe(false);
+    expect(r.error).toBe('approval callback threw: ui gone');
+  });
+
   it('error 与 output 并存：ok=false 但输出保留（供回传模型诊断）', async () => {
     const reg = new ToolRegistry();
     reg.register(makeTool({ name: 'partial', execute: async () => ({ output: 'partial logs', error: 'exit code 1' }) }));
@@ -187,5 +209,22 @@ describe('ToolExecutor.runWave（并发波次）', () => {
     const results = await executor.runWave([req('x', 'nope')], env);
     expect(results[0]).toMatchObject({ callId: 'x', ok: false, error: 'unknown tool: nope' });
     expect((await executor.execute(req('y', 'nope'), env)).error).toBe('unknown tool: nope');
+  });
+
+  it('P2-2 回归：lockKey 抛异常 → 该调用 ok:false 不执行，runWave 不 reject', async () => {
+    let executed = 0;
+    const reg = new ToolRegistry();
+    reg.register(
+      makeTool({
+        name: 'keyed',
+        concurrencySafe: true,
+        lockKey: () => { throw new Error('bad key'); },
+        execute: async () => { executed += 1; return { output: 'x' }; },
+      }),
+    );
+    const results = await new ToolExecutor(reg).runWave([req('a', 'keyed'), req('b', 'keyed')], env);
+    expect(results.map((r) => r.callId)).toEqual(['a', 'b']);
+    expect(results.every((r) => r.ok === false && r.error?.includes('lockKey callback threw'))).toBe(true);
+    expect(executed).toBe(0);
   });
 });
