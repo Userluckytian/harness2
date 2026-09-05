@@ -57,6 +57,8 @@ export interface AssistantMessagePayload {
   text: string;
   model?: string;
   usage?: TokenUsage;
+  /** 思考/推理文本（阶段 3 加性字段：reasoning_content / thinking 汇总；旧日志可缺省） */
+  reasoning?: string;
   turnId?: string;
 }
 

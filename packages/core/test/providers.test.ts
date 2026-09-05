@@ -10,8 +10,10 @@ import { ProviderError } from '../src/provider/types.js';
 import type { ChatMessage, ChatRequest, StreamChunk } from '../src/provider/types.js';
 
 const servers: StubServer[] = [];
+const e2eDirs: string[] = [];
 afterEach(async () => {
   for (const s of servers.splice(0)) await s.close();
+  for (const d of e2eDirs.splice(0)) rmSync(d, { recursive: true, force: true });
 });
 
 async function start(): Promise<StubServer> {
@@ -475,3 +477,233 @@ describe('toAnthropicWireMessages 纯函数', () => {
     expect(wire[0]!.content[0]).toEqual({ type: 'tool_use', id: 't1', name: 'x', input: {} });
   });
 });
+
+// ---------- Task 4: 工厂 + 端到端（runTurn × stub server） ----------
+
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { createProvider, resolveApiKey } from '../src/provider/factory.js';
+import { ConfigError, type AuthFile, type HarnessConfig } from '../src/config/index.js';
+import { runTurn } from '../src/agent/loop.js';
+import { ToolRegistry } from '../src/tools/registry.js';
+import type { ToolDefinition } from '../src/tools/types.js';
+import { loadSession } from '../src/session/reader.js';
+
+function tmpDir(): string {
+  const d = mkdtempSync(join(tmpdir(), 'h2-e2e-'));
+  e2eDirs.push(d);
+  return d;
+}
+
+const FACTORY_CONFIG: HarnessConfig = {
+  providers: {
+    deepseek: {
+      protocol: 'openai',
+      baseUrl: 'https://api.deepseek.com/v1',
+      envKey: 'DEEPSEEK_API_KEY',
+      models: { 'deepseek-chat': { contextWindow: 128000, maxOutputTokens: 8192 } },
+    },
+    claude: {
+      protocol: 'anthropic',
+      baseUrl: 'https://api.anthropic.com',
+      models: { 'claude-sonnet-4-5': { maxOutputTokens: 64000 } },
+    },
+  },
+  roles: {
+    main: { channel: 'deepseek', model: 'deepseek-chat' },
+    subagent: { channel: 'claude', model: 'claude-sonnet-4-5' },
+  },
+  approval: { mode: 'default' },
+};
+
+describe('createProvider 工厂', () => {
+  const auth: AuthFile = { channels: { deepseek: { apiKey: 'test-auth-key' } } };
+
+  it('openai 协议分派：name 为 channel/model，key 取自 auth.json', () => {
+    const p = createProvider(FACTORY_CONFIG, 'main', { auth, env: {} });
+    expect(p).toBeInstanceOf(OpenAICompatProvider);
+    expect(p.name).toBe('deepseek/deepseek-chat');
+  });
+
+  it('anthropic 协议分派：maxOutputTokens 从 models 配置透传', async () => {
+    const stub = await start();
+    stub.enqueue({ sse: ANTHROPIC_TEXT_EVENTS });
+    // 红线：baseUrl 指向本地 stub，绝不触达真实端点
+    const config: HarnessConfig = {
+      ...FACTORY_CONFIG,
+      providers: {
+        ...FACTORY_CONFIG.providers,
+        claude: { ...FACTORY_CONFIG.providers['claude']!, baseUrl: stub.url },
+      },
+    };
+    const p = createProvider(config, 'subagent', {
+      auth: { channels: { claude: { apiKey: 'test-claude-key' } } },
+      env: {},
+    });
+    expect(p).toBeInstanceOf(AnthropicProvider);
+    expect(p.name).toBe('claude/claude-sonnet-4-5');
+    for await (const _ of p.streamChat({ messages: [{ role: 'user', content: 'x' }] })) break;
+    const body = stub.requests[0]!.body as { max_tokens: number };
+    expect(body.max_tokens).toBe(64000);
+  });
+
+  it('key 来源顺序：auth.json 优先于 env；env 兜底可用', () => {
+    const env = { DEEPSEEK_API_KEY: 'test-env-key' };
+    const viaEnv = createProvider(FACTORY_CONFIG, 'main', { auth: { channels: {} }, env });
+    expect(viaEnv).toBeInstanceOf(OpenAICompatProvider); // env key 可用即构造成功
+    // resolveApiKey 直测来源
+    expect(resolveApiKey('deepseek', FACTORY_CONFIG.providers['deepseek']!, auth, env)).toMatchObject({ kind: 'auth.json' });
+    expect(resolveApiKey('deepseek', FACTORY_CONFIG.providers['deepseek']!, { channels: {} }, env)).toMatchObject({
+      kind: 'env',
+      envKey: 'DEEPSEEK_API_KEY',
+    });
+    expect(resolveApiKey('deepseek', FACTORY_CONFIG.providers['deepseek']!, { channels: {} }, {})).toMatchObject({ kind: 'missing' });
+  });
+
+  it('错误路径：role 缺失 / channel 不存在 / model 未声明 / key 缺失 → ConfigError 单行消息', () => {
+    expect(() => createProvider(FACTORY_CONFIG, 'ghost', { auth, env: {} })).toThrow(ConfigError);
+    expect(() => createProvider(FACTORY_CONFIG, 'ghost', { auth, env: {} })).toThrow(/未在 config.roles 中配置/);
+
+    const badChannel = { ...FACTORY_CONFIG, roles: { main: { channel: 'nowhere', model: 'm' } } } as HarnessConfig;
+    expect(() => createProvider(badChannel, 'main', { auth, env: {} })).toThrow(/不存在于 config.providers/);
+
+    const badModel = { ...FACTORY_CONFIG, roles: { main: { channel: 'deepseek', model: 'nope' } } } as HarnessConfig;
+    expect(() => createProvider(badModel, 'main', { auth, env: {} })).toThrow(/未在 providers.deepseek.models 中声明/);
+
+    expect(() => createProvider(FACTORY_CONFIG, 'subagent', { auth: { channels: {} }, env: {} })).toThrow(
+      /缺少 API key/,
+    );
+  });
+});
+
+describe('端到端：runTurn × 本地 stub server（openai 协议，含一轮工具调用）', () => {
+  it('两步 turn：wire 请求与日志投影一致（不变量）、reasoning/usage 落 assistant/message', async () => {
+    const stub = await start();
+    stub.enqueueAll([
+      {
+        sse: [
+          'data: {"choices":[{"delta":{"reasoning_content":"用户要写文件"}}]}',
+          'data: {"choices":[{"delta":{"reasoning_content":"，先调用工具"}}]}',
+          'data: {"choices":[{"delta":{"tool_calls":[{"index":0,"id":"call-1","function":{"name":"write_file","arguments":"{\\"path\\":"}}]}}]}',
+          'data: {"choices":[{"delta":{"tool_calls":[{"index":0,"function":{"arguments":"\\"a.txt\\"}"}}]},"finish_reason":"tool_calls"}]}',
+          'data: {"choices":[{"delta":{}}],"usage":{"prompt_tokens":20,"completion_tokens":10}}',
+          'data: [DONE]',
+        ],
+      },
+      {
+        sse: [
+          'data: {"choices":[{"delta":{"content":"已写入 a.txt"}}]}',
+          'data: {"choices":[{"delta":{},"finish_reason":"stop"}],"usage":{"prompt_tokens":50,"completion_tokens":6}}',
+          'data: [DONE]',
+        ],
+      },
+    ]);
+
+    const config: HarnessConfig = {
+      providers: {
+        deepseek: { protocol: 'openai', baseUrl: stub.url, models: { 'deepseek-chat': {} } },
+      },
+      roles: { main: { channel: 'deepseek', model: 'deepseek-chat' } },
+      approval: {},
+    };
+    const provider = createProvider(config, 'main', { auth: { channels: { deepseek: { apiKey: 'test-key-e2e' } } }, env: {} });
+
+    const registry = new ToolRegistry();
+    const writeTool: ToolDefinition = {
+      name: 'write_file',
+      description: '写文件',
+      parameters: { type: 'object', properties: {} },
+      execute: () => ({ output: 'written' }),
+    };
+    registry.register(writeTool);
+
+    const dir = tmpDir();
+    const result = await runTurn(dir, { provider, tools: registry, cwd: dir, userText: '写 a.txt' });
+
+    expect(result.stopReason).toBe('end_turn');
+    expect(result.steps).toBe(2);
+    expect(result.toolCalls).toBe(1);
+    expect(result.finalText).toBe('已写入 a.txt');
+
+    // stub 恰好收到 2 次请求
+    expect(stub.requests).toHaveLength(2);
+    expect(stub.requests[0]!.headers['authorization']).toBe('Bearer test-key-e2e');
+
+    // —— 不变量：stub 捕获的 wire 消息 === 从日志独立重建后映射的 wire 消息 ——
+    const session = loadSession(dir);
+    computeMessagesSnapshots(session, stub);
+    // 第二次请求的 wire 消息应包含 tool 结果回传
+    const secondWire = (stub.requests[1]!.body as { messages: Array<Record<string, unknown>> }).messages;
+    expect(secondWire.at(-1)).toEqual({ role: 'tool', tool_call_id: 'call-1', content: 'written' });
+    expect(secondWire[0]).toEqual({ role: 'user', content: '写 a.txt' });
+
+    // reasoning / usage 落盘
+    const assistantMsgs = session.events
+      .filter((e) => e.event.type === 'assistant/message')
+      .map((e) => (e.event.type === 'assistant/message' ? e.event.payload : null)!);
+    expect(assistantMsgs[0]).toMatchObject({
+      text: '',
+      model: 'deepseek/deepseek-chat',
+      reasoning: '用户要写文件，先调用工具',
+      usage: { inputTokens: 20, outputTokens: 10 },
+    });
+    expect(assistantMsgs[1]).toMatchObject({ text: '已写入 a.txt', usage: { inputTokens: 50, outputTokens: 6 } });
+    expect(assistantMsgs[1]!.reasoning).toBeUndefined(); // 第二步无思考内容则不写字段
+
+    // 日志中的 tool/call 与 tool/result
+    const callEvents = session.events.filter((e) => e.event.type === 'tool/call');
+    const resultEvents = session.events.filter((e) => e.event.type === 'tool/result');
+    expect(callEvents).toHaveLength(1);
+    expect(resultEvents).toHaveLength(1);
+  }, 10000);
+});
+
+/** 按 step/start 切分，断言每次 stub 请求的消息列表与日志逐步重建一致 */
+function computeMessagesSnapshots(
+  session: ReturnType<typeof loadSession>,
+  stub: StubServer,
+): void {
+  const { events } = session;
+  const messages: ChatMessage[] = [];
+  const expected: string[] = [];
+  for (const { event: e } of events) {
+    if (e.type === 'step/start') {
+      expected.push(JSON.stringify(messages));
+      continue;
+    }
+    if (e.type === 'user/message') messages.push({ role: 'user', content: e.payload.text });
+    else if (e.type === 'assistant/message') messages.push({ role: 'assistant', content: e.payload.text });
+    else if (e.type === 'tool/call' && messages.at(-1)?.role === 'assistant') {
+      const last = messages.at(-1) as { toolCalls?: { id: string; name: string; arguments: string }[] };
+      (last.toolCalls ??= []).push({
+        id: e.payload.callId,
+        name: e.payload.tool,
+        arguments: JSON.stringify(e.payload.args ?? {}),
+      });
+    } else if (e.type === 'tool/result') {
+      const content = e.payload.ok
+        ? (e.payload.output ?? '')
+        : [e.payload.error, e.payload.output].filter(Boolean).join('\n');
+      messages.push({ role: 'tool', content, toolCallId: e.payload.callId, name: e.payload.tool });
+    }
+  }
+  const actual = stub.requests.map((r) =>
+    JSON.stringify((r.body as { messages: unknown[] }).messages.map(normalizeWireMessage)),
+  );
+  const expectedWire = expected.map((snapshot) =>
+    JSON.stringify(toOpenAIWireMessages(JSON.parse(snapshot) as ChatMessage[]).map(normalizeWireMessage)),
+  );
+  expect(actual).toEqual(expectedWire);
+}
+
+/** wire 消息归一化（stub 捕获的 body 字段顺序无关） */
+function normalizeWireMessage(m: unknown): unknown {
+  const msg = m as Record<string, unknown>;
+  const out: Record<string, unknown> = {};
+  for (const k of ['role', 'content', 'tool_call_id'] as const) {
+    if (msg[k] !== undefined) out[k] = msg[k];
+  }
+  if (msg['tool_calls'] !== undefined) out['tool_calls'] = msg['tool_calls'];
+  return out;
+}

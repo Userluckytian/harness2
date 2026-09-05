@@ -146,6 +146,7 @@ async function runTurnWithWriter(writer: SessionWriter, options: TurnOptions): P
     const request: ChatRequest = toolSpecs.length > 0 ? { messages, tools: toolSpecs } : { messages };
 
     let text = '';
+    let reasoning: string | undefined;
     let usage: ProviderUsage | undefined;
     const calls: ToolCallRequest[] = [];
     // 取消分类公共出口：半截尝试以 assistant/attempt 记录（append-only），绝不冒充 assistant/message
@@ -171,6 +172,7 @@ async function runTurnWithWriter(writer: SessionWriter, options: TurnOptions): P
     try {
       for await (const chunk of provider.streamChat(request, { signal })) {
         if (chunk.type === 'text-delta') text += chunk.text;
+        else if (chunk.type === 'reasoning-delta') reasoning = (reasoning ?? '') + chunk.text;
         else if (chunk.type === 'tool-call') calls.push(chunk.call);
         else if (chunk.type === 'usage') usage = chunk.usage;
       }
@@ -204,6 +206,7 @@ async function runTurnWithWriter(writer: SessionWriter, options: TurnOptions): P
     writer.append('assistant/message', {
       text,
       model: provider.name,
+      ...(reasoning !== undefined && reasoning.length > 0 ? { reasoning } : {}),
       ...(usage !== undefined ? { usage } : {}),
       turnId,
     });
