@@ -13,6 +13,7 @@ export * from './tools/types.js';
 export * from './tools/registry.js';
 export * from './tools/executor.js';
 export * from './tools/predefined/index.js';
+export * from './approval/policy.js';
 export * from './agent/types.js';
 export * from './agent/loop.js';
 
