@@ -1,230 +1,57 @@
 # harness2 架构说明
 
-> 碳卫星数据生产系统（Carbon Satellite Data Production System）前端技术架构
+> 跨端 AI agent harness（CLI / 桌面 / IM 网关多形态）
+> 状态：随阶段推进持续更新（当前：阶段 1 —— 事件溯源会话内核 + 轨迹）
+> 决策依据：`docs/ROADMAP.md` D1–D6 · `docs/research/2026-09-06-reference-analysis.md`
 
-## 技术栈
+## 技术栈（2026-09-06 确认）
 
-| 分类 | 技术 | 版本 |
-|------|------|------|
-| 框架 | Vue 3 (Composition API + `<script setup>`) | 3.5 |
-| 构建 | Vite 8 + vue-tsc + UnoCSS | 8.1 |
-| 路由 | Vue Router 4 (Hash 模式) | 4.6 |
-| 状态 | Pinia | 2.3 |
-| UI | Element Plus (全局注册) | 2.14 |
-| 图表 | ECharts 6 (按需引入) | 6.1 |
-| 2D 地图 | Leaflet 1.9 | 1.9 |
-| 3D 地图 | Cesium 1.143 (占位) | 1.143 |
-| 国际化 | vue-i18n 11 | 11.4 |
-| HTTP | Axios + qs | 1.18 |
-| 加密 | crypto-js | 4.2 |
-| 语言 | TypeScript 6 | 6.0 |
+| 分类 | 技术 | 版本 | 说明 |
+|------|------|------|------|
+| 语言 | TypeScript（strict） | 5.x | 全栈同语言 |
+| 运行时 | Node.js | ≥22 | LTS |
+| 包管理 | pnpm workspaces | 11.x | 备选 npm workspaces（Windows 符号链接异常时降级） |
+| 测试 | vitest | 3.x | 含快照回放测试 |
+| CLI 框架 | commander | 14.x | 轻量命令解析 |
+| 桌面端（P1） | Electron + React | — | WebContentsView 内嵌浏览器 |
+| 存储 | JSONL（会话事件）+ SQLite（索引/FTS，后期） | — | 事件日志为唯一事实源 |
+| IM 网关（P2） | Node 常驻进程 + QQ 官方 Bot API v2 | — | 用户已在 QQ 开放平台注册 |
 
-## 目录结构
+## 目录结构（四包位形）
 
 ```
-src/
-├── api/                    # API 请求层
-│   ├── request.ts          # Axios 封装（拦截器、token 注入、错误处理）
-│   └── modules/            # 按模块拆分的 API
-│       ├── auth.ts         # 认证（/sso-server/auth/* + /tansat-server/auth/*）
-│       ├── user.ts
-│       ├── role.ts
-│       ├── menu.ts
-│       └── dict.ts
-├── assets/                 # 静态资源
-│   └── styles/
-│       ├── index.scss      # 入口样式（@use 引入所有子模块）
-│       ├── reset.scss      # 全局重置 + 暗色滚动条
-│       ├── dark/custom.css # Element Plus 暗色主题覆盖
-│       └── theme/          # harness2 自定义主题变量
-│           ├── variables.scss
-│           ├── light.scss   # --app-* 浅色变量
-│           └── dark.scss    # --app-* 深色变量
-├── components/             # 公共组件
-│   ├── CgIcon/             # 图标组件
-│   ├── CgTable/            # 表格组件（分页、loading）
-│   ├── CgPanel/            # 面板容器
-│   ├── CgChart/            # ECharts 封装
-│   ├── CgLeafletMap/       # Leaflet 地图封装
-│   ├── CgCesium/           # Cesium 地球（占位）
-│   ├── form/               # 表单组件（FormInput, FormSelect, FormDateRange, FormCheckbox）
-│   ├── svgIcon/            # SVG 图标组件
-│   ├── ZoomImageViewer/    # 图片缩放预览（支持缩放持久化）
-│   ├── LazyFileTree.vue    # 懒加载文件树
-│   ├── UpdateProfile/      # 个人信息修改（头像 + 别名）
-│   └── ChangePassword/     # 修改密码
-├── composables/            # 组合式函数
-│   ├── useToken.ts         # URL token 提取 + 管理
-│   ├── useAuth.ts          # 登录/注册/登出
-│   ├── useDict.ts          # 字典数据管理
-│   ├── useTheme.ts         # 主题切换
-│   ├── useECharts.ts       # ECharts 实例管理
-│   ├── useLeaflet.ts       # Leaflet 地图管理
-│   └── useTable.ts         # 表格分页/加载管理
-├── directive/              # 自定义指令
-│   └── index.ts            # v-auth（RBAC 权限控制）
-├── i18n/                   # 国际化
-│   ├── index.ts
-│   └── lang/
-│       ├── zh-cn.ts        # 中文
-│       └── en.ts           # 英文
-├── layout/                 # 布局组件
-│   ├── index.vue           # 主布局（Sidebar + Header + Content）
-│   └── components/
-│       ├── Sidebar.vue     # 侧边栏（菜单）
-│       ├── Header.vue      # 顶部栏（用户下拉、主题切换、语言切换）
-│       └── SubMenu.vue     # 递归子菜单
-├── router/                 # 路由
-│   ├── index.ts            # 创建路由实例 + setupGuard
-│   ├── routes.ts           # 静态路由配置
-│   └── guard.ts            # 全局前置守卫（token 校验）
-├── stores/                 # 状态管理
-│   ├── index.ts            # Pinia 实例
-│   └── modules/
-│       ├── app.ts          # 站点配置（loadConfig）
-│       ├── user.ts         # 用户信息 + token
-│       └── theme.ts        # 主题 + 语言
-├── utils/                  # 工具函数
-│   ├── storage.ts          # Session / Local 封装
-│   ├── crypto.ts           # SHA256 + AES 加密
-│   ├── mitt.ts             # 事件总线
-│   ├── format.ts           # 日期/数字格式化
-│   ├── validate.ts         # 表单校验规则
-│   └── loading.ts          # 全局 loading
-├── views/                  # 页面视图
-│   ├── login/              # 登录/注册
-│   ├── business/           # 业务模块
-│   │   ├── home/           # 首页
-│   │   ├── map/            # 2D 地图
-│   │   ├── globe/          # 3D 地球
-│   │   └── charts/         # 图表
-│   ├── system/             # 系统管理
-│   │   └── setting/
-│   │       ├── menu/       # 菜单管理
-│   │       ├── role/       # 角色管理
-│   │       ├── user/       # 用户管理
-│   │       └── directory/  # 字典管理
-│   └── error/              # 错误页
-│       └── 404.vue
-├── App.vue
-└── main.ts                 # 入口（异步加载配置 → 初始化主题 → 挂载）
+packages/
+├── core/      # 会话内核：事件日志、投影、轨迹渲染、（后续）agent loop、工具系统
+├── cli/       # 终端入口：harness2 命令（traj / 后续 chat 等）
+├── desktop/   # Electron 桌面端（P1，先占位）
+└── gateway/   # IM 网关与定时任务（P2，先占位）
 ```
 
-## 认证流程
+## 核心设计不变量
 
-### SSO Token 提取
+1. **Model-visible ⟺ logged**（自 deepseek-harness）：任何将发往模型的内容，必须可从事件日志完整重建；运行时与测试断言此不变量。
+2. **Append-only**：会话日志只追加，不修改不删除；撤回/分叉都是追加标记事件；代际文件（`session.vN.jsonl`）不可变。
+3. **会话内核与 UI 解耦**（决策 D5）：core 是单写者事件记录器；CLI/桌面/IM 网关都是消费者（投影）。多会话并行时后台会话只记事件不渲染。
+4. **独立文件快照**（决策 D6）：文件回滚不依赖 git（学习 grok rewind 的 before/after 双快照 + 冲突检测）。
 
-URL 带 `?token=xxx` 参数时自动提取并存储：
+## 会话事件日志（阶段 1 交付）
 
-```
-http://host/#/login?token=xxx
-  ↓ useToken.extractTokenFromUrl()
-  ↓ Cookie 存储 token
-  ↓ replaceState 清除 URL 参数
-```
+- 每会话一个目录，主文件 `session.v1.jsonl`，一行一个 JSON 事件，行尾 `\n`。
+- 单写者：`SessionWriter` 持有目录锁，写入即 fsync（可配置批量窗口）；崩溃残行由 reader 跳过并告警。
+- 事件类型 v1（字段命名对齐 deepseek-harness `known-event-types.ts`，留 `v` 版本字段）：
+  `session/header`、`user/message`、`assistant/message`、`assistant/attempt`（失败尝试）、
+  `step/start`、`step/end`、`tool/call`、`tool/result`、`rewind/marker`。
+- 投影语义：`rewind/marker` 之前的活动事件构成当前会话投影；被 rewind 的"影子事件"保留在日志中可导出，但不进当前上下文。
+- 密钥红线：API key 等凭证不落事件日志、不进 git。
 
-### 登录流程
+## 撤回/分叉路线（决策定案）
 
-```
-用户输入用户名密码
-  ↓ POST /sso-server/auth/login (userName, password, appId=siteId)
-  ↓ 响应 { status: 200, data: { userId, userName, userToken, ... } }
-  ↓ 存储 token + userInfo 到 SessionStorage
-  ↓ 路由跳转到首页
-```
+- P0/P1：`/undo` `/redo`（opencode 语义：投影截断 + 文件快照恢复）→ P1：分叉（dsh 语义：header 血缘 parentSession）→ P1 增强：grok 三模式 rewind。
 
-### 路由守卫
+## 插件机制（决策 D4，后期公开）
 
-```
-beforeEach:
-  1. extractTokenFromUrl() 或 getToken()
-  2. 无 token → 重定向 /login?redirect=原路径
-  3. 有 token 且目标是 /login → 重定向 /business/home
-  4. 有 token → 检查 userStore，加载存储的用户信息，next()
-```
+自研轻量总线：事件 emit/waterfall + 注册返回 disposer（学 dsh"注册即可逆"，不引 Cordis）。阶段 1–3 仅内部使用，P2 公开化。
 
-## RBAC 权限模型
+## 不做
 
-```
-用户 (User) → 1:1 → 角色 (Role)
-角色 (Role) → 1:N → 菜单 (Menu)  [menuIds[] 数组]
-菜单 (Menu) → M:N → 角色 (Role)  [展示用，数据库关联]
-```
-
-- 路由 `meta.roles` 限制访问权限
-- `v-auth` 指令控制按钮级权限
-- 侧边栏根据菜单数据动态渲染
-
-## 主题系统
-
-### 双重机制
-
-1. **harness2 自定义主题**：`data-theme` 属性控制 `--app-*` CSS 变量
-   - 浅色：`#f4f6f9` 背景
-   - 深色：`#0f253d` 背景
-
-2. **Element Plus 暗色模式**：`html.dark` 类控制 `--el-*` CSS 变量
-   - 使用官方 `element-plus/theme-chalk/dark/css-vars.css`
-   - 自定义 `dark/custom.css` 覆盖（深蓝色系）
-
-### 切换逻辑
-
-```ts
-// theme store
-toggleTheme() → 设置 isDark → applyTheme()
-  → document.documentElement.setAttribute('data-theme', 'dark' | 'light')
-  → document.documentElement.classList.toggle('dark', isDark)
-```
-
-## API 层设计
-
-### 请求封装 (`request.ts`)
-
-- **baseURL**：`/tansat-server`（通过 Vite proxy 代理）
-- **认证头**：`Authorization: {token}`
-- **站点头**：`siteId: {siteId}`（从 SessionStorage 读取）
-- **错误处理**：默认全局 `ElMessage.error()`，支持 `{ showGlobalError: false }` 在组件内 catch 处理
-- **响应兼容**：支持 `status: 200` 和 `code: 200` 两种成功判断
-
-### 代理配置
-
-```ts
-proxy: {
-  '/sso-server' → http://10.0.10.10:8877
-  '/tansat-server' → http://10.0.10.10:8877
-}
-```
-
-### API 模块划分
-
-| 模块 | 前缀 | 说明 |
-|------|------|------|
-| auth | `/sso-server/auth/` | 登录、注册、登出、修改资料、修改密码 |
-| auth | `/tansat-server/auth/` | 重置密码（管理员） |
-| user | `/tansat-server/user/` | 用户 CRUD |
-| role | `/tansat-server/role/` | 角色 CRUD |
-| menu | `/tansat-server/menu/` | 菜单 CRUD |
-| dict | `/tansat-server/dict/` | 字典管理 |
-
-## 站点配置
-
-`public/config.json` 在启动时加载，不参与打包，可运行时修改：
-
-```json
-{ "siteId": "your-site-id" }
-```
-
-加载流程：`main.ts` → `appStore.loadConfig()` → `fetch('/config.json')` → `Session.set('siteId', siteId)`
-
-## 国际化
-
-- 语言：`zh-cn`（中文）、`en`（英文）
-- 路由 key 格式：`router.{RouteName}`（如 `router.BusinessHome`）
-- 切换存储：`localStorage` 的 `locale` 字段
-
-## 样式规范
-
-- 入口：`@/assets/styles/index.scss`（使用 `@use` 引入子模块）
-- CSS 变量：所有自定义颜色使用 `--app-*` 前缀
-- 暗色模式：通过 `html.dark` 类 + `data-theme` 属性双重控制
-- 组件库：Element Plus 暗色覆盖在 `dark/custom.css`
+见 `docs/ROADMAP.md`「明确不做」：闭源逆向、个人号逆向协议、Cordis 引入、Rust/Tauri、UI 一次做全。

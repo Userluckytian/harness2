@@ -4,16 +4,18 @@
 > 原则：实事求是（不确定的不做）；轨迹优先；每个功能尽可能完善后再推进下一个。
 > 状态图例：⬜ 未开始 · 🔶 进行中 · ✅ 完成
 
-## 核心架构决策（待确认后生效）
+## 核心架构决策（2026-09-06 用户确认生效）
 
-| # | 决策 | 推荐 | 备选 | 依据 |
+| # | 决策 | 定案 | 备选 | 依据 |
 |---|------|------|------|------|
-| D1 | 技术栈 | TypeScript / Node ≥22，pnpm monorepo | Python core（打包痛）/ Rust core（迭代慢） | dsh 验证了 TS 多形态可行性；与桌面端同语言 |
-| D2 | 桌面端 | Electron + React | Tauri 2（更轻但 webview 跨平台不一致） | Tokeny/ZCode/Hermes/opencode 四家全是 Electron，Windows 验证最充分 |
-| D3 | 会话存储 | append-only JSONL 事件日志（代际迁移）+ SQLite（FTS 索引/元数据） | 全 SQLite | opencode/grok/dsh 三家趋同；轨迹与 undo 免费获得 |
-| D4 | 插件机制 | 自研轻量总线：事件 emit/waterfall + 注册返回 disposer | 引入 Cordis（概念密度过高） | 学 dsh"注册即可逆"，不背其术语税 |
-| D5 | 会话与 UI 解耦 | 会话内核独立进程/服务，UI 是观察者 | UI 直连内核 | Tokeny stream_runs schema + 用户需求 8/9 |
-| D6 | 文件快照 | 独立文件快照（不依赖 git） | git-based（opencode 有社区反馈副作用） | grok rewind 证明独立快照更稳 |
+| D1 | 技术栈 | **TypeScript / Node ≥22，pnpm monorepo** | Python core（打包痛）/ Rust core（迭代慢） | dsh 验证了 TS 多形态可行性；与桌面端同语言 |
+| D2 | 桌面端 | **Electron + React** | Tauri 2（更轻但 webview 跨平台不一致） | Tokeny/ZCode/Hermes/opencode 四家全是 Electron，Windows 验证最充分 |
+| D3 | 会话存储 | **append-only JSONL 事件日志（代际迁移）+ SQLite（FTS 索引/元数据）** | 全 SQLite | opencode/grok/dsh 三家趋同；轨迹与 undo 免费获得 |
+| D4 | 插件机制 | **自研轻量总线：事件 emit/waterfall + 注册返回 disposer** | 引入 Cordis（概念密度过高） | 学 dsh"注册即可逆"，不背其术语税 |
+| D5 | 会话与 UI 解耦 | **会话内核独立进程/服务，UI 是观察者** | UI 直连内核 | Tokeny stream_runs schema + 用户需求 8/9 |
+| D6 | 文件快照 | **独立文件快照（不依赖 git）** | git-based（opencode 有社区反馈副作用） | grok rewind 证明独立快照更稳 |
+
+补充确认（2026-09-06）：跨端 = 跨操作系统（Win/macOS/Linux）+ 跨形态（CLI→桌面→IM 网关）；用户已在 QQ 开放平台注册机器人（P2 集成时使用）。
 
 ---
 
