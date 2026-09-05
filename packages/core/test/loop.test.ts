@@ -175,6 +175,32 @@ describe('runTurn 基础语义', () => {
     expect(events.at(-1)?.type).toBe('step/end');
   });
 
+  it('P2-4 回归：provider done.stopReason 白名单透传（length→length；paused→paused + warning）', async () => {
+    const stoppedProvider = (stopReason: 'length' | 'paused'): ChatProvider => ({
+      name: `stub-${stopReason}`,
+      async *streamChat() {
+        yield { type: 'text-delta', text: '半截回复' };
+        yield { type: 'done', stopReason };
+      },
+    });
+    const tools = new ToolRegistry();
+
+    const dir1 = tmpDir();
+    const r1 = await runTurn(dir1, { provider: stoppedProvider('length'), tools, cwd: dir1, userText: 'x' });
+    expect(r1.stopReason).toBe('length'); // 不再折叠为 end_turn
+    expect(r1.finalText).toBe('半截回复');
+    expect(r1.warning).toBeUndefined();
+
+    const dir2 = tmpDir();
+    const r2 = await runTurn(dir2, { provider: stoppedProvider('paused'), tools, cwd: dir2, userText: 'x' });
+    expect(r2.stopReason).toBe('paused');
+    expect(r2.warning).toContain('pause_turn'); // 续跑未实现的如实告知
+    expect(r2.finalText).toBe('半截回复');
+    const events2 = loadEvents(dir2).map((e) => e.type);
+    expect(events2).toContain('assistant/message'); // 流完整结束，文本正常落盘
+    expect(events2.at(-1)).toBe('step/end'); // 日志无悬挂
+  });
+
   it('approval deny：工具不执行、result 为 denied，loop 带着拒绝消息继续到 end_turn', async () => {
     const dir = tmpDir();
     const provider = new MockProvider([

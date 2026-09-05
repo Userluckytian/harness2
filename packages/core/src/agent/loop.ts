@@ -9,7 +9,14 @@ import { join } from 'node:path';
 import { computeProjection, loadSession, type LoadedSession } from '../session/reader.js';
 import { SessionWriter } from '../session/writer.js';
 import { SESSION_LOG_FILE } from '../session/types.js';
-import type { ChatMessage, ChatRequest, ProviderUsage, ToolCallRequest, ToolSpec } from '../provider/types.js';
+import type {
+  ChatMessage,
+  ChatRequest,
+  ProviderStopReason,
+  ProviderUsage,
+  ToolCallRequest,
+  ToolSpec,
+} from '../provider/types.js';
 import { ToolExecutor, type ExecutedToolResult, type ToolExecutionRequest } from '../tools/executor.js';
 import type { ToolRegistry } from '../tools/registry.js';
 import type { TurnOptions, TurnResult, TurnStopReason } from './types.js';
@@ -121,6 +128,7 @@ async function runTurnWithWriter(writer: SessionWriter, options: TurnOptions): P
   let finalText: string | undefined;
   let stopReason: TurnStopReason = 'end_turn';
   let error: string | undefined;
+  let warning: string | undefined;
 
   // eslint 结构：每个 step = step/start → 请求（日志投影）→ 模型流 → 事件落盘 → step/end
   while (true) {
@@ -148,6 +156,7 @@ async function runTurnWithWriter(writer: SessionWriter, options: TurnOptions): P
     let text = '';
     let reasoning: string | undefined;
     let usage: ProviderUsage | undefined;
+    let providerStop: ProviderStopReason | undefined; // done 块透传的流终止原因（P2-4）
     const calls: ToolCallRequest[] = [];
     // 取消分类公共出口：半截尝试以 assistant/attempt 记录（append-only），绝不冒充 assistant/message
     const finishCancelled = (msg: string): TurnResult => {
@@ -175,6 +184,7 @@ async function runTurnWithWriter(writer: SessionWriter, options: TurnOptions): P
         else if (chunk.type === 'reasoning-delta') reasoning = (reasoning ?? '') + chunk.text;
         else if (chunk.type === 'tool-call') calls.push(chunk.call);
         else if (chunk.type === 'usage') usage = chunk.usage;
+        else if (chunk.type === 'done') providerStop = chunk.stopReason;
       }
     } catch (e) {
       const msg = (e as Error)?.message ?? String(e);
@@ -214,7 +224,14 @@ async function runTurnWithWriter(writer: SessionWriter, options: TurnOptions): P
     if (calls.length === 0) {
       writer.append('step/end', { stepId, turnId, durationMs: Math.round(performance.now() - stepStartedAt) });
       finalText = text;
-      stopReason = 'end_turn';
+      if (providerStop === 'paused') {
+        // P2-4：Anthropic pause_turn → paused。续跑（把暂停原因写回并重发请求继续本 turn）未实现，
+        // 已登记 OPEN.md；此处以 warning 通道如实告知调用方，不冒充 end_turn。
+        warning = 'provider 请求暂停本 turn（pause_turn）：续跑未实现，turn 以 paused 结束，需重新发起';
+      }
+      // provider 白名单透传的终止原因（length/content_filter/refusal/paused）优先；
+      // done 缺失（provider 契约未发）或报 tool_use 却无调用时归 end_turn
+      stopReason = providerStop && providerStop !== 'tool_use' ? providerStop : 'end_turn';
       break;
     }
 
@@ -286,5 +303,6 @@ async function runTurnWithWriter(writer: SessionWriter, options: TurnOptions): P
     durationMs: elapsed(),
     ...(finalText !== undefined ? { finalText } : {}),
     ...(error !== undefined ? { error } : {}),
+    ...(warning !== undefined ? { warning } : {}),
   };
 }

@@ -3,7 +3,21 @@ import type { ChatProvider } from '../provider/types.js';
 import type { ToolRegistry } from '../tools/registry.js';
 import type { ApprovalHandler } from '../tools/types.js';
 
-export type TurnStopReason = 'end_turn' | 'error' | 'cancelled' | 'max_steps';
+/**
+ * Turn 终止原因：end_turn/error/cancelled/max_steps 为 loop 自身状态；
+ * length/content_filter/refusal/max_tokens 为 provider 白名单透传（P2-4，不再折叠为 end_turn）；
+ * paused = provider 请求暂停（Anthropic pause_turn），续跑未实现（登记 OPEN.md）。
+ */
+export type TurnStopReason =
+  | 'end_turn'
+  | 'error'
+  | 'cancelled'
+  | 'max_steps'
+  | 'length'
+  | 'content_filter'
+  | 'max_tokens'
+  | 'refusal'
+  | 'paused';
 
 export interface TurnOptions {
   provider: ChatProvider;
@@ -34,4 +48,6 @@ export interface TurnResult {
   finalText?: string;
   /** error/cancelled 时的错误摘要 */
   error?: string;
+  /** 非致命告警（如 provider 请求暂停续跑 paused）：turn 正常返回，调用方应向用户展示 */
+  warning?: string;
 }

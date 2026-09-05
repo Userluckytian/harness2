@@ -138,6 +138,57 @@ describe('OpenAI-compatible：SSE 流式与 wire 请求', () => {
     ]);
   });
 
+  it('P2-5 回归：两个无 index 的完整 tool_calls → 两个独立调用（不并进槽 0）', async () => {
+    const stub = await start();
+    stub.enqueue({
+      sse: [
+        'data: {"choices":[{"delta":{"tool_calls":[{"id":"call-1","function":{"name":"t1","arguments":"{\\"x\\":1}"}}]}}]}',
+        'data: {"choices":[{"delta":{"tool_calls":[{"id":"call-2","function":{"name":"t2","arguments":"{\\"y\\":2}"}}]}}]}',
+        'data: [DONE]',
+      ],
+    });
+    const provider = makeProvider(stub.url);
+    const chunks = await collect(provider, { messages: [{ role: 'user', content: 'x' }] });
+    const calls = chunks
+      .filter((c) => c.type === 'tool-call')
+      .map((c) => (c as { call: { id: string; name: string; arguments: string } }).call);
+    expect(calls).toEqual([
+      { id: 'call-1', name: 't1', arguments: '{"x":1}' },
+      { id: 'call-2', name: 't2', arguments: '{"y":2}' },
+    ]);
+    expect(chunks.at(-1)).toEqual({ type: 'done', stopReason: 'tool_use' });
+  });
+
+  it('P2-5 回归：无 id 同名 name-only delta 延续累积（不重复拼接 name、不另开新槽）', async () => {
+    const stub = await start();
+    stub.enqueue({
+      sse: [
+        'data: {"choices":[{"delta":{"tool_calls":[{"id":"call-1","function":{"name":"t1","arguments":"{\\"x\\":"}}]}}]}',
+        'data: {"choices":[{"delta":{"tool_calls":[{"function":{"name":"t1","arguments":"1}"}}]}}]}',
+        'data: [DONE]',
+      ],
+    });
+    const provider = makeProvider(stub.url);
+    const chunks = await collect(provider, { messages: [{ role: 'user', content: 'x' }] });
+    const calls = chunks
+      .filter((c) => c.type === 'tool-call')
+      .map((c) => (c as { call: { id: string; name: string; arguments: string } }).call);
+    expect(calls).toEqual([{ id: 'call-1', name: 't1', arguments: '{"x":1}' }]);
+  });
+
+  it('P2-4 回归：finish_reason length/content_filter 透传为对应 stopReason（不再折叠为 end_turn）', async () => {
+    const stub = await start();
+    stub.enqueueAll([
+      { sse: ['data: {"choices":[{"delta":{"content":"写到一半"},"finish_reason":"length"}]}', 'data: [DONE]'] },
+      { sse: ['data: {"choices":[{"delta":{"content":"违禁内容"},"finish_reason":"content_filter"}]}', 'data: [DONE]'] },
+    ]);
+    const provider = makeProvider(stub.url);
+    const first = await collect(provider, { messages: [{ role: 'user', content: 'x' }] });
+    expect(first.at(-1)).toEqual({ type: 'done', stopReason: 'length' });
+    const second = await collect(provider, { messages: [{ role: 'user', content: 'x' }] });
+    expect(second.at(-1)).toEqual({ type: 'done', stopReason: 'content_filter' });
+  });
+
   it('reasoning_content → reasoning-delta；usage 帧 → usage chunk', async () => {
     const stub = await start();
     stub.enqueue({
@@ -233,6 +284,52 @@ describe('OpenAI-compatible：错误与异常路径', () => {
     ac.abort();
     await expect(iter.next()).rejects.toMatchObject({ name: 'ProviderError', message: 'cancelled' });
   }, 8000);
+
+  it('P1-1 回归：流中错误帧+[DONE] → 脱敏抛 ProviderError（不再吞成空成功回复）', async () => {
+    const stub = await start();
+    stub.enqueue({
+      sse: [
+        'data: {"error":{"message":"Insufficient Balance","type":"invalid_request_error"}}',
+        'data: [DONE]',
+      ],
+    });
+    const provider = makeProvider(stub.url);
+    await expect(collect(provider, { messages: [{ role: 'user', content: 'x' }] })).rejects.toMatchObject({
+      name: 'ProviderError',
+      code: 'invalid_request',
+      message: expect.stringContaining('Insufficient Balance'),
+    });
+  });
+
+  it('P1-1 回归：错误帧且无 [DONE] → 保留错误帧 code（不被误报 stream_truncated）', async () => {
+    const stub = await start();
+    stub.enqueue({ sse: ['data: {"error":{"message":"boom","type":"server_error"}}'] });
+    const provider = makeProvider(stub.url);
+    await expect(collect(provider, { messages: [{ role: 'user', content: 'x' }] })).rejects.toMatchObject({
+      name: 'ProviderError',
+      code: 'server_error',
+    });
+  });
+
+  it('P1-1 回归：错误帧 message 含假 key → 输出已脱敏', async () => {
+    const stub = await start();
+    stub.enqueue({
+      sse: [
+        'data: {"error":{"message":"Invalid API key provided: sk-real-secret-9911","type":"authentication_error"}}',
+        'data: [DONE]',
+      ],
+    });
+    const provider = makeProvider(stub.url);
+    const err = await collect(provider, { messages: [{ role: 'user', content: 'x' }] }).then(
+      () => null,
+      (e: unknown) => e,
+    );
+    expect(err).toBeInstanceOf(ProviderError);
+    const msg = (err as Error).message;
+    expect(msg).not.toContain('sk-real-secret-9911');
+    expect(msg).toContain('[REDACTED]');
+    expect((err as { code?: string }).code).toBe('auth_error');
+  });
 
   it('连接被拒（无服务）→ ProviderError(network) 且消息脱敏', async () => {
     // 使用一个确定没人监听的端口
@@ -348,7 +445,7 @@ describe('Anthropic：SSE 事件与 wire 请求', () => {
     expect(texts).toEqual(['答案是 4']);
   });
 
-  it('wire 映射：连续 tool 消息合并为一条 user 消息的 tool_result 块；assistant.toolCalls → tool_use 块', async () => {
+  it('wire 映射：连续 tool 消息与相邻 user 合并（P1-2：末条 user 含 tool_result+text 两块，不产生连续 user 消息）；assistant.toolCalls → tool_use 块', async () => {
     const stub = await start();
     stub.enqueue({ sse: ANTHROPIC_TEXT_EVENTS });
     const provider = makeAnthropic(stub.url);
@@ -383,14 +480,16 @@ describe('Anthropic：SSE 事件与 wire 请求', () => {
         { type: 'tool_use', id: 'toolu-2', name: 'read', input: { path: 'a.txt' } },
       ],
     });
+    // P1-2：tool_result 与后续 user 文本合并为同一条 user 消息（Anthropic 要求 user/assistant 交替）
     expect(body.messages[2]).toEqual({
       role: 'user',
       content: [
         { type: 'tool_result', tool_use_id: 'toolu-1', content: 'written' },
         { type: 'tool_result', tool_use_id: 'toolu-2', content: 'hello' },
+        { type: 'text', text: '继续' },
       ],
     });
-    expect(body.messages[3]).toEqual({ role: 'user', content: [{ type: 'text', text: '继续' }] });
+    expect(body.messages).toHaveLength(3); // 不再出现连续 user 消息
     expect(body.tools).toEqual([
       { name: 'write', description: '写文件', input_schema: { type: 'object', properties: {} } },
     ]);
@@ -430,6 +529,24 @@ describe('Anthropic：错误与异常路径', () => {
     const msg = (err as Error).message;
     expect(msg).toContain('overloaded_error');
     expect(msg).not.toContain('secret-tok-1122');
+    // P2-3：error 事件保留原 code，不被 catch 误包成 stream_truncated
+    expect((err as { code?: string }).code).toBe('api_error');
+  });
+
+  it('P2-4 回归：stop_reason max_tokens/refusal/pause_turn 透传（pause_turn → paused）', async () => {
+    const stub = await start();
+    const frame = (reason: string) =>
+      `data: {"type":"message_delta","delta":{"stop_reason":"${reason}"},"usage":{"output_tokens":1}}`;
+    stub.enqueueAll([
+      { sse: [frame('max_tokens'), 'data: {"type":"message_stop"}'] },
+      { sse: [frame('refusal'), 'data: {"type":"message_stop"}'] },
+      { sse: [frame('pause_turn'), 'data: {"type":"message_stop"}'] },
+    ]);
+    const provider = makeAnthropic(stub.url);
+    const req: ChatRequest = { messages: [{ role: 'user', content: 'x' }] };
+    expect((await collect(provider, req)).at(-1)).toEqual({ type: 'done', stopReason: 'max_tokens' });
+    expect((await collect(provider, req)).at(-1)).toEqual({ type: 'done', stopReason: 'refusal' });
+    expect((await collect(provider, req)).at(-1)).toEqual({ type: 'done', stopReason: 'paused' });
   });
 
   it('断流半帧：未收到 message_stop → stream_truncated', async () => {
@@ -475,6 +592,20 @@ describe('toAnthropicWireMessages 纯函数', () => {
       { role: 'assistant', content: '', toolCalls: [{ id: 't1', name: 'x', arguments: 'not-json' }] },
     ]) as Array<{ content: Array<Record<string, unknown>> }>;
     expect(wire[0]!.content[0]).toEqual({ type: 'tool_use', id: 't1', name: 'x', input: {} });
+  });
+
+  it('P1-2 回归：[user, assistant(tool_use), tool, user] → user/assistant/user 三条，末条 user 含 tool_result+text 两块', () => {
+    const wire = toAnthropicWireMessages([
+      { role: 'user', content: '写文件' },
+      { role: 'assistant', content: '', toolCalls: [{ id: 'toolu-1', name: 'write', arguments: '{}' }] },
+      { role: 'tool', content: 'written', toolCallId: 'toolu-1', name: 'write' },
+      { role: 'user', content: '继续' },
+    ]) as Array<{ role: string; content: Array<Record<string, unknown>> }>;
+    expect(wire.map((m) => m.role)).toEqual(['user', 'assistant', 'user']);
+    expect(wire[2]!.content).toEqual([
+      { type: 'tool_result', tool_use_id: 'toolu-1', content: 'written' },
+      { type: 'text', text: '继续' },
+    ]);
   });
 });
 

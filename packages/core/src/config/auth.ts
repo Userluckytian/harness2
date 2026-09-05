@@ -46,6 +46,8 @@ export function readAuthFile(path: string): ReadAuthResult {
   if (typeof rawChannels !== 'object' || rawChannels === null || Array.isArray(rawChannels)) {
     return { auth: emptyAuth(), error: `auth.json.channels 必须是对象，已按未配置处理` };
   }
+  // P2-7：缺/空 apiKey 的渠道全部收集，错误消息一次列全（只报第一个会让用户修一个错跑一次）
+  const brokenChannels: string[] = [];
   for (const [channel, v] of Object.entries(rawChannels)) {
     const apiKey =
       typeof v === 'string'
@@ -54,12 +56,16 @@ export function readAuthFile(path: string): ReadAuthResult {
           ? ((v as Record<string, unknown>)['apiKey'] as string)
           : undefined;
     if (apiKey === undefined || apiKey === '') {
-      return {
-        auth: emptyAuth(),
-        error: `auth.json.channels.${channel} 缺少非空 apiKey 字段，已按未配置处理`,
-      };
+      brokenChannels.push(channel);
+      continue;
     }
     auth.channels[channel] = { apiKey };
+  }
+  if (brokenChannels.length > 0) {
+    return {
+      auth: emptyAuth(),
+      error: `auth.json.channels 缺少非空 apiKey 字段的渠道：${brokenChannels.join('、')}（已按未配置处理）`,
+    };
   }
   return { auth };
 }

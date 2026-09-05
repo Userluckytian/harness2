@@ -51,6 +51,21 @@ export interface ProviderUsage {
 }
 
 /**
+ * 流终止原因（P2-4 白名单透传）：
+ *   end_turn/tool_use 为基线；OpenAI finish_reason length/content_filter、
+ *   Anthropic stop_reason max_tokens/refusal 原样透传，不再折叠为 end_turn；
+ *   Anthropic pause_turn 映射为 paused（续跑未实现，登记 OPEN.md）。
+ */
+export type ProviderStopReason =
+  | 'end_turn'
+  | 'tool_use'
+  | 'length'
+  | 'content_filter'
+  | 'max_tokens'
+  | 'refusal'
+  | 'paused';
+
+/**
  * 流式响应块：文本增量 / 工具调用 / 用量 / 结束标记。
  * `reasoning-delta` 是阶段 3 的最小加性扩展（DeepSeek/GLM reasoning_content、
  * Anthropic thinking）：不改变既有块的语义；不消费方（如阶段 2 loop 的 if/else 链）
@@ -61,7 +76,7 @@ export type StreamChunk =
   | { type: 'reasoning-delta'; text: string }
   | { type: 'tool-call'; call: ToolCallRequest }
   | { type: 'usage'; usage: ProviderUsage }
-  | { type: 'done'; stopReason: 'end_turn' | 'tool_use' };
+  | { type: 'done'; stopReason: ProviderStopReason };
 
 export interface StreamOptions {
   signal?: AbortSignal;

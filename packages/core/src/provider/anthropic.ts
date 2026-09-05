@@ -20,27 +20,31 @@ export interface AnthropicOptions {
 
 export const ANTHROPIC_VERSION = '2023-06-01';
 
-/** ChatMessage → Anthropic wire messages；连续的 tool 消息合并为一条 user 消息内的 tool_result 块 */
+/**
+ * ChatMessage → Anthropic wire messages。
+ * 合并规则（P1-2）：Anthropic API 要求 user/assistant 严格交替，相邻的 tool 消息与
+ * user 消息必须合并为同一条 user 消息的 content 块数组（tool_result 与 text 块可共存）。
+ * 真实触发路径：上一 turn 以 error/cancel/max_steps 结束（无 assistant/message）时，
+ * 下一轮的 user 与 tool_result-user 相邻——不合并在真实 API 必 400。
+ */
 export function toAnthropicWireMessages(messages: readonly ChatMessage[]): unknown[] {
-  const wire: unknown[] = [];
-  const pendingToolResults: Record<string, unknown>[] = [];
-  const flushToolResults = () => {
-    if (pendingToolResults.length > 0) {
-      wire.push({ role: 'user', content: [...pendingToolResults] });
-      pendingToolResults.length = 0;
-    }
+  const wire: Array<{ role: 'user' | 'assistant'; content: Record<string, unknown>[] }> = [];
+  /** 追加进末条 user 消息的 content 块数组；末条不是 user（或为空）时新开 user 消息 */
+  const appendToLastUser = (block: Record<string, unknown>): void => {
+    const last = wire.at(-1);
+    if (last?.role === 'user') last.content.push(block);
+    else wire.push({ role: 'user', content: [block] });
   };
   for (const m of messages) {
     if (m.role === 'tool') {
-      pendingToolResults.push({ type: 'tool_result', tool_use_id: m.toolCallId ?? '', content: m.content });
+      appendToLastUser({ type: 'tool_result', tool_use_id: m.toolCallId ?? '', content: m.content });
       continue;
     }
-    flushToolResults();
     if (m.role === 'user') {
-      wire.push({ role: 'user', content: [{ type: 'text', text: m.content }] });
+      appendToLastUser({ type: 'text', text: m.content });
       continue;
     }
-    // assistant：text 块（空文本不发）+ tool_use 块
+    // assistant：text 块（空文本不发）+ tool_use 块；assistant 必然新开消息（恢复交替）
     const blocks: Record<string, unknown>[] = [];
     if (m.content.length > 0) blocks.push({ type: 'text', text: m.content });
     for (const c of m.toolCalls ?? []) {
@@ -48,7 +52,6 @@ export function toAnthropicWireMessages(messages: readonly ChatMessage[]): unkno
     }
     wire.push({ role: 'assistant', content: blocks });
   }
-  flushToolResults();
   return wire;
 }
 
@@ -202,6 +205,7 @@ export class AnthropicProvider implements ChatProvider {
       }
     } catch (e) {
       if (signal?.aborted) throw new ProviderError(CANCELLED, CANCELLED);
+      if (e instanceof ProviderError) throw e; // error 事件等已分类脱敏的异常保留原 code，不误报 stream_truncated（P2-3）
       throw new ProviderError(
         redactedSummary(`连接在流结束前中断: ${(e as Error)?.message ?? String(e)}`),
         'stream_truncated',
@@ -225,8 +229,15 @@ export class AnthropicProvider implements ChatProvider {
       };
     }
     const hasToolUse = toolCallCount > 0 || stopReason === 'tool_use';
-    yield { type: 'done', stopReason: hasToolUse ? 'tool_use' : 'end_turn' };
+    yield { type: 'done', stopReason: hasToolUse ? 'tool_use' : mapStopReason(stopReason) };
   }
+}
+
+/** stop_reason → done.stopReason 白名单透传（P2-4），未知值归 end_turn；pause_turn → paused */
+function mapStopReason(reason: string | undefined): 'end_turn' | 'max_tokens' | 'refusal' | 'paused' {
+  if (reason === 'max_tokens' || reason === 'refusal') return reason;
+  if (reason === 'pause_turn') return 'paused';
+  return 'end_turn';
 }
 
 /** 处理单个 SSE 事件：产出 text/reasoning/tool-call 增量，捕获 usage 与 stop_reason */

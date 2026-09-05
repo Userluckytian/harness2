@@ -6,7 +6,9 @@ import {
   defaultConfigPaths,
   loadConfig,
   readAuthFile,
+  redactObject,
   resolveApiKey,
+  type AuthFile,
   type HarnessConfig,
 } from '@harness2/core';
 
@@ -70,10 +72,16 @@ program
           globalPath: paths.globalConfig,
           projectPath: paths.projectConfig,
         });
+        // P2-9：先校验后输出——auth.json 读取与全部 error 收集完成前，不允许 "config OK" 先行打印
         const errors = [...result.errors];
-        if (result.config) {
-          // 深层展示（含 auth 读取）；auth 损坏等展示期错误追加进 errors 统一 exit 1
-          errors.push(...printConfigReport(result.config, result.warnings, result.sources, paths));
+        const auth = readAuthFile(paths.globalAuth);
+        if (auth.error) errors.push(auth.error);
+        if (errors.length === 0) {
+          if (result.config) {
+            printConfigReport(result.config, result.warnings, result.sources, paths, auth.auth);
+          } else {
+            errors.push('config 未加载成功（无可用配置）');
+          }
         }
         if (errors.length > 0) {
           for (const err of errors) console.error(`error: ${err}`);
@@ -83,24 +91,24 @@ program
   );
 
 /** 打印脱敏报告；key 来源只显示 auth.json / env:XXX / **missing**，永不显示明文。
- *  返回展示期发现的错误（如 auth.json 损坏），由调用方统一 exit 1。 */
+ *  前置条件：调用方已确认 errors 为空（先校验后输出，P2-9），本函数不再返回错误。 */
 function printConfigReport(
   config: HarnessConfig,
   warnings: string[],
   sources: { global: boolean; project: boolean },
-  paths: { globalConfig: string; projectConfig: string; globalAuth: string },
-): string[] {
-  const errors: string[] = [];
-  const auth = readAuthFile(paths.globalAuth);
-  if (auth.error) errors.push(auth.error);
-
+  paths: { globalConfig: string; projectConfig: string },
+  auth: AuthFile,
+): void {
   const lines: string[] = [];
   lines.push(
     `config OK (global: ${sources.global ? paths.globalConfig : '-'} , project: ${sources.project ? paths.projectConfig : '-'})`,
   );
   lines.push('providers:');
   for (const [channel, p] of Object.entries(config.providers)) {
-    lines.push(`  ${channel}  ${p.protocol}  ${p.baseUrl}${p.envKey ? `  envKey=${p.envKey}` : ''}`);
+    // P2-6/P2-9：展示值统一过 redactObject（全部字符串叶子过 redactSecrets），
+    // 防 ${VAR} 展开值（如内网地址内嵌 token）或误写入的 key 泄入输出
+    const safe = redactObject(p);
+    lines.push(`  ${channel}  ${safe.protocol}  ${safe.baseUrl}${safe.envKey ? `  envKey=${safe.envKey}` : ''}`);
     const models = Object.keys(p.models ?? {});
     if (models.length > 0) lines.push(`    models: ${models.join(', ')}`);
   }
@@ -114,7 +122,7 @@ function printConfigReport(
   lines.push(`approval: mode=${config.approval.mode ?? 'default'}${approvalRules ? `, rules: ${approvalRules}` : ''}`);
   lines.push('keys:');
   for (const [channel, p] of Object.entries(config.providers)) {
-    const source = resolveApiKey(channel, p, auth.auth, process.env);
+    const source = resolveApiKey(channel, p, auth, process.env);
     const label =
       source.kind === 'auth.json'
         ? 'auth.json'
@@ -128,7 +136,6 @@ function printConfigReport(
     for (const w of warnings) lines.push(`  - ${w}`);
   }
   console.log(lines.join('\n'));
-  return errors;
 }
 
 program.parseAsync(process.argv);

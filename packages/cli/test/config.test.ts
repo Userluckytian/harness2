@@ -159,6 +159,28 @@ describe('harness2 config check', () => {
     }
   });
 
+  it('P2-6：baseUrl 含 ${VAR} 展开出的密钥形态值 → 输出已脱敏', () => {
+    const { home, root, cleanup } = makeEnv();
+    try {
+      writeGlobal(
+        home,
+        JSON.stringify({
+          providers: {
+            deepseek: { protocol: 'openai', baseUrl: '${MY_BASE}/v1' },
+          },
+          roles: { main: { channel: 'deepseek', model: 'deepseek-chat' } },
+        }),
+      );
+      const r = runCheck(home, root, { ...process.env, MY_BASE: 'https://sk-real-secret-9911.internal.example' });
+      expect(r.status).toBe(0);
+      expect(r.stdout).toContain('deepseek  openai');
+      expect(r.stdout).toContain('[REDACTED]');
+      expect(r.stdout).not.toContain('sk-real-secret-9911');
+    } finally {
+      cleanup();
+    }
+  });
+
   it('auth.json 损坏：一行 error，exit 1', () => {
     const { home, root, cleanup } = makeEnv();
     try {
@@ -167,6 +189,9 @@ describe('harness2 config check', () => {
       const r = runCheck(home, root);
       expect(r.status).toBe(1);
       expect(r.stderr).toContain('auth.json');
+      expect(r.stderr).toMatch(/^error: auth\.json/m); // 单行 error（无堆栈）
+      // P2-9：先校验后输出——不再先打 "config OK" 再 exit 1 的自相矛盾输出
+      expect(r.stdout).not.toContain('config OK');
     } finally {
       cleanup();
     }

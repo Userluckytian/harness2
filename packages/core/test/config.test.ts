@@ -302,6 +302,20 @@ describe('auth.json 读写与容错', () => {
     expect(r.error).toContain('apiKey');
   });
 
+  it('P2-7 回归：多个渠道缺/空 apiKey → 错误消息列出全部渠道名', () => {
+    const dir = tmpDir();
+    const p = writeConfig(
+      dir,
+      'multi.json',
+      JSON.stringify({ channels: { deepseek: { apiKey: '' }, openai: {}, glm: 'test-key-ok' } }),
+    );
+    const r = readAuthFile(p);
+    expect(r.auth.channels).toEqual({});
+    expect(r.error).toContain('deepseek');
+    expect(r.error).toContain('openai');
+    expect(r.error).not.toContain('glm'); // 合法渠道不进错误消息
+  });
+
   it('auth.json 权限收紧失败不影响内容正确性（覆盖 chmod 异常分支）', () => {
     const dir = tmpDir();
     const p = join(dir, 'auth.json');

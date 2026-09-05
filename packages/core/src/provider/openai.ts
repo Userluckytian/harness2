@@ -10,7 +10,7 @@ import type {
   StreamChunk,
 } from './types.js';
 import { ProviderError } from './types.js';
-import { redactedSummary } from '../config/redact.js';
+import { redactObject, redactedSummary } from '../config/redact.js';
 
 export interface OpenAICompatOptions {
   /** provider 标识（写入 assistant/message.model），如 "deepseek/deepseek-chat" */
@@ -63,20 +63,43 @@ interface CallBuffer {
   arguments: string;
 }
 
+/** 单个 tool_calls delta（部分厂商不传 index，见 bufferOpenToolCall 的分槽规则） */
+interface ToolCallDelta {
+  index?: number;
+  id?: string;
+  function?: { name?: string; arguments?: string };
+}
+
 interface WireChunk {
   choices?: Array<{
     delta?: {
       content?: string | null;
       reasoning_content?: string | null;
-      tool_calls?: Array<{
-        index?: number;
-        id?: string;
-        function?: { name?: string; arguments?: string };
-      }>;
+      tool_calls?: ToolCallDelta[];
     };
     finish_reason?: string | null;
   }>;
   usage?: { prompt_tokens?: number; completion_tokens?: number } | null;
+  /** JSON 可解析的错误帧（无 choices），如 {"error":{"message":"Insufficient Balance","type":"..."}} */
+  error?: { message?: string; type?: string; code?: string };
+}
+
+/** OpenAI-compatible 错误帧 type → ProviderError code（未知 type 一律 api_error）（P1-1） */
+const ERROR_TYPE_TO_CODE: Record<string, string> = {
+  invalid_request_error: 'invalid_request',
+  authentication_error: 'auth_error',
+  auth_error: 'auth_error',
+  permission_error: 'permission_denied',
+  not_found_error: 'not_found',
+  rate_limit_error: 'rate_limit',
+  insufficient_quota: 'insufficient_quota',
+  server_error: 'server_error',
+};
+
+/** finish_reason → done.stopReason 白名单透传（P2-4），未知值归 end_turn */
+function mapFinishReason(reason: string | undefined): 'end_turn' | 'length' | 'content_filter' {
+  if (reason === 'length' || reason === 'content_filter') return reason;
+  return 'end_turn';
 }
 
 const CANCELLED = 'cancelled';
@@ -146,6 +169,7 @@ export class OpenAICompatProvider implements ChatProvider {
     let sawDone = false;
     let finishReason: string | undefined;
     const calls = new Map<number, CallBuffer>();
+    const openCalls: CallBuffer[] = []; // 无 index 的 tool_calls delta 累积槽（P2-5）
 
     // SSE 解析：跨 chunk 缓冲 + 逐行处理（data: 帧 / [DONE] / 注释行忽略）；
     // TextDecoder 流式解码处理跨 chunk 的多字节 UTF-8（中文）。
@@ -170,12 +194,13 @@ export class OpenAICompatProvider implements ChatProvider {
           } catch {
             continue; // 无法解析的帧跳过（协议未知字段/坏帧不致命）
           }
-          yield* handleWireChunk(chunk, calls, (fr) => (finishReason = fr));
+          yield* handleWireChunk(chunk, calls, openCalls, (fr) => (finishReason = fr));
         }
         if (sawDone) break;
       }
     } catch (e) {
       if (signal?.aborted) throw new ProviderError(CANCELLED, CANCELLED);
+      if (e instanceof ProviderError) throw e; // 错误帧等已分类脱敏的异常保留原 code，不误报 stream_truncated（P2-3）
       // 已收到 2xx 响应头后读流失败 = 连接在 [DONE] 前中断（断流），与建连失败（network）区分
       throw new ProviderError(
         redactedSummary(`连接在流结束前中断: ${(e as Error)?.message ?? String(e)}`),
@@ -190,20 +215,22 @@ export class OpenAICompatProvider implements ChatProvider {
       throw new ProviderError('连接在流结束前中断（未收到 [DONE]）', 'stream_truncated');
     }
 
-    // finish 边界：按 index 顺序吐出组装完成的 tool-call（arguments 仍为 JSON 串，解析归 agent loop）
-    const ordered = [...calls.entries()].sort((a, b) => a[0] - b[0]);
-    for (const [index, call] of ordered) {
+    // finish 边界：吐出组装完成的 tool-call（arguments 仍为 JSON 串，解析归 agent loop）；
+    // 有 index 的按 index 升序，无 index 的按到达顺序追加在后（P2-5）
+    const indexed = [...calls.entries()].sort((a, b) => a[0] - b[0]).map(([, call]) => call);
+    const all = [...indexed, ...openCalls];
+    for (const [i, call] of all.entries()) {
       yield {
         type: 'tool-call',
         call: {
-          id: call.id || `openai_tool_${index}`,
+          id: call.id || `openai_tool_${i}`,
           name: call.name,
           arguments: call.arguments === '' ? '{}' : call.arguments,
         },
       };
     }
-    const hasToolUse = ordered.length > 0 || finishReason === 'tool_calls';
-    yield { type: 'done', stopReason: hasToolUse ? 'tool_use' : 'end_turn' };
+    const hasToolUse = all.length > 0 || finishReason === 'tool_calls';
+    yield { type: 'done', stopReason: hasToolUse ? 'tool_use' : mapFinishReason(finishReason) };
   }
 }
 
@@ -211,8 +238,20 @@ export class OpenAICompatProvider implements ChatProvider {
 function* handleWireChunk(
   chunk: WireChunk,
   calls: Map<number, CallBuffer>,
+  openCalls: CallBuffer[],
   setFinish: (reason: string) => void,
 ): Generator<StreamChunk> {
+  if (chunk.error) {
+    // P1-1：JSON 可解析的错误帧（无 choices）不得静默吞掉——结构化脱敏后抛出，保留厂商 message
+    const safe = redactObject(chunk.error) as { message?: string; type?: string; code?: string };
+    const type = typeof safe.type === 'string' && safe.type.length > 0 ? safe.type : 'unknown';
+    const message =
+      typeof safe.message === 'string' && safe.message.length > 0 ? safe.message : JSON.stringify(safe);
+    throw new ProviderError(
+      redactedSummary(`上游流中错误帧 (${type}): ${message}`),
+      ERROR_TYPE_TO_CODE[type] ?? 'api_error',
+    );
+  }
   if (chunk.usage && (chunk.usage.prompt_tokens !== undefined || chunk.usage.completion_tokens !== undefined)) {
     const usage: ProviderUsage = {
       ...(chunk.usage.prompt_tokens !== undefined ? { inputTokens: chunk.usage.prompt_tokens } : {}),
@@ -230,15 +269,54 @@ function* handleWireChunk(
       yield { type: 'text-delta', text: delta.content };
     }
     for (const tc of delta.tool_calls ?? []) {
-      const index = tc.index ?? 0;
-      const cur: CallBuffer = calls.get(index) ?? { id: '', name: '', arguments: '' };
+      if (tc.index === undefined) {
+        bufferOpenToolCall(openCalls, tc); // P2-5：无 index 分槽，不并入槽 0
+        continue;
+      }
+      const cur: CallBuffer = calls.get(tc.index) ?? { id: '', name: '', arguments: '' };
       if (typeof tc.id === 'string' && tc.id.length > 0) cur.id = tc.id;
       if (typeof tc.function?.name === 'string' && tc.function.name.length > 0) cur.name += tc.function.name;
       if (typeof tc.function?.arguments === 'string') cur.arguments += tc.function.arguments;
-      calls.set(index, cur);
+      calls.set(tc.index, cur);
     }
     if (typeof choice.finish_reason === 'string' && choice.finish_reason.length > 0) {
       setFinish(choice.finish_reason);
     }
   }
+}
+
+/**
+ * P2-5：无 index 的 tool_calls delta 分槽规则——
+ *   有 id → 按 id 匹配既有槽，无则新槽；仅有 name → 与当前开放槽同名则延续累积
+ *   （不重复拼接 name），新名字开新槽；只有 arguments → 追加进当前开放槽。
+ */
+function bufferOpenToolCall(open: CallBuffer[], tc: ToolCallDelta): void {
+  const id = typeof tc.id === 'string' && tc.id.length > 0 ? tc.id : undefined;
+  const name = typeof tc.function?.name === 'string' && tc.function.name.length > 0 ? tc.function.name : undefined;
+  const args = typeof tc.function?.arguments === 'string' ? tc.function.arguments : undefined;
+  let cur: CallBuffer | undefined;
+  if (id !== undefined) {
+    cur = open.find((c) => c.id === id);
+    if (!cur) {
+      cur = { id, name: '', arguments: '' };
+      open.push(cur);
+    }
+    if (name !== undefined) cur.name = cur.name === '' ? name : cur.name + name;
+  } else if (name !== undefined) {
+    const last = open.at(-1);
+    if (last && (last.name === name || last.name === '')) {
+      cur = last;
+      if (last.name === '') last.name = name; // 同名延续：不重复拼接（区别于索引路径的部分名流 +=）
+    } else {
+      cur = { id: '', name, arguments: '' };
+      open.push(cur);
+    }
+  } else {
+    cur = open.at(-1);
+    if (!cur) {
+      cur = { id: '', name: '', arguments: '' };
+      open.push(cur);
+    }
+  }
+  if (args !== undefined) cur.arguments += args;
 }
