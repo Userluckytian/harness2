@@ -3,8 +3,9 @@ import { appendFileSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { SessionWriter } from '../src/session/writer.js';
-import { SESSION_LOG_FILE } from '../src/session/types.js';
+import { SESSION_LOG_FILE, parseEventLine, type SessionEventType } from '../src/session/types.js';
 import { computeProjection, exportAllEvents, loadSession } from '../src/session/reader.js';
+import { renderTrajectory } from '../src/trajectory/view.js';
 
 const dirs: string[] = [];
 function tmpDir(): string {
@@ -46,6 +47,58 @@ describe('loadSession', () => {
 
   it('目录不存在时抛错', () => {
     expect(() => loadSession(join(tmpDir(), 'nope'))).toThrow(/not found/);
+  });
+
+  it('P1-3 回归：payload 形状非法 → loadSession 告警并跳过，renderTrajectory 不抛 TypeError', () => {
+    // 审查实测输入：payload 缺 text 字段（{"typoField":1}）
+    const badLine = JSON.stringify({
+      v: 1, seq: 10, ts: '2026-09-06T00:00:00.000Z', type: 'user/message', payload: { typoField: 1 },
+    }) + '\n';
+    expect(parseEventLine(badLine)).toBeNull();
+
+    const dir = tmpDir();
+    const w = writeDemoSession(dir);
+    w.close();
+    appendFileSync(join(dir, SESSION_LOG_FILE), badLine, 'utf8');
+
+    const s = loadSession(dir);
+    expect(s.events).toHaveLength(9); // 非法行被跳过
+    expect(s.warnings).toHaveLength(1); // 走告警通道
+    expect(s.warnings[0]).toMatch(/invalid line 10/);
+    expect(() => renderTrajectory(s)).not.toThrow();
+    expect(renderTrajectory(s).join('\n')).toContain('1 warning(s)');
+  });
+});
+
+describe('parseEventLine payload 校验（P1-3）', () => {
+  const base = { v: 1, ts: '2026-09-06T00:00:00.000Z' };
+  const line = (type: SessionEventType, payload: unknown): string =>
+    JSON.stringify({ ...base, seq: 1, type, payload });
+
+  // 每种事件类型的最低 payload 要求：合法最小 payload 通过，缺字段/类型不符返回 null
+  const cases: Array<{ type: SessionEventType; good: Record<string, unknown>; bad: Record<string, unknown> }> = [
+    { type: 'session/header', good: { sessionId: 's' }, bad: {} },
+    { type: 'user/message', good: { text: 'x' }, bad: { text: 42 } },
+    { type: 'assistant/message', good: { text: 'x' }, bad: { typoField: 1 } },
+    { type: 'assistant/attempt', good: { error: 'e' }, bad: { error: null } },
+    { type: 'step/start', good: { stepId: 'st' }, bad: {} },
+    { type: 'step/end', good: { stepId: 'st' }, bad: { stepId: 7 } },
+    { type: 'tool/call', good: { callId: 'c', tool: 'bash' }, bad: { callId: 'c' } },
+    { type: 'tool/result', good: { callId: 'c', ok: true }, bad: { callId: 'c', ok: 'yes' } },
+    { type: 'rewind/marker', good: { rewindToSeq: 3 }, bad: { rewindToSeq: 1.5 } },
+  ];
+
+  for (const { type, good, bad } of cases) {
+    it(`${type}：缺字段/类型不符 → null，合法最小 payload 通过`, () => {
+      expect(parseEventLine(line(type, good))).not.toBeNull();
+      expect(parseEventLine(line(type, bad))).toBeNull();
+    });
+  }
+
+  it('payload 为非对象（标量/数组/null）→ null', () => {
+    for (const payload of [42, 'x', [], null, false]) {
+      expect(parseEventLine(line('user/message', payload))).toBeNull();
+    }
   });
 });
 
