@@ -2,6 +2,7 @@
 export * from './session/types.js';
 export * from './session/writer.js';
 export * from './session/reader.js';
+export * from './session/snapshots.js';
 export * from './trajectory/view.js';
 export * from './provider/types.js';
 export * from './provider/mock.js';
