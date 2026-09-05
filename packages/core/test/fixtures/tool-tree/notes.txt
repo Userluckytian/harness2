@@ -1,0 +1,3 @@
+备注一：中文内容第一行
+note two: english line
+备注三：grep 应能匹配到这里
