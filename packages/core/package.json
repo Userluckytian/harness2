@@ -20,6 +20,7 @@
     "vitest": "^5.0.0"
   },
   "dependencies": {
-    "fast-glob": "^3.3.3"
+    "fast-glob": "^3.3.3",
+    "jsonc-parser": "^3.3.1"
   }
 }

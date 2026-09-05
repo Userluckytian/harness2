@@ -5,6 +5,7 @@ export * from './session/reader.js';
 export * from './trajectory/view.js';
 export * from './provider/types.js';
 export * from './provider/mock.js';
+export * from './config/index.js';
 export * from './tools/types.js';
 export * from './tools/registry.js';
 export * from './tools/executor.js';
