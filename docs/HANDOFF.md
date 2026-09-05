@@ -22,12 +22,13 @@
 
 1. `AGENTS.md` —— 协作规范入口：工作模式（编排者/子代理分工）、强制遵循、提交规范
 2. `docs/ai-framework/workflow-delegation.md` —— 角色/流程细则（每阶段标准流程、验收规则、交接要求）
-3. `docs/ROADMAP.md` —— 26 项功能清单 + 架构决策 D1–D6 + 明确不做
-4. `architecture.md` —— 技术栈与核心不变量
-5. `docs/ai-framework/plans/` —— 阶段计划（每份含零上下文交接提示词）
-6. `docs/diary/YYYY-MM-DD.md` —— 每日日志（发版 release note 素材）
-7. `docs/issue-log/` —— 问题日志（README 约定 + OPEN.md 未关闭索引）
-8. `docs/research/2026-09-06-reference-analysis.md` —— 四参考项目实证调研
+3. `docs/MASTER-PLAN.md` —— **总控计划**（里程碑 M1–M4、阶段 Ph2–Ph12、横切线）——批准后为全局实施依据
+4. `docs/ROADMAP.md` —— 26 项功能清单 + 架构决策 D1–D6 + 明确不做
+5. `architecture.md` —— 技术栈与核心不变量
+6. `docs/ai-framework/plans/` —— 阶段计划（每份含零上下文交接提示词）
+7. `docs/diary/YYYY-MM-DD.md` —— 每日日志（发版 release note 素材）
+8. `docs/issue-log/` —— 问题日志（README 约定 + OPEN.md 未关闭索引）
+9. `docs/research/2026-09-06-reference-analysis.md` —— 四参考项目实证调研
 
 ## 4. 如何继续开发（标准循环）
 
