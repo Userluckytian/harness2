@@ -129,7 +129,10 @@ export interface SessionEvent<T extends SessionEventType = SessionEventType> {
   payload: SessionEventMap[T];
 }
 
-export type AnySessionEvent = SessionEvent;
+/** 判别联合：按 type 收窄后 payload 类型随之确定 */
+export type AnySessionEvent = {
+  [T in SessionEventType]: SessionEvent<T>;
+}[SessionEventType];
 
 /** 解析一行日志；非法行返回 null（调用方负责跳过并告警） */
 export function parseEventLine(line: string): AnySessionEvent | null {
