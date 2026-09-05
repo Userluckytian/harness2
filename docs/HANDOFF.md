@@ -14,10 +14,10 @@
 | 开发分支 | `feat/phase-3-providers-config`（阶段 3 全部工作在此；阶段 2 在 `feat/phase-2-agent-loop-tools`，阶段 1 在 `feat/phase-1-session-core`） |
 | 阶段 1 | ✅ 已完成并验收（事件溯源会话内核 + 轨迹，33 测试） |
 | 阶段 2 | ✅ 已完成并验收（Agent loop + 工具系统 + MockProvider + CI 骨架，109 测试） |
-| 阶段 3 | ✅ 实现代理自验通过（真实 Provider + 配置体系 + 审批配置化 + `config check`；171 测试）；独立验收 `/accept-phase` 待做。**真实端点（DeepSeek/智谱/Anthropic）未实机验证**——待用户在 `~/.harness2/auth.json` 配 key 后按 OPEN.md 清单手工执行 |
+| 阶段 3 | ✅ 实现代理自验通过（真实 Provider + 配置体系 + 审批配置化 + `config check`；182 测试，含独立审查修复 P1×2+P2×7 回归）；独立验收 `/accept-phase` 待做。**真实端点（DeepSeek/智谱/Anthropic）未实机验证**——待用户在 `~/.harness2/auth.json` 配 key 后按 OPEN.md 清单手工执行 |
 | 阶段 4 | ⬜ 未开始（CLI chat / 流式渲染，见 MASTER-PLAN） |
 | 未关闭事项 | 读 `docs/issue-log/OPEN.md`（保持为零上下文第一读） |
-| 测试 | `pnpm test`（含 build）—— core 160 passed + 1 skipped（`H2_GEN_LOOP_DEMO` 门控的 fixture 生成器，非用例失败）+ cli 11 passed = 171 passed + 1 skipped（2026-09-06，阶段 3 完成后） |
+| 测试 | `pnpm test`（含 build）—— core 170 passed + 1 skipped（`H2_GEN_LOOP_DEMO` 门控的 fixture 生成器，非用例失败）+ cli 12 passed = 182 passed + 1 skipped（2026-09-06，阶段 3 独立审查修复后） |
 | 远程 | 无（未配置 origin；push 需人类授权） |
 
 ## 3. 文档地图（按阅读顺序）
