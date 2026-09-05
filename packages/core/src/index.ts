@@ -8,6 +8,9 @@ export * from './provider/mock.js';
 export * from './tools/types.js';
 export * from './tools/registry.js';
 export * from './tools/executor.js';
+export * from './tools/predefined/index.js';
+export * from './agent/types.js';
+export * from './agent/loop.js';
 
 export const CORE_VERSION = '0.1.0';
 
