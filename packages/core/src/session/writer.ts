@@ -23,6 +23,7 @@ import {
   type SessionEventMap,
   type SessionEventType,
   type SessionHeaderPayload,
+  type RewindMarkerPayload,
   isSessionEventType,
   parseEventLine,
 } from './types.js';
@@ -128,6 +129,13 @@ export class SessionWriter {
   append<T extends SessionEventType>(type: T, payload: SessionEventMap[T]): SessionEvent<T> {
     if (this.closed) throw new Error('writer is closed');
     if (!isSessionEventType(type)) throw new Error(`unknown event type: ${type}`);
+    if (type === 'rewind/marker') {
+      // P2-1：rewindToSeq 必须指向本日志中已存在的事件（1..lastSeq），越界在写入口即拒绝
+      const n = (payload as RewindMarkerPayload).rewindToSeq;
+      if (!Number.isInteger(n) || n < 1 || n > this.lastSeq) {
+        throw new Error(`invalid rewind/marker: rewindToSeq ${n} out of range (1..${this.lastSeq})`);
+      }
+    }
     const event: SessionEvent<T> = {
       v: 1,
       seq: this.nextSeq,

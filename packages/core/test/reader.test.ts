@@ -68,6 +68,27 @@ describe('loadSession', () => {
     expect(() => renderTrajectory(s)).not.toThrow();
     expect(renderTrajectory(s).join('\n')).toContain('1 warning(s)');
   });
+
+  it('P2-1 读侧容错：日志中已存在的越界 rewind/marker 给 warning，渲染不崩溃', () => {
+    const dir = tmpDir();
+    const w = writeDemoSession(dir); // seq 1..9
+    w.close();
+    // 绕过 writer 直接追加越界 marker（模拟旧版本/外部写入的日志）
+    const bogus = JSON.stringify({
+      v: 1, seq: 10, ts: '2026-09-06T00:00:00.000Z', type: 'rewind/marker', payload: { rewindToSeq: 0 },
+    }) + '\n';
+    appendFileSync(join(dir, SESSION_LOG_FILE), bogus, 'utf8');
+
+    const s = loadSession(dir);
+    expect(s.warnings).toHaveLength(1);
+    expect(s.warnings[0]).toMatch(/rewind\/marker at seq 10: rewindToSeq 0 out of range \(1\.\.10\)/);
+    expect(() => renderTrajectory(s)).not.toThrow();
+    // 单调并集语义仍然生效：rewindToSeq 0 遮蔽其前全部非标记事件（含 header）
+    const p = computeProjection(s);
+    expect(p.messages).toHaveLength(0);
+    expect(p.shadowedCount).toBe(9);
+    expect(p.rewindCount).toBe(1);
+  });
 });
 
 describe('parseEventLine payload 校验（P1-3）', () => {

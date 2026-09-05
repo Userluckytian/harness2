@@ -59,6 +59,7 @@ export function loadSession(dir: string): LoadedSession {
   const events: LoadedEvent[] = [];
   const warnings: string[] = [];
   let header: SessionHeaderPayload | null = null;
+  let maxSeq = 0;
   for (const [i, line] of lines.entries()) {
     if (line.length === 0) continue;
     const e = parseEventLine(line);
@@ -69,7 +70,18 @@ export function loadSession(dir: string): LoadedSession {
     if (e.type === 'session/header') {
       header = e.payload;
     }
+    if (e.seq > maxSeq) maxSeq = e.seq;
     events.push({ event: e, active: true });
+  }
+  // P2-1（读侧容错旧日志）：日志中已存在的越界 rewind/marker 给 warning，不抛错
+  for (const { event } of events) {
+    if (event.type !== 'rewind/marker') continue;
+    const n = event.payload.rewindToSeq;
+    if (!Number.isInteger(n) || n < 1 || n > maxSeq) {
+      warnings.push(
+        `rewind/marker at seq ${event.seq}: rewindToSeq ${n} out of range (1..${maxSeq})`,
+      );
+    }
   }
   return { dir, header, events, warnings };
 }

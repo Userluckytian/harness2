@@ -230,4 +230,37 @@ describe('SessionWriter', () => {
     expect(() => w2.append('bogus/type' as 'user/message', {} as never)).toThrow(/unknown event type/);
     w2.close();
   });
+
+  it('P2-1 回归：rewind/marker 的 rewindToSeq 越界在写入口被拒绝', () => {
+    const dir = tmpDir();
+    const w = SessionWriter.create(dir, { sessionId: 's1' }, { fsync: false });
+    w.append('user/message', { text: 'a' }); // lastSeq=2（含 header）
+    expect(() => w.append('rewind/marker', { rewindToSeq: 0 })).toThrow(/out of range/);
+    expect(() => w.append('rewind/marker', { rewindToSeq: -1 })).toThrow(/out of range/);
+    expect(() => w.append('rewind/marker', { rewindToSeq: 3 })).toThrow(/out of range/); // 超过 lastSeq=2
+    expect(() => w.append('rewind/marker', { rewindToSeq: 1.5 })).toThrow(/out of range/);
+    // 边界内合法：1 与 lastSeq 均可
+    expect(w.append('rewind/marker', { rewindToSeq: 1, reason: 'undo all' }).seq).toBe(3);
+    w.close();
+
+    // 被拒绝的调用没有留下任何半行/垃圾事件
+    const lines = readLines(dir);
+    expect(lines).toHaveLength(3);
+    for (const l of lines) expect(parseEventLine(l)).not.toBeNull();
+  });
+
+  it('P2-3：fsync 默认开启路径冒烟——默认参数 create/append/close 后日志完整', () => {
+    const dir = tmpDir();
+    const w = SessionWriter.create(dir, { sessionId: 'fsync-default' }); // 不传 options：fsync 默认 true
+    w.append('user/message', { text: 'fsync 默认路径' });
+    w.append('assistant/message', { text: 'ok' });
+    w.close();
+
+    const lines = readLines(dir);
+    expect(lines).toHaveLength(3);
+    for (const l of lines) expect(parseEventLine(l)).not.toBeNull();
+    const w2 = SessionWriter.open(dir, { fsync: false });
+    expect(w2.lastSeq).toBe(3);
+    w2.close();
+  });
 });

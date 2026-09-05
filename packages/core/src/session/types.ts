@@ -93,6 +93,8 @@ export interface ToolResultPayload {
   output?: string;
   error?: string;
   durationMs?: number;
+  /** 归属 turn（阶段 2 起 loop 写入；旧日志可缺省，渲染归入 `── turn -`） */
+  turnId?: string;
 }
 
 /**

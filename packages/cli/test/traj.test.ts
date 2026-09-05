@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest';
-import { execFileSync } from 'node:child_process';
+import { execFileSync, spawnSync } from 'node:child_process';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
@@ -30,7 +30,7 @@ function makeSession(dir: string): void {
   });
   w.append('step/start', { stepId: 's1', turnId: 't1' });
   w.append('tool/call', { callId: 'c1', tool: 'bash', args: { cmd: 'ls' }, turnId: 't1' });
-  w.append('tool/result', { callId: 'c1', ok: true, output: 'file1.txt', durationMs: 12 });
+  w.append('tool/result', { callId: 'c1', ok: true, output: 'file1.txt', durationMs: 12, turnId: 't1' });
   w.append('step/end', { stepId: 's1', turnId: 't1', durationMs: 15 });
   w.append('user/message', { text: 'shadowed-user', turnId: 't2' });
   w.append('assistant/message', { text: 'shadowed-answer', turnId: 't2' });
@@ -40,24 +40,28 @@ function makeSession(dir: string): void {
 }
 
 describe('harness2 traj', () => {
-  it('默认渲染活动投影：含消息/工具/回退统计，不含影子消息', () => {
+  it('默认渲染活动投影：含 turn 标头/消息/工具/回退统计，不含影子消息', () => {
     const dir = tmpDir();
     makeSession(dir);
     const out = execFileSync('node', [cliEntry, 'traj', dir], { encoding: 'utf8' });
     expect(out).toContain('# session traj-demo (D:/demo)');
+    expect(out).toContain('── turn t1');
+    expect(out).toContain('── turn -'); // rewind/marker 无 turnId
+    expect(out).not.toContain('── turn t2');
     expect(out).toContain('[USER] hello');
     expect(out).toContain('[ASSISTANT] [glm-5.3] hi there (10 in / 4 out)');
     expect(out).toContain('> tool bash({"cmd":"ls"})');
-    expect(out).toContain('< ok 12ms: file1.txt');
+    expect(out).toContain('< ok [c1] 12ms: file1.txt'); // tool/result 带 callId（P2-5）
     expect(out).toContain('[REWIND] to seq 7 (undo turn 2)');
     expect(out).not.toContain('shadowed-user');
     expect(out).toMatch(/-- 10 events \| 2 messages \| 1 rewind\(s\) \| shadowed 2/);
   });
 
-  it('--all 显示影子事件；--json 输出结构化事件与投影', () => {
+  it('--all 显示影子事件与 t2 标头；--json 输出结构化事件与投影', () => {
     const dir = tmpDir();
     makeSession(dir);
     const outAll = execFileSync('node', [cliEntry, 'traj', dir, '--all'], { encoding: 'utf8' });
+    expect(outAll).toContain('── turn t2');
     expect(outAll).toContain('~ [USER] shadowed-user');
     expect(outAll).toContain('~ [ASSISTANT] shadowed-answer');
 
@@ -73,5 +77,13 @@ describe('harness2 traj', () => {
     expect(outJson.projection.lastSeq).toBe(10);
     expect(outJson.events).toHaveLength(10);
     expect(outJson.events.filter((e) => !e.active)).toHaveLength(2);
+  });
+
+  it('loadSession 失败：一行友好错误（exit 1，无堆栈）', () => {
+    const dir = tmpDir(); // 空目录，无会话日志
+    const r = spawnSync('node', [cliEntry, 'traj', dir], { encoding: 'utf8' });
+    expect(r.status).toBe(1);
+    expect(r.stderr).toMatch(/^error: .+not found/);
+    expect(r.stderr).not.toMatch(/\n\s+at /); // 不打印调用堆栈（P2-5）
   });
 });

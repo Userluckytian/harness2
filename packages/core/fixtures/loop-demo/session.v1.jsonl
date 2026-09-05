@@ -1,15 +1,15 @@
-{"v":1,"seq":1,"ts":"2026-09-05T20:36:02.053Z","type":"session/header","payload":{"sessionId":"loop-demo","cwd":"D:\\AI_projects\\harness2\\packages\\core\\fixtures\\loop-demo","createdAt":"2026-09-05T20:36:02.053Z"}}
-{"v":1,"seq":2,"ts":"2026-09-05T20:36:02.053Z","type":"user/message","payload":{"text":"创建 hello.txt 并读取验证","turnId":"05d85f84-ee8b-4b0f-a197-99ea3fefce05"}}
-{"v":1,"seq":3,"ts":"2026-09-05T20:36:02.053Z","type":"step/start","payload":{"stepId":"step-05d85f84-1","turnId":"05d85f84-ee8b-4b0f-a197-99ea3fefce05"}}
-{"v":1,"seq":4,"ts":"2026-09-05T20:36:02.054Z","type":"assistant/message","payload":{"text":"我来创建演示文件。","model":"mock","turnId":"05d85f84-ee8b-4b0f-a197-99ea3fefce05"}}
-{"v":1,"seq":5,"ts":"2026-09-05T20:36:02.054Z","type":"tool/call","payload":{"callId":"call-1","tool":"write","args":{"file_path":"hello.txt","content":"由 agent loop 生成的演示内容\n第二行：你好 harness2\n"},"turnId":"05d85f84-ee8b-4b0f-a197-99ea3fefce05"}}
-{"v":1,"seq":6,"ts":"2026-09-05T20:36:02.054Z","type":"tool/result","payload":{"callId":"call-1","tool":"write","ok":true,"output":"written","durationMs":0}}
-{"v":1,"seq":7,"ts":"2026-09-05T20:36:02.054Z","type":"step/end","payload":{"stepId":"step-05d85f84-1","turnId":"05d85f84-ee8b-4b0f-a197-99ea3fefce05","durationMs":1}}
-{"v":1,"seq":8,"ts":"2026-09-05T20:36:02.054Z","type":"step/start","payload":{"stepId":"step-05d85f84-2","turnId":"05d85f84-ee8b-4b0f-a197-99ea3fefce05"}}
-{"v":1,"seq":9,"ts":"2026-09-05T20:36:02.055Z","type":"assistant/message","payload":{"text":"读取确认一下。","model":"mock","turnId":"05d85f84-ee8b-4b0f-a197-99ea3fefce05"}}
-{"v":1,"seq":10,"ts":"2026-09-05T20:36:02.055Z","type":"tool/call","payload":{"callId":"call-2","tool":"read","args":{"file_path":"hello.txt"},"turnId":"05d85f84-ee8b-4b0f-a197-99ea3fefce05"}}
-{"v":1,"seq":11,"ts":"2026-09-05T20:36:02.055Z","type":"tool/result","payload":{"callId":"call-2","tool":"read","ok":true,"output":"由 agent loop 生成的演示内容","durationMs":0}}
-{"v":1,"seq":12,"ts":"2026-09-05T20:36:02.055Z","type":"step/end","payload":{"stepId":"step-05d85f84-2","turnId":"05d85f84-ee8b-4b0f-a197-99ea3fefce05","durationMs":1}}
-{"v":1,"seq":13,"ts":"2026-09-05T20:36:02.055Z","type":"step/start","payload":{"stepId":"step-05d85f84-3","turnId":"05d85f84-ee8b-4b0f-a197-99ea3fefce05"}}
-{"v":1,"seq":14,"ts":"2026-09-05T20:36:02.056Z","type":"assistant/message","payload":{"text":"已写入并读取 hello.txt，内容确认无误。","model":"mock","turnId":"05d85f84-ee8b-4b0f-a197-99ea3fefce05"}}
-{"v":1,"seq":15,"ts":"2026-09-05T20:36:02.056Z","type":"step/end","payload":{"stepId":"step-05d85f84-3","turnId":"05d85f84-ee8b-4b0f-a197-99ea3fefce05","durationMs":1}}
+{"v":1,"seq":1,"ts":"2026-09-05T20:45:07.050Z","type":"session/header","payload":{"sessionId":"loop-demo","cwd":"D:\\AI_projects\\harness2\\packages\\core\\fixtures\\loop-demo","createdAt":"2026-09-05T20:45:07.050Z"}}
+{"v":1,"seq":2,"ts":"2026-09-05T20:45:07.050Z","type":"user/message","payload":{"text":"创建 hello.txt 并读取验证","turnId":"91d73e47-29d4-4a4d-84dd-7b0c1e75fd46"}}
+{"v":1,"seq":3,"ts":"2026-09-05T20:45:07.050Z","type":"step/start","payload":{"stepId":"step-91d73e47-1","turnId":"91d73e47-29d4-4a4d-84dd-7b0c1e75fd46"}}
+{"v":1,"seq":4,"ts":"2026-09-05T20:45:07.051Z","type":"assistant/message","payload":{"text":"我来创建演示文件。","model":"mock","turnId":"91d73e47-29d4-4a4d-84dd-7b0c1e75fd46"}}
+{"v":1,"seq":5,"ts":"2026-09-05T20:45:07.051Z","type":"tool/call","payload":{"callId":"call-1","tool":"write","args":{"file_path":"hello.txt","content":"由 agent loop 生成的演示内容\n第二行：你好 harness2\n"},"turnId":"91d73e47-29d4-4a4d-84dd-7b0c1e75fd46"}}
+{"v":1,"seq":6,"ts":"2026-09-05T20:45:07.051Z","type":"tool/result","payload":{"callId":"call-1","tool":"write","ok":true,"output":"written","durationMs":0,"turnId":"91d73e47-29d4-4a4d-84dd-7b0c1e75fd46"}}
+{"v":1,"seq":7,"ts":"2026-09-05T20:45:07.051Z","type":"step/end","payload":{"stepId":"step-91d73e47-1","turnId":"91d73e47-29d4-4a4d-84dd-7b0c1e75fd46","durationMs":1}}
+{"v":1,"seq":8,"ts":"2026-09-05T20:45:07.051Z","type":"step/start","payload":{"stepId":"step-91d73e47-2","turnId":"91d73e47-29d4-4a4d-84dd-7b0c1e75fd46"}}
+{"v":1,"seq":9,"ts":"2026-09-05T20:45:07.051Z","type":"assistant/message","payload":{"text":"读取确认一下。","model":"mock","turnId":"91d73e47-29d4-4a4d-84dd-7b0c1e75fd46"}}
+{"v":1,"seq":10,"ts":"2026-09-05T20:45:07.051Z","type":"tool/call","payload":{"callId":"call-2","tool":"read","args":{"file_path":"hello.txt"},"turnId":"91d73e47-29d4-4a4d-84dd-7b0c1e75fd46"}}
+{"v":1,"seq":11,"ts":"2026-09-05T20:45:07.051Z","type":"tool/result","payload":{"callId":"call-2","tool":"read","ok":true,"output":"由 agent loop 生成的演示内容","durationMs":0,"turnId":"91d73e47-29d4-4a4d-84dd-7b0c1e75fd46"}}
+{"v":1,"seq":12,"ts":"2026-09-05T20:45:07.051Z","type":"step/end","payload":{"stepId":"step-91d73e47-2","turnId":"91d73e47-29d4-4a4d-84dd-7b0c1e75fd46","durationMs":0}}
+{"v":1,"seq":13,"ts":"2026-09-05T20:45:07.051Z","type":"step/start","payload":{"stepId":"step-91d73e47-3","turnId":"91d73e47-29d4-4a4d-84dd-7b0c1e75fd46"}}
+{"v":1,"seq":14,"ts":"2026-09-05T20:45:07.052Z","type":"assistant/message","payload":{"text":"已写入并读取 hello.txt，内容确认无误。","model":"mock","turnId":"91d73e47-29d4-4a4d-84dd-7b0c1e75fd46"}}
+{"v":1,"seq":15,"ts":"2026-09-05T20:45:07.052Z","type":"step/end","payload":{"stepId":"step-91d73e47-3","turnId":"91d73e47-29d4-4a4d-84dd-7b0c1e75fd46","durationMs":0}}

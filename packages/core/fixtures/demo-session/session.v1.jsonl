@@ -3,7 +3,7 @@
 {"v":1,"seq":3,"ts":"2026-09-06T08:00:02.000Z","type":"assistant/message","payload":{"text":"我来查看目录内容。","model":"glm-5.3","usage":{"inputTokens":120,"outputTokens":18},"turnId":"t1"}}
 {"v":1,"seq":4,"ts":"2026-09-06T08:00:03.000Z","type":"step/start","payload":{"stepId":"s1","turnId":"t1"}}
 {"v":1,"seq":5,"ts":"2026-09-06T08:00:04.000Z","type":"tool/call","payload":{"callId":"c1","tool":"bash","args":{"cmd":"ls"},"turnId":"t1"}}
-{"v":1,"seq":6,"ts":"2026-09-06T08:00:05.000Z","type":"tool/result","payload":{"callId":"c1","ok":true,"output":"README.md\npackage.json","durationMs":34}}
+{"v":1,"seq":6,"ts":"2026-09-06T08:00:05.000Z","type":"tool/result","payload":{"callId":"c1","ok":true,"output":"README.md\npackage.json","durationMs":34,"turnId":"t1"}}
 {"v":1,"seq":7,"ts":"2026-09-06T08:00:06.000Z","type":"step/end","payload":{"stepId":"s1","turnId":"t1","durationMs":41}}
 {"v":1,"seq":8,"ts":"2026-09-06T08:00:07.000Z","type":"assistant/message","payload":{"text":"目录下有 README.md 和 package.json。","model":"glm-5.3","usage":{"inputTokens":210,"outputTokens":25},"turnId":"t1"}}
 {"v":1,"seq":9,"ts":"2026-09-06T08:00:08.000Z","type":"user/message","payload":{"text":"顺便看下 .gitignore","turnId":"t2"}}

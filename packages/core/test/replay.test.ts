@@ -56,12 +56,17 @@ describe('fixture: demo-session', () => {
     const again = computeProjection(loadSession(fixtureDir));
     expect(again).toEqual(projection);
     const rendered = renderTrajectory(session).join('\n');
+    expect(rendered).toContain('── turn t1'); // turn 标头（P2-5）
+    expect(rendered).toContain('── turn -'); // rewind/marker 无 turnId
+    expect(rendered).toContain('── turn t3');
     expect(rendered).toContain('[REWIND] to seq 8 (turn2 因限流失败，回退重试)');
-    expect(rendered).toContain('< ok 34ms: README.md\\npackage.json'); // 多行输出折叠为单行
+    expect(rendered).toContain('< ok [c1] 34ms: README.md\\npackage.json'); // tool/result 带 callId（P2-5）
     expect(rendered).not.toContain('attempt failed'); // 影子区内容默认不渲染
+    expect(rendered).not.toContain('── turn t2'); // t2 事件全部被遮蔽，默认视图不出现其标头
     expect(rendered).toMatch(/12 events \| 4 messages \| 1 rewind\(s\) \| shadowed 2/);
 
     const withShadowed = renderTrajectory(session, { includeShadowed: true }).join('\n');
+    expect(withShadowed).toContain('── turn t2'); // --all 视图出现 t2 标头
     expect(withShadowed).toContain('! attempt failed: rate_limited: 429');
     expect(withShadowed).toContain('~ [USER] 顺便看下 .gitignore');
   });

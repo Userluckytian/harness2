@@ -209,12 +209,12 @@ async function runTurnWithWriter(writer: SessionWriter, options: TurnOptions): P
     const byCallId = new Map(results.map((r) => [r.callId, r]));
     for (const p of pending) {
       if (p.parseError !== undefined) {
-        writer.append('tool/result', { callId: p.callId, tool: p.tool, ok: false, error: p.parseError });
+        writer.append('tool/result', { callId: p.callId, tool: p.tool, ok: false, error: p.parseError, turnId });
         continue;
       }
       const r = byCallId.get(p.callId);
       if (!r) {
-        writer.append('tool/result', { callId: p.callId, tool: p.tool, ok: false, error: 'executor lost result' });
+        writer.append('tool/result', { callId: p.callId, tool: p.tool, ok: false, error: 'executor lost result', turnId });
         continue;
       }
       writer.append('tool/result', {
@@ -224,6 +224,7 @@ async function runTurnWithWriter(writer: SessionWriter, options: TurnOptions): P
         ...(r.output !== undefined ? { output: r.output } : {}),
         ...(r.error !== undefined ? { error: r.error } : {}),
         durationMs: r.durationMs,
+        turnId,
       });
     }
     toolCallsTotal += calls.length;
