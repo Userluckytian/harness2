@@ -41,7 +41,9 @@ export const editTool: ToolDefinition = {
     if (occurrences > 1) {
       return { error: `old_text matches ${occurrences} times; expected exactly 1 (make it more specific)` };
     }
-    writeAtomic(filePath, content.replace(oldText, newText));
+    // 函数形式替换：字符串形式的 new_text 会被解释 `$&`/`` $` ``/`$'`/`$$` 等替换模式，
+    // 导致静默损坏文件（P1-2）；函数形式按字面写入。
+    writeAtomic(filePath, content.replace(oldText, () => newText));
     return { output: `replaced 1 occurrence in ${filePath}` };
   },
 };

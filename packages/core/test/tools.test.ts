@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it } from 'vitest';
-import { mkdtempSync, mkdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
+import { spawnSync } from 'node:child_process';
+import { existsSync, mkdtempSync, mkdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -13,6 +14,17 @@ import { editTool } from '../src/tools/predefined/edit.js';
 import { globTool } from '../src/tools/predefined/glob.js';
 import { grepTool, scanTextFiles } from '../src/tools/predefined/grep.js';
 import { builtinTools, registerBuiltinTools } from '../src/tools/predefined/index.js';
+
+const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
+
+/** rg 可用性探测（P2-3 对齐测试注明覆盖路径：可用时双实现同测，缺失时仅回退路径） */
+const rgAvailable = (() => {
+  try {
+    return spawnSync('rg', ['--version'], { stdio: 'ignore', windowsHide: true }).status === 0;
+  } catch {
+    return false;
+  }
+})();
 
 const echoTool: ToolDefinition = {
   name: 'echo',
@@ -126,6 +138,25 @@ describe('bash 工具', () => {
     expect((r.output as string).length).toBeLessThan(40000);
     expect(r.output).toContain('[truncated');
   }, 15000);
+
+  it('P1-3 回归：超时杀死整棵进程树——延时副作用文件不再出现', async () => {
+    const dir = tmpDir();
+    const sideEffect = join(dir, 'late-side-effect.txt');
+    // 跨平台长副作用命令：node 起来后先睡 2s 再写文件（工作进程若在超时后存活，文件终将出现）
+    const r = await run(
+      bashTool,
+      {
+        command: `node -e "setTimeout(function(){require('fs').writeFileSync(process.argv[1],'late')},2000)" "${sideEffect}"`,
+        timeoutMs: 600,
+      },
+      dir,
+    );
+    expect(r.ok).toBe(false);
+    expect(r.error).toMatch(/timed out after 600ms/);
+    // 留足缓冲（避免竞态）：副作用最迟在命令启动 ~2s 后出现；4s 后仍不存在即证明进程树已死
+    await sleep(4000);
+    expect(existsSync(sideEffect)).toBe(false);
+  }, 20000);
 });
 
 describe('read 工具', () => {
@@ -217,6 +248,16 @@ describe('edit 工具', () => {
     expect(r.ok).toBe(false);
     expect(r.error).toMatch(/3 times/);
     expect(readFileSync(join(dir, 'f.txt'), 'utf8')).toBe('a b a b a'); // 未被改动
+  });
+
+  it('P1-2 回归：new_text 含替换模式符号（$& $$ $` $\'）时按字面写入不解释', async () => {
+    const dir = tmpDir();
+    writeFileSync(join(dir, 'f.txt'), 'alpha beta gamma', 'utf8');
+    // 字符串形式的 String.replace 会解释这些符号（$&=匹配串、$$=字面 $、$'=匹配后缀等）
+    const newText = "$& $$ $` $' \\$1";
+    const r = await run(editTool, { file_path: 'f.txt', old_text: 'beta', new_text: newText }, dir);
+    expect(r.ok).toBe(true);
+    expect(readFileSync(join(dir, 'f.txt'), 'utf8')).toBe(`alpha ${newText} gamma`);
   });
 });
 
