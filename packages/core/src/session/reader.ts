@@ -86,23 +86,51 @@ export function loadSession(dir: string): LoadedSession {
   return { dir, header, events, warnings };
 }
 
-/** 计算活动投影。两遍扫描：先由 rewind 标记求出遮蔽集，再据此构建投影。 */
+/**
+ * 计算活动投影。两遍扫描：先由 rewind 标记求出遮蔽集，再据此构建投影。
+ *
+ * 标记语义（单调并集 + redo 链中立化）：
+ *   - 每个 rewind/marker 追溯遮蔽「标记之前已出现且 seq > rewindToSeq」的非标记事件；
+ *   - reason 以 'redo' 开头的标记额外**中立化** seq = rewindToSeq + 1 处的标记
+ *     （移除其遮蔽贡献）。undo/redo 约定 redo.rewindToSeq = 被重做 undo 标记的 seq - 1，
+ *     因此该定位精确命中被重做的 undo 标记并恢复其遮蔽的事件——n 级 undo/redo 链
+ *     按此自然成立（每次 redo 只复活一层）；
+ *   - 非 redo 标记的语义与阶段 1 完全一致（只遮蔽、不复活），旧日志行为不变。
+ */
 export function computeProjection(session: LoadedSession): SessionProjection {
-  // pass 1：每个 rewind/marker 只遮蔽「标记之前已出现且 seq > rewindToSeq」的非标记事件
-  const shadowed = new Set<number>();
-  let rewindCount = 0;
+  // pass 1：逐标记求遮蔽集（redo 标记可中立化被重做的 undo 标记）
+  interface MarkerRule {
+    seq: number;
+    targets: Set<number>; // 该标记遮蔽的非标记事件 seq
+    neutralized: boolean;
+  }
+  const rules: MarkerRule[] = [];
   const seen: LoadedEvent[] = [];
+  let rewindCount = 0;
   for (const item of session.events) {
-    if (item.event.type === 'rewind/marker') {
-      const n = item.event.payload.rewindToSeq;
-      for (const s of seen) {
-        if (s.event.seq > n && s.event.type !== 'rewind/marker') {
-          shadowed.add(s.event.seq);
+    const e = item.event;
+    if (e.type === 'rewind/marker') {
+      const n = e.payload.rewindToSeq;
+      if ((e.payload.reason ?? '').startsWith('redo')) {
+        // redo 链：中立化 seq = n+1 处的标记（undo/redo 约定的被重做 undo 标记）
+        const victimSeq = n + 1;
+        for (const rule of rules) {
+          if (rule.seq === victimSeq) rule.neutralized = true;
         }
       }
+      const targets = new Set<number>();
+      for (const s of seen) {
+        if (s.event.seq > n && s.event.type !== 'rewind/marker') targets.add(s.event.seq);
+      }
+      rules.push({ seq: e.seq, targets, neutralized: false });
       rewindCount += 1;
     }
     seen.push(item);
+  }
+  const shadowed = new Set<number>();
+  for (const rule of rules) {
+    if (rule.neutralized) continue;
+    for (const t of rule.targets) shadowed.add(t);
   }
 
   // pass 2：活动性 + 可重建消息序列

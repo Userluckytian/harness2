@@ -196,4 +196,52 @@ describe('computeProjection', () => {
       .map((x) => (x.event.payload as { text: string }).text);
     expect(loggedTexts).toEqual(written);
   });
+
+  it('redo 链中立化：reason=redo 的标记复活其前 undo 标记遮蔽的事件', () => {
+    const dir = tmpDir();
+    const w = writeDemoSession(dir); // seq 1..9
+    w.append('rewind/marker', { rewindToSeq: 5, reason: 'undo' }); // seq 10：遮蔽 6..9（a2 在 seq5，保持活动）
+    let p = computeProjection(loadSession(dir));
+    expect(p.messages.map((m) => m.text)).toEqual(['u1', 'a1', 'u2', 'a2']);
+
+    // redo 标记：rewindToSeq = undo 标记前一事件（seq 9）→ 中立化 undo 标记，6..9 复活
+    w.append('rewind/marker', { rewindToSeq: 9, reason: 'redo' }); // seq 11
+    p = computeProjection(loadSession(dir));
+    expect(p.messages.map((m) => m.text)).toEqual(['u1', 'a1', 'u2', 'a2', 'u3', 'a3']);
+    expect(p.shadowedCount).toBe(0);
+    w.close();
+  });
+
+  it('redo 只中立化范围内的标记：更早的 undo 遮蔽保持不变', () => {
+    const dir = tmpDir();
+    const w = SessionWriter.create(dir, { sessionId: 'chain' }, { fsync: false });
+    w.append('user/message', { text: 'u1' }); // 2
+    w.append('assistant/message', { text: 'a1' }); // 3
+    w.append('user/message', { text: 'u2' }); // 4
+    w.append('assistant/message', { text: 'a2' }); // 5
+    w.append('rewind/marker', { rewindToSeq: 1, reason: 'undo' }); // 6：遮蔽 2..5
+    w.append('user/message', { text: 'u1-alt' }); // 7
+    w.append('assistant/message', { text: 'a1-alt' }); // 8
+    w.append('rewind/marker', { rewindToSeq: 6, reason: 'undo' }); // 9：遮蔽 7..8
+    let p = computeProjection(loadSession(dir));
+    expect(p.messages).toEqual([]);
+
+    // redo 精确中立化 rewindToSeq+1（=seq 9 的 marker9）；marker6（seq 6）不受影响
+    w.append('rewind/marker', { rewindToSeq: 8, reason: 'redo' }); // 10
+    p = computeProjection(loadSession(dir));
+    expect(p.messages.map((m) => m.text)).toEqual(['u1-alt', 'a1-alt']); // 2..5 仍被 marker6 遮蔽
+    w.close();
+  });
+
+  it('非 redo 标记语义不变：无 reason / undo 前缀均不触发中立化', () => {
+    const dir = tmpDir();
+    const w = SessionWriter.create(dir, { sessionId: 'legacy' }, { fsync: false });
+    w.append('user/message', { text: 'u1' }); // 2
+    w.append('rewind/marker', { rewindToSeq: 1, reason: 'undo' }); // 3：遮蔽 2
+    w.append('user/message', { text: 'u2' }); // 4
+    w.append('rewind/marker', { rewindToSeq: 3 }); // 5：无 reason，遮蔽 4；不复活 2
+    const p = computeProjection(loadSession(dir));
+    expect(p.messages.map((m) => m.text)).toEqual([]);
+    w.close();
+  });
 });

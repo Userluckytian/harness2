@@ -100,10 +100,13 @@ export interface ToolResultPayload {
 }
 
 /**
- * 回退标记：追加式撤回。语义为单调并集——每个标记追溯遮蔽「标记之前已出现且
- * seq > rewindToSeq」的非标记事件，永不复活此前已被遮蔽的事件；标记之后新追加
- * 的事件属于新分支、默认活动。被遮蔽的历史事件保留在日志中（影子事件），可全量
- * 导出，但不再进入当前上下文（对照 grok RewindMarker）。
+ * 回退标记：追加式撤回。语义为单调并集 + redo 链中立化——每个标记追溯遮蔽「标记
+ * 之前已出现且 seq > rewindToSeq」的非标记事件；reason 以 'redo' 开头的标记额外中立化
+ * seq = rewindToSeq + 1 处的标记（undo/redo 约定 redo.rewindToSeq = 被重做 undo 标记的
+ * seq - 1，n 级链每次 redo 只复活一层，见 reader.computeProjection）；
+ * 其余标记永不复活此前已被遮蔽的事件；标记之后新追加的事件属于新分支、默认活动。
+ * 被遮蔽的历史事件保留在日志中（影子事件），可全量导出，但不再进入当前上下文
+ * （对照 grok RewindMarker）。
  */
 export interface RewindMarkerPayload {
   rewindToSeq: number;
