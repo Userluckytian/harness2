@@ -1,6 +1,6 @@
 # 阶段 2：Agent loop + 工具系统 + Mock Provider + CI 骨架
 
-> **状态：** 自验完成 + 阶段 2 独立审查 P1/P2 修复完成（实现代理按 Task 1–7 执行；审查修复后 109 passed + 1 skipped，跳过项为 H2_GEN_LOOP_DEMO 门控的 fixture 生成器；待编排者独立验收 `/accept-phase`）
+> **状态：** ✅ 已完成——2026-09-06 编排者验收通过（独立审查 pass-with-fixes → 3 P1 + 8 P2 已修复 +12 回归测试；重跑证据：pnpm test 109 passed + 1 skipped、typecheck 0 错、双 fixture traj 渲染正常、红线通过；CI 待远程验证见 OPEN.md）
 > **For agentic workers:** 按 Task 顺序执行；每 Task 测完再进下一 Task。
 > **交接提示词**见文末「给接手 AI 的完整提示词」。
 > **元规范:** `docs/ai-framework/phased-plan-driven.md`
