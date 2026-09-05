@@ -61,3 +61,4 @@
 - Windows 下 tsc/commit 有 CRLF warning，无害
 - 会话日志写入依赖「换行即提交」语义（未以 \n 结尾的尾行视为未提交丢弃），改 writer 前先读其测试
 - 外部脚手架（.opencode/、ai-framework 文档）由项目负责人维护，更新时注意与 `workflow-delegation.md` 的角色约定保持一致
+- CI（.github/workflows/ci.yml）本地只做过 YAML 语法校验，Actions 真实运行待远程仓库与 push 授权（见 `docs/issue-log/OPEN.md`）
