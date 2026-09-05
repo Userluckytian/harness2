@@ -1,6 +1,7 @@
 # harness2 总控计划（Master Plan）
 
-> 制定：2026-09-06 · 状态：**待用户确认** · 批准后作为全局实施依据
+> 制定：2026-09-06 · 状态：**已批准（2026-09-06 用户确认）** · 批准后作为全局实施依据
+> 已确认决策：①v0.1 纯 CLI 首发，桌面在 M2；②首批 Provider = OpenAI-compatible + DeepSeek 原生 + Anthropic + 智谱/GLM；③按公开发布准备（MIT，GitHub public；远程仓库待用户创建授权）；④产品名沿用 harness2（CLI 命令名 `harness2`）；⑤QQ 机器人在 M3；⑥节奏改为**连续逐阶段推进**——每阶段完成（实施/测试/审查/验收）后直接进入下一阶段，无需逐阶段确认；无法自主完成的测试（如需远程/真机/密钥）在 issue-log 与 HANDOFF 标记。
 > 细粒度功能清单见 `docs/ROADMAP.md`（26 项）；单阶段执行计划开工前另立 `docs/ai-framework/plans/YYYY-MM-DD-phase-N-*.md`
 > 执行模式：编排者（主会话）规划/验收/文档，实现/测试/审查由子代理承担（见 `docs/ai-framework/workflow-delegation.md`）
 
