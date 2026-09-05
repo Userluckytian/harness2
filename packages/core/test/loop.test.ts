@@ -2,17 +2,19 @@
 // mock.requests 的每条消息序列，必须能从最终日志独立逐步重建（测试内手写重建逻辑，
 // 不与 loop 的 buildChatMessages 共享实现，避免同义反复）。
 import { afterEach, describe, expect, it } from 'vitest';
-import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { MockProvider } from '../src/provider/mock.js';
 import type { ChatMessage, ChatProvider } from '../src/provider/types.js';
 import { computeProjection, loadSession } from '../src/session/reader.js';
+import { SnapshotStore } from '../src/session/snapshots.js';
 import { SessionWriter } from '../src/session/writer.js';
 import { SESSION_LOG_FILE, type AnySessionEvent } from '../src/session/types.js';
 import { runTurn } from '../src/agent/loop.js';
 import { ToolRegistry } from '../src/tools/registry.js';
+import { editTool, writeTool } from '../src/tools/predefined/index.js';
 import type { ApprovalHandler, ToolDefinition } from '../src/tools/types.js';
 
 const dirs: string[] = [];
@@ -435,6 +437,127 @@ describe('Model-visible ⟺ logged 不变量', () => {
         if (m.role === 'tool') expect(loggedResultIds.has(m.toolCallId as string)).toBe(true);
       }
     }
+  });
+});
+
+describe('快照钩子（TurnOptions.snapshots）', () => {
+  it('write 工具执行前后产生快照条目；seq = tool/call 事件 seq；undo 恢复后文件复原（loop 级）', async () => {
+    const dir = tmpDir(); // 会话目录
+    const work = tmpDir(); // 工具工作目录
+    const file = join(work, 'hello.txt');
+    writeFileSync(file, 'original', 'utf8');
+
+    const provider = new MockProvider([
+      { text: '写入文件', toolCalls: [{ id: 'w1', name: 'write', arguments: JSON.stringify({ file_path: 'hello.txt', content: 'updated' }) }] },
+      { text: '完成' },
+    ]);
+    const registry = new ToolRegistry();
+    registry.register(writeTool);
+    const snapshots = new SnapshotStore(dir);
+    const result = await runTurn(dir, { provider, tools: registry, cwd: work, userText: '写 hello.txt', snapshots });
+    expect(result.stopReason).toBe('end_turn');
+    expect(readFileSync(file, 'utf8')).toBe('updated');
+
+    // 条目：seq 与日志 tool/call 事件 seq 一致，before/after 正确
+    const toolCallSeq = loadEvents(dir).find((e) => e.type === 'tool/call')!.seq;
+    const entries = snapshots.entries();
+    expect(entries).toHaveLength(1);
+    expect(entries[0]).toMatchObject({ seq: toolCallSeq, before: 'original', after: 'updated' });
+    expect(entries[0]!.file).toBe(file); // 绝对路径
+
+    // loop 级 undo：追加 rewind marker + 快照恢复 → 文件回到 original
+    const writer = SessionWriter.open(dir, { fsync: false });
+    writer.append('rewind/marker', { rewindToSeq: toolCallSeq - 1, reason: 'undo' });
+    const restored = snapshots.restore(toolCallSeq - 1);
+    writer.close();
+    expect(restored.items[0]).toMatchObject({ file, target: 'original', externallyModified: false, restored: true });
+    expect(readFileSync(file, 'utf8')).toBe('original');
+  });
+
+  it('read/bash 工具不产生快照条目', async () => {
+    const dir = tmpDir();
+    const provider = new MockProvider([
+      {
+        text: '读并执行',
+        toolCalls: [
+          { id: 'r1', name: 'read', arguments: '{"file_path":"a.txt"}' },
+          { id: 'b1', name: 'bash', arguments: '{"cmd":"echo hi"}' },
+        ],
+      },
+      { text: '完成' },
+    ]);
+    const registry = new ToolRegistry();
+    registry.register(makeTool('read', () => ({ output: 'x' })));
+    registry.register(makeTool('bash', () => ({ output: 'hi' })));
+    const snapshots = new SnapshotStore(dir);
+    await runTurn(dir, { provider, tools: registry, cwd: dir, userText: 'x', snapshots });
+    expect(snapshots.entries()).toEqual([]);
+  });
+
+  it('工具失败（ok:false）不记 after；取消路径同样不落盘', async () => {
+    const dir = tmpDir();
+    const provider = new MockProvider([
+      { text: '会失败的编辑', toolCalls: [{ id: 'e1', name: 'edit', arguments: JSON.stringify({ file_path: 'nope.txt', old_text: 'a', new_text: 'b' }) }] },
+      { text: '收到失败' },
+    ]);
+    const registry = new ToolRegistry();
+    registry.register(editTool);
+    const snapshots = new SnapshotStore(dir);
+    const result = await runTurn(dir, { provider, tools: registry, cwd: dir, userText: 'x', snapshots });
+
+    expect(result.stopReason).toBe('end_turn');
+    const results = loadEvents(dir).filter((e) => e.type === 'tool/result');
+    expect(results[0] && results[0].type === 'tool/result' ? results[0].payload.ok : null).toBe(false);
+    expect(snapshots.entries()).toEqual([]); // capture 后未 commitAfter → 无条目
+  });
+
+  it('工具执行中被取消：不 commitAfter，不产生条目（append-only，取消路径无恢复点）', async () => {
+    const dir = tmpDir();
+    const work = tmpDir();
+    const ac = new AbortController();
+    const provider = new MockProvider([
+      { text: '慢慢写', toolCalls: [{ id: 'w1', name: 'write', arguments: JSON.stringify({ file_path: 'slow.txt', content: 'x' }) }] },
+      { text: 'never' },
+    ]);
+    const registry = new ToolRegistry();
+    // 名为 write 的慢工具：模拟执行中取消（快照钩子按工具名判定，与实现无关）
+    registry.register(makeTool('write', async () => { await sleep(150); return { output: 'written' }; }));
+    const snapshots = new SnapshotStore(dir);
+    const pending = runTurn(dir, { provider, tools: registry, cwd: work, userText: 'x', snapshots, signal: ac.signal });
+    setTimeout(() => ac.abort(), 30);
+    const result = await pending;
+
+    expect(result.stopReason).toBe('cancelled');
+    const logged = loadEvents(dir).find((e) => e.type === 'tool/result');
+    expect(logged && logged.type === 'tool/result' ? logged.payload.ok : null).toBe(false);
+    expect(snapshots.entries()).toEqual([]);
+  }, 8000);
+
+  it('同 turn 两次写同一文件：两次 capture 各取执行前状态（unsafe 串行语义）', async () => {
+    const dir = tmpDir();
+    const work = tmpDir();
+    const provider = new MockProvider([
+      {
+        text: '连续写两次',
+        toolCalls: [
+          { id: 'w1', name: 'write', arguments: JSON.stringify({ file_path: 'a.txt', content: 'v2' }) },
+          { id: 'w2', name: 'write', arguments: JSON.stringify({ file_path: 'a.txt', content: 'v3' }) },
+        ],
+      },
+      { text: '完成' },
+    ]);
+    const registry = new ToolRegistry();
+    registry.register(writeTool);
+    const snapshots = new SnapshotStore(dir);
+    writeFileSync(join(work, 'a.txt'), 'v1', 'utf8');
+    await runTurn(dir, { provider, tools: registry, cwd: work, userText: 'x', snapshots });
+
+    const entries = snapshots.entries();
+    expect(entries).toHaveLength(2);
+    expect(entries[0]).toMatchObject({ before: 'v1', after: 'v2' });
+    expect(entries[1]).toMatchObject({ before: 'v2', after: 'v3' });
+    // 撤到两次写之前 → v1
+    expect(snapshots.restore(entries[0]!.seq - 1).items[0]!.target).toBe('v1');
   });
 });
 

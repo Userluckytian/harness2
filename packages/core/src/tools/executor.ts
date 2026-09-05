@@ -18,6 +18,13 @@ export interface ExecutedToolResult extends ToolResult {
 export interface ExecutionEnv {
   signal: AbortSignal;
   cwd: string;
+  /**
+   * 可选：单次执行前回调（agent loop 注入快照捕获，见 session/snapshots.ts）。
+   * 抛出异常 → 该调用以 ok:false 失败（捕获不到 before 就不允许修改文件，保 undo 完整性）。
+   */
+  onBeforeExecute?(req: ToolExecutionRequest): void;
+  /** 可选：单次执行后回调（ok = 工具是否成功；失败/取消路径 loop 不记 after）。异常 → 该调用转 ok:false */
+  onAfterExecute?(req: ToolExecutionRequest, ok: boolean): void;
 }
 
 export const DENIED_MESSAGE = 'denied by approval policy';
@@ -82,6 +89,13 @@ export class ToolExecutor {
     const signal =
       def.timeoutMs !== undefined ? AbortSignal.any([env.signal, AbortSignal.timeout(def.timeoutMs)]) : env.signal;
 
+    // 快照捕获（执行前）：异常转失败——没有 before 就不允许修改文件（undo 完整性优先）
+    try {
+      env.onBeforeExecute?.(req);
+    } catch (e) {
+      return { ok: false, error: `snapshot capture failed: ${errorMessage(e)}`, durationMs: elapsed() };
+    }
+
     let out: ToolOutput;
     try {
       out = await raceAbort(signal, Promise.resolve(def.execute(req.args, { signal, cwd: env.cwd })));
@@ -92,7 +106,14 @@ export class ToolExecutor {
       else if (signal.aborted) error = `tool timeout after ${def.timeoutMs}ms`;
       return { ok: false, error, durationMs: elapsed() };
     }
-    return { ok: out.error === undefined, output: out.output, error: out.error, durationMs: elapsed() };
+    const ok = out.error === undefined;
+    // 快照补记（成功后）：失败/取消路径由调用方跳过；异常转失败（文件虽已改动，如实报告）
+    try {
+      env.onAfterExecute?.(req, ok);
+    } catch (e) {
+      return { ok: false, error: `snapshot commit failed: ${errorMessage(e)}`, durationMs: elapsed() };
+    }
+    return { ok, output: out.output, error: out.error, durationMs: elapsed() };
   }
 
   /**

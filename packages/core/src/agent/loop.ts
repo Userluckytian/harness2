@@ -7,6 +7,7 @@ import { randomUUID } from 'node:crypto';
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { computeProjection, loadSession, type LoadedSession } from '../session/reader.js';
+import { readTextOrNull, snapshotTargetFile, type SnapshotStore } from '../session/snapshots.js';
 import { SessionWriter } from '../session/writer.js';
 import { SESSION_LOG_FILE } from '../session/types.js';
 import type {
@@ -237,25 +238,46 @@ async function runTurnWithWriter(writer: SessionWriter, options: TurnOptions): P
 
     // 有工具调用：逐个落 tool/call → 波次执行（safe 并行/unsafe 串行/lockKey 串行）→ 逐个落 tool/result
     const pending: PendingCall[] = [];
+    const callSeqs = new Map<string, number>(); // callId → tool/call 事件 seq（快照键）
     for (const call of calls) {
       const { args, parseError } = parseToolArgs(call.arguments);
-      writer.append('tool/call', {
+      const callEvent = writer.append('tool/call', {
         callId: call.id,
         tool: call.name,
         ...(parseError === undefined ? { args } : {}),
         turnId,
       });
+      callSeqs.set(call.id, callEvent.seq);
       pending.push({ callId: call.id, tool: call.name, args, parseError });
     }
 
     const runnable = pending.filter((p): p is PendingCall & { parseError: undefined } => p.parseError === undefined);
+    // 快照钩子（仅当提供 SnapshotStore；write/edit 才产生条目，bash/read 等不产生）
+    const snapshots = options.snapshots;
+    const snapshotHooks = snapshots
+      ? {
+          onBeforeExecute: (req: ToolExecutionRequest): void => {
+            const seq = callSeqs.get(req.callId);
+            const file = snapshotTargetFile(req.tool, req.args, options.cwd);
+            if (seq === undefined || file === null) return;
+            snapshots.capture({ seq, file, before: readTextOrNull(file) });
+          },
+          onAfterExecute: (req: ToolExecutionRequest, ok: boolean): void => {
+            if (!ok) return; // 失败/取消不记 after（未完成的修改没有恢复点）
+            const seq = callSeqs.get(req.callId);
+            const file = snapshotTargetFile(req.tool, req.args, options.cwd);
+            if (seq === undefined || file === null) return;
+            snapshots.commitAfter({ seq, after: readTextOrNull(file) });
+          },
+        }
+      : {};
     let results: ExecutedToolResult[];
     try {
       results =
         runnable.length > 0
           ? await executor.runWave(
               runnable.map((p): ToolExecutionRequest => ({ callId: p.callId, tool: p.tool, args: p.args })),
-              { signal: envSignal, cwd: options.cwd },
+              { signal: envSignal, cwd: options.cwd, ...snapshotHooks },
             )
           : [];
     } catch (e) {

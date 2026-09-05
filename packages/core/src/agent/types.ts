@@ -1,5 +1,6 @@
 // Agent loop 类型：一次用户 turn 的执行选项与结果。
 import type { ChatProvider } from '../provider/types.js';
+import type { SnapshotStore } from '../session/snapshots.js';
 import type { ToolRegistry } from '../tools/registry.js';
 import type { ApprovalHandler } from '../tools/types.js';
 
@@ -35,6 +36,12 @@ export interface TurnOptions {
    * 再开始循环——用户输入同样必须 logged（Model-visible ⟺ logged）。
    */
   userText?: string;
+  /**
+   * 可选：文件快照存储（决策 D6）。提供时 write/edit 工具执行前 capture、成功后
+   * commitAfter（键 = tool/call 事件 seq）；失败/取消不记 after。bash/read 等工具
+   * 不产生快照（bash 副作用不进快照，见 chat 帮助与 README 的如实声明）。
+   */
+  snapshots?: SnapshotStore;
 }
 
 export interface TurnResult {
