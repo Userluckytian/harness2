@@ -1,6 +1,6 @@
 # 阶段 1：事件溯源会话内核 + 轨迹（最小闭环）
 
-> **状态：** 计划已就绪（技术栈 D1–D6 已于 2026-09-06 确认：TS/Node ≥22/pnpm；环境实测 Node v22.23.0、pnpm 11.13.0）
+> **状态：** 实施中——Task 1–5 已实现并自验通过（2026-09-06，分支 `feat/phase-1-session-core`）；独立验收 `/accept-phase` 待做。环境实测 Node v22.23.0、pnpm 11.13.0。
 > **For agentic workers:** 按 Task 顺序执行；每 Task 测完再进下一 Task。
 > **交接提示词**见文末「给接手 AI 的完整提示词」。
 > **元规范:** `docs/ai-framework/phased-plan-driven.md`

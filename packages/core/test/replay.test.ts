@@ -6,11 +6,15 @@ import { fileURLToPath } from 'node:url';
 import { mkdtempSync, rmSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { SessionWriter } from '../src/session/writer.js';
-import { SESSION_LOG_FILE } from '../src/session/types.js';
+import { type AnySessionEvent, type SessionEvent, SESSION_LOG_FILE } from '../src/session/types.js';
 import { computeProjection, exportAllEvents, loadSession } from '../src/session/reader.js';
 import { renderTrajectory } from '../src/trajectory/view.js';
 
 const fixtureDir = join(dirname(fileURLToPath(import.meta.url)), '..', 'fixtures', 'demo-session');
+
+function isMessageEvent(e: AnySessionEvent): e is SessionEvent<'user/message'> | SessionEvent<'assistant/message'> {
+  return e.type === 'user/message' || e.type === 'assistant/message';
+}
 
 describe('fixture: demo-session', () => {
   const session = loadSession(fixtureDir);
@@ -34,11 +38,10 @@ describe('fixture: demo-session', () => {
 
   it('Model-visible ⟺ logged：活动消息与日志中的消息事件一一对应', () => {
     const loggedActive = session.events
-      .filter(
-        ({ event, active }) =>
-          active && (event.type === 'user/message' || event.type === 'assistant/message'),
-      )
-      .map(({ event }) => event.payload.text);
+      .filter(({ active }) => active)
+      .map(({ event }) => event)
+      .filter(isMessageEvent)
+      .map((e) => e.payload.text);
     expect(loggedActive).toEqual(projection.messages.map((m) => m.text));
   });
 
