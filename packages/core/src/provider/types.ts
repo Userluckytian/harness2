@@ -50,9 +50,15 @@ export interface ProviderUsage {
   outputTokens?: number;
 }
 
-/** 流式响应块：文本增量 / 工具调用 / 用量 / 结束标记 */
+/**
+ * 流式响应块：文本增量 / 工具调用 / 用量 / 结束标记。
+ * `reasoning-delta` 是阶段 3 的最小加性扩展（DeepSeek/GLM reasoning_content、
+ * Anthropic thinking）：不改变既有块的语义；不消费方（如阶段 2 loop 的 if/else 链）
+ * 天然忽略该变体，消费方（loop 汇总进 assistant/message.reasoning）按需读取。
+ */
 export type StreamChunk =
   | { type: 'text-delta'; text: string }
+  | { type: 'reasoning-delta'; text: string }
   | { type: 'tool-call'; call: ToolCallRequest }
   | { type: 'usage'; usage: ProviderUsage }
   | { type: 'done'; stopReason: 'end_turn' | 'tool_use' };
