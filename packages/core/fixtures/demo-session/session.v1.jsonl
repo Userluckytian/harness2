@@ -1,0 +1,12 @@
+{"v":1,"seq":1,"ts":"2026-09-06T08:00:00.000Z","type":"session/header","payload":{"sessionId":"demo-session","cwd":"D:/demo","createdAt":"2026-09-06T08:00:00.000Z"}}
+{"v":1,"seq":2,"ts":"2026-09-06T08:00:01.000Z","type":"user/message","payload":{"text":"列出当前目录的文件","turnId":"t1"}}
+{"v":1,"seq":3,"ts":"2026-09-06T08:00:02.000Z","type":"assistant/message","payload":{"text":"我来查看目录内容。","model":"glm-5.3","usage":{"inputTokens":120,"outputTokens":18},"turnId":"t1"}}
+{"v":1,"seq":4,"ts":"2026-09-06T08:00:03.000Z","type":"step/start","payload":{"stepId":"s1","turnId":"t1"}}
+{"v":1,"seq":5,"ts":"2026-09-06T08:00:04.000Z","type":"tool/call","payload":{"callId":"c1","tool":"bash","args":{"cmd":"ls"},"turnId":"t1"}}
+{"v":1,"seq":6,"ts":"2026-09-06T08:00:05.000Z","type":"tool/result","payload":{"callId":"c1","ok":true,"output":"README.md\npackage.json","durationMs":34}}
+{"v":1,"seq":7,"ts":"2026-09-06T08:00:06.000Z","type":"step/end","payload":{"stepId":"s1","turnId":"t1","durationMs":41}}
+{"v":1,"seq":8,"ts":"2026-09-06T08:00:07.000Z","type":"assistant/message","payload":{"text":"目录下有 README.md 和 package.json。","model":"glm-5.3","usage":{"inputTokens":210,"outputTokens":25},"turnId":"t1"}}
+{"v":1,"seq":9,"ts":"2026-09-06T08:00:08.000Z","type":"user/message","payload":{"text":"顺便看下 .gitignore","turnId":"t2"}}
+{"v":1,"seq":10,"ts":"2026-09-06T08:00:09.000Z","type":"assistant/attempt","payload":{"error":"rate_limited: 429","model":"glm-5.3","turnId":"t2"}}
+{"v":1,"seq":11,"ts":"2026-09-06T08:00:10.000Z","type":"rewind/marker","payload":{"rewindToSeq":8,"reason":"turn2 因限流失败，回退重试"}}
+{"v":1,"seq":12,"ts":"2026-09-06T08:00:11.000Z","type":"user/message","payload":{"text":"查看 .gitignore 内容","turnId":"t3"}}

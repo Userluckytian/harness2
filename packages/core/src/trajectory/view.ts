@@ -11,7 +11,9 @@ export interface TrajectoryRenderOptions {
 }
 
 function truncate(s: string, max: number): string {
-  return s.length <= max ? s : `${s.slice(0, max)}...`;
+  // 单行渲染：折叠换行，避免多行输出撑破时间线
+  const oneLine = s.replace(/\r?\n/g, '\\n');
+  return oneLine.length <= max ? oneLine : `${oneLine.slice(0, max)}...`;
 }
 
 function preview(value: unknown, max: number): string {
