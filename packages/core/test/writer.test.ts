@@ -107,6 +107,119 @@ describe('SessionWriter', () => {
     for (const l of lines) expect(parseEventLine(l)).not.toBeNull();
   });
 
+  it('P1-1 回归：日志中部空行不触发截断，已提交内容全部保留', () => {
+    const dir = tmpDir();
+    const w = SessionWriter.create(dir, { sessionId: 's1' }, { fsync: false });
+    w.append('user/message', { text: 'a' });
+    w.append('assistant/message', { text: 'b' });
+    w.append('user/message', { text: 'c' });
+    w.append('assistant/message', { text: 'd' });
+    w.close();
+
+    const logPath = join(dir, SESSION_LOG_FILE);
+    const originalLines = readLines(dir); // 5 行（header + 4 事件）
+    // 在第 2 行后注入 1 个空行
+    const raw = readFileSync(logPath, 'utf8');
+    const parts = raw.split('\n');
+    const injected = [...parts.slice(0, 2), '', ...parts.slice(2)].join('\n');
+    writeFileSync(logPath, injected, 'utf8');
+
+    const w2 = SessionWriter.open(dir, { fsync: false });
+    expect(w2.recoveredBytes).toBe(0); // 空行保留，无需恢复
+    expect(w2.lastSeq).toBe(5);
+    const ev = w2.append('user/message', { text: 'after' });
+    expect(ev.seq).toBe(6);
+    w2.close();
+
+    const after = readFileSync(logPath, 'utf8');
+    expect(after).toContain('\n\n'); // 空行未被删除
+    // 原有 5 行逐字节保留，新事件可解析
+    for (const l of originalLines) expect(after).toContain(l);
+    const lines = readLines(dir);
+    expect(lines).toHaveLength(6);
+    for (const l of lines) expect(parseEventLine(l)).not.toBeNull();
+  });
+
+  it('P1-1 回归：无换行的完整 JSON 尾行视为未提交丢弃，续写 seq 正确且无 NUL 补字节', () => {
+    const dir = tmpDir();
+    const w = SessionWriter.create(dir, { sessionId: 's1' }, { fsync: false });
+    w.append('user/message', { text: 'a' });
+    w.close();
+
+    const logPath = join(dir, SESSION_LOG_FILE);
+    // 模拟崩溃：事件字节已落盘但换行（提交标记）未落盘
+    const uncommitted = JSON.stringify({
+      v: 1, seq: 3, ts: '2026-09-06T00:00:00.000Z', type: 'user/message', payload: { text: 'orphan' },
+    });
+    appendFileSync(logPath, uncommitted, 'utf8');
+
+    const w2 = SessionWriter.open(dir, { fsync: false });
+    expect(w2.recoveredBytes).toBe(Buffer.byteLength(uncommitted, 'utf8'));
+    expect(w2.lastSeq).toBe(2);
+    const ev = w2.append('user/message', { text: 'next' });
+    expect(ev.seq).toBe(3);
+    w2.close();
+
+    const rawBytes = readFileSync(logPath);
+    expect(rawBytes.includes(0)).toBe(false); // 无 NUL 补字节
+    expect(readFileSync(logPath, 'utf8')).not.toContain('orphan');
+    const lines = readLines(dir);
+    expect(lines).toHaveLength(3);
+    for (const l of lines) expect(parseEventLine(l)).not.toBeNull();
+  });
+
+  it('P1-2 回归：open() 取锁后失败（seq 不一致触发 scanLog 抛错）锁文件已释放', () => {
+    const dir = tmpDir();
+    const w = SessionWriter.create(dir, { sessionId: 's1' }, { fsync: false });
+    w.append('user/message', { text: 'a' });
+    w.close();
+
+    // 追加一行格式合法但 seq 与行数不一致的事件（恢复扫描不会截掉它，
+    // 从而让 open() 在取锁之后的 scanLog 校验中抛错）
+    const bogus = JSON.stringify({
+      v: 1, seq: 9, ts: '2026-09-06T00:00:00.000Z', type: 'user/message', payload: { text: 'x' },
+    });
+    appendFileSync(join(dir, SESSION_LOG_FILE), bogus + '\n', 'utf8');
+
+    expect(() => SessionWriter.open(dir, { fsync: false })).toThrow(/seq inconsistency/);
+    expect(existsSync(join(dir, SESSION_LOCK_FILE))).toBe(false);
+    // 锁已释放：后续 open 不被死锁阻塞（仍因同样的日志问题抛错）
+    expect(() => SessionWriter.open(dir, { fsync: false })).toThrow(/seq inconsistency/);
+    expect(existsSync(join(dir, SESSION_LOCK_FILE))).toBe(false);
+  });
+
+  it('P1-1 回归：多字节 UTF-8 撕裂尾行按字节精确丢弃', () => {
+    const dir = tmpDir();
+    const w = SessionWriter.create(dir, { sessionId: 's1' }, { fsync: false });
+    w.append('user/message', { text: '你好' });
+    w.close();
+
+    const logPath = join(dir, SESSION_LOG_FILE);
+    const committedBytes = readFileSync(logPath); // 以 \n 结尾的已提交前缀
+    const full = JSON.stringify({
+      v: 1, seq: 3, ts: '2026-09-06T00:00:00.000Z', type: 'user/message', payload: { text: '崩溃前的中文' },
+    }) + '\n';
+    const fullBytes = Buffer.from(full, 'utf8');
+    // 行尾 7 字节 =「文」(E6 96 87) + '"' + '}' + '}' + '\n'；去掉 5 字节会切进「文」中间
+    expect([...fullBytes.subarray(-7)]).toEqual([0xe6, 0x96, 0x87, 0x22, 0x7d, 0x7d, 0x0a]);
+    const partial = fullBytes.subarray(0, fullBytes.length - 5);
+    appendFileSync(logPath, partial); // 按字节写入撕裂残行（含半截多字节字符）
+
+    const w2 = SessionWriter.open(dir, { fsync: false });
+    expect(w2.recoveredBytes).toBe(partial.length); // 字节精确
+    expect(w2.lastSeq).toBe(2);
+    const ev = w2.append('user/message', { text: 'after' });
+    expect(ev.seq).toBe(3);
+    w2.close();
+
+    const rawBytes = readFileSync(logPath);
+    expect(rawBytes.subarray(0, committedBytes.length)).toEqual(committedBytes); // 已提交前缀原样保留
+    expect(rawBytes.includes(0)).toBe(false);
+    expect(rawBytes.at(-1)).toBe(0x0a);
+    expect(readLines(dir)).toHaveLength(3);
+    for (const l of readLines(dir)) expect(parseEventLine(l)).not.toBeNull();
+  });
+
   it('已有日志的目录不能 create；未知事件类型被拒', () => {
     const dir = tmpDir();
     const w = SessionWriter.create(dir, { sessionId: 's1' }, { fsync: false });

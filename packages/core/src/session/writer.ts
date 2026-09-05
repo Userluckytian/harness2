@@ -1,6 +1,8 @@
 // 单写者会话写入器：目录锁 + 追加写 + 可选 fsync。
 // 崩溃一致性策略（对照 grok persistence）：追加前不截断文件；
-// 残行（崩溃导致的半行 JSON）由 open() 恢复 —— 截断到最后一个完整合法事件行边界。
+// open() 时按字节偏移扫描恢复：换行即提交标记 —— 已提交内容（合法事件行与空行）全部保留；
+// 「非空且解析失败」的行及其后内容、以及末尾未以 \n 终止的尾行（无论 JSON 是否完整）
+// 视为未提交的撕裂区，截断丢弃。
 import {
   closeSync,
   existsSync,
@@ -8,7 +10,6 @@ import {
   mkdirSync,
   openSync,
   readFileSync,
-  statSync,
   truncateSync,
   unlinkSync,
   writeFileSync,
@@ -79,12 +80,17 @@ export class SessionWriter {
     mkdirSync(dir, { recursive: true });
     const writer = new SessionWriter(dir, options);
     writer.acquireLock();
-    writer.fd = openSync(join(dir, SESSION_LOG_FILE), 'a');
-    writer.append('session/header', {
-      ...header,
-      createdAt: header.createdAt ?? new Date().toISOString(),
-    });
-    return writer;
+    try {
+      writer.fd = openSync(join(dir, SESSION_LOG_FILE), 'a');
+      writer.append('session/header', {
+        ...header,
+        createdAt: header.createdAt ?? new Date().toISOString(),
+      });
+      return writer;
+    } catch (e) {
+      writer.releaseOnFailure();
+      throw e;
+    }
   }
 
   /** 打开既有会话继续追加；自动恢复崩溃残行（见 recoveredBytes）。 */
@@ -95,14 +101,19 @@ export class SessionWriter {
     }
     const writer = new SessionWriter(dir, options);
     writer.acquireLock();
-    writer.recoveredBytesValue = writer.recoverTruncatedTail(logPath);
-    const { count, lastSeq } = writer.scanLog(logPath);
-    if (lastSeq !== count) {
-      throw new Error(`log seq inconsistency in ${logPath}: ${count} lines but last seq is ${lastSeq}`);
+    try {
+      writer.recoveredBytesValue = writer.recoverTruncatedTail(logPath);
+      const { count, lastSeq } = writer.scanLog(logPath);
+      if (lastSeq !== count) {
+        throw new Error(`log seq inconsistency in ${logPath}: ${count} lines but last seq is ${lastSeq}`);
+      }
+      writer.fd = openSync(logPath, 'a');
+      writer.nextSeq = lastSeq + 1;
+      return writer;
+    } catch (e) {
+      writer.releaseOnFailure();
+      throw e;
     }
-    writer.fd = openSync(logPath, 'a');
-    writer.nextSeq = lastSeq + 1;
-    return writer;
   }
 
   /** open() 时从崩溃残行恢复所丢弃的字节数（0 表示无需恢复） */
@@ -137,6 +148,24 @@ export class SessionWriter {
     unlinkSync(join(this.dir, SESSION_LOCK_FILE));
   }
 
+  /** create()/open() 取锁后失败时的善后：释放已打开的 fd 并移除锁文件（由调用方 rethrow）。 */
+  private releaseOnFailure(): void {
+    this.closed = true;
+    if (this.fd >= 0) {
+      try {
+        closeSync(this.fd);
+      } catch {
+        // fd 已失效则忽略，确保锁文件仍被清理
+      }
+      this.fd = -1;
+    }
+    try {
+      unlinkSync(join(this.dir, SESSION_LOCK_FILE));
+    } catch {
+      // 锁文件不存在则无需清理
+    }
+  }
+
   private acquireLock(): void {
     const lockPath = join(this.dir, SESSION_LOCK_FILE);
     mkdirSync(this.dir, { recursive: true });
@@ -155,16 +184,29 @@ export class SessionWriter {
     writeFileSync(lockPath, JSON.stringify({ pid: process.pid, ts: new Date().toISOString() } satisfies LockContent), 'utf8');
   }
 
-  /** 检测并截断文件尾部的崩溃残行。返回丢弃的字节数（0 表示无需恢复）。 */
+  /**
+   * 检测并截断文件尾部的崩溃撕裂区。返回丢弃的字节数（0 表示无需恢复）。
+   * 按字节偏移逐行扫描（多字节 UTF-8 安全）：换行即提交标记 ——
+   *   - 合法事件行与空行：已提交，保留并继续扫描；
+   *   - 非空且 parseEventLine 失败的行：撕裂区起点，该行及其后全部丢弃；
+   *   - 末尾未以 \n 终止的尾行：无论 JSON 是否完整，一律视为未提交丢弃。
+   * goodBytes 始终不超过文件大小（结构上保证 truncate 不会把文件变长）。
+   */
   private recoverTruncatedTail(logPath: string): number {
-    const before = statSync(logPath).size;
+    const buf = readFileSync(logPath);
+    const before = buf.length;
     if (before === 0) return 0;
-    const lines = readFileSync(logPath).toString('utf8').split('\n');
     let goodBytes = 0;
-    for (const line of lines) {
-      if (line.length === 0 || parseEventLine(line) === null) break;
-      // +1 为行尾换行；Buffer.byteLength 保证多字节字符下的字节精确
-      goodBytes += Buffer.byteLength(line, 'utf8') + 1;
+    let pos = 0;
+    while (pos < before) {
+      const nl = buf.indexOf(0x0a, pos);
+      if (nl === -1) break; // 尾行无换行 → 未提交，从该行起全部丢弃
+      if (nl > pos && parseEventLine(buf.subarray(pos, nl).toString('utf8')) === null) {
+        break; // 非空且非法 → 撕裂区起点
+      }
+      // 空行（nl === pos，保留）或合法事件行（已提交）
+      goodBytes = nl + 1;
+      pos = nl + 1;
     }
     if (goodBytes === before) return 0;
     truncateSync(logPath, goodBytes);
