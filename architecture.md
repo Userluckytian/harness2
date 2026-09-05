@@ -1,7 +1,7 @@
 # harness2 架构说明
 
 > 跨端 AI agent harness（CLI / 桌面 / IM 网关多形态）
-> 状态：随阶段推进持续更新（当前：阶段 2 —— Agent loop + 工具系统 + MockProvider + CI 骨架）
+> 状态：随阶段推进持续更新（当前：阶段 3 —— 真实 Provider + 配置体系 + 审批配置化）
 > 决策依据：`docs/ROADMAP.md` D1–D6 · `docs/research/2026-09-06-reference-analysis.md`
 
 ## 技术栈（2026-09-06 确认）
@@ -34,13 +34,27 @@ packages/
 3. **会话内核与 UI 解耦**（决策 D5）：core 是单写者事件记录器；CLI/桌面/IM 网关都是消费者（投影）。多会话并行时后台会话只记事件不渲染。
 4. **独立文件快照**（决策 D6）：文件回滚不依赖 git（学习 grok rewind 的 before/after 双快照 + 冲突检测）。
 
-## Provider 缝（阶段 2 交付，Ph3 接真实厂商）
+## Provider 缝（阶段 2 交付，阶段 3 落地真实厂商）
 
 - `ChatProvider.streamChat(req, {signal}) → AsyncIterable<StreamChunk>`：流式块为
   `text-delta` / `tool-call` / `usage` / `done`；`ChatMessage` 与日志事件的映射规则
   写死在 `provider/types.ts` 注释（user/assistant 消息、tool 结果回传、toolCalls 归属）。
-- 阶段 2 唯一实现是脚本化确定性 `MockProvider`（可编排 tool_calls、流式分片、错误注入、
-  记录每次 ChatRequest 供不变量断言）；真实 provider 与 `{channelId, model}` 配置是 Ph3 范围。
+- 阶段 3 实现（协议手写 fetch，无 SDK；全部经 127.0.0.1 stub server 测试，CI 零 API key）：
+  - `provider/openai.ts` OpenAI-compatible（DeepSeek/智谱 GLM 等）：`POST {baseUrl}/chat/completions`
+    （stream:true），`delta.tool_calls` 按 index 增量组装、`delta.reasoning_content` →
+    `reasoning-delta`、usage 帧、HTTP 非 2xx 与断流（未收到 `[DONE]`，code `stream_truncated`）
+    均抛脱敏 ProviderError；abort → ProviderError('cancelled')。
+  - `provider/anthropic.ts` Anthropic Messages API：`POST {baseUrl}/v1/messages`（baseUrl 不含
+    `/v1`），`x-api-key` + `anthropic-version` 头、`max_tokens` 必填；SSE 事件映射
+    `text_delta`/`input_json_delta`/`thinking_delta`（→ reasoning-delta）/`message_delta`
+    （stop_reason/usage）/`error`（脱敏抛出）；`tool_result` 块按连续 tool 消息合并进 user 消息。
+  - `provider/factory.ts` `createProvider(config, role)`：roles → channel → key 解析
+    （auth.json > env，见配置体系）→ 协议分派；provider 标识（写入 assistant/message.model）
+    为 `channel/model`；key 缺失抛脱敏 ConfigError。
+- **阶段 3 契约加性扩展（唯一一处，经批准的最小扩展）**：`StreamChunk` 新增
+  `{type:'reasoning-delta', text}` 变体；loop 汇总进 `assistant/message.reasoning`
+  （session 事件加性可选字段，代际不变）。既有块的语义与 loop 其余行为完全不变。
+- 思考内容（reasoning）只进日志展示，不回传模型（多轮上下文重建不含 reasoning）。
 
 ## Agent loop（阶段 2 交付）
 
@@ -53,7 +67,8 @@ packages/
   不变量测试用独立回放断言 `mock.requests` 与日志逐步重建序列完全一致。
 - **不变量边界**：Model-visible ⟺ logged 当前覆盖 **messages**（user/assistant/tool 消息）；
   `ChatRequest.tools`（工具 schema 列表）暂不在日志重建范围内——阶段 2 工具集固定，
-  Ph3 工具配置化时再评估是否把 tools 也纳入重建。
+  工具配置化时再评估是否把 tools 也纳入重建。阶段 3 起该不变量通过真实 provider 的
+  wire 请求验证：E2E 测试断言 stub server 捕获的请求体与日志投影重建后的 wire 消息全等。
 - **append-only**：取消与失败都是追加事件——模型失败/取消记 `assistant/attempt`，
   被取消的工具调用记 `ok:false` 的 `tool/result`；无任何 update/delete 路径。
 - 用户输入同样 logged：`userText` 由 loop 先写 `user/message` 再进循环。
@@ -72,6 +87,28 @@ packages/
   进程组击杀，守护进程化进程除外）；grep 优先 spawn ripgrep、ENOENT 回退纯 JS 扫描，
   两条路径无条件跳过 node_modules/.git、隐藏文件/目录（含 .env*）与二进制文件；
   glob 同样排除 node_modules/.git）。
+- **审批策略配置化（阶段 3 交付，`approval/policy.ts`）**：`createApprovalPolicy(config.approval)`
+  产出 Ph2 的 `ApprovalHandler`。三 mode（default：safe=allow/其余 ask；acceptEdits：
+  write/edit=allow 其余同 default；bypass：全 allow）+ per-tool 规则（allow|ask|deny，
+  优先级高于 mode 推导）；未列出的工具按安全集判定（缺省安全集 = read/glob/grep）。
+
+## 配置体系（阶段 3 交付，`config/`）
+
+- **两级加载**（`load.ts`）：全局 `~/.harness2/config.json` + 项目 `<root>/.harness2/config.json`，
+  深合并（对象递归、数组/标量项目覆盖全局）；JSONC 宽松解析（注释/尾逗号）；任一存在的
+  文件解析失败即致命错误（不静默丢配置）；`${VAR}` 展开缺失 env 时保留原样并告警
+  （`envKey` 是变量名引用、不展开）。
+- **schema 校验**（`schema.ts`）：providers（protocol 枚举 / baseUrl / envKey / models 容量
+  元数据）、roles（channel+model，交叉引用必须存在）、approval（mode 枚举 + per-tool 规则）；
+  未知字段忽略并告警；错误消息出口统一过 `redactSecrets`（不回显疑似密钥内容）。
+- **密钥分离**（`auth.ts`）：key 只存 `~/.harness2/auth.json`（`channels.<id>.apiKey`，读损坏
+  = 空表 + 一行错误；写入尽力 chmod 600，Windows 依赖目录 ACL）与环境变量（`envKey` 指定
+  变量名，解析顺序 auth.json > env）。config 契约里没有任何 key 字段（类型层面钉死）。
+- **脱敏**（`redact.ts`）：`redactSecrets`/`redactedSummary`/`redactObject`——错误消息、HTTP
+  body 摘要（≤200 字符、先脱敏再截断）、任意对象出口前的最后闸门。
+- **CLI**：`harness2 config check [--root <dir>] [--home <dir>]`——校验合并配置，脱敏打印
+  providers（baseUrl/protocol/models）、roles、approval 与 key 来源（`auth.json` /
+  `env:XXX` / `**missing**`，永不打印明文）；任何错误一行输出 exit 1。
 
 ## 会话事件日志（阶段 1 交付）
 
@@ -82,6 +119,8 @@ packages/
   `step/start`、`step/end`、`tool/call`、`tool/result`、`rewind/marker`。
   阶段 2 增量：`tool/result` 增加可选 `turnId`（渲染 turn 标头用，旧日志兼容）；
   `rewind/marker.rewindToSeq` 写入口强校验 `1..lastSeq`，读侧对越界旧数据告警容错。
+  阶段 3 增量：`assistant/message` 增加可选 `reasoning`（思考文本汇总，v1 加性字段，
+  旧日志兼容）。
 - 投影语义：`rewind/marker` 之前的活动事件构成当前会话投影；被 rewind 的"影子事件"保留在日志中可导出，但不进当前上下文。
 - 密钥红线：API key 等凭证不落事件日志、不进 git。
 

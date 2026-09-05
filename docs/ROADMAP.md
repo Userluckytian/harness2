@@ -29,11 +29,11 @@
 | 2 | **事件溯源会话内核** | JSONL append-only、事件类型 v1、单写者、崩溃一致（fsync/原子 rename）；不变量：Model-visible ⟺ logged | dsh session + grok persistence actor | ✅ |
 | 3 | **轨迹记录与查看器（CLI 版）** | 全事件落盘；`harness2 traj` 命令读日志渲染时间线（turn/step/tool 调用树、耗时、token）；快照回放测试（无需 API key） | dsh trajectory + session-query | ✅ |
 | 4 | Agent loop | turn/step 状态机、流式输出、取消、失败尝试单独记录 | dsh agent-loop + grok sampler | ✅ |
-| 5 | 工具系统 | 注册返回 disposer；pre/execute/post 瀑布管线；并发安全声明；同文件编辑锁键串行 | dsh tools + grok tool_dispatch | ✅（审批缝已留；分级审批与 pre/post 钩子随 Ph3） |
+| 5 | 工具系统 | 注册返回 disposer；pre/execute/post 瀑布管线；并发安全声明；同文件编辑锁键串行 | dsh tools + grok tool_dispatch | ✅（审批分级已随 Ph3 配置化；pre/post 钩子随后续阶段） |
 | 6 | 基础工具集 | bash / read / write / edit / grep / glob | grok 树内 opencode/codex 移植版 | ✅ |
-| 7 | Provider 抽象 | OpenAI-compatible 起步 + DeepSeek/Anthropic；`{channelId, model}` 按场景配置（主模型/小模型/子代理模型）；key 分离存储 | Tokeny schema + ZCode catalog | ⬜ |
-| 8 | 配置体系 | 全局 + 项目级两层；`$VAR` 展开；错误不回显源码行 | grok config loader | ⬜ |
-| 9 | 审批与权限 | 工具分级审批（allow/ask/deny） | dsh approval + hermes guardrails | ⬜ |
+| 7 | Provider 抽象 | OpenAI-compatible 起步 + DeepSeek/Anthropic；`{channelId, model}` 按场景配置（主模型/小模型/子代理模型）；key 分离存储 | Tokeny schema + ZCode catalog | ✅（协议层 stub 测试通过；真实端点待用户 key 实机验证，见 OPEN.md） |
+| 8 | 配置体系 | 全局 + 项目级两层；`$VAR` 展开；错误不回显源码行 | grok config loader | ✅ |
+| 9 | 审批与权限 | 工具分级审批（allow/ask/deny） | dsh approval + hermes guardrails | ✅（三 mode + per-tool 规则，配置化） |
 | 10 | CLI 端（能用） | 多会话管理、流式渲染、`/undo` `/redo`（opencode 语义：投影截断 + 文件快照恢复）、会话搜索 | opencode TUI + grok rewind | ⬜ |
 
 ## P1 桌面与体验

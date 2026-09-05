@@ -1,6 +1,6 @@
 # 阶段 3：真实 Provider + 配置体系 + 审批细化
 
-> **状态：** 计划已就绪（总控计划 Ph3，2026-09-06 批准）
+> **状态：** 实施完成（Task 1–7 全部执行，171 passed + 1 skipped；待独立验收 `/accept-phase`。真实端点实机验证待用户 key，登记于 OPEN.md）
 > **For agentic workers:** 按 Task 顺序执行；每 Task 测完再进下一 Task。
 > **交接提示词**见文末「给接手 AI 的完整提示词」。
 > **元规范:** `docs/ai-framework/phased-plan-driven.md`

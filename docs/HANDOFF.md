@@ -1,6 +1,6 @@
 # HANDOFF — 交接入口（新维护者/AI 从这里开始）
 
-> 更新：2026-09-06（阶段 2 完成） · 本文件是唯一交接入口，保持与实际状态同步。
+> 更新：2026-09-06（阶段 3 完成） · 本文件是唯一交接入口，保持与实际状态同步。
 
 ## 1. 项目一句话
 
@@ -11,12 +11,13 @@
 | 项 | 状态 |
 |----|------|
 | 默认分支 | `master`（注意：不是 main） |
-| 开发分支 | `feat/phase-2-agent-loop-tools`（阶段 2 全部工作在此；阶段 1 在 `feat/phase-1-session-core`） |
+| 开发分支 | `feat/phase-3-providers-config`（阶段 3 全部工作在此；阶段 2 在 `feat/phase-2-agent-loop-tools`，阶段 1 在 `feat/phase-1-session-core`） |
 | 阶段 1 | ✅ 已完成并验收（事件溯源会话内核 + 轨迹，33 测试） |
-| 阶段 2 | ✅ 自验 + 阶段 2 独立审查 P1/P2 全部修复（Agent loop + 工具系统 + MockProvider + CI 骨架）；独立验收 `/accept-phase` 待做 |
-| 阶段 3 | ⬜ 未开始：Provider 真实实现 + 配置体系 + 审批细化（ROADMAP P0-7/8/9） |
+| 阶段 2 | ✅ 已完成并验收（Agent loop + 工具系统 + MockProvider + CI 骨架，109 测试） |
+| 阶段 3 | ✅ 实现代理自验通过（真实 Provider + 配置体系 + 审批配置化 + `config check`；171 测试）；独立验收 `/accept-phase` 待做。**真实端点（DeepSeek/智谱/Anthropic）未实机验证**——待用户在 `~/.harness2/auth.json` 配 key 后按 OPEN.md 清单手工执行 |
+| 阶段 4 | ⬜ 未开始（CLI chat / 流式渲染，见 MASTER-PLAN） |
 | 未关闭事项 | 读 `docs/issue-log/OPEN.md`（保持为零上下文第一读） |
-| 测试 | `pnpm test`（含 build）—— core 106 passed + 1 skipped（`H2_GEN_LOOP_DEMO` 门控的 fixture 生成器，非用例失败）+ cli 3 passed = 109 passed + 1 skipped（2026-09-06，审查修复后；此前文档误记为「98 全绿」） |
+| 测试 | `pnpm test`（含 build）—— core 160 passed + 1 skipped（`H2_GEN_LOOP_DEMO` 门控的 fixture 生成器，非用例失败）+ cli 11 passed = 171 passed + 1 skipped（2026-09-06，阶段 3 完成后） |
 | 远程 | 无（未配置 origin；push 需人类授权） |
 
 ## 3. 文档地图（按阅读顺序）
@@ -25,7 +26,7 @@
 2. `docs/ai-framework/workflow-delegation.md` —— 角色/流程细则（每阶段标准流程、验收规则、交接要求）
 3. `docs/MASTER-PLAN.md` —— **总控计划**（里程碑 M1–M4、阶段 Ph2–Ph12、横切线）——批准后为全局实施依据
 4. `docs/ROADMAP.md` —— 26 项功能清单 + 架构决策 D1–D6 + 明确不做
-5. `architecture.md` —— 技术栈与核心不变量（阶段 2 起：含 Provider 缝 / Agent loop / 工具系统小节）
+5. `architecture.md` —— 技术栈与核心不变量（阶段 3 起：含 Provider 缝 / Agent loop / 工具系统 / 配置体系小节）
 6. `docs/ai-framework/plans/` —— 阶段计划（每份含零上下文交接提示词）
 7. `docs/diary/YYYY-MM-DD.md` —— 每日日志（发版 release note 素材）
 8. `docs/issue-log/` —— 问题日志（README 约定 + OPEN.md 未关闭索引）
@@ -55,13 +56,16 @@
 - Node ≥22（实测 v22.23.0）、pnpm 11（实测 11.13.0）、Windows + Git Bash
 - `pnpm install` → `pnpm test`（= build + test）→ `pnpm -r typecheck`
 - 试轨迹：`node packages/cli/dist/index.js traj packages/core/fixtures/demo-session`（阶段 1 手写样例）；`node packages/cli/dist/index.js traj packages/core/fixtures/loop-demo`（阶段 2 agent loop 实跑生成的会话）
+- 查配置：`node packages/cli/dist/index.js config check`（`--root`/`--home` 可重定向路径；key 来源只显示 auth.json / env:XXX / **missing**，不显示明文）
 - 注意：`pnpm --filter @harness2/cli test` 在干净检出需先 build（根脚本已串 build）
-- 跑一次 loop 演示：任意 node 脚本 `runTurn(dir, { provider: new MockProvider(script), tools, cwd, userText })`（见 `packages/core/test/loop.test.ts`）
+- 跑一次 loop 演示：任意 node 脚本 `runTurn(dir, { provider, tools, cwd, userText })`；provider 可用 `createProvider(config, role)`（真实协议，需 stub/真实端点）或 `new MockProvider(script)`（见 `packages/core/test/loop.test.ts`、`packages/core/test/providers.test.ts` 的 E2E 用例）
 
 ## 7. 已知坑
 
 - Windows 下 tsc/commit 有 CRLF warning，无害
 - 会话日志写入依赖「换行即提交」语义（未以 \n 结尾的尾行视为未提交丢弃），改 writer 前先读其测试
+- **真实 API 未实机验证**（阶段 3）：provider 协议全部经 127.0.0.1 stub 测试，DeepSeek/智谱/Anthropic 真实端点行为（含 reasoning 字段、usage 帧、流式细节的厂商差异）待用户配置 key 后按 `docs/issue-log/OPEN.md` 清单手工验证
+- 密钥只在 `~/.harness2/auth.json`（不入 git，.gitignore 已含 `auth.json`）与环境变量；config/日志/错误消息里出现疑似密钥一律经 `redactSecrets` 脱敏——新增错误路径时记得过这个闸门
 - 外部脚手架（.opencode/、ai-framework 文档）由项目负责人维护，更新时注意与 `workflow-delegation.md` 的角色约定保持一致
 - CI（.github/workflows/ci.yml）本地只做过 YAML 语法校验，Actions 真实运行待远程仓库与 push 授权（见 `docs/issue-log/OPEN.md`）
 - grep 工具优先 spawn ripgrep，CI 镜像若未装 rg 会自动回退纯 JS 扫描（行为一致但大目录更慢）
