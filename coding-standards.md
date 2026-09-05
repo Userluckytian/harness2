@@ -1,206 +1,47 @@
-# harness2 编码规范说明
+# harness2 编码规范
+
+> 本文件为**通用工程约定**，适用于任意语言/技术栈。各语言/框架的**项目专属约定**（如前端组件命名、后端分层规则、特定 Lint 配置）请在「项目专属约定」一章补充，由项目自行维护。
+
+## 核心原则
+
+- **可读性优先**：代码是写给后来者（包括未来的自己）读的。
+- **职责单一**：一个函数/类/模块只做一件事；过大时拆解。
+- **一致优先**：以项目现有代码的主流写法为主；有约定先遵守约定。
+- **最小修改**：改动只动必要部分，不做顺手重构，避免放大 diff。
 
 ## 命名规范
 
-### 文件命名
+- 文件、类、函数、变量的命名必须**表达意图**，避免 `tmp`、`data`、`obj` 这类无意义命名。
+- 遵循项目所在**语言/社区的通行命名风格**，并以项目现有代码为准。
+- 缩写仅在项目内通用时使用；跨模块命名保持一致。
 
-| 类型 | 规范 | 示例 |
-|------|------|------|
-| Vue 组件 | PascalCase | `FormInput.vue`, `ZoomImageViewer/index.vue` |
-| 组合式函数 | camelCase + `use` 前缀 | `useToken.ts`, `useECharts.ts` |
-| Pinia Store | camelCase + `use` 前缀 + `Store` 后缀 | `useUserStore` |
-| API 模块 | camelCase | `auth.ts`, `user.ts` |
-| 工具函数 | camelCase | `storage.ts`, `validate.ts` |
-| 样式文件 | kebab-case | `custom.css`, `variables.scss` |
-| 类型定义 | 文件名小写，类型名 PascalCase | `types.ts` → `FormItemOptions` |
+## 代码结构与组织
 
-### 变量与函数
+- 按**功能/模块**组织文件，而非按文件类型堆叠。
+- 单个文件/函数保持合理长度，超出阈值就拆分。
+- 公共逻辑抽取复用，避免复制粘贴（DRY）。
 
-```ts
-// 组合式函数：use 前缀
-const { token, setToken } = useToken()
+## 代码风格
 
-// 事件处理函数：handle 前缀
-function handleClick() { ... }
-function handleCheckChange() { ... }
+- **格式化交给工具**：优先使用项目配置的 formatter（如 prettier/black/gofmt）与 linter，不靠人工对齐。
+- 避免无意义的冗余；注释表达「为什么」而不是「做了什么」。
+- 魔法数字/字符串抽成命名常量。
 
-// 计算属性：get 前缀或描述性名称
-const isLoggedIn = computed(() => !!token)
-const innerValue = computed({ get, set })
+## 错误处理
 
-// 响应式变量：描述性名称
-const viewerVisible = ref(false)
-const selectedNodeId = ref<string | number | null>(null)
-```
+- 明确错误边界在哪里；不要用空 `catch`/`except` 吞掉异常。
+- 关键路径的错误必须记录日志并给出可读提示。
+- 对外部输入（用户输入、API 返回值、文件内容）做校验与兜底。
 
-### CSS 类名
+## 安全
 
-```scss
-// 组件根类名：组件名 kebab-case
-.zv-overlay { ... }
-.zv-toolbar { ... }
-
-// 修饰符：BEM 风格
-.node-label { ... }
-.node-label.is-active { ... }
-
-// CSS 变量：统一前缀
---app-color-primary
---app-bg-container
---app-border-color
-```
-
-## Vue 组件规范
-
-### 单文件组件结构
-
-```vue
-<template>
-  <!-- 模板在最前 -->
-</template>
-
-<script setup lang="ts">
-// 第三方导入
-import { ref, computed } from 'vue'
-import { ElMessage } from 'element-plus'
-
-// 本地导入
-import type { UserInfo } from './types'
-
-// Props & Emits
-const props = defineProps<{ ... }>()
-const emit = defineEmits<{ ... }>()
-
-// 状态
-const data = ref(null)
-
-// 计算属性
-const derived = computed(() => ...)
-
-// 方法
-function handleAction() { ... }
-
-// 生命周期
-onMounted(() => { ... })
-</script>
-
-<style lang="scss" scoped>
-/* 组件样式 */
-</style>
-```
-
-### Props 与 Emits
-
-```ts
-// Props：使用泛型定义
-const props = defineProps<{
-  modelValue: string
-  options: SelectOptionItem[]
-  control?: SelectControlOptions
-}>()
-
-// 带默认值
-const props = withDefaults(
-  defineProps<{
-    loadFn: (parentId: string | number) => Promise<FileNodeItem[]>
-    modelValue?: FileNodeItem | null
-  }>(),
-  { modelValue: null }
-)
-
-// Emits：使用泛型定义
-const emit = defineEmits<{
-  'update:modelValue': [value: any]
-  'node-select': [node: FileNodeItem | null]
-}>()
-```
-
-### 组件命名
-
-```vue
-<!-- 组件内 name 由文件名自动推断 -->
-<!-- 不使用 vite-plugin-vue-setup-extend -->
-
-<!-- 使用时统一 PascalCase -->
-<FormInput v-model="form.name" />
-<ZoomImageViewer :src="url" />
-```
-
-## TypeScript 规范
-
-### 类型定义
-
-```ts
-// 接口使用 PascalCase
-export interface FileNodeItem {
-  id: string | number
-  name: string
-  fileType: 'FOLDER' | string
-  [key: string]: any  // 允许扩展属性
-}
-
-// 类型别名
-export type FormItemOptions = Partial<FormItemProps>
-export type SelectControlOptions = Partial<SelectProps>
-```
-
-### 函数签名
-
-```ts
-// 具体类型，避免 any
-const handleLoad = async (
-  node: any,
-  resolve: (data: FileNodeItem[]) => void
-) => { ... }
-
-// 回调函数明确类型
-const triggerSelectUpdate = (node: FileNodeItem | null) => { ... }
-```
-
-## CSS 规范
-
-### 主题变量使用
-
-```scss
-// ✅ 正确：使用 harness2 CSS 变量
-color: var(--app-text-primary);
-background-color: var(--app-bg-container);
-border: 1px solid var(--app-border-color);
-
-// ❌ 错误：硬编码颜色值
-color: #303133;
-background-color: #ffffff;
-
-// ❌ 错误：使用其他项目变量
-color: var(--next-color-bar);
-```
-
-### 样式作用域
-
-```vue
-<!-- scoped 样式：组件内使用 -->
-<style lang="scss" scoped>
-.component-class { ... }
-</style>
-
-<!-- 非 scoped 样式：覆盖第三方组件内部样式 -->
-<style lang="scss">
-.el-tree-node__content { ... }
-</style>
-```
-
-### 样式引入
-
-```scss
-// index.scss 使用 @use 引入
-@use './reset.scss';
-@use './nprogress.scss';
-@use './element.scss';
-@use './transition.scss';
-@use './theme/variables.scss';
-```
+- **密钥、token、密码、凭证绝不进 git**；使用环境变量/密钥管理。
+- 不硬编码密钥与真实地址。
+- 对敏感操作（push 远程、删除、改动生产）需人类明确授权。
 
 ## Git 提交规范
+
+> 下列为默认约定，仅供**无既有约定**时使用；若项目已有自己的提交规范，以项目现有规范为准（可直接覆写本节）。
 
 ### 格式
 
@@ -208,7 +49,7 @@ color: var(--next-color-bar);
 <gitmoji><type>(<scope>): <中文描述>
 ```
 
-### type 类型
+### type 与 gitmoji
 
 | type | gitmoji | 说明 |
 |------|---------|------|
@@ -223,48 +64,40 @@ color: var(--next-color-bar);
 | ci | 🐳 | CI/CD 配置 |
 | revert | ⏪ | 回滚 |
 
-### scope 范围
-
-`auth`, `api`, `login`, `layout`, `theme`, `i18n`, `map`, `chart`, `user`, `role`, `menu`, `dict`
-
-### 示例
-
-```
-✨feat(auth): 添加用户注册接口
-🐛fix(login): 修复登录报错弹窗重复显示
-♻️refactor(api): 请求拦截器支持 showGlobalError 开关
-```
-
 ### 规则
 
 - 描述使用**中文**，祈使语气，首字母不大写，结尾不加句号
-- 首行不超过 50 个字符
-- 正文每行不超过 72 个字符
+- 首行尽量不超过 50 字符
+- 正文每行不超过 72 字符
 
-## 组件开发约定
+## 模块/组件开发约定
 
-### 公共组件
+- 公共可复用模块放入统一目录（如 `src/components/`、`lib/`、`common/`），保持职责单一。
+- 对外接口支持统一的输入/输出约定，必要时提供默认值。
+- 样式若使用 CSS 变量，统一使用 `--app-*` 前缀（适配主题/暗色切换）。
 
-- 放在 `src/components/` 下
-- 支持 `v-model` 双向绑定
-- Props 使用泛型定义，提供默认值
-- 样式使用 `--app-*` CSS 变量，适配暗色模式
+## 项目专属约定
 
-### 页面组件
+> 本节为**留空填写**区，由目标项目按其实际技术栈补充，AI 与协作者据此执行。以下给出各栈的填写提示，按需勾选/填写，不需要的可整行删除。
 
-- 放在 `src/views/` 对应目录下
-- 使用 `CgPanel`、`CgTable` 等公共组件
-- API 调用通过 `useAuth`、`useDict` 等组合式函数
+### 技术栈
+- 语言/框架：____________
+- 构建/运行命令：____________
+- 包管理器：____________
+- 测试命令/工具：____________
 
-### 组合式函数
+### 前端约定（若是前端项目）
+- 组件命名：____________（如 PascalCase）
+- 状态管理：____________
+- 样式作用域 / 主题变量：____________
+- 路由 / 目录结构：____________
 
-- 返回值解构使用 `const { ... } = useXxx()` 模式
-- 内部状态使用 `ref` 或 `reactive`
-- 可选链调用方法避免空值错误
+### 后端约定（若是后端项目）
+- 分层结构：____________（如 controller/service/repository）
+- API 返回结构：____________
+- 异常/错误定义：____________
+- 数据访问方式：____________
 
-### 样式
-
-- 所有颜色使用 `--app-*` CSS 变量
-- 暗色模式通过 `html.dark` 类自动切换
-- 组件内使用 `scoped` 样式
-- 覆盖 Element Plus 样式时使用非 `scoped` 样式块
+### 其他
+- Lint/格式化工具与配置：____________
+- 特殊工具链 / 版本要求：____________

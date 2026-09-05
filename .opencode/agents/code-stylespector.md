@@ -18,32 +18,29 @@ permission:
 依据 `coding-standards.md` 逐项检查，重点关注：
 
 ### 1. 命名规范
-- Vue 组件文件：PascalCase（如 `FormInput.vue`、`ZoomImageViewer/index.vue`）
-- 组合式函数：camelCase + `use` 前缀（如 `useToken.ts`、`useECharts.ts`）
-- 事件处理函数：`handle` 前缀（如 `handleClick`、`handleCheckChange`）
-- CSS 类名：kebab-case + BEM 风格（如 `.zv-overlay`、`.node-label.is-active`）
+- 文件、类、函数、变量命名是否表达意图、遵循项目通行风格
+- 是否存在无意义命名（tmp、data、obj 等）或命名不一致
 
-### 2. Vue SFC 结构
-- 顺序：`<template>` → `<script setup lang="ts">` → `<style lang="scss" scoped>`
-- Props 使用泛型定义：`defineProps<{ ... }>()`
-- Emits 使用泛型定义：`defineEmits<{ ... }>()`
-- 带默认值使用 `withDefaults`
+### 2. 结构与职责
+- 是否按功能/模块组织，职责是否单一
+- 是否存在过大的函数/类/文件
 
-### 3. CSS 规范
-- 所有颜色必须使用 `--app-*` CSS 变量
-- 禁止硬编码颜色值（如 `#303133`、`#ffffff`）
-- 组件内样式使用 `scoped`
-- 覆盖 Element Plus 样式时使用非 `scoped` 样式块
+### 3. 代码风格
+- 格式化是否交给工具（formatter/linter）统一
+- 是否有拷贝粘贴的重复逻辑（未抽取复用）
+- 是否有魔法数字/字符串未抽常量
 
-### 4. TypeScript 规范
-- 接口使用 PascalCase
-- 函数签名使用具体类型，避免 `any`
-- 组合式函数返回值解构使用 `const { ... } = useXxx()` 模式
+### 4. 错误处理
+- 是否存在空 catch/except 吞异常
+- 关键路径错误是否有日志与可读提示
 
-### 5. 导入规范
-- 第三方导入在前
-- 本地导入在后
-- 使用 `@/` 别名路径
+### 5. 安全性
+- 是否硬编码密钥/token/密码/真实地址
+- 敏感操作是否缺乏授权
+
+### 6. 引用/导入规范（如有）
+- 第三方引用在前、本地引用在后，保持统一
+- 使用项目配置的路径别名/相对路径，保持一致
 
 ## 输出要求
 

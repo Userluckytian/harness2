@@ -25,9 +25,9 @@
 
 | # | 功能 | 说明 | 主要参考 | 状态 |
 |---|------|------|----------|------|
-| 1 | Monorepo 骨架 | pnpm workspaces：core / cli / desktop / gateway 四包位形 | dsh 包结构 | ⬜ |
-| 2 | **事件溯源会话内核** | JSONL append-only、事件类型 v1、单写者、崩溃一致（fsync/原子 rename）；不变量：Model-visible ⟺ logged | dsh session + grok persistence actor | ⬜ |
-| 3 | **轨迹记录与查看器（CLI 版）** | 全事件落盘；`harness2 traj` 命令读日志渲染时间线（turn/step/tool 调用树、耗时、token）；快照回放测试（无需 API key） | dsh trajectory + session-query | ⬜ |
+| 1 | Monorepo 骨架 | pnpm workspaces：core / cli / desktop / gateway 四包位形 | dsh 包结构 | ✅ |
+| 2 | **事件溯源会话内核** | JSONL append-only、事件类型 v1、单写者、崩溃一致（fsync/原子 rename）；不变量：Model-visible ⟺ logged | dsh session + grok persistence actor | ✅ |
+| 3 | **轨迹记录与查看器（CLI 版）** | 全事件落盘；`harness2 traj` 命令读日志渲染时间线（turn/step/tool 调用树、耗时、token）；快照回放测试（无需 API key） | dsh trajectory + session-query | ✅ |
 | 4 | Agent loop | turn/step 状态机、流式输出、取消、失败尝试单独记录 | dsh agent-loop + grok sampler | ⬜ |
 | 5 | 工具系统 | 注册返回 disposer；pre/execute/post 瀑布管线；并发安全声明；同文件编辑锁键串行 | dsh tools + grok tool_dispatch | ⬜ |
 | 6 | 基础工具集 | bash / read / write / edit / grep / glob | grok 树内 opencode/codex 移植版 | ⬜ |

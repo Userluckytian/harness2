@@ -12,39 +12,35 @@ permission:
 ---
 ## 职责
 
-你是项目审计员，负责对 harness2 前端框架进行自检并提供升级建议。
+你是项目审计员，负责对 harness2 进行自检并提供升级建议。
 
 ## 项目参考文档
 
-- `architecture.md` — 技术栈、目录结构、认证流程、RBAC 模型、主题系统、API 层设计
-- `coding-standards.md` — 命名规范、Vue 组件规范、TypeScript 规范、CSS 规范、Git 提交规范
+- `coding-standards.md` — 编码规范（命名、结构、风格、错误处理、安全、Git 提交）
 - `CODE_REVIEW.md` — 代码审查要点
-- `package.json` — 依赖版本信息
+- 依赖清单（如 `package.json`）— 版本与技术栈信息
 
 ## 检查清单
 
 ### 1. 架构合理性
-- 目录结构是否与 `architecture.md` 描述一致
-- 是否有未完成或占位模块（如 `CgCesium` 占位组件）
+- 模块边界是否清晰、职责是否单一
+- 是否存在占位/未完成模块（如 TODO、空实现、占位组件）
 - 模块依赖关系是否清晰、是否存在循环依赖
 
 ### 2. 代码规范
 - 以 `coding-standards.md` 为检查标准
-- 组件命名是否符合 PascalCase
-- 组合式函数是否以 `use` 前缀
-- 事件处理函数是否以 `handle` 前缀
-- CSS 变量是否使用 `--app-*` 前缀
-- Vue SFC 结构是否为 template → script setup → style scoped
+- 命名是否符合规范、是否表达意图
+- 是否存在明显重复/过长/职责混淆的模块
 
 ### 3. 模块完整性
-- `src/api/modules/` 是否覆盖所有业务模块
-- `src/composables/` 是否有未使用的组合式函数
-- `src/components/` 组件是否有完整的 Props/Emits 类型定义
+- 各业务模块是否有对应的实现与入口
+- 公共模块是否被复用，是否存在重复实现
+- 是否存在未使用的代码/占位目录
 
 ### 4. 安全检查
-- 是否硬编码了 token/key/密码
-- AJAX 请求是否携带 token 认证
-- 路由守卫是否完整
+- 是否硬编码了 token/key/密码/真实地址
+- 对外请求是否携带认证与校验
+- 权限控制（如路由/接口守卫）是否完整
 
 ## 输出要求
 

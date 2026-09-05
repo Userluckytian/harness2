@@ -7,3 +7,9 @@ coverage/
 auth.json
 *.local
 .DS_Store
+
+# ai-framework: 按天问题日志入库策略
+# 按天问题日志（只入库约定文档 README.md，每日日志本地保留不入库）
+docs/issue-log/*
+!docs/issue-log/README.md
+!docs/issue-log/OPEN.md
