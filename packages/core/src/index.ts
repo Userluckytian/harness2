@@ -2,6 +2,7 @@
 export * from './session/types.js';
 export * from './session/writer.js';
 export * from './session/reader.js';
+export * from './trajectory/view.js';
 
 export const CORE_VERSION = '0.1.0';
 
