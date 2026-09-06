@@ -21,6 +21,20 @@ export type TurnStopReason =
   | 'refusal'
   | 'paused';
 
+/**
+ * 上下文压缩选项（阶段 7，Task 1）。提供时 runTurn 在每个 turn 开始检查触发：
+ * 活动消息估算 token（字符/4）> contextWindow × 0.75 → 摘要 → append compaction/applied。
+ * 不提供 = 零压缩行为（cron/subagent 等短生命周期会话无需装配）。
+ */
+export interface CompactionOptions {
+  /** 触发阈值分母（roles.main 模型容量声明；缺省 128k） */
+  contextWindow?: number;
+  /** 摘要 provider（roles.small）；缺省 = 本 turn 的主 provider */
+  summarizer?: ChatProvider;
+  /** 摘要最大字符数（缺省 2000） */
+  maxSummaryChars?: number;
+}
+
 export interface TurnOptions {
   provider: ChatProvider;  tools: ToolRegistry;
   /** 审批策略缝；缺省 allow-all（工具直接执行） */
@@ -57,6 +71,12 @@ export interface TurnOptions {
    * 两个记忆文件都为空 → 不注入不落事件。
    */
   memory?: MemoryStore;
+  /**
+   * 可选：上下文压缩（阶段 7）。提供时 turn 开始（user/message 落盘后、首个 step 前）
+   * 检查触发：估算超阈值 → 摘要 → append compaction/applied 事件；摘要失败不落事件、
+   * 本轮跳过（TurnResult.warning 告知），turn 不中断。
+   */
+  compaction?: CompactionOptions;
 }
 
 /** turn 内流式观察事件（onStream 回调 payload；纯渲染缝，非模型上下文来源） */

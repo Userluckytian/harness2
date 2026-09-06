@@ -6,11 +6,21 @@
 import { randomUUID } from 'node:crypto';
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
+import {
+  buildCompactionDigest,
+  COMPACTION_SUMMARY_PREFIX,
+  COMPACTION_TRIGGER_RATIO,
+  computeCoveredUpToSeq,
+  DEFAULT_CONTEXT_WINDOW,
+  estimateContextTokens,
+  requestCompactionSummary,
+} from './compaction.js';
 import { assembleMemorySnapshot, type MemoryStore } from '../memory/store.js';
 import { computeProjection, loadSession, type LoadedSession } from '../session/reader.js';
 import { readTextOrNull, snapshotTargetFile, type SnapshotStore } from '../session/snapshots.js';
 import { SessionWriter, type SessionAppender } from '../session/writer.js';
 import { SESSION_LOG_FILE } from '../session/types.js';
+import type { CompactionAppliedPayload } from '../session/types.js';
 import type {
   ChatMessage,
   ChatRequest,
@@ -29,13 +39,43 @@ export const DEFAULT_MAX_STEPS = 25;
  * 从会话日志重建模型请求消息列表（provider/types.ts 中映射规则的唯一实现）：
  *   user/message → user 消息；assistant/message → assistant 消息；
  *   紧随 assistant 的 tool/call → 该消息的 toolCalls；tool/result → tool 消息。
- * 依赖 computeProjection 的 rewind 语义：被回退遮蔽的事件不进入上下文。
+ * 压缩（阶段 7）：取**最新**一条活动 compaction/applied（旧摘要被新摘要覆盖），
+ * 把 seq <= coveredUpToSeq 的活动消息替换为一条摘要 user 消息；保留区首条消息若为
+ * user 则摘要并入其中（role 交替不变量）；覆盖区边界消息的工具流量（摘要区与保留区
+ * 之间的 tool/call 与 tool/result）一并跳过——它们属于被摘要的边界消息，保留会成为
+ * 孤儿 tool 消息。依赖 computeProjection 的 rewind 语义：被回退遮蔽的事件不进入上下文。
  */
 export function buildChatMessages(session: LoadedSession): ChatMessage[] {
   computeProjection(session); // 标记每个事件的活动性（rewind 感知）
+  // 最新一条活动压缩事件生效（旧 compaction/applied 被新的覆盖）
+  let compaction: CompactionAppliedPayload | undefined;
+  for (const { event, active } of session.events) {
+    if (active && event.type === 'compaction/applied') compaction = event.payload;
+  }
+  // 保留区起点：覆盖区之后首条活动 user/assistant 消息的 seq（其前的工具流量一并跳过）
+  let keptStart: number | null = null;
+  if (compaction !== undefined) {
+    for (const { event, active } of session.events) {
+      if (
+        active &&
+        event.seq > compaction.coveredUpToSeq &&
+        (event.type === 'user/message' || event.type === 'assistant/message')
+      ) {
+        keptStart = event.seq;
+        break;
+      }
+    }
+  }
   const messages: ChatMessage[] = [];
   for (const { event: e, active } of session.events) {
     if (!active) continue;
+    if (compaction !== undefined) {
+      if (e.seq <= compaction.coveredUpToSeq) continue; // 覆盖区：由摘要消息替代
+      // 覆盖区与保留区之间的工具事件属于被摘要的边界消息，不进上下文
+      if (keptStart !== null && e.seq < keptStart && (e.type === 'tool/call' || e.type === 'tool/result')) {
+        continue;
+      }
+    }
     switch (e.type) {
       case 'user/message':
         messages.push({ role: 'user', content: e.payload.text });
@@ -64,7 +104,20 @@ export function buildChatMessages(session: LoadedSession): ChatMessage[] {
         break;
       }
       default:
-        break; // 结构性事件（header/step/attempt/rewind）不进模型上下文
+        break; // 结构性事件（header/step/attempt/rewind/compaction/memory）不直接进消息投影
+    }
+  }
+  if (compaction !== undefined) {
+    const summaryText = `${COMPACTION_SUMMARY_PREFIX}\n${compaction.summary}`;
+    const first = messages[0];
+    if (first === undefined) {
+      // 防御：保留区为空（如尾部被 rewind 遮蔽）——摘要消息本身成为唯一上下文
+      messages.push({ role: 'user', content: summaryText });
+    } else if (first.role === 'user') {
+      // 保留区首条是 user：摘要与其合并为一条（role 交替不变量，禁止连续两条 user）
+      messages[0] = { role: 'user', content: `${summaryText}\n\n${first.content}` };
+    } else {
+      messages.unshift({ role: 'user', content: summaryText });
     }
   }
   return messages;
@@ -121,6 +174,39 @@ interface PendingCall {
   parseError?: string;
 }
 
+/**
+ * 压缩触发检查（turn 开始，user/message 落盘后、首个 step 前）：
+ *   估算（buildChatMessages 输出，已应用既有压缩替换）> contextWindow × 0.75 →
+ *   覆盖区折叠 → 摘要 provider 生成摘要 → append compaction/applied。
+ * 任何失败（估算/摘要/落盘）都不中断 turn：返回 warning 或 undefined，绝不抛出。
+ */
+async function runCompactionIfNeeded(
+  writer: SessionAppender,
+  options: TurnOptions,
+  signal: AbortSignal,
+): Promise<string | undefined> {
+  const compaction = options.compaction;
+  if (compaction === undefined) return undefined;
+  try {
+    const session = loadSession(writer.dir);
+    const tokens = estimateContextTokens(buildChatMessages(session));
+    const contextWindow = compaction.contextWindow ?? DEFAULT_CONTEXT_WINDOW;
+    if (tokens <= contextWindow * COMPACTION_TRIGGER_RATIO) return undefined;
+    const coveredUpToSeq = computeCoveredUpToSeq(session);
+    if (coveredUpToSeq === null) return undefined; // 尾部保护：无安全可折叠区域，跳过
+    const digest = buildCompactionDigest(session, coveredUpToSeq);
+    if (digest.length === 0) return undefined;
+    const summary = await requestCompactionSummary(compaction.summarizer ?? options.provider, digest, {
+      ...(compaction.maxSummaryChars !== undefined ? { maxChars: compaction.maxSummaryChars } : {}),
+      ...(options.signal !== undefined ? { signal } : {}),
+    });
+    writer.append('compaction/applied', { summary, coveredUpToSeq });
+    return undefined;
+  } catch (e) {
+    return `上下文压缩失败已跳过（下轮重试）: ${(e as Error)?.message ?? String(e)}`;
+  }
+}
+
 function parseToolArgs(raw: string): { args: unknown; parseError?: string } {
   if (raw.trim() === '') return { args: {} };
   try {
@@ -156,12 +242,19 @@ async function runTurnWithWriter(writer: SessionWriter | SessionAppender, option
     writer.append('user/message', { text: options.userText, turnId });
   }
 
+  // —— 上下文压缩（阶段 7）：turn 开始检查触发（估算含本条用户消息）——
+  // 摘要失败 → 不落事件 + 本轮跳过（下轮重试），turn 不中断；warning 如实告知。
+  let compactionWarning: string | undefined;
+  if (options.compaction !== undefined) {
+    compactionWarning = await runCompactionIfNeeded(writer, options, envSignal);
+  }
+
   let steps = 0;
   let toolCallsTotal = 0;
   let finalText: string | undefined;
   let stopReason: TurnStopReason = 'end_turn';
   let error: string | undefined;
-  let warning: string | undefined;
+  let warning: string | undefined = compactionWarning;
 
   // eslint 结构：每个 step = step/start → 请求（日志投影）→ 模型流 → 事件落盘 → step/end
   while (true) {

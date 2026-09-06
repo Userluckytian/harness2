@@ -24,6 +24,7 @@ export * from './memory/tool.js';
 export * from './memory/pending.js';
 export * from './memory/nudge.js';
 export * from './agent/types.js';
+export * from './agent/compaction.js';
 export * from './agent/loop.js';
 export * from './server/sessions.js';
 export * from './server/http.js';

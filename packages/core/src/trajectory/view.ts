@@ -95,6 +95,11 @@ export function renderTrajectory(session: LoadedSession, options: TrajectoryRend
       case 'rewind/marker':
         lines.push(`${p}[REWIND] to seq ${e.payload.rewindToSeq}${e.payload.reason ? ` (${e.payload.reason})` : ''}`);
         break;
+      case 'compaction/applied':
+        lines.push(
+          `${p}[COMPACT] covered ≤ seq ${e.payload.coveredUpToSeq}: ${truncate(e.payload.summary, maxTextLength)}`,
+        );
+        break;
       default: {
         // exhaustive 兜底：未知事件类型显式渲染而非静默吞掉
         lines.push(`${p}? unknown event: ${(e as { type: string }).type}`);

@@ -15,6 +15,7 @@ import {
   MockProvider,
   PendingMemoryStore,
   registerBuiltinTools,
+  resolveCompactionOptions,
   runTurn,
   forkSession,
   defaultSessionsRoot,
@@ -24,6 +25,7 @@ import {
   type ApprovalHandler,
   type ApprovalInput,
   type ChatProvider,
+  type CompactionOptions,
   type MemorySink,
   type MockScript,
   type SessionWriter,
@@ -97,6 +99,8 @@ export async function runChat(options: ChatOptions = {}): Promise<void> {
   let approval: ApprovalHandler | undefined;
   // 记忆装配（阶段 6）：mode ≠ off 才注册 memory 工具与注入 store；off = 零记忆行为
   let memoryStore: MemoryStore | undefined;
+  // 压缩装配（阶段 7）：仅配置路径派生（mock 演示零压缩行为）
+  let compaction: CompactionOptions | undefined;
   const tools = new ToolRegistry();
   registerBuiltinTools(tools);
 
@@ -114,6 +118,16 @@ export async function runChat(options: ChatOptions = {}): Promise<void> {
     try {
       const paths = defaultConfigPaths(root, options.home);
       provider = createProvider(loaded.config, 'main', { authPath: paths.globalAuth });
+      // 压缩装配（阶段 7）：contextWindow = roles.main 容量声明；摘要 = roles.small（缺失回落主）
+      let smallProvider: ChatProvider | undefined;
+      try {
+        smallProvider = createProvider(loaded.config, 'small', { authPath: paths.globalAuth });
+      } catch {
+        smallProvider = undefined;
+      }
+      compaction = resolveCompactionOptions(loaded.config, (role) =>
+        role === 'small' ? smallProvider : provider,
+      );
     } catch (e) {
       renderer.line(`error: ${(e as Error).message}`);
       process.exitCode = 1;
@@ -330,6 +344,7 @@ export async function runChat(options: ChatOptions = {}): Promise<void> {
         tools,
         ...(approval !== undefined ? { approval } : {}),
         ...(memoryStore !== undefined ? { memory: memoryStore } : {}),
+        ...(compaction !== undefined ? { compaction } : {}),
         cwd: root,
         userText: text,
         signal: ac.signal,

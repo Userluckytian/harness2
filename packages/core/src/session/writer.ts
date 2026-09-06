@@ -24,6 +24,7 @@ import {
   type SessionEventType,
   type SessionHeaderPayload,
   type RewindMarkerPayload,
+  type CompactionAppliedPayload,
   isSessionEventType,
   parseEventLine,
 } from './types.js';
@@ -153,6 +154,17 @@ export class SessionWriter {
       const content = (payload as { content?: unknown }).content;
       if (typeof content !== 'string' || content.length === 0) {
         throw new Error('invalid memory/snapshot: content must be a non-empty string');
+      }
+    }
+    if (type === 'compaction/applied') {
+      // 摘要非空 + coveredUpToSeq 必须指向本日志中已存在的事件（1..lastSeq，与 rewind 同口径）
+      const p = payload as CompactionAppliedPayload;
+      if (typeof p.summary !== 'string' || p.summary.length === 0) {
+        throw new Error('invalid compaction/applied: summary must be a non-empty string');
+      }
+      const n = p.coveredUpToSeq;
+      if (!Number.isInteger(n) || n < 1 || n > this.lastSeq) {
+        throw new Error(`invalid compaction/applied: coveredUpToSeq ${String(n)} out of range (1..${this.lastSeq})`);
       }
     }
     const event: SessionEvent<T> = {

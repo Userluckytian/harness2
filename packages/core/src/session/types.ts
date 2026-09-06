@@ -21,6 +21,7 @@ export type SessionEventType =
   | 'tool/call'
   | 'tool/result'
   | 'memory/snapshot'
+  | 'compaction/applied'
   | 'rewind/marker';
 
 export const KNOWN_EVENT_TYPES: readonly SessionEventType[] = [
@@ -33,6 +34,7 @@ export const KNOWN_EVENT_TYPES: readonly SessionEventType[] = [
   'tool/call',
   'tool/result',
   'memory/snapshot',
+  'compaction/applied',
   'rewind/marker',
 ];
 
@@ -126,6 +128,20 @@ export interface MemorySnapshotPayload {
   content: string;
 }
 
+/**
+ * 上下文压缩（阶段 7）：活动消息估算超过阈值时，把覆盖区（seq <= coveredUpToSeq 的
+ * user/assistant 消息及其工具流量）折叠为一条摘要。普通活动事件：参与 rewind 遮蔽、
+ * 不直接进消息投影——buildChatMessages 取**最新**一条生效（旧摘要被新摘要覆盖），
+ * 把覆盖区替换为一条摘要消息（Model-visible ⟺ logged 延伸到压缩：摘要消息必须可从
+ * 本事件重建）。
+ */
+export interface CompactionAppliedPayload {
+  /** 覆盖区摘要（≤ COMPACTION_MAX_SUMMARY_CHARS 字符） */
+  summary: string;
+  /** 摘要覆盖到的最后一条 user/assistant 消息 seq（含） */
+  coveredUpToSeq: number;
+}
+
 export interface SessionEventMap {
   'session/header': SessionHeaderPayload;
   'user/message': UserMessagePayload;
@@ -136,6 +152,7 @@ export interface SessionEventMap {
   'tool/call': ToolCallPayload;
   'tool/result': ToolResultPayload;
   'memory/snapshot': MemorySnapshotPayload;
+  'compaction/applied': CompactionAppliedPayload;
   'rewind/marker': RewindMarkerPayload;
 }
 
@@ -195,5 +212,11 @@ const PAYLOAD_VALIDATORS: Record<SessionEventType, (p: Record<string, unknown>) 
   'tool/call': (p) => typeof p.callId === 'string' && typeof p.tool === 'string',
   'tool/result': (p) => typeof p.callId === 'string' && typeof p.ok === 'boolean',
   'memory/snapshot': (p) => typeof p.content === 'string' && p.content.length > 0,
+  'compaction/applied': (p) =>
+    typeof p.summary === 'string' &&
+    p.summary.length > 0 &&
+    typeof p.coveredUpToSeq === 'number' &&
+    Number.isInteger(p.coveredUpToSeq) &&
+    p.coveredUpToSeq >= 1,
   'rewind/marker': (p) => typeof p.rewindToSeq === 'number' && Number.isInteger(p.rewindToSeq),
 };

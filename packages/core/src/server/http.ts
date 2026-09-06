@@ -15,6 +15,8 @@ import { loadConfig, defaultConfigPaths } from '../config/load.js';
 import { readAuthFile } from '../config/auth.js';
 import { redactSecrets } from '../config/redact.js';
 import { createProvider } from '../provider/factory.js';
+import { resolveCompactionOptions } from '../agent/compaction.js';
+import type { CompactionOptions } from '../agent/types.js';
 import { registerBuiltinTools } from '../tools/predefined/index.js';
 import { ToolRegistry } from '../tools/registry.js';
 import { createApprovalPolicy } from '../approval/policy.js';
@@ -125,6 +127,8 @@ export interface StartServeOptions {
   approvalTimeoutMs?: number;
   /** 注入记忆装配（mode ≠ off；mock/测试用）。缺省：配置加载成功时按 config.memory 派生 */
   memory?: SessionHubMemory;
+  /** 注入上下文压缩装配（阶段 7；mock/测试用）。缺省：配置加载成功时按 roles.main 容量 + roles.small 派生 */
+  compaction?: CompactionOptions;
   /** hub 观察钩子透传（WS 事件面 / 测试用） */
   hooks?: SessionHubHooks;
 }
@@ -160,6 +164,7 @@ export async function startServe(options: StartServeOptions = {}): Promise<Serve
   let provider = options.provider;
   let decide = options.decide;
   let memory: SessionHubMemory | undefined = options.memory;
+  let compaction: CompactionOptions | undefined = options.compaction;
   if (provider === undefined) {
     const loaded = loadConfig({ root, ...(home !== undefined ? { home } : {}) });
     if (loaded.config === null) {
@@ -187,6 +192,18 @@ export async function startServe(options: StartServeOptions = {}): Promise<Serve
         ...(mode === 'ask' ? { pending: new PendingMemoryStore(defaultPendingRoot(home), store) } : {}),
       };
     }
+    // 压缩装配（阶段 7）：contextWindow = roles.main 模型容量声明；摘要 provider = roles.small（缺失回落主）
+    if (compaction === undefined) {
+      let smallProvider: ChatProvider | undefined;
+      try {
+        smallProvider = createProvider(loaded.config, 'small', { authPath: paths.globalAuth });
+      } catch {
+        smallProvider = undefined; // 摘要回落主 provider（resolveCompactionOptions 不传 summarizer）
+      }
+      compaction = resolveCompactionOptions(loaded.config, (role) =>
+        role === 'small' ? smallProvider : provider,
+      );
+    }
   }
 
   const tools = new ToolRegistry();
@@ -198,6 +215,7 @@ export async function startServe(options: StartServeOptions = {}): Promise<Serve
     cwd: root,
     ...(decide !== undefined ? { decide } : {}),
     ...(memory !== undefined ? { memory } : {}),
+    ...(compaction !== undefined ? { compaction } : {}),
     ...(options.approvalTimeoutMs !== undefined ? { approvalTimeoutMs: options.approvalTimeoutMs } : {}),
     ...(options.hooks !== undefined ? { hooks: options.hooks } : {}),
   });

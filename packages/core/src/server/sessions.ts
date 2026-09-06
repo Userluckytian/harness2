@@ -16,7 +16,7 @@
 // undo/redo 与 turn 互斥（busy 会话上拒绝，避免 rewind marker 与 turn 事件交错落盘）。
 import { randomUUID } from 'node:crypto';
 import { runTurn } from '../agent/loop.js';
-import type { TurnResult, TurnStreamEvent } from '../agent/types.js';
+import type { CompactionOptions, TurnResult, TurnStreamEvent } from '../agent/types.js';
 import type { ApprovalDecision, ApprovalInput } from '../tools/types.js';
 import { ToolRegistry } from '../tools/registry.js';
 import { createMemoryToolForMode, runNudgeReview, type NudgeResult } from '../memory/nudge.js';
@@ -106,6 +106,8 @@ export interface SessionHubOptions {
   approvalTimeoutMs?: number;
   /** 记忆装配（mode ≠ off 时注入；缺省 = 无记忆行为） */
   memory?: SessionHubMemory;
+  /** 上下文压缩装配（阶段 7；缺省 = 不压缩）。由启动器按 roles.main 容量 + roles.small 摘要派生 */
+  compaction?: CompactionOptions;
   hooks?: SessionHubHooks;
 }
 
@@ -356,6 +358,8 @@ export class SessionHub {
         onStream: (event: TurnStreamEvent) => this.forwardStream(id, event),
         // 审查 P1-1：serve/desktop 路径同样注入记忆 store（缺此前主会话零快照、system 恒空）
         ...(this.options.memory !== undefined ? { memory: this.options.memory.store } : {}),
+        // 阶段 7：上下文压缩装配（启动器按 config 派生；缺省不压缩）
+        ...(this.options.compaction !== undefined ? { compaction: this.options.compaction } : {}),
       });
       this.emitTurnEnd(id, result);
       this.bumpNudge(id); // turn-end 回调之后计数/触发复盘（异步，不阻塞主对话）
