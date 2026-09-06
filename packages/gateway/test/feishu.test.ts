@@ -99,7 +99,7 @@ describe('FeishuAdapter（离线 stub）', () => {
 
     await adapter.send('oc_chat1', '飞书回复', 'm1');
     expect(sent).toHaveLength(1);
+    expect(sent[0]?.path).toBe('/open-apis/im/v1/messages/m1/reply'); // P2-7：回复走官方 reply API
     expect(sent[0]?.body.content).toBe(JSON.stringify({ text: '飞书回复' }));
-    expect(sent[0]?.body.receive_id).toBe('oc_chat1');
   });
 });

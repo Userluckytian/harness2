@@ -25,6 +25,8 @@ export class ServeClient {
   private reconnectTimer: NodeJS.Timeout | null = null;
   /** 首次连接就绪（open）后 resolve；断线重连不重置——订阅调用在就绪前排队等待 */
   private readyPromise: Promise<void> | null = null;
+  /** 已订阅会话（P1-1：serve 侧订阅随连接重建，重连 open 后自动重发） */
+  private subscribed = new Set<string>();
 
   constructor(private readonly options: ServeClientOptions) {}
 
@@ -94,6 +96,14 @@ export class ServeClient {
         const socket = new WebSocket(this.options.wsUrl);
         socket.on('open', () => {
           this.ws = socket;
+          // P1-1：serve 侧订阅按连接存储，重连后重发全部订阅（否则一次掉线即永久失联）
+          for (const sessionId of this.subscribed) {
+            try {
+              socket.send(JSON.stringify({ op: 'subscribe', sessionId }));
+            } catch {
+              // 发送失败由 close 链路兜底
+            }
+          }
           this.options.onStatus?.('connected');
           resolve();
         });
@@ -131,8 +141,9 @@ export class ServeClient {
     });
   }
 
-  /** 订阅会话（路由命中后调用） */
+  /** 订阅会话（路由命中后调用；断线重连后自动重发） */
   subscribe(sessionId: string): void {
+    this.subscribed.add(sessionId);
     this.wsSend({ op: 'subscribe', sessionId });
   }
 
@@ -141,8 +152,18 @@ export class ServeClient {
     this.wsSend({ op: 'user-message', sessionId, text });
   }
 
-  respondApproval(requestId: string, decision: 'allow' | 'deny'): void {
-    this.wsSend({ op: 'approval-response', requestId, decision });
+  /** 审批应答（P1-2：未连接不抛——返回 false 由调用方感知，杜绝平台事件监听器同步路径崩溃） */
+  respondApproval(requestId: string, decision: 'allow' | 'deny'): boolean {
+    if (this.ws === null || this.ws.readyState !== WebSocket.OPEN) {
+      this.options.onStatus?.('reconnecting', '审批应答时事件通道未连接（已丢弃，hub 超时拒绝兜底）');
+      return false;
+    }
+    try {
+      this.ws.send(JSON.stringify({ op: 'approval-response', requestId, decision }));
+      return true;
+    } catch {
+      return false;
+    }
   }
 
   private wsSend(frame: unknown): void {

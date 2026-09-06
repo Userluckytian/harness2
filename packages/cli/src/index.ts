@@ -39,7 +39,8 @@ import {
   type MockScript,
 } from '@harness2/core';
 import { runChat, MOCK_DEMO_SCRIPT } from './chat.js';
-import { QqAdapter, startGateway, type PlatformAdapter } from '@harness2/gateway';
+// gateway 仅 gateway 命令使用：动态加载，避免拖慢 chat/serve 等所有命令的启动
+import type { PlatformAdapter } from '@harness2/gateway';
 
 const program = new Command();
 
@@ -717,27 +718,62 @@ program
   .option('--root <dir>', 'serve 工作根目录（工具执行 cwd + 会话分组）', process.cwd())
   .option('--home <dir>', '用户数据根（默认 ~/.harness2）')
   .option('--port <n>', 'serve 监听端口（0 = 随机）', '0')
-  .action(async (opts: { root: string; home?: string; port: string }) => {
+  .option('--platform <list>', '启用的平台（逗号分隔，缺省 = 配置里的全部）')
+  .action(async (opts: { root: string; home?: string; port: string; platform?: string }) => {
     const { startServe } = await import('@harness2/core');
+    const { startGateway, QqAdapter, FeishuAdapter } = await import('@harness2/gateway');
     const home = opts.home;
     const paths = defaultConfigPaths(opts.root, home);
     const loaded = loadConfig({ root: opts.root, ...(home !== undefined ? { home } : {}) });
     const auth = readAuthFile(paths.globalAuth);
+    // P1-6（审查）：配置/凭据错误如实输出（对齐 config check 口径），排障不再被「凭据缺失」一言蔽之
+    for (const err of loaded.errors) console.error(`config 错误: ${err}`);
+    if (auth.error !== undefined) console.error(`auth 警告: ${auth.error}`);
     const gwConfig = loaded.config?.gateways ?? {};
     const gwAuth = auth.auth.gateways ?? {};
 
+    const wanted = (opts.platform ?? 'qq,feishu')
+      .split(',')
+      .map((s) => s.trim())
+      .filter((s) => s.length > 0);
     const adapters: PlatformAdapter[] = [];
-    if (gwConfig.qq !== undefined && gwConfig.qq.enabled) {
-      const cred = gwAuth.qq ?? secretFromEnv(gwConfig.qq.appSecretEnvKey, gwConfig.qq.appId);
-      if (cred === null) {
-        console.error(`error: QQ 网关凭据缺失——请在 auth.json.gateways.qq 配置 appId/appSecret（或设 ${gwConfig.qq.appSecretEnvKey ?? '对应环境变量'}）`);
-        process.exitCode = 1;
-        return;
+    const credFor = (name: string, envKey: string | undefined): { appId: string; appSecret: string } | null => {
+      const fromAuth = gwAuth[name];
+      if (fromAuth !== undefined) return fromAuth;
+      const secret = envKey !== undefined ? process.env[envKey] : undefined;
+      return typeof secret === 'string' && secret.length > 0 ? { appId: gwConfig[name as keyof typeof gwConfig]!.appId, appSecret: secret } : null;
+    };
+
+    if (wanted.includes('qq')) {
+      const qq = gwConfig.qq;
+      if (qq === undefined || !qq.enabled) {
+        console.error('提示: config.gateways.qq 未配置或 enabled=false，跳过 QQ');
+      } else {
+        const cred = gwAuth.qq ?? credFor('qq', qq.appSecretEnvKey);
+        if (cred === null) {
+          console.error(`error: QQ 网关凭据缺失——请在 auth.json.gateways.qq 配置 appId/appSecret（或设 ${qq.appSecretEnvKey ?? '对应环境变量'}）`);
+          process.exitCode = 1;
+          return;
+        }
+        adapters.push(new QqAdapter({ config: qq, auth: cred }));
       }
-      adapters.push(new QqAdapter({ config: gwConfig.qq, auth: cred }));
+    }
+    if (wanted.includes('feishu')) {
+      const fs = gwConfig.feishu;
+      if (fs === undefined || !fs.enabled) {
+        console.error('提示: config.gateways.feishu 未配置或 enabled=false，跳过飞书');
+      } else {
+        const cred = gwAuth.feishu ?? credFor('feishu', fs.appSecretEnvKey);
+        if (cred === null) {
+          console.error(`error: 飞书网关凭据缺失——请在 auth.json.gateways.feishu 配置 appId/appSecret（或设 ${fs.appSecretEnvKey ?? '对应环境变量'}）`);
+          process.exitCode = 1;
+          return;
+        }
+        adapters.push(new FeishuAdapter({ config: fs, auth: cred, verificationToken: process.env['FEISHU_VERIFICATION_TOKEN'] }));
+      }
     }
     if (adapters.length === 0) {
-      console.error('error: config.gateways 未配置任何启用的平台（qq/feishu）');
+      console.error('error: 没有可启用的平台（检查 --platform 与 config.gateways 配置）');
       process.exitCode = 1;
       return;
     }
@@ -762,10 +798,5 @@ program
     process.on('SIGINT', () => void shutdown());
     process.on('SIGTERM', () => void shutdown());
   });
-
-function secretFromEnv(envKey: string | undefined, appId: string): { appId: string; appSecret: string } | null {
-  const secret = envKey !== undefined ? process.env[envKey] : undefined;
-  return typeof secret === 'string' && secret.length > 0 ? { appId, appSecret: secret } : null;
-}
 
 program.parseAsync(process.argv);

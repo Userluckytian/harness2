@@ -51,12 +51,16 @@ export async function startGateway(options: StartGatewayOptions): Promise<Gatewa
     baseUrl: options.serve.baseUrl,
     wsUrl: options.serve.wsUrl,
     onFrame: (frame) => {
-      if (frame.type === 'error') return;
-      // 审批请求：可能来自尚未路由映射的子会话——按 sessionId 匹配已知 chat，未匹配忽略（子会话审批经父会话链）
+      if (frame.type === 'error') {
+        // 陈旧路由/协议错误：一行可见（此前静默会让 chat 永久失联无反馈）
+        console.error(`[gateway] serve 错误帧: ${frame.error}`);
+        return;
+      }
+      // 审批请求：仅处理已路由映射的会话（子会话审批 v1 忽略，由 hub 120s 超时拒绝兜底）
       if (frame.type === 'approval-request') {
         const meta = sessionToMeta.get(frame.sessionId);
-        const chatKey = meta?.sessionKey ?? findChatBySessionPrefix(frame.sessionId);
-        if (chatKey === undefined || meta === undefined) return;
+        if (meta === undefined) return;
+        const chatKey = meta.sessionKey;
         if (pendingApproval.has(chatKey)) return; // 上一审批未决：忽略新请求（hub 串行保证不会并发）
         pendingApproval.set(chatKey, frame.requestId);
         const adapter = adapters.get(meta.channel);
@@ -141,12 +145,11 @@ export async function startGateway(options: StartGatewayOptions): Promise<Gatewa
       });
   };
   for (const adapter of options.adapters) adapter.onMessage(handleInbound);
+  // P0-1（审查 fail 判定）：启动全部适配器——此前漏调导致网关对平台完全聋哑
+  for (const adapter of options.adapters) await adapter.start();
   client.connect();
 
-  /** 子会话（subagent）审批兜底：sessionId 前缀无法映射——v1 忽略（子会话审批由 hub 超时拒绝兜底） */
-  function findChatBySessionPrefix(_sessionId: string): string | undefined {
-    return undefined;
-  }
+  // 子会话（subagent）的审批请求在网关侧 v1 不支持路由映射，忽略——由 hub 120s 超时拒绝兜底
 
   return {
     async stop(): Promise<void> {

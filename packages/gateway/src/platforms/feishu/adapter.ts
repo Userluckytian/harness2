@@ -4,18 +4,23 @@
 // 解析 + im/v1/messages 出站），端点由装配方暴露。
 // 红线：文本收发；tenant_access_token 单飞刷新（internal app：app_id+app_secret）；零新写入路径。
 import { createServer, type Server, type ServerResponse } from 'node:http';
+import { createHmac } from 'node:crypto';
 import { policyAllows, type GatewayChannelName, type InboundMessage, type PlatformAdapter } from '../../types.js';
 import type { GatewayChannelConfig } from '@harness2/core';
 
 export interface FeishuAdapterOptions {
   config: GatewayChannelConfig;
   auth: { appId: string; appSecret: string };
-  /** 入站消息回调（网关注入） */
-  onEventMessage: (message: InboundMessage) => void;
+  /** 入站消息回调（经 onMessage(handler) 注册；此字段仅为兼容保留，可选） */
+  onEventMessage?: (message: InboundMessage) => void;
   /** webhook 监听端口（本地；公网暴露由装配方负责） */
   webhookPort?: number;
+  /** 飞书开放平台「Verification Token」（事件订阅页配置；配置后强制校验请求头 token）——P1-5 */
+  verificationToken?: string;
   /** 飞书 API 基址（默认官方；测试注入本地 stub） */
   apiBase?: string;
+  /** 出站最小间隔 ms（与 QQ 同款限速；默认 300） */
+  minIntervalMs?: number;
   fetchImpl?: typeof fetch;
 }
 
@@ -39,6 +44,9 @@ export class FeishuAdapter implements PlatformAdapter {
   private readonly fetchImpl: typeof fetch;
   private readonly apiBase: string;
   private inboundHandler: ((message: InboundMessage) => void) | null = null;
+  /** 出站限速队列（P2-7：与 QQ 同款，防多 chat 突发撞 QPS） */
+  private outboundQueue: Promise<void> = Promise.resolve();
+  private lastSentAt = 0;
 
   constructor(private readonly options: FeishuAdapterOptions) {
     this.fetchImpl = options.fetchImpl ?? fetch;
@@ -49,8 +57,11 @@ export class FeishuAdapter implements PlatformAdapter {
     this.inboundHandler = handler;
   }
 
-  /** 启动本地 webhook 接收端点 */
+  /** 启动本地 webhook 接收端点（P1-5：配置 verificationToken 时强制校验；未配置启动告警「仅限内网」） */
   async start(): Promise<void> {
+    if (this.options.verificationToken === undefined) {
+      console.error('[gateway/feishu] 警告：未配置 verificationToken，webhook 无鉴权——仅限 127.0.0.1 内网/穿透环境使用');
+    }
     const port = this.options.webhookPort ?? 9800;
     const server = createServer((req, res) => {
       if (req.method !== 'POST' || !req.url?.includes('events')) {
@@ -61,8 +72,18 @@ export class FeishuAdapter implements PlatformAdapter {
       const chunks: Buffer[] = [];
       req.on('data', (c: Buffer) => chunks.push(c));
       req.on('end', () => {
-        void this.handleEventBody(Buffer.concat(chunks).toString('utf8'), res);
+        const raw = Buffer.concat(chunks).toString('utf8');
+        const token = typeof req.headers['x-lark-token'] === 'string' ? req.headers['x-lark-token'] : undefined;
+        if (this.options.verificationToken !== undefined && token !== this.options.verificationToken) {
+          res.writeHead(401);
+          res.end('invalid verification token');
+          return;
+        }
+        void this.handleEventBody(raw, res);
       });
+    });
+    server.on('error', (e: Error) => {
+      console.error(`[gateway/feishu] webhook 端点错误: ${e.message}`);
     });
     this.server = server;
     await new Promise<void>((resolve) => server.listen(port, '127.0.0.1', resolve));
@@ -107,6 +128,8 @@ export class FeishuAdapter implements PlatformAdapter {
           }
           if (text.length > 0 && this.inboundHandler !== null) {
             // 飞书 p2p 会话 chat_id 为 oc_*；群聊同为 oc_*——v1 一律按私聊（p2p chat_type 判定需要额外字段，留真机联调）
+            // P1-4（审查）：策略三态在入站闸门执行（与 QQ 同位）——缺省 allowlist 防滥用
+            if (!policyAllows(this.options.config.dmPolicy, chatId, this.options.config.allow)) return;
             this.inboundHandler({ channel: 'feishu', chatId, messageId, text, isGroup: false });
           }
         }
@@ -144,29 +167,38 @@ export class FeishuAdapter implements PlatformAdapter {
     return this.tokenState.token;
   }
 
-  /** 出站文本消息（im/v1/messages，receive_id_type=chat_id） */
+  /** 出站文本消息（P2-7：回复走官方 reply API；普通消息走 im/v1/messages；最小间隔限速与 QQ 同款） */
   async send(chatId: string, text: string, replyToMessageId?: string): Promise<void> {
     const token = await this.getToken();
     const content = JSON.stringify({ text });
-    const body: Record<string, unknown> = {
-      receive_id: chatId,
-      msg_type: 'text',
-      content,
-      ...(replyToMessageId !== undefined ? { reply_in_thread: false } : {}),
-    };
-    const res = await this.fetchImpl(
-      `${this.apiBase}/open-apis/im/v1/messages?receive_id_type=chat_id${replyToMessageId !== undefined ? '' : ''}`,
-      {
+    const path =
+      replyToMessageId !== undefined
+        ? `/open-apis/im/v1/messages/${encodeURIComponent(replyToMessageId)}/reply`
+        : `/open-apis/im/v1/messages?receive_id_type=chat_id`;
+    const body: Record<string, unknown> =
+      replyToMessageId !== undefined
+        ? { msg_type: 'text', content }
+        : { receive_id: chatId, msg_type: 'text', content };
+    const run = this.outboundQueue.then(async () => {
+      const wait = this.lastSentAt + 300 - Date.now();
+      if (wait > 0) await new Promise((r) => setTimeout(r, wait));
+      const res = await this.fetchImpl(`${this.apiBase}${path}`, {
         method: 'POST',
         headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` },
         body: JSON.stringify(body),
-      },
-    );
-    if (!res.ok) {
-      const errText = await res.text().catch(() => '');
-      throw new Error(`feishu 出站失败（status ${res.status}）: ${errText.slice(0, 200)}`);
-    }
-    await res.arrayBuffer().catch(() => {});
+      });
+      if (!res.ok) {
+        const errText = await res.text().catch(() => '');
+        throw new Error(`feishu 出站失败（status ${res.status}）: ${errText.slice(0, 200)}`);
+      }
+      await res.arrayBuffer().catch(() => {});
+      this.lastSentAt = Date.now();
+    });
+    this.outboundQueue = run.then(
+      () => undefined,
+      () => undefined,
+    ); // 队列容错：单次失败不阻塞后续
+    await run;
   }
 
   async stop(): Promise<void> {

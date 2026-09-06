@@ -29,6 +29,8 @@ export class QqAdapter implements PlatformAdapter {
   private gateway: QqGatewayWs | null = null;
   private readonly seen = new Set<string>();
   private readonly seenOrder: string[] = [];
+  /** P1-3（审查）：QQ 去重规则——同 msg_id + msg_seq 重复发送被拒，须按 msg_id 递增 msg_seq */
+  private readonly msgSeqByMsgId = new Map<string, number>();
   private inboundHandler: ((message: InboundMessage) => void) | null = null;
 
   constructor(private readonly options: QqAdapterOptions) {
@@ -62,13 +64,19 @@ export class QqAdapter implements PlatformAdapter {
     this.gateway = null;
   }
 
-  /** 出站：群 / 私聊 v2 接口（频率限制队列；msg_id 被动回复） */
+  /** 出站：群 / 私聊 v2 接口（频率限制队列；msg_id 被动回复 + msg_seq 按 msg_id 递增） */
   async send(chatId: string, text: string, replyToMessageId?: string, isGroup?: boolean): Promise<void> {
     const path = isGroup === true ? `/v2/groups/${encodeURIComponent(chatId)}/messages` : `/v2/users/${encodeURIComponent(chatId)}/messages`;
+    let msgSeq: number | undefined;
+    if (replyToMessageId !== undefined) {
+      const next = (this.msgSeqByMsgId.get(replyToMessageId) ?? 0) + 1;
+      this.msgSeqByMsgId.set(replyToMessageId, next);
+      msgSeq = next;
+    }
     const body: Record<string, unknown> = {
       msg_type: 0,
       content: text,
-      ...(replyToMessageId !== undefined ? { msg_id: replyToMessageId, msg_seq: 1 } : {}),
+      ...(replyToMessageId !== undefined ? { msg_id: replyToMessageId, msg_seq: msgSeq } : {}),
     };
     await this.api.enqueue(() => this.api.request(path, body));
   }

@@ -49,7 +49,14 @@ export class QqGatewayWs {
       const token = await this.options.token();
       const ws = new WebSocket(url);
       this.ws = ws;
-      ws.on('message', (data: unknown) => this.handleFrame(JSON.parse(String(data)) as QqFrame, token));
+      ws.on('message', (data: unknown) => {
+        try {
+          const frame = JSON.parse(String(data)) as QqFrame; // P2-2：平台侧畸形帧不击穿进程
+          this.handleFrame(frame, token);
+        } catch {
+          return;
+        }
+      });
       ws.on('close', () => {
         if (this.ws === ws) this.ws = null;
         if (this.heartbeatTimer !== null) clearInterval(this.heartbeatTimer);
@@ -93,6 +100,11 @@ export class QqGatewayWs {
       }
       case 7: {
         // 服务端要求重连：立即断开触发重连链
+        this.ws?.close();
+        break;
+      }
+      case 9: {
+        // P2-3：invalid session（Identify/Resume 被拒）——关闭触发重连链重新 Identify
         this.ws?.close();
         break;
       }

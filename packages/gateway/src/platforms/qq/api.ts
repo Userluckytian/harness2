@@ -70,28 +70,33 @@ export class QqApi {
     if (typeof body.access_token !== 'string' || body.access_token.length === 0) {
       throw new QqApiError(res.status, 'token 响应缺少 access_token');
     }
-    const expiresIn = typeof body.expires_in === 'number' && body.expires_in > 60 ? body.expires_in : 3600;
+    // P2-1（审查）：官方实测 expires_in 返回字符串 "7200"——两种形态都兼容
+    const rawExpires = body.expires_in;
+    const expiresNum = typeof rawExpires === 'number' ? rawExpires : typeof rawExpires === 'string' ? Number(rawExpires) : NaN;
+    const expiresIn = Number.isFinite(expiresNum) && expiresNum > 60 ? expiresNum : 3600;
     this.tokenState = { token: body.access_token, expiresAt: Date.now() + expiresIn * 1000 };
     return this.tokenState.token;
   }
 
-  /** 入队出站（串行 + 最小间隔）；fn 抛 429 时按 retryAfterMs 退避重试一次 */
+  /** 入队出站（串行 + 最小间隔）；fn 抛 429 时指数退避重试（P2-4：最多 3 次 2s/4s/8s，仍失败如实抛出） */
   enqueue<T>(fn: () => Promise<T>): Promise<T> {
     const run = this.queue.then(async () => {
       const wait = this.lastSentAt + this.minIntervalMs - Date.now();
       if (wait > 0) await sleep(wait);
-      try {
-        const result = await fn();
-        this.lastSentAt = Date.now();
-        return result;
-      } catch (e) {
-        if (e instanceof QqApiError && e.status === 429) {
-          await sleep(2000);
+      let attempt = 0;
+      for (;;) {
+        try {
           const result = await fn();
           this.lastSentAt = Date.now();
           return result;
+        } catch (e) {
+          if (e instanceof QqApiError && e.status === 429 && attempt < 3) {
+            await sleep(2000 * 2 ** attempt);
+            attempt += 1;
+            continue;
+          }
+          throw e;
         }
-        throw e;
       }
     });
     // 队列容错：单次失败不阻塞后续出站
