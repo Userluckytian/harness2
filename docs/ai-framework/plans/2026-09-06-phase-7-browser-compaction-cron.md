@@ -1,6 +1,6 @@
 # 阶段 7：内嵌浏览器 + 上下文压缩 + 定时任务 → M2 v0.3 发布
 
-> **状态：** 计划已就绪（总控计划 Ph7 / 里程碑 M2，2026-09-06 批准；基线 = 阶段 6 验收 397 passed + 1 skipped）
+> **状态：** ✅ 已完成——2026-09-06 编排者验收通过（独立审查 pass-with-fixes → 1 P1（cron run 审批旁路）+ 6 P2 修复 `5dc17d7`，含压缩摘要方向修正（尾部优先）与 cron 锁 O_EXCL 原子化；P2-7/8 登记不修。重跑证据：pnpm test **452 passed + 1 skipped**、typecheck 3 包 Done、抽查属实、chat mock 冒烟 exit 0。实现过程备注：Task 1-3 实现代理 + Task 4 编排者接手收尾（修复中断残留的测试 bug）+ Task 5-6 编排者代做留档）。
 > **For agentic workers:** 按 Task 顺序执行；每 Task 测完再进下一 Task。
 > **交接提示词**见文末「给接手 AI 的完整提示词」。
 > **元规范:** `docs/ai-framework/phased-plan-driven.md`
