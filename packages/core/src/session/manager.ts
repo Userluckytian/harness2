@@ -151,6 +151,8 @@ export class SessionManager {
       /** fork 血缘：派生自哪个会话 */
       parentSession?: string;
       isSeeded?: boolean;
+      /** subagent 血缘（阶段 8）：由 subagent_start 创建的子会话 */
+      subagent?: boolean;
     } = {},
   ): SessionCreateResult {
     const id = opts.id ?? this.generateId();
@@ -162,6 +164,7 @@ export class SessionManager {
         cwd: resolve(cwd),
         ...(opts.parentSession !== undefined ? { parentSession: opts.parentSession } : {}),
         ...(opts.isSeeded !== undefined ? { isSeeded: opts.isSeeded } : {}),
+        ...(opts.subagent !== undefined ? { subagent: opts.subagent } : {}),
       },
       { fsync: opts.fsync ?? true },
     );

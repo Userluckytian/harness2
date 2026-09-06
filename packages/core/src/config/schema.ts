@@ -102,6 +102,17 @@ export type McpServerConfig =
 /** 缺省 = 无 MCP 服务器（零 MCP 行为） */
 export type McpServersConfig = Record<string, McpServerConfig>;
 
+/**
+ * Subagent 配置（阶段 8）：maxDepth = 子会话递归深度上限（1 = 子会话内无 subagent 工具）；
+ * maxTurns = 子会话单 turn 最大 step 数。roles.subagent 复用既有角色配置选择子会话模型。
+ */
+export interface SubagentConfig {
+  maxDepth: number;
+  maxTurns: number;
+}
+
+export const DEFAULT_SUBAGENT_CONFIG: SubagentConfig = { maxDepth: 1, maxTurns: 25 };
+
 /** 合并+校验后的配置（唯一合法形态） */
 export interface HarnessConfig {
   providers: Record<string, ProviderConfig>;
@@ -111,6 +122,7 @@ export interface HarnessConfig {
   browser: BrowserConfig;
   plugins: PluginsConfig;
   mcpServers: McpServersConfig;
+  subagent: SubagentConfig;
 }
 
 /** 配置错误（工厂/CLI 对其做一行友好输出；消息不携带密钥） */
@@ -147,7 +159,7 @@ function isStringRecord(v: unknown): v is Record<string, string> {
 }
 
 /** schema 内已知的顶层字段（其余忽略并告警） */
-const KNOWN_TOP_KEYS = new Set(['providers', 'roles', 'approval', 'memory', 'browser', 'plugins', 'mcpServers']);
+const KNOWN_TOP_KEYS = new Set(['providers', 'roles', 'approval', 'memory', 'browser', 'plugins', 'mcpServers', 'subagent']);
 
 function collectUnknownKeys(obj: Dict, known: ReadonlySet<string>, where: string, warnings: string[]): void {
   for (const k of Object.keys(obj)) {
@@ -163,6 +175,7 @@ const MEMORY_KNOWN_KEYS = new Set(['mode', 'nudgeInterval']);
 const BROWSER_KNOWN_KEYS = new Set(['enabled', 'idleDestroyMs', 'maxConcurrent']);
 const PLUGINS_KNOWN_KEYS = new Set(['enabled', 'allow']);
 const MCP_SERVER_KNOWN_KEYS = new Set(['command', 'args', 'env', 'cwd', 'url', 'headers']);
+const SUBAGENT_KNOWN_KEYS = new Set(['maxDepth', 'maxTurns']);
 
 /**
  * 校验合并后的原始 JSON（展开 ${VAR} 之后的形态），产出 HarnessConfig。
@@ -481,6 +494,26 @@ export function parseConfig(raw: unknown): ConfigParseResult {
     }
   }
 
+  // —— subagent（阶段 8；缺省 = maxDepth 1 / maxTurns 25 深度红线）——
+  const subagent: SubagentConfig = { ...DEFAULT_SUBAGENT_CONFIG };
+  const rawSubagent = raw['subagent'];
+  if (rawSubagent !== undefined) {
+    if (!isPlainObject(rawSubagent)) {
+      errors.push('config.subagent 必须是对象');
+    } else {
+      collectUnknownKeys(rawSubagent, SUBAGENT_KNOWN_KEYS, 'subagent', warnings);
+      for (const field of ['maxDepth', 'maxTurns'] as const) {
+        const num = rawSubagent[field];
+        if (num === undefined) continue;
+        if (typeof num !== 'number' || !Number.isInteger(num) || num < 1 || num > 10) {
+          errors.push(`subagent.${field} 必须是 1..10 的整数`);
+        } else {
+          subagent[field] = num;
+        }
+      }
+    }
+  }
+
   // —— 交叉引用校验（roles 引用存在的 channel/model）——
   for (const [role, rc] of Object.entries(roles)) {
     const provider = providers[rc.channel];
@@ -501,5 +534,5 @@ export function parseConfig(raw: unknown): ConfigParseResult {
   const safeErrors = errors.map(redactSecrets);
   const safeWarnings = warnings.map(redactSecrets);
   if (safeErrors.length > 0) return { config: null, errors: safeErrors, warnings: safeWarnings };
-  return { config: { providers, roles, approval, memory, browser, plugins, mcpServers }, errors: safeErrors, warnings: safeWarnings };
+  return { config: { providers, roles, approval, memory, browser, plugins, mcpServers, subagent }, errors: safeErrors, warnings: safeWarnings };
 }

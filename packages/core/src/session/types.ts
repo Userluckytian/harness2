@@ -50,6 +50,8 @@ export interface SessionHeaderPayload {
   /** fork 血缘：派生自哪个会话（P1 分叉用） */
   parentSession?: string;
   isSeeded?: boolean;
+  /** subagent 血缘（阶段 8）：本会话由 subagent_start 创建（加性字段，旧日志可缺省） */
+  subagent?: boolean;
 }
 
 export interface UserMessagePayload {

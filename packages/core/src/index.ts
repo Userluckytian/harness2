@@ -27,6 +27,7 @@ export * from './memory/nudge.js';
 export * from './agent/types.js';
 export * from './agent/compaction.js';
 export * from './agent/loop.js';
+export * from './agent/subagent.js';
 export * from './server/sessions.js';
 export * from './server/http.js';
 export * from './server/ws.js';

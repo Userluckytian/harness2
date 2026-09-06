@@ -685,6 +685,7 @@ const FACTORY_CONFIG: HarnessConfig = {
   browser: { enabled: false, idleDestroyMs: 300000, maxConcurrent: 2 },
   plugins: { enabled: true, allow: [] },
   mcpServers: {},
+  subagent: { maxDepth: 1, maxTurns: 25 },
 };
 
 describe('createProvider 工厂', () => {
@@ -780,6 +781,7 @@ describe('端到端：runTurn × 本地 stub server（openai 协议，含一轮�
       browser: { enabled: false, idleDestroyMs: 300000, maxConcurrent: 2 },
       plugins: { enabled: true, allow: [] },
       mcpServers: {},
+      subagent: { maxDepth: 1, maxTurns: 25 },
     };
     const provider = createProvider(config, 'main', { auth: { channels: { deepseek: { apiKey: 'test-key-e2e' } } }, env: {} });
 
