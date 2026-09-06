@@ -374,7 +374,7 @@ Electron 主进程 spawn `harness2 serve --port 0`（`ELECTRON_RUN_AS_NODE=1` �
 - **幂等**：fflate zipSync 的条目 mtime 统一固定（2000-01-01，zip DOS 时间仅支持 1980-2099）+ 条目按相对路径排序——同目录同内容两次导出得到逐字节相同的 zip。运行时依赖新增 `fflate`（纯 JS zip，无原生模块；cli 包仅测试 devDep）。
 - **importReplay（回放校验）**：解包 → 每个 `session.v1.jsonl` 逐行 parseEventLine（坏行计数 + loadSession 同款告警格式，坏行不中断后续解析）→ computeProjection → `{id, source, events, badLines, warnings, messageCount, lastSeq}` 摘要报告（内存内进行，不落盘）。包内无任何会话日志（空包/非 harness2 导出）抛错（CLI exit 1）。
 - **CLI**：`harness2 export <会话目录> [-o <zip>]`（默认输出 `<cwd>/<sessionId>.zip`）；`harness2 replay <zip>`（主会话/子会话逐行摘要 + 坏行明细）。
-- **性能口径（与 P2-4 大日志同档留档）**：导出为全量内存读取 + zipSync 一次性打包，回放为全量解包——超大日志/超大 zip 未做流式处理；子会话扫描为全库遍历（与 list/search 同口径）。真实长会话体积评估留待用户环境（见 OPEN.md）。
+- **性能口径（与 P2-4 大日志同档留档）**：导出为全量内存读取 + zipSync 一次性打包，回放为全量解包——超大日志/超大 zip 未做流式处理（importReplay 亦无解压体积上限，审查 P2-5 留档见 OPEN.md）；子会话扫描为全库遍历（与 list/search 同口径）；非库布局的裸目录导出（如 fixtures）时，库 root 退化为「父目录的父」，按目录遍历容错扫描（只读——扫不到子会话即无副作用）。真实长会话体积评估留待用户环境（见 OPEN.md）。
 - **隐私边界**：导出内容含用户代码与对话（属用户资产），只落本地文件，不自动上传。
 
 ## Skills（阶段 10 交付，`skills/`）

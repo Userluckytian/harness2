@@ -16,7 +16,7 @@
 | 阶段 9 特别说明 | 独立审查曾判 **fail**（P0 网关聋哑 + 7 P1，审查引用 QQ 官方文档纠偏），修复落地（`fb837bb`）后全量绿；**复审待基础设施恢复后补做**（fail 阶段闭环条件，见 OPEN.md） |
 | **M1 v0.1 / M2 v0.3 / M3 v0.6** | 🔶 代码/物料就绪；发布动作待人类操作：远程已建 `Userluckytian/harness2` 并授权 push；npm 包名占用检查、`NPM_TOKEN` secret、推 tag（可合并发布，见 OPEN.md） |
 | 未关闭事项 | 读 `docs/issue-log/OPEN.md`（保持为零上下文第一读；含 QQ/飞书真机联调清单、真实 MCP/插件验证、M1 手工验收清单、真实长会话导出体积评估、skill 真机体验） |
-| 测试 | `pnpm test`（含 build）—— core 471+1 skipped + cli 48 + desktop 41 + gateway 14 = **575 项（574 passed + 1 skipped**，`H2_GEN_LOOP_DEMO` 门控的 fixture 生成器非失败；loop/tools/cli 偶发抖动已登记 OPEN.md，失败先重跑甄别） |
+| 测试 | `pnpm test`（含 build）—— core 476+1 skipped + cli 48 + desktop 41 + gateway 14 = **580 项（579 passed + 1 skipped**，`H2_GEN_LOOP_DEMO` 门控的 fixture 生成器非失败；loop/tools/cli 偶发抖动已登记 OPEN.md，失败先重跑甄别） |
 | 远程 | `origin → github.com/Userluckytian/harness2`（用户授权 push；NPM 发布仍待 NPM_TOKEN） |
 
 ## 3. 文档地图（按阅读顺序）
