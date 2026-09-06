@@ -35,13 +35,16 @@ const DECLARATION_PATTERNS: ReadonlyArray<[RegExp, Kind]> = [
 ];
 
 const STAR_RE = /^export\s+\*\s+from\s+['"]([^'"]+)['"]\s*;?\s*$/gm;
+// export * as ns from './x.js' —— 命名空间对象值导出（ns 本身钉进清单，审查 P2-2 前瞻硬化）
+const STAR_AS_RE = /^export\s+\*\s+as\s+([A-Za-z_$][\w$]*)\s+from\s+['"]([^'"]+)['"]\s*;?\s*$/gm;
 // export { A, B as C } [from './x.js']; —— 单行与多行块都覆盖（[\s\S]*? 惰性到首个闭括号）
-const NAMED_BLOCK_RE = /^export\s*\{([\s\S]*?)\}\s*(?:from\s*['"]([^'"]+)['"])?\s*;?\s*$/gm;
+const NAMED_BLOCK_RE = /^export\s+(?:type\s+)?\{([\s\S]*?)\}\s*(?:from\s*['"]([^'"]+)['"])?\s*;?\s*$/gm;
 const IMPORT_NAMED_RE = /^import\s+(?:type\s+)?\{([^}]*)\}\s*from\s*['"]([^'"]+)['"]\s*;?\s*$/gm;
 
 interface ParsedModule {
   declared: Record<string, Kind>;
   starFrom: string[];
+  starAsFrom: Array<{ name: string; from: string }>;
   namedFrom: Array<{ orig: string; exported: string; from: string }>;
   localNamed: Array<{ orig: string; exported: string }>;
   imports: Record<string, { orig: string; from: string }>;
@@ -79,6 +82,12 @@ function parseDtsModule(content: string): ParsedModule {
     const spec = m[1];
     if (spec) starFrom.push(spec);
   }
+  const starAsFrom: ParsedModule['starAsFrom'] = [];
+  for (const m of content.matchAll(STAR_AS_RE)) {
+    const name = m[1];
+    const spec = m[2];
+    if (name && spec) starAsFrom.push({ name, from: spec });
+  }
 
   const namedFrom: ParsedModule['namedFrom'] = [];
   const localNamed: ParsedModule['localNamed'] = [];
@@ -98,7 +107,7 @@ function parseDtsModule(content: string): ParsedModule {
     if (!clause || !from) continue;
     for (const n of parseNamesClause(clause)) imports[n.exported] = { orig: n.orig, from };
   }
-  return { declared, starFrom, namedFrom, localNamed, imports };
+  return { declared, starFrom, starAsFrom, namedFrom, localNamed, imports };
 }
 
 /** './x.js' → importerDir/x.d.ts；非相对引用返回 null（dist d.ts 内均为相对引用） */
@@ -129,6 +138,10 @@ export function extractApiSurface(distDir: string): Record<string, Kind> {
       for (const [name, kind] of Object.entries(exportsOf(target))) {
         if (!(name in out)) out[name] = kind;
       }
+    }
+    // export * as ns：ns 本身是命名空间对象值绑定（与目标内容无关），钉为 const
+    for (const re of parsed.starAsFrom) {
+      if (!(re.name in out)) out[re.name] = 'const';
     }
     for (const re of parsed.namedFrom) {
       const target = resolveDts(re.from, dirname(file));
@@ -327,6 +340,37 @@ describe('公开导出面快照（@harness2/core 主入口）', () => {
         foo: 'function',
         renamed: 'function',
       });
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('提取器硬化（审查 P2-2）：type-only 重导出被钉住且删除变红；export * as ns 钉进清单', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'h2-api-surface-hard-'));
+    try {
+      writeFileSync(
+        join(dir, 'index.d.ts'),
+        [
+          "export type { Foo } from './foo.js';",
+          "export * as ns from './impl.js';",
+          '',
+        ].join('\n'),
+      );
+      writeFileSync(join(dir, 'foo.d.ts'), 'export interface Foo { x: number }\n');
+      writeFileSync(join(dir, 'impl.d.ts'), 'export declare function impl(): void;\n');
+
+      const withType = extractApiSurface(dir);
+      // type-only 重导出此前完全不被钉住（前瞻缺口）；ns 为命名空间对象值绑定
+      expect(withType['Foo']).toBe('interface');
+      expect(withType['ns']).toBe('const');
+
+      // 删除 type-only 重导出 → 快照红（removed 含 Foo）——该形式从此在快照保护范围内
+      writeFileSync(join(dir, 'index.d.ts'), "export * as ns from './impl.js';\n");
+      const withoutType = extractApiSurface(dir);
+      expect('Foo' in withoutType).toBe(false);
+      const diff = compareSurface(withoutType, withType);
+      expect(diff.removed).toEqual(['Foo']);
+      expect(describeBreaking(diff)).toContain('breaking');
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
