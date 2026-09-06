@@ -1,0 +1,135 @@
+// @vitest-environment jsdom
+// 对话 UI 组件测试（Task 4，jsdom + RTL）：会话列表与切换重放渲染、
+// Enter 发送 / Shift+Enter 换行、turn 中停止按钮（abort）、审批按钮（allow/deny）。
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import type React from 'react';
+import type {
+  ConnectionStatus,
+  Harness2Api,
+  SessionEventsPayloadShape,
+  StatusDetail,
+  WsFrame,
+} from '../src/shared/protocol.js';
+
+let seq = 0;
+function ev(type: string, payload: Record<string, unknown>): any {
+  seq += 1;
+  return { v: 1, seq, ts: '2026-09-06T00:00:00Z', type, payload, active: true };
+}
+
+function makeFakeApi() {
+  const eventListeners: Array<(f: WsFrame) => void> = [];
+  const replay: SessionEventsPayloadShape = {
+    id: 's1',
+    dir: 'd',
+    header: { sessionId: 's1' },
+    events: [
+      ev('session/header', { sessionId: 's1' }),
+      ev('user/message', { text: '第一句', turnId: 't1' }),
+      ev('assistant/message', { text: '第一句回复', reasoning: '暗自思考', model: 'mock/m', turnId: 't1' }),
+    ],
+    warnings: [],
+    lastSeq: 3,
+  };
+  const api: Harness2Api & { emit: (f: WsFrame) => void } = {
+    listSessions: vi.fn(async () => [
+      { id: 's1', dir: 'd', mtimeMs: 10, firstUserText: '第一句', messageCount: 2, lastSeq: 3 },
+    ]),
+    createSession: vi.fn(async () => ({ id: 's2' })),
+    events: vi.fn(async (id: string) => (id === 's1' ? replay : { ...replay, id, lastSeq: 0, events: [] })),
+    undo: vi.fn(async () => ({ results: [] })),
+    redo: vi.fn(async () => ({ results: [] })),
+    subscribe: vi.fn(async () => undefined),
+    unsubscribe: vi.fn(async () => undefined),
+    sendMessage: vi.fn(async () => undefined),
+    abort: vi.fn(async () => undefined),
+    respondApproval: vi.fn(async () => undefined),
+    loadLayout: vi.fn(async () => undefined),
+    saveLayout: vi.fn(async () => undefined),
+    onEvent: vi.fn((cb: (f: WsFrame) => void) => {
+      eventListeners.push(cb);
+      return () => {};
+    }),
+    onConnectionStatus: vi.fn((cb: (s: ConnectionStatus, d?: StatusDetail) => void) => {
+      queueMicrotask(() => cb('connected'));
+      return () => {};
+    }),
+    emit: (f: WsFrame): void => {
+      for (const cb of eventListeners) cb(f);
+    },
+  };
+  return api;
+}
+
+async function bootApp(api: Harness2Api): Promise<Record<string, unknown>> {
+  vi.resetModules();
+  (window as unknown as { harness2: Harness2Api }).harness2 = api;
+  return import('../src/renderer/App');
+}
+
+describe('对话 UI（jsdom）', () => {
+  beforeEach(() => {
+    cleanup();
+    seq = 0;
+  });
+
+  it('会话列表与切换重放：点击会话 → subscribe + 全量重放渲染气泡/reasoning/摘要', async () => {
+    const api = makeFakeApi();
+    const App = (await bootApp(api)) as { App: () => React.ReactNode };
+    render(<App.App />);
+
+    expect(await screen.findByText('第一句')).toBeTruthy(); // 列表摘要
+    fireEvent.click(screen.getByRole('button', { name: /第一句/ }));
+
+    await waitFor(() => expect(api.subscribe).toHaveBeenCalledWith('s1'));
+    await waitFor(() => expect(api.events).toHaveBeenCalledWith('s1'));
+    expect(await screen.findByText('第一句回复')).toBeTruthy(); // assistant 气泡
+    expect(screen.getByText('思考过程')).toBeTruthy(); // reasoning 折叠块
+    expect(screen.getByText('── turn')).toBeTruthy(); // turn 标头
+  });
+
+  it('输入框：Enter 发送（trim）→ 转运行中（停止按钮）→ 停止调 abort；Shift+Enter 换行不发送', async () => {
+    const api = makeFakeApi();
+    const App = (await bootApp(api)) as { App: () => React.ReactNode };
+    render(<App.App />);
+    fireEvent.click(await screen.findByRole('button', { name: /第一句/ }));
+
+    const box = (await screen.findByPlaceholderText(/输入消息/)) as HTMLTextAreaElement;
+    fireEvent.change(box, { target: { value: '  你好  ' } });
+    fireEvent.keyDown(box, { key: 'Enter', shiftKey: true }); // 换行：不发送
+    fireEvent.keyDown(box, { key: 'Enter', shiftKey: false }); // 发送
+    expect(api.sendMessage).toHaveBeenCalledWith('s1', '你好');
+    expect(box.value).toBe(''); // 发送后清空
+
+    // 乐观 running → 停止按钮出现
+    expect(await screen.findByRole('button', { name: /停止/ })).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: /停止/ }));
+    expect(api.abort).toHaveBeenCalledWith('s1');
+  });
+
+  it('审批条：approval-request 帧 → 允许/拒绝按钮 → respondApproval 带决策', async () => {
+    const api = makeFakeApi();
+    const App = (await bootApp(api)) as { App: () => React.ReactNode };
+    render(<App.App />);
+    fireEvent.click(await screen.findByRole('button', { name: /第一句/ }));
+    expect(await screen.findByText('第一句回复')).toBeTruthy();
+
+    api.emit({ type: 'approval-request', sessionId: 's1', tool: 'write', args: { file_path: 'a.txt' }, requestId: 'r1' });
+    expect(await screen.findByText(/允许执行/)).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: '允许' }));
+    expect(api.respondApproval).toHaveBeenCalledWith('r1', 'allow');
+  });
+
+  it('后台帧缓冲：选中 s1 时 s2 的 assistant/message 计未读并显示徽标', async () => {
+    const api = makeFakeApi();
+    const App = (await bootApp(api)) as { App: () => React.ReactNode; store: { peekStream(id: string): { unread: number } } };
+    render(<App.App />);
+    fireEvent.click(await screen.findByRole('button', { name: /第一句/ }));
+    await screen.findByText('第一句回复');
+
+    api.emit({ type: 'event', sessionId: 's2', event: ev('assistant/message', { text: '后台产出', turnId: 'k' }) });
+    api.emit({ type: 'turn-end', sessionId: 's2', stopReason: 'end_turn' });
+    expect(App.store.peekStream('s2').unread).toBe(2);
+  });
+});
