@@ -26,7 +26,7 @@ export const COMPACTION_MAX_SUMMARY_CHARS = 2000;
 
 /** 摘要输入折叠限额：单条消息 ≤ 此字符 */
 export const COMPACTION_DIGEST_MESSAGE_MAX_CHARS = 500;
-/** 摘要输入折叠限额：总量 ≤ 此字符（超出停止折叠，先到先得） */
+/** 摘要输入折叠限额：总量 ≤ 此字符（尾部优先收集，超出截断在最旧端） */
 export const COMPACTION_DIGEST_TOTAL_MAX_CHARS = 24000;
 
 /** 摘要消息的可见前缀（buildChatMessages 替换覆盖区时使用） */
@@ -75,16 +75,19 @@ export function computeCoveredUpToSeq(session: LoadedSession): number | null {
 
 /**
  * 覆盖区文本折叠（摘要模型输入）：seq <= coveredUpToSeq 的活动 user/assistant 消息，
- * `USER: ` / `ASSISTANT: ` 行；单条裁到 COMPACTION_DIGEST_MESSAGE_MAX_CHARS，
- * 总量超过 COMPACTION_DIGEST_TOTAL_MAX_CHARS 停止（先到先得）。
+ * `USER: ` / `ASSISTANT: ` 行；单条裁到 COMPACTION_DIGEST_MESSAGE_MAX_CHARS。
+ * 收集方向（P2-2 阶段 7 审查）：从覆盖区**最新**消息向前收集（尾部优先——近端上下文
+ * 对摘要最有价值，越需要压缩的会话越不能丢近端）；总量超过
+ * COMPACTION_DIGEST_TOTAL_MAX_CHARS 时停止，截断发生在最旧端。
  */
 export function buildCompactionDigest(session: LoadedSession, coveredUpToSeq: number): string {
   computeProjection(session);
   const lines: string[] = [];
   let total = 0;
-  for (const { event, active } of session.events) {
+  for (let i = session.events.length - 1; i >= 0; i--) {
+    const { event, active } = session.events[i]!;
     if (!active) continue;
-    if (event.seq > coveredUpToSeq) break; // 日志有序：之后全是保留区
+    if (event.seq > coveredUpToSeq) continue; // 尾部保留区（日志有序：越界只出现在最新端）
     if (event.type !== 'user/message' && event.type !== 'assistant/message') continue;
     const text = event.payload.text.replace(/\s+/g, ' ').trim();
     const clipped =
@@ -96,6 +99,7 @@ export function buildCompactionDigest(session: LoadedSession, coveredUpToSeq: nu
     if (total > COMPACTION_DIGEST_TOTAL_MAX_CHARS) break;
     lines.push(line);
   }
+  lines.reverse(); // 恢复时间顺序（收集自最新端向前）
   return lines.join('\n');
 }
 

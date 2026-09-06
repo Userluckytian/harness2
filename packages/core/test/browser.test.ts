@@ -40,10 +40,15 @@ afterEach(async () => {
 const servers: Server[] = [];
 const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 
-/** 本地 stub 页面：按钮（点击写 #out）、输入框、文本 */
+/** 本地 stub 页面：按钮（点击写 #out）、输入框、文本；/empty 路径返回无交互元素页面（ref 失配场景） */
 function startStubServer(): Promise<string> {
   return new Promise((resolve) => {
     const server = createServer((req, res) => {
+      if (req.url?.startsWith('/empty')) {
+        res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
+        res.end('<!doctype html><html><body><p>空白页（无交互元素）</p></body></html>');
+        return;
+      }
       res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
       res.end(`<!doctype html><html><head><title>stub 页面</title></head><body>
 <h1>harness2 浏览器测试页</h1>
@@ -161,6 +166,28 @@ describe.skipIf(!hasChromium)('浏览器全链（真实 headless chromium + 本�
     expect(pool.size).toBe(2);
     const snapB = await runTool(toolByName(b, 'browser_snapshot'), {});
     expect(snapB.text).not.toContain('hello harness2');
+  }, 40_000);
+
+  it('ref 失配提示：页面跳转后用旧 ref → 错误附「browser_snapshot 重新获取引用」提示（审查 P2-4）', async () => {
+    const url = await startStubServer();
+    const pool = smallPool();
+    const tools = createBrowserTools('s-stale', pool);
+    const navigate = toolByName(tools, 'browser_navigate');
+    const snapshot = toolByName(tools, 'browser_snapshot');
+    const click = toolByName(tools, 'browser_click');
+
+    await runTool(navigate, { url });
+    const s1 = await runTool(snapshot, {});
+    const btnRef = refOf(s1.text, '点我');
+    expect(btnRef).toBeTruthy();
+
+    // 导航到无交互元素的页面（DOM 已变更）→ 旧 ref 定位失败，错误必须含再取引用的指引
+    const nav2 = await runTool(navigate, { url: `${url}empty` });
+    expect(nav2.ok).toBe(true);
+    const r = await runTool(click, { ref: btnRef });
+    expect(r.ok).toBe(false);
+    expect(r.text).toContain('页面可能已变化');
+    expect(r.text).toContain('browser_snapshot 重新获取引用');
   }, 40_000);
 
   it('screenshot：png 落盘（默认临时目录与指定路径）', async () => {

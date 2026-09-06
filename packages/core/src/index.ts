@@ -33,5 +33,5 @@ export * from './server/ws.js';
 export * from './server/trust.js';
 export * from './cron/index.js';
 
-export const CORE_VERSION = '0.1.0';
+export const CORE_VERSION = '0.3.0';
 

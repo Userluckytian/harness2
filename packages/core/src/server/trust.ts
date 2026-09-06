@@ -14,6 +14,15 @@ export function isTrustedOrigin(origin: string | undefined): boolean {
   return TRUSTED_ORIGIN_PATTERN.test(origin.trim());
 }
 
+/**
+ * Origin 头规范化（P2-5 阶段 7 审查）：重复 Origin 头可能被解析为 string[]
+ * （而非 typeof 'string' 可命中的标量）——取首值校验，杜绝数组形态绕过信任域检查。
+ */
+export function normalizeOriginHeader(origin: string | string[] | undefined): string | undefined {
+  if (Array.isArray(origin)) return origin[0];
+  return origin;
+}
+
 /** Host 是否为 127.0.0.1:<port>（undefined = 客户端未携带 Host，放行） */
 export function isTrustedHost(host: string | undefined, port: number): boolean {
   if (host === undefined) return true;

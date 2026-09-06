@@ -3,7 +3,7 @@
 // 熔断（连续 3 失败 disable + incident）/history 落盘/WS 通知帧。
 // 测试直接调用 scheduler.tick(now) 驱动（不依赖真实定时器），执行用 stub provider。
 import { afterEach, describe, expect, it } from 'vitest';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync, unlinkSync } from 'node:fs';
+import { closeSync, existsSync, mkdirSync, mkdtempSync, openSync, readFileSync, readdirSync, rmSync, writeFileSync, unlinkSync, writeSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
@@ -280,6 +280,39 @@ describe('跨进程 tick 文件锁', () => {
     await scheduler.stop();
     expect(provider.calls).toBe(1);
     expect(existsSync(join(root, '.tick.lock'))).toBe(false); // 释放
+  });
+
+  it('两进程争锁（O_EXCL，审查 P2-1）：存活持有者的锁不被覆盖，第二个 tick 拿不到锁退出；死 pid 接管成功', async () => {
+    const root = tmpDir();
+    const t0 = Date.now();
+    writeJobsFile(root, [makeJob()]);
+    const provider = new StubOkProvider();
+    const scheduler = new CronScheduler({
+      root,
+      cwd: root,
+      provider,
+      toolsForSession: () => tools(),
+      fsync: false,
+    });
+    const lockPath = join(root, '.tick.lock');
+
+    // 模拟另一进程以 O_EXCL 原子创建占住锁（活 pid = 本进程）
+    const fd = openSync(lockPath, 'wx');
+    writeSync(fd, JSON.stringify({ pid: process.pid, ts: 'held-by-other' }));
+    closeSync(fd);
+
+    // 第二进程的 tick：拿不到锁 → 本次跳过（不执行、不推进、不覆盖锁内容）
+    await scheduler.tick(new Date(t0));
+    expect(provider.calls).toBe(0);
+    expect(JSON.parse(readFileSync(lockPath, 'utf8'))).toMatchObject({ pid: process.pid, ts: 'held-by-other' });
+    expect(new Date(new CronJobStore(root).get('cron-test1')!.nextRun).getTime()).toBeLessThan(t0);
+
+    // 持有者死亡（死 pid）→ unlink 后原子重试接管成功并正常执行
+    writeFileSync(lockPath, JSON.stringify({ pid: 999999999, ts: 'dead-holder' }), 'utf8');
+    await scheduler.tick(new Date(t0));
+    await scheduler.stop();
+    expect(provider.calls).toBe(1);
+    expect(existsSync(lockPath)).toBe(false); // 释放
   });
 });
 

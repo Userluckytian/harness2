@@ -6,6 +6,7 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { request as httpRequest } from 'node:http';
+import { connect } from 'node:net';
 import WebSocketWS from 'ws';
 import { startServe, type ServeHandle } from '../src/server/http.js';
 import { MockProvider } from '../src/provider/mock.js';
@@ -52,6 +53,20 @@ function getWithHost(url: string, host: string): Promise<{ status: number }> {
   });
 }
 
+/** 原生 socket 发原始请求报文（重复 Origin 头——http.request/fetch 无法发出重复头） */
+function rawRequest(port: number, raw: string): Promise<{ status: number }> {
+  return new Promise((resolve, reject) => {
+    const socket = connect(port, '127.0.0.1', () => socket.write(raw));
+    let buf = '';
+    socket.on('data', (d: Buffer) => (buf += d.toString('utf8')));
+    socket.on('close', () => {
+      const m = /^HTTP\/1\.1 (\d{3})/.exec(buf);
+      resolve({ status: m ? Number(m[1]) : 0 });
+    });
+    socket.on('error', reject);
+  });
+}
+
 describe('HTTP 信任域（Origin/Host）', () => {
   it('合法三种来源放行：无 Origin（非浏览器）、file://、http://localhost:*、http://127.0.0.1:*', async () => {
     const handle = await start();
@@ -86,6 +101,19 @@ describe('HTTP 信任域（Origin/Host）', () => {
     for (const host of ['evil.example', `localhost:${handle.port}`, `127.0.0.1:${handle.port + 1}`, '127.0.0.1']) {
       expect((await getWithHost(base, host)).status).toBe(403);
     }
+  });
+
+  it('重复 Origin 头（原生请求）→ 403：数组/拼接形态不得绕过信任域（审查 P2-5）', async () => {
+    const handle = await start();
+    const res = await rawRequest(
+      handle.port,
+      'GET /api/sessions HTTP/1.1\r\n' +
+        `Host: 127.0.0.1:${handle.port}\r\n` +
+        'Origin: https://evil.example\r\n' +
+        'Origin: file://\r\n' +
+        'Connection: close\r\n\r\n',
+    );
+    expect(res.status).toBe(403);
   });
 });
 

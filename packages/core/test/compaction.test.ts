@@ -1,5 +1,6 @@
 // 上下文压缩测试（阶段 7 Task 1）：
-// 触发/不触发/替换正确性/最新覆盖旧摘要/摘要失败跳过/不变量扩展/role 交替/写入口校验。
+// 触发/不触发/替换正确性/最新覆盖旧摘要/摘要失败跳过/不变量扩展/role 交替/写入口校验；
+// 摘要输入尾部优先（审查 P2-2）；压缩 × rewind 交互（审查 P2-3）。
 // 不变量回放（独立重建）不与 buildChatMessages 共享实现，避免同义反复。
 import { afterEach, describe, expect, it } from 'vitest';
 import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
@@ -7,6 +8,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { buildChatMessages } from '../src/agent/loop.js';
 import { runTurn } from '../src/agent/loop.js';
+import { undoLastTurn } from '../src/session/undo.js';
 import {
   buildCompactionDigest,
   COMPACTION_DIGEST_TOTAL_MAX_CHARS,
@@ -108,12 +110,12 @@ describe('estimateContextTokens / computeCoveredUpToSeq（纯函数）', () => {
 });
 
 describe('buildCompactionDigest / requestCompactionSummary（纯函数）', () => {
-  it('折叠覆盖区消息为 USER/ASSISTANT 行；单条裁剪 + 总量超限停止（先到先得）', () => {
+  it('折叠覆盖区消息为 USER/ASSISTANT 行；总量超限尾部优先——摘要输入含最新、不含最旧（审查 P2-2）', () => {
     const dir = tmpDir();
     const writer = SessionWriter.create(dir, { sessionId: 'digest' }, { fsync: false });
     writer.append('user/message', { text: '问: 早期问题' });
-    writer.append('assistant/message', { text: 'B'.repeat(2000) }); // 单条裁到 500
-    // 60 条 ×~510 字符 ≈ 30600 > 总量 24000 → 后段停止
+    writer.append('assistant/message', { text: 'B'.repeat(2000) }); // 单条裁到 500（本例中整体被截断在最旧端）
+    // 60 条 filler：双位数行 ~419 字符、单位数行 ~373 字符，总量超 24000
     for (let i = 0; i < 60; i++) {
       writer.append('user/message', { text: `filler${i} `.repeat(46).trim() });
     }
@@ -123,12 +125,27 @@ describe('buildCompactionDigest / requestCompactionSummary（纯函数）', () =
     computeProjection(session);
     const lastSeq = session.events.at(-1)!.event.seq;
     const digest = buildCompactionDigest(session, lastSeq);
-    expect(digest).toContain('USER: 问: 早期问题');
-    expect(digest).toContain(`ASSISTANT: ${'B'.repeat(500)}…`);
-    expect(digest).not.toContain('B'.repeat(501));
-    expect(digest).toContain('filler0 ');
-    expect(digest).not.toContain('filler59 '); // 总量超限：尾部未进摘要
+    // 尾部优先：最新端消息进入摘要输入，且 digest 内保持时间顺序
+    expect(digest).toContain('filler59 ');
+    expect(digest).toContain('filler2 ');
+    expect(digest.indexOf('filler58 ')).toBeLessThan(digest.indexOf('filler59 '));
+    // 超限截断发生在最旧端：最早的消息不进摘要输入
+    expect(digest).not.toContain('问: 早期问题');
+    expect(digest).not.toContain('B'.repeat(500));
+    expect(digest).not.toContain('filler1 ');
     expect(digest.length).toBeLessThanOrEqual(COMPACTION_DIGEST_TOTAL_MAX_CHARS + 600);
+  });
+
+  it('单条超长消息裁到 500 字符（未超总量时全部进入摘要输入）', () => {
+    const dir = tmpDir();
+    const writer = SessionWriter.create(dir, { sessionId: 'clip' }, { fsync: false });
+    writer.append('assistant/message', { text: 'B'.repeat(2000) }); // seq2
+    writer.close();
+    const session = loadSession(dir);
+    computeProjection(session);
+    const lastSeq = session.events.at(-1)!.event.seq;
+    const digest = buildCompactionDigest(session, lastSeq);
+    expect(digest).toBe(`ASSISTANT: ${'B'.repeat(500)}…`);
   });
 
   it('摘要调用：system 提示 + 超长输出截断；空输出抛错', async () => {
@@ -331,6 +348,53 @@ describe('buildChatMessages 消费 compaction/applied（单元）', () => {
     const messages = buildChatMessages(loadSession(dir));
     expect(messages.map((m) => m.role)).toEqual(['user', 'assistant', 'tool']);
     expect(messages[1]!.toolCalls).toHaveLength(1);
+  });
+});
+
+describe('压缩 × rewind（阶段 7 审查 P2-3）', () => {
+  it('压缩事件被 rewind 遮蔽 → buildChatMessages 从原文重建（无摘要）', () => {
+    const dir = tmpDir();
+    const writer = SessionWriter.create(dir, { sessionId: 'rewind-masked' }, { fsync: false });
+    writer.append('user/message', { text: 'u1' }); // seq2
+    writer.append('assistant/message', { text: 'a1' }); // seq3
+    writer.append('user/message', { text: 'u2' }); // seq4
+    writer.append('assistant/message', { text: 'a2' }); // seq5
+    writer.append('compaction/applied', { summary: '覆盖摘要', coveredUpToSeq: 3 }); // seq6
+    writer.append('user/message', { text: 'u3' }); // seq7
+    writer.append('assistant/message', { text: 'a3' }); // seq8
+    undoLastTurn(writer); // 撤 u3 turn（rewindTo 6）
+    undoLastTurn(writer); // 撤 u2 turn（rewindTo 3）→ 压缩事件（seq6）一并被遮蔽
+    writer.close();
+
+    const messages = buildChatMessages(loadSession(dir));
+    expect(messages.map((m) => m.role)).toEqual(['user', 'assistant']);
+    expect(messages[0]!.content).toBe('u1');
+    expect(messages[1]!.content).toBe('a1');
+    expect(messages.some((m) => m.content.includes(COMPACTION_SUMMARY_PREFIX))).toBe(false);
+    expect(messages.some((m) => m.content.includes('覆盖摘要'))).toBe(false);
+  });
+
+  it('两条压缩事件间 undo → 旧摘要继续生效 + 分段原文（新摘要被遮蔽）', () => {
+    const dir = tmpDir();
+    const writer = SessionWriter.create(dir, { sessionId: 'between-undos' }, { fsync: false });
+    writer.append('user/message', { text: 'u1' }); // seq2
+    writer.append('assistant/message', { text: 'a1' }); // seq3
+    writer.append('user/message', { text: 'u2' }); // seq4
+    writer.append('assistant/message', { text: 'a2' }); // seq5
+    writer.append('compaction/applied', { summary: '旧摘要', coveredUpToSeq: 3 }); // seq6
+    writer.append('user/message', { text: 'u3' }); // seq7
+    writer.append('assistant/message', { text: 'a3' }); // seq8
+    writer.append('compaction/applied', { summary: '新摘要', coveredUpToSeq: 8 }); // seq9
+    undoLastTurn(writer); // 撤 u3 turn（rewindTo 6，落在两条压缩事件之间）→ 新摘要（seq9）被遮蔽
+    writer.close();
+
+    const messages = buildChatMessages(loadSession(dir));
+    // 旧摘要（seq6）仍是最新活动压缩 → 覆盖 seq<=3；保留区 = u2, a2 原文
+    expect(messages.map((m) => m.role)).toEqual(['user', 'assistant']);
+    expect(messages[0]!.content).toBe(`${COMPACTION_SUMMARY_PREFIX}\n旧摘要\n\nu2`);
+    expect(messages[1]!.content).toBe('a2');
+    expect(messages.some((m) => m.content.includes('新摘要'))).toBe(false);
+    expect(messages.some((m) => m.content.includes('u3'))).toBe(false);
   });
 });
 

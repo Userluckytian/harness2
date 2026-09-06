@@ -271,6 +271,9 @@ function normalizeRef(tool: string, raw: string): string {
   return ref;
 }
 
+/** ref 定位失败的统一提示（P2-4 阶段 7 审查）：页面跳转/DOM 变更后旧 ref 会失配 */
+const REF_MISS_HINT = '（页面可能已变化，请先 browser_snapshot 重新获取引用）';
+
 function disposeSuffix(notes: string[]): string {
   return notes.length > 0 ? `\n${notes.join('\n')}` : '';
 }
@@ -348,7 +351,7 @@ export function createBrowserTools(sessionKey: string, pool: BrowserPool): ToolD
         });
         return { output: result + disposeSuffix(notes) };
       } catch (e) {
-        return { error: `browser_click: ${(e as Error)?.message ?? String(e)}` };
+        return { error: `browser_click: ${(e as Error)?.message ?? String(e)}${REF_MISS_HINT}` };
       }
     },
   };
@@ -376,7 +379,7 @@ export function createBrowserTools(sessionKey: string, pool: BrowserPool): ToolD
         });
         return { output: result + disposeSuffix(notes) };
       } catch (e) {
-        return { error: `browser_type: ${(e as Error)?.message ?? String(e)}` };
+        return { error: `browser_type: ${(e as Error)?.message ?? String(e)}${REF_MISS_HINT}` };
       }
     },
   };

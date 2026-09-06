@@ -17,7 +17,7 @@ import type { TurnStopReason } from '../agent/types.js';
 import type { ToolCallRequest } from '../provider/types.js';
 import type { AnySessionEvent } from '../session/types.js';
 import { HubError, SessionHub, type TurnDelta } from './sessions.js';
-import { isTrustedHost, isTrustedOrigin, WS_MAX_PAYLOAD } from './trust.js';
+import { isTrustedHost, isTrustedOrigin, normalizeOriginHeader, WS_MAX_PAYLOAD } from './trust.js';
 
 export const WS_PATH = '/ws';
 
@@ -84,7 +84,8 @@ export function attachWsServer(server: Server, hub: SessionHub, options: WsPlane
     } catch {
       pathname = '';
     }
-    const origin = typeof req.headers.origin === 'string' ? req.headers.origin : undefined;
+    // P2-5（阶段 7 审查）：与 HTTP 同口径——重复 Origin 头取首值规范化后再校验
+    const origin = normalizeOriginHeader(req.headers.origin);
     const host = typeof req.headers.host === 'string' ? req.headers.host : undefined;
     const address = server.address();
     const port = address !== null && typeof address === 'object' ? address.port : undefined;

@@ -8,6 +8,7 @@ import {
   CronJobStore,
   CronScheduler,
   computeProjection,
+  createApprovalPolicy,
   createProvider,
   defaultConfigPaths,
   defaultCronRoot,
@@ -460,6 +461,9 @@ cronCmd
       cwd: root,
       provider,
       toolsForSession: () => tools,
+      // P1-1（阶段 7 审查）：与 serve 调度路径同语义——手工执行同样走审批策略，
+      // unsafe 工具不再 allow-all；ask 无人工通道 → 执行器按拒绝处理
+      decide: createApprovalPolicy(loaded.config.approval).decide,
       fsync: false,
     });
     const outcome = await scheduler.runOnce(id);

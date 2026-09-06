@@ -1,13 +1,13 @@
 // 定时任务调度器（阶段 7 Task 3，hermes 实证口径）：
 //   - serve 内常驻 tick（setTimeout 链，默认 60s；测试可调小）；
-//   - 跨进程 tick 文件锁（~/.harness2/cron/.tick.lock，pid 存活检查 + 陈旧锁接管）；
+//   - 跨进程 tick 文件锁（~/.harness2/cron/.tick.lock，O_EXCL 原子创建 + pid 存活检查 + 陈旧锁接管）；
 //   - at-most-once：到点任务**先推进 next_run 落盘再执行**——crash 不重跑、落后不补跑
 //     （错过的 occurrences 直接跳过，nextRun = 执行触发时刻 + 一个周期）；
 //   - 执行 = 独立临时会话跑 runTurn（主 provider + 全量工具 + cwd=serve root），
 //     产出写 ~/.harness2/cron/history/<id>/<ts>/（session.v1.jsonl + result.md）；
 //   - 失败 failCount+1（成功归零），连续 ≥3 → enabled=false + incidents.jsonl 标记；
 //   - 执行串行（进程内单队列，不与用户 turn 抢并发）；ask 审批无人工通道 → 按拒绝处理。
-import { existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs';
+import { closeSync, existsSync, mkdirSync, openSync, readFileSync, unlinkSync, writeFileSync, writeSync } from 'node:fs';
 import { join } from 'node:path';
 import { runTurn } from '../agent/loop.js';
 import type { TurnResult } from '../agent/types.js';
@@ -228,11 +228,21 @@ export class CronScheduler {
     return join(this.root, '.tick.lock');
   }
 
-  /** 获取 tick 锁；被存活进程持有 → 抛错（本次 tick 跳过）；返回 release */
+  /**
+   * 获取 tick 锁（P2-1 阶段 7 审查）：openSync 'wx'（O_EXCL）原子创建——不存在
+   * exists→check→write 的检查窗口，双进程争锁只有一个创建成功；被存活进程持有 →
+   * 抛错（本次 tick 跳过）；陈旧锁（持有者 pid 死亡/锁损坏）unlink 后原子重试一次，
+   * 仍失败 = 竞争对手刚接管。返回 release。
+   */
   private acquireTickLock(): () => void {
     mkdirSync(this.root, { recursive: true });
     const path = this.lockPath();
-    if (existsSync(path)) {
+    const tryCreate = (): number => openSync(path, 'wx');
+    let fd: number;
+    try {
+      fd = tryCreate();
+    } catch {
+      // 锁已存在：检查持有者是否存活
       let pid: number | undefined;
       try {
         pid = (JSON.parse(readFileSync(path, 'utf8')) as { pid?: number }).pid;
@@ -242,8 +252,23 @@ export class CronScheduler {
       if (typeof pid === 'number' && isPidAlive(pid)) {
         throw new Error(`tick lock held by pid ${pid}`);
       }
+      // 陈旧锁接管：先 unlink 再原子重试一次（仍失败 = 对手刚接管，本轮放弃）
+      try {
+        unlinkSync(path);
+      } catch {
+        // 锁已消失（对手接管后释放等）：直接重试
+      }
+      try {
+        fd = tryCreate();
+      } catch {
+        throw new Error('tick lock contention: stale takeover lost');
+      }
     }
-    writeFileSync(path, JSON.stringify({ pid: process.pid, ts: new Date().toISOString() }), 'utf8');
+    try {
+      writeSync(fd, JSON.stringify({ pid: process.pid, ts: new Date().toISOString() }));
+    } finally {
+      closeSync(fd);
+    }
     return () => {
       try {
         // 只删除自己持有的锁（期间被接管则不误删）
