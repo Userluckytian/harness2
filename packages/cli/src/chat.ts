@@ -16,6 +16,7 @@ import {
   PendingMemoryStore,
   registerBuiltinTools,
   runTurn,
+  forkSession,
   defaultSessionsRoot,
   SessionManager,
   SnapshotStore,
@@ -33,6 +34,10 @@ import { handleCommand, parseCommand, type CommandContext } from './commands.js'
 export interface ChatOptions {
   /** 恢复指定会话 id；缺省 = 恢复 cwd 最新会话或新建 */
   session?: string;
+  /** 从指定会话分叉新会话并继续（可配 at 截取；阶段 6） */
+  fork?: string;
+  /** --fork 的截取上界（事件 seq，含）；缺省 = 全部活动事件 */
+  at?: number;
   /** 'mock' = 内置演示脚本（不加载配置、不触发审批）；缺省按配置 roles.main 构造 */
   provider?: string;
   /** 工作目录：工具执行 cwd + 会话分组（默认 process.cwd()） */
@@ -167,7 +172,18 @@ export async function runChat(options: ChatOptions = {}): Promise<void> {
     const created = manager.create(root);
     return { id: created.id, dir: created.dir, writer: created.writer };
   };
-  if (options.session !== undefined) {
+  if (options.fork !== undefined) {
+    // --fork <id> [--at <seq>]：先分叉（读原会话活动投影 → 新会话血缘重放），再打开新会话
+    try {
+      const r = forkSession(manager, options.fork, options.at !== undefined ? { atSeq: options.at } : {});
+      current = openById(r.id);
+      renderer.line(`会话: ${current.id}（自 ${r.parentSession} 分叉，复制 ${r.copiedEvents} 个活动事件）`);
+    } catch (e) {
+      renderer.line(`error: ${(e as Error).message}`);
+      process.exitCode = 1;
+      return;
+    }
+  } else if (options.session !== undefined) {
     try {
       current = openById(options.session);
     } catch (e) {
@@ -285,6 +301,22 @@ export async function runChat(options: ChatOptions = {}): Promise<void> {
       finish();
     },
     snapshots: () => (current ? new SnapshotStore(current.dir) : undefined),
+    fork: (at?: number) => {
+      if (!current) {
+        renderer.line('error: 无活动会话');
+        return;
+      }
+      try {
+        const r = forkSession(manager, current.id, at !== undefined ? { atSeq: at } : {});
+        closeCurrent();
+        current = openById(r.id);
+        renderer.line(
+          `会话: ${current.id}（自 ${r.parentSession} 分叉，复制 ${r.copiedEvents} 个活动事件${at !== undefined ? `，截取到 seq ${at}` : ''}）`,
+        );
+      } catch (e) {
+        renderer.line(`error: ${(e as Error).message}`);
+      }
+    },
   };
 
   async function runUserTurn(text: string): Promise<void> {

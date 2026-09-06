@@ -26,6 +26,7 @@ import type { ChatProvider, ToolCallRequest } from '../provider/types.js';
 import { computeProjection, loadSession, type LoadedEvent } from '../session/reader.js';
 import { SnapshotStore } from '../session/snapshots.js';
 import { SessionManager } from '../session/manager.js';
+import { forkSession, ForkError, type ForkResult } from '../session/fork.js';
 import { redoLastUndo, undoLastTurn, UndoRedoError, type UndoRedoResult } from '../session/undo.js';
 import type {
   AnySessionEvent,
@@ -472,6 +473,17 @@ export class SessionHub {
       }
     }
     return { results };
+  }
+
+  // —— fork（阶段 6：血缘派生，只读原会话，busy 会话也允许——append-only 日志并发读安全） ——
+
+  fork(id: string, opts: { atSeq?: number } = {}): ForkResult {
+    try {
+      return forkSession(this.options.manager, id, opts.atSeq !== undefined ? { atSeq: opts.atSeq } : {});
+    } catch (e) {
+      if (e instanceof ForkError) throw new HubError(e.code, e.message);
+      throw e;
+    }
   }
 
   // —— 审批上抛 ——

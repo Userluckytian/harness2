@@ -8,6 +8,7 @@ export const HELP_TEXT = [
   '  /new                   新建会话',
   '  /sessions [关键字]     列出当前目录的会话（带关键字时改为全文搜索）',
   '  /resume <id>           恢复指定会话',
+  '  /fork [seq]            从当前会话分叉新会话（seq = 截取到的事件序号，缺省全部活动）',
   '  /undo [n] [--dry-run]  撤销最近 n 个用户 turn（--dry-run 仅预览，不落盘）',
   '  /redo                  重做最近一次撤销（可连续多次逐层恢复）',
   '  /help                  显示本帮助',
@@ -18,6 +19,8 @@ export const HELP_TEXT = [
   '  - redo 会恢复到撤销前状态，撤销之后新输入的消息将被移出当前上下文',
   '    （仍保留在日志中，可用 traj 查看）。',
   '  - 撤回/重做只追加 rewind 标记（append-only），会话日志永不回改。',
+  '  - 分叉（/fork）= 复制当前会话的活动事件到新会话（血缘入 header）；',
+  '    原会话零改动，新会话 undo 从零开始（文件快照不复制）。',
   '  - 审批提示中的 [a] 本会话总是 = 该工具后续所有调用不再询问（仅进程内会话级，不落盘）。',
   '  - 以 / 开头的普通消息会被当作命令，无法直接发送。',
 ].join('\n');
@@ -44,6 +47,8 @@ export interface CommandContext {
   requestExit(): void;
   /** 当前会话的快照存储（undo/redo 联动） */
   snapshots(): SnapshotStore | undefined;
+  /** 从当前会话分叉新会话并切换（at = 截取到的事件序号，缺省全部活动） */
+  fork?(at?: number): void;
 }
 
 export function handleCommand(parsed: { name: string; rest: string }, ctx: CommandContext): void {
@@ -70,6 +75,9 @@ export function handleCommand(parsed: { name: string; rest: string }, ctx: Comma
     }
     case '/sessions':
       handleSessions(parsed.rest, ctx);
+      return;
+    case '/fork':
+      handleFork(parsed.rest, ctx);
       return;
     case '/undo':
       handleUndo(parsed.rest, ctx);
@@ -106,6 +114,24 @@ function handleSessions(keyword: string, ctx: CommandContext): void {
     const marker = ctx.current()?.id === s.id ? ' *' : '';
     ctx.print(`${s.id}  ${formatTime(s.mtimeMs)}  ${s.messageCount} 条${marker}  ${s.firstUserText}`);
   }
+}
+
+function handleFork(rest: string, ctx: CommandContext): void {
+  if (ctx.fork === undefined) {
+    ctx.print('error: 当前会话不支持分叉');
+    return;
+  }
+  const token = rest.split(/\s+/)[0] ?? '';
+  if (token.length === 0) {
+    ctx.fork();
+    return;
+  }
+  const at = Number(token);
+  if (!Number.isInteger(at) || at < 1) {
+    ctx.print(`error: 无效的事件序号 "${token}"（应为 >= 1 的整数，或省略分叉全部活动事件）`);
+    return;
+  }
+  ctx.fork(at);
 }
 
 function handleUndo(rest: string, ctx: CommandContext): void {

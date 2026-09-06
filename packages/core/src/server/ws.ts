@@ -25,7 +25,8 @@ export type WsClientMessage =
   | { op: 'unsubscribe'; sessionId: string }
   | { op: 'abort'; sessionId: string }
   | { op: 'user-message'; sessionId: string; text: string }
-  | { op: 'approval-response'; requestId: string; decision: 'allow' | 'deny' };
+  | { op: 'approval-response'; requestId: string; decision: 'allow' | 'deny' }
+  | { op: 'fork'; sessionId: string; atSeq?: number };
 
 export type WsServerMessage =
   | { type: 'delta'; sessionId: string; kind: 'text' | 'reasoning'; text: string }
@@ -49,6 +50,7 @@ export type WsServerMessage =
       staged: number;
       error?: string;
     }
+  | { type: 'forked'; sessionId: string; parentSession: string; copiedEvents: number }
   | { type: 'error'; error: string };
 
 export interface WsPlaneOptions {
@@ -153,6 +155,17 @@ export function attachWsServer(server: Server, hub: SessionHub, options: WsPlane
             hub.respondApproval(msg.requestId, msg.decision); // false = 已超时/取消：静默忽略
             break;
           }
+          case 'fork': {
+            // 响应帧 {type:'forked', sessionId: 新会话 id, parentSession, copiedEvents}
+            const r = hub.fork(msg.sessionId, msg.atSeq !== undefined ? { atSeq: msg.atSeq } : {});
+            sendSafe(ws, {
+              type: 'forked',
+              sessionId: r.id,
+              parentSession: r.parentSession,
+              copiedEvents: r.copiedEvents,
+            });
+            break;
+          }
         }
       } catch (e) {
         const detail = e instanceof HubError ? e.message : `请求处理失败: ${(e as Error).message}`;
@@ -193,7 +206,7 @@ function sendSafe(ws: WebSocket, frame: WsServerMessage): void {
   }
 }
 
-const OPS = new Set(['subscribe', 'unsubscribe', 'abort', 'user-message', 'approval-response']);
+const OPS = new Set(['subscribe', 'unsubscribe', 'abort', 'user-message', 'approval-response', 'fork']);
 
 export function parseClientMessage(data: unknown): WsClientMessage {
   let obj: unknown;
@@ -221,6 +234,14 @@ export function parseClientMessage(data: unknown): WsClientMessage {
       const decision = m['decision'];
       if (decision !== 'allow' && decision !== 'deny') throw new Error("decision 必须是 'allow' | 'deny'");
       return { op, requestId: requireString(m['requestId'], 'requestId'), decision };
+    }
+    case 'fork': {
+      const atSeq = m['atSeq'];
+      if (atSeq === undefined) return { op, sessionId: requireString(m['sessionId'], 'sessionId') };
+      if (typeof atSeq !== 'number' || !Number.isInteger(atSeq) || atSeq < 1) {
+        throw new Error('atSeq 必须是 >= 1 的整数');
+      }
+      return { op, sessionId: requireString(m['sessionId'], 'sessionId'), atSeq };
     }
   }
 }

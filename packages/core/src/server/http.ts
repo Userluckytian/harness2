@@ -292,12 +292,18 @@ async function route(hub: SessionHub, env: ServeEnv, req: IncomingMessage, res: 
     return;
   }
   // /api/sessions/:id/*
-  const sessionMatch = /^\/api\/sessions\/([^/]+)(\/events|\/undo|\/redo)?$/.exec(pathname);
+  const sessionMatch = /^\/api\/sessions\/([^/]+)(\/events|\/undo|\/redo|\/fork)?$/.exec(pathname);
   if (sessionMatch) {
     const id = decodeURIComponent(sessionMatch[1]!);
     const sub = sessionMatch[2] ?? '';
     if (sub === '/events' && req.method === 'GET') {
       sendJson(res, 200, hub.events(id));
+      return;
+    }
+    if (sub === '/fork' && req.method === 'POST') {
+      const body = await readJsonBody(req);
+      const atSeq = body['atSeq'] === undefined ? undefined : requireAtSeq(body['atSeq']);
+      sendJson(res, 200, hub.fork(id, atSeq !== undefined ? { atSeq } : {}));
       return;
     }
     if (sub === '/undo' && req.method === 'POST') {
@@ -378,6 +384,13 @@ function requireNonEmptyString(v: unknown, name: string): string {
 function requireUndoN(v: unknown): number {
   if (typeof v !== 'number' || !Number.isInteger(v) || v < 1 || v > 100) {
     throw new HubError('invalid', 'n 必须是 1..100 的整数');
+  }
+  return v;
+}
+
+function requireAtSeq(v: unknown): number {
+  if (typeof v !== 'number' || !Number.isInteger(v) || v < 1) {
+    throw new HubError('invalid', 'atSeq 必须是 >= 1 的整数（上界按原会话 lastSeq 校验）');
   }
   return v;
 }

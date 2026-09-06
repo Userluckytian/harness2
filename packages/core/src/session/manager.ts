@@ -141,12 +141,30 @@ export class SessionManager {
 
   /**
    * 新建会话：root/组目录缺失时自动创建（含 ~/.harness2 链）；
-   * header 写入 sessionId 与 cwd 真值。
+   * header 写入 sessionId 与 cwd 真值；fork 血缘字段（阶段 5 预留）由 forkSession 传入。
    */
-  create(cwd: string, opts: { id?: string; fsync?: boolean } = {}): SessionCreateResult {
+  create(
+    cwd: string,
+    opts: {
+      id?: string;
+      fsync?: boolean;
+      /** fork 血缘：派生自哪个会话 */
+      parentSession?: string;
+      isSeeded?: boolean;
+    } = {},
+  ): SessionCreateResult {
     const id = opts.id ?? this.generateId();
     const dir = join(this.groupDir(cwd), id);
-    const writer = SessionWriter.create(dir, { sessionId: id, cwd: resolve(cwd) }, { fsync: opts.fsync ?? true });
+    const writer = SessionWriter.create(
+      dir,
+      {
+        sessionId: id,
+        cwd: resolve(cwd),
+        ...(opts.parentSession !== undefined ? { parentSession: opts.parentSession } : {}),
+        ...(opts.isSeeded !== undefined ? { isSeeded: opts.isSeeded } : {}),
+      },
+      { fsync: opts.fsync ?? true },
+    );
     return { id, dir, writer };
   }
 
