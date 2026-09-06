@@ -125,7 +125,13 @@ export class OpenAICompatProvider implements ChatProvider {
     const signal = opts?.signal;
     const wireBody: Record<string, unknown> = {
       model: this.model,
-      messages: toOpenAIWireMessages(req.messages),
+      // ChatRequest.system → 首条 system 消息（阶段 6 加性缝；缺省时消息列表不变）
+      messages: [
+        ...(req.system !== undefined && req.system.length > 0
+          ? [{ role: 'system', content: req.system }]
+          : []),
+        ...toOpenAIWireMessages(req.messages),
+      ],
       stream: true,
       ...(req.tools && req.tools.length > 0
         ? {

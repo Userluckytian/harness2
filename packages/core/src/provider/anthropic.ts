@@ -121,7 +121,8 @@ export class AnthropicProvider implements ChatProvider {
       max_tokens: this.maxOutputTokens,
       stream: true,
       messages: toAnthropicWireMessages(req.messages),
-      // system 顶层参数位：v1 ChatMessage 无 system 角色，故不发送（保留字段语义注释）
+      // ChatRequest.system → Anthropic 顶层 system 参数（阶段 6 加性缝；v1 ChatMessage 无 system 角色）
+      ...(req.system !== undefined && req.system.length > 0 ? { system: req.system } : {}),
       ...(req.tools && req.tools.length > 0
         ? {
             tools: req.tools.map((t) => ({

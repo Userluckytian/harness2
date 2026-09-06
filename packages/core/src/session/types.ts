@@ -20,6 +20,7 @@ export type SessionEventType =
   | 'step/end'
   | 'tool/call'
   | 'tool/result'
+  | 'memory/snapshot'
   | 'rewind/marker';
 
 export const KNOWN_EVENT_TYPES: readonly SessionEventType[] = [
@@ -31,6 +32,7 @@ export const KNOWN_EVENT_TYPES: readonly SessionEventType[] = [
   'step/end',
   'tool/call',
   'tool/result',
+  'memory/snapshot',
   'rewind/marker',
 ];
 
@@ -113,6 +115,17 @@ export interface RewindMarkerPayload {
   reason?: string;
 }
 
+/**
+ * 记忆快照（阶段 6）：会话首个 user turn 前，把长期记忆注入内容整体冻结落盘。
+ * content 即发到模型 ChatRequest.system 的原文（Model-visible ⟺ logged 扩展到
+ * system：请求里的 system 必须可从本事件重建）；loop 后续轮复用快照不重读文件
+ * （prefix cache 语义）。普通活动事件：参与 rewind 遮蔽、不进消息投影、渲染走
+ * 通用兜底行。
+ */
+export interface MemorySnapshotPayload {
+  content: string;
+}
+
 export interface SessionEventMap {
   'session/header': SessionHeaderPayload;
   'user/message': UserMessagePayload;
@@ -122,6 +135,7 @@ export interface SessionEventMap {
   'step/end': StepEndPayload;
   'tool/call': ToolCallPayload;
   'tool/result': ToolResultPayload;
+  'memory/snapshot': MemorySnapshotPayload;
   'rewind/marker': RewindMarkerPayload;
 }
 
@@ -180,5 +194,6 @@ const PAYLOAD_VALIDATORS: Record<SessionEventType, (p: Record<string, unknown>) 
   'step/end': (p) => typeof p.stepId === 'string',
   'tool/call': (p) => typeof p.callId === 'string' && typeof p.tool === 'string',
   'tool/result': (p) => typeof p.callId === 'string' && typeof p.ok === 'boolean',
+  'memory/snapshot': (p) => typeof p.content === 'string' && p.content.length > 0,
   'rewind/marker': (p) => typeof p.rewindToSeq === 'number' && Number.isInteger(p.rewindToSeq),
 };

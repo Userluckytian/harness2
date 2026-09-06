@@ -43,6 +43,13 @@ export interface ToolSpec {
 export interface ChatRequest {
   messages: ChatMessage[];
   tools?: ToolSpec[];
+  /**
+   * 可选 system 提示（阶段 6 记忆快照缝；加性可选，缺省时 wire 完全不变）：
+   *   openai 协议 → 首条 {role:'system', content} 消息；
+   *   anthropic 协议 → 顶层 system 参数。
+   * 唯一来源 = 会话日志 memory/snapshot 事件（Model-visible ⟺ logged 扩展到 system）。
+   */
+  system?: string;
 }
 
 export interface ProviderUsage {

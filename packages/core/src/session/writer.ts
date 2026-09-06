@@ -148,6 +148,13 @@ export class SessionWriter {
         throw new Error(`invalid rewind/marker: rewindToSeq ${n} out of range (1..${this.lastSeq})`);
       }
     }
+    if (type === 'memory/snapshot') {
+      // 空 content 的行会被 parseEventLine 拒绝（读回即 corrupt），写入口同步拦截
+      const content = (payload as { content?: unknown }).content;
+      if (typeof content !== 'string' || content.length === 0) {
+        throw new Error('invalid memory/snapshot: content must be a non-empty string');
+      }
+    }
     const event: SessionEvent<T> = {
       v: 1,
       seq: this.nextSeq,

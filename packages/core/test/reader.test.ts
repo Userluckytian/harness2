@@ -106,6 +106,7 @@ describe('parseEventLine payload 校验（P1-3）', () => {
     { type: 'step/end', good: { stepId: 'st' }, bad: { stepId: 7 } },
     { type: 'tool/call', good: { callId: 'c', tool: 'bash' }, bad: { callId: 'c' } },
     { type: 'tool/result', good: { callId: 'c', ok: true }, bad: { callId: 'c', ok: 'yes' } },
+    { type: 'memory/snapshot', good: { content: '记忆内容' }, bad: { content: '' } },
     { type: 'rewind/marker', good: { rewindToSeq: 3 }, bad: { rewindToSeq: 1.5 } },
   ];
 
@@ -120,6 +121,50 @@ describe('parseEventLine payload 校验（P1-3）', () => {
     for (const payload of [42, 'x', [], null, false]) {
       expect(parseEventLine(line('user/message', payload))).toBeNull();
     }
+  });
+});
+
+describe('memory/snapshot 事件（阶段 6）', () => {
+  it('writer append + loadSession 往返：content 原样保留，普通活动事件参与投影', () => {
+    const dir = tmpDir();
+    const w = SessionWriter.create(dir, { sessionId: 'mem' }, { fsync: false });
+    const content = '长期记忆快照内容\n多行也行';
+    w.append('memory/snapshot', { content });
+    w.append('user/message', { text: 'u1' });
+    w.close();
+
+    const s = loadSession(dir);
+    const snap = s.events.find((x) => x.event.type === 'memory/snapshot')?.event;
+    expect(snap && snap.type === 'memory/snapshot' ? snap.payload : null).toEqual({ content });
+    // 普通活动事件：计入 activeCount，不出现在消息投影，渲染不特殊处理
+    const p = computeProjection(s);
+    expect(p.activeCount).toBe(3); // header + snapshot + user
+    expect(p.messages.map((m) => m.text)).toEqual(['u1']);
+    const lines = renderTrajectory(s);
+    expect(lines.join('\n')).toContain('unknown event: memory/snapshot');
+  });
+
+  it('空 content：解析层拒绝（非法行）；writer 写入口同步拦截，日志不出现读不回的行', () => {
+    const badLine = JSON.stringify({
+      v: 1, seq: 2, ts: '2026-09-06T00:00:00.000Z', type: 'memory/snapshot', payload: { content: '' },
+    });
+    expect(parseEventLine(badLine)).toBeNull();
+
+    const dir = tmpDir();
+    const w = SessionWriter.create(dir, { sessionId: 'mem-guard' }, { fsync: false });
+    expect(() => w.append('memory/snapshot', { content: '' })).toThrow(/non-empty/);
+    expect(() => w.append('memory/snapshot', { content: 42 as unknown as string })).toThrow(/non-empty/);
+    w.close();
+    expect(loadSession(dir).warnings).toHaveLength(0);
+  });
+
+  it('旧日志兼容：不含 memory/snapshot 的日志照常解析（事件类型清单加性扩展）', () => {
+    const dir = tmpDir();
+    const w = writeDemoSession(dir);
+    w.close();
+    const s = loadSession(dir);
+    expect(s.warnings).toHaveLength(0);
+    expect(s.events.some((x) => x.event.type === 'memory/snapshot')).toBe(false);
   });
 });
 

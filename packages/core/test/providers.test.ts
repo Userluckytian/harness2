@@ -358,6 +358,41 @@ describe('toOpenAIWireMessages 纯函数', () => {
   });
 });
 
+// ---------- ChatRequest.system 缝（阶段 6：记忆快照注入；加性可选） ----------
+
+describe('ChatRequest.system wire 映射', () => {
+  it('openai：system → 首条 {role:"system"} 消息；缺省时消息列表不变', async () => {
+    const stub = await start();
+    stub.enqueueAll([{ sse: TEXT_FRAMES }, { sse: TEXT_FRAMES }]);
+    const provider = makeProvider(stub.url);
+
+    await collect(provider, { system: '你是记忆增强助手', messages: [{ role: 'user', content: 'u1' }] });
+    await collect(provider, { messages: [{ role: 'user', content: 'u2' }] });
+
+    const withSystem = (stub.requests[0]!.body as { messages: Array<{ role: string; content: string }> }).messages;
+    expect(withSystem[0]).toEqual({ role: 'system', content: '你是记忆增强助手' });
+    expect(withSystem.at(-1)).toEqual({ role: 'user', content: 'u1' });
+
+    const withoutSystem = (stub.requests[1]!.body as { messages: Array<{ role: string; content: string }> }).messages;
+    expect(withoutSystem).toEqual([{ role: 'user', content: 'u2' }]);
+  });
+
+  it('anthropic：system → 顶层 system 参数；缺省时不发送该键', async () => {
+    const stub = await start();
+    stub.enqueueAll([{ sse: ANTHROPIC_TEXT_EVENTS }, { sse: ANTHROPIC_TEXT_EVENTS }]);
+    const provider = makeAnthropic(stub.url);
+
+    await collect(provider, { system: '记忆快照内容', messages: [{ role: 'user', content: 'u1' }] });
+    await collect(provider, { messages: [{ role: 'user', content: 'u2' }] });
+
+    const body1 = stub.requests[0]!.body as { system?: string; messages: unknown[] };
+    expect(body1.system).toBe('记忆快照内容');
+    expect(body1.messages).toEqual([{ role: 'user', content: [{ type: 'text', text: 'u1' }] }]);
+    const body2 = stub.requests[1]!.body as { system?: string };
+    expect(body2.system).toBeUndefined();
+  });
+});
+
 // ---------- Anthropic ----------
 
 function makeAnthropic(baseUrl: string, name = 'anthropic/claude-sonnet-4-5'): AnthropicProvider {
