@@ -13,10 +13,10 @@
 | 默认分支 | `master`（注意：不是 main） |
 | 开发分支 | `feat/phase-6-memory-fork`（阶段 6 全部工作在此；此前阶段各在其分支） |
 | 阶段 1–5 | ✅ 已完成并验收（内核 → loop+工具 → Provider+配置 → CLI chat+undo/redo → 服务化+桌面壳） |
-| 阶段 6 | 🔶 实现代理自验通过（记忆开关三态 [MEMORY/USER.md 硬预算/漂移检测/注入扫描/memory 工具] + memory/snapshot 冻结注入 + nudge 后台复盘 + pending 审批 CLI + 会话分叉三端入口；379 passed + 1 skipped）；独立验收 `/accept-phase` 待做 |
+| 阶段 6 | 🔶 实现代理自验通过（记忆开关三态 [MEMORY/USER.md 硬预算/漂移检测/注入扫描/memory 工具] + memory/snapshot 冻结注入 + nudge 后台复盘 + pending 审批 CLI + 会话分叉三端入口；**390 项（389 passed + 1 skipped）**，含独立审查 P1/P2 修复轮）；独立验收 `/accept-phase` 待做 |
 | **M1 v0.1** | 🔶 代码/物料就绪（包名 `harness2` + `@harness2/core`、CHANGELOG、README、release workflow）；**发布动作未执行**——待人类授权：远程仓库 + push、npm 包名占用检查、`NPM_TOKEN` secret、推 tag `v0.1.0`（见 OPEN.md） |
 | 未关闭事项 | 读 `docs/issue-log/OPEN.md`（保持为零上下文第一读；含真实模型 chat 手工验收清单、记忆三态真实模型验证清单、pause_turn 评估结论） |
-| 测试 | `pnpm test`（含 build）—— core 314+1 skipped + cli 28 + desktop 37 = **379 项（378 passed + 1 skipped**，`H2_GEN_LOOP_DEMO` 门控的 fixture 生成器非失败）（2026-09-06 阶段 6 自验） |
+| 测试 | `pnpm test`（含 build）—— core 324+1 skipped + cli 29 + desktop 37 = **390 项（389 passed + 1 skipped**，`H2_GEN_LOOP_DEMO` 门控的 fixture 生成器非失败）（2026-09-06 阶段 6 审查修复轮复验） |
 | 远程 | 无（未配置 origin；push 需人类授权） |
 
 ## 3. 文档地图（按阅读顺序）
