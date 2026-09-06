@@ -8,8 +8,12 @@
 //   - 取消传播：子 runTurn 直接消费父 turn 的 ctx.signal——父 abort → 子 abort，
 //     子会话以 cancelled 收尾且事件照常落盘（append-only）。
 //   - 审批缝同源：子会话复用宿主 ApprovalHandler（ask 上抛同一审批通道；缺省按拒绝）。
-// v1 口径：子会话不注入记忆/压缩（短生命周期子任务，与 cron 执行同口径）；非沙箱——
-// 子会话与父同进程运行，隔离边界与插件小节一致（architecture.md 如实声明）。
+// 口径统一（阶段 11 Task 2，消化 OPEN.md 留档）：子会话工具集 = 宿主集 − subagent 工具
+//   − per-session 绑定类（memory/browser_*），CLI 与 serve 两端一致（统一到 architecture.md
+//   既声明的 serve 语义）；skills 注入对子会话为**加性**能力——子会话 turn 传宿主同款
+//   SkillStore，system 亦得「[Skills 可用]」列表（消除"继承 skill 工具但盲调"缺口）。
+//   v1 口径其余不变：子会话不注入记忆/压缩（短生命周期子任务，与 cron 执行同口径）；
+//   非沙箱——子会话与父同进程运行，隔离边界与插件小节一致（architecture.md 如实声明）。
 import { resolve, isAbsolute } from 'node:path';
 import { loadSession } from '../session/reader.js';
 import { SESSION_ID_PATTERN } from '../session/manager.js';
@@ -21,11 +25,21 @@ import type { TurnResult, TurnStopReason } from './types.js';
 import type { AnySessionEvent, SessionEvent, SessionEventType, SessionEventMap } from '../session/types.js';
 import type { SessionAppender } from '../session/writer.js';
 import type { ChatProvider } from '../provider/types.js';
+import type { SkillStore } from '../skills/store.js';
+import { BROWSER_TOOL_NAMES } from '../tools/predefined/browser.js';
 import { ToolRegistry } from '../tools/registry.js';
 import type { ToolDefinition, ToolContext, ApprovalHandler } from '../tools/types.js';
 
 /** subagent 工具名（装配层据此从子会话工具集剔除，实现深度限制） */
 export const SUBAGENT_TOOL_NAMES = ['subagent_start', 'subagent_continue'] as const;
+
+/**
+ * per-session 绑定类工具名（子会话不继承——阶段 11 口径统一，两端一致）：
+ * memory（记忆按宿主进程绑定）与 browser_*（浏览器上下文按会话 id 绑定池键）。
+ * 子会话是独立会话，继承会带来跨会话状态污染（CLI 历史上共享注册表直通导致继承，
+ * serve 为换装不继承——统一剔除）。
+ */
+export const SUBAGENT_SESSION_BOUND_TOOL_NAMES = ['memory', ...BROWSER_TOOL_NAMES] as const;
 
 /** 缺省深度上限（config.subagent.maxDepth 可调） */
 export const DEFAULT_SUBAGENT_MAX_DEPTH = 1;
@@ -67,6 +81,12 @@ export interface SubagentOptions {
   parentSessionId: string;
   /** 当前会话深度（0 = 用户主会话）：depth < maxDepth 才允许注册本工具 */
   depth: number;
+  /**
+   * 宿主 Skills 商店（加性，阶段 11 口径统一）：子会话 turn 注入「[Skills 可用]」列表，
+   * 与宿主同一 store（两级目录同源）。缺省不注入——skill 工具仍可能经共享注册表被
+   * 子会话继承，但列表缺席即"盲调"缺口（OPEN.md 阶段 10 并案），装配层应总是传入。
+   */
+  skills?: SkillStore;
   hooks?: SubagentHooks;
   /** 会话日志 fsync（测试可关） */
   fsync?: boolean;
@@ -79,16 +99,18 @@ function approvalFor(opts: SubagentOptions, childSessionId: string, signal: Abor
 }
 
 /**
- * 构建子会话工具集：宿主工具 − subagent 工具，再按 子深度 < maxDepth 重挂 subagent 工具
- * （重挂时血缘重绑：parentSessionId = 子会话 id、depth = options.depth + 1，供更深递归）。
- * options 描述"派发方"会话（parentSessionId = 派发方 id，depth = 派发方深度）；
+ * 构建子会话工具集：宿主工具 − subagent 工具 − per-session 绑定类（memory/browser_*，
+ * 阶段 11 口径统一：两端一致，不继承会话绑定状态），再按 子深度 < maxDepth 重挂
+ * subagent 工具（重挂时血缘重绑：parentSessionId = 子会话 id、depth = options.depth + 1，
+ * 供更深递归）。options 描述"派发方"会话（parentSessionId = 派发方 id，depth = 派发方深度）；
  * childSessionId = 本次派发的子会话 id。
  */
 export function buildSubagentChildTools(options: SubagentOptions, childSessionId: string): ToolRegistry {
   const registry = new ToolRegistry();
   const subNames = new Set<string>(SUBAGENT_TOOL_NAMES);
+  const sessionBound = new Set<string>(SUBAGENT_SESSION_BOUND_TOOL_NAMES);
   for (const def of options.baseTools.list()) {
-    if (subNames.has(def.name)) continue;
+    if (subNames.has(def.name) || sessionBound.has(def.name)) continue;
     registry.register(def);
   }
   const childDepth = options.depth + 1;
@@ -176,6 +198,8 @@ export function createSubagentTools(options: SubagentOptions): ToolDefinition[] 
           ...(approvalFor(opts, childId, ctx.signal) !== undefined
             ? { approval: approvalFor(opts, childId, ctx.signal) }
             : {}),
+          // 阶段 11 口径统一（加性）：子会话注入宿主同款 skills 列表
+          ...(opts.skills !== undefined ? { skills: opts.skills } : {}),
           cwd: childCwd,
           userText: prompt,
           signal: ctx.signal,
@@ -259,6 +283,8 @@ export function createSubagentTools(options: SubagentOptions): ToolDefinition[] 
           ...(approvalFor(opts, childSessionId, ctx.signal) !== undefined
             ? { approval: approvalFor(opts, childSessionId, ctx.signal) }
             : {}),
+          // 阶段 11 口径统一（加性）：子会话注入宿主同款 skills 列表
+          ...(opts.skills !== undefined ? { skills: opts.skills } : {}),
           cwd: header.cwd ?? opts.cwd,
           userText: message,
           signal: ctx.signal,

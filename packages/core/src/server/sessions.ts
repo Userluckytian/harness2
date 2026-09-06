@@ -469,6 +469,8 @@ export class SessionHub {
         },
         // 子会话 ask 上抛同一待审批表（requestId 全局可应答；payload.sessionId = 子会话）
         approvalFactory: (childId, signal) => this.makeApprovalHandler(childId, signal),
+        // 阶段 11 口径统一（加性）：子会话注入宿主同款 skills 列表（与 chat REPL 一致）
+        ...(this.options.skills !== undefined ? { skills: this.options.skills } : {}),
       })) {
         registry.register(def);
       }

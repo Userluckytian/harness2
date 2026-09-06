@@ -1,8 +1,10 @@
 // Subagent 测试（阶段 8 Task 3）：独立子会话落盘 / 血缘 header / 深度限制 / 取消传播 /
 // continue 往返与血缘校验 / 子失败不影响父 / 参数校验 / 零新增事件类型。
 // mock provider 脚本按消费顺序编排父/子/孙 turn（同一 provider 实例贯穿父子）。
+// 阶段 11 Task 2 补：子会话口径统一——per-session 绑定类（memory/browser_*）不继承
+// （两端一致）+ skills 注入加性（子会话 system 得 [Skills 可用] 列表）。
 import { afterEach, describe, expect, it } from 'vitest';
-import { existsSync, mkdtempSync, rmSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { ToolRegistry } from '../src/tools/registry.js';
@@ -15,7 +17,15 @@ import { undoLastTurn } from '../src/session/undo.js';
 import { loadSession, computeProjection } from '../src/session/reader.js';
 import { runTurn } from '../src/agent/loop.js';
 import { writeTool } from '../src/tools/predefined/write.js';
+import { registerBuiltinTools } from '../src/tools/predefined/index.js';
+import { BROWSER_TOOL_NAMES, BrowserPool, createBrowserTools } from '../src/tools/predefined/browser.js';
+import { createMemoryTool } from '../src/memory/tool.js';
+import { MemoryStore } from '../src/memory/store.js';
+import { assembleSkillsSystemBlock, SkillStore } from '../src/skills/store.js';
+import { createSkillTool } from '../src/skills/tool.js';
+import { SessionHub } from '../src/server/sessions.js';
 import {
+  SUBAGENT_SESSION_BOUND_TOOL_NAMES,
   SUBAGENT_TOOL_NAMES,
   buildSubagentChildTools,
   createSubagentTools,
@@ -502,5 +512,202 @@ describe('补测：subagent_start 取消传播', () => {
     const attempt = childSession.events.find((e) => e.event.type === 'assistant/attempt')!;
     expect((attempt.event.payload as { error: string }).error).toContain('cancelled');
     expect(types.at(-1)).toBe('step/end');
+  });
+});
+
+// —— 阶段 11 Task 2：子会话口径统一（OPEN.md「CLI 与 serve 的子会话工具集口径差异」消化）——
+
+const pools: BrowserPool[] = [];
+afterEach(async () => {
+  for (const p of pools.splice(0)) await p.closeAll();
+});
+
+/** 写一个最小 skill 文件（frontmatter 合法），返回其 store */
+function skillStoreWithDemo(home: string): SkillStore {
+  const dir = join(home, 'skills');
+  mkdirSync(dir, { recursive: true });
+  writeFileSync(
+    join(dir, 'demo.md'),
+    '---\nname: demo\ndescription: 演示 skill（口径统一测试用）\n---\n\n按步骤演示。\n',
+    'utf8',
+  );
+  return new SkillStore(dir, undefined);
+}
+
+/** CLI 形态宿主注册表（共享注册表直通：builtin + memory + browser_* + skill） */
+function cliStyleBaseRegistry(home: string): ToolRegistry {
+  const registry = new ToolRegistry();
+  registerBuiltinTools(registry);
+  registry.register(createMemoryTool({ apply: async () => ({ ok: true, warnings: [], files: [] }) }));
+  const pool = new BrowserPool({ idleDestroyMs: 60_000 });
+  pools.push(pool);
+  for (const def of createBrowserTools('cli', pool)) registry.register(def);
+  registry.register(createSkillTool(skillStoreWithDemo(home)));
+  return registry;
+}
+
+/** serve 形态共享注册表（builtin + skill；memory/browser 属 per-session 换装不在此层） */
+function serveStyleBaseRegistry(home: string): ToolRegistry {
+  const registry = new ToolRegistry();
+  registerBuiltinTools(registry);
+  registry.register(createSkillTool(skillStoreWithDemo(home)));
+  return registry;
+}
+
+describe('口径统一：per-session 绑定类工具不继承（阶段 11 Task 2）', () => {
+  it('防回归钉死：CLI 形态宿主集含 memory/browser_*，子会话工具集剔除二者（builtin/skill 保留）', () => {
+    const home = tmpDir();
+    const base = cliStyleBaseRegistry(home);
+    const baseNames = base.list().map((d) => d.name);
+    // 前置：宿主确实含 memory 与 browser_*（差异存在的前提）
+    expect(baseNames).toContain('memory');
+    for (const n of BROWSER_TOOL_NAMES) expect(baseNames).toContain(n);
+    // 修复前：子会话 = 宿主 − subagent 工具 → 继承 memory/browser_*；修复后：一并剔除
+    const child = buildSubagentChildTools(
+      {
+        manager: new SessionManager(join(home, 's')),
+        provider: new MockProvider([]),
+        baseTools: base,
+        cwd: home,
+        maxDepth: 1,
+        maxTurns: 25,
+        parentSessionId: 'parent',
+        depth: 0,
+      },
+      'child-x',
+    );
+    const childNames = child.list().map((d) => d.name);
+    expect(childNames).not.toContain('memory');
+    for (const n of BROWSER_TOOL_NAMES) expect(childNames).not.toContain(n);
+    expect(childNames).not.toContain('subagent_start');
+    expect(childNames).toContain('bash'); // 本地工具保留
+    expect(childNames).toContain('skill'); // skill 工具保留（加性注入随行）
+    expect([...SUBAGENT_SESSION_BOUND_TOOL_NAMES]).toContain('memory');
+  });
+
+  it('两端子会话工具集相等：CLI 形态与 serve 形态派生的子工具集名单一致', () => {
+    const home = tmpDir();
+    const cliChild = buildSubagentChildTools(
+      {
+        manager: new SessionManager(join(home, 's')),
+        provider: new MockProvider([]),
+        baseTools: cliStyleBaseRegistry(home),
+        cwd: home,
+        maxDepth: 1,
+        maxTurns: 25,
+        parentSessionId: 'parent',
+        depth: 0,
+      },
+      'child-x',
+    );
+    const serveChild = buildSubagentChildTools(
+      {
+        manager: new SessionManager(join(home, 's')),
+        provider: new MockProvider([]),
+        baseTools: serveStyleBaseRegistry(home),
+        cwd: home,
+        maxDepth: 1,
+        maxTurns: 25,
+        parentSessionId: 'parent',
+        depth: 0,
+      },
+      'child-x',
+    );
+    const cliNames = cliChild.list().map((d) => d.name).sort();
+    const serveNames = serveChild.list().map((d) => d.name).sort();
+    expect(cliNames).toEqual(serveNames);
+    expect(cliNames).not.toContain('memory');
+    for (const n of BROWSER_TOOL_NAMES) expect(cliNames).not.toContain(n);
+  });
+
+  it('BROWSER_TOOL_NAMES 常量契约：与 createBrowserTools 注册名单一一对应（剔除依据不漂移）', () => {
+    const pool = new BrowserPool({ idleDestroyMs: 60_000 });
+    pools.push(pool);
+    const registered = createBrowserTools('probe', pool).map((d) => d.name).sort();
+    expect(registered).toEqual([...BROWSER_TOOL_NAMES].sort());
+  });
+
+  it('serve hub 集成：父 turn 工具集含 memory/browser_*，subagent_start 派发的子请求不含且注入 skills', async () => {
+    const root = tmpDir();
+    const manager = new SessionManager(join(root, 'sessions'));
+    const skills = skillStoreWithDemo(join(root, 'home'));
+    const pool = new BrowserPool({ idleDestroyMs: 60_000 });
+    pools.push(pool);
+    const shared = serveStyleBaseRegistry(join(root, 'home'));
+    const provider = new MockProvider([{ text: 'child done' }]);
+    const hub = new SessionHub({
+      manager,
+      provider,
+      tools: shared,
+      cwd: root,
+      memory: { store: new MemoryStore(join(root, 'memories')), mode: 'auto', nudgeInterval: 1000 },
+      browser: { pool },
+      subagent: { provider, maxDepth: 1, maxTurns: 25 },
+      skills,
+    });
+    const parent = manager.create(root, { fsync: false });
+    try {
+      // 父 turn 工具集（per-session 换装）：含 memory/browser_*/subagent 工具
+      const parentTools = hub.toolsForSession(parent.id).list().map((d) => d.name);
+      expect(parentTools).toContain('memory');
+      for (const n of BROWSER_TOOL_NAMES) expect(parentTools).toContain(n);
+      expect(parentTools).toContain('subagent_start');
+      // 经 hub 装配的 subagent_start 派发子会话：子请求工具集无 memory/browser_*
+      const startDef = hub.toolsForSession(parent.id).get('subagent_start')!;
+      const out = await startDef.execute({ prompt: 'p' }, CALL_CTX);
+      const parsed = parseOut(out.output);
+      expect(parsed.stopReason).toBe('end_turn');
+      const childReq = provider.requests[0]!;
+      const childNames = (childReq.tools ?? []).map((t) => t.name);
+      expect(childNames).not.toContain('memory');
+      for (const n of BROWSER_TOOL_NAMES) expect(childNames).not.toContain(n);
+      expect(childNames).toContain('bash');
+      // skills 注入：子请求 system = 宿主同款 store 扫描出的 [Skills 可用] 块（一致）
+      const expected = assembleSkillsSystemBlock(skills.scan().skills);
+      expect(childReq.system).toBe(expected);
+      expect(childReq.system).toContain('[Skills 可用]');
+      expect(childReq.system).toContain('demo: 演示 skill（口径统一测试用）');
+    } finally {
+      await hub.close();
+      parent.writer.close();
+    }
+  });
+
+  it('skills 缺省（旧装配）：子请求无 system 注入（行为不回归为"盲调"之外的意外注入）', async () => {
+    const h = makeHarness([{ text: 'child done' }, { text: 'parent done' }]);
+    const startDef = h.registry.get('subagent_start')!;
+    const out = await startDef.execute({ prompt: 'p' }, CALL_CTX);
+    expect(parseOut(out.output).stopReason).toBe('end_turn');
+    const childReq = h.provider.requests[0]!;
+    expect(childReq.system).toBeUndefined();
+  });
+
+  it('skills 注入（直接装配）：子会话 turn 传宿主同款 store → 子请求 system 得同一 [Skills 可用] 块', async () => {
+    const root = tmpDir();
+    const manager = new SessionManager(join(root, 'sessions'));
+    const skills = skillStoreWithDemo(join(root, 'home'));
+    const registry = new ToolRegistry();
+    const provider = new MockProvider([{ text: 'child done' }]);
+    const parent = manager.create(root, { fsync: false });
+    for (const def of createSubagentTools({
+      manager,
+      provider,
+      baseTools: registry,
+      cwd: root,
+      maxDepth: 1,
+      maxTurns: 25,
+      parentSessionId: parent.id,
+      depth: 0,
+      skills,
+      fsync: false,
+    })) {
+      registry.register(def);
+    }
+    const startDef = registry.get('subagent_start')!;
+    const out = await startDef.execute({ prompt: 'p' }, { signal: new AbortController().signal, cwd: root });
+    expect(parseOut(out.output).stopReason).toBe('end_turn');
+    const childReq = provider.requests[0]!;
+    expect(childReq.system).toBe(assembleSkillsSystemBlock(skills.scan().skills));
+    parent.writer.close();
   });
 });

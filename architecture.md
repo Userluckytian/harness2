@@ -346,9 +346,9 @@ Electron 主进程 spawn `harness2 serve --port 0`（`ELECTRON_RUN_AS_NODE=1` �
 - `subagent_start {prompt, cwd?}`：`SessionManager.create` 子会话（header：`parentSession`/`isSeeded`/`subagent` 血缘）→ **独立子会话跑完整 runTurn**（天然继承事件溯源/轨迹/undo 隔离；**独立文件快照**：rewind_points.jsonl 落子会话目录，hub.undo(childId) 复原子会话期间的 write/edit 文件，与父会话快照互不干扰）；结果 JSON（`childSessionId/finalText/stopReason`）进 tool/result.output。
 - `subagent_continue {childSessionId, message}`：向子会话追加消息续跑（校验血缘：只续本会话派发且 header.subagent=true 的会话——分叉会话 parentSession 同源但无 subagent 标志，拒绝；childSessionId 过 SESSION_ID_PATTERN 格式校验；目录锁冲突如实失败）。
 - **零新增事件类型**：父日志只有 tool/call + tool/result；父子以 header 血缘 + output.childSessionId 关联（桌面端工具行「子会话 ↗」跳转）。
-- **深度红线**：子会话工具集 = 宿主工具集 − subagent 工具，再按 `(depth+1) < maxDepth` 重挂（血缘重绑）；默认 maxDepth=1（子内无 subagent 工具）。maxTurns 限子会话单 turn 步数（默认 25，可配 1..200）。**子会话工具集声明（P2-4，v1 口径）**：父集减 subagent 工具，browser_*/memory 属 per-session 绑定不继承——serve 路径子会话无 browser_*/memory 工具（hub 换装只把 browser/memory 挂进父会话 turn 工具集；子会话从共享注册表派生）。
+- **深度红线**：子会话工具集 = 宿主工具集 − subagent 工具，再按 `(depth+1) < maxDepth` 重挂（血缘重绑）；默认 maxDepth=1（子内无 subagent 工具）。maxTurns 限子会话单 turn 步数（默认 25，可配 1..200）。**子会话工具集声明（阶段 11 口径统一，两端一致）**：宿主集 − subagent 工具 − **per-session 绑定类**（memory 与 browser_*，常量 `SUBAGENT_SESSION_BOUND_TOOL_NAMES`）——memory 按宿主进程绑定、browser 上下文按会话 id 绑定池键，子会话是独立会话不继承（CLI 历史上共享注册表直通导致继承，已统一剔除到核心侧 `buildSubagentChildTools`，两端装配殊途同归）。skills 注入对子会话为**加性**能力：装配层传宿主同款 SkillStore，子会话 system 亦得「[Skills 可用]」列表（消除"继承 skill 工具但盲调"缺口；skill 工具本身经共享注册表保留在子会话集内）。
 - **取消传播**：子 runTurn 消费父 turn 的 signal——父 abort → 子 abort，子会话以 cancelled 收尾且事件照常落盘（append-only）。审批上抛同一待审批表（payload.sessionId = 子会话）。
-- v1 口径：子会话不注入记忆/压缩（短生命周期子任务，与 cron 同口径）；与父同进程非沙箱（边界与插件小节一致）。装配：hub 每会话重绑（血缘/审批按子会话），CLI chat 会话切换时重绑。
+- v1 口径：子会话不注入记忆/压缩（短生命周期子任务，与 cron 同口径）；skills 列表加性注入（见上）；与父同进程非沙箱（边界与插件小节一致）。装配：hub 每会话重绑（血缘/审批按子会话），CLI chat 会话切换时重绑；两端 subagent 装配均传宿主同款 skills store（阶段 11 统一）。
 
 ## 不做
 

@@ -323,6 +323,9 @@ export async function runChat(options: ChatOptions = {}): Promise<void> {
       maxTurns: subagentConfig?.maxTurns ?? 25,
       parentSessionId: sessionId,
       depth: 0,
+      // 阶段 11 口径统一：CLI 子会话不再经共享注册表继承 memory/browser（per-session
+      // 绑定类，核心侧剔除）；skills 注入为加性——与宿主同一 SkillStore
+      skills: skillsStore,
     })) {
       if (tools.get(def.name) !== undefined) {
         // 防御兜底：冲突工具不可收回（非插件来源等）→ 跳过该权威版，绝不让 REPL 崩溃

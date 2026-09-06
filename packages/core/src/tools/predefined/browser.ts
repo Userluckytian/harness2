@@ -21,6 +21,20 @@ import { expectObject, expectString, optionalString, truncateText } from './comm
 export const BROWSER_IDLE_DESTROY_MS = 300_000;
 export const BROWSER_MAX_CONCURRENT = 2;
 
+/**
+ * browser_* 工具名清单（per-session 绑定类的浏览器侧成员；subagent 子会话工具集
+ * 剔除据此判断，阶段 11 口径统一）。与 createBrowserTools 内的字面量名一一对应，
+ * 一致性由 subagent 测试钉死（BROWSER_TOOL_NAMES 契约）。
+ */
+export const BROWSER_TOOL_NAMES = [
+  'browser_navigate',
+  'browser_click',
+  'browser_type',
+  'browser_snapshot',
+  'browser_screenshot',
+  'browser_close',
+] as const;
+
 /** aria 快照输出的字符上限（防极端页面撑爆模型上下文） */
 const SNAPSHOT_MAX_CHARS = 20_000;
 
