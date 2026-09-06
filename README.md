@@ -34,6 +34,8 @@ harness2 chat                   # 接真实模型（roles.main）
 ```
 
 chat 内常用命令：`/new`、`/sessions [关键字]`、`/resume <id>`、`/undo [n] [--dry-run]`、`/redo`、`/exit`。
+`/redo` 会恢复到撤销前状态，撤销之后新输入的消息将被移出当前上下文（仍保留在日志中，可用 `traj` 查看）。
+审批 ask 提示中的 `[a] 本会话总是` = 该工具后续所有调用不再询问（仅进程内会话级缓存，不落盘）。
 会话存储在 `~/.harness2/sessions/<工作目录编码>/<会话id>/`；`harness2 traj <会话目录>` 查看轨迹。
 
 ## 如实声明（重要）

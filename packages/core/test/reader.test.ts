@@ -244,4 +244,22 @@ describe('computeProjection', () => {
     expect(p.messages.map((m) => m.text)).toEqual([]);
     w.close();
   });
+
+  it('redo 标记的 rewindToSeq+1 处不是标记时优雅 no-op：无中立化发生，undo 遮蔽保持', () => {
+    const dir = tmpDir();
+    const w = writeDemoSession(dir); // seq 1..9（6=tool/call 7=tool/result 8=u3 9=a3）
+    w.append('rewind/marker', { rewindToSeq: 5, reason: 'undo' }); // seq 10：遮蔽 6..9
+    let p = computeProjection(loadSession(dir));
+    expect(p.messages.map((m) => m.text)).toEqual(['u1', 'a1', 'u2', 'a2']);
+
+    // redo 定位落空：rewindToSeq+1 = seq 8（u3，非 rewind/marker）→ 不中立化任何标记
+    w.append('rewind/marker', { rewindToSeq: 7, reason: 'redo' }); // seq 11
+    p = computeProjection(loadSession(dir));
+    // undo 标记（seq 10）的遮蔽保持——u3/a3 等不复活；redo 标记自身按普通 rewind
+    // 语义遮蔽 seq > 7 的非标记事件（本已被 undo 遮蔽），投影不变、不抛错
+    expect(p.messages.map((m) => m.text)).toEqual(['u1', 'a1', 'u2', 'a2']);
+    expect(p.shadowedCount).toBe(4);
+    expect(p.rewindCount).toBe(2);
+    w.close();
+  });
 });

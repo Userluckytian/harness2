@@ -1,6 +1,7 @@
 # harness2 Release：push tag v* → 三平台 build+test → pnpm publish（NPM_TOKEN）。
-# 发布为人类授权动作：NPM_TOKEN 未配置（或发布失败）时 publish 步骤跳过并告警，
-# 不阻塞 workflow（见 docs/issue-log/OPEN.md 的待授权登记）。
+# 发布为人类授权动作：NPM_TOKEN 未配置时条件跳过 publish 并输出明确 notice（不误发）；
+# 已配置但发布失败（token 失效/包名冲突/网络）→ publish 步骤失败 → workflow 红
+# （审查 P1-1：不用 continue-on-error，避免"跳过"与"真实失败"混同造成假绿）。
 name: Release
 
 on:
@@ -44,6 +45,8 @@ jobs:
     name: publish (npm)
     needs: test
     runs-on: ubuntu-latest
+    env:
+      NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
     steps:
       - uses: actions/checkout@v4
 
@@ -61,23 +64,18 @@ jobs:
       - name: Build
         run: pnpm -r build
 
-      - name: Publish（需 NPM_TOKEN；未配置时本步骤失败被吞并进入告警）
-        id: publish
-        continue-on-error: true
-        env:
-          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+      # 无 token → 本步骤条件跳过（下方 notice 步骤说明）；
+      # 有 token → 发布失败（token 失效/包名冲突/网络）直接红，不加 continue-on-error
+      - name: Publish（需 NPM_TOKEN；未配置时条件跳过）
+        if: env.NPM_TOKEN != ''
         run: |
-          if [ -z "$NPM_TOKEN" ]; then
-            echo "::warning::NPM_TOKEN 未配置，跳过 npm 发布（发布需人类授权，见 docs/issue-log/OPEN.md）"
-            exit 1
-          fi
           echo "//registry.npmjs.org/:_authToken=\${NPM_TOKEN}" > ~/.npmrc
           # workspace:^ 依赖按拓扑序发布：先内核后 CLI（pnpm publish 自动替换 workspace: 协议）
           pnpm --filter @harness2/core publish --access public --no-git-checks
           pnpm --filter harness2 publish --access public --no-git-checks
 
-      - name: Publish outcome
-        if: steps.publish.outcome != 'success'
+      - name: Skip notice（未配置 NPM_TOKEN，明确跳过而非静默失败）
+        if: env.NPM_TOKEN == ''
         run: |
-          echo "::warning::npm 发布未执行或失败（outcome=${{ steps.publish.outcome }}）。\
-          待办：配置 NPM_TOKEN secret 并人工授权后重跑（docs/issue-log/OPEN.md）。"
+          echo "::notice::NPM_TOKEN 未配置，本次 release 跳过 npm publish（发布需人类授权，见 docs/issue-log/OPEN.md）"
+          echo "::notice::待办：配置 NPM_TOKEN secret 并人工授权后重新触发发布（重推 tag 或手跑 workflow）"

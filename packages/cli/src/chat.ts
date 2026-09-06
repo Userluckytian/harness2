@@ -62,7 +62,12 @@ export const MOCK_DEMO_SCRIPT: MockScript = [
   },
 ];
 
-const APPROVAL_PROMPT = (tool: string): string => `允许执行 ${tool}? [y]本次 [a]本会话总是 [n]拒绝 `;
+// P2-3：[a] 的粒度在提示里写明（该工具后续所有调用不再询问；仅进程内会话级，不落盘）
+const APPROVAL_PROMPT = (tool: string): string =>
+  `允许执行 ${tool}? [y]本次 [a]本会话总是（该工具后续所有调用不再询问） [n]拒绝 `;
+
+/** ask 取消哨兵：无法由键盘输入的答案值（turn 取消信号 abort 时以此结束 ask 等待，P2-2） */
+const ASK_CANCELLED = '\u0000ask-cancelled';
 
 interface ChatSession {
   id: string;
@@ -109,12 +114,19 @@ export async function runChat(options: ChatOptions = {}): Promise<void> {
         return policy.decide(input);
       },
       async onAsk(input: ApprovalInput) {
-        const answer = (await askUser(APPROVAL_PROMPT(input.tool))).trim().toLowerCase();
-        if (answer === 'a') {
+        // P2-2：ask 等待与 turn 取消信号竞速——signal abort 时以取消态结束（按拒绝处理），
+        // 不再无限悬挂（Ctrl+C / Ctrl+D / /exit 期间的等待均可取消），且取消后不再吞下一行输入。
+        const answer = await askUser(APPROVAL_PROMPT(input.tool), currentAbort?.signal);
+        if (answer === ASK_CANCELLED) {
+          renderer.line('审批等待被取消（该工具调用按拒绝处理）');
+          return false;
+        }
+        const normalized = answer.trim().toLowerCase();
+        if (normalized === 'a') {
           alwaysAllowed.add(input.tool);
           return true;
         }
-        return answer === 'y';
+        return normalized === 'y';
       },
     };
   }
@@ -127,7 +139,8 @@ export async function runChat(options: ChatOptions = {}): Promise<void> {
     return { id: r.id, dir: r.dir, writer: r.writer };
   };
   const newSession = (): ChatSession => {
-    const created = manager.create(root, { fsync: false });
+    // P2-5：fsync 与恢复路径（manager.resume 默认 true）保持一致，不再对新建降级
+    const created = manager.create(root);
     return { id: created.id, dir: created.dir, writer: created.writer };
   };
   if (options.session !== undefined) {
@@ -165,10 +178,27 @@ export async function runChat(options: ChatOptions = {}): Promise<void> {
   let answerResolver: ((line: string) => void) | null = null;
   let lastCtrlCAt = 0;
 
-  function askUser(query: string): Promise<string> {
+  /**
+   * 内联审批提问：拦截下一行输入作答案（answerResolver）。
+   * 提供 signal 时与 turn 取消竞速（P2-2）：abort → 以 ASK_CANCELLED 结束等待，
+   * 并清空 answerResolver——取消后到达的输入行走正常 REPL 流程，不再被当答案吞掉。
+   */
+  function askUser(query: string, signal?: AbortSignal): Promise<string> {
     return new Promise((resolveAnswer) => {
+      const settle = (line: string): void => {
+        if (answerResolver === resolveAnswer) answerResolver = null;
+        signal?.removeEventListener('abort', onAbort);
+        resolveAnswer(line);
+      };
+      const onAbort = (): void => settle(ASK_CANCELLED);
       output.write(query);
       answerResolver = resolveAnswer;
+      if (signal === undefined) return;
+      if (signal.aborted) {
+        settle(ASK_CANCELLED);
+        return;
+      }
+      signal.addEventListener('abort', onAbort, { once: true });
     });
   }
 
@@ -285,7 +315,8 @@ export async function runChat(options: ChatOptions = {}): Promise<void> {
   }
 
   rl.on('line', (line) => {
-    // 审批答案优先（REPL 内联提问期间的下一行输入）
+    // 审批答案优先（REPL 内联提问期间的下一行输入）；ask 被取消后 answerResolver
+    // 已被清空（P2-2），取消后的输入行不再被当答案吞掉，走正常 REPL 流程
     if (answerResolver) {
       const resolveAnswer = answerResolver;
       answerResolver = null;
@@ -300,7 +331,8 @@ export async function runChat(options: ChatOptions = {}): Promise<void> {
     void handleLine(line);
   });
   rl.on('SIGINT', () => {
-    // TTY Ctrl+C：turn 进行中 = 取消当前 turn；空闲 = 两次退出
+    // TTY Ctrl+C：turn 进行中（含审批 ask 等待，P2-2——ask 与 signal 竞速会随 abort 结束）
+    // = 取消当前 turn；空闲 = 两次退出
     if (busy && currentAbort) {
       renderer.line('^C（正在取消当前 turn…）');
       currentAbort.abort();

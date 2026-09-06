@@ -184,6 +184,85 @@ describe('harness2 chat --provider mock（流式/命令/undo+redo）', () => {
   }, 20000);
 });
 
+// —— 会话恢复与多级 undo（审查 P2-6a/6b 覆盖缺口） ——
+
+describe('harness2 chat 会话恢复与多级 undo（P2-6）', () => {
+  it('--session <id> 恢复：banner 标记已恢复，恢复后的投影可 /undo（文件复原联动）', async () => {
+    const home = tmpDir('h2-chat-home-');
+    const work = tmpDir('h2-chat-work-');
+    // 第一段：跑演示生成会话与演示文件
+    const first = startChat(['--provider', 'mock', '--home', home, '--root', work]);
+    await first.wait('会话: ');
+    const id = /会话: (\S+)（新建）/.exec(first.out())?.[1] ?? '';
+    expect(id).not.toBe('');
+    first.send('开始演示');
+    await first.wait('演示完成');
+    expect(await first.exit()).toBe(0);
+
+    // 第二段：--session 恢复同一会话，历史投影可用
+    const second = startChat(['--provider', 'mock', '--home', home, '--root', work, '--session', id]);
+    try {
+      await second.wait(`会话: ${id}（已恢复）`);
+      second.send('/undo');
+      await second.wait('已撤回 4 条消息');
+      expect(existsSync(join(work, 'harness2-demo.txt'))).toBe(false);
+    } finally {
+      expect(await second.exit()).toBe(0);
+    }
+  }, 30000);
+
+  it('/resume <id> 恢复：切换后 /sessions 把恢复的会话标记为当前', async () => {
+    const home = tmpDir('h2-chat-home-');
+    const work = tmpDir('h2-chat-work-');
+    const chat = startChat(['--provider', 'mock', '--home', home, '--root', work]);
+    try {
+      await chat.wait('会话: ');
+      const firstId = /会话: (\S+)（新建）/.exec(chat.out())?.[1] ?? '';
+      expect(firstId).not.toBe('');
+      chat.send('开始演示');
+      await chat.wait('演示完成');
+      chat.send('/new');
+      await chat.wait(() => [...chat.out().matchAll(/会话: \S+（新建）/g)].length >= 2);
+
+      chat.send(`/resume ${firstId}`);
+      await chat.wait(`会话: ${firstId}（已恢复）`);
+      chat.send('/sessions');
+      await chat.wait(`${firstId}  `); // 列表行格式（id + 两空格），与横幅区分
+      expect(chat.out()).toContain(' 条 *'); // 当前会话标记指向恢复的会话
+    } finally {
+      expect(await chat.exit()).toBe(0);
+    }
+  }, 30000);
+
+  it('/undo 2（n>1）连续撤回两个 turn；/redo 只重做一层（文件回放）', async () => {
+    const home = tmpDir('h2-chat-home-');
+    const work = tmpDir('h2-chat-work-');
+    const chat = startChat(['--provider', 'mock', '--home', home, '--root', work]);
+    try {
+      await chat.wait('会话: ');
+      chat.send('开始演示');
+      await chat.wait('演示完成');
+      // 第二个 turn：mock 脚本耗尽 → error turn（user 消息已落盘，可撤）
+      chat.send('再来一轮');
+      await chat.wait('[error');
+
+      chat.send('/undo 2');
+      await chat.wait('已撤回 1 条消息'); // 先撤 error turn（仅 user 消息）
+      await chat.wait('已撤回 4 条消息'); // 再撤演示 turn，创建的文件被删除
+      const out = chat.out();
+      expect(out.indexOf('已撤回 1 条消息')).toBeLessThan(out.indexOf('已撤回 4 条消息'));
+      expect(existsSync(join(work, 'harness2-demo.txt'))).toBe(false);
+
+      // /redo 只重做最近一次撤销：演示 turn 复活，文件恢复
+      chat.send('/redo');
+      await chat.wait('已重做 4 条消息');
+      expect(existsSync(join(work, 'harness2-demo.txt'))).toBe(true);
+    } finally {
+      expect(await chat.exit()).toBe(0);
+    }
+  }, 30000);
+});
+
 // —— 审批交互（真实 provider 配置 + 本地 OpenAI SSE stub） ——
 
 const SSE_HEADERS = { 'Content-Type': 'text/event-stream' };
