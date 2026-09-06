@@ -23,6 +23,8 @@ import { ToolRegistry } from '../tools/registry.js';
 import { createApprovalPolicy } from '../approval/policy.js';
 import { defaultMemoriesRoot, MemoryStore } from '../memory/store.js';
 import { defaultPendingRoot, PendingMemoryStore } from '../memory/pending.js';
+import { defaultSkillsRoot, projectSkillsRoot, SkillStore } from '../skills/store.js';
+import { createSkillTool } from '../skills/tool.js';
 import { SessionManager, defaultSessionsRoot } from '../session/manager.js';
 import { CronScheduler, type CronFinishedFrame } from '../cron/scheduler.js';
 import { defaultCronRoot } from '../cron/jobs.js';
@@ -145,6 +147,8 @@ export interface StartServeOptions {
   mcp?: { manager: McpManager };
   /** 注入 subagent 装配（阶段 8；mock/测试用）。缺省：config.subagent 派生（provider 取 roles.subagent，缺失回退主） */
   subagent?: SessionHubSubagent;
+  /** 注入 Skills 商店（阶段 10；mock/测试用）。缺省：项目 .harness2/skills/ + 全局 ~/.harness2/skills/ 两级派生 */
+  skills?: SkillStore;
   /** hub 观察钩子透传（WS 事件面 / 测试用） */
   hooks?: SessionHubHooks;
 }
@@ -186,6 +190,14 @@ export async function startServe(options: StartServeOptions = {}): Promise<Serve
   // 共享工具注册表（本地 → 插件 → MCP → subagent 的装配基底）
   const tools = new ToolRegistry();
   registerBuiltinTools(tools);
+
+  // Skills 装配（阶段 10）：无 config 开关，两级目录按需读盘（空目录 = 零注入）；
+  // skill 工具注册进共享注册表（turn 工具集随之携带，全文现读磁盘）
+  let skills: SkillStore | undefined = options.skills;
+  if (skills === undefined) {
+    skills = new SkillStore(projectSkillsRoot(root), defaultSkillsRoot(home));
+  }
+  tools.register(createSkillTool(skills));
 
   let provider = options.provider;
   let decide = options.decide;
@@ -288,6 +300,7 @@ export async function startServe(options: StartServeOptions = {}): Promise<Serve
     ...(browser !== undefined ? { browser } : {}),
     ...(subagent !== undefined ? { subagent } : {}),
     ...(plugins !== undefined ? { plugins } : {}),
+    ...(skills !== undefined ? { skills } : {}),
     ...(options.approvalTimeoutMs !== undefined ? { approvalTimeoutMs: options.approvalTimeoutMs } : {}),
     ...(options.hooks !== undefined ? { hooks: options.hooks } : {}),
   });

@@ -16,6 +16,7 @@ import {
   requestCompactionSummary,
 } from './compaction.js';
 import { assembleMemorySnapshot, type MemoryStore } from '../memory/store.js';
+import { assembleSkillsSystemBlock, type SkillStore } from '../skills/store.js';
 import { computeProjection, loadSession, type LoadedSession } from '../session/reader.js';
 import { readTextOrNull, snapshotTargetFile, type SnapshotStore } from '../session/snapshots.js';
 import { SessionWriter, type SessionAppender } from '../session/writer.js';
@@ -238,6 +239,16 @@ async function runTurnWithWriter(writer: SessionWriter | SessionAppender, option
       ? await resolveMemorySystem(writer, options.memory)
       : undefined;
 
+  // —— Skills 注入（阶段 10）：turn 开始扫描两级目录（列表每 turn 重读磁盘，本轮内冻结）；
+  // 仅名称+描述进 system，全文走 skill 工具按需加载；坏文件/覆盖/超限告警如实上报 ——
+  let skillsSystem: string | undefined;
+  let skillsWarning: string | undefined;
+  if (options.skills !== undefined) {
+    const scan = options.skills.scan();
+    skillsSystem = assembleSkillsSystemBlock(scan.skills) ?? undefined;
+    if (scan.warnings.length > 0) skillsWarning = scan.warnings.join('；');
+  }
+
   if (options.userText !== undefined) {
     writer.append('user/message', { text: options.userText, turnId });
   }
@@ -254,7 +265,8 @@ async function runTurnWithWriter(writer: SessionWriter | SessionAppender, option
   let finalText: string | undefined;
   let stopReason: TurnStopReason = 'end_turn';
   let error: string | undefined;
-  let warning: string | undefined = compactionWarning;
+  const earlyWarnings = [compactionWarning, skillsWarning].filter((w): w is string => w !== undefined);
+  let warning: string | undefined = earlyWarnings.length > 0 ? earlyWarnings.join('；') : undefined;
 
   // eslint 结构：每个 step = step/start → 请求（日志投影）→ 模型流 → 事件落盘 → step/end
   while (true) {
@@ -273,12 +285,17 @@ async function runTurnWithWriter(writer: SessionWriter | SessionAppender, option
     writer.append('step/start', { stepId, turnId });
 
     // —— 模型请求上下文：唯一来源 = 日志投影（无内存旁路）——
+    // system：memory 快照（阶段 6，冻结事件）在前，Skills 列表（阶段 10，仅追加内容段）在后
+    const systemText =
+      memorySystem !== undefined && skillsSystem !== undefined
+        ? `${memorySystem}\n\n${skillsSystem}`
+        : (memorySystem ?? skillsSystem);
     const messages = buildChatMessages(loadSession(writer.dir));
     const toolSpecs = options.tools.list().map(
       (def): ToolSpec => ({ name: def.name, description: def.description, parameters: def.parameters }),
     );
     const request: ChatRequest = {
-      ...(memorySystem !== undefined ? { system: memorySystem } : {}),
+      ...(systemText !== undefined ? { system: systemText } : {}),
       messages,
       ...(toolSpecs.length > 0 ? { tools: toolSpecs } : {}),
     };

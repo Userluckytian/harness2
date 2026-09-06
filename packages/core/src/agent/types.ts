@@ -1,6 +1,7 @@
 // Agent loop 类型：一次用户 turn 的执行选项与结果。
 import type { ChatProvider, ToolCallRequest } from '../provider/types.js';
 import type { MemoryStore } from '../memory/store.js';
+import type { SkillStore } from '../skills/store.js';
 import type { SnapshotStore } from '../session/snapshots.js';
 import type { ToolRegistry } from '../tools/registry.js';
 import type { ApprovalHandler } from '../tools/types.js';
@@ -71,6 +72,15 @@ export interface TurnOptions {
    * 两个记忆文件都为空 → 不注入不落事件。
    */
   memory?: MemoryStore;
+  /**
+   * 可选：项目/全局 Skills（阶段 10）。提供时 turn 开始扫描两级目录（项目
+   * .harness2/skills/ > 全局 ~/.harness2/skills/，同名覆盖 + 告警；上限 50），把
+   * 「[Skills 可用] 名称: 描述」列表追加进 ChatRequest.system（每 turn 重扫磁盘——
+   * 项目文件可中途新增；同一 turn 内冻结，与 memory 快照同款 prefix cache 语义）。
+   * 全文不进 system：模型经 skill 工具按需加载（工具由装配层注册）。
+   * 空 skills = 零注入；扫描告警并入 TurnResult.warning。
+   */
+  skills?: SkillStore;
   /**
    * 可选：上下文压缩（阶段 7）。提供时 turn 开始（user/message 落盘后、首个 step 前）
    * 检查触发：估算超阈值 → 摘要 → append compaction/applied 事件；摘要失败不落事件、

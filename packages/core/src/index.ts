@@ -25,6 +25,8 @@ export * from './memory/store.js';
 export * from './memory/tool.js';
 export * from './memory/pending.js';
 export * from './memory/nudge.js';
+export * from './skills/store.js';
+export * from './skills/tool.js';
 export * from './agent/types.js';
 export * from './agent/compaction.js';
 export * from './agent/loop.js';

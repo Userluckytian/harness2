@@ -22,6 +22,7 @@ import { ToolRegistry } from '../tools/registry.js';
 import { createMemoryToolForMode, runNudgeReview, type NudgeResult } from '../memory/nudge.js';
 import type { PendingMemoryStore } from '../memory/pending.js';
 import type { MemoryStore } from '../memory/store.js';
+import type { SkillStore } from '../skills/store.js';
 import type { ChatProvider, ToolCallRequest } from '../provider/types.js';
 import { redactSecrets } from '../config/redact.js';
 import { createBrowserTools, type BrowserPool } from '../tools/predefined/browser.js';
@@ -130,6 +131,8 @@ export interface SessionHubOptions {
   browser?: { pool: BrowserPool };
   /** subagent 装配（阶段 8；config.subagent 派生）——按会话 id 绑定血缘的 subagent 工具 */
   subagent?: SessionHubSubagent;
+  /** Skills 装配（阶段 10）——每次 turn 扫描两级目录并把列表追加进 system（skill 工具在共享注册表） */
+  skills?: SkillStore;
   /** 插件装配（阶段 8）——插件事件订阅的桥接（emitSessionEvent） */
   plugins?: SessionHubPlugins;
   hooks?: SessionHubHooks;
@@ -390,6 +393,8 @@ export class SessionHub {
         onStream: (event: TurnStreamEvent) => this.forwardStream(id, event),
         // 审查 P1-1：serve/desktop 路径同样注入记忆 store（缺此前主会话零快照、system 恒空）
         ...(this.options.memory !== undefined ? { memory: this.options.memory.store } : {}),
+        // 阶段 10：Skills 列表注入（每 turn 重扫磁盘；全文走 skill 工具）
+        ...(this.options.skills !== undefined ? { skills: this.options.skills } : {}),
         // 阶段 7：上下文压缩装配（启动器按 config 派生；缺省不压缩）
         ...(this.options.compaction !== undefined ? { compaction: this.options.compaction } : {}),
       });

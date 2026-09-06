@@ -8,11 +8,13 @@ import {
   createBrowserTools,
   createMemoryTool,
   createProvider,
+  createSkillTool,
   createSubagentTools,
   defaultConfigPaths,
   defaultMemoriesRoot,
   defaultPendingRoot,
   defaultPluginsRoot,
+  defaultSkillsRoot,
   getSharedBrowserPool,
   loadConfig,
   McpManager,
@@ -20,12 +22,14 @@ import {
   MockProvider,
   PendingMemoryStore,
   PluginBus,
+  projectSkillsRoot,
   registerBuiltinTools,
   resolveCompactionOptions,
   runTurn,
   forkSession,
   defaultSessionsRoot,
   SessionManager,
+  SkillStore,
   SnapshotStore,
   ToolRegistry,
   SUBAGENT_TOOL_NAMES,
@@ -131,6 +135,11 @@ export async function runChat(options: ChatOptions = {}): Promise<void> {
   const extensionDisposers: Array<() => void | Promise<void>> = [];
   const tools = new ToolRegistry();
   registerBuiltinTools(tools);
+
+  // Skills 装配（阶段 10）：项目级 .harness2/skills/ 优先于全局 ~/.harness2/skills/。
+  // 无 config 开关：两级扫描按需读盘（空目录 = 零注入）；全文经 skill 工具按需加载。
+  const skillsStore = new SkillStore(projectSkillsRoot(root), defaultSkillsRoot(options.home));
+  tools.register(createSkillTool(skillsStore));
 
   if (options.provider === 'mock') {
     // mock 演示：不接配置（零 key 可用），审批全放行
@@ -475,6 +484,7 @@ export async function runChat(options: ChatOptions = {}): Promise<void> {
         tools,
         ...(approval !== undefined ? { approval } : {}),
         ...(memoryStore !== undefined ? { memory: memoryStore } : {}),
+        skills: skillsStore,
         ...(compaction !== undefined ? { compaction } : {}),
         cwd: root,
         userText: text,
