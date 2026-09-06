@@ -152,8 +152,8 @@ export interface HarnessConfig {
   plugins: PluginsConfig;
   mcpServers: McpServersConfig;
   subagent: SubagentConfig;
-  /** IM 网关配置（阶段 9；缺省 = {}：零网关行为） */
-  gateways: GatewaysConfig;
+  /** IM 网关配置（阶段 9；可选——缺省/未配置 = 零网关行为） */
+  gateways?: GatewaysConfig;
 }
 
 /** 配置错误（工厂/CLI 对其做一行友好输出；消息不携带密钥） */
