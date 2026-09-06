@@ -1,6 +1,6 @@
 # HANDOFF — 交接入口（新维护者/AI 从这里开始）
 
-> 更新：2026-09-06（阶段 8 实现完成：插件总线公开化 + MCP 客户端 + subagent——扩展生态三扇门打开，待 `/accept-phase` 验收） · 本文件是唯一交接入口，保持与实际状态同步。
+> 更新：2026-09-06（阶段 8 实现完成 + 独立审查发现项全部修复：插件总线公开化 + MCP 客户端 + subagent——扩展生态三扇门打开，待 `/accept-phase` 验收） · 本文件是唯一交接入口，保持与实际状态同步。
 
 ## 1. 项目一句话
 
@@ -13,10 +13,10 @@
 | 默认分支 | `master`（注意：不是 main） |
 | 开发分支 | `feat/phase-8-plugins-mcp-subagent`（阶段 8 工作在此；此前阶段各在其分支，1–7 在 feat/phase-7-*） |
 | 阶段 1–7 | ✅ 全部完成并验收（内核 → loop+工具 → Provider+配置 → CLI chat+undo/redo → 服务化+桌面 → 记忆+分叉 → 浏览器+压缩+cron[M2]） |
-| 阶段 8 | 🔶 实现+自测完成：Task 1–5 已提交（插件总线 manifest 权限/装载审批/disposer 逆序展开；MCP 客户端 stdio+url/退避重启/namespaced 工具；subagent 独立子会话/深度限制/取消传播；hub/serve/chat 装配 + CLI plugin/mcp 命令 + 桌面前缀渲染/子会话跳转），待 `/accept-phase` 验收 |
+| 阶段 8 | 🔶 实现+独立审查修复完成：Task 1–5 已提交（插件总线 manifest 权限/装载审批/disposer 逆序展开；MCP 客户端 stdio+url/退避重启/namespaced 工具；subagent 独立子会话/深度限制/取消传播；hub/serve/chat 装配 + CLI plugin/mcp 命令 + 桌面前缀渲染/子会话跳转）；独立审查 P1×4 + P2×6 + 补测×3 已全部修复（见 issue-log §16），待 `/accept-phase` 验收 |
 | **M1 v0.1 / M2 v0.3** | 🔶 代码/物料就绪；**发布动作未执行**——待人类授权：远程仓库 + push、npm 包名占用检查、`NPM_TOKEN` secret、推 tag（见 OPEN.md） |
 | 未关闭事项 | 读 `docs/issue-log/OPEN.md`（保持为零上下文第一读；含真实 MCP server 实测、第三方插件样例清单） |
-| 测试 | `pnpm test`（含 build）—— core 434+1 skipped + cli 37 + desktop 41 = **513 项（512 passed + 1 skipped**，`H2_GEN_LOOP_DEMO` 门控的 fixture 生成器非失败；loop.test/tools.test 偶发抖动已登记 OPEN.md，失败先重跑甄别） |
+| 测试 | `pnpm test`（含 build）—— core 445+1 skipped + cli 40 + desktop 41 = **527 项（526 passed + 1 skipped**，`H2_GEN_LOOP_DEMO` 门控的 fixture 生成器非失败；loop.test/tools.test 偶发抖动已登记 OPEN.md，失败先重跑甄别） |
 | 远程 | 无（未配置 origin；push 需人类授权） |
 
 ## 3. 文档地图（按阅读顺序）
