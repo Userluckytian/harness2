@@ -1,6 +1,6 @@
 # 阶段 5：会话服务化 + Electron 桌面壳（多会话并行 / 分屏）
 
-> **状态：** 计划草案——待阶段 4 验收通过后开工（如有微调以 Ph4 实际产物为准）
+> **状态：** 计划已就绪（阶段 4 已于 2026-09-06 验收通过，基线 253 passed + 1 skipped；API 契约以本文件为准）
 > **For agentic workers:** 按 Task 顺序执行；每 Task 测完再进下一 Task。
 > **交接提示词**见文末「给接手 AI 的完整提示词」。
 > **元规范:** `docs/ai-framework/phased-plan-driven.md`
