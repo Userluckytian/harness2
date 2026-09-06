@@ -3,7 +3,7 @@
 // （自动化冒烟；窗口交互/拖拽等 GUI 项仍需真机人工验收，见 docs/issue-log/OPEN.md）。
 import { app, BrowserWindow } from 'electron';
 import { mkdtempSync, rmSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { homedir, tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createBridge, registerBridgeIpc, type Bridge } from './bridge.js';
 import { ServeManager } from './serve-manager.js';
@@ -31,6 +31,7 @@ interface DesktopHandles {
 }
 
 function startDesktop(opts: { show: boolean; provider: 'mock' | 'config'; home?: string }): DesktopHandles {
+  const home = opts.home ?? homedir();
   let resolveReady!: (v: { port: number }) => void;
   let rejectReady!: (e: Error) => void;
   const ready = new Promise<{ port: number }>((resolve, reject) => {
@@ -63,7 +64,7 @@ function startDesktop(opts: { show: boolean; provider: 'mock' | 'config'; home?:
     },
   });
 
-  const bridge = createBridge({ serve, root: resolveRepoRoot(), sendEvent, sendStatus });
+  const bridge = createBridge({ serve, root: resolveRepoRoot(), home, sendEvent, sendStatus });
   registerBridgeIpc(bridge);
 
   const win = new BrowserWindow({

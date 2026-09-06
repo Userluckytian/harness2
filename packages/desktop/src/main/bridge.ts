@@ -8,12 +8,15 @@ import type {
   StatusDetail,
   WsFrame,
 } from '../shared/protocol.js';
+import { readLayout, writeLayout } from './layout-file.js';
 import type { ServeManager } from './serve-manager.js';
 
 export interface BridgeDeps {
   serve: ServeManager;
   /** serve 的 --root（工具执行 cwd + 新会话分组；渲染端不感知文件系统） */
   root: string;
+  /** 用户数据根（分屏布局持久化 ~/.harness2/desktop-layout.json） */
+  home: string;
   /** 渲染窗口 webContents 推送（帧） */
   sendEvent: (frame: WsFrame) => void;
   /** 渲染窗口推送（连接状态） */
@@ -186,9 +189,9 @@ export function createBridge(deps: BridgeDeps): Bridge {
         });
         return null;
       case 'loadLayout':
-        return null; // Task 5 接入
+        return readLayout(deps.home);
       case 'saveLayout':
-        return null; // Task 5 接入
+        return writeLayout(deps.home, args['layout']);
       default:
         throw new InvokeError(`未知命令 ${cmd}`);
     }

@@ -1,12 +1,17 @@
-// 渲染端根组件：状态角标 + 会话侧栏 + 对话视图（气泡/工具行/reasoning 折叠/流式光标/审批）。
+// 渲染端根组件：状态角标 + 会话侧栏（拖拽源）+ 分栏对话区（1/2/3 栏，DnD 绑定会话）。
+// 布局纯逻辑见 shared/layout.ts；持久化经主进程落 ~/.harness2/desktop-layout.json。
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import type { ChatItem } from './chat-model.js';
 import type { ConnectionStatus } from '../shared/protocol.js';
-import { AppStore } from './store.js';
+import { MAX_PANES } from '../shared/layout.js';
+import { AppStore, type AppState } from './store.js';
 import { createController } from './app-controller.js';
 
 export const store = new AppStore();
 export const controller = createController(store, window.harness2);
+
+/** 拖拽载荷：jsdom 无 dataTransfer，模块级回退（优先 dataTransfer） */
+export const dragState: { sessionId: string | null } = { sessionId: null };
 
 export function useAppState() {
   return useSyncExternalStore(store.subscribe, store.getState);
@@ -27,6 +32,12 @@ export function StatusBadge({ status, error }: { status: ConnectionStatus; error
       {label.text}
     </span>
   );
+}
+
+/** 点击会话时目标分栏：优先空栏，其次第一栏 */
+function targetPaneFor(state: AppState): number {
+  const empty = state.layout.panes.findIndex((p) => p.sessionId === null);
+  return empty >= 0 ? empty : 0;
 }
 
 export function SessionList(): React.ReactNode {
@@ -50,16 +61,31 @@ export function SessionList(): React.ReactNode {
         ) : (
           state.sessions.map((s) => {
             const stream = store.peekStream(s.id);
+            const background = store.isBackground(s.id);
             const unread = stream?.unread ?? 0;
             return (
               <li key={s.id}>
                 <button
                   type="button"
                   className={`session-item${state.selectedId === s.id ? ' selected' : ''}`}
-                  onClick={() => void controller.selectSession(s.id)}
+                  draggable
+                  onDragStart={(e) => {
+                    dragState.sessionId = s.id;
+                    try {
+                      e.dataTransfer.setData('text/plain', s.id);
+                      e.dataTransfer.effectAllowed = 'move';
+                    } catch {
+                      // jsdom 无 dataTransfer：回退 dragState
+                    }
+                  }}
+                  onClick={() => {
+                    // 点击 = 打入目标分栏；拖拽 = 显式分屏
+                    void controller.assignToPane(targetPaneFor(state), s.id);
+                  }}
                 >
                   <span className="session-title">
                     {s.firstUserText || '(空会话)'}
+                    {background && <span className="bg-tag">后台</span>}
                     {unread > 0 && <span className="unread-badge">{unread}</span>}
                     {stream?.running && <span className="running-dot" title="turn 进行中" />}
                   </span>
@@ -157,10 +183,10 @@ export function ChatItemView({ item }: { item: ChatItem }) {
   }
 }
 
-export function ChatView({ streamId }: { streamId: string }) {
+export function ChatView({ streamId }: { streamId: string | null }) {
   const state = useAppState();
-  const stream = store.peekStream(streamId);
-  const items = store.chatItems(streamId);
+  const stream = streamId !== null ? store.peekStream(streamId) : undefined;
+  const items = streamId !== null ? store.chatItems(streamId) : [];
   const [draft, setDraft] = useState('');
   const scrollRef = useRef<HTMLDivElement>(null);
 
@@ -169,13 +195,18 @@ export function ChatView({ streamId }: { streamId: string }) {
     if (el) el.scrollTop = el.scrollHeight;
   }, [items, streamId]);
 
+  if (streamId === null) {
+    return (
+      <div className="chat empty-pane">
+        <p>从左侧拖会话到此分屏</p>
+      </div>
+    );
+  }
   if (stream === undefined || !stream.loaded) {
     return (
-      <main className="main">
-        <div className="empty-state">
-          <p>加载会话…</p>
-        </div>
-      </main>
+      <div className="chat empty-pane">
+        <p>加载会话…</p>
+      </div>
     );
   }
 
@@ -187,7 +218,7 @@ export function ChatView({ streamId }: { streamId: string }) {
   };
 
   return (
-    <main className="main chat">
+    <div className="chat">
       <div className="messages" ref={scrollRef}>
         {items.map((item, i) => (
           <ChatItemView key={item.callId ?? item.seq ?? `i${i}`} item={item} />
@@ -242,6 +273,71 @@ export function ChatView({ streamId }: { streamId: string }) {
           </button>
         )}
       </div>
+    </div>
+  );
+}
+
+export function PaneArea(): React.ReactNode {
+  const state = useAppState();
+  const [dragOverPane, setDragOverPane] = useState<number | null>(null);
+  const panes = state.layout.panes;
+
+  return (
+    <main className="main panes">
+      <div className="pane-toolbar">
+        {[1, 2, 3].map((n) => (
+          <button
+            key={n}
+            type="button"
+            className={`pane-count${panes.length === n ? ' active' : ''}`}
+            onClick={() => void controller.setPaneCount(n)}
+          >
+            {n} 栏
+          </button>
+        ))}
+      </div>
+      <div className="pane-row">
+        {panes.map((pane, i) => {
+          const sid = pane.sessionId;
+          const session = sid !== null ? state.sessions.find((s) => s.id === sid) : undefined;
+          return (
+            <section
+              key={i}
+              className={`pane${dragOverPane === i ? ' drag-over' : ''}`}
+              onDragOver={(e) => {
+                e.preventDefault();
+                setDragOverPane(i);
+              }}
+              onDragLeave={() => setDragOverPane((cur) => (cur === i ? null : cur))}
+              onDrop={(e) => {
+                e.preventDefault();
+                setDragOverPane(null);
+                const fromEvent = (() => {
+                  try {
+                    const v = e.dataTransfer.getData('text/plain');
+                    return v.length > 0 ? v : null;
+                  } catch {
+                    return null;
+                  }
+                })();
+                const dragged = dragState.sessionId ?? fromEvent;
+                if (dragged !== null) void controller.assignToPane(i, dragged);
+                dragState.sessionId = null;
+              }}
+            >
+              <div className="pane-head">
+                <span className="pane-label">{session ? session.firstUserText || '(空会话)' : '空分栏'}</span>
+                {sid !== null && (
+                  <button type="button" className="pane-unbind" onClick={() => void controller.assignToPane(i, null)}>
+                    ✕
+                  </button>
+                )}
+              </div>
+              <ChatView streamId={sid} />
+            </section>
+          );
+        })}
+      </div>
     </main>
   );
 }
@@ -249,25 +345,23 @@ export function ChatView({ streamId }: { streamId: string }) {
 export function App(): React.ReactNode {
   const state = useAppState();
   const statusInfo = STATUS_LABEL[state.status];
-  // controller 生命周期挂组件：启动事件订阅 + 列表刷新（卸载时退订）
-  useEffect(() => controller.start(), []);
+  // controller 生命周期挂组件：启动事件订阅 + 布局加载（卸载时退订）
+  useEffect(() => {
+    void controller.initLayout();
+    return controller.start();
+  }, []);
   return (
     <div className="app">
       <header className="topbar">
         <span className="brand">harness2</span>
-        <StatusBadge status={state.status} error={state.statusDetail?.error} />
+        <span className="topbar-right">
+          <span className="hint">最多 {MAX_PANES} 分屏并行</span>
+          <StatusBadge status={state.status} error={state.statusDetail?.error} />
+        </span>
       </header>
       <div className="body">
         <SessionList />
-        {state.selectedId === null ? (
-          <main className="main">
-            <div className="empty-state">
-              <p>{statusInfo.text === '已连接' ? '选择或新建一个会话开始' : '等待服务就绪…'}</p>
-            </div>
-          </main>
-        ) : (
-          <ChatView streamId={state.selectedId} />
-        )}
+        <PaneArea />
       </div>
     </div>
   );

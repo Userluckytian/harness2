@@ -14,6 +14,11 @@ export interface Controller {
   sendMessage(id: string, text: string): Promise<void>;
   abort(id: string): Promise<void>;
   respondApproval(requestId: string, decision: 'allow' | 'deny'): Promise<void>;
+  /** 启动时读取持久化布局（~/.harness2/desktop-layout.json 经主进程） */
+  initLayout(): Promise<void>;
+  /** 分栏数变化 / 会话分配：更新 store 并持久化；绑定的会话自动订阅+重放 */
+  setPaneCount(count: number): Promise<void>;
+  assignToPane(paneIndex: number, sessionId: string | null): Promise<void>;
 }
 
 export function createController(store: AppStore, api: Harness2Api): Controller {
@@ -38,6 +43,14 @@ export function createController(store: AppStore, api: Harness2Api): Controller 
       store.applyReplay(await api.events(id));
     } catch {
       // 会话可能刚被并发创建（服务端尚未可见）：保持缓冲，等增量
+    }
+  };
+
+  const persistLayout = async (): Promise<void> => {
+    try {
+      await api.saveLayout(store.getState().layout);
+    } catch {
+      // 持久化失败不影响使用
     }
   };
 
@@ -90,6 +103,25 @@ export function createController(store: AppStore, api: Harness2Api): Controller 
       } finally {
         store.removeApproval(requestId);
       }
+    },
+    async initLayout(): Promise<void> {
+      try {
+        store.applyLayout((await api.loadLayout()) as Parameters<AppStore['applyLayout']>[0]);
+      } catch {
+        // 布局加载失败：保持默认
+      }
+    },
+    async setPaneCount(count: number): Promise<void> {
+      store.applyPaneCount(count);
+      await persistLayout();
+    },
+    async assignToPane(paneIndex: number, sessionId: string | null): Promise<void> {
+      store.assignToPane(paneIndex, sessionId);
+      if (sessionId !== null) {
+        await subscribeSession(sessionId);
+        await replaySession(sessionId);
+      }
+      await persistLayout();
     },
   };
 }

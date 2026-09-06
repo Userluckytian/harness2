@@ -79,14 +79,49 @@ describe('对话 UI（jsdom）', () => {
     const App = (await bootApp(api)) as { App: () => React.ReactNode };
     render(<App.App />);
 
-    expect(await screen.findByText('第一句')).toBeTruthy(); // 列表摘要
+    expect(await screen.findByText(/第一句/)).toBeTruthy(); // 列表摘要
     fireEvent.click(screen.getByRole('button', { name: /第一句/ }));
 
     await waitFor(() => expect(api.subscribe).toHaveBeenCalledWith('s1'));
     await waitFor(() => expect(api.events).toHaveBeenCalledWith('s1'));
-    expect(await screen.findByText('第一句回复')).toBeTruthy(); // assistant 气泡
+    expect(await screen.findByText('第一句回复')).toBeTruthy(); // 分栏内 assistant 气泡
     expect(screen.getByText('思考过程')).toBeTruthy(); // reasoning 折叠块
     expect(screen.getByText('── turn')).toBeTruthy(); // turn 标头
+  });
+
+  it('分屏拖拽（HTML5 DnD）：dragStart 会话 → drop 分栏 → 绑定并渲染；dataTransfer 与回退两路', async () => {
+    const api = makeFakeApi();
+    const App = (await bootApp(api)) as { App: () => React.ReactNode };
+    render(<App.App />);
+    const item = await screen.findByRole('button', { name: /第一句/ });
+
+    // 路径一：dataTransfer 有效载荷
+    const dataTransfer = { getData: () => 's1', setData: () => {}, effectAllowed: '' };
+    fireEvent.dragStart(item, { dataTransfer });
+    fireEvent.drop(screen.getByText('空分栏').closest('section')!, { dataTransfer });
+    await waitFor(() => expect(api.subscribe).toHaveBeenCalledWith('s1'));
+    expect(await screen.findByText('第一句回复')).toBeTruthy();
+
+    // 解绑后走路径二：dragState 回退（jsdom 无 dataTransfer）
+    fireEvent.click(screen.getByRole('button', { name: '✕' }));
+    await waitFor(() => expect(screen.getByText('空分栏')).toBeTruthy());
+    fireEvent.dragStart(item, {});
+    fireEvent.drop(screen.getByText('空分栏').closest('section')!, {});
+    await waitFor(() => expect(api.subscribe).toHaveBeenCalledTimes(2));
+  });
+
+  it('分栏数切换：1→2→3 栏；布局经 saveLayout 持久化', async () => {
+    const api = makeFakeApi();
+    const App = (await bootApp(api)) as { App: () => React.ReactNode };
+    render(<App.App />);
+    fireEvent.click(await screen.findByRole('button', { name: '2 栏' }));
+    await waitFor(() => expect(api.saveLayout).toHaveBeenCalled());
+    expect(screen.getAllByText('空分栏')).toHaveLength(2);
+    fireEvent.click(screen.getByRole('button', { name: '3 栏' }));
+    expect(await screen.findAllByText('空分栏')).toHaveLength(3);
+    const saveCalls = vi.mocked(api.saveLayout).mock.calls;
+    expect(saveCalls.length).toBeGreaterThanOrEqual(2);
+    expect((saveCalls.at(-1)?.[0] as { panes: unknown[] }).panes).toHaveLength(3);
   });
 
   it('输入框：Enter 发送（trim）→ 转运行中（停止按钮）→ 停止调 abort；Shift+Enter 换行不发送', async () => {

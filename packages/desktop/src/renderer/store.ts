@@ -12,6 +12,14 @@ import type {
   StatusDetail,
   WsFrame,
 } from '../shared/protocol.js';
+import * as layoutFns from '../shared/layout.js';
+import {
+  assignSession as assignPaneInLayout,
+  boundSessionIds,
+  defaultLayout,
+  normalizeLayout,
+  type DesktopLayout,
+} from '../shared/layout.js';
 import {
   applyEvent,
   emptyLive,
@@ -57,10 +65,12 @@ export interface AppState {
   statusDetail?: StatusDetail;
   sessions: SessionMeta[];
   selectedId: string | null;
+  /** 分屏布局（1..3 栏；渲染端唯一事实来自这里，持久化经主进程落盘） */
+  layout: DesktopLayout;
 }
 
 export function initialState(): AppState {
-  return { rev: 0, status: 'connecting', sessions: [], selectedId: null };
+  return { rev: 0, status: 'connecting', sessions: [], selectedId: null, layout: defaultLayout() };
 }
 
 export class AppStore {
@@ -109,6 +119,35 @@ export class AppStore {
 
   addSession(summary: SessionMeta): void {
     this.set({ sessions: [summary, ...this.state.sessions.filter((s) => s.id !== summary.id)] });
+  }
+
+  // —— 分屏布局 ——
+
+  /** 应用外部布局（磁盘/IPC 未知来源）：normalizeLayout 统一校验，非法回落默认 */
+  applyLayout(raw: unknown): void {
+    this.set({ layout: normalizeLayout(raw) });
+  }
+
+  /** 改分栏数（1..3）：布局纯函数处理绑定去重/裁剪 */
+  applyPaneCount(count: number): void {
+    const { setPaneCount } = layoutFns;
+    this.set({ layout: setPaneCount(this.state.layout, count) });
+  }
+
+  /** 拖拽/点击分配会话到分栏：清该会话未读（进入视野）；null = 清空该栏 */
+  assignToPane(paneIndex: number, sessionId: string | null): void {
+    const layout = assignPaneInLayout(this.state.layout, paneIndex, sessionId);
+    if (sessionId !== null) {
+      const stream = this.streams.get(sessionId);
+      if (stream !== undefined) stream.unread = 0;
+    }
+    this.set({ layout });
+  }
+
+  /** 会话是否处于"后台"（已订阅但不在任何分栏、也非当前选中） */
+  isBackground(id: string): boolean {
+    if (this.state.selectedId === id) return false;
+    return !boundSessionIds(this.state.layout).has(id);
   }
 
   // —— 会话流 ——
@@ -194,8 +233,8 @@ export class AppStore {
     } else if (frame.type === 'approval-request') {
       stream.approvals = [...stream.approvals, { requestId: frame.requestId, tool: frame.tool, args: frame.args }];
     }
-    // 后台会话徽标：按"新消息"口径计数（assistant/message / turn-end），delta 片与 step 事件不计
-    if (this.state.selectedId !== id) {
+    // 后台会话徽标：非选中且未绑定分栏的会话，按"新消息"口径计数（assistant/message / turn-end）
+    if (this.isBackground(id)) {
       if (frame.type === 'turn-end' || (frame.type === 'event' && frame.event.type === 'assistant/message')) {
         stream.unread += 1;
       }
