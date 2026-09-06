@@ -20,6 +20,15 @@ import { SessionWriter } from './writer.js';
 /** ~/.harness2 下的会话存储目录名 */
 export const SESSIONS_DIR_NAME = 'sessions';
 
+/**
+ * sessionId 合法格式（generateId 的生成口径；路径穿越防御的唯一事实源）：
+ * id 会拼进会话目录路径，`../x` 之类的穿越原语必须在出口处拒绝。
+ * generateId = UTC 8 位日期-6 位时间- + randomBytes(3).toString('hex')（6 位小写 hex），
+ * `{6,}` 对后缀加宽留容忍；任何不匹配格式一律拒绝，不触达文件系统。
+ * hub（server/sessions.ts）与 subagent_continue（agent/subagent.ts，审查 P2-3）共用本常量。
+ */
+export const SESSION_ID_PATTERN = /^\d{8}-\d{6}-[0-9a-f]{6,}$/;
+
 /** 会话摘要展示宽度（首条用户消息/命中片段 ≤60 字） */
 export const SUMMARY_TEXT_MAX = 60;
 

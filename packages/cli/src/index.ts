@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // harness2 CLI 入口。traj（阶段 1）、config check（阶段 3）、chat REPL（阶段 4）、serve（阶段 5）、browser/cron（阶段 7）、plugin/mcp（阶段 8）。
 import { Command } from 'commander';
-import { existsSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import { createInterface } from 'node:readline';
 import { join, sep } from 'node:path';
 import {
@@ -645,7 +645,11 @@ function mutatePluginsAllow(home: string | undefined, mutate: (allow: string[]) 
   const allow = Array.isArray(plugins['allow']) ? [...(plugins['allow'] as unknown[]).filter((x): x is string => typeof x === 'string')] : [];
   mutate(allow);
   raw['plugins'] = { ...plugins, allow };
-  writeFileSync(paths.globalConfig, `${JSON.stringify(raw, null, 2)}\n`, 'utf8');
+  // P2-5③：temp + rename 原子写（对齐 write/edit 工具与 MemoryStore 口径）——写入中途崩溃
+  // 不留半截 config；同目录 rename 保证同盘原子性
+  const tmpPath = `${paths.globalConfig}.tmp`;
+  writeFileSync(tmpPath, `${JSON.stringify(raw, null, 2)}\n`, 'utf8');
+  renameSync(tmpPath, paths.globalConfig);
 }
 
 /** mcp 命令（阶段 8）：MCP 服务器查看与连接探测。 */
@@ -687,7 +691,10 @@ mcpCmd
       if (report.connected.includes(name)) {
         console.log(`\r${name}  ${describeMcpServer(cfg)}  已连接，${status.tools.length} 个工具（mcp__${name}__*）`);
       } else {
-        console.log(`\r${name}  ${describeMcpServer(cfg)}  连接失败：${report.failed[0]?.error ?? status.lastError ?? '未知错误'}`);
+        // P2-2：如实显示 down 状态与恢复路径（chat/serve 启动装载时自动退避重试）
+        console.log(
+          `\r${name}  ${describeMcpServer(cfg)}  down（连接失败：${report.failed[0]?.error ?? status.lastError ?? '未知错误'}；chat/serve 启动时将自动退避重试，修正 config 后重启即可恢复）`,
+        );
       }
       await manager.close();
     }

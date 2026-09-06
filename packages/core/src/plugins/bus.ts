@@ -144,8 +144,10 @@ export class PluginBus {
       try {
         const mod = await importPluginModule(source.dir, source.manifest.name);
         const ctx = this.createContext(record);
-        await mod.setup(ctx);
+        // P2-1：先登记再 setup——setup 期间的 registerTool/on 走同一存活检查
+        //（此后 unload/dispose 的延迟逃逸调用才会被拒绝）
         this.records.set(source.name, record);
+        await mod.setup(ctx);
         report.loaded.push({
           name: source.name,
           dir: source.dir,
@@ -153,7 +155,8 @@ export class PluginBus {
           tools: [...record.toolNames],
         });
       } catch (e) {
-        // setup 半途失败：展开已获取的 disposer（不留半装载状态），再收口为跳过
+        // setup 半途失败：摘除登记 + 展开已获取的 disposer（不留半装载状态），再收口为跳过
+        this.records.delete(source.name);
         this.unwind(record);
         this.removeSubscriptions(source.name);
         skip(e instanceof PluginError ? e.message : `${(e as Error)?.name ?? 'Error'}: ${(e as Error)?.message ?? String(e)}`);
@@ -186,6 +189,33 @@ export class PluginBus {
     this.unwind(record);
     this.removeSubscriptions(name);
     return true;
+  }
+
+  /**
+   * 宿主装配层收回某插件已注册的工具（P1-3：插件抢占 subagent 等权威工具名时，
+   * CLI 在重挂权威版之前剔除插件版本，而不是让重名 throw 崩掉 chat）。
+   * 仅首个持有该名的插件生效（同一工具名只会被一个插件成功注册）；返回是否确有收回。
+   */
+  revokeTool(name: string): boolean {
+    for (const record of this.records.values()) {
+      const i = record.toolNames.indexOf(name);
+      if (i < 0) continue;
+      const disposer = record.disposers[i];
+      // 先摘记账再展开：与插件自 dispose 的语义一致（unload 时不重复展开）
+      record.disposers.splice(i, 1);
+      record.toolNames.splice(i, 1);
+      if (disposer !== undefined) {
+        try {
+          disposer();
+        } catch {
+          // 收回失败按未收回处理（调用方保持降级路径）
+          return false;
+        }
+      }
+      this.logSink(`[plugin:${record.name}] 工具 "${name}" 被宿主收回（权威实现优先）`);
+      return true;
+    }
+    return false;
   }
 
   /** 全量卸载（serve/chat 关闭路径）：装载顺序的逆序逐插件展开 */
@@ -221,8 +251,17 @@ export class PluginBus {
     const bus = this;
     const perms = record.manifest.permissions ?? {};
     const pluginName = record.name;
+    // P2-1 存活检查：registerTool/on 在插件卸载（unload/dispose）后被延迟调用（setTimeout
+    // 等异步逃逸）时静默拒绝 + 告警，返回 no-op disposer——杜绝「已卸载插件仍能把工具/
+    // 订阅残留进宿主」。选「静默拒绝」而非抛 PluginError：逃逸调用发生在宿主无法捕获的
+    // 异步回调里，抛错会变成 uncaught exception 拖垮主进程（与单插件失败不拖垮宿主矛盾）。
+    const alive = (): boolean => !bus.disposed && bus.records.get(pluginName) === record;
     return {
       registerTool(def: ToolDefinition): () => void {
+        if (!alive()) {
+          bus.logSink(`[plugin:${pluginName}] 插件已卸载，忽略延迟的 registerTool("${def.name}") 调用（逃逸防护）`);
+          return () => {};
+        }
         const allowed =
           perms.tools === true || (Array.isArray(perms.tools) && perms.tools.includes(def.name));
         if (!allowed) {
@@ -234,7 +273,10 @@ export class PluginBus {
         try {
           disposer = bus.options.tools.register(def);
         } catch (e) {
-          throw new PluginError(`注册工具 "${def.name}" 被拒绝: ${(e as Error).message}`);
+          // P2-5①：单工具重名/非法名 → 降级为跳过该工具 + 告警，不弃整插件（对齐计划
+          // 「冲突告警不中断」；本地工具先注册 = 本地优先语义保持）
+          bus.logSink(`[plugin:${pluginName}] 工具 "${def.name}" 跳过（与既有工具冲突或名称非法）: ${(e as Error).message}`);
+          return () => {};
         }
         record.disposers.push(disposer);
         record.toolNames.push(def.name);
@@ -248,6 +290,10 @@ export class PluginBus {
         };
       },
       on(event: string, handler: PluginEventHandler): () => void {
+        if (!alive()) {
+          bus.logSink(`[plugin:${pluginName}] 插件已卸载，忽略延迟的 on("${event}") 订阅（逃逸防护）`);
+          return () => {};
+        }
         if (event !== '*' && !isSessionEventType(event)) {
           throw new PluginError(`未知事件类型 "${event}"（必须是已知会话事件类型或 '*'）`);
         }

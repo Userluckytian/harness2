@@ -502,13 +502,22 @@ export function parseConfig(raw: unknown): ConfigParseResult {
       errors.push('config.subagent 必须是对象');
     } else {
       collectUnknownKeys(rawSubagent, SUBAGENT_KNOWN_KEYS, 'subagent', warnings);
-      for (const field of ['maxDepth', 'maxTurns'] as const) {
-        const num = rawSubagent[field];
-        if (num === undefined) continue;
-        if (typeof num !== 'number' || !Number.isInteger(num) || num < 1 || num > 10) {
-          errors.push(`subagent.${field} 必须是 1..10 的整数`);
+      // P1-2：maxDepth 与 maxTurns 分开校验（语义不同：递归深度红线 vs 子会话单 turn 步数）。
+      // maxTurns 上限 200——缺省即 25（计划契约示例同值），旧上限 10 会令照抄契约的合法配置报错。
+      const depth = rawSubagent['maxDepth'];
+      if (depth !== undefined) {
+        if (typeof depth !== 'number' || !Number.isInteger(depth) || depth < 1 || depth > 10) {
+          errors.push('subagent.maxDepth 必须是 1..10 的整数');
         } else {
-          subagent[field] = num;
+          subagent.maxDepth = depth;
+        }
+      }
+      const turns = rawSubagent['maxTurns'];
+      if (turns !== undefined) {
+        if (typeof turns !== 'number' || !Number.isInteger(turns) || turns < 1 || turns > 200) {
+          errors.push('subagent.maxTurns 必须是 1..200 的整数');
+        } else {
+          subagent.maxTurns = turns;
         }
       }
     }

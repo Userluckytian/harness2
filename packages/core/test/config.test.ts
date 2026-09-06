@@ -267,6 +267,27 @@ describe('schema 校验', () => {
     expect(r.errors).toEqual([]);
     expect(r.config?.providers['a']?.baseUrl).toBe('https://x');
   });
+
+  it('subagent：maxDepth 1..10、maxTurns 1..200 分开校验（P1-2：契约示例 {maxDepth:1, maxTurns:25} 可解析）', () => {
+    const base = { providers: { a: { protocol: 'openai', baseUrl: 'https://x' } }, roles: { main: { channel: 'a', model: 'm' } } };
+    // 计划契约示例即 25——旧上限 10 会令照抄契约的合法配置报错
+    const contract = parseConfig({ ...base, subagent: { maxDepth: 1, maxTurns: 25 } });
+    expect(contract.errors).toEqual([]);
+    expect(contract.config?.subagent).toEqual({ maxDepth: 1, maxTurns: 25 });
+    // 边界：maxTurns 200 合法、201 拒绝；maxDepth 10 合法、11 拒绝
+    const edge = parseConfig({ ...base, subagent: { maxDepth: 10, maxTurns: 200 } });
+    expect(edge.errors).toEqual([]);
+    expect(edge.config?.subagent).toEqual({ maxDepth: 10, maxTurns: 200 });
+    const badTurns = parseConfig({ ...base, subagent: { maxTurns: 201 } });
+    expect(badTurns.config).toBeNull();
+    expect(badTurns.errors.join('\n')).toContain('subagent.maxTurns 必须是 1..200 的整数');
+    const badDepth = parseConfig({ ...base, subagent: { maxDepth: 11 } });
+    expect(badDepth.config).toBeNull();
+    expect(badDepth.errors.join('\n')).toContain('subagent.maxDepth 必须是 1..10 的整数');
+    // 缺省值不受影响
+    const def = parseConfig(base);
+    expect(def.config?.subagent).toEqual({ maxDepth: 1, maxTurns: 25 });
+  });
 });
 
 describe('错误消息不回显密钥内容', () => {

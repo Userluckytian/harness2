@@ -2,15 +2,19 @@
 // continue 往返与血缘校验 / 子失败不影响父 / 参数校验 / 零新增事件类型。
 // mock provider 脚本按消费顺序编排父/子/孙 turn（同一 provider 实例贯穿父子）。
 import { afterEach, describe, expect, it } from 'vitest';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { existsSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { ToolRegistry } from '../src/tools/registry.js';
 import type { ToolDefinition } from '../src/tools/types.js';
 import { MockProvider, type MockScript } from '../src/provider/mock.js';
 import { SessionManager } from '../src/session/manager.js';
+import { SessionWriter } from '../src/session/writer.js';
+import { SnapshotStore } from '../src/session/snapshots.js';
+import { undoLastTurn } from '../src/session/undo.js';
 import { loadSession, computeProjection } from '../src/session/reader.js';
 import { runTurn } from '../src/agent/loop.js';
+import { writeTool } from '../src/tools/predefined/write.js';
 import {
   SUBAGENT_TOOL_NAMES,
   buildSubagentChildTools,
@@ -59,14 +63,18 @@ interface Harness {
   childEvents: Array<{ sessionId: string; type: string }>;
 }
 
-/** 组装父会话（depth 0）+ 注册 subagent 工具 */
-function makeHarness(script: MockScript, opts: { maxDepth?: number; maxTurns?: number; cwd?: string } = {}): Harness {
+/** 组装父会话（depth 0）+ 注册 subagent 工具（extraTools 先于 subagent 工具进 base 注册表） */
+function makeHarness(
+  script: MockScript,
+  opts: { maxDepth?: number; maxTurns?: number; cwd?: string; extraTools?: ToolDefinition[] } = {},
+): Harness {
   const root = tmpDir();
   const manager = new SessionManager(join(root, 'sessions'));
   const provider = new MockProvider(script);
   const registry = new ToolRegistry();
   const childLog: Array<{ name: string; args: unknown }> = [];
   registry.register(childToolDef(childLog));
+  for (const def of opts.extraTools ?? []) registry.register(def);
   const parent = manager.create(opts.cwd ?? root, { fsync: false });
   const childEvents: Array<{ sessionId: string; type: string }> = [];
   const subOptions: SubagentOptions = {
@@ -314,19 +322,30 @@ describe('subagent_continue', () => {
     expect(childReqs[1]!.messages.map((m) => (m.role === 'user' ? m.content : null))).toContain('go on');
   });
 
-  it('血缘校验：非本会话派生的会话拒绝续跑；未知 id 报不存在', async () => {
+  it('血缘校验：非本会话派生的会话拒绝续跑；未知 id / 遍历形 id 报不存在或格式非法', async () => {
     const h = makeHarness([
       { toolCalls: [{ id: 'c1', name: 'subagent_start', arguments: '{"prompt":"p"}' }] },
       { text: 'ok' },
       { text: 'done' },
     ]);
     const continueDef = h.registry.get('subagent_continue')!;
-    // 未知 id
+    // 未知 id（格式合法但不存在的目录）
     const miss = await continueDef.execute(
-      { childSessionId: '20260906-000000-zzzzzz', message: 'm' },
+      { childSessionId: '20260906-000000-fffff1', message: 'm' },
       CALL_CTX,
     );
     expect(miss.error).toContain('子会话不存在');
+    // P2-3：遍历形 / 任意串 id → SESSION_ID_PATTERN 格式拒绝（不触达文件系统）
+    const traversal = await continueDef.execute(
+      { childSessionId: '../../evil', message: 'm' },
+      CALL_CTX,
+    );
+    expect(traversal.error).toContain('格式非法');
+    const garbage = await continueDef.execute(
+      { childSessionId: 'zzz', message: 'm' },
+      CALL_CTX,
+    );
+    expect(garbage.error).toContain('格式非法');
     // 存在但不是子会话：造一个独立会话
     const root = tmpDir();
     const stranger = h.manager.create(root, { fsync: false });
@@ -338,6 +357,24 @@ describe('subagent_continue', () => {
     expect(foreign.error).toContain('不是本会话的子会话');
   });
 
+  it('P2-3：分叉会话（parentSession 同源但无 subagent 标志）拒绝续跑', async () => {
+    const h = makeHarness([{ text: 'root result' }]);
+    // 造一个「fork 会话」：parentSession 指向派发方、但 header 无 subagent=true
+    const root = tmpDir();
+    const forked = h.manager.create(root, {
+      parentSession: h.parentId,
+      isSeeded: true,
+      fsync: false,
+    });
+    forked.writer.close();
+    const continueDef = h.registry.get('subagent_continue')!;
+    const r = await continueDef.execute(
+      { childSessionId: forked.id, message: 'm' },
+      CALL_CTX,
+    );
+    expect(r.error).toContain('不是 subagent 子会话');
+  });
+
   it('参数校验：缺 prompt / 缺 message / 缺 childSessionId → 明确 error', async () => {
     const h = makeHarness([]);
     const startDef = h.registry.get('subagent_start')!;
@@ -345,7 +382,10 @@ describe('subagent_continue', () => {
     expect((await startDef.execute({}, CALL_CTX)).error).toContain('prompt');
     expect((await startDef.execute({ prompt: '   ' }, CALL_CTX)).error).toContain('prompt');
     expect((await continueDef.execute({ message: 'm' }, CALL_CTX)).error).toContain('childSessionId');
-    expect((await continueDef.execute({ childSessionId: 'x' }, CALL_CTX)).error).toContain('message');
+    // 合法格式 id 缺 message → message 错误（id 校验先于 locate，但格式合法时不拦截）
+    expect(
+      (await continueDef.execute({ childSessionId: '20260906-000000-000001' }, CALL_CTX)).error,
+    ).toContain('message');
   });
 });
 
@@ -397,5 +437,70 @@ describe('取消传播', () => {
 describe('SUBAGENT_TOOL_NAMES 契约', () => {
   it('工具名集合固定（装配层剔除依据）', () => {
     expect([...SUBAGENT_TOOL_NAMES]).toEqual(['subagent_start', 'subagent_continue']);
+  });
+});
+
+describe('P1-4 子会话独立快照', () => {
+  it('子会话 write 文件 → undo（hub.undo(childId) 内核路径）→ 文件复原（修复前：undo 只回退日志、文件不还原）', async () => {
+    const root = tmpDir();
+    const target = join(root, 'snapshot-child.txt');
+    const h = makeHarness(
+      [
+        { toolCalls: [{ id: 'c1', name: 'subagent_start', arguments: '{"prompt":"write file"}' }] },
+        { toolCalls: [{ id: 'w1', name: 'write', arguments: JSON.stringify({ file_path: target, content: 'child was here\n' }) }] },
+        { text: 'child wrote file' },
+        { text: 'parent wrapped' },
+      ],
+      { cwd: root, extraTools: [writeTool] },
+    );
+    const result = await runTurn(h.parentWriter, {
+      provider: h.provider,
+      tools: h.registry,
+      cwd: root,
+      userText: 'go write',
+      maxSteps: 5,
+    });
+    expect(result.stopReason).toBe('end_turn');
+    expect(existsSync(target)).toBe(true); // 子会话真实写盘
+    // undo 子会话最近一个 turn（= SessionHub.undo(id) 的内核路径：undoLastTurn + SnapshotStore(childDir)）
+    const childDir = childDirs(h.manager, h.parentId)[0]!;
+    const childWriter = SessionWriter.open(childDir, { fsync: false });
+    const snapshots = new SnapshotStore(childDir);
+    try {
+      const r = undoLastTurn(childWriter, { snapshots });
+      expect(r.files.length).toBeGreaterThan(0);
+      expect(r.files[0]!.error).toBeUndefined(); // 快照存在（独立 rewind_points.jsonl 落子会话目录）
+    } finally {
+      childWriter.close();
+    }
+    expect(existsSync(target)).toBe(false); // 文件复原：创建 → 删除
+  });
+});
+
+describe('补测：subagent_start 取消传播', () => {
+  it('父 ctx.signal abort → 子 turn cancelled 收尾且事件照常落盘', async () => {
+    const h = makeHarness([
+      { textChunks: ['a', 'b', 'c', 'd', 'e'], chunkDelayMs: 120 },
+      { text: 'unreachable' },
+    ]);
+    const startDef = h.registry.get('subagent_start')!;
+    const ac = new AbortController();
+    setTimeout(() => ac.abort(), 200);
+    const out = await startDef.execute({ prompt: 'long task' }, { signal: ac.signal, cwd: '.' });
+    const parsed = parseOut(out.output);
+    expect(parsed.stopReason).toBe('cancelled');
+    // 子会话日志 append-only 收口：user/message 已落盘 + cancelled 收尾（assistant/attempt + step/end）
+    let childDir = '';
+    await waitFor(() => {
+      childDir = childDirs(h.manager, h.parentId)[0] ?? '';
+      if (!childDir) return false;
+      return loadSession(childDir).events.at(-1)?.event.type === 'step/end';
+    });
+    const childSession = loadSession(childDir);
+    const types = childSession.events.map((e) => e.event.type);
+    expect(types).toContain('user/message');
+    const attempt = childSession.events.find((e) => e.event.type === 'assistant/attempt')!;
+    expect((attempt.event.payload as { error: string }).error).toContain('cancelled');
+    expect(types.at(-1)).toBe('step/end');
   });
 });

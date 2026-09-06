@@ -126,8 +126,9 @@ export async function runChat(options: ChatOptions = {}): Promise<void> {
   let pluginBus: PluginBus | undefined;
   let mcpManager: McpManager | undefined;
   let subagentConfig: { maxDepth: number; maxTurns: number; provider?: ChatProvider } | undefined;
-  // 退出收尾（MCP 连接 / 插件订阅逆序展开）
-  const extensionDisposers: Array<() => void> = [];
+  // 退出收尾（MCP 连接 / 插件订阅逆序展开）；dispose 允许异步（P2-5②：MCP close 等真正
+  // 完成后再放行进程退出，不再 `void` 丢弃——REPL 会话日志与子进程收尾不被截断）
+  const extensionDisposers: Array<() => void | Promise<void>> = [];
   const tools = new ToolRegistry();
   registerBuiltinTools(tools);
 
@@ -210,9 +211,7 @@ export async function runChat(options: ChatOptions = {}): Promise<void> {
       mcpManager = new McpManager({ tools });
       const report = await mcpManager.connectAll(loaded.config.mcpServers);
       for (const w of report.warnings) renderer.line(`warning: ${w}`);
-      extensionDisposers.push(() => {
-        void mcpManager?.close();
-      });
+      extensionDisposers.push(() => mcpManager?.close());
     }
     const alwaysAllowed = new Set<string>(); // 进程内会话级缓存，不落盘
     approval = {
@@ -292,6 +291,15 @@ export async function runChat(options: ChatOptions = {}): Promise<void> {
   const bindSubagentTools = (sessionId: string): void => {
     for (const dispose of subagentDisposers) dispose();
     subagentDisposers.length = 0;
+    // P1-3：插件抢占 subagent 权威工具名 → 先剔除冲突插件工具 + 告警（subagent 工具为权威
+    // 实现）。原实现直接 tools.register 重名 throw 在 try/catch 之外，chat 整体崩溃。
+    for (const name of SUBAGENT_TOOL_NAMES) {
+      if (tools.get(name) === undefined) continue;
+      const revoked = pluginBus?.revokeTool(name) === true;
+      renderer.line(
+        `warning: 工具 "${name}" 与 subagent 权威工具重名，已剔除冲突版本（subagent 实现优先）${revoked ? '' : '，但冲突工具不可收回'}`,
+      );
+    }
     const childProvider =
       options.provider === 'mock'
         ? new MockProvider(options.mockChildScript ?? MOCK_CHILD_DEMO_SCRIPT)
@@ -307,6 +315,11 @@ export async function runChat(options: ChatOptions = {}): Promise<void> {
       parentSessionId: sessionId,
       depth: 0,
     })) {
+      if (tools.get(def.name) !== undefined) {
+        // 防御兜底：冲突工具不可收回（非插件来源等）→ 跳过该权威版，绝不让 REPL 崩溃
+        renderer.line(`warning: subagent 工具 "${def.name}" 与不可收回的既有工具重名，本会话跳过注册`);
+        continue;
+      }
       subagentDisposers.push(tools.register(def));
     }
   };
@@ -362,13 +375,13 @@ export async function runChat(options: ChatOptions = {}): Promise<void> {
     resolveDone = r;
   });
 
-  function finish(): void {
+  async function finish(): Promise<void> {
     closeCurrent();
     for (const dispose of subagentDisposers) dispose();
     subagentDisposers.length = 0;
     for (const dispose of extensionDisposers) {
       try {
-        dispose();
+        await dispose(); // P2-5②：await MCP close 等异步收尾（完成后再 resolveDone 放行退出）
       } catch {
         // 收尾异常不阻塞退出
       }

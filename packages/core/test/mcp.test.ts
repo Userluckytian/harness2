@@ -263,6 +263,117 @@ describe('McpManager 断线退避重启', () => {
     await manager.close(); // 幂等
     expect(lines.join('\n')).not.toContain('重启');
   });
+
+  it('P1-1 回归：断开落在 listTools 窗口（onerror + send reject 同发）→ 只调度一个 timer、单一重连链、无僵尸 client', async () => {
+    const tools = new ToolRegistry();
+    const lines: string[] = [];
+    let created = 0;
+    let closed = 0;
+    let inFlight = 0;
+    let maxInFlight = 0;
+    const manager = new McpManager(
+      testManagerOptions(tools, lines, () => {
+        created += 1;
+        inFlight += 1;
+        maxInFlight = Math.max(maxInFlight, inFlight);
+        // 自定义 transport：initialize 正常应答；tools/list 时同时触发 onerror + send reject
+        //（P1-1 竞态原现场：断开落在 listTools 窗口）
+        let isClosed = false;
+        const transport: Transport = {
+          start: async () => {},
+          send: async (message) => {
+            const m = message as { method?: string; id?: unknown };
+            if (m.method === 'initialize') {
+              queueMicrotask(() => {
+                transport.onmessage?.({
+                  jsonrpc: '2.0',
+                  id: m.id as number,
+                  result: {
+                    protocolVersion: '2025-06-18',
+                    capabilities: { tools: {} },
+                    serverInfo: { name: 'fake-broken', version: '1.0.0' },
+                  },
+                } as never);
+              });
+              return;
+            }
+            if (m.method === 'tools/list') {
+              transport.onerror?.(new Error('transport broken during listTools'));
+              throw new Error('send failed: transport closed');
+            }
+            // notifications 等：无响应
+          },
+          close: async () => {
+            if (isClosed) return;
+            isClosed = true;
+            closed += 1;
+            inFlight -= 1;
+          },
+        };
+        return transport;
+      }, { stableResetMs: 3_600_000 }), // 永不稳定 → 重启计数累计（同 flapping 用例口径）
+    );
+    await manager.connectAll({ demo: { command: 'unused' } });
+    await waitFor(() => stateOf(manager, 'demo').state === 'down');
+    // 单一重连链：初始连接 + maxRestarts=3 次重连 = 恰 4 次 factory 调用（双 timer 会 > 4）
+    expect(created).toBe(4);
+    // 无并发重连：任意时刻存活（未 close）的 transport ≤ 1 → 无僵尸 stdio 子进程
+    expect(maxInFlight).toBe(1);
+    expect(stateOf(manager, 'demo').restarts).toBe(3);
+    await manager.close();
+    expect(closed).toBe(created); // 全部 transport 均已关闭
+  });
+
+  it('P2-2：down 状态恢复路径——connectAll 二次调用对 down entry 重连成功（补测：含工具恢复）', async () => {
+    const tools = new ToolRegistry();
+    const lines: string[] = [];
+    let attempts = 0;
+    let healthy = false;
+    const manager = new McpManager(
+      testManagerOptions(tools, lines, async () => {
+        attempts += 1;
+        if (!healthy) throw new Error('connection refused');
+        return (await makeLinkedServer({})).transport;
+      }),
+    );
+    // 首轮：连接失败 → 退避重试耗尽（backoff 20ms×3）→ down（工具未注册）
+    const first = await manager.connectAll({ demo: { command: 'unused' } });
+    expect(first.connected).toEqual([]);
+    await waitFor(() => stateOf(manager, 'demo').state === 'down');
+    expect(stateOf(manager, 'demo').restarts).toBe(3);
+    expect(tools.size).toBe(0);
+    // 二轮：服务器恢复 → down entry 允许重连、重启预算清零、工具注册
+    healthy = true;
+    const second = await manager.connectAll({ demo: { command: 'unused' } });
+    expect(second.connected).toEqual(['demo']);
+    expect(stateOf(manager, 'demo').state).toBe('connected');
+    expect(stateOf(manager, 'demo').restarts).toBe(0);
+    expect(tools.get('mcp__demo__echo')).toBeDefined();
+    expect((await tools.get('mcp__demo__echo')!.execute({ msg: 'back' }, CALL_CTX)).output).toBe('echo:back');
+  });
+
+  it('P2-6：2 个不可达 server 并行连接——总耗时 < 2×单 server 失败耗时（串行会 ≥ 2×）', async () => {
+    const tools = new ToolRegistry();
+    const lines: string[] = [];
+    const failDelayMs = 400;
+    const manager = new McpManager(
+      testManagerOptions(tools, lines, async (name) => {
+        await new Promise((r) => setTimeout(r, failDelayMs));
+        throw new Error(`${name}: connection refused`);
+      }),
+    );
+    const start = Date.now();
+    const report = await manager.connectAll({
+      slowA: { command: 'unused' },
+      slowB: { command: 'unused' },
+    });
+    const elapsed = Date.now() - start;
+    expect(report.connected).toEqual([]);
+    expect(report.failed).toHaveLength(2);
+    // 并行下界：两个 400ms 失败同时进行 → 远小于串行的 800ms（留抖动余量取 700ms）
+    expect(elapsed).toBeLessThan(failDelayMs * 2 - 100);
+    await manager.close();
+  });
 });
 
 // —— stdio / url 生产传输路径 ——

@@ -52,8 +52,13 @@ export interface McpManagerOptions {
   tools: ToolRegistry;
   /** 告警/诊断 sink（缺省 console.error，避免污染 serve stdout） */
   logSink?: (line: string) => void;
-  /** 连接/工具调用超时 ms（缺省 10_000） */
+  /** 连接/工具调用超时 ms（缺省 10_000；工具调用与 listTools 沿用） */
   timeoutMs?: number;
+  /**
+   * 连接握手超时 ms（缺省 5_000，P2-6：与工具调用超时分开且缩短——多 server 并行
+   * 连接时单 server 握手悬挂不再拖慢整体启动；listTools/callTool 仍用 timeoutMs）。
+   */
+  connectTimeoutMs?: number;
   /** 退避序列 ms（缺省 [1_000, 5_000, 15_000]；测试注入短间隔） */
   backoffSchedule?: readonly number[];
   /** 重启尝试上限（缺省 3；耗尽 → down + 工具下线） */
@@ -104,6 +109,7 @@ export class McpManager {
   private readonly maxRestarts: number;
   private readonly stableResetMs: number;
   private readonly timeoutMs: number;
+  private readonly connectTimeoutMs: number;
   private readonly logSink: (line: string) => void;
   private closed = false;
 
@@ -112,6 +118,7 @@ export class McpManager {
     this.maxRestarts = options.maxRestarts ?? 3;
     this.stableResetMs = options.stableResetMs ?? 30_000;
     this.timeoutMs = options.timeoutMs ?? 10_000;
+    this.connectTimeoutMs = options.connectTimeoutMs ?? 5_000;
     this.logSink = options.logSink ?? ((line: string) => console.error(line));
   }
 
@@ -129,37 +136,63 @@ export class McpManager {
   /**
    * 连接全部配置的 server：逐 server 独立收口（失败 = failed + 告警，不断批、不抛出）。
    * 成功的 server 立即注册 namespaced 工具；失败进入退避重启（tools 未注册，直到连上）。
+   * P2-6：多 server 并行连接（Promise.allSettled，单 server 握手悬挂/失败不拖慢其他）；
+   * 逐 server 结果（connected/failed/warnings）仍按配置顺序归位。
    */
   async connectAll(config: Record<string, McpServerConfig>): Promise<McpConnectReport> {
     const report: McpConnectReport = { connected: [], failed: [], warnings: [] };
+    const pending: Array<{ name: string; entry: ServerEntry | null }> = [];
     for (const [name, cfg] of Object.entries(config)) {
-      if (this.entries.has(name)) {
-        report.warnings.push(`MCP 服务器 "${name}" 已连接（不重复连接）`);
+      const existing = this.entries.get(name);
+      if (existing !== undefined && existing.state !== 'down') {
+        // 告警措辞按 state 区分（P2-2）：restarting = 退避重试在途；connected = 正常
+        report.warnings.push(
+          `MCP 服务器 "${name}" ${existing.state === 'restarting' ? '正在退避重启' : '已连接'}（不重复连接）`,
+        );
+        pending.push({ name, entry: null });
         continue;
       }
-      const entry: ServerEntry = {
-        name,
-        cfg,
-        client: null,
-        state: 'restarting',
-        toolDisposers: new Map(),
-        restarts: 0,
-        timer: null,
-        stableTimer: null,
-        closing: false,
-      };
-      this.entries.set(name, entry);
-      try {
-        await this.openConnection(entry);
-        report.connected.push(name);
-      } catch (e) {
-        const msg = (e as Error)?.message ?? String(e);
-        entry.lastError = msg;
-        report.failed.push({ server: name, error: msg });
-        report.warnings.push(`MCP 服务器 "${name}" 连接失败（将退避重启，上限 ${this.maxRestarts} 次）: ${msg}`);
-        this.scheduleRestart(entry);
+      let entry = existing;
+      if (entry === undefined) {
+        entry = {
+          name,
+          cfg,
+          client: null,
+          state: 'restarting',
+          toolDisposers: new Map(),
+          restarts: 0,
+          timer: null,
+          stableTimer: null,
+          closing: false,
+        };
+        this.entries.set(name, entry);
+      } else {
+        // P2-2：down 恢复路径——connectAll 二次调用允许重连（新一轮重启预算，成功即恢复工具）
+        entry.cfg = cfg;
+        entry.restarts = 0;
+        entry.state = 'restarting';
+        entry.lastError = undefined;
+        report.warnings.push(`MCP 服务器 "${name}" 处于 down 状态，尝试重新连接`);
       }
+      pending.push({ name, entry });
     }
+    await Promise.allSettled(
+      pending
+        .filter((p): p is { name: string; entry: ServerEntry } => p.entry !== null)
+        .map(async ({ name, entry }) => {
+          try {
+            await this.openConnection(entry);
+            report.connected.push(name);
+          } catch (e) {
+            const msg = (e as Error)?.message ?? String(e);
+            entry.lastError = msg;
+            report.failed.push({ server: name, error: msg });
+            report.warnings.push(`MCP 服务器 "${name}" 连接失败（将退避重启，上限 ${this.maxRestarts} 次）: ${msg}`);
+            // 与 handleDisconnect/reconnect catch 收口同一路径（P1-1：scheduleRestart 幂等）
+            this.scheduleRestart(entry);
+          }
+        }),
+    );
     return report;
   }
 
@@ -200,7 +233,9 @@ export class McpManager {
       if (entry.closing || this.closed) return;
       this.handleDisconnect(entry);
     };
-    await client.connect(transport, { timeout: this.timeoutMs });
+    await client.connect(transport, { timeout: this.connectTimeoutMs });
+    // P1-1：旧 client 覆盖前先 close（防御任何竞态下不留 stdio 僵尸子进程）
+    if (entry.client !== null) await this.closeConnection(entry);
     entry.client = client;
     entry.state = 'connected';
     // 稳定清零：连接保持 stableResetMs 后重置本轮重启计数（flapping 服务器不清零，累计至耗尽）
@@ -276,6 +311,9 @@ export class McpManager {
   private handleDisconnect(entry: ServerEntry): void {
     // 仅 connected 状态需要处理断开（onerror/onclose 可能双触发，restarting/down 忽略防重复重启）
     if (entry.state !== 'connected' || entry.closing || this.closed) return;
+    // P1-1：重连已在途（openConnection 中途 listTools 失败的 catch 先行调度）→ 只收尾连接，
+    // 不再进入断开调度（scheduleRestart 幂等闸门兜底，这里提前挡掉重复的「断开」日志/计数）
+    if (entry.timer !== null) return;
     if (entry.stableTimer !== null) {
       clearTimeout(entry.stableTimer);
       entry.stableTimer = null;
@@ -286,11 +324,23 @@ export class McpManager {
     this.scheduleRestart(entry);
   }
 
+  /**
+   * 退避重启调度（P1-1 幂等入口）：connectAll/reconnect catch 与 handleDisconnect 全部
+   * 收口到这里——已有在途 timer 或非重启态时直接返回，杜绝「断开落在 listTools 窗口」
+   * 时 onerror 与 catch 各自调度一个 timer、双 reconnect 并发覆盖 entry.client 的竞态
+   * （旧 client 永不 close = stdio 僵尸子进程，重启预算 2 倍速耗尽）。
+   */
   private scheduleRestart(entry: ServerEntry): void {
     if (entry.closing || this.closed) return;
+    if (entry.timer !== null) return; // 已有在途重启：幂等返回
+    if (entry.state !== 'restarting') {
+      // 理论不可达（全部调用方已置 restarting）：防御性归位，避免 connected 状态被调度打断
+      entry.state = 'restarting';
+    }
     if (entry.restarts >= this.maxRestarts) {
       entry.state = 'down';
       this.offlineTools(entry);
+      void this.closeConnection(entry); // down 时不残留半死连接（若有）
       this.logSink(`[mcp:${entry.name}] 重启 ${this.maxRestarts} 次仍失败，放弃：该服务器工具全部下线（主进程不受影响）`);
       return;
     }

@@ -27,7 +27,7 @@ import { redactSecrets } from '../config/redact.js';
 import { createBrowserTools, type BrowserPool } from '../tools/predefined/browser.js';
 import { computeProjection, loadSession, type LoadedEvent } from '../session/reader.js';
 import { SnapshotStore } from '../session/snapshots.js';
-import { SessionManager } from '../session/manager.js';
+import { SessionManager, SESSION_ID_PATTERN } from '../session/manager.js';
 import { forkSession, ForkError, type ForkResult } from '../session/fork.js';
 import { redoLastUndo, undoLastTurn, UndoRedoError, type UndoRedoResult } from '../session/undo.js';
 import { createSubagentTools, SUBAGENT_TOOL_NAMES } from '../agent/subagent.js';
@@ -138,13 +138,9 @@ export interface SessionHubOptions {
 /** undo n>1 提示的层数上限（与 chat /undo 参数口径一致） */
 const UNDO_MAX_N = 100;
 
-/**
- * sessionId 合法格式（路径穿越防御，复审 P2-1）：id 会拼进会话目录路径，
- * `../x` 之类的穿越原语必须在 hub 出口处拒绝。manager.generateId（session/manager.ts）
- * 生成 `UTC 8 位日期-6 位时间-` + randomBytes(3).toString('hex')（6 位小写 hex），
- * 此处 `{6,}` 对后缀加宽留容忍；任何不匹配格式一律 HubError('invalid')，不触达文件系统。
- */
-const SESSION_ID_PATTERN = /^\d{8}-\d{6}-[0-9a-f]{6,}$/;
+// sessionId 合法格式（SESSION_ID_PATTERN，自 session/manager.ts 导入）：路径穿越防御——
+// id 会拼进会话目录路径，`../x` 之类的穿越原语必须在 hub 出口处拒绝；
+// 任何不匹配格式一律 HubError('invalid')，不触达文件系统。
 
 export interface SessionEventsPayload {
   id: string;
@@ -218,6 +214,8 @@ export class SessionHub {
   private readonly memoryToolUseInTurn = new Set<string>();
   /** 运行中复盘 turn 的取消源（close 时全部取消；同会话连续复盘各自独立） */
   private readonly reviewRunning = new Set<AbortController>();
+  /** 已告警过的 subagent 重名工具（P1-3：每名只告警一次，不随每 turn 刷屏） */
+  private readonly subagentNameConflictsWarned = new Set<string>();
 
   readonly approvalTimeoutMs: number;
   /** 观察者集合（WS 事件面 / 测试；addHooks 注册，返回退订函数） */
@@ -430,7 +428,17 @@ export class SessionHub {
     const subNames = new Set<string>(SUBAGENT_TOOL_NAMES);
     for (const def of this.options.tools.list()) {
       if (def.name === 'memory') continue; // 换装按会话绑定的变体
-      if (subagent !== undefined && subNames.has(def.name)) continue; // subagent 工具按会话重绑
+      if (subagent !== undefined && subNames.has(def.name)) {
+        // P1-3：插件抢占 subagent 权威工具名 → per-turn 换装天然剔除插件版（权威版随后重挂），
+        // 但不静默——首次命中时告警一次（stderr，与 McpManager 缺省 sink 同口径）
+        if (!this.subagentNameConflictsWarned.has(def.name)) {
+          this.subagentNameConflictsWarned.add(def.name);
+          console.error(
+            `warning: 工具 "${def.name}" 与 subagent 权威工具重名，turn 工具集使用权威版本（冲突插件工具被过滤）`,
+          );
+        }
+        continue;
+      }
       registry.register(def);
     }
     if (memory !== undefined) {

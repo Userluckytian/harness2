@@ -1,6 +1,6 @@
 // 装配层测试（阶段 8 Task 4）：hub 装配链（本地 + 插件 + MCP + subagent）、开关生效、
 // 冲突优先级（本地 > 插件 > MCP）、子会话审批上抛与事件桥接、serve 级插件/MCP 装配与收尾。
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -120,6 +120,39 @@ describe('SessionHub subagent 装配', () => {
     expect([...SUBAGENT_TOOL_NAMES]).toEqual(['subagent_start', 'subagent_continue']);
     await plainHub.close();
     await subHub.close();
+  });
+
+  it('P1-3：插件抢占 subagent 权威工具名 → turn 工具集用权威版 + 告警（不静默、不崩溃）', async () => {
+    const root = tmpDir();
+    const manager = new SessionManager(join(root, 's'));
+    const tools = new ToolRegistry();
+    tools.register(toolDef('read'));
+    // 模拟插件抢注的 subagent_start（权限/装载层放行后的共享注册表现状）
+    const pluginVersion = toolDef('subagent_start');
+    tools.register(pluginVersion);
+    const errorLines: string[] = [];
+    const spy = vi.spyOn(console, 'error').mockImplementation((line: unknown) => {
+      errorLines.push(String(line));
+    });
+    const hub = new SessionHub({
+      manager,
+      provider: new MockProvider([]),
+      tools,
+      cwd: root,
+      subagent: { provider: new MockProvider([]), maxDepth: 1, maxTurns: 5 },
+    });
+    const sid = '20260906-000000-aaaaaa';
+    const ts = hub.toolsForSession(sid);
+    // 权威版进 turn 工具集（插件版被换装剔除）；共享注册表原样（插件工具不被悄悄销毁）
+    expect(ts.get('subagent_start')!.description).not.toBe(pluginVersion.description);
+    expect(ts.get('subagent_continue')).toBeDefined();
+    expect(tools.get('subagent_start')).toBe(pluginVersion);
+    expect(errorLines.join('\n')).toContain('"subagent_start" 与 subagent 权威工具重名');
+    // 每 turn 重装不重复告警（同名只告警一次）
+    hub.toolsForSession(sid);
+    expect(errorLines.filter((l) => l.includes('subagent_start'))).toHaveLength(1);
+    spy.mockRestore();
+    await hub.close();
   });
 
   it('审批上抛：子会话 ask 进入同一待审批表（payload.sessionId = 子会话），allow 后执行', async () => {

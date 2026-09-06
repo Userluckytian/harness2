@@ -12,6 +12,8 @@
 // 子会话与父同进程运行，隔离边界与插件小节一致（architecture.md 如实声明）。
 import { resolve, isAbsolute } from 'node:path';
 import { loadSession } from '../session/reader.js';
+import { SESSION_ID_PATTERN } from '../session/manager.js';
+import { SnapshotStore } from '../session/snapshots.js';
 import { SessionManager } from '../session/manager.js';
 import { SessionWriter } from '../session/writer.js';
 import { runTurn } from './loop.js';
@@ -166,6 +168,8 @@ export function createSubagentTools(options: SubagentOptions): ToolDefinition[] 
       };
       try {
         // 取消传播：子 runTurn 消费父 turn 的 signal——父 abort → 子 abort（事件照常落盘）
+        // P1-4：子会话独立文件快照（rewind_points.jsonl 落子会话目录）——hub.undo(childId)
+        // 能真实复原子会话期间 write/edit 的文件，计划红线「独立快照」在此兑现
         const result = await runTurn(observed, {
           provider: opts.provider,
           tools: buildSubagentChildTools(opts, childId),
@@ -176,6 +180,7 @@ export function createSubagentTools(options: SubagentOptions): ToolDefinition[] 
           userText: prompt,
           signal: ctx.signal,
           maxSteps: Math.max(1, opts.maxTurns),
+          snapshots: new SnapshotStore(created.dir),
         });
         return { output: finishOutput(result) };
       } catch (e) {
@@ -202,6 +207,11 @@ export function createSubagentTools(options: SubagentOptions): ToolDefinition[] 
       if (typeof childSessionId !== 'string' || childSessionId.trim() === '') {
         return { error: 'childSessionId 必须是非空字符串' };
       }
+      // P2-3：id 格式先于文件系统校验（与 hub SESSION_ID_PATTERN 同源）——遍历形/任意串
+      // 不触达 manager.locate 的路径拼接
+      if (!SESSION_ID_PATTERN.test(childSessionId)) {
+        return { error: `childSessionId 格式非法: ${childSessionId}` };
+      }
       if (typeof message !== 'string' || message.trim() === '') {
         return { error: 'message 必须是非空字符串' };
       }
@@ -211,10 +221,14 @@ export function createSubagentTools(options: SubagentOptions): ToolDefinition[] 
       } catch {
         return { error: `子会话不存在: ${childSessionId}` };
       }
-      // 血缘校验：只能续本会话派生的子会话（防误续/跨会话注入）
+      // 血缘校验：只能续本会话派发的 subagent 子会话（防误续/跨会话注入）。
+      // P2-3：分叉会话（fork）parentSession 同样指向派发方但无 subagent 标志 → 必须一并拒绝
       const header = loadSession(dir).header;
       if (header?.parentSession !== opts.parentSessionId) {
         return { error: `会话 ${childSessionId} 不是本会话的子会话，拒绝续跑` };
+      }
+      if (header?.subagent !== true) {
+        return { error: `会话 ${childSessionId} 不是 subagent 子会话（分叉/普通会话不可续跑）` };
       }
       let writer: SessionWriter;
       try {
@@ -238,6 +252,7 @@ export function createSubagentTools(options: SubagentOptions): ToolDefinition[] 
               },
             };
       try {
+        // P1-4：续跑同样传独立快照（与 start 同口径，undo 复原能力跨续跑保持）
         const result = await runTurn(observed, {
           provider: opts.provider,
           tools: buildSubagentChildTools(opts, childSessionId),
@@ -248,6 +263,7 @@ export function createSubagentTools(options: SubagentOptions): ToolDefinition[] 
           userText: message,
           signal: ctx.signal,
           maxSteps: Math.max(1, opts.maxTurns),
+          snapshots: new SnapshotStore(dir),
         });
         opts.hooks?.onChildTurnEnd?.(childSessionId, result);
         const out: SubagentStartOutput = {
