@@ -1,6 +1,6 @@
 # 阶段 5：会话服务化 + Electron 桌面壳（多会话并行 / 分屏）
 
-> **状态：** ✅ 已完成——2026-09-06 编排者验收通过（**审查为编排者代审**：子代理基础设施故障连续失败 4 次，降级代审并登记补审待办；命门核查：EventMirrorWriter 为真实 writer 观察包裹、单写者不变量成立，P0/P1 无、5 P2 留档；重跑证据：pnpm test 312 passed + 1 skipped、typecheck 3 包 Done、serve 冒烟 API 正常脱敏、CSP connect-src 'none'、打包产物 106.9MiB 冒烟通过；GUI/安装/真实 provider 项待真机与 key，见 OPEN.md）
+> **状态：** ✅ 已完成（复审修订）——2026-09-06 编排者验收通过。审查链：编排者代审（pass，基础设施故障降级）→ **子代理恢复后补独立复审（pass-with-fixes：确认单写者结论、部分推翻代审并抓到 1 新 P1 + 7 P2）** → 修复代理完成（`c304149`：serve-manager 重启语义、sessionId 路径穿越校验、close 清队列、turn-end 兜底、HTTP 健壮性、--smoke TDZ）。重跑证据：pnpm test **397 passed + 1 skipped**、typecheck 3 包 Done、抽查属实、chat mock 冒烟 exit 0。遗留：GUI 真机清单/安装流程/真实 provider/信任域加固（M2 前）见 OPEN.md。
 > **For agentic workers:** 按 Task 顺序执行；每 Task 测完再进下一 Task。
 > **交接提示词**见文末「给接手 AI 的完整提示词」。
 > **元规范:** `docs/ai-framework/phased-plan-driven.md`

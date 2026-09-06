@@ -1,6 +1,6 @@
 # 阶段 6：记忆系统（开关三态）+ 会话分叉
 
-> **状态：** 计划已就绪（总控计划 Ph6，2026-09-06 批准；基线 = 阶段 5 验收 312 passed + 1 skipped）
+> **状态：** ✅ 已完成——2026-09-06 编排者验收通过（独立审查 pass-with-fixes → 2 P1 装配漏传 + 6 P2 已修复（`0ecccdc`）+ 覆盖缺口补测；重跑证据：pnpm test **397 passed + 1 skipped**、typecheck 3 包 Done、chat mock 冒烟 exit 0；契约扩展确仅两处、记忆红线通过；真实模型记忆三态行为待用户 key，见 OPEN.md）
 > **For agentic workers:** 按 Task 顺序执行；每 Task 测完再进下一 Task。
 > **交接提示词**见文末「给接手 AI 的完整提示词」。
 > **元规范:** `docs/ai-framework/phased-plan-driven.md`
