@@ -18,6 +18,8 @@ export * from './tools/registry.js';
 export * from './tools/executor.js';
 export * from './tools/predefined/index.js';
 export * from './approval/policy.js';
+export * from './memory/store.js';
+export * from './memory/tool.js';
 export * from './agent/types.js';
 export * from './agent/loop.js';
 export * from './server/sessions.js';
