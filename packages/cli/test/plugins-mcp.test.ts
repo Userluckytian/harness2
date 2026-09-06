@@ -1,7 +1,12 @@
 // 阶段 8 端侧命令测试：harness2 plugin list/enable/disable、harness2 mcp list、
 // chat REPL 内 subagent 调用端到端（mock，经 --mock-script/--mock-child-script 注入）。
 // 依赖根脚本 `pnpm -r build`（dist/index.js）；全部零外部依赖（MCP 用 core 的 stdio fixture）。
-import { afterAll, afterEach, describe, expect, it } from 'vitest';
+// 阶段 11 抖动根治（OPEN.md 抖动并案）：本文件每个用例多次 spawnSync 启动 node CLI
+//（含 mcp stdio 子进程握手），全量并行负载下单次 spawn+加载可超 vitest 缺省 5s 用例
+// 超时（历史「enable 超时」抖动根因）——放宽到 30s；真挂起（非负载）30s 仍会红。
+import { afterAll, afterEach, describe, expect, it, vi } from 'vitest';
+
+vi.setConfig({ testTimeout: 30_000 });
 import { spawn, spawnSync, type ChildProcess } from 'node:child_process';
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';

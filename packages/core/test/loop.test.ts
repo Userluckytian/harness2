@@ -108,16 +108,19 @@ describe('runTurn 基础语义', () => {
     expect(provider.requests[0]?.tools?.map((t) => t.name)).toEqual(['read_file']);
   });
 
-  // retry:2——纯墙钟时序断言在 Windows/高负载下有调度抖动（OPEN.md 偶发抖动并案）；
-  // 并行性真回归会连败仍红，抖动被吸收
-  it('并行 safe 工具波次：同波 safe 调用并行，step 总时长远小于串行', { retry: 2, timeout: 8000 }, async () => {
+  // 阶段 11 抖动根治：并行性判据从「绝对墙钟上限」改为「同批结果落盘间隔」——
+  // safe 并行时两个工具几乎同时完成、tool/result 同批连续落盘（gap≈0ms）；若退化为
+  // 串行，第二个结果须等第一个执行完才产生（gap≈200ms）。判据只依赖事件间相对时序，
+  // 不依赖机器绝对速度；历史 elapsed<220ms 绝对上限在全量并行负载下被投影/写盘开销
+  // 抖动击穿（OPEN.md 抖动并案根因），retry:2 保留为兜底（真回归连败仍红）。
+  it('并行 safe 工具波次：同波 safe 调用并行，结果同批落盘', { retry: 2, timeout: 8000 }, async () => {
     const dir = tmpDir();
     const provider = new MockProvider([
       {
         text: '并行探测',
         toolCalls: [
-          { id: 'p1', name: 'slow_probe', arguments: '{"ms":120}' },
-          { id: 'p2', name: 'slow_probe', arguments: '{"ms":120}' },
+          { id: 'p1', name: 'slow_probe', arguments: '{"ms":200}' },
+          { id: 'p2', name: 'slow_probe', arguments: '{"ms":200}' },
         ],
       },
       { text: '完成' },
@@ -133,16 +136,21 @@ describe('runTurn 基础语义', () => {
         { concurrencySafe: true },
       ),
     );
-    const started = performance.now();
     const result = await runTurn(dir, { provider, tools: registry, cwd: dir, userText: '探测' });
-    const elapsed = performance.now() - started;
 
     expect(result.stopReason).toBe('end_turn');
     expect(result.toolCalls).toBe(2);
-    expect(elapsed).toBeLessThan(220); // 串行需 ~240ms
     // tool/result 顺序与调用顺序一致
     const results = loadEvents(dir).filter((e) => e.type === 'tool/result');
     expect(results.map((e) => (e.payload as { callId: string }).callId)).toEqual(['p1', 'p2']);
+    // 两个工具都真实执行（各 ≈200ms），排除「瞬间空跑假并行」
+    for (const r of results) {
+      expect((r.payload as { durationMs?: number }).durationMs).toBeGreaterThan(150);
+    }
+    // 并行判据：同批落盘间隔远小于单工具执行时长（串行退化时 gap≈200ms）
+    const gap = Date.parse(results[1]!.ts) - Date.parse(results[0]!.ts);
+    expect(gap).toBeGreaterThanOrEqual(0);
+    expect(gap).toBeLessThan(120);
   });
 
   it('max_steps 守卫：达到上限停止并返回 max_steps', async () => {

@@ -139,23 +139,29 @@ describe('bash 工具', () => {
     expect(r.output).toContain('[truncated');
   }, 15000);
 
-  // retry:2——进程树击杀 + 副作用缺证是双进程墙钟断言，Windows/高负载下有竞态抖动
-  //（OPEN.md 偶发抖动并案）；击杀语义真回归会连败仍红
+  // 阶段 11 抖动根治（OPEN.md 抖动并案）：击杀竞态的根因是「超时点早于子进程 exec 完成」
+  // ——600ms 超时在高负载下可能在 node 尚未启动时触发，taskkill 枚举进程树漏掉未出生的
+  // node，随后 node 照常启动并写副作用文件（假回归）。三处对症调整：
+  //   ①超时 600→1200ms：击杀时 node 必然已在进程树内，/T /F 枚举确定命中；
+  //   ②副作用延时 2s→3s：与击杀点（1.2s）拉开 1.8s，存活进程的副作用必然在检查点前落盘；
+  //   ③等待 4s 保持：检查点 ≈5.2s > 启动+3s ≈ ≤4.2s，真回归（树未死）仍可靠检出。
+  // retry:2 保留为兜底（击杀语义真回归会连败仍红）。
   it('P1-3 回归：超时杀死整棵进程树——延时副作用文件不再出现', { retry: 2, timeout: 20000 }, async () => {
     const dir = tmpDir();
     const sideEffect = join(dir, 'late-side-effect.txt');
-    // 跨平台长副作用命令：node 起来后先睡 2s 再写文件（工作进程若在超时后存活，文件终将出现）
+    // 跨平台长副作用命令：node 起来后先睡 3s 再写文件（工作进程若在超时后存活，文件终将出现）
     const r = await run(
       bashTool,
       {
-        command: `node -e "setTimeout(function(){require('fs').writeFileSync(process.argv[1],'late')},2000)" "${sideEffect}"`,
-        timeoutMs: 600,
+        command: `node -e "setTimeout(function(){require('fs').writeFileSync(process.argv[1],'late')},3000)" "${sideEffect}"`,
+        timeoutMs: 1200,
       },
       dir,
     );
     expect(r.ok).toBe(false);
-    expect(r.error).toMatch(/timed out after 600ms/);
-    // 留足缓冲（避免竞态）：副作用最迟在命令启动 ~2s 后出现；4s 后仍不存在即证明进程树已死
+    expect(r.error).toMatch(/timed out after 1200ms/);
+    // 留足缓冲（避免竞态）：存活进程的副作用最迟在命令启动 ~4.2s（spawn+3s）后出现；
+    // 击杀点 1.2s + 4s = 5.2s 仍不存在即证明进程树已死
     await sleep(4000);
     expect(existsSync(sideEffect)).toBe(false);
   });
