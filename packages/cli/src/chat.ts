@@ -280,7 +280,9 @@ export async function runChat(options: ChatOptions = {}): Promise<void> {
         onStream: (event) => {
           if (event.type === 'text-delta') renderer.textDelta(event.text);
           else if (event.type === 'tool-call') renderer.toolCall(event.call.name, event.call.arguments);
-          else renderer.toolResult(event.callId, event.ok, event.error);
+          else if (event.type === 'reasoning-delta') {
+            // reasoning 增量：REPL 不渲染（与落盘展示口径一致；服务层用它推送 reasoning delta）
+          } else renderer.toolResult(event.callId, event.ok, event.error);
         },
       });
       renderer.turnEnd(result);

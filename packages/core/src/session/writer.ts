@@ -33,6 +33,18 @@ export interface SessionWriterOptions {
   fsync?: boolean;
 }
 
+/**
+ * 会话日志的最小写入面（阶段 5）：SessionWriter 的公开形态。
+ * runTurn/undo 内核只消费这些成员——服务层的观察包裹器（镜像回调）同构可用，
+ * 内核签名面向本接口，观察包裹不构成第二写者（append 仍只有一个落盘入口）。
+ */
+export interface SessionAppender {
+  readonly dir: string;
+  /** 日志最后一个事件的 seq */
+  get lastSeq(): number;
+  append<T extends SessionEventType>(type: T, payload: SessionEventMap[T]): SessionEvent<T>;
+}
+
 export class SessionLockedError extends Error {
   constructor(
     readonly dir: string,

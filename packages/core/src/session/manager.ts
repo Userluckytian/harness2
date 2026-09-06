@@ -198,10 +198,11 @@ export class SessionManager {
   }
 
   /**
-   * 恢复会话：按 id 定位（cwd 提供时直查组目录，否则全库查找；命中多组取 mtime 最新）
-   * 并打开 writer（崩溃残行恢复语义沿用 SessionWriter.open）。
+   * 只读定位会话目录（阶段 5）：cwd 提供时直查组目录，否则全库查找；命中多组取 mtime 最新。
+   * 不打开 writer、不取目录锁——服务层读事件日志（GET /events）用，可与持锁写者并存。
+   * 找不到抛 `session not found: <id>`（与 resume一致）。
    */
-  resume(id: string, opts: { cwd?: string; fsync?: boolean } = {}): SessionResumeResult {
+  locate(id: string, opts: { cwd?: string } = {}): string {
     let dir: string | undefined;
     if (opts.cwd !== undefined) {
       const candidate = join(this.groupDir(opts.cwd), id);
@@ -224,6 +225,14 @@ export class SessionManager {
     if (dir === undefined) {
       throw new Error(`session not found: ${id}`);
     }
+    return dir;
+  }
+
+  /**
+   * 恢复会话：locate 定位后打开 writer（崩溃残行恢复语义沿用 SessionWriter.open）。
+   */
+  resume(id: string, opts: { cwd?: string; fsync?: boolean } = {}): SessionResumeResult {
+    const dir = this.locate(id, { ...(opts.cwd !== undefined ? { cwd: opts.cwd } : {}) });
     const header = loadSession(dir).header;
     const writer = SessionWriter.open(dir, { fsync: opts.fsync ?? true });
     return { id, dir, writer, header, recoveredBytes: writer.recoveredBytes };

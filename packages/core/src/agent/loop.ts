@@ -8,7 +8,7 @@ import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { computeProjection, loadSession, type LoadedSession } from '../session/reader.js';
 import { readTextOrNull, snapshotTargetFile, type SnapshotStore } from '../session/snapshots.js';
-import { SessionWriter } from '../session/writer.js';
+import { SessionWriter, type SessionAppender } from '../session/writer.js';
 import { SESSION_LOG_FILE } from '../session/types.js';
 import type {
   ChatMessage,
@@ -76,7 +76,7 @@ export function buildChatMessages(session: LoadedSession): ChatMessage[] {
  *   - 目录 + 日志已存在 → open 续写并在结束后 close；
  *   - writer → 直接使用（由调用方负责 close）。
  */
-export async function runTurn(session: string | SessionWriter, options: TurnOptions): Promise<TurnResult> {
+export async function runTurn(session: string | SessionWriter | SessionAppender, options: TurnOptions): Promise<TurnResult> {
   if (typeof session !== 'string') return runTurnWithWriter(session, options);
   const writer = existsSync(join(session, SESSION_LOG_FILE))
     ? SessionWriter.open(session)
@@ -110,7 +110,7 @@ function abortReasonMessage(signal: AbortSignal): string {
   return reason instanceof Error ? reason.message : reason !== undefined ? String(reason) : 'aborted';
 }
 
-async function runTurnWithWriter(writer: SessionWriter, options: TurnOptions): Promise<TurnResult> {
+async function runTurnWithWriter(writer: SessionWriter | SessionAppender, options: TurnOptions): Promise<TurnResult> {
   const turnId = randomUUID();
   const maxSteps = Math.max(1, options.maxSteps ?? DEFAULT_MAX_STEPS);
   const executor = new ToolExecutor(options.tools, options.approval);
@@ -185,7 +185,8 @@ async function runTurnWithWriter(writer: SessionWriter, options: TurnOptions): P
           text += chunk.text;
           options.onStream?.({ type: 'text-delta', text: chunk.text });
         } else if (chunk.type === 'reasoning-delta') {
-          reasoning = (reasoning ?? '') + chunk.text; // reasoning 只进日志展示，不回调渲染
+          reasoning = (reasoning ?? '') + chunk.text; // reasoning 汇总进 assistant/message.reasoning（日志展示），不回传模型
+          options.onStream?.({ type: 'reasoning-delta', text: chunk.text }); // 观察缝（阶段 5 服务层增量推送用；REPL 不渲染）
         } else if (chunk.type === 'tool-call') {
           calls.push(chunk.call);
           options.onStream?.({ type: 'tool-call', call: chunk.call });

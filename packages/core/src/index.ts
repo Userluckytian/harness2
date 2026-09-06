@@ -12,6 +12,7 @@ export * from './provider/openai.js';
 export * from './provider/anthropic.js';
 export * from './provider/factory.js';
 export * from './config/index.js';
+export * from './config/report.js';
 export * from './tools/types.js';
 export * from './tools/registry.js';
 export * from './tools/executor.js';
@@ -19,6 +20,8 @@ export * from './tools/predefined/index.js';
 export * from './approval/policy.js';
 export * from './agent/types.js';
 export * from './agent/loop.js';
+export * from './server/sessions.js';
+export * from './server/http.js';
 
 export const CORE_VERSION = '0.1.0';
 

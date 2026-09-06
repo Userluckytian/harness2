@@ -1,17 +1,20 @@
 #!/usr/bin/env node
-// harness2 CLI 入口。traj（阶段 1）、config check（阶段 3）、chat REPL（阶段 4）。
+// harness2 CLI 入口。traj（阶段 1）、config check（阶段 3）、chat REPL（阶段 4）、serve（阶段 5）。
 import { Command } from 'commander';
 import { computeProjection, loadSession, renderTrajectory } from '@harness2/core';
 import {
+  buildConfigReport,
   defaultConfigPaths,
   loadConfig,
+  MockProvider,
   readAuthFile,
-  redactObject,
-  resolveApiKey,
+  startServe,
+  DEFAULT_SERVE_PORT,
   type AuthFile,
   type HarnessConfig,
+  type MockScript,
 } from '@harness2/core';
-import { runChat } from './chat.js';
+import { runChat, MOCK_DEMO_SCRIPT } from './chat.js';
 
 const program = new Command();
 
@@ -92,7 +95,8 @@ program
   );
 
 /** 打印脱敏报告；key 来源只显示 auth.json / env:XXX / **missing**，永不显示明文。
- *  前置条件：调用方已确认 errors 为空（先校验后输出，P2-9），本函数不再返回错误。 */
+ *  前置条件：调用方已确认 errors 为空（先校验后输出，P2-9），本函数不再返回错误。
+ *  报告数据与 GET /api/config 同源（core buildConfigReport 唯一构造处），此处只负责文本渲染。 */
 function printConfigReport(
   config: HarnessConfig,
   warnings: string[],
@@ -100,37 +104,27 @@ function printConfigReport(
   paths: { globalConfig: string; projectConfig: string },
   auth: AuthFile,
 ): void {
+  const report = buildConfigReport(config, auth);
   const lines: string[] = [];
   lines.push(
     `config OK (global: ${sources.global ? paths.globalConfig : '-'} , project: ${sources.project ? paths.projectConfig : '-'})`,
   );
   lines.push('providers:');
-  for (const [channel, p] of Object.entries(config.providers)) {
-    // P2-6/P2-9：展示值统一过 redactObject（全部字符串叶子过 redactSecrets），
-    // 防 ${VAR} 展开值（如内网地址内嵌 token）或误写入的 key 泄入输出
-    const safe = redactObject(p);
-    lines.push(`  ${channel}  ${safe.protocol}  ${safe.baseUrl}${safe.envKey ? `  envKey=${safe.envKey}` : ''}`);
-    const models = Object.keys(p.models ?? {});
-    if (models.length > 0) lines.push(`    models: ${models.join(', ')}`);
+  for (const p of report.providers) {
+    lines.push(`  ${p.channel}  ${p.protocol}  ${p.baseUrl}${p.envKey ? `  envKey=${p.envKey}` : ''}`);
+    if (p.models.length > 0) lines.push(`    models: ${p.models.join(', ')}`);
   }
   lines.push('roles:');
-  for (const [role, r] of Object.entries(config.roles)) {
-    lines.push(`  ${role} -> ${r.channel}/${r.model}`);
+  for (const r of report.roles) {
+    lines.push(`  ${r.role} -> ${r.channel}/${r.model}`);
   }
-  const approvalRules = Object.entries(config.approval.tools ?? {})
+  const approvalRules = Object.entries(report.approval.tools)
     .map(([tool, rule]) => `${tool}=${rule}`)
     .join(', ');
-  lines.push(`approval: mode=${config.approval.mode ?? 'default'}${approvalRules ? `, rules: ${approvalRules}` : ''}`);
+  lines.push(`approval: mode=${report.approval.mode}${approvalRules ? `, rules: ${approvalRules}` : ''}`);
   lines.push('keys:');
-  for (const [channel, p] of Object.entries(config.providers)) {
-    const source = resolveApiKey(channel, p, auth, process.env);
-    const label =
-      source.kind === 'auth.json'
-        ? 'auth.json'
-        : source.kind === 'env'
-          ? `env:${source.envKey}`
-          : '**missing**';
-    lines.push(`  ${channel}: ${label}`);
+  for (const p of report.providers) {
+    lines.push(`  ${p.channel}: ${p.keySource}`);
   }
   if (warnings.length > 0) {
     lines.push('warnings:');
@@ -159,5 +153,48 @@ program
       process.exitCode = 1;
     }
   });
+
+/** serve：本地会话服务（阶段 5）。127.0.0.1-only；监听成功后向 stdout 打印一行 JSON
+ *  {"port":N,"pid":M}（--port 0 = 随机端口，桌面端固定用它）。SIGINT/SIGTERM 优雅关闭
+ *  （取消运行中 turn、拒绝待审批、释放端口锁）。 */
+program
+  .command('serve')
+  .description('启动本地会话服务（HTTP 控制面 + WS 事件面，仅 127.0.0.1）')
+  .option('--port <n>', '监听端口（0 = 随机可用端口）', String(DEFAULT_SERVE_PORT))
+  .option('--root <dir>', '工具执行 cwd + 会话分组目录（默认当前目录）')
+  .option('--home <dir>', '覆盖用户数据根（配置/会话存储/端口锁；测试/多环境用）')
+  .option('--provider <name>', "'mock' = 长驻演示脚本（不加载配置、不触发审批）", 'config')
+  .action(async (opts: { port: string; root?: string; home?: string; provider: string }) => {
+    const port = Number(opts.port);
+    if (!Number.isInteger(port) || port < 0 || port > 65535) {
+      console.error('error: --port 必须是 0..65535 的整数');
+      process.exit(1);
+    }
+    try {
+      const handle = await startServe({
+        port,
+        ...(opts.root !== undefined ? { root: opts.root } : {}),
+        ...(opts.home !== undefined ? { home: opts.home } : {}),
+        ...(opts.provider === 'mock' ? { provider: new MockProvider(SERVE_MOCK_SCRIPT satisfies MockScript) } : {}),
+      });
+      console.log(JSON.stringify({ port: handle.port, pid: process.pid }));
+      const shutdown = (): void => {
+        void handle
+          .close()
+          .catch(() => {})
+          .finally(() => process.exit(0));
+      };
+      process.on('SIGINT', shutdown);
+      process.on('SIGTERM', shutdown);
+    } catch (e) {
+      console.error(`error: ${(e as Error).message}`);
+      process.exit(1);
+    }
+  });
+
+/** --provider mock 的服务端演示脚本：回复 1000 次（长驻服务不能像 REPL 一样耗尽即停） */
+const SERVE_MOCK_SCRIPT: MockScript = Array.from({ length: 1000 }, () => ({
+  textChunks: ['mock 回复：', '已收到你的消息。'],
+}));
 
 program.parseAsync(process.argv);

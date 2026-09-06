@@ -52,6 +52,7 @@ export interface TurnOptions {
 /** turn 内流式观察事件（onStream 回调 payload；纯渲染缝，非模型上下文来源） */
 export type TurnStreamEvent =
   | { type: 'text-delta'; text: string }
+  | { type: 'reasoning-delta'; text: string }
   | { type: 'tool-call'; call: ToolCallRequest }
   | { type: 'tool-result'; callId: string; ok: boolean; error?: string };
 

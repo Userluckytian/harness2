@@ -13,7 +13,7 @@
 // 不写文件）。目标恒在界内（与 Ph2 的 writer 侧 rewindToSeq 1..lastSeq 校验兼容）。
 import { computeProjection, loadSession, type ProjectionMessage } from './reader.js';
 import type { SnapshotRestoreItem, SnapshotStore } from './snapshots.js';
-import type { SessionWriter } from './writer.js';
+import type { SessionAppender } from './writer.js';
 
 /** undo/redo 无法执行时的明确错误（调用方按一行友好输出处理） */
 export class UndoRedoError extends Error {
@@ -77,7 +77,7 @@ function messageSeqs(messages: readonly ProjectionMessage[]): Set<number> {
  * 撤销最近一个用户 turn：目标 = 最近活动 user/message 的 seq - 1。
  * 无活动 user/message（无可撤）或目标越界（撤到 seq 0）→ UndoRedoError。
  */
-export function undoLastTurn(writer: SessionWriter, opts: UndoRedoOptions = {}): UndoRedoResult {
+export function undoLastTurn(writer: SessionAppender, opts: UndoRedoOptions = {}): UndoRedoResult {
   const session = loadSession(writer.dir);
   const lastUser = activeMessages(session)
     .slice()
@@ -98,7 +98,7 @@ export function undoLastTurn(writer: SessionWriter, opts: UndoRedoOptions = {}):
  * rewindToSeq+1 处指向的 undo，即出栈），取栈顶 undo 标记 M，目标 = M.seq - 1。
  * 无 marker / 栈空（全部已重做）→ UndoRedoError。
  */
-export function redoLastUndo(writer: SessionWriter, opts: UndoRedoOptions = {}): UndoRedoResult {
+export function redoLastUndo(writer: SessionAppender, opts: UndoRedoOptions = {}): UndoRedoResult {
   const session = loadSession(writer.dir);
   const markers = session.events.filter((x) => x.event.type === 'rewind/marker');
   if (markers.length === 0) {
@@ -129,7 +129,7 @@ export function redoLastUndo(writer: SessionWriter, opts: UndoRedoOptions = {}):
 }
 
 function applyMarker(
-  writer: SessionWriter,
+  writer: SessionAppender,
   kind: 'undo' | 'redo',
   target: number,
   opts: UndoRedoOptions,
