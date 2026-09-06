@@ -35,7 +35,7 @@ export interface NudgeResult {
   sessionId: string;
   stopReason: TurnResult['stopReason'];
   toolCalls: number;
-  /** ask 模式下暂存的待审批条数 */
+  /** ask 模式下本次复盘新增暂存的待审批条数（不含此前遗留的未审批项） */
   staged: number;
   error?: string;
 }
@@ -103,6 +103,9 @@ export async function runNudgeReview(options: NudgeOptions): Promise<NudgeResult
         : undefined;
     registry.register(createMemoryToolForMode(options.store, options.mode, pending, options.sessionId));
 
+    // 审查 P2-2：staged 只统计本次复盘新增的暂存（diff），不含此前遗留的未审批项
+    const beforeIds = new Set(pending !== undefined ? (await pending.list()).map((p) => p.id) : []);
+
     const digest = buildConversationDigest(options.sessionDir);
     const result = await runTurn(reviewDir, {
       provider: options.provider,
@@ -111,10 +114,13 @@ export async function runNudgeReview(options: NudgeOptions): Promise<NudgeResult
       userText: `以下是需要回顾的最近对话：\n\n${digest}`,
       ...(options.signal !== undefined ? { signal: options.signal } : {}),
       maxSteps: 10, // 复盘最多 10 次模型调用，防止失控
+      // 审查 P1-2：注入记忆 store——临时会话预置的 NUDGE_REVIEW_SYSTEM 快照才会被
+      // runTurn 复用为 system（缺此前复盘裸跑，预置提示永不生效）
+      memory: options.store,
     });
     let staged = 0;
     if (pending !== undefined) {
-      staged = (await pending.list()).filter((p) => p.sessionId === options.sessionId).length;
+      staged = (await pending.list()).filter((p) => !beforeIds.has(p.id)).length;
     }
     const nudgeResult: NudgeResult = {
       sessionId: options.sessionId,

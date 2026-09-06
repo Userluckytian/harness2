@@ -1,13 +1,17 @@
-// 记忆写入 gate 的 pending 暂存（阶段 4，对照 hermes tools/write_approval.py 的 stage 语义）：
+// 记忆写入 gate 的 pending 暂存（阶段 6，对照 hermes tools/write_approval.py 的 stage 语义）：
 // mode=ask 时模型的记忆写入不直接落盘，先进 pending/<ts>-<id>.json（记录 ops + 来源会话），
-// 人工 `harness2 memory approve <id>` 重放执行 / `reject <id>` 丢弃——只延迟、绝不静默丢弃。
-// 同进程互斥与 MemoryStore 同思路（promise 链）；文件原子写（tmp + rename）。
+// 人工 `harness2 memory approve <id>` 重放执行 / `reject <id>` 丢弃 / `memory pending --clear`
+// 清空全部——只延迟、绝不静默丢弃。同进程互斥与 MemoryStore 同思路（promise 链）；文件原子写
+// （tmp + rename）；暂存条数上限 200（写入时超限拒绝并提示先处理，防无界堆积）。
 import { randomBytes } from 'node:crypto';
 import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, unlinkSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { defaultMemoriesRoot, validateOp, MemoryStore, type MemoryApplyResult, type MemoryOp } from './store.js';
 
 export const PENDING_DIR_NAME = 'pending';
+
+/** 暂存条数上限（审查 P2-3：防无界堆积；超限拒绝写入并提示先处理） */
+export const PENDING_MAX_ITEMS = 200;
 
 export function defaultPendingRoot(home?: string): string {
   return join(defaultMemoriesRoot(home), PENDING_DIR_NAME);
@@ -65,7 +69,7 @@ export class PendingMemoryStore {
     return next;
   }
 
-  /** 暂存一批操作（形状校验失败即拒绝，不产生文件） */
+  /** 暂存一批操作（形状校验失败即拒绝，不产生文件）；暂存数达上限时拒绝并提示先处理 */
   stage(sessionId: string, ops: readonly MemoryOp[]): Promise<PendingMemory> {
     return this.run(() => {
       if (!Array.isArray(ops) || ops.length === 0) throw new Error('pending: operations 不能为空');
@@ -74,6 +78,11 @@ export class PendingMemoryStore {
         if (invalid !== null) throw new Error(`pending: operations[${i}]: ${invalid}`);
       }
       mkdirSync(this.root, { recursive: true });
+      if (listJsonFiles(this.root).length >= PENDING_MAX_ITEMS) {
+        throw new Error(
+          `pending: 暂存已达上限 ${PENDING_MAX_ITEMS} 条，请先处理（harness2 memory approve/reject，或 memory pending --clear 清空）`,
+        );
+      }
       const { id, file } = pendingFileName(new Date());
       const pending: PendingMemory = {
         id,
@@ -146,6 +155,23 @@ export class PendingMemoryStore {
       if (!existsSync(path)) return false;
       unlinkSync(path);
       return true;
+    });
+  }
+
+  /** 清空全部待审批项（用户显式丢弃，审查 P2-3）；返回清除条数 */
+  clearAll(): Promise<number> {
+    return this.run(() => {
+      if (!existsSync(this.root)) return 0;
+      let cleared = 0;
+      for (const name of listJsonFiles(this.root)) {
+        try {
+          unlinkSync(join(this.root, name));
+          cleared += 1;
+        } catch {
+          /* 已被并发删除：不计入 */
+        }
+      }
+      return cleared;
     });
   }
 }

@@ -722,4 +722,31 @@ describe('记忆开关与冻结注入（阶段 6）', () => {
       expect(req.system).toBe(expected[i]!.system);
     }
   });
+
+  it('rewind 到快照 seq 之前（审查覆盖缺口）：旧快照被遮蔽，下轮读当前 store 补落新快照', async () => {
+    const dir = tmpDir();
+    const store = new MemoryStore(tmpDir());
+    await store.apply([{ operation: 'add', target: 'memory', text: '第一版记忆' }]);
+    const provider = new MockProvider([{ text: 't1 完成' }, { text: 't2 完成' }]);
+    await runTurn(dir, { provider, tools: new ToolRegistry(), cwd: dir, userText: '第一轮', memory: store });
+
+    // 手工 rewind（writer API 构造）：marker 追溯遮蔽 seq > rewindToSeq 的全部事件（含快照）
+    const snapshotSeq = loadEvents(dir).find((e) => e.type === 'memory/snapshot')!.seq;
+    const writer = SessionWriter.open(dir, { fsync: false });
+    writer.append('rewind/marker', { rewindToSeq: snapshotSeq - 1, reason: 'undo' });
+    writer.close();
+
+    // 快照已在活动投影外：下一轮读当前 store 补落新快照（而非错误地复用被遮蔽的旧快照）
+    await store.apply([{ operation: 'add', target: 'memory', text: 'rewind 后的新记忆' }]);
+    await runTurn(dir, { provider, tools: new ToolRegistry(), cwd: dir, userText: '第二轮', memory: store });
+
+    const session = loadSession(dir);
+    computeProjection(session); // 未计算投影时 active 恒为 true（loadSession 不代算）
+    const activeSnaps = session.events.filter((x) => x.active && x.event.type === 'memory/snapshot');
+    expect(activeSnaps).toHaveLength(1); // 旧快照被遮蔽，只剩补落的新快照
+    const content = (activeSnaps[0]!.event.payload as { content: string }).content;
+    expect(content).toContain('第一版记忆'); // 组装自当前 store（旧条目 + 新条目）
+    expect(content).toContain('rewind 后的新记忆');
+    expect(provider.requests[1]!.system).toBe(content); // 新轮请求 system === 补落快照
+  });
 });

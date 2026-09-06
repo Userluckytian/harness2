@@ -10,12 +10,15 @@ import {
   defaultSessionsRoot,
   forkSession,
   ForkError,
+  MemoryStore,
+  MockProvider,
+  runTurn,
   SessionManager,
   SessionWriter,
+  ToolRegistry,
   loadSession,
   computeProjection,
   startServe,
-  MockProvider,
   type ServeHandle,
 } from '../src/index.js';
 import { SESSION_LOG_FILE } from '../src/session/types.js';
@@ -153,6 +156,79 @@ describe('forkSession 内核语义', () => {
     w.append('user/message', { text: 'x' });
     w.close();
     expect(() => forkSession(orig.manager, 'bare-id')).toThrow(/header\.cwd/);
+  });
+
+  // —— 快照分支（审查覆盖缺口）：分叉与 memory/snapshot 冻结语义的交互 ——
+
+  it('快照分支 A（atSeq 在快照之后）：分叉会话复用冻结内容，store 后续变化不注入', async () => {
+    const root = tmpDir();
+    const store = new MemoryStore(join(root, 'memories'));
+    await store.apply([{ operation: 'add', target: 'memory', text: '分叉前的记忆' }]);
+    const manager = new SessionManager(defaultSessionsRoot(root));
+    const { id, writer } = manager.create(root);
+    await runTurn(writer, {
+      provider: new MockProvider([{ text: 'a1' }]),
+      tools: new ToolRegistry(),
+      cwd: root,
+      userText: 'u1',
+      memory: store,
+    });
+    writer.close();
+
+    // 全量分叉（缺省 atSeq = 尾部）：memory/snapshot 是普通活动事件，照常复制
+    const r = forkSession(manager, id);
+    expect(r.copiedEvents).toBeGreaterThan(0);
+    // 分叉后 store 变化：分叉会话的快照已冻结 → 请求 system 仍为复制来的快照
+    await store.apply([{ operation: 'add', target: 'memory', text: '分叉后的新记忆' }]);
+    const provider = new MockProvider([{ text: 'fork-a1' }]);
+    await runTurn(r.dir, {
+      provider,
+      tools: new ToolRegistry(),
+      cwd: root,
+      userText: 'fork-u1',
+      memory: store,
+    });
+
+    const snaps = loadSession(r.dir).events.filter((x) => x.event.type === 'memory/snapshot');
+    expect(snaps).toHaveLength(1); // 复用冻结内容，未追加新快照
+    const frozen = (snaps[0]!.event.payload as { content: string }).content;
+    expect(frozen).toContain('分叉前的记忆');
+    expect(provider.requests[0]!.system).toBe(frozen);
+    expect(provider.requests[0]!.system).not.toContain('分叉后的新记忆');
+  });
+
+  it('快照分支 B（atSeq 截在快照之前）：下轮读当前 store 补落新快照并注入', async () => {
+    const root = tmpDir();
+    const store = new MemoryStore(join(root, 'memories'));
+    await store.apply([{ operation: 'add', target: 'memory', text: '原会话的记忆' }]);
+    const manager = new SessionManager(defaultSessionsRoot(root));
+    const { id, writer } = manager.create(root);
+    await runTurn(writer, {
+      provider: new MockProvider([{ text: 'a1' }]),
+      tools: new ToolRegistry(),
+      cwd: root,
+      userText: 'u1',
+      memory: store,
+    });
+    writer.close();
+
+    // atSeq=1：只有 header 的空分叉——快照事件（seq 2）不进新会话（等价于"原会话无快照"分支）
+    const r = forkSession(manager, id, { atSeq: 1 });
+    expect(r.copiedEvents).toBe(0);
+    const provider = new MockProvider([{ text: 'fork-a1' }]);
+    await runTurn(r.dir, {
+      provider,
+      tools: new ToolRegistry(),
+      cwd: root,
+      userText: 'fork-u1',
+      memory: store,
+    });
+
+    const snaps = loadSession(r.dir).events.filter((x) => x.event.type === 'memory/snapshot');
+    expect(snaps).toHaveLength(1); // 无冻结可复用 → 下轮读当前 store 补落
+    const fresh = (snaps[0]!.event.payload as { content: string }).content;
+    expect(fresh).toContain('原会话的记忆');
+    expect(provider.requests[0]!.system).toBe(fresh);
   });
 });
 

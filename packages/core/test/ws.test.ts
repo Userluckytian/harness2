@@ -3,16 +3,18 @@
 //   delta 与落盘事件一致性断言（text 拼接 = assistant/message.text；reasoning 同理）；
 //   双会话并行互不阻塞；abort 取消；审批 request/response 往返；坏帧 error。
 import { afterEach, describe, expect, it } from 'vitest';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
+  MemoryStore,
   startServe,
   MockProvider,
   type MockScript,
   type ServeHandle,
   type WsServerMessage,
 } from '../src/index.js';
+import { SESSION_LOG_FILE } from '../src/session/types.js';
 
 const dirs: string[] = [];
 const handles: ServeHandle[] = [];
@@ -308,6 +310,45 @@ describe('WS abort 与审批往返', () => {
     if (result.type !== 'event' || result.event.type !== 'tool/result') throw new Error('unreachable');
     expect(result.event.payload.ok).toBe(false);
     expect(result.event.payload.error ?? '').toContain('denied by approval policy');
+    client.close();
+  });
+});
+
+describe('serve 记忆装配（审查 P1-1 防回归）', () => {
+  it('auto 模式 hub 发消息：落盘日志含 memory/snapshot 且 provider 请求 system === 快照内容', async () => {
+    const store = new MemoryStore(tmpDir('h2-ws-mem-'));
+    await store.apply([
+      { operation: 'add', target: 'memory', text: '项目使用 pnpm monorepo' },
+      { operation: 'add', target: 'user', text: '用户偏好简体中文' },
+    ]);
+    // 注入假 store + 记录 requests 的 mock provider（nudgeInterval 拉高：本例不触发复盘）
+    const provider = new MockProvider([{ textChunks: ['回复。'] }]);
+    const handle = await startServe({
+      port: 0,
+      home: tmpDir('h2-ws-home-'),
+      root: tmpDir('h2-ws-root-'),
+      provider,
+      memory: { store, mode: 'auto', nudgeInterval: 999, reviewProvider: provider },
+    });
+    handles.push(handle);
+    const id = await createSession(handle);
+    const client = new WsClient(`ws://127.0.0.1:${handle.port}/ws`);
+    await client.open;
+    client.send({ op: 'subscribe', sessionId: id });
+    client.send({ op: 'user-message', sessionId: id, text: '打个招呼' });
+    await client.waitFor((f) => f.type === 'turn-end', 'turn-end');
+
+    // 读侧修复前：serve 路径主会话零 memory/snapshot、system 恒空（只写不读）
+    const log = readFileSync(join(handle.hub.locate(id), SESSION_LOG_FILE), 'utf8');
+    expect(log).toContain('memory/snapshot');
+
+    // Model-visible ⟺ logged 扩展到 system：捕获的请求 system === 落盘快照 content
+    const snapLine = log.split('\n').find((l) => l.includes('memory/snapshot'))!;
+    const snapContent = (JSON.parse(snapLine) as { payload: { content: string } }).payload.content;
+    expect(snapContent).toContain('项目使用 pnpm monorepo');
+    expect(snapContent).toContain('用户偏好简体中文');
+    expect(provider.requests).toHaveLength(1);
+    expect(provider.requests[0]!.system).toBe(snapContent);
     client.close();
   });
 });

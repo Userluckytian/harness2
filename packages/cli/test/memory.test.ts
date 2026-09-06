@@ -158,4 +158,23 @@ describe('harness2 memory pending / approve / reject', () => {
       env.cleanup();
     }
   });
+
+  it('pending --clear 清空全部暂存并输出清除条数（审查 P2-3）', () => {
+    const env = makeEnv();
+    try {
+      stageFile(env, '1788660000000-ee03');
+      stageFile(env, '1788660000000-ff04');
+      const r = runMemory(env.home, ['pending', '--clear']);
+      expect(r.status).toBe(0);
+      expect(r.stdout as string).toContain('已清除 2 条待审批项');
+      expect(readdirSync(env.pendingDir)).toHaveLength(0);
+
+      // 空目录再 clear：输出 0 条，exit 0
+      const r2 = runMemory(env.home, ['pending', '--clear']);
+      expect(r2.status).toBe(0);
+      expect(r2.stdout as string).toContain('已清除 0 条待审批项');
+    } finally {
+      env.cleanup();
+    }
+  });
 });

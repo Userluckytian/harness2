@@ -105,11 +105,16 @@ export interface InjectionPattern {
 
 /** 典型指令注入模式（启发式清单；命中只告警不拦截——标记后仍按原样写入） */
 export const INJECTION_PATTERNS: readonly InjectionPattern[] = [
-  { name: 'ignore previous instructions', regex: /(?:ignore|disregard)\s+(?:all\s+)?(?:previous|prior|above|earlier)/i },
-  { name: '忽略之前指令', regex: /忽略(?:掉)?(?:之前|以上|前面|先前|上面)(?:的)?(?:所有|全部)?(?:对话|指令|内容|提示)/ },
+  // ignore/disregard previous|prior|above|earlier（含 "ignore the above/previous" 冠词形态）
+  { name: 'ignore previous instructions', regex: /(?:ignore|disregard)\s+(?:all\s+|the\s+)?(?:previous|prior|above|earlier)/i },
+  // 忽略/无视 + 之前/以上/上述/前面/先前/上面 + 对话/指令/内容/提示
+  { name: '忽略之前指令', regex: /(?:忽略|无视)(?:掉)?(?:之前|以上|上述|前面|先前|上面)(?:的)?(?:所有|全部)?(?:对话|指令|内容|提示)/ },
   { name: 'system prompt 泄露', regex: /system\s*prompt/i },
   { name: '系统提示', regex: /系统提示(?:词|语)?/ },
-  { name: 'reveal instructions', regex: /(?:reveal|show|print)\s+(?:your|the)\s+(?:instructions|rules)/i },
+  // reveal/show/print/repeat + your/the + instructions/rules/system prompt/system instructions
+  { name: 'reveal instructions', regex: /(?:reveal|show|print|repeat)\s+(?:your|the)\s+(?:system\s+(?:prompt|instructions)|instructions|rules)/i },
+  // 泄露/透露/打印/复述你的系统提示词/系统指令/初始指令（须带「你的」，避免误伤普通「输出系统提示」描述）
+  { name: '泄露你的系统指令', regex: /(?:泄露|透露|打印|复述)(?:一下)?你的(?:系统提示(?:词|语)?|系统指令|系统设定|(?:初始|原始)指令)/ },
 ];
 
 export interface InjectionFinding {

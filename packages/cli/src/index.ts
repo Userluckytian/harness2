@@ -215,7 +215,7 @@ memoryCmd
     for (const target of targets) {
       const v = await store.read(target);
       if (v.drift) {
-        console.error(`error: ${v.file} 结构漂移，拒绝写入（原文件已备份 .bak，请先手工处理）`);
+        console.error(`error: ${v.file} 结构漂移，拒绝清空（未做备份，请先手工恢复 § 结构或删除该文件后重试）`);
         process.exitCode = 1;
         continue;
       }
@@ -236,9 +236,15 @@ memoryCmd
 memoryCmd
   .command('pending')
   .description('列出待审批的记忆写入（ask 模式暂存，先到先审）')
+  .option('--clear', '清空全部待审批项（不可恢复），输出清除条数')
   .option('--home <dir>', '覆盖用户数据根（测试/多环境用）')
-  .action(async (opts: MemoryHomeOptions) => {
+  .action(async (opts: MemoryHomeOptions & { clear?: boolean }) => {
     const pending = new PendingMemoryStore(defaultPendingRoot(opts.home));
+    if (opts.clear === true) {
+      const cleared = await pending.clearAll();
+      console.log(`已清除 ${cleared} 条待审批项`);
+      return;
+    }
     const items = await pending.list();
     if (items.length === 0) {
       console.log('（无待审批项）');

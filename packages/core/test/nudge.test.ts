@@ -11,9 +11,15 @@ import { SessionManager } from '../src/session/manager.js';
 import { MockProvider, type MockScript } from '../src/provider/mock.js';
 import { ToolRegistry } from '../src/tools/registry.js';
 import { registerBuiltinTools } from '../src/tools/predefined/index.js';
-import { MemoryStore } from '../src/memory/store.js';
+import { MemoryStore, assembleMemorySnapshot } from '../src/memory/store.js';
 import { PendingMemoryStore } from '../src/memory/pending.js';
-import { buildConversationDigest, createMemoryToolForMode, NUDGE_REVIEW_SYSTEM } from '../src/memory/nudge.js';
+import {
+  buildConversationDigest,
+  createMemoryToolForMode,
+  NUDGE_REVIEW_SYSTEM,
+  runNudgeReview,
+} from '../src/memory/nudge.js';
+import { SessionWriter } from '../src/session/writer.js';
 import { defaultSessionsRoot } from '../src/session/manager.js';
 
 const dirs: string[] = [];
@@ -140,6 +146,24 @@ describe('PendingMemoryStore', () => {
     );
     await expect(pending.stage('sess-1', [])).rejects.toThrow(/不能为空/);
   });
+
+  it('暂存上限 200（审查 P2-3）：第 201 条拒绝并提示先处理；清理后可继续写', async () => {
+    const root = tmpDir();
+    const store = new MemoryStore(join(root, 'memories'));
+    const pending = new PendingMemoryStore(join(root, 'pending'), store);
+    for (let i = 0; i < 200; i++) {
+      await pending.stage('sess-limit', [{ operation: 'add', target: 'user', text: `条目 ${i}` }]);
+    }
+    expect(await pending.list()).toHaveLength(200);
+    await expect(
+      pending.stage('sess-limit', [{ operation: 'add', target: 'user', text: '超出上限的一条' }]),
+    ).rejects.toThrow(/上限 200/);
+    // 显式清空后可继续写（clearAll 返回清除条数）
+    expect(await pending.clearAll()).toBe(200);
+    const again = await pending.stage('sess-limit', [{ operation: 'add', target: 'user', text: '清理后可写' }]);
+    expect(again.id).toBeTruthy();
+    expect(await pending.list()).toHaveLength(1);
+  });
 });
 
 describe('createMemoryToolForMode', () => {
@@ -204,7 +228,7 @@ describe('buildConversationDigest', () => {
 describe('SessionHub nudge 计数与触发', () => {
   it('计数到 nudgeInterval 触发复盘：mock small 调 memory 工具直接写盘（auto），触发后归零', async () => {
     const fx = makeHub({
-      main: [{ text: '回复 1' }, { text: '回复 2' }],
+      main: [{ text: '回复 1' }, { text: '回复 2' }, { text: '回复 3' }],
       review: [
         {
           toolCalls: [
@@ -224,10 +248,16 @@ describe('SessionHub nudge 计数与触发', () => {
     expect(fx.hub.nudgeCount(fx.sessionId)).toBe(0); // 触发后归零
     await finished;
     expect(readFileSync(join(fx.root, 'memories', 'USER.md'), 'utf8')).toBe('复盘发现的偏好');
-    // 复盘不落主会话日志：主日志无 memory/snapshot、无复盘内容
-    const log = readFileSync(join(fx.hub.locate(fx.sessionId), 'session.v1.jsonl'), 'utf8');
-    expect(log).not.toContain('memory/snapshot');
-    expect(log).not.toContain('复盘发现的偏好');
+    // 复盘在独立临时会话运行：主日志绝不出现复盘系统提示（NUDGE_REVIEW_SYSTEM）
+    let log = readFileSync(join(fx.hub.locate(fx.sessionId), 'session.v1.jsonl'), 'utf8');
+    expect(log).not.toContain(NUDGE_REVIEW_SYSTEM);
+    // 复盘写盘后主会话下一轮注入快照（审查 P1-1：serve 路径记忆不只写不读）
+    fx.hub.sendUserMessage(fx.sessionId, '第三句');
+    while (fx.hub.isBusy(fx.sessionId)) await sleep(20);
+    log = readFileSync(join(fx.hub.locate(fx.sessionId), 'session.v1.jsonl'), 'utf8');
+    const snapLine = log.split('\n').find((l) => l.includes('memory/snapshot'));
+    expect(snapLine).toBeTruthy();
+    expect(snapLine).toContain('复盘发现的偏好');
     await fx.hub.close();
   });
 
@@ -258,6 +288,8 @@ describe('SessionHub nudge 计数与触发', () => {
   it('ask 模式：复盘写入进 pending（来源会话归因），主对话零阻塞继续收消息', async () => {
     const fx = makeHub({
       main: [{ text: '回复 1' }, { text: '回复 2' }],
+      // nudgeInterval=1：两条消息各触发一次复盘，共享 reviewProvider——脚本给足 4 条
+      //（每复盘最多 2 次请求），无论交错顺序两复盘都能正常收尾
       review: [
         {
           toolCalls: [
@@ -265,18 +297,22 @@ describe('SessionHub nudge 计数与触发', () => {
           ],
         },
         { text: '无需记忆' },
+        { text: '无需记忆' },
+        { text: '无需记忆' },
       ],
       mode: 'ask',
       nudgeInterval: 1,
     });
-    const finished = fx.nextNudgeFinished();
+    const finished1 = fx.nextNudgeFinished();
+    const finished2 = fx.nextNudgeFinished();
     fx.hub.sendUserMessage(fx.sessionId, '第一句');
     // 复盘慢（不阻塞）：立即发第二条消息，主对话照常进行
     fx.hub.sendUserMessage(fx.sessionId, '第二句');
     while (fx.hub.isBusy(fx.sessionId)) await sleep(20);
-    const { staged, error } = await finished;
-    expect(error).toBeUndefined();
-    expect(staged).toBe(1);
+    // 两次复盘都无错误；staged 聚合 = 1（审查 P2-2 口径：只统计各自本次新增）
+    const results = await Promise.all([finished1, finished2]);
+    expect(results.map((r) => r.error)).toEqual([undefined, undefined]);
+    expect(results.reduce((sum, r) => sum + r.staged, 0)).toBe(1);
     // 主对话两个 turn 都已完成且未写入记忆文件（ask = 只延迟）
     expect(existsSync(join(fx.root, 'memories', 'USER.md'))).toBe(false);
     const pending = new PendingMemoryStore(join(fx.root, 'memories', 'pending'));
@@ -291,6 +327,33 @@ describe('SessionHub nudge 计数与触发', () => {
     const r = await pendingForApprove.approve(items[0]!.id);
     expect(r.ok).toBe(true);
     expect(readFileSync(join(fx.root, 'memories', 'USER.md'), 'utf8')).toBe('ask 暂存偏好');
+    await fx.hub.close();
+  });
+
+  it('staged 只统计本次复盘新增（审查 P2-2）：此前遗留的同会话暂存不计入', async () => {
+    const fx = makeHub({
+      main: [{ text: '回复 1' }],
+      review: [
+        {
+          toolCalls: [
+            { id: 'r1', name: 'memory', arguments: JSON.stringify({ operation: 'add', target: 'user', text: '本次复盘新增的暂存' }) },
+          ],
+        },
+        { text: '无需记忆' },
+      ],
+      mode: 'ask',
+      nudgeInterval: 1,
+    });
+    // 预置一条同 sessionId 的遗留暂存（旧实现会把全部未审批项计入 staged → 2）
+    const legacy = new PendingMemoryStore(join(fx.root, 'memories', 'pending'));
+    await legacy.stage(fx.sessionId, [{ operation: 'add', target: 'user', text: '此前遗留的暂存' }]);
+    const finished = fx.nextNudgeFinished();
+    fx.hub.sendUserMessage(fx.sessionId, '第一句');
+    while (fx.hub.isBusy(fx.sessionId)) await sleep(20);
+    const { staged, error } = await finished;
+    expect(error).toBeUndefined();
+    expect(staged).toBe(1); // 只算本次复盘新增
+    expect(await legacy.list()).toHaveLength(2); // 遗留项仍在，等人工审批
     await fx.hub.close();
   });
 
@@ -328,5 +391,59 @@ describe('复盘临时会话与系统提示', () => {
   it('NUDGE_REVIEW_SYSTEM 非空且经 assembleMemorySnapshot 冻结（复盘会话 system 有独立提示）', () => {
     expect(NUDGE_REVIEW_SYSTEM).toMatch(/memory 工具/);
     expect(NUDGE_REVIEW_SYSTEM.length).toBeGreaterThan(20);
+  });
+
+  it('复盘请求 system === 预置的 NUDGE_REVIEW_SYSTEM 快照（审查 P1-2 防回归：缺注入则恒空）', async () => {
+    const root = tmpDir();
+    // 主会话：一轮对话（digest 有内容可回顾）
+    const mainDir = join(root, 'main');
+    const w = SessionWriter.create(mainDir, { sessionId: 'main' }, { fsync: false });
+    w.append('user/message', { text: '我偏好深色主题', turnId: 't1' });
+    w.append('assistant/message', { text: '好的', turnId: 't1' });
+    w.close();
+
+    const reviewProvider = new MockProvider([{ text: '无需记忆' }]);
+    const result = await runNudgeReview({
+      provider: reviewProvider,
+      store: new MemoryStore(join(root, 'memories')),
+      mode: 'auto',
+      sessionId: 'main',
+      sessionDir: mainDir,
+      cwd: root,
+    });
+    expect(result.error).toBeUndefined();
+    expect(reviewProvider.requests).toHaveLength(1);
+    // 预置快照被 runTurn 复用为 system（memory: options.store 注入缝生效）
+    expect(reviewProvider.requests[0]!.system).toBe(assembleMemorySnapshot(NUDGE_REVIEW_SYSTEM, ''));
+    expect(reviewProvider.requests[0]!.system).toContain(NUDGE_REVIEW_SYSTEM);
+  });
+});
+
+describe('SessionHub 装配校验（审查 P2-1）', () => {
+  it('ask 模式缺 pending 装配：构造即抛错（fail-fast），装配齐全不抛', () => {
+    const root = tmpDir();
+    const manager = new SessionManager(defaultSessionsRoot(root));
+    const store = new MemoryStore(join(root, 'memories'));
+    const build = (memory: Record<string, unknown>) =>
+      new SessionHub({
+        manager,
+        provider: new MockProvider([{ text: 'x' }]),
+        tools: new ToolRegistry(),
+        cwd: root,
+        memory: memory as never,
+      });
+    // 残缺装配：此前每次 turn 抛错被 pump 吞掉（消息凭空消失）——现在构造期即拒绝
+    expect(() =>
+      build({ store, mode: 'ask', nudgeInterval: 2 }), // pending 缺失
+    ).toThrow(/pending/);
+    // 齐全装配：正常构造
+    const hub = build({
+      store,
+      mode: 'ask',
+      nudgeInterval: 2,
+      pending: new PendingMemoryStore(join(root, 'memories', 'pending'), store),
+    });
+    expect(hub.approvalTimeoutMs).toBe(120_000);
+    void hub.close();
   });
 });

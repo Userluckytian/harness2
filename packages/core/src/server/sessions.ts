@@ -190,6 +190,11 @@ export class SessionHub {
 
   constructor(private readonly options: SessionHubOptions) {
     this.approvalTimeoutMs = options.approvalTimeoutMs ?? 120_000;
+    // 审查 P2-1 fail-fast：ask 模式缺 pending 装配时 buildTurnTools 每次 turn 抛错、
+    // 被 pump 的 catch 吞掉（消息凭空消失）——装配残缺在构造期即拒绝，不给静默失败留窗口。
+    if (options.memory?.mode === 'ask' && options.memory.pending === undefined) {
+      throw new HubError('invalid', 'memory.mode=ask 需要装配 pending 暂存区（SessionHubMemory.pending），拒绝静默吞消息的残缺装配');
+    }
     if (options.hooks !== undefined) this.addHooks(options.hooks);
   }
 
@@ -336,6 +341,8 @@ export class SessionHub {
         signal: ac.signal,
         snapshots,
         onStream: (event: TurnStreamEvent) => this.forwardStream(id, event),
+        // 审查 P1-1：serve/desktop 路径同样注入记忆 store（缺此前主会话零快照、system 恒空）
+        ...(this.options.memory !== undefined ? { memory: this.options.memory.store } : {}),
       });
       this.emitTurnEnd(id, result);
       this.bumpNudge(id); // turn-end 回调之后计数/触发复盘（异步，不阻塞主对话）
