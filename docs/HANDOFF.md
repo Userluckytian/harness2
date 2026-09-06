@@ -1,6 +1,6 @@
 # HANDOFF — 交接入口（新维护者/AI 从这里开始）
 
-> 更新：2026-09-06（阶段 6 实现完成：记忆系统（开关三态）+ 会话分叉；独立验收待做） · 本文件是唯一交接入口，保持与实际状态同步。
+> 更新：2026-09-06（阶段 5/6 双验收通过；阶段 7 实现中——M2 三大件：浏览器工具/上下文压缩/定时任务） · 本文件是唯一交接入口，保持与实际状态同步。
 
 ## 1. 项目一句话
 
@@ -11,12 +11,12 @@
 | 项 | 状态 |
 |----|------|
 | 默认分支 | `master`（注意：不是 main） |
-| 开发分支 | `feat/phase-6-memory-fork`（阶段 6 全部工作在此；此前阶段各在其分支） |
-| 阶段 1–5 | ✅ 已完成并验收（内核 → loop+工具 → Provider+配置 → CLI chat+undo/redo → 服务化+桌面壳） |
-| 阶段 6 | 🔶 实现代理自验通过（记忆开关三态 [MEMORY/USER.md 硬预算/漂移检测/注入扫描/memory 工具] + memory/snapshot 冻结注入 + nudge 后台复盘 + pending 审批 CLI + 会话分叉三端入口；**398 项（397 passed + 1 skipped）**，含阶段 6 独立审查修复轮与阶段 5 补复审修复轮）；独立验收 `/accept-phase` 待做 |
-| **M1 v0.1** | 🔶 代码/物料就绪（包名 `harness2` + `@harness2/core`、CHANGELOG、README、release workflow）；**发布动作未执行**——待人类授权：远程仓库 + push、npm 包名占用检查、`NPM_TOKEN` secret、推 tag `v0.1.0`（见 OPEN.md） |
-| 未关闭事项 | 读 `docs/issue-log/OPEN.md`（保持为零上下文第一读；含真实模型 chat 手工验收清单、记忆三态真实模型验证清单、pause_turn 评估结论） |
-| 测试 | `pnpm test`（含 build）—— core 329+1 skipped + cli 29 + desktop 39 = **398 项（397 passed + 1 skipped**，`H2_GEN_LOOP_DEMO` 门控的 fixture 生成器非失败）（2026-09-06 阶段 5 补复审修复轮复验） |
+| 开发分支 | `feat/phase-7-browser-compaction-cron`（阶段 7 工作在此；此前阶段各在其分支） |
+| 阶段 1–6 | ✅ 全部完成并验收（内核 → loop+工具 → Provider+配置 → CLI chat+undo/redo → 服务化+桌面 → 记忆+分叉） |
+| 阶段 7（M2） | 🔶 实现中：Task 1–4 已提交（上下文压缩/浏览器工具/定时任务/信任域加固），Task 5–6（发布物料/整备）由编排者代做（子代理并发限制故障降级，留档待补独立审查） |
+| **M1 v0.1 / M2 v0.3** | 🔶 代码/物料就绪；**发布动作未执行**——待人类授权：远程仓库 + push、npm 包名占用检查、`NPM_TOKEN` secret、推 tag（见 OPEN.md） |
+| 未关闭事项 | 读 `docs/issue-log/OPEN.md`（保持为零上下文第一读；含真实模型体验清单、GUI 真机清单、信任域加固结论） |
+| 测试 | `pnpm test`（含 build）—— core 377+1 skipped + cli 29 + desktop 39 = **405 项（405 passed + 1 skipped**，`H2_GEN_LOOP_DEMO` 门控的 fixture 生成器非失败） |
 | 远程 | 无（未配置 origin；push 需人类授权） |
 
 ## 3. 文档地图（按阅读顺序）
