@@ -43,10 +43,31 @@ jobs:
       - name: Test
         run: pnpm test
 
-  # 桌面端构建矩阵（Task 6）：win 打包产物冒烟级别验证；GUI 测试不做（见 docs/issue-log/OPEN.md）
-  desktop:
-    name: desktop build (windows)
-    runs-on: windows-latest
+  # 桌面端构建矩阵（阶段 11 Task 3）：三平台各自构建 + artifact 上传（unsigned；
+  # 构建失败即红）。GUI 测试不做（见 docs/issue-log/OPEN.md）；桌面单测为纯逻辑
+  # （jsdom，无 GUI），仅 windows 跑一次即可覆盖。
+  build-desktop:
+    name: desktop build (${{ matrix.name }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            name: win-setup
+            script: dist:win
+            artifact: packages/desktop/release/*.exe
+          - os: macos-latest
+            name: mac-dmg
+            script: dist:mac
+            artifact: packages/desktop/release/*.dmg
+          - os: ubuntu-latest
+            name: linux-appimage
+            script: dist:linux
+            artifact: packages/desktop/release/*.AppImage
+    env:
+      # macOS 无证书（总控计划既定）：显式跳过签名发现，构建日志声明 unsigned
+      CSC_IDENTITY_AUTO_DISCOVERY: false
     steps:
       - uses: actions/checkout@v4
 
@@ -63,15 +84,16 @@ jobs:
       - name: Build packages
         run: pnpm build
 
-      - name: Desktop unit tests（纯逻辑/jsdom，无 GUI）
+      - name: Desktop unit tests（纯逻辑/jsdom，无 GUI；仅 windows 跑一次）
+        if: runner.os == 'Windows'
         run: pnpm --filter @harness2/desktop test
 
-      - name: Package win nsis（unsigned）
-        run: pnpm --filter @harness2/desktop dist
+      - name: Package（unsigned）
+        run: pnpm --filter @harness2/desktop ${{ matrix.script }}
 
-      - name: Upload nsis artifact
+      - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: harness2-win-setup
-          path: packages/desktop/release/*.exe
+          name: harness2-${{ matrix.name }}
+          path: ${{ matrix.artifact }}
           if-no-files-found: error

@@ -1,6 +1,8 @@
-# electron-builder 配置（win 先行，nsis，unsigned；产物落 release/，已 gitignore）。
+# electron-builder 配置（三平台，unsigned；产物落 release/，已 gitignore）。
 # 打包后的 serve 子进程 = extraResources 的 cli 单文件 bundle（ELECTRON_RUN_AS_NODE 运行，
 # 不依赖系统 node 与 node_modules）。
+# 签名口径（总控计划既定）：全平台 unsigned——win 默认无证书；mac identity: null 显式跳过
+# 签名/公证（CI 另设 CSC_IDENTITY_AUTO_DISCOVERY=false 双保险）；无自动更新。
 appId: dev.harness2.desktop
 productName: harness2
 copyright: harness2
@@ -23,5 +25,20 @@ nsis:
   perMachine: false
   allowToChangeInstallationDirectory: false
   deleteAppDataOnUninstall: false
-# 无自动更新（Ph11 边界；publish 留空防止意外发布配置）
+mac:
+  # 无证书构建：identity: null = 显式跳过签名（electron-builder 不再自动发现证书）
+  identity: null
+  category: public.app-category.developer-tools
+  target:
+    - target: dmg
+      arch:
+        - arm64
+        - x64
+linux:
+  target:
+    - target: AppImage
+      arch:
+        - x64
+  category: Development
+# publish 留空防止意外发布配置（发布走 release workflow 的 npm publish / Release 附加）
 publish: null

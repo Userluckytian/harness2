@@ -11,7 +11,10 @@
     "test": "vitest run --passWithNoTests",
     "dev": "pnpm build && electron .",
     "smoke": "pnpm build && electron . --smoke",
-    "dist": "pnpm build && pnpm --filter harness2 bundle && electron-builder --win"
+    "dist": "pnpm dist:win",
+    "dist:win": "pnpm build && pnpm --filter harness2 bundle && electron-builder --win",
+    "dist:mac": "pnpm build && pnpm --filter harness2 bundle && electron-builder --mac",
+    "dist:linux": "pnpm build && pnpm --filter harness2 bundle && electron-builder --linux"
   },
   "dependencies": {
     "react": "^19.2.8",

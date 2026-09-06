@@ -475,7 +475,13 @@ export function createBrowserTools(sessionKey: string, pool: BrowserPool): ToolD
  */
 export async function installBrowserRuntime(): Promise<number> {
   const { createRequire } = await import('node:module');
-  const require = createRequire(import.meta.url);
+  let require: NodeRequire;
+  try {
+    require = createRequire(import.meta.url);
+  } catch {
+    // CJS bundle（esbuild cjs 输出中 import.meta 为空）：以 cwd 为解析基点兜底
+    require = createRequire(join(process.cwd(), 'package.json'));
+  }
   const cliPath = require.resolve('playwright/cli.js');
   const { spawn } = await import('node:child_process');
   return new Promise((resolve, reject) => {

@@ -79,3 +79,72 @@ jobs:
         run: |
           echo "::notice::NPM_TOKEN 未配置，本次 release 跳过 npm publish（发布需人类授权，见 docs/issue-log/OPEN.md）"
           echo "::notice::待办：配置 NPM_TOKEN secret 并人工授权后重新触发发布（重推 tag 或手跑 workflow）"
+
+  # 桌面产物（阶段 11 Task 3）：三平台 unsigned 构建 → artifact → 附加到 GitHub Release。
+  # macOS 无证书：CSC_IDENTITY_AUTO_DISCOVERY=false + identity: null 显式跳过签名/公证。
+  desktop:
+    name: desktop artifacts (${{ matrix.name }})
+    needs: test
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            name: win-setup
+            script: dist:win
+            artifact: packages/desktop/release/*.exe
+          - os: macos-latest
+            name: mac-dmg
+            script: dist:mac
+            artifact: packages/desktop/release/*.dmg
+          - os: ubuntu-latest
+            name: linux-appimage
+            script: dist:linux
+            artifact: packages/desktop/release/*.AppImage
+    env:
+      CSC_IDENTITY_AUTO_DISCOVERY: false
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Package（unsigned）
+        run: pnpm --filter @harness2/desktop ${{ matrix.script }}
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: harness2-${{ matrix.name }}
+          path: ${{ matrix.artifact }}
+          if-no-files-found: error
+
+  release-assets:
+    name: attach desktop artifacts to release
+    needs: [publish, desktop]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Download desktop artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: release-assets
+          merge-multiple: true
+
+      - name: Attach to GitHub Release（无 Release 则生成后附加）
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          gh release view "$TAG" >/dev/null 2>&1 || gh release create "$TAG" --generate-notes --title "$TAG"
+          gh release upload "$TAG" release-assets/* --clobber
+          echo "::notice::桌面产物已附加到 Release $TAG（全部 unsigned，无签名/公证）"
