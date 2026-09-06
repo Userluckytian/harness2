@@ -9,6 +9,8 @@ export interface MockReply {
   text?: string;
   /** 拆成多个 text-delta 逐片产出（验证流式语义） */
   textChunks?: string[];
+  /** 拆成多个 reasoning-delta 逐片产出（先于 text；阶段 5 服务层增量推送验证用） */
+  reasoningChunks?: string[];
   toolCalls?: ToolCallRequest[];
   usage?: ProviderUsage;
   /** 非空时 streamChat 抛 ProviderError（错误注入） */
@@ -45,6 +47,11 @@ export class MockProvider implements ChatProvider {
     this.cursor += 1;
     if (reply.error) throw new ProviderError(reply.error);
 
+    for (const reasoning of reply.reasoningChunks ?? []) {
+      if (reply.chunkDelayMs) await sleep(reply.chunkDelayMs);
+      opts?.signal?.throwIfAborted();
+      yield { type: 'reasoning-delta', text: reasoning };
+    }
     const chunks = reply.textChunks ?? (reply.text === undefined ? [] : [reply.text]);
     for (const text of chunks) {
       if (reply.chunkDelayMs) await sleep(reply.chunkDelayMs);

@@ -22,6 +22,7 @@ import { SessionManager, defaultSessionsRoot } from '../session/manager.js';
 import type { ChatProvider } from '../provider/types.js';
 import type { ApprovalDecision, ApprovalInput } from '../tools/types.js';
 import { SessionHub, HubError, type SessionHubHooks } from './sessions.js';
+import { attachWsServer, type WsPlane } from './ws.js';
 
 /** 默认监听端口（--port 0 = 随机端口，桌面端固定用 0） */
 export const DEFAULT_SERVE_PORT = 46213;
@@ -129,7 +130,9 @@ export interface ServeHandle {
   port: number;
   hub: SessionHub;
   server: Server;
-  /** 优雅关闭：取消运行中 turn → 拒绝待审批 → 关 hub → 关 HTTP → 释放端口锁 */
+  /** WS 事件面（路径 /ws） */
+  ws: WsPlane;
+  /** 优雅关闭：取消运行中 turn → 拒绝待审批 → 关 hub → 关 WS → 关 HTTP → 释放端口锁 */
   close(): Promise<void>;
 }
 
@@ -197,12 +200,17 @@ export async function startServe(options: StartServeOptions = {}): Promise<Serve
     throw e;
   }
 
+  // WS 事件面与 HTTP 共用监听（upgrade 升级到 /ws）
+  const ws = attachWsServer(server, hub);
+
   return {
     port: actualPort,
     hub,
     server,
+    ws,
     async close(): Promise<void> {
       await hub.close();
+      await ws.close();
       await new Promise<void>((resolve) => server.close(() => resolve()));
       lock.release();
     },

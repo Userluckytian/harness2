@@ -25,6 +25,7 @@ import { SnapshotStore } from '../session/snapshots.js';
 import { SessionManager } from '../session/manager.js';
 import { redoLastUndo, undoLastTurn, UndoRedoError, type UndoRedoResult } from '../session/undo.js';
 import type {
+  AnySessionEvent,
   SessionEvent,
   SessionEventMap,
   SessionEventType,
@@ -61,7 +62,7 @@ export type ApprovalSettleReason = 'response' | 'timeout' | 'cancelled';
 
 export interface SessionHubHooks {
   /** 落盘事件镜像（append 返回后同步回调；含 rewind/marker） */
-  onEvent?(sessionId: string, event: SessionEvent): void;
+  onEvent?(sessionId: string, event: AnySessionEvent): void;
   /** 流式增量（turn 进行中逐片回调；text/reasoning 与随后 assistant/message 一致） */
   onDelta?(sessionId: string, delta: TurnDelta): void;
   /** turn 结束（stopReason：end_turn/error/cancelled/max_steps/…） */
@@ -108,7 +109,7 @@ class EventMirrorWriter {
   private closed = false;
   constructor(
     private readonly inner: SessionWriter,
-    private readonly onEvent: (event: SessionEvent) => void,
+    private readonly onEvent: (event: AnySessionEvent) => void,
   ) {
     this.dir = inner.dir;
   }
@@ -123,7 +124,8 @@ class EventMirrorWriter {
   }
   append<T extends SessionEventType>(type: T, payload: SessionEventMap[T]): SessionEvent<T> {
     const event = this.inner.append(type, payload);
-    this.onEvent(event);
+    // event 由本方法按 T 构造，必属 AnySessionEvent 联合成员（此处收窄需显式断言）
+    this.onEvent(event as AnySessionEvent);
     return event;
   }
   close(): void {
@@ -155,11 +157,20 @@ export class SessionHub {
   private readonly inflight = new Set<Promise<void>>();
 
   readonly approvalTimeoutMs: number;
-  private readonly hooks: SessionHubHooks;
+  /** 观察者集合（WS 事件面 / 测试；addHooks 注册，返回退订函数） */
+  private readonly listeners = new Set<SessionHubHooks>();
 
   constructor(private readonly options: SessionHubOptions) {
-    this.hooks = options.hooks ?? {};
     this.approvalTimeoutMs = options.approvalTimeoutMs ?? 120_000;
+    if (options.hooks !== undefined) this.addHooks(options.hooks);
+  }
+
+  /** 注册观察者（幂等性由调用方保证）；返回退订函数 */
+  addHooks(hooks: SessionHubHooks): () => void {
+    this.listeners.add(hooks);
+    return () => {
+      this.listeners.delete(hooks);
+    };
   }
 
   get manager(): SessionManager {
@@ -175,7 +186,7 @@ export class SessionHub {
     const entry: HubEntry = {
       id: created.id,
       dir: created.dir,
-      writer: new EventMirrorWriter(created.writer, (event) => this.hooks.onEvent?.(created.id, event)),
+      writer: new EventMirrorWriter(created.writer, (event) => this.emitEvent(created.id, event)),
     };
     this.entries.set(created.id, entry);
     return { id: created.id, dir: created.dir };
@@ -218,7 +229,7 @@ export class SessionHub {
     const entry: HubEntry = {
       id,
       dir,
-      writer: new EventMirrorWriter(writer, (event) => this.hooks.onEvent?.(id, event)),
+      writer: new EventMirrorWriter(writer, (event) => this.emitEvent(id, event)),
     };
     this.entries.set(id, entry);
     return entry;
@@ -291,7 +302,7 @@ export class SessionHub {
         snapshots,
         onStream: (event: TurnStreamEvent) => this.forwardStream(id, event),
       });
-      this.hooks.onTurnEnd?.(id, result);
+      this.emitTurnEnd(id, result);
     } finally {
       this.running.delete(id);
       // 队列里还有同会话消息 → 继续泵（保持 await 顺序，串行语义）
@@ -301,11 +312,11 @@ export class SessionHub {
 
   private forwardStream(id: string, event: TurnStreamEvent): void {
     if (event.type === 'text-delta') {
-      this.hooks.onDelta?.(id, { kind: 'text', text: event.text });
+      this.emitDelta(id, { kind: 'text', text: event.text });
     } else if (event.type === 'reasoning-delta') {
-      this.hooks.onDelta?.(id, { kind: 'reasoning', text: event.text });
+      this.emitDelta(id, { kind: 'reasoning', text: event.text });
     } else if (event.type === 'tool-call') {
-      this.hooks.onDelta?.(id, { kind: 'tool', call: event.call });
+      this.emitDelta(id, { kind: 'tool', call: event.call });
     }
     // tool-result 不发增量：落盘 tool/result 事件镜像已覆盖（delta 只做"未落盘"内容）
   }
@@ -369,6 +380,38 @@ export class SessionHub {
     return true;
   }
 
+  // —— 观察者分发（异常互不影响：单观察者抛错不阻断其他分发与内核） ——
+
+  private emitEvent(sessionId: string, event: AnySessionEvent): void {
+    for (const l of this.listeners) {
+      try {
+        l.onEvent?.(sessionId, event);
+      } catch {
+        // 观察者异常不回写内核
+      }
+    }
+  }
+
+  private emitDelta(sessionId: string, delta: TurnDelta): void {
+    for (const l of this.listeners) {
+      try {
+        l.onDelta?.(sessionId, delta);
+      } catch {
+        // 观察者异常不回写内核
+      }
+    }
+  }
+
+  private emitTurnEnd(sessionId: string, result: TurnResult): void {
+    for (const l of this.listeners) {
+      try {
+        l.onTurnEnd?.(sessionId, result);
+      } catch {
+        // 观察者异常不回写内核
+      }
+    }
+  }
+
   private makeApprovalHandler(sessionId: string, signal: AbortSignal) {
     const decide = this.options.decide;
     return {
@@ -388,7 +431,7 @@ export class SessionHub {
             clearTimeout(timer);
             signal.removeEventListener('abort', onAbort);
             this.approvals.delete(approval.requestId);
-            this.hooks.onApprovalSettled?.(approval.requestId, allowed, reason);
+            for (const l of this.listeners) l.onApprovalSettled?.(approval.requestId, allowed, reason);
             resolve(allowed);
           };
           const timer = setTimeout(() => settle(false, 'timeout'), this.approvalTimeoutMs);
@@ -399,7 +442,7 @@ export class SessionHub {
           }
           signal.addEventListener('abort', onAbort, { once: true });
           this.approvals.set(approval.requestId, { approval, settle });
-          this.hooks.onApprovalRequest?.(approval);
+          for (const l of this.listeners) l.onApprovalRequest?.(approval);
         });
       },
     };
