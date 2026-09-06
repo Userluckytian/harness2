@@ -139,6 +139,10 @@ packages/
   冲突基准 = 该文件在被撤操作中最新 after；`restoreAfter(fromSeq)`（redo）取最新一条恢复 after，
   冲突基准 = 最早 before。当前内容 ≠ 基准 → `externallyModified`（dryRun 列出；实际恢复报告后仍执行）。
   单文件恢复失败转 `item.error` 不中断整体；崩溃残行按「换行即提交」策略容错。
+  多级 undo 后逐级 redo 的中间态口径（阶段 4 审查留档，实现不改）：redo 的文件恢复范围 = 被 redo 的
+  undo 所撤的全部条目（seq > 该 undo 的 rewindToSeq 取最新 after），第一次 redo 可能把尚未复活的
+  更外层 turn 的文件改动一并恢复——出现「文件领先于对话」的中间态，继续 redo 至对话追平后一致；
+  恢复了哪些文件在 redo 输出中如实列出。
 - **undo/redo 内核**（`session/undo.ts`）：全部是 append-only 日志上的投影操作 + 快照恢复联动，无内存旁路。
   - `undoLastTurn`：最近一条**活动** user/message 的 seq U → 目标 U-1；追加 `rewind/marker{rewindToSeq:U-1, reason:'undo'}`
     + `snapshots.restore(U-1)`；无活动 user 或目标越界（撤到 seq 0）→ 明确错误。

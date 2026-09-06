@@ -13,10 +13,10 @@
 | 默认分支 | `master`（注意：不是 main） |
 | 开发分支 | `feat/phase-4-cli-m1`（阶段 4 全部工作在此；此前阶段各在其分支） |
 | 阶段 1–3 | ✅ 已完成并验收（会话内核 33 测试 → loop+工具+mock+CI 109 测试 → Provider+配置+审批 182 测试） |
-| 阶段 4 | ✅ 实现代理自验通过（chat REPL + 文件快照 + undo/redo + 会话管理器 + M1 发布物料；248 测试）；独立验收 `/accept-phase` 待做 |
+| 阶段 4 | ✅ 实现代理自验通过（chat REPL + 文件快照 + undo/redo + 会话管理器 + M1 发布物料；253 测试）；独立验收 `/accept-phase` 待做 |
 | **M1 v0.1** | 🔶 代码/物料就绪（包名 `harness2` + `@harness2/core`、CHANGELOG、README、release workflow）；**发布动作未执行**——待人类授权：远程仓库 + push、npm 包名占用检查、`NPM_TOKEN` secret、推 tag `v0.1.0`（见 OPEN.md） |
 | 未关闭事项 | 读 `docs/issue-log/OPEN.md`（保持为零上下文第一读；含真实模型 chat 手工验收清单、pause_turn 评估结论） |
-| 测试 | `pnpm test`（含 build）—— core 232 passed + 1 skipped（`H2_GEN_LOOP_DEMO` 门控的 fixture 生成器，非用例失败）+ cli 16 passed = **248 passed + 1 skipped**（2026-09-06，阶段 4 自验） |
+| 测试 | `pnpm test`（含 build）—— core 233 passed + 1 skipped（`H2_GEN_LOOP_DEMO` 门控的 fixture 生成器，非用例失败）+ cli 20 passed = **253 passed + 1 skipped**（2026-09-06，阶段 4 自验 + 独立审查修复轮：+5 测试） |
 | 远程 | 无（未配置 origin；push 需人类授权） |
 
 ## 3. 文档地图（按阅读顺序）
@@ -70,5 +70,6 @@
 - **真实 API 未实机验证**（阶段 3 起）：provider 协议全部经 127.0.0.1 stub 测试，DeepSeek/智谱/Anthropic 真实端点行为（含 reasoning 字段、usage 帧、流式细节的厂商差异）与 M1 chat 全流程待用户配置 key 后按 `docs/issue-log/OPEN.md` 清单手工验证
 - 密钥只在 `~/.harness2/auth.json`（不入 git，.gitignore 已含 `auth.json`）与环境变量；config/日志/错误消息里出现疑似密钥一律经 `redactSecrets` 脱敏——新增错误路径时记得过这个闸门
 - 外部脚手架（.opencode/、ai-framework 文档）由项目负责人维护，更新时注意与 `workflow-delegation.md` 的角色约定保持一致
-- CI（ci.yml）与 release.yml 本地只做过 YAML 语法校验，Actions 真实运行待远程仓库与 push 授权（见 `docs/issue-log/OPEN.md`）
+- CI（ci.yml）与 release.yml 本地只做过 YAML 语法校验，Actions 真实运行待远程仓库与 push 授权（见 `docs/issue-log/OPEN.md`）。release.yml 的 publish 步骤为**条件跳过**语义：无 `NPM_TOKEN` → 明确 notice 跳过；有 token 但发布失败 → workflow 红（2026-09-06 审查修复 P1-1，勿再加 continue-on-error）
+- chat 审批内联提示：ask 等待期间下一行输入即答案（含以 / 开头的行）；取消等待用 Ctrl+C / Ctrl+D（ask 与 turn 取消信号竞速，abort 后按拒绝处理且不再吞行）——改 chat.ts 的 askUser/answerResolver 前先读 chat-cancel.test.ts
 - grep 工具优先 spawn ripgrep，CI 镜像若未装 rg 会自动回退纯 JS 扫描（行为一致但大目录更慢）
