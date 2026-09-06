@@ -92,6 +92,7 @@ describe('harness2 chat --provider mock（流式/命令/undo+redo）', () => {
       await chat.wait('会话: ');
       chat.send('开始演示'); // 触发 mock 演示脚本
       await chat.wait('演示完成'); // mock 三段 textChunks 流式拼流 + 两轮工具
+      await chat.wait('[end_turn'); // 等到 turn 摘要行再断言（'演示完成' 是第三段首个流式块，先于 turnEnd 渲染——高负载下全量并行时的既有竞态窗口，阶段 10 加固）
 
       const out = chat.out();
       expect(out).toContain('provider: mock');
