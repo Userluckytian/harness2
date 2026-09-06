@@ -377,6 +377,29 @@ Electron 主进程 spawn `harness2 serve --port 0`（`ELECTRON_RUN_AS_NODE=1` �
 - **性能口径（与 P2-4 大日志同档留档）**：导出为全量内存读取 + zipSync 一次性打包，回放为全量解包——超大日志/超大 zip 未做流式处理（importReplay 亦无解压体积上限，审查 P2-5 留档见 OPEN.md）；子会话扫描为全库遍历（与 list/search 同口径）；非库布局的裸目录导出（如 fixtures）时，库 root 退化为「父目录的父」，按目录遍历容错扫描（只读——扫不到子会话即无副作用）。真实长会话体积评估留待用户环境（见 OPEN.md）。
 - **隐私边界**：导出内容含用户代码与对话（属用户资产），只落本地文件，不自动上传。
 
+## 性能预算（阶段 11 交付，`session/bench.ts` + `scripts/bench-session.mjs`）
+
+- **口径**：合成日志基准（10 万事件量级、约 20% tool 事件、10 个 rewind/marker，日志约 34 MiB），
+  确定性 PRNG（同 seed 同日志）；每操作单次测量（loadSession/computeProjection 先热身一次再测）。
+- **复跑**：`pnpm build && pnpm bench`（`H2_BENCH_EVENTS`/`H2_BENCH_SEED` 可覆盖规模与种子）。
+- **基线数据（2026-09-07，Windows 10.0.22631 x64 / Node v22.23.0 / Intel i7-1260P，两次取差值 <10%）**：
+
+| 操作 | 10 万事件耗时 |
+|------|--------------|
+| loadSession | ≈200ms |
+| computeProjection（含 10 rewind 遮蔽） | ≈30ms |
+| manager.list（全库） | ≈245ms |
+| manager.search（全库） | ≈420ms |
+| exportSession（主会话 zip） | ≈1.4s |
+| importReplay（回放校验） | ≈320ms |
+
+- **预算判定**：3s 预算线——**全部操作达标，无 >3s 痛点，本阶段不做性能优化**（测量先于优化：
+  无数据不重构）。已有全量内存/全库遍历口径不变（P2-4 留档），基线表即后续回归对照锚点。
+- **回放解压上限**：`importReplay` 默认累计解压 256 MiB 上限（`DEFAULT_MAX_REPLAY_BYTES`，
+  `maxDecompressedBytes` 参数可覆盖）——前置读 zip 中央目录声明体积（不解压即拒绝），后置核
+  实际解压体积兜底声明撒谎的包；超限抛 `ReplayTooLargeError`（消息含上限值与建议，CLI exit 1）。
+  解压炸弹防护为本地信任域口径（export 产物/用户自供文件，不经网络接收）。
+
 ## Skills（阶段 10 交付，`skills/`）
 
 - **边界**：只做文本指令型 skill——markdown + YAML 简表 frontmatter（`name`/`description` 必填；`name` 不得含空白，值支持成对引号剥离；未知键忽略）；**无可执行脚本**（Global Constraints）。

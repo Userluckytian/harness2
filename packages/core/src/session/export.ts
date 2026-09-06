@@ -167,6 +167,58 @@ export function exportSession(sessionDir: string, outFile?: string): ExportResul
 
 // —— 回放校验 ——
 
+/** importReplay 累计解压字节缺省上限（256 MiB；解压炸弹防护，OPEN.md 2026-09-06 P2-5 消化） */
+export const DEFAULT_MAX_REPLAY_BYTES = 256 * 1024 * 1024;
+
+/** 解压体积超限：消息含上限值与建议（CLI 一行输出 exit 1） */
+export class ReplayTooLargeError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'ReplayTooLargeError';
+  }
+}
+
+function formatMiB(bytes: number): string {
+  return `${(bytes / 1024 / 1024).toFixed(1)} MiB`;
+}
+
+const REPLAY_LIMIT_HINT =
+  '建议：确认包来源后分段导出（主会话与子会话分别导出）再回放，或在调用 importReplay 时用 maxDecompressedBytes 参数提高上限。';
+
+/**
+ * 前置校验（不解压）：解析 zip 中央目录各条目「声明的解压后体积」并求和。
+ * 返回 null = 结构无法识别（非 zip / zip64 EOCD 等）——此时跳过前置校验，
+ * 由后置实际体积校验兜底。条目声明 0xFFFFFFFF（zip64 标记值）时该项不可信，
+ * 同样交给后置校验。恶意包可谎报体积，本地信任域口径下前置校验是主闸门、
+ * 后置校验拦「声明撒谎」包的后续处理。
+ */
+function declaredUncompressedTotal(data: Uint8Array): number | null {
+  const minEocd = 22;
+  if (data.length < minEocd) return null;
+  // EOCD 从尾部向前扫（注释最长 65535 字节）
+  let eocd = -1;
+  const scanFrom = Math.max(0, data.length - minEocd - 65535);
+  for (let i = data.length - minEocd; i >= scanFrom; i--) {
+    if (data[i] === 0x50 && data[i + 1] === 0x4b && data[i + 2] === 0x05 && data[i + 3] === 0x06) {
+      eocd = i;
+      break;
+    }
+  }
+  if (eocd < 0) return null;
+  const dv = new DataView(data.buffer, data.byteOffset, data.byteLength);
+  const totalEntries = dv.getUint16(eocd + 10, true);
+  const cdOffset = dv.getUint32(eocd + 16, true);
+  let pos = cdOffset;
+  let total = 0;
+  for (let i = 0; i < totalEntries; i++) {
+    if (pos + 46 > data.length || dv.getUint32(pos, true) !== 0x02014b50) return null;
+    const uncompressed = dv.getUint32(pos + 24, true);
+    if (uncompressed !== 0xffffffff) total += uncompressed;
+    pos += 46 + dv.getUint16(pos + 28, true) + dv.getUint16(pos + 30, true) + dv.getUint16(pos + 32, true);
+  }
+  return total;
+}
+
 export interface ReplaySessionReport {
   /** 会话 id（header.sessionId；缺头时回退包内路径推导） */
   id: string;
@@ -233,14 +285,36 @@ function replayFromJsonl(text: string, source: string): ReplaySessionReport {
   };
 }
 
+/** importReplay 选项 */
+export interface ImportReplayOptions {
+  /** 累计解压字节上限（缺省 DEFAULT_MAX_REPLAY_BYTES = 256 MiB；测试/特殊场景可覆盖） */
+  maxDecompressedBytes?: number;
+}
+
 /**
  * 回放校验：解包 zip → 每个会话日志逐行解析（坏行计数与告警）→ 投影摘要。
  * 包内没有任何 session.v1.jsonl（空包/非 harness2 导出）→ 抛错（CLI exit 1）。
- * 顺序：根会话在前，子会话按路径排序。
+ * 解压体积上限（OPEN.md P2-5 消化）：累计解压字节超过 maxDecompressedBytes
+ * （缺省 256 MiB）→ ReplayTooLargeError（消息含上限值与建议）。
+ * 前置校验读中央目录声明体积（不解压即拒绝）；后置校验核实际解压体积
+ * （声明撒谎的包在解包后、进解析前拦截）。顺序：根会话在前，子会话按路径排序。
  */
-export function importReplay(zipPath: string): ReplayReport {
+export function importReplay(zipPath: string, opts: ImportReplayOptions = {}): ReplayReport {
+  const limit = opts.maxDecompressedBytes ?? DEFAULT_MAX_REPLAY_BYTES;
   const data = readFileSync(zipPath);
+  const declared = declaredUncompressedTotal(data);
+  if (declared !== null && declared > limit) {
+    throw new ReplayTooLargeError(
+      `回放包解压体积超限：${zipPath} 声明解压后约 ${formatMiB(declared)}，超过上限 ${formatMiB(limit)}。${REPLAY_LIMIT_HINT}`,
+    );
+  }
   const files = unzipSync(new Uint8Array(data));
+  const actual = Object.values(files).reduce((sum, b) => sum + b.length, 0);
+  if (actual > limit) {
+    throw new ReplayTooLargeError(
+      `回放包解压体积超限：${zipPath} 实际解压 ${formatMiB(actual)}，超过上限 ${formatMiB(limit)}（包声明的条目体积不可信）。${REPLAY_LIMIT_HINT}`,
+    );
+  }
   const logEntries = Object.keys(files)
     .filter(
       (k) =>
