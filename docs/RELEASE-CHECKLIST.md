@@ -44,10 +44,10 @@
 
 | # | 动作 | 说明 | 状态 |
 |---|------|------|------|
-| R1 | 授权 push（分支合并 + 推送远程） | 远程已建 `Userluckytian/harness2`；push 需明确授权 | ⬜ 待授权 |
+| R1 | push 推送远程（备份） | ✅ **已授权并持续执行**——push 备份自阶段 1 起获用户授权（origin 的 master 与 feat/phase-1~11 分支均在远程），分支合并后推送同属备份惯例。**发布执行者无需为此请示，也勿据此跳过下方真正的待授权项（R2-R4）** | ✅ 已授权（备份持续执行） |
 | R2 | npm 包名占用检查 | `npm view harness2` / `npm view @harness2/core` | ⬜ 待执行 |
 | R3 | 配置 Actions secret `NPM_TOKEN` | 缺失时 publish 步骤条件跳过（不会误发）；配置后发布失败即红 | ⬜ 待配置 |
-| R4 | 推 tag `v1.0.0` | 触发 `release.yml`（npm publish + 三平台产物附加 GitHub Release）；可合并发布（跳过 0.1/0.3/0.6 独立 tag，release note 说明里程碑对应关系） | ⬜ 待授权 |
+| R4 | 推 tag `v1.0.0` | 触发 `release.yml`（npm publish + 三平台产物附加 GitHub Release）；可合并发布（跳过 0.1/0.3/0.6 独立 tag，release note 说明里程碑对应关系）——**这才是待人类授权的发布动作** | ⬜ 待授权 |
 | R5 | 开启 GitHub Pages | 仓库 Settings → Pages → Source 选 **GitHub Actions**；随后 `pages` job 首次部署生效（渲染级验证随之进行） | ⬜ 待开启 |
 | R6 | Release 页核对 | 产物清单（win nsis / mac dmg arm64+x64 / linux AppImage，全 unsigned）与 release note | ⬜ 随 R4 |
 
