@@ -34,7 +34,7 @@
 | 7 | Provider 抽象 | OpenAI-compatible 起步 + DeepSeek/Anthropic；`{channelId, model}` 按场景配置（主模型/小模型/子代理模型）；key 分离存储 | Tokeny schema + ZCode catalog | ✅（协议层 stub 测试通过；真实端点待用户 key 实机验证，见 OPEN.md） |
 | 8 | 配置体系 | 全局 + 项目级两层；`$VAR` 展开；错误不回显源码行 | grok config loader | ✅ |
 | 9 | 审批与权限 | 工具分级审批（allow/ask/deny） | dsh approval + hermes guardrails | ✅（三 mode + per-tool 规则，配置化） |
-| 10 | CLI 端（能用） | 多会话管理、流式渲染、`/undo` `/redo`（opencode 语义：投影截断 + 文件快照恢复）、会话搜索 | opencode TUI + grok rewind | ⬜ |
+| 10 | CLI 端（能用） | 多会话管理、流式渲染、`/undo` `/redo`（opencode 语义：投影截断 + 文件快照恢复）、会话搜索 | opencode TUI + grok rewind | ✅（阶段 4：chat REPL + 会话管理器 + 独立文件快照；bash 副作用不进快照已如实声明） |
 
 ## P1 桌面与体验
 
@@ -48,7 +48,7 @@
 | 16 | 内嵌浏览器 | WebContentsView + 空闲销毁 + 并发上限 + dispose 事件进轨迹 | Tokeny Playwright 形态 | ⬜ |
 | 17 | 上下文压缩 | 阈值百分比触发、aux 模型摘要、近端原文保留、role 交替不变量 | hermes compression | ⬜ |
 | 18 | 定时任务 | tick + 文件锁 + at-most-once；任务即工具（模型自己调 scheduler_create）；结果通知事件 | hermes cron + grok scheduler | ⬜ |
-| 19 | undo 增强 | grok 三模式（对话/文件/全部）+ 冲突检测 + dry-run 预览 | grok rewind | ⬜ |
+| 19 | undo 增强 | grok 三模式（对话/文件/全部）+ 冲突检测 + dry-run 预览 | grok rewind | ✅（阶段 4：undo/redo = 对话投影截断 + 文件快照联动恢复，冲突检测与 dry-run 预览齐备；三模式合一为单一 undo/redo 流，独立分模式留作后续增强） |
 
 ## P2 扩展与生态
 

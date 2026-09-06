@@ -1,6 +1,6 @@
 # HANDOFF — 交接入口（新维护者/AI 从这里开始）
 
-> 更新：2026-09-06（阶段 3 完成） · 本文件是唯一交接入口，保持与实际状态同步。
+> 更新：2026-09-06（阶段 4 完成，M1 v0.1 就绪待发布） · 本文件是唯一交接入口，保持与实际状态同步。
 
 ## 1. 项目一句话
 
@@ -11,13 +11,12 @@
 | 项 | 状态 |
 |----|------|
 | 默认分支 | `master`（注意：不是 main） |
-| 开发分支 | `feat/phase-3-providers-config`（阶段 3 全部工作在此；阶段 2 在 `feat/phase-2-agent-loop-tools`，阶段 1 在 `feat/phase-1-session-core`） |
-| 阶段 1 | ✅ 已完成并验收（事件溯源会话内核 + 轨迹，33 测试） |
-| 阶段 2 | ✅ 已完成并验收（Agent loop + 工具系统 + MockProvider + CI 骨架，109 测试） |
-| 阶段 3 | ✅ 实现代理自验通过（真实 Provider + 配置体系 + 审批配置化 + `config check`；182 测试，含独立审查修复 P1×2+P2×7 回归）；独立验收 `/accept-phase` 待做。**真实端点（DeepSeek/智谱/Anthropic）未实机验证**——待用户在 `~/.harness2/auth.json` 配 key 后按 OPEN.md 清单手工执行 |
-| 阶段 4 | ⬜ 未开始（CLI chat / 流式渲染，见 MASTER-PLAN） |
-| 未关闭事项 | 读 `docs/issue-log/OPEN.md`（保持为零上下文第一读） |
-| 测试 | `pnpm test`（含 build）—— core 170 passed + 1 skipped（`H2_GEN_LOOP_DEMO` 门控的 fixture 生成器，非用例失败）+ cli 12 passed = 182 passed + 1 skipped（2026-09-06，阶段 3 独立审查修复后） |
+| 开发分支 | `feat/phase-4-cli-m1`（阶段 4 全部工作在此；此前阶段各在其分支） |
+| 阶段 1–3 | ✅ 已完成并验收（会话内核 33 测试 → loop+工具+mock+CI 109 测试 → Provider+配置+审批 182 测试） |
+| 阶段 4 | ✅ 实现代理自验通过（chat REPL + 文件快照 + undo/redo + 会话管理器 + M1 发布物料；248 测试）；独立验收 `/accept-phase` 待做 |
+| **M1 v0.1** | 🔶 代码/物料就绪（包名 `harness2` + `@harness2/core`、CHANGELOG、README、release workflow）；**发布动作未执行**——待人类授权：远程仓库 + push、npm 包名占用检查、`NPM_TOKEN` secret、推 tag `v0.1.0`（见 OPEN.md） |
+| 未关闭事项 | 读 `docs/issue-log/OPEN.md`（保持为零上下文第一读；含真实模型 chat 手工验收清单、pause_turn 评估结论） |
+| 测试 | `pnpm test`（含 build）—— core 232 passed + 1 skipped（`H2_GEN_LOOP_DEMO` 门控的 fixture 生成器，非用例失败）+ cli 16 passed = **248 passed + 1 skipped**（2026-09-06，阶段 4 自验） |
 | 远程 | 无（未配置 origin；push 需人类授权） |
 
 ## 3. 文档地图（按阅读顺序）
@@ -57,15 +56,19 @@
 - `pnpm install` → `pnpm test`（= build + test）→ `pnpm -r typecheck`
 - 试轨迹：`node packages/cli/dist/index.js traj packages/core/fixtures/demo-session`（阶段 1 手写样例）；`node packages/cli/dist/index.js traj packages/core/fixtures/loop-demo`（阶段 2 agent loop 实跑生成的会话）
 - 查配置：`node packages/cli/dist/index.js config check`（`--root`/`--home` 可重定向路径；key 来源只显示 auth.json / env:XXX / **missing**，不显示明文）
-- 注意：`pnpm --filter @harness2/cli test` 在干净检出需先 build（根脚本已串 build）
+- **chat 冒烟（阶段 4）**：`node packages/cli/dist/index.js chat --provider mock --root <临时目录>`——演示 write+read 两轮工具 → `/undo --dry-run` → `/undo`（创建的文件被删）→ `/redo`（内容回放）→ `/sessions` → `/exit`
+- 注意：cli 包名已改为 `harness2`（npm 发布名），根工作区更名为 `harness2-monorepo`（避免重名）；`pnpm --filter harness2` 指向 packages/cli
+- 注意：`pnpm --filter harness2 test` 在干净检出需先 build（根脚本已串 build）
 - 跑一次 loop 演示：任意 node 脚本 `runTurn(dir, { provider, tools, cwd, userText })`；provider 可用 `createProvider(config, role)`（真实协议，需 stub/真实端点）或 `new MockProvider(script)`（见 `packages/core/test/loop.test.ts`、`packages/core/test/providers.test.ts` 的 E2E 用例）
 
 ## 7. 已知坑
 
 - Windows 下 tsc/commit 有 CRLF warning，无害
 - 会话日志写入依赖「换行即提交」语义（未以 \n 结尾的尾行视为未提交丢弃），改 writer 前先读其测试
-- **真实 API 未实机验证**（阶段 3）：provider 协议全部经 127.0.0.1 stub 测试，DeepSeek/智谱/Anthropic 真实端点行为（含 reasoning 字段、usage 帧、流式细节的厂商差异）待用户配置 key 后按 `docs/issue-log/OPEN.md` 清单手工验证
+- **redo 的投影复活依赖 reason 前缀 `redo` 的标记链语义**（按 `rewindToSeq+1` 精确中立化被重做的 undo 标记）：手工构造 rewind 标记时不要用 `redo` 前缀，除非明确想触发复活（见 reader.ts computeProjection 注释与测试）
+- **bash 副作用不进文件快照**（write/edit 才有 before/after）：对外已如实声明（README、chat /help），改快照范围时同步这两处
+- **真实 API 未实机验证**（阶段 3 起）：provider 协议全部经 127.0.0.1 stub 测试，DeepSeek/智谱/Anthropic 真实端点行为（含 reasoning 字段、usage 帧、流式细节的厂商差异）与 M1 chat 全流程待用户配置 key 后按 `docs/issue-log/OPEN.md` 清单手工验证
 - 密钥只在 `~/.harness2/auth.json`（不入 git，.gitignore 已含 `auth.json`）与环境变量；config/日志/错误消息里出现疑似密钥一律经 `redactSecrets` 脱敏——新增错误路径时记得过这个闸门
 - 外部脚手架（.opencode/、ai-framework 文档）由项目负责人维护，更新时注意与 `workflow-delegation.md` 的角色约定保持一致
-- CI（.github/workflows/ci.yml）本地只做过 YAML 语法校验，Actions 真实运行待远程仓库与 push 授权（见 `docs/issue-log/OPEN.md`）
+- CI（ci.yml）与 release.yml 本地只做过 YAML 语法校验，Actions 真实运行待远程仓库与 push 授权（见 `docs/issue-log/OPEN.md`）
 - grep 工具优先 spawn ripgrep，CI 镜像若未装 rg 会自动回退纯 JS 扫描（行为一致但大目录更慢）

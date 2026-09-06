@@ -1,7 +1,7 @@
 # harness2 架构说明
 
 > 跨端 AI agent harness（CLI / 桌面 / IM 网关多形态）
-> 状态：随阶段推进持续更新（当前：阶段 3 —— 真实 Provider + 配置体系 + 审批配置化）
+> 状态：随阶段推进持续更新（当前：阶段 4 —— CLI 完整体验 → M1 v0.1：chat REPL + 文件快照 + undo/redo + 会话管理）
 > 决策依据：`docs/ROADMAP.md` D1–D6 · `docs/research/2026-09-06-reference-analysis.md`
 
 ## 技术栈（2026-09-06 确认）
@@ -122,11 +122,58 @@ packages/
   阶段 3 增量：`assistant/message` 增加可选 `reasoning`（思考文本汇总，v1 加性字段，
   旧日志兼容）。
 - 投影语义：`rewind/marker` 之前的活动事件构成当前会话投影；被 rewind 的"影子事件"保留在日志中可导出，但不进当前上下文。
+  阶段 4 增量（redo 链，向后兼容）：`reason` 以 `redo` 开头的标记按「undo/redo 约定」精确中立化
+  `seq = rewindToSeq + 1` 处的被重做 undo 标记（恢复其遮蔽的事件）；n 级 undo/redo 链每次 redo 只复活一层；
+  非 redo 标记语义不变（只遮蔽、不复活），旧日志行为完全一致（见 `reader.computeProjection` 与 reader 测试）。
 - 密钥红线：API key 等凭证不落事件日志、不进 git。
+
+## 文件快照与 undo/redo（阶段 4 交付）
+
+- **独立文件快照**（决策 D6，`session/snapshots.ts`）：辅助文件 `rewind_points.jsonl` 位于会话目录内，
+  一行一条 `{v, seq, file, before, after}`（file 恒为绝对路径；null = 文件不存在）；绝不回改 session.v1.jsonl。
+- 写入协议由 agent loop 驱动（执行器 `ExecutionEnv` 的 `onBeforeExecute`/`onAfterExecute` 钩子）：
+  write/edit 执行前 capture（键 = tool/call 事件 seq）、成功后 commitAfter 落盘整条；
+  失败/取消不记 after（未完成的修改没有恢复点）；捕获失败该调用直接失败（undo 完整性优先）。
+  bash/read 等工具不参与（**bash 副作用不进快照**，已在 chat /help 与 README 如实声明）。
+- 恢复语义：`restore(toSeq)`（undo）对 `seq > toSeq` 的条目**按文件取最早一条**恢复 before（创建→删除），
+  冲突基准 = 该文件在被撤操作中最新 after；`restoreAfter(fromSeq)`（redo）取最新一条恢复 after，
+  冲突基准 = 最早 before。当前内容 ≠ 基准 → `externallyModified`（dryRun 列出；实际恢复报告后仍执行）。
+  单文件恢复失败转 `item.error` 不中断整体；崩溃残行按「换行即提交」策略容错。
+- **undo/redo 内核**（`session/undo.ts`）：全部是 append-only 日志上的投影操作 + 快照恢复联动，无内存旁路。
+  - `undoLastTurn`：最近一条**活动** user/message 的 seq U → 目标 U-1；追加 `rewind/marker{rewindToSeq:U-1, reason:'undo'}`
+    + `snapshots.restore(U-1)`；无活动 user 或目标越界（撤到 seq 0）→ 明确错误。
+  - `redoLastUndo`：回放 undo 栈（undo 入栈；redo 按其 `rewindToSeq+1` 弹出它重做的 undo）→ 取栈顶 M，
+    目标 = M.seq-1；追加 `rewind/marker{rewindToSeq:M.seq-1, reason:'redo'}` + `snapshots.restoreAfter(M.rewindToSeq)`。
+  - `dryRun` 只预览（消息数/文件清单/冲突标记），不追加 marker、不写文件。
+  - 与 writer 侧 `rewindToSeq ∈ 1..lastSeq` 校验天然兼容；目标恒在界内。
+
+## 会话管理器（阶段 4 交付，`session/manager.ts`）
+
+- 全局集中布局：`~/.harness2/sessions/<encoded-cwd>/<sessionId>/session.v1.jsonl`（grok 式按 cwd 归组）。
+  cwd 编码（`encodeCwd`，纯字符串逐字符映射、跨平台一致）：字母/数字/`.`/`_`/`-` 保留；盘符冒号丢弃；
+  `\` 与 `/` → `--`；其余不安全字符 → `-`（如 `D:\a\b` → `D--a--b`）；>120 字符截断 + sha1 前 8 位。
+  编码不保证双射，cwd 真值以 header.cwd 为准。
+- `create`（自动创建 `~/.harness2` 链；id = UTC 时间戳 + 随机后缀，全库查重）、`list(cwd?)`
+  （mtime 倒序；首条活动用户消息摘要 ≤60 字、活动消息数、lastSeq）、`search(cwd?, text)`
+  （活动消息子串命中、大小写不敏感、≤3 条摘要片段——SQLite/FTS 明确不做）、`resume(id, {cwd?})`
+  （打开 writer，崩溃残行恢复语义沿用）。
+
+## chat REPL（阶段 4 交付，packages/cli）
+
+- `harness2 chat [--session <id>] [--provider mock] [--root <dir>] [--home <dir>]`：无 --session 时
+  恢复 cwd 最近会话或新建；提示符 `> `。`--provider mock` 用内置演示脚本（两轮工具调用：write+read），
+  不加载配置、不触发审批，零 key 可用。
+- 流式渲染（`render.ts`）：text-delta 直写 stdout 不换行拼流；工具调用/结果单行（`> tool (args摘要)` /
+  `< ok|FAILED [callId]`）；turn 结束摘要行；reasoning 不渲染。核心 loop 增加最小观察缝
+  `TurnOptions.onStream`（text-delta/tool-call/tool-result 三类事件，纯渲染用，不参与上下文组装）。
+- 命令集（`commands.ts`）：`/new` `/sessions [关键字]` `/resume <id>` `/undo [n] [--dry-run]` `/redo`
+  `/help` `/exit`（或 Ctrl+C 两次 / 空行 Ctrl+D）；Ctrl+C 在 turn 进行中 = 取消当前 turn（AbortController）。
+- 审批交互：config.approval 判定 ask 时 REPL 内联提问 `允许执行 <tool>? [y]本次 [a]本会话总是 [n]拒绝`；
+  "总是"仅存进程内会话级缓存（不落盘）。渲染与输入交错策略：turn 期间不写提示符、渲染器独占输出。
 
 ## 撤回/分叉路线（决策定案）
 
-- P0/P1：`/undo` `/redo`（opencode 语义：投影截断 + 文件快照恢复）→ P1：分叉（dsh 语义：header 血缘 parentSession）→ P1 增强：grok 三模式 rewind。
+- ✅ P0/P1（阶段 4 交付）：`/undo` `/redo`（opencode 语义：投影截断 + 文件快照恢复，含冲突检测与 dry-run）→ P1：分叉（dsh 语义：header 血缘 parentSession）→ P1 增强：grok 三模式 rewind（对话/文件/全部独立撤回）。
 
 ## 插件机制（决策 D4，后期公开）
 
