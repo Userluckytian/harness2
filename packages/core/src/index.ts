@@ -18,6 +18,7 @@ export * from './tools/types.js';
 export * from './tools/registry.js';
 export * from './tools/executor.js';
 export * from './tools/predefined/index.js';
+export * from './tools/predefined/browser.js';
 export * from './approval/policy.js';
 export * from './memory/store.js';
 export * from './memory/tool.js';

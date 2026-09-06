@@ -52,12 +52,25 @@ export interface MemoryConfig {
 export const MEMORY_MODES: readonly MemoryMode[] = ['off', 'ask', 'auto'];
 export const DEFAULT_MEMORY_CONFIG: MemoryConfig = { mode: 'off', nudgeInterval: 10 };
 
+/**
+ * 浏览器工具配置（阶段 7）：enabled=false 不注册浏览器工具；
+ * idleDestroyMs/maxConcurrent 传入 BrowserPool（资源红线默认：空闲 5min 销毁、并发 2）。
+ */
+export interface BrowserConfig {
+  enabled: boolean;
+  idleDestroyMs: number;
+  maxConcurrent: number;
+}
+
+export const DEFAULT_BROWSER_CONFIG: BrowserConfig = { enabled: true, idleDestroyMs: 300_000, maxConcurrent: 2 };
+
 /** 合并+校验后的配置（唯一合法形态） */
 export interface HarnessConfig {
   providers: Record<string, ProviderConfig>;
   roles: Record<string, RoleConfig>;
   approval: ApprovalConfig;
   memory: MemoryConfig;
+  browser: BrowserConfig;
 }
 
 /** 配置错误（工厂/CLI 对其做一行友好输出；消息不携带密钥） */
@@ -88,7 +101,7 @@ function isPlainObject(v: unknown): v is Dict {
 }
 
 /** schema 内已知的顶层字段（其余忽略并告警） */
-const KNOWN_TOP_KEYS = new Set(['providers', 'roles', 'approval', 'memory']);
+const KNOWN_TOP_KEYS = new Set(['providers', 'roles', 'approval', 'memory', 'browser']);
 
 function collectUnknownKeys(obj: Dict, known: ReadonlySet<string>, where: string, warnings: string[]): void {
   for (const k of Object.keys(obj)) {
@@ -101,6 +114,7 @@ const MODEL_KNOWN_KEYS = new Set(['contextWindow', 'maxOutputTokens']);
 const ROLE_KNOWN_KEYS = new Set(['channel', 'model']);
 const APPROVAL_KNOWN_KEYS = new Set(['mode', 'tools']);
 const MEMORY_KNOWN_KEYS = new Set(['mode', 'nudgeInterval']);
+const BROWSER_KNOWN_KEYS = new Set(['enabled', 'idleDestroyMs', 'maxConcurrent']);
 
 /**
  * 校验合并后的原始 JSON（展开 ${VAR} 之后的形态），产出 HarnessConfig。
@@ -276,6 +290,41 @@ export function parseConfig(raw: unknown): ConfigParseResult {
     }
   }
 
+  // —— browser（缺省 = enabled + 默认资源红线；enabled=false 才完全关闭）——
+  const browser: BrowserConfig = { ...DEFAULT_BROWSER_CONFIG };
+  const rawBrowser = raw['browser'];
+  if (rawBrowser !== undefined) {
+    if (!isPlainObject(rawBrowser)) {
+      errors.push('config.browser 必须是对象');
+    } else {
+      collectUnknownKeys(rawBrowser, BROWSER_KNOWN_KEYS, 'browser', warnings);
+      const enabled = rawBrowser['enabled'];
+      if (enabled !== undefined) {
+        if (typeof enabled !== 'boolean') {
+          errors.push('browser.enabled 必须是布尔值');
+        } else {
+          browser.enabled = enabled;
+        }
+      }
+      const idleDestroyMs = rawBrowser['idleDestroyMs'];
+      if (idleDestroyMs !== undefined) {
+        if (typeof idleDestroyMs !== 'number' || !Number.isInteger(idleDestroyMs) || idleDestroyMs < 1000) {
+          errors.push('browser.idleDestroyMs 必须是 >= 1000 的整数（毫秒）');
+        } else {
+          browser.idleDestroyMs = idleDestroyMs;
+        }
+      }
+      const maxConcurrent = rawBrowser['maxConcurrent'];
+      if (maxConcurrent !== undefined) {
+        if (typeof maxConcurrent !== 'number' || !Number.isInteger(maxConcurrent) || maxConcurrent < 1 || maxConcurrent > 8) {
+          errors.push('browser.maxConcurrent 必须是 1..8 的整数');
+        } else {
+          browser.maxConcurrent = maxConcurrent;
+        }
+      }
+    }
+  }
+
   // —— 交叉引用校验（roles 引用存在的 channel/model）——
   for (const [role, rc] of Object.entries(roles)) {
     const provider = providers[rc.channel];
@@ -296,5 +345,5 @@ export function parseConfig(raw: unknown): ConfigParseResult {
   const safeErrors = errors.map(redactSecrets);
   const safeWarnings = warnings.map(redactSecrets);
   if (safeErrors.length > 0) return { config: null, errors: safeErrors, warnings: safeWarnings };
-  return { config: { providers, roles, approval, memory }, errors: safeErrors, warnings: safeWarnings };
+  return { config: { providers, roles, approval, memory, browser }, errors: safeErrors, warnings: safeWarnings };
 }

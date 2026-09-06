@@ -5,11 +5,13 @@
 import { createInterface, type Interface } from 'node:readline';
 import {
   createApprovalPolicy,
+  createBrowserTools,
   createMemoryTool,
   createProvider,
   defaultConfigPaths,
   defaultMemoriesRoot,
   defaultPendingRoot,
+  getSharedBrowserPool,
   loadConfig,
   MemoryStore,
   MockProvider,
@@ -118,17 +120,25 @@ export async function runChat(options: ChatOptions = {}): Promise<void> {
     try {
       const paths = defaultConfigPaths(root, options.home);
       provider = createProvider(loaded.config, 'main', { authPath: paths.globalAuth });
-      // 压缩装配（阶段 7）：contextWindow = roles.main 容量声明；摘要 = roles.small（缺失回落主）
-      let smallProvider: ChatProvider | undefined;
-      try {
-        smallProvider = createProvider(loaded.config, 'small', { authPath: paths.globalAuth });
-      } catch {
-        smallProvider = undefined;
-      }
-      compaction = resolveCompactionOptions(loaded.config, (role) =>
-        role === 'small' ? smallProvider : provider,
-      );
-    } catch (e) {
+    // 压缩装配（阶段 7）：contextWindow = roles.main 容量声明；摘要 = roles.small（缺失回落主）
+    let smallProvider: ChatProvider | undefined;
+    try {
+      smallProvider = createProvider(loaded.config, 'small', { authPath: paths.globalAuth });
+    } catch {
+      smallProvider = undefined;
+    }
+    compaction = resolveCompactionOptions(loaded.config, (role) =>
+      role === 'small' ? smallProvider : provider,
+    );
+    // 浏览器装配（阶段 7）：enabled 时注册 browser_* 工具（CLI 单会话，池键 = 'cli'）
+    if (loaded.config.browser.enabled) {
+      const pool = getSharedBrowserPool({
+        idleDestroyMs: loaded.config.browser.idleDestroyMs,
+        maxConcurrent: loaded.config.browser.maxConcurrent,
+      });
+      for (const def of createBrowserTools('cli', pool)) tools.register(def);
+    }
+  } catch (e) {
       renderer.line(`error: ${(e as Error).message}`);
       process.exitCode = 1;
       return;

@@ -17,6 +17,7 @@ import { redactSecrets } from '../config/redact.js';
 import { createProvider } from '../provider/factory.js';
 import { resolveCompactionOptions } from '../agent/compaction.js';
 import type { CompactionOptions } from '../agent/types.js';
+import { getSharedBrowserPool } from '../tools/predefined/browser.js';
 import { registerBuiltinTools } from '../tools/predefined/index.js';
 import { ToolRegistry } from '../tools/registry.js';
 import { createApprovalPolicy } from '../approval/policy.js';
@@ -129,6 +130,8 @@ export interface StartServeOptions {
   memory?: SessionHubMemory;
   /** 注入上下文压缩装配（阶段 7；mock/测试用）。缺省：配置加载成功时按 roles.main 容量 + roles.small 派生 */
   compaction?: CompactionOptions;
+  /** 注入浏览器装配（阶段 7；mock/测试用）。缺省：配置加载成功且 browser.enabled 时用共享池派生 */
+  browser?: { pool: ReturnType<typeof getSharedBrowserPool> };
   /** hub 观察钩子透传（WS 事件面 / 测试用） */
   hooks?: SessionHubHooks;
 }
@@ -165,6 +168,7 @@ export async function startServe(options: StartServeOptions = {}): Promise<Serve
   let decide = options.decide;
   let memory: SessionHubMemory | undefined = options.memory;
   let compaction: CompactionOptions | undefined = options.compaction;
+  let browser: { pool: ReturnType<typeof getSharedBrowserPool> } | undefined = options.browser;
   if (provider === undefined) {
     const loaded = loadConfig({ root, ...(home !== undefined ? { home } : {}) });
     if (loaded.config === null) {
@@ -204,6 +208,15 @@ export async function startServe(options: StartServeOptions = {}): Promise<Serve
         role === 'small' ? smallProvider : provider,
       );
     }
+    // 浏览器装配（阶段 7）：config.browser.enabled 时用进程级共享池（资源红线参数来自配置）
+    if (browser === undefined && loaded.config.browser.enabled) {
+      browser = {
+        pool: getSharedBrowserPool({
+          idleDestroyMs: loaded.config.browser.idleDestroyMs,
+          maxConcurrent: loaded.config.browser.maxConcurrent,
+        }),
+      };
+    }
   }
 
   const tools = new ToolRegistry();
@@ -216,6 +229,7 @@ export async function startServe(options: StartServeOptions = {}): Promise<Serve
     ...(decide !== undefined ? { decide } : {}),
     ...(memory !== undefined ? { memory } : {}),
     ...(compaction !== undefined ? { compaction } : {}),
+    ...(browser !== undefined ? { browser } : {}),
     ...(options.approvalTimeoutMs !== undefined ? { approvalTimeoutMs: options.approvalTimeoutMs } : {}),
     ...(options.hooks !== undefined ? { hooks: options.hooks } : {}),
   });

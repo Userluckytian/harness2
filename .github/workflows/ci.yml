@@ -33,6 +33,10 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      # 浏览器工具测试用（惰性依赖：chromium 二进制不随 npm 安装，测试对缺失自动 skip）
+      - name: Install chromium (browser tools tests)
+        run: pnpm exec playwright install chromium
+
       - name: Typecheck
         run: pnpm -r typecheck
 

@@ -24,6 +24,7 @@ import type { PendingMemoryStore } from '../memory/pending.js';
 import type { MemoryStore } from '../memory/store.js';
 import type { ChatProvider, ToolCallRequest } from '../provider/types.js';
 import { redactSecrets } from '../config/redact.js';
+import { createBrowserTools, type BrowserPool } from '../tools/predefined/browser.js';
 import { computeProjection, loadSession, type LoadedEvent } from '../session/reader.js';
 import { SnapshotStore } from '../session/snapshots.js';
 import { SessionManager } from '../session/manager.js';
@@ -108,6 +109,8 @@ export interface SessionHubOptions {
   memory?: SessionHubMemory;
   /** 上下文压缩装配（阶段 7；缺省 = 不压缩）。由启动器按 roles.main 容量 + roles.small 摘要派生 */
   compaction?: CompactionOptions;
+  /** 浏览器装配（阶段 7；config.browser.enabled 时注入）——按会话绑定池键注册 browser_* 工具 */
+  browser?: { pool: BrowserPool };
   hooks?: SessionHubHooks;
 }
 
@@ -383,18 +386,24 @@ export class SessionHub {
   }
 
   /**
-   * turn 工具注册表：无记忆装配时直接复用共享注册表；有则按会话换装 memory 工具
-   * （auto = 直写 store；ask = 暂存 pending，来源会话归因到当前会话）。
+   * turn 工具注册表：无记忆/浏览器装配时直接复用共享注册表；有则按会话换装——
+   * memory 工具按模式绑定 store/pending，browser_* 工具按会话 id 绑定池键。
    */
   private buildTurnTools(sessionId: string): ToolRegistry {
     const memory = this.options.memory;
-    if (memory === undefined) return this.options.tools;
+    const browser = this.options.browser;
+    if (memory === undefined && browser === undefined) return this.options.tools;
     const registry = new ToolRegistry();
     for (const def of this.options.tools.list()) {
       if (def.name === 'memory') continue; // 换装按会话绑定的变体
       registry.register(def);
     }
-    registry.register(createMemoryToolForMode(memory.store, memory.mode, memory.pending, sessionId));
+    if (memory !== undefined) {
+      registry.register(createMemoryToolForMode(memory.store, memory.mode, memory.pending, sessionId));
+    }
+    if (browser !== undefined) {
+      for (const def of createBrowserTools(sessionId, browser.pool)) registry.register(def);
+    }
     return registry;
   }
 

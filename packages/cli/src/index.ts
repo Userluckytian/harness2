@@ -1,7 +1,7 @@
 #!/usr/bin/env node
-// harness2 CLI 入口。traj（阶段 1）、config check（阶段 3）、chat REPL（阶段 4）、serve（阶段 5）。
+// harness2 CLI 入口。traj（阶段 1）、config check（阶段 3）、chat REPL（阶段 4）、serve（阶段 5）、browser/cron（阶段 7）。
 import { Command } from 'commander';
-import { computeProjection, loadSession, renderTrajectory } from '@harness2/core';
+import { computeProjection, installBrowserRuntime, loadSession, renderTrajectory } from '@harness2/core';
 import {
   buildConfigReport,
   defaultConfigPaths,
@@ -340,5 +340,23 @@ program
 const SERVE_MOCK_SCRIPT: MockScript = Array.from({ length: 1000 }, () => ({
   textChunks: ['mock 回复：', '已收到你的消息。'],
 }));
+
+/** browser 命令（阶段 7）：chromium 安装（浏览器工具的浏览器二进制，npm 包本身随依赖安装）。 */
+const browserCmd = new Command('browser').description('浏览器工具管理');
+
+browserCmd
+  .command('install')
+  .description('安装 chromium（Playwright 浏览器二进制，约 130MB；浏览器工具首次使用前必须安装）')
+  .action(async () => {
+    console.log('正在安装 chromium（Playwright）…');
+    const code = await installBrowserRuntime();
+    if (code !== 0) {
+      console.error(`error: chromium 安装失败（exit ${code}）`);
+      process.exit(code);
+    }
+    console.log('chromium 安装完成：浏览器工具（browser_*）已可用。');
+  });
+
+program.addCommand(browserCmd);
 
 program.parseAsync(process.argv);
