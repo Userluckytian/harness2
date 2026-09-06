@@ -84,13 +84,20 @@ describe('runDoctor 分节检查', () => {
     }
   });
 
-  it('config 解析失败 → FAIL，exit 1（明细过 redactSecrets）', async () => {
+  it('config 解析失败 → FAIL，exit 1（明细过 redactSecrets）；mcp 检查显示「未知」而非「未配置」', async () => {
     const home = tmpHome();
     writeGlobalConfig(home, '{ invalid json !!!');
     const r = await runDoctor({ home });
     const config = r.checks.find((c) => c.id === 'config')!;
     expect(config.status).toBe('fail');
     expect(r.exitCode).toBe(1);
+    // 审查 P2-6：配置文件存在但解析失败 → mcp「未知」（未知 ≠ 未配置）
+    const mcp = r.checks.find((c) => c.id === 'mcp')!;
+    expect(mcp.status).toBe('warn');
+    expect(mcp.summary).toContain('未知（config 解析失败');
+    // 对照：全新环境（无配置文件）mcp 照常显示「未配置」
+    const fresh = await runDoctor({ home: tmpHome() });
+    expect(fresh.checks.find((c) => c.id === 'mcp')!.summary).toContain('未配置 MCP 服务器');
   });
 
   it('会话库坏行 → sessions WARN，明细含坏行位置；干净库 OK', async () => {

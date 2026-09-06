@@ -8,6 +8,9 @@ const SECRET_FIELD_PATTERN =
 /** OpenAI 形态密钥：sk- 前缀的长 token */
 const SK_KEY_PATTERN = /\bsk-[A-Za-z0-9_-]{6,}/g;
 
+/** URL userinfo 凭据：scheme://user:pass@host（如 MCP server url 携带 token 的形态） */
+const URL_USERINFO_PATTERN = /\b([a-z][a-z0-9+.-]*:\/\/)[^\s/@:]+:[^\s/@]+@/gi;
+
 /** Bearer / Basic 认证头的值 */
 const BEARER_PATTERN = /\b(bearer|basic)\s+[A-Za-z0-9._~+/=-]{6,}/gi;
 
@@ -23,6 +26,7 @@ export const REDACTED = '[REDACTED]';
  */
 export function redactSecrets(text: string): string {
   let out = text;
+  out = out.replace(URL_USERINFO_PATTERN, (_m, scheme: string) => `${scheme}${REDACTED}@`);
   out = out.replace(SK_KEY_PATTERN, REDACTED);
   out = out.replace(BEARER_PATTERN, (_m, scheme: string) => `${scheme} ${REDACTED}`);
   out = out.replace(X_API_KEY_PATTERN, (_m, header: string) => `${header}: ${REDACTED}`);

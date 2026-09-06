@@ -57,7 +57,12 @@ function checkNode(): DoctorCheck {
  * config + auth（脱敏）：返回检查结果与已加载 config（MCP 检查复用）。
  * 全新环境（两个配置文件都不存在）= WARN；存在但解析失败 = FAIL；key 全缺 = WARN。
  */
-function checkConfig(opts: DoctorOptions): { check: DoctorCheck; config: HarnessConfig | null } {
+function checkConfig(opts: DoctorOptions): {
+  check: DoctorCheck;
+  config: HarnessConfig | null;
+  /** 配置文件存在但解析/校验失败（mcp 检查据此显示「未知」而非「未配置」，审查 P2-6） */
+  configUnavailable: boolean;
+} {
   const root = opts.root ?? process.cwd();
   const paths = defaultConfigPaths(root, opts.home);
   const loaded = loadConfig({
@@ -80,7 +85,9 @@ function checkConfig(opts: DoctorOptions): { check: DoctorCheck; config: Harness
           details,
         }
       : { id: 'config', status: 'fail', summary: 'config 加载失败', details };
-    return { check, config: null };
+    // config 不可用区分两态（审查 P2-6）：配置文件存在但解析/校验失败 = mcp 检查「未知」
+    // （未知 ≠ 未配置）；全新环境无文件 = 真没有配置 → mcp 照常显示「未配置」
+    return { check, config: null, configUnavailable: !fresh };
   }
   // key 来源（buildConfigReport 唯一构造处，只有来源标签）
   const auth = readAuthFile(paths.globalAuth);
@@ -101,7 +108,7 @@ function checkConfig(opts: DoctorOptions): { check: DoctorCheck; config: Harness
       details,
     };
   }
-  return { check, config: loaded.config };
+  return { check, config: loaded.config, configUnavailable: false };
 }
 
 /** ~/.harness2 目录可写（探针文件写入 + 删除；探针即真实目录验证） */
@@ -128,8 +135,12 @@ function describeMcpServer(cfg: McpServerConfig): string {
   return `[url] ${cfg.url}`;
 }
 
-/** MCP servers：缺省仅列出配置；probe 实连（单 server 独立超时，down = WARN 不 FAIL） */
-async function checkMcp(config: HarnessConfig | null, opts: DoctorOptions): Promise<DoctorCheck> {
+/** MCP servers：缺省仅列出配置；probe 实连（单 server 独立超时，down = WARN 不 FAIL）。
+ *  configUnavailable（配置文件存在但解析失败）= 显示「未知」而非「未配置」——未知 ≠ 未配置（审查 P2-6）。 */
+async function checkMcp(config: HarnessConfig | null, unavailable: boolean, opts: DoctorOptions): Promise<DoctorCheck> {
+  if (unavailable) {
+    return { id: 'mcp', status: 'warn', summary: '未知（config 解析失败，未探测 MCP servers——修复 config 后重跑）' };
+  }
   const servers = config?.mcpServers ?? {};
   const names = Object.keys(servers);
   if (names.length === 0) {
@@ -280,15 +291,17 @@ export async function runDoctor(opts: DoctorOptions = {}): Promise<DoctorReport>
 
   run('node', checkNode);
   let config: HarnessConfig | null = null;
+  let configUnavailable = false;
   try {
     const r = checkConfig(opts);
     checks.push(r.check);
     config = r.config;
+    configUnavailable = r.configUnavailable;
   } catch (e) {
     checks.push(crashedCheck('config', e));
   }
   run('home', () => checkHomeWritable(opts));
-  await runAsync('mcp', () => checkMcp(config, opts));
+  await runAsync('mcp', () => checkMcp(config, configUnavailable, opts));
   run('sessions', () => checkSessions(opts));
   run('skills', () => checkSkills(opts));
 

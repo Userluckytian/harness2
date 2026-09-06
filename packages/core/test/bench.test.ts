@@ -4,9 +4,10 @@
 //   - runSessionBench 小样本端到端（bench 管线自检；大样本跑 scripts/bench-session.mjs）。
 // 大样本（10 万事件）不在每测运行——计划风险口径：测试用小样本 + 采样校验。
 import { afterEach, describe, expect, it } from 'vitest';
-import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { zipSync } from 'fflate';
 import {
   BENCH_SEARCH_WORD,
   formatBenchTable,
@@ -102,7 +103,46 @@ describe('importReplay 解压体积上限（P2-5 消化）', () => {
     // 默认上限常量口径（256 MiB）
     expect(DEFAULT_MAX_REPLAY_BYTES).toBe(256 * 1024 * 1024);
   });
+
+  it('撒谎包（声明 ≤ 上限、实际超限）：前置校验被骗过后由后置实际体积校验拒绝，报错含上限值', () => {
+    const root = tmpDir();
+    // 单条目 stored（method 0）zip：声明体积与实际体积原本一致，fflate 按声明正常解出
+    const body = new TextEncoder().encode('x'.repeat(3 * 1024 * 1024));
+    const zipped = zipSync({ 'session.v1.jsonl': [body, { level: 0 }] });
+    // 篡改中央目录条目的 uncompressed size 字段（+24，LE）为 16 字节——前置校验被骗过
+    const tampered = patchCentralUncompressedSize(zipped, 16);
+    const path = join(root, 'liar.zip');
+    writeFileSync(path, tampered);
+    let caught: unknown;
+    try {
+      importReplay(path, { maxDecompressedBytes: 1024 * 1024 });
+    } catch (e) {
+      caught = e;
+    }
+    expect(caught).toBeInstanceOf(ReplayTooLargeError);
+    const msg = (caught as Error).message;
+    expect(msg).toContain('不可信'); // 后置分支的「声明体积不可信」措辞
+    expect(msg).toContain('1.0 MiB'); // 上限值出现
+  });
 });
+
+/** 把单条目 zip 中央目录首条目的 uncompressed size 改为 fakeSize（撒谎包构造，审查 P2-1） */
+function patchCentralUncompressedSize(zip: Uint8Array, fakeSize: number): Uint8Array {
+  const out = new Uint8Array(zip);
+  const dv = new DataView(out.buffer);
+  let eocd = -1;
+  for (let i = out.length - 22; i >= 0; i--) {
+    if (dv.getUint32(i, true) === 0x06054b50) {
+      eocd = i;
+      break;
+    }
+  }
+  if (eocd < 0) throw new Error('EOCD not found');
+  const cdOffset = dv.getUint32(eocd + 16, true);
+  if (dv.getUint32(cdOffset, true) !== 0x02014b50) throw new Error('central directory entry not found');
+  dv.setUint32(cdOffset + 24, fakeSize, true);
+  return out;
+}
 
 describe('runSessionBench 基线管线（小样本自检）', () => {
   it('六项操作全部产出测量记录（大样本跑 scripts/bench-session.mjs，不在每测运行）', () => {

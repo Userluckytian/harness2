@@ -394,6 +394,15 @@ describe('redactSecrets / redactedSummary / redactObject', () => {
     expect(out).toContain('"model":"glm-5.3"');
   });
 
+  it('URL userinfo 凭据：scheme://user:pass@host 的凭据段替换（MCP url 出口脱敏，审查 P2-2）', () => {
+    const out = redactSecrets('连接 https://alice:s3cret-token@example.com/mcp?x=1 失败');
+    expect(out).toBe('连接 https://[REDACTED]@example.com/mcp?x=1 失败');
+    // host:port（无 userinfo）不误伤
+    expect(redactSecrets('https://example.com:8080/path')).toBe('https://example.com:8080/path');
+    // 既有字段名模式在查询串中仍生效
+    expect(redactSecrets('https://example.com/api?token=abc123xyz')).not.toContain('abc123xyz');
+  });
+
   it('redactedSummary 先脱敏再截断（≤200 字符）', () => {
     const long = `error detail: ${'x'.repeat(300)} token=secret-value-987654321 tail`;
     const s = redactedSummary(long);
