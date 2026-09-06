@@ -54,8 +54,10 @@ function parseNamesClause(clause: string): Array<{ orig: string; exported: strin
     .filter(Boolean)
     .map((item) => {
       const asMatch = item.match(/^(.+?)\s+as\s+(.+)$/);
-      return asMatch
-        ? { orig: asMatch[1].trim(), exported: asMatch[2].trim() }
+      const orig = asMatch?.[1]?.trim();
+      const exported = asMatch?.[2]?.trim();
+      return orig && exported
+        ? { orig, exported }
         : { orig: item, exported: item };
     });
 }
@@ -65,26 +67,36 @@ function parseDtsModule(content: string): ParsedModule {
   for (const line of content.split('\n')) {
     for (const [re, kind] of DECLARATION_PATTERNS) {
       const m = line.match(re);
-      if (m) {
-        if (!(m[1] in declared)) declared[m[1]] = kind;
+      const name = m?.[1];
+      if (m && name) {
+        if (!(name in declared)) declared[name] = kind;
         break;
       }
     }
   }
   const starFrom: string[] = [];
-  for (const m of content.matchAll(STAR_RE)) starFrom.push(m[1]);
+  for (const m of content.matchAll(STAR_RE)) {
+    const spec = m[1];
+    if (spec) starFrom.push(spec);
+  }
 
   const namedFrom: ParsedModule['namedFrom'] = [];
   const localNamed: ParsedModule['localNamed'] = [];
   for (const m of content.matchAll(NAMED_BLOCK_RE)) {
-    const names = parseNamesClause(m[1]);
-    if (m[2]) for (const n of names) namedFrom.push({ ...n, from: m[2] });
+    const clause = m[1];
+    if (!clause) continue;
+    const names = parseNamesClause(clause);
+    const from = m[2];
+    if (from) for (const n of names) namedFrom.push({ ...n, from });
     else for (const n of names) localNamed.push(n);
   }
 
   const imports: ParsedModule['imports'] = {};
   for (const m of content.matchAll(IMPORT_NAMED_RE)) {
-    for (const n of parseNamesClause(m[1])) imports[n.exported] = { orig: n.orig, from: m[2] };
+    const clause = m[1];
+    const from = m[2];
+    if (!clause || !from) continue;
+    for (const n of parseNamesClause(clause)) imports[n.exported] = { orig: n.orig, from };
   }
   return { declared, starFrom, namedFrom, localNamed, imports };
 }
@@ -138,8 +150,12 @@ export function extractApiSurface(distDir: string): Record<string, Kind> {
   };
 
   const surface = exportsOf(join(distDir, 'index.d.ts'));
-  const sortedNames = Object.keys(surface).sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
-  return Object.fromEntries(sortedNames.map((n) => [n, surface[n]]));
+  const out: Record<string, Kind> = {};
+  for (const name of Object.keys(surface).sort((a, b) => (a < b ? -1 : a > b ? 1 : 0))) {
+    const kind = surface[name];
+    if (kind) out[name] = kind;
+  }
+  return out;
 }
 
 export interface SurfaceDiff {
@@ -156,7 +172,12 @@ export function compareSurface(
   const removed = Object.keys(baseline).filter((n) => !(n in current));
   const kindChanged = Object.keys(current)
     .filter((n) => n in baseline && current[n] !== baseline[n])
-    .map((name) => ({ name, from: baseline[name], to: current[name] }));
+    .map((name) => {
+      const from = baseline[name];
+      const to = current[name];
+      return from !== undefined && to !== undefined ? { name, from, to } : null;
+    })
+    .filter((v): v is { name: string; from: Kind; to: Kind } => v !== null);
   return { added, removed, kindChanged };
 }
 
@@ -190,9 +211,12 @@ function readBaseline(): Record<string, Kind> {
 }
 
 function sortKeysDeep(value: Record<string, Kind>): Record<string, Kind> {
-  return Object.fromEntries(
-    Object.keys(value).sort((a, b) => (a < b ? -1 : a > b ? 1 : 0)).map((k) => [k, value[k]]),
-  );
+  const out: Record<string, Kind> = {};
+  for (const k of Object.keys(value).sort((a, b) => (a < b ? -1 : a > b ? 1 : 0))) {
+    const kind = value[k];
+    if (kind) out[k] = kind;
+  }
+  return out;
 }
 
 describe('公开导出面快照（@harness2/core 主入口）', () => {
