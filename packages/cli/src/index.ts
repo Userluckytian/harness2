@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// harness2 CLI 入口。阶段 1 提供 traj 命令；阶段 3 提供 config check；后续扩展 chat 等。
+// harness2 CLI 入口。traj（阶段 1）、config check（阶段 3）、chat REPL（阶段 4）。
 import { Command } from 'commander';
 import { computeProjection, loadSession, renderTrajectory } from '@harness2/core';
 import {
@@ -11,6 +11,7 @@ import {
   type AuthFile,
   type HarnessConfig,
 } from '@harness2/core';
+import { runChat } from './chat.js';
 
 const program = new Command();
 
@@ -137,5 +138,26 @@ function printConfigReport(
   }
   console.log(lines.join('\n'));
 }
+
+program
+  .command('chat')
+  .description('交互式 chat REPL（流式渲染 / 会话管理 / /undo /redo / 审批交互）')
+  .option('--session <id>', '恢复指定会话（缺省：恢复 cwd 最新会话或新建）')
+  .option('--provider <name>', "provider：'mock' = 内置演示脚本（不加载配置）；缺省按配置 roles.main", 'config')
+  .option('--root <dir>', '工作目录：工具执行 cwd + 会话分组（默认当前目录）')
+  .option('--home <dir>', '覆盖用户数据根（配置 + 会话存储；测试/多环境用）')
+  .action(async (opts: { session?: string; provider: string; root?: string; home?: string }) => {
+    try {
+      await runChat({
+        ...(opts.session !== undefined ? { session: opts.session } : {}),
+        ...(opts.provider !== 'config' ? { provider: opts.provider } : {}),
+        ...(opts.root !== undefined ? { root: opts.root } : {}),
+        ...(opts.home !== undefined ? { home: opts.home } : {}),
+      });
+    } catch (e) {
+      console.error(`error: ${(e as Error).message}`);
+      process.exitCode = 1;
+    }
+  });
 
 program.parseAsync(process.argv);

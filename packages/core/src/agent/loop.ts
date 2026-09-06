@@ -181,10 +181,15 @@ async function runTurnWithWriter(writer: SessionWriter, options: TurnOptions): P
     };
     try {
       for await (const chunk of provider.streamChat(request, { signal })) {
-        if (chunk.type === 'text-delta') text += chunk.text;
-        else if (chunk.type === 'reasoning-delta') reasoning = (reasoning ?? '') + chunk.text;
-        else if (chunk.type === 'tool-call') calls.push(chunk.call);
-        else if (chunk.type === 'usage') usage = chunk.usage;
+        if (chunk.type === 'text-delta') {
+          text += chunk.text;
+          options.onStream?.({ type: 'text-delta', text: chunk.text });
+        } else if (chunk.type === 'reasoning-delta') {
+          reasoning = (reasoning ?? '') + chunk.text; // reasoning 只进日志展示，不回调渲染
+        } else if (chunk.type === 'tool-call') {
+          calls.push(chunk.call);
+          options.onStream?.({ type: 'tool-call', call: chunk.call });
+        } else if (chunk.type === 'usage') usage = chunk.usage;
         else if (chunk.type === 'done') providerStop = chunk.stopReason;
       }
     } catch (e) {
@@ -295,11 +300,13 @@ async function runTurnWithWriter(writer: SessionWriter, options: TurnOptions): P
     for (const p of pending) {
       if (p.parseError !== undefined) {
         writer.append('tool/result', { callId: p.callId, tool: p.tool, ok: false, error: p.parseError, turnId });
+        options.onStream?.({ type: 'tool-result', callId: p.callId, ok: false, error: p.parseError });
         continue;
       }
       const r = byCallId.get(p.callId);
       if (!r) {
         writer.append('tool/result', { callId: p.callId, tool: p.tool, ok: false, error: 'executor lost result', turnId });
+        options.onStream?.({ type: 'tool-result', callId: p.callId, ok: false, error: 'executor lost result' });
         continue;
       }
       writer.append('tool/result', {
@@ -310,6 +317,12 @@ async function runTurnWithWriter(writer: SessionWriter, options: TurnOptions): P
         ...(r.error !== undefined ? { error: r.error } : {}),
         durationMs: r.durationMs,
         turnId,
+      });
+      options.onStream?.({
+        type: 'tool-result',
+        callId: r.callId,
+        ok: r.ok,
+        ...(r.error !== undefined ? { error: r.error } : {}),
       });
     }
     toolCallsTotal += calls.length;

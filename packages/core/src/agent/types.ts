@@ -1,5 +1,5 @@
 // Agent loop 类型：一次用户 turn 的执行选项与结果。
-import type { ChatProvider } from '../provider/types.js';
+import type { ChatProvider, ToolCallRequest } from '../provider/types.js';
 import type { SnapshotStore } from '../session/snapshots.js';
 import type { ToolRegistry } from '../tools/registry.js';
 import type { ApprovalHandler } from '../tools/types.js';
@@ -21,8 +21,7 @@ export type TurnStopReason =
   | 'paused';
 
 export interface TurnOptions {
-  provider: ChatProvider;
-  tools: ToolRegistry;
+  provider: ChatProvider;  tools: ToolRegistry;
   /** 审批策略缝；缺省 allow-all（工具直接执行） */
   approval?: ApprovalHandler;
   /** 单 turn 最大 step 数（模型调用次数），默认 25 */
@@ -42,7 +41,19 @@ export interface TurnOptions {
    * 不产生快照（bash 副作用不进快照，见 chat 帮助与 README 的如实声明）。
    */
   snapshots?: SnapshotStore;
+  /**
+   * 可选：turn 内流式事件回调（CLI 渲染用，纯观察、不参与模型上下文组装）。
+   * text-delta 随 provider 块逐片回调；tool-call 随 provider 块回调；
+   * tool-result 在对应 tool/result 事件落盘后回调（含解析失败/拒绝/取消的失败结果）。
+   */
+  onStream?: (event: TurnStreamEvent) => void;
 }
+
+/** turn 内流式观察事件（onStream 回调 payload；纯渲染缝，非模型上下文来源） */
+export type TurnStreamEvent =
+  | { type: 'text-delta'; text: string }
+  | { type: 'tool-call'; call: ToolCallRequest }
+  | { type: 'tool-result'; callId: string; ok: boolean; error?: string };
 
 export interface TurnResult {
   stopReason: TurnStopReason;

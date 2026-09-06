@@ -124,7 +124,8 @@ export function redoLastUndo(writer: SessionWriter, opts: UndoRedoOptions = {}):
   if (target <= top.rewindToSeq) {
     throw new UndoRedoError(`无法重做：目标 seq ${target} 未越过 undo 目标 ${top.rewindToSeq}`);
   }
-  return applyMarker(writer, 'redo', target, opts);
+  // redo 的快照恢复范围 = 被 redo 的 undo 标记的 rewindToSeq（该 undo 所撤的全部操作）
+  return applyMarker(writer, 'redo', target, opts, top.rewindToSeq);
 }
 
 function applyMarker(
@@ -132,6 +133,7 @@ function applyMarker(
   kind: 'undo' | 'redo',
   target: number,
   opts: UndoRedoOptions,
+  restoreFromSeq?: number,
 ): UndoRedoResult {
   const dryRun = opts.dryRun ?? false;
   const markerSeq = writer.lastSeq + 1;
@@ -141,11 +143,13 @@ function applyMarker(
   const afterMsgs = messageSeqs(projectionWithMarker(writer.dir, markerSeq, target, kind));
   const messages = kind === 'undo' ? beforeMsgs.size - countIntersection(beforeMsgs, afterMsgs) : afterMsgs.size - countIntersection(beforeMsgs, afterMsgs);
 
-  // 文件恢复计划（dryRun 由 SnapshotStore 保证无副作用）
+  // 文件恢复计划（dryRun 由 SnapshotStore 保证无副作用）：
+  //   undo 恢复 seq > 目标 的条目；redo 恢复 seq > 被重做 undo 的 rewindToSeq 的条目
+  const restoreFrom = kind === 'undo' ? target : (restoreFromSeq ?? target);
   const files = opts.snapshots
     ? (kind === 'undo'
-        ? opts.snapshots.restore(target, { dryRun })
-        : opts.snapshots.restoreAfter(target, { dryRun })
+        ? opts.snapshots.restore(restoreFrom, { dryRun })
+        : opts.snapshots.restoreAfter(restoreFrom, { dryRun })
       ).items
     : [];
 
