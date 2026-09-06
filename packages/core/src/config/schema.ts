@@ -78,6 +78,30 @@ export interface PluginsConfig {
 
 export const DEFAULT_PLUGINS_CONFIG: PluginsConfig = { enabled: true, allow: [] };
 
+/**
+ * MCP 服务器配置（阶段 8）：stdio（command 子进程）或 url（Streamable HTTP）二选一。
+ * 服务器名将拼进 namespaced 工具名 `mcp__<server>__<tool>`，必须满足 ^[a-z0-9_]+$
+ * （与工具名约束一致，schema 层提前拦截）。
+ */
+export interface McpStdioServerConfig {
+  command: string;
+  args?: string[];
+  env?: Record<string, string>;
+  cwd?: string;
+}
+
+export interface McpUrlServerConfig {
+  url: string;
+  headers?: Record<string, string>;
+}
+
+export type McpServerConfig =
+  | (McpStdioServerConfig & { command: string })
+  | (McpUrlServerConfig & { url: string });
+
+/** 缺省 = 无 MCP 服务器（零 MCP 行为） */
+export type McpServersConfig = Record<string, McpServerConfig>;
+
 /** 合并+校验后的配置（唯一合法形态） */
 export interface HarnessConfig {
   providers: Record<string, ProviderConfig>;
@@ -86,6 +110,7 @@ export interface HarnessConfig {
   memory: MemoryConfig;
   browser: BrowserConfig;
   plugins: PluginsConfig;
+  mcpServers: McpServersConfig;
 }
 
 /** 配置错误（工厂/CLI 对其做一行友好输出；消息不携带密钥） */
@@ -115,8 +140,14 @@ function isPlainObject(v: unknown): v is Dict {
   return typeof v === 'object' && v !== null && !Array.isArray(v);
 }
 
+function isStringRecord(v: unknown): v is Record<string, string> {
+  return (
+    isPlainObject(v) && Object.values(v).every((x) => typeof x === 'string')
+  );
+}
+
 /** schema 内已知的顶层字段（其余忽略并告警） */
-const KNOWN_TOP_KEYS = new Set(['providers', 'roles', 'approval', 'memory', 'browser', 'plugins']);
+const KNOWN_TOP_KEYS = new Set(['providers', 'roles', 'approval', 'memory', 'browser', 'plugins', 'mcpServers']);
 
 function collectUnknownKeys(obj: Dict, known: ReadonlySet<string>, where: string, warnings: string[]): void {
   for (const k of Object.keys(obj)) {
@@ -131,6 +162,7 @@ const APPROVAL_KNOWN_KEYS = new Set(['mode', 'tools']);
 const MEMORY_KNOWN_KEYS = new Set(['mode', 'nudgeInterval']);
 const BROWSER_KNOWN_KEYS = new Set(['enabled', 'idleDestroyMs', 'maxConcurrent']);
 const PLUGINS_KNOWN_KEYS = new Set(['enabled', 'allow']);
+const MCP_SERVER_KNOWN_KEYS = new Set(['command', 'args', 'env', 'cwd', 'url', 'headers']);
 
 /**
  * 校验合并后的原始 JSON（展开 ${VAR} 之后的形态），产出 HarnessConfig。
@@ -368,6 +400,87 @@ export function parseConfig(raw: unknown): ConfigParseResult {
     }
   }
 
+  // —— mcpServers（阶段 8；缺省 = {}：零 MCP 行为）——
+  // server 名必须满足 ^[a-z0-9_]+$（拼进 mcp__<server>__<tool> 工具名）；stdio（command）
+  // 与 url 二选一，双填/都不填均报错。
+  const mcpServers: McpServersConfig = {};
+  const rawMcp = raw['mcpServers'];
+  if (rawMcp !== undefined) {
+    if (!isPlainObject(rawMcp)) {
+      errors.push('config.mcpServers 必须是对象');
+    } else {
+      const MCP_NAME_PATTERN = /^[a-z0-9_]+$/;
+      for (const [serverName, v] of Object.entries(rawMcp)) {
+        if (!MCP_NAME_PATTERN.test(serverName)) {
+          errors.push(`mcpServers.${serverName} 服务器名必须匹配 ^[a-z0-9_]+$（拼进工具名 mcp__<server>__<tool>）`);
+          continue;
+        }
+        if (!isPlainObject(v)) {
+          errors.push(`mcpServers.${serverName} 必须是对象`);
+          continue;
+        }
+        collectUnknownKeys(v, MCP_SERVER_KNOWN_KEYS, `mcpServers.${serverName}`, warnings);
+        const command = v['command'];
+        const url = v['url'];
+        if (command !== undefined && url !== undefined) {
+          errors.push(`mcpServers.${serverName} 的 command 与 url 只能二选一`);
+          continue;
+        }
+        if (typeof command === 'string') {
+          if (command.trim() === '') {
+            errors.push(`mcpServers.${serverName}.command 必须是非空字符串`);
+            continue;
+          }
+          const cfg: McpStdioServerConfig = { command };
+          const args = v['args'];
+          if (args !== undefined) {
+            if (!Array.isArray(args) || !args.every((a) => typeof a === 'string')) {
+              errors.push(`mcpServers.${serverName}.args 必须是字符串数组`);
+              continue;
+            }
+            cfg.args = [...args];
+          }
+          const env = v['env'];
+          if (env !== undefined) {
+            if (!isStringRecord(env)) {
+              errors.push(`mcpServers.${serverName}.env 必须是字符串到字符串的映射`);
+              continue;
+            }
+            cfg.env = { ...env };
+          }
+          const cwd = v['cwd'];
+          if (cwd !== undefined) {
+            if (typeof cwd !== 'string' || cwd.trim() === '') {
+              errors.push(`mcpServers.${serverName}.cwd 必须是非空字符串`);
+              continue;
+            }
+            cfg.cwd = cwd;
+          }
+          mcpServers[serverName] = cfg;
+          continue;
+        }
+        if (typeof url === 'string') {
+          if (!/^https?:\/\//.test(url)) {
+            errors.push(`mcpServers.${serverName}.url 必须是 http(s) 地址，实际为 ${JSON.stringify(url)}`);
+            continue;
+          }
+          const cfg: McpUrlServerConfig = { url };
+          const headers = v['headers'];
+          if (headers !== undefined) {
+            if (!isStringRecord(headers)) {
+              errors.push(`mcpServers.${serverName}.headers 必须是字符串到字符串的映射`);
+              continue;
+            }
+            cfg.headers = { ...headers };
+          }
+          mcpServers[serverName] = cfg;
+          continue;
+        }
+        errors.push(`mcpServers.${serverName} 必须提供 command（stdio）或 url（Streamable HTTP）`);
+      }
+    }
+  }
+
   // —— 交叉引用校验（roles 引用存在的 channel/model）——
   for (const [role, rc] of Object.entries(roles)) {
     const provider = providers[rc.channel];
@@ -388,5 +501,5 @@ export function parseConfig(raw: unknown): ConfigParseResult {
   const safeErrors = errors.map(redactSecrets);
   const safeWarnings = warnings.map(redactSecrets);
   if (safeErrors.length > 0) return { config: null, errors: safeErrors, warnings: safeWarnings };
-  return { config: { providers, roles, approval, memory, browser, plugins }, errors: safeErrors, warnings: safeWarnings };
+  return { config: { providers, roles, approval, memory, browser, plugins, mcpServers }, errors: safeErrors, warnings: safeWarnings };
 }
