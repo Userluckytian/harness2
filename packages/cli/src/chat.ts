@@ -20,6 +20,7 @@ import {
   McpManager,
   MemoryStore,
   MockProvider,
+  noteCrashSessionId,
   PendingMemoryStore,
   PluginBus,
   projectSkillsRoot,
@@ -293,6 +294,7 @@ export async function runChat(options: ChatOptions = {}): Promise<void> {
       renderer.line(`会话: ${current.id}（新建）`);
     }
   }
+  noteCrashSessionId(current.id); // 崩溃报告携带当前会话 id（阶段 11 Task 4）
 
   // —— subagent 工具装配（阶段 8）：按当前会话 id 绑定血缘；会话切换时重绑 ——
   // mock 模式用注入的子脚本 provider；配置模式取 roles.subagent（缺失回退主 provider）。
@@ -389,6 +391,7 @@ export async function runChat(options: ChatOptions = {}): Promise<void> {
 
   async function finish(): Promise<void> {
     closeCurrent();
+    noteCrashSessionId(undefined);
     for (const dispose of subagentDisposers) dispose();
     subagentDisposers.length = 0;
     for (const dispose of extensionDisposers) {
@@ -429,6 +432,7 @@ export async function runChat(options: ChatOptions = {}): Promise<void> {
         renderer.line(`会话: ${current.id}（新建）`);
       }
       bindSubagentTools(current.id); // subagent 血缘随会话切换重绑（阶段 8）
+      noteCrashSessionId(current.id); // 崩溃报告会话上下文随切换更新
       renderer.line(`会话: ${current.id}（${id === null ? '新建' : '已恢复'}）`);
     },
     requestExit() {

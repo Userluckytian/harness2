@@ -21,17 +21,21 @@ import {
   describePermissions,
   exportSession,
   installBrowserRuntime,
+  installCrashReporter,
   importReplay,
   loadConfig,
   loadSession,
   McpManager,
   MemoryStore,
   MockProvider,
+  noteCrashSessionId,
   PendingMemoryStore,
   projectSkillsRoot,
   readAuthFile,
   registerBuiltinTools,
+  renderDoctorReport,
   renderTrajectory,
+  runDoctor,
   scanPluginSources,
   SkillStore,
   startServe,
@@ -48,6 +52,10 @@ import {
 import { runChat, MOCK_DEMO_SCRIPT } from './chat.js';
 // gateway 仅 gateway 命令使用：动态加载，避免拖慢 chat/serve 等所有命令的启动
 import type { PlatformAdapter } from '@harness2/gateway';
+
+// 顶层崩溃报告（阶段 11 Task 4）：uncaughtException → ~/.harness2/crash/<ISO>.log（redact
+// 后）+ 控制台路径与手动反馈指引；无遥测，零网络发送。
+installCrashReporter();
 
 const program = new Command();
 
@@ -204,6 +212,22 @@ function printConfigReport(
   }
   console.log(lines.join('\n'));
 }
+
+program
+  .command('doctor')
+  .description('环境自检：node 版本 / config+auth（脱敏）/ 目录可写 / MCP（--probe 实连）/ 会话库完整性 / skills')
+  .option('--root <dir>', '项目根目录（默认当前目录）')
+  .option('--home <dir>', '覆盖用户数据根（测试/多环境用）')
+  .option('--probe', '实连 MCP 服务器探测（每 server 超时 5s；缺省仅列出配置）', false)
+  .action(async (opts: { root?: string; home?: string; probe?: boolean }) => {
+    const report = await runDoctor({
+      ...(opts.root !== undefined ? { root: opts.root } : {}),
+      ...(opts.home !== undefined ? { home: opts.home } : {}),
+      ...(opts.probe === true ? { probe: true } : {}),
+    });
+    for (const line of renderDoctorReport(report)) console.log(line);
+    process.exitCode = report.exitCode;
+  });
 
 program
   .command('chat')
