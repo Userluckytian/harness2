@@ -23,6 +23,7 @@ import { createMemoryToolForMode, runNudgeReview, type NudgeResult } from '../me
 import type { PendingMemoryStore } from '../memory/pending.js';
 import type { MemoryStore } from '../memory/store.js';
 import type { ChatProvider, ToolCallRequest } from '../provider/types.js';
+import { redactSecrets } from '../config/redact.js';
 import { computeProjection, loadSession, type LoadedEvent } from '../session/reader.js';
 import { SnapshotStore } from '../session/snapshots.js';
 import { SessionManager } from '../session/manager.js';
@@ -110,6 +111,14 @@ export interface SessionHubOptions {
 
 /** undo n>1 提示的层数上限（与 chat /undo 参数口径一致） */
 const UNDO_MAX_N = 100;
+
+/**
+ * sessionId 合法格式（路径穿越防御，复审 P2-1）：id 会拼进会话目录路径，
+ * `../x` 之类的穿越原语必须在 hub 出口处拒绝。manager.generateId（session/manager.ts）
+ * 生成 `UTC 8 位日期-6 位时间-` + randomBytes(3).toString('hex')（6 位小写 hex），
+ * 此处 `{6,}` 对后缀加宽留容忍；任何不匹配格式一律 HubError('invalid')，不触达文件系统。
+ */
+const SESSION_ID_PATTERN = /^\d{8}-\d{6}-[0-9a-f]{6,}$/;
 
 export interface SessionEventsPayload {
   id: string;
@@ -235,6 +244,7 @@ export class SessionHub {
 
   /** 只读定位会话目录（不取锁；与持锁写者并存） */
   locate(id: string, cwd?: string): string {
+    this.assertValidSessionId(id);
     try {
       return this.options.manager.locate(id, cwd !== undefined ? { cwd } : {});
     } catch {
@@ -244,6 +254,7 @@ export class SessionHub {
 
   /** 恢复会话到注册表（幂等：已在册直接返回）；锁被占（如 CLI chat 同时打开）→ HubError('locked') */
   ensureOpen(id: string): { id: string; dir: string } {
+    this.assertValidSessionId(id);
     const entry = this.entryFor(id);
     return { id: entry.id, dir: entry.dir };
   }
@@ -276,6 +287,7 @@ export class SessionHub {
 
   /** 全量事件（含 active 标记）：切换会话时的重放来源；只读、不取锁 */
   events(id: string): SessionEventsPayload {
+    this.assertValidSessionId(id);
     const dir = this.locate(id);
     const session = loadSession(dir);
     computeProjection(session); // 就地标记每个事件的活动性（影子事件 false）
@@ -296,6 +308,7 @@ export class SessionHub {
     if (typeof text !== 'string' || text.trim().length === 0) {
       throw new HubError('invalid', 'text 必须是非空字符串');
     }
+    this.assertValidSessionId(id);
     this.ensureOpen(id);
     const queue = this.pendingTexts.get(id) ?? [];
     queue.push(text);
@@ -346,6 +359,18 @@ export class SessionHub {
       });
       this.emitTurnEnd(id, result);
       this.bumpNudge(id); // turn-end 回调之后计数/触发复盘（异步，不阻塞主对话）
+    } catch (e) {
+      // 复审 P2-3：非预期异常（provider 抛错之外的装配/快照/写盘错误）也要给客户端
+      // turn-end 收口——否则 pump 的防御性静默 catch 会让消息凭空消失。
+      // error 消息过 redactSecrets 再出站（错误路径最后闸门）。
+      this.emitTurnEnd(id, {
+        stopReason: 'error',
+        steps: 0,
+        toolCalls: 0,
+        durationMs: 0,
+        error: redactSecrets((e as Error)?.message ?? String(e)),
+      });
+      throw e; // rethrow-safe：pump 已有防御性兜底，不留未处理拒绝
     } finally {
       this.running.delete(id);
       // 队列里还有同会话消息 → 继续泵（保持 await 顺序，串行语义）
@@ -441,6 +466,7 @@ export class SessionHub {
   // —— undo / redo（直调 Ph4 内核；busy 会话拒绝） ——
 
   undo(id: string, opts: { n?: number; dryRun?: boolean } = {}): { results: UndoRedoResult[]; error?: string } {
+    this.assertValidSessionId(id);
     const n = opts.n ?? 1;
     if (!Number.isInteger(n) || n < 1 || n > UNDO_MAX_N) {
       throw new HubError('invalid', `无效的撤回层数 ${n}（应为 1..${UNDO_MAX_N} 整数）`);
@@ -457,6 +483,7 @@ export class SessionHub {
   }
 
   redo(id: string): { results: UndoRedoResult[]; error?: string } {
+    this.assertValidSessionId(id);
     if (this.isBusy(id)) {
       throw new HubError('busy', 'turn 进行中，无法 redo（先停止当前 turn）');
     }
@@ -485,6 +512,7 @@ export class SessionHub {
   // —— fork（阶段 6：血缘派生，只读原会话，busy 会话也允许——append-only 日志并发读安全） ——
 
   fork(id: string, opts: { atSeq?: number } = {}): ForkResult {
+    this.assertValidSessionId(id);
     try {
       return forkSession(this.options.manager, id, opts.atSeq !== undefined ? { atSeq: opts.atSeq } : {});
     } catch (e) {
@@ -598,8 +626,10 @@ export class SessionHub {
 
   // —— 收尾 ——
 
-  /** 关闭：取消运行中 turn 与复盘 → 拒绝全部待审批 → 等待收尾 → 关闭全部 writer（释放目录锁） */
+  /** 关闭：进入即清排队消息（排队 turn 不再在关闭后继续跑）→ 取消运行中 turn 与复盘
+   *  → 拒绝全部待审批 → 等待收尾 → 关闭全部 writer（释放目录锁） */
   async close(): Promise<void> {
+    this.pendingTexts.clear();
     for (const ac of this.running.values()) ac.abort();
     for (const ac of this.reviewRunning.values()) ac.abort();
     for (const pending of this.approvals.values()) pending.settle(false, 'cancelled');
@@ -614,6 +644,13 @@ export class SessionHub {
   private assertNonEmpty(value: string, name: string): void {
     if (typeof value !== 'string' || value.trim().length === 0) {
       throw new HubError('invalid', `${name} 必须是非空字符串`);
+    }
+  }
+
+  /** sessionId 出口校验（复审 P2-1，路径穿越原语）：非法格式 → HubError('invalid')，不触达文件系统 */
+  private assertValidSessionId(id: string): void {
+    if (typeof id !== 'string' || !SESSION_ID_PATTERN.test(id)) {
+      throw new HubError('invalid', '无效的会话 id（应为 YYYYMMDD-HHMMSS-xxxxxx 格式）');
     }
   }
 }

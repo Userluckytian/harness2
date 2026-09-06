@@ -1,7 +1,10 @@
 // serve 子进程管理（Electron 主进程）：
 //   spawn `harness2 serve --port 0`（ELECTRON_RUN_AS_NODE 复用 Electron 运行时的 node 能力，
 //   打包后无需系统 node）→ 解析 stdout 一行 JSON {"port":N,"pid":M} → 健康检查 /api/config
-//   → ready。意外退出按退避自动重启（上限+退避，见 backoffDelayMs）；
+//   → ready。运行期意外退出与启动期退出（未打印端口行）都按退避自动重启（上限+退避，
+//   见 backoffDelayMs / scheduleRestart）：启动期退出仍向首次 start() 的调用方 reject
+//   （提示由调用方决定），但计入同一条退避链；重启链中的 spawn 失败不再被无声吞掉，
+//   而是调度下一次退避重试，达上限才 offline。
 //   端口锁被既有实例占用（serve 退出码 1）→ 尝试按锁文件采纳既有实例端口。
 // 纯函数（端口行解析/退避/重启决策/锁文件读取）拆出以便单测。
 import { spawn, type ChildProcess } from 'node:child_process';
@@ -56,7 +59,7 @@ export function backoffDelayMs(attempt: number, baseMs = 1000, maxMs = 15000): n
   return Math.min(baseMs * 2 ** Math.max(0, attempt), maxMs);
 }
 
-/** 重启决策：主动 stop 不重启；其余任何退出（含端口锁冲突退出码 1）都按退避重试 */
+/** 重启决策：主动 stop 不重启；其余任何退出（含端口锁冲突退出码 1、启动期退出）都按退避重试 */
 export function shouldRestartChild(intentionalStop: boolean): boolean {
   return !intentionalStop;
 }
@@ -83,6 +86,9 @@ export function isPidAlive(pid: number): boolean {
     return (e as NodeJS.ErrnoException).code === 'EPERM';
   }
 }
+
+/** stdout 累积上限：端口行解析只需头部内容，长驻进程的后续输出不无限增长（保留尾部 8KB） */
+const STDOUT_TAIL_MAX_BYTES = 8 * 1024;
 
 // —— 健康检查 ——
 
@@ -165,9 +171,15 @@ export class ServeManager {
     this.options.onStatus?.(status, detail);
   }
 
-  /** 启动（或采纳）serve 实例；失败抛错 */
+  /** 启动（或采纳）serve 实例；失败抛错（失败会计入退避链自动重试，达上限才 offline） */
   async start(): Promise<{ port: number; adopted: boolean }> {
     this.stopping = false;
+    // 新一轮 start：清除上一轮遗留的重启定时器并把退避计数归零（计数只在 stop()/start() 归零）
+    if (this.restartTimer !== null) {
+      clearTimeout(this.restartTimer);
+      this.restartTimer = null;
+    }
+    this.restartCount = 0;
     this.setStatus('connecting');
     // 端口锁被既有实例持有 → 采纳（避免与 CLI serve 双实例互踢）
     if ((this.options.adoptExisting ?? true) && this.options.home !== undefined) {
@@ -200,6 +212,17 @@ export class ServeManager {
   }
 
   private spawnServe(): Promise<{ port: number; adopted: boolean }> {
+    const attempt = this.doSpawnServe();
+    // 重启链唯一失败出口：一次 spawn 尝试的任何失败（启动期退出 / spawn 错误 / 健康检查超时）
+    // 都计入退避链自动重试（达上限才 offline），不再被 `.catch(() => {})` 无声吞掉。
+    // 首次 start() 的失败仍向上 reject（提示由调用方 main.ts 决定），重试照常进行。
+    // scheduleRestart 自带防重（stopping / 已有挂起重试 / 存活子进程），
+    // 过期尝试的迟到失败（如健康检查超时晚于子进程退出并被重启取代）不会触发额外重启。
+    void attempt.catch((e: Error) => this.scheduleRestart(e.message));
+    return attempt;
+  }
+
+  private doSpawnServe(): Promise<{ port: number; adopted: boolean }> {
     return new Promise((resolve, reject) => {
       const spawnImpl = this.options.spawnImpl ?? spawn;
       const child = spawnImpl(this.options.executablePath ?? process.execPath, this.buildServeArgs(), {
@@ -212,14 +235,16 @@ export class ServeManager {
       let settled = false;
 
       child.stdout?.on('data', (chunk: Buffer) => {
-        this.stdoutBuf += chunk.toString('utf8');
+        if (settled) return; // 端口行已解析：停止累积（防长驻进程 stdout 无限增长）
+        // 端口行打印前的噪声输出过大时只保留尾部 8KB
+        this.stdoutBuf = (this.stdoutBuf + chunk.toString('utf8')).slice(-STDOUT_TAIL_MAX_BYTES);
         const line = extractServePort(this.stdoutBuf);
-        if (!line || settled) return;
+        if (!line) return;
         settled = true;
         this.port = line.port;
         waitForHealth(line.port, this.options.healthTimeoutMs ?? 15000)
           .then(() => {
-            // 注意：这里不重置 restartCount——连续失败计数只在 stop() 后由新一轮 start 归零，
+            // 注意：这里不重置 restartCount——连续失败计数只在 stop()/新一轮 start() 归零，
             // 保证"必崩"服务也会按上限停止（退避封顶 15s），不会无限重启循环。
             this.setStatus('connected', { port: line.port });
             resolve({ port: line.port, adopted: false });
@@ -233,6 +258,7 @@ export class ServeManager {
       child.on('error', (e: Error) => {
         if (settled) return;
         settled = true;
+        this.child = null; // spawn 失败（如 ENOENT）：子进程不可用，允许退避链继续
         this.setStatus('offline', { error: e.message });
         reject(e);
       });
@@ -243,6 +269,8 @@ export class ServeManager {
           settled = true;
           const detail = `serve 启动期退出（code=${code ?? 'null'}, signal=${signal ?? 'null'}）`;
           this.setStatus('offline', { error: detail });
+          // 首次 start() 仍 reject（调用方决定提示）；重试由 spawnServe 的统一失败出口
+          // 调度（与运行期意外退出同一条退避链），不再"启动期退出 = 永远 offline"。
           reject(new Error(detail));
           return;
         }
@@ -252,10 +280,15 @@ export class ServeManager {
   }
 
   private handleUnexpectedExit(code: number | null, signal: string | null): void {
-    if (this.stopping) return;
-    this.adoptedPort = null;
-    this.setStatus('reconnecting', { error: `serve 退出（code=${code ?? 'null'}, signal=${signal ?? 'null'}）` });
+    this.scheduleRestart(`serve 退出（code=${code ?? 'null'}, signal=${signal ?? 'null'}）`);
+  }
+
+  /** 退避重试调度（重启链唯一入口）：主动停止不重启；已有挂起重试/存活子进程时不重复调度 */
+  private scheduleRestart(reason: string): void {
+    if (this.stopping || this.restartTimer !== null || this.child !== null) return;
     if (!shouldRestartChild(this.stopping)) return;
+    this.adoptedPort = null;
+    this.setStatus('reconnecting', { error: reason });
     const attempts = this.options.restartAttempts ?? 5;
     if (this.restartCount >= attempts) {
       this.setStatus('offline', { error: `serve 自动重启已达上限（${attempts} 次）` });
@@ -266,19 +299,19 @@ export class ServeManager {
     this.restartTimer = setTimeout(() => {
       this.restartTimer = null;
       if (this.stopping) return;
-      void this.spawnServe().catch(() => {
-        // spawnServe 失败已在内部发 offline；等待下一次 exit/重试
-      });
+      // 失败出口在 spawnServe 内统一调度下一次退避重试（达上限才 offline）
+      void this.spawnServe();
     }, delay);
   }
 
-  /** 优雅停止：不再重启，杀掉子进程并等待退出 */
+  /** 优雅停止：不再重启，杀掉子进程并等待退出；重启退避计数归零（新一轮 start 从头计） */
   async stop(): Promise<void> {
     this.stopping = true;
     if (this.restartTimer !== null) {
       clearTimeout(this.restartTimer);
       this.restartTimer = null;
     }
+    this.restartCount = 0;
     const child = this.child;
     this.adoptedPort = null;
     if (child === null) {

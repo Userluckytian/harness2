@@ -373,7 +373,7 @@ describe('WS 协议边界', () => {
     client.close();
   });
 
-  it('坏帧 / 未知会话 → error 帧；审批 requestId 未知静默忽略', async () => {
+  it('坏帧 / 未知会话 / 非法 sessionId → error 帧；审批 requestId 未知静默忽略', async () => {
     const handle = await start();
     const client = new WsClient(`ws://127.0.0.1:${handle.port}/ws`);
     await client.open;
@@ -381,15 +381,16 @@ describe('WS 协议边界', () => {
     const err1 = await client.waitFor((f) => f.type === 'error', 'error 帧');
     expect(err1.type === 'error' && err1.error).toContain('JSON');
 
-    client.send({ op: 'user-message', sessionId: 'no-such-session', text: 'hi' });
+    // 合法格式但不存在的 id → not_found（非法格式走"无效的会话 id"，见下方）
+    client.send({ op: 'user-message', sessionId: '20990101-000000-000000', text: 'hi' });
     const err2 = await client.waitFor((f) => f.type === 'error' && f.error.includes('session not found'), 'error 帧 2', 1);
     expect(err2.type === 'error' && err2.error).toContain('session not found');
 
     client.send({ op: 'approval-response', requestId: 'gone', decision: 'allow' });
     client.send({ op: 'subscribe', sessionId: 'no-such-session' });
     const err3 = await client.waitFor(
-      (f) => f.type === 'error' && f.error.includes('session not found'),
-      '订阅未知会话 error',
+      (f) => f.type === 'error' && f.error.includes('无效的会话 id'),
+      '订阅非法 sessionId error',
       client.frames.indexOf(err2) + 1,
     );
     expect(err3.type === 'error').toBe(true);

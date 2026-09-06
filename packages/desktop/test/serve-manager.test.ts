@@ -3,7 +3,8 @@
 //   ServeManager：真实子进程 start（spawn -e 假 serve：打印端口 JSON + 起 HTTP 健康端点）、
 //   stop 优雅退出、意外退出自动重启（退避可调小）、按锁文件采纳既有实例。
 import { afterEach, describe, expect, it } from 'vitest';
-import { spawn } from 'node:child_process';
+import { spawn, type ChildProcess } from 'node:child_process';
+import { EventEmitter } from 'node:events';
 import { createServer, type Server } from 'node:http';
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -58,6 +59,34 @@ function fakeSpawn(): SpawnImpl {
     children.push(child);
     return child;
   }) as unknown as SpawnImpl;
+}
+
+/** 假子进程（无真实进程）：带 stdout 事件发射器与 kill（触发 exit）；用 queueMicrotask 发 exit */
+function fakeChild(): ChildProcess {
+  const child = new EventEmitter() as unknown as ChildProcess;
+  (child as unknown as { stdout: EventEmitter }).stdout = new EventEmitter();
+  (child as unknown as { kill: () => boolean }).kill = () => {
+    child.emit('exit', null, null);
+    return true;
+  };
+  return child;
+}
+
+/** spawnImpl：前 failures 次返回"立即启动期退出"的假子进程，之后走真实假 serve 脚本 */
+function startupExitSpawn(failures: number): { impl: SpawnImpl; calls: () => number } {
+  let count = 0;
+  const impl = ((file: string, _args: string[], opts: Record<string, unknown>) => {
+    count += 1;
+    if (count <= failures) {
+      const child = fakeChild();
+      queueMicrotask(() => child.emit('exit', 1, null)); // 未打印端口行即退出（启动期退出）
+      return child;
+    }
+    const child = spawn(file, ['-e', FAKE_SERVE_SCRIPT], opts as never);
+    children.push(child);
+    return child;
+  }) as unknown as SpawnImpl;
+  return { impl, calls: () => count };
 }
 
 function makeManager(opts: Partial<ConstructorParameters<typeof ServeManager>[0]> = {}): ServeManager {
@@ -181,6 +210,63 @@ describe('ServeManager（真实子进程）', () => {
       delete process.env['FAKE_EXIT_MS'];
     }
   }, 20000);
+
+  it('启动期退出（未打印端口行）→ start() reject 但计入退避链自动重试成功（复审 P1）', async () => {
+    const { impl, calls } = startupExitSpawn(1);
+    const statuses: string[] = [];
+    const mgr = makeManager({
+      spawnImpl: impl,
+      restartAttempts: 3,
+      restartBaseDelayMs: 40,
+      onStatus: (status) => statuses.push(status),
+    });
+    // 首次 start() 仍 reject（提示由调用方决定），但退避链继续重试
+    await expect(mgr.start()).rejects.toThrow('启动期退出');
+    for (let i = 0; i < 200 && mgr.status !== 'connected'; i++) {
+      await new Promise((r) => setTimeout(r, 25));
+    }
+    expect(mgr.status).toBe('connected');
+    expect(calls()).toBeGreaterThanOrEqual(2); // 第二次尝试成功
+    expect(statuses).toEqual(['connecting', 'offline', 'reconnecting', 'connected']);
+    await mgr.stop();
+  }, 15000);
+
+  it('重启计数只在 stop()/新一轮 start() 归零：达上限后新一轮 start 重新获得完整重试预算（复审 P1）', async () => {
+    let calls = 0;
+    const impl = (() => {
+      calls += 1;
+      const child = fakeChild();
+      queueMicrotask(() => child.emit('exit', 1, null)); // 每次尝试都启动期退出
+      return child;
+    }) as unknown as SpawnImpl;
+    const mgr = makeManager({
+      spawnImpl: impl,
+      restartAttempts: 1,
+      restartBaseDelayMs: 20,
+    });
+
+    // 第一轮：start reject → 1 次重试也启动期退出 → 达上限（1 次）offline；共 spawn 2 次
+    await expect(mgr.start()).rejects.toThrow('启动期退出');
+    for (let i = 0; i < 200 && !(mgr.status === 'offline' && calls >= 2); i++) {
+      await new Promise((r) => setTimeout(r, 25));
+    }
+    expect(mgr.status).toBe('offline');
+    expect(calls).toBe(2);
+
+    // stop() → 新一轮 start()：计数归零 → 仍获得 1 次重试（再 spawn 2 次，而非立即达上限的 1 次）
+    await mgr.stop();
+    const before = calls;
+    await expect(mgr.start()).rejects.toThrow('启动期退出');
+    for (let i = 0; i < 200 && calls < before + 2; i++) {
+      await new Promise((r) => setTimeout(r, 25));
+    }
+    expect(calls).toBe(before + 2);
+    for (let i = 0; i < 200 && mgr.status !== 'offline'; i++) {
+      await new Promise((r) => setTimeout(r, 25));
+    }
+    expect(mgr.status).toBe('offline');
+    await mgr.stop();
+  }, 15000);
 
   it('adoptExisting：锁文件指向存活健康实例时直接采纳（不 spawn）', async () => {
     const server = createServer((_req, res) => {

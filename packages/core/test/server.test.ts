@@ -10,6 +10,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
   defaultSessionsRoot,
+  MemoryStore,
   MockProvider,
   SessionManager,
   startServe,
@@ -18,6 +19,7 @@ import {
   type MockScript,
   type ServeHandle,
   type SessionHubHooks,
+  type SessionHubMemory,
 } from '../src/index.js';
 import { acquireServeLock } from '../src/server/http.js';
 
@@ -91,6 +93,7 @@ interface StartOpts {
   home?: string;
   root?: string;
   hooks?: SessionHubHooks;
+  memory?: SessionHubMemory;
 }
 
 async function start(opts: StartOpts = {}): Promise<ServeHandle> {
@@ -102,6 +105,7 @@ async function start(opts: StartOpts = {}): Promise<ServeHandle> {
     ...(opts.decide !== undefined ? { decide: opts.decide } : {}),
     ...(opts.approvalTimeoutMs !== undefined ? { approvalTimeoutMs: opts.approvalTimeoutMs } : {}),
     ...(opts.hooks !== undefined ? { hooks: opts.hooks } : {}),
+    ...(opts.memory !== undefined ? { memory: opts.memory } : {}),
   });
   handles.push(handle);
   return handle;
@@ -216,9 +220,19 @@ describe('sessions API', () => {
     const wrongMethod2 = await api(handle, 'POST', '/api/config');
     expect(wrongMethod2.status).toBe(405);
 
-    const unknownSession = await api(handle, 'GET', '/api/sessions/does-not-exist/events');
+    // 合法格式但不存在的 id → 404（复审 P2-1 后：非法格式走 400，见下方 sessionId 校验测试）
+    const unknownSession = await api(handle, 'GET', '/api/sessions/20990101-000000-000000/events');
     expect(unknownSession.status).toBe(404);
     expect(unknownSession.json.error).toContain('session not found');
+
+    // 复审 P2-1：sessionId 格式校验（路径穿越原语）——`../x` 类 id 400，不触达文件系统
+    const traversal = await api(handle, 'GET', '/api/sessions/%2e%2e%2Fx/events');
+    expect(traversal.status).toBe(400);
+    expect(traversal.json.error).toContain('会话 id');
+    const traversalFork = await api(handle, 'POST', '/api/sessions/%2e%2e%2Fx/fork', {});
+    expect(traversalFork.status).toBe(400);
+    const traversalUndo = await api(handle, 'POST', '/api/sessions/%2e%2e%2Fx/undo', {});
+    expect(traversalUndo.status).toBe(400);
   });
 });
 
@@ -469,5 +483,80 @@ describe('端口锁（~/.harness2/serve.lock）', () => {
     // 恢复后的会话可继续 undo（ensureOpen 路径）
     const undo = await api(second, 'POST', `/api/sessions/${id}/undo`, { dryRun: true });
     expect(undo.status).toBe(200);
+  });
+});
+
+// —— 阶段 5 补独立复审修复回归（P2） ——
+
+describe('复审修复回归（P2）', () => {
+  it('P2-2 close 进入即清排队消息：排队中的 turn 在 close 后不再执行', async () => {
+    const { c, hooks } = captureHooks();
+    const provider = new MockProvider([{ textChunks: ['一', '二'], chunkDelayMs: 300 }]);
+    const handle = await start({ provider, hooks });
+    const root = tmpDir('h2-serve-cwd-');
+    const id = (await api(handle, 'POST', '/api/sessions', { cwd: root })).json.id as string;
+    handle.hub.sendUserMessage(id, '第一轮'); // turn 运行中（300ms/片）
+    handle.hub.sendUserMessage(id, '第二轮'); // 排队
+    await handle.close();
+    handles.splice(handles.indexOf(handle), 1);
+    // 运行中第一轮被取消收口；排队第二轮被 close 清空，不再执行新 turn
+    await waitForTurnEnds(c, 1);
+    expect(c.turnEnds).toHaveLength(1);
+    expect(c.turnEnds[0]!.stopReason).toBe('cancelled');
+    expect(provider.consumed).toBe(1); // 第二条消息从未消耗脚本
+    await sleep(200);
+    expect(c.turnEnds).toHaveLength(1); // 关闭后无新 turn-end
+  });
+
+  it('P2-3 runOne 非预期异常 → 客户端收到 turn-end（stopReason=error，消息脱敏）', async () => {
+    const { c, hooks } = captureHooks();
+    // 注入 read 即抛错的记忆 store：resolveMemorySystem 在 runTurn 内、provider 调用前抛出
+    // （非 provider 异常路径，修复前被 pump 的静默 catch 吞掉、无任何 turn-end）
+    const throwingStore = {
+      read: () => Promise.reject(new Error('记忆存储 IO 故障 sk-plain-secret-999999')),
+    };
+    const handle = await start({
+      provider: new MockProvider([{ textChunks: ['不应到达'] }]),
+      hooks,
+      memory: { store: throwingStore as unknown as MemoryStore, mode: 'auto', nudgeInterval: 100 },
+    });
+    const root = tmpDir('h2-serve-cwd-');
+    const id = (await api(handle, 'POST', '/api/sessions', { cwd: root })).json.id as string;
+    handle.hub.sendUserMessage(id, '触发异常');
+    await waitForTurnEnds(c, 1);
+    expect(c.turnEnds[0]!.stopReason).toBe('error');
+    const err = c.turnEnds[0]!.error ?? '';
+    expect(err).toContain('记忆存储 IO 故障');
+    expect(err).toContain('[REDACTED]'); // redactSecrets 已滤掉 sk- 密钥形态
+    expect(err).not.toContain('sk-plain-secret-999999');
+  });
+
+  it('P2-4a 请求体超限 → 400 请求体过大（服务端停读，响应后销毁连接）', async () => {
+    const handle = await start();
+    const big = await fetch(`http://127.0.0.1:${handle.port}/api/sessions`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ cwd: 'x', pad: 'x'.repeat(1024 * 1024 + 64) }),
+    });
+    expect(big.status).toBe(400);
+    expect(((await big.json()) as { error: string }).error).toContain('请求体过大');
+  });
+
+  it('P2-4b 畸形百分号编码 → 400 输入错误而非 500', async () => {
+    const handle = await start();
+    // 截断的 UTF-8 序列（修复前 decode URIError → 500）
+    const malformed = await api(handle, 'GET', '/api/sessions/%E0%A4%A/events');
+    expect(malformed.status).toBe(400);
+    expect(malformed.json.error).toContain('编码非法');
+  });
+
+  it('P2-4c POST 缺 content-type → 400（JSON 接口不盲读 body）', async () => {
+    const handle = await start();
+    const noCt = await fetch(`http://127.0.0.1:${handle.port}/api/sessions`, {
+      method: 'POST',
+      body: JSON.stringify({ cwd: 'x' }),
+    });
+    expect(noCt.status).toBe(400);
+    expect(((await noCt.json()) as { error: string }).error).toContain('content-type');
   });
 });

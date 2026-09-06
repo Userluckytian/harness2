@@ -119,6 +119,9 @@ async function runSmoke(): Promise<void> {
   let handles: DesktopHandles | null = null;
   let code = 1;
   let finished = false;
+  // 提前声明（finish 闭包引用）：若 40s 超时在 smokeHome 初始化前触发（如 mkdtempSync 抛错），
+  // 闭包读到的是 null 而非 TDZ ReferenceError
+  let smokeHome: string | null = null;
   const finish = (): void => {
     if (finished) return;
     finished = true;
@@ -129,7 +132,7 @@ async function runSmoke(): Promise<void> {
         await handles.serve.stop().catch(() => {});
       }
       try {
-        rmSync(smokeHome, { recursive: true, force: true });
+        if (smokeHome !== null) rmSync(smokeHome, { recursive: true, force: true });
       } catch {
         // temp 清理失败不阻塞退出
       }
@@ -141,10 +144,11 @@ async function runSmoke(): Promise<void> {
     finish();
   }, 40000);
 
-  const smokeHome = mkdtempSync(join(tmpdir(), 'h2-smoke-home-')); // 独立 home：不碰真实 ~/.harness2（锁/会话）
+  const home = mkdtempSync(join(tmpdir(), 'h2-smoke-home-')); // 独立 home：不碰真实 ~/.harness2（锁/会话）
+  smokeHome = home;
   try {
     await app.whenReady();
-    handles = startDesktop({ show: false, provider: 'mock', home: smokeHome });
+    handles = startDesktop({ show: false, provider: 'mock', home });
     handles.win.webContents.on('did-finish-load', () => {
       result.rendererLoaded = true;
     });

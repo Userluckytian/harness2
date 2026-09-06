@@ -273,7 +273,8 @@ describe('hub / HTTP / WS 分叉入口', () => {
     const cut = await api(handle, 'POST', `/api/sessions/${id}/fork`, { atSeq: 999 });
     expect(cut.status).toBe(400);
 
-    const nf = await api(handle, 'POST', '/api/sessions/nope/fork', {});
+    // 合法格式但不存在的 id → 404（复审 P2-1 后：`nope` 等非法格式走 400，见 server.test.ts sessionId 校验测试）
+    const nf = await api(handle, 'POST', '/api/sessions/20990101-000000-000000/fork', {});
     expect(nf.status).toBe(404);
   }, 20000);
 

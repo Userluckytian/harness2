@@ -282,7 +282,7 @@ async function route(hub: SessionHub, env: ServeEnv, req: IncomingMessage, res: 
   }
   // POST /api/sessions {cwd}
   if (pathname === '/api/sessions' && req.method === 'POST') {
-    const body = await readJsonBody(req);
+    const body = await readJsonBody(req, res);
     const cwd = body['cwd'];
     sendJson(res, 200, hub.create(requireNonEmptyString(cwd, 'cwd')));
     return;
@@ -294,20 +294,26 @@ async function route(hub: SessionHub, env: ServeEnv, req: IncomingMessage, res: 
   // /api/sessions/:id/*
   const sessionMatch = /^\/api\/sessions\/([^/]+)(\/events|\/undo|\/redo|\/fork)?$/.exec(pathname);
   if (sessionMatch) {
-    const id = decodeURIComponent(sessionMatch[1]!);
+    // 复审 P2-4：畸形百分号编码（如 %E0%A4%A）decode 抛 URIError——按 400 输入错误处理，而非 500
+    let id: string;
+    try {
+      id = decodeURIComponent(sessionMatch[1]!);
+    } catch {
+      throw new HubError('invalid', 'sessionId 编码非法（百分号编码畸形）');
+    }
     const sub = sessionMatch[2] ?? '';
     if (sub === '/events' && req.method === 'GET') {
       sendJson(res, 200, hub.events(id));
       return;
     }
     if (sub === '/fork' && req.method === 'POST') {
-      const body = await readJsonBody(req);
+      const body = await readJsonBody(req, res);
       const atSeq = body['atSeq'] === undefined ? undefined : requireAtSeq(body['atSeq']);
       sendJson(res, 200, hub.fork(id, atSeq !== undefined ? { atSeq } : {}));
       return;
     }
     if (sub === '/undo' && req.method === 'POST') {
-      const body = await readJsonBody(req);
+      const body = await readJsonBody(req, res);
       const n = body['n'] === undefined ? undefined : requireUndoN(body['n']);
       const dryRun = body['dryRun'] === undefined ? undefined : requireBoolean(body['dryRun'], 'dryRun');
       sendJson(
@@ -400,13 +406,24 @@ function requireBoolean(v: unknown, name: string): boolean {
   return v;
 }
 
-function readJsonBody(req: IncomingMessage): Promise<Record<string, unknown>> {
+function readJsonBody(req: IncomingMessage, res: ServerResponse): Promise<Record<string, unknown>> {
+  // 复审 P2-4：JSON 接口只接受 application/json（缺失/错误类型 400），不盲读 body
+  const contentType = req.headers['content-type'];
+  if (typeof contentType !== 'string' || !contentType.toLowerCase().includes('application/json')) {
+    return Promise.reject(new HubError('invalid', 'content-type 必须是 application/json'));
+  }
   return new Promise((resolve, reject) => {
     const chunks: Buffer[] = [];
     let size = 0;
     req.on('data', (chunk: Buffer) => {
       size += chunk.length;
       if (size > MAX_BODY_BYTES) {
+        // 复审 P2-4：超限立即停止读取（摘监听 + 背压，不再累积分片）；
+        // 400 响应发出后销毁连接（请求体未读完，连接不可复用）——直接 destroy 会把 400 一并掐断
+        req.removeAllListeners('data');
+        req.removeAllListeners('end');
+        req.pause();
+        res.once('close', () => req.destroy());
         reject(new HubError('invalid', '请求体过大'));
         return;
       }
