@@ -1,6 +1,6 @@
 # 阶段 9：QQ / 飞书 IM 网关
 
-> **状态：** 计划已就绪（总控计划 Ph9，2026-09-06 批准；基线 = 阶段 8 验收 526 passed + 1 skipped）
+> **状态：** ✅ 已完成——2026-09-06 编排者验收通过。过程：实现代理两次并发中断（接手代理收尾）→ 独立审查 **verdict: fail**（P0 网关聋哑 + 7 P1，审查引用 QQ 官方文档纠正 msg_seq/token 契约）→ 修复代理两次中断后编排者代修（`fb837bb`：生命周期/重连重订阅/msg_seq 递增/飞书策略与鉴权/CLI 飞书分支）→ 全量复验 540 passed + 1 skipped。**复审待基础设施恢复后补做**（fail 阶段闭环条件）；真实联调待用户 QQ/飞书凭据，见 OPEN.md
 > **For agentic workers:** 按 Task 顺序执行；每 Task 测完再进下一 Task。
 > **交接提示词**见文末「给接手 AI 的完整提示词」。
 > **元规范:** `docs/ai-framework/phased-plan-driven.md`

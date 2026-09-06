@@ -57,8 +57,8 @@
 | # | 功能 | 说明 | 主要参考 | 状态 |
 |---|------|------|----------|------|
 | 20 | 插件总线公开化 | 内置能力逐步插件化；第三方插件加载与沙箱边界 | dsh Profile/Bundle 思想（简化） | ✅（阶段 8：manifest 声明式权限 + allow 装载审批 + disposer 逆序展开 + 事件总线；v1 进程内非隔离如实声明，worker 隔离留档评估；内置能力插件化与插件市场不在范围） |
-| 21 | QQ Bot gateway | 官方 Bot API v2（WS+REST）、审批按钮、每 chat 串行、持久化去重；**集成前实测个人开发者权限** | hermes qqbot adapter | ✅（阶段 9：官方 v2 全实现 + 回复式审批 + 频率限制队列 + 重推去重 + 三态策略；**真机联调待用户开放平台凭据**，个人开发者权限实测后收口） |
-| 22 | 飞书等其他 IM | 飞书 → Telegram/Discord 按需 | hermes platforms | ✅（阶段 9：飞书基础适配器（webhook 挑战/事件解析 + im/v1 出站 token 单飞）；Telegram/Discord 按需） |
+| 21 | QQ Bot gateway | 官方 Bot API v2（WS+REST）、审批按钮、每 chat 串行、持久化去重；**集成前实测个人开发者权限** | hermes qqbot adapter | ✅（阶段 9：官方 v2 已实现（审查 fail→修复闭环：生命周期/重连重订阅/msg_seq 递增/429 退避）+ 回复式审批 + 频率限制队列 + 重推去重 + 三态策略；**真机联调待用户开放平台凭据**，个人开发者权限实测后收口） |
+| 22 | 飞书等其他 IM | 飞书 → Telegram/Discord 按需 | hermes platforms | ✅（阶段 9：飞书基础适配器（webhook 挑战/事件解析 + im/v1 出站 token 单飞 + 策略闸门 + token 校验 + reply API）；Telegram/Discord 按需） |
 | 23 | 轨迹导出/回放 | ZIP 导出（含子代理）；轨迹即测试夹具 | dsh session.export + snapshots | ⬜ |
 | 24 | MCP 支持 | 作为工具提供方接入 MCP 生态 | dsh/grok mcp | ✅（阶段 8：官方 SDK + stdio/Streamable HTTP + `mcp__<server>__<tool>` namespaced + 断线退避重启上限 3 + 崩溃不拖垮主进程；resources/prompts 仅 tools；真实第三方 server 待用户环境实测） |
 | 25 | Subagent | 深度限制、独立日志、消息互通 | dsh subagent + grok task | ✅（阶段 8：subagent_start/continue 工具 + 独立子会话完整 runTurn（零新增事件类型）+ 深度默认 1 + 父取消传播 + 审批上抛同缝；子会话跳转桌面端支持） |

@@ -6,6 +6,8 @@
 
 | 日期 | 事项 | 状态 | 详情 |
 |------|------|------|------|
+| 2026-09-06 | **阶段 9 真机联调清单**（待用户 QQ 开放平台/飞书凭据）：①auth.json.gateways 配 appId/appSecret → ②`harness2 gateway` 启动（serve 自动起）→ ③QQ 群 @bot 对话、私聊对话（token 刷新/心跳/断线重连真机观察）→ ④审批请求回复「1/2」→ ⑤消息频率限制与 msg_seq 递增观察 → ⑥飞书 webhook（公网/穿透）+ verificationToken 校验 + p2p/群 chat_type 判定补全 | 待处理（需人类操作：凭据 + 真机） | [2026-09-06.md](2026-09-06.md) §17 |
+| 2026-09-06 | **阶段 9 复审待补（fail 闭环条件）**：审查 verdict 曾为 fail（P0 网关聋哑 + 7 P1），修复已落地（`fb837bb`，全量 540+1 绿）——**基础设施恢复后补一轮复审**确认 P0/P1 修复有效性（重点：startGateway 生命周期断言、重连重订阅、msg_seq 递增） | 已修复待复审 | [2026-09-06.md](2026-09-06.md) §17 |
 | 2026-09-06 | **阶段 8 残留手工验收清单**（自动化已覆盖逻辑路径；待用户环境）：①真实 MCP server 实测——config 配 `mcpServers`（如 filesystem）→ `harness2 mcp list` 探测 → chat/serve 中 `mcp__<server>__*` 工具真实调用；②第三方插件样例从零装载——`~/.harness2/plugins/<name>/` 手写 manifest+index.js → `plugin list` → `plugin enable` 审批 → 重启后工具/事件订阅生效；③桌面子会话跳转体验——subagent 工具行「子会话 ↗」跳转 traj 实机手感 | 待处理（需人类操作：用户环境） | [2026-09-06.md](2026-09-06.md) §15 |
 | 2026-09-06 | **阶段 8 独立审查待补**：~~实现代理单飞完成 Task 1-5（本日无中断），尚未跑独立只读审查~~ 独立只读审查已完成（2026-09-06）：P1×4（MCP 双重调度竞态 / maxTurns 契约矛盾 / 插件抢占 subagent 工具名崩 chat / 子会话零快照）+ P2×6 + 补测×3 **全部修复并附防回归测试**（527 项 526 passed + 1 skipped，见日志 §16）；剩余：正式 `/accept-phase` 验收待做 | 部分关闭（审查发现项已修；accept-phase 待做） | [2026-09-06.md](2026-09-06.md) §16 |
 | 2026-09-06 | **CLI 与 serve 的子会话工具集口径差异（阶段 8 审查修复留档）**：CLI chat 的 memory/browser 工具注册在共享注册表 → subagent 子会话工具集（= 宿主集 − subagent 工具）实际继承二者；serve/hub 的 memory/browser 属 per-session 换装 → 子会话不继承（architecture.md P2-4 以 serve 口径声明）。影响面：两端子会话可用工具不一致（CLI 子会话可写记忆/开浏览器，serve 子会话不可）。统一口径（给 CLI 子会话剔除 per-session 绑定类工具，或 serve 补继承）留待后续阶段评估 | 已知差异（留档，暂不统一） | [2026-09-06.md](2026-09-06.md) §16 |
