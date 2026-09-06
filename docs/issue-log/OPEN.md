@@ -6,6 +6,7 @@
 
 | 日期 | 事项 | 状态 | 详情 |
 |------|------|------|------|
+| 2026-09-06 | **v0.6.0（M3）发布待授权**：代码/物料全部就绪（插件/MCP/subagent（阶段 8）、QQ/飞书网关（阶段 9）、轨迹导出回放 + Skills（阶段 10）、CHANGELOG 0.6.0、README 章节补齐、四包版本已升 0.6.0）。执行前待人类：①创建远程仓库并授权 push；②npm 包名占用检查（`npm view harness2` / `npm view @harness2/core`）；③配置 `NPM_TOKEN` secret；④推 tag `v0.6.0`。可与 v0.1.0/v0.3.0 合并发布（跳过多 tag，直接发 0.6.0 并在 release note 说明里程碑对应关系） | 待处理（需人类操作：授权 + NPM_TOKEN） | [2026-09-06.md](2026-09-06.md) |
 | 2026-09-06 | **阶段 9 真机联调清单**（待用户 QQ 开放平台/飞书凭据）：①auth.json.gateways 配 appId/appSecret → ②`harness2 gateway` 启动（serve 自动起）→ ③QQ 群 @bot 对话、私聊对话（token 刷新/心跳/断线重连真机观察）→ ④审批请求回复「1/2」→ ⑤消息频率限制与 msg_seq 递增观察 → ⑥飞书 webhook（公网/穿透）+ verificationToken 校验 + p2p/群 chat_type 判定补全 | 待处理（需人类操作：凭据 + 真机） | [2026-09-06.md](2026-09-06.md) §17 |
 | 2026-09-06 | **阶段 9 复审待补（fail 闭环条件）**：审查 verdict 曾为 fail（P0 网关聋哑 + 7 P1），修复已落地（`fb837bb`，全量 540+1 绿）——**基础设施恢复后补一轮复审**确认 P0/P1 修复有效性（重点：startGateway 生命周期断言、重连重订阅、msg_seq 递增） | 已修复待复审 | [2026-09-06.md](2026-09-06.md) §17 |
 | 2026-09-06 | **阶段 8 残留手工验收清单**（自动化已覆盖逻辑路径；待用户环境）：①真实 MCP server 实测——config 配 `mcpServers`（如 filesystem）→ `harness2 mcp list` 探测 → chat/serve 中 `mcp__<server>__*` 工具真实调用；②第三方插件样例从零装载——`~/.harness2/plugins/<name>/` 手写 manifest+index.js → `plugin list` → `plugin enable` 审批 → 重启后工具/事件订阅生效；③桌面子会话跳转体验——subagent 工具行「子会话 ↗」跳转 traj 实机手感 | 待处理（需人类操作：用户环境） | [2026-09-06.md](2026-09-06.md) §15 |

@@ -2,6 +2,39 @@
 
 本文件记录面向使用者的显著变更。发布素材源自 `docs/diary/`（每日日志的 Release note 段）。
 
+## 0.6.0 — M3「连接外部」（2026-09-06，代码就绪；发布待授权）
+
+M3 里程碑（Ph8–Ph10）达成：在 M1「CLI 可用」+ M2「桌面可用」的能力累积上（流式对话/工具/undo/轨迹/记忆/压缩/浏览器/cron/桌面多会话），接通外部生态——插件、MCP、子代理、QQ/飞书机器人、轨迹资产化与 Skills。版本号沿用总控计划的里程碑编号（无 0.4/0.5 独立发布）。
+
+### 轨迹导出与回放（阶段 10）
+
+- `harness2 export <会话目录> [-o <zip>]`：只读打包会话轨迹为 ZIP——主日志 `session.v1.jsonl` 必含，`rewind_points.jsonl`、`snapshots/` 存在即含，**子代理会话**（全库扫描 `header.parentSession` 匹配）递归入 `subagents/<id>/`；默认输出 `<当前目录>/<sessionId>.zip`。固定条目时间戳，同目录同内容两次导出得到逐字节相同的 zip（幂等）。
+- `harness2 replay <zip>`：回放校验——逐事件解析（坏行计数与明细告警）+ 投影摘要（events/messages/lastSeq）；空包/非 harness2 导出 exit 1。**CI 零 key 可跑：轨迹即测试夹具**。
+- 导出全程只读：不修改会话目录任何文件；目录锁等进程状态永不入包。
+
+### 项目级 Skills（阶段 10）
+
+- 文本指令型 skill：markdown + YAML 简表 frontmatter（`name`/`description` 必填），**无可执行脚本**。
+- 两级目录：项目 `.harness2/skills/` 优先于全局 `~/.harness2/skills/`（同名项目覆盖 + 告警）；上限 50 个；坏文件跳过 + 告警。`harness2 skill list` 查看合并后的列表。
+- 注入模型：每个 turn 从磁盘重扫，仅「[Skills 可用] 名称: 描述」列表追加进 system（同一 turn 内冻结）；**全文经 `skill` 工具按需加载**（现读磁盘），不占 system 预算。
+- `harness2 skill list`：展示两级扫描合并结果（来源标注 project/global + 覆盖告警）。
+
+### 插件 / MCP / 子代理（阶段 8）
+
+- **插件总线**：manifest 声明式权限 + 装载审批（`harness2 plugin list/enable/disable`，allow 名单入全局 config）+ disposer 逆序展开 + 事件总线；v1 与主进程同进程运行（非隔离，如实声明）。
+- **MCP**：官方 SDK，stdio 与 Streamable HTTP 双传输，工具以 `mcp__<server>__<tool>` 命名空间接入；断线退避重启（上限 3），单 server 故障不拖垮主进程；`harness2 mcp list` 连接探测。
+- **Subagent**：`subagent_start` / `subagent_continue` 工具派发独立子会话（完整 runTurn、零新增事件类型）；深度上限（默认 1）、父取消传播、审批上抛同缝、独立文件快照；桌面端可跳转子会话轨迹。
+
+### QQ / 飞书机器人网关（阶段 9）
+
+- `harness2 gateway`：把 QQ / 飞书消息桥接到本地 serve。QQ 官方 Bot API v2（WS+REST、断线重连重订阅、msg_seq 递增、429 退避、重推去重）；飞书 webhook 挑战 + im/v1 出站。
+- 每 chat 串行、频率限制队列、回复式审批（allow/deny 按钮语义）、三态私聊/群策略（open/allowlist/disabled，缺省 allowlist 防滥用）。
+- 凭据只存 `auth.json.gateways` 或环境变量；**真机联调待用户开放平台凭据**。
+
+### M1/M2 能力累积概述
+
+M3 发布包含此前全部里程碑能力：M1（v0.1）事件溯源会话内核、流式 chat、工具执行、`/undo` `/redo`、轨迹可查、审批策略、双协议 Provider；M2（v0.3）桌面多会话并行/分屏拖拽/审批按钮、记忆三态、上下文压缩、浏览器工具、定时任务、serve 信任域加固。完整清单见下节与 `docs/ROADMAP.md`。
+
 ## 0.3.0 — M2「桌面可用」（2026-09-06，代码就绪；发布待授权）
 
 桌面端第一版 + 三大件。版本号沿用总控计划的里程碑编号（无 0.2 独立发布）。

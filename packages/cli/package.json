@@ -1,6 +1,6 @@
 {
   "name": "harness2",
-  "version": "0.3.0",
+  "version": "0.6.0",
   "description": "跨端 AI agent harness —— 终端里接真实模型干活：流式 chat、工具执行、/undo /redo、轨迹可查",
   "license": "MIT",
   "type": "module",

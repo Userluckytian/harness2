@@ -36,6 +36,7 @@ import {
   SkillStore,
   startServe,
   ToolRegistry,
+  CORE_VERSION,
   DEFAULT_SERVE_PORT,
   type AuthFile,
   type ChatProvider,
@@ -50,7 +51,7 @@ import type { PlatformAdapter } from '@harness2/gateway';
 
 const program = new Command();
 
-program.name('harness2').description('跨端 AI agent harness').version('0.1.0');
+program.name('harness2').description('跨端 AI agent harness').version(CORE_VERSION);
 
 interface TrajOptions {
   json: boolean;

@@ -1,6 +1,6 @@
 # harness2
 
-自研跨端 AI agent harness（CLI / 桌面 / IM 网关多形态）。**M1（v0.1）= 终端里接真实模型干活**：流式对话、读写文件、跑命令、`/undo` `/redo`、轨迹可查、审批可控。**M2（v0.3）= 桌面可用**：多会话并行分屏、上下文压缩、浏览器工具、定时任务。
+自研跨端 AI agent harness（CLI / 桌面 / IM 网关多形态）。**M1（v0.1）= 终端里接真实模型干活**：流式对话、读写文件、跑命令、`/undo` `/redo`、轨迹可查、审批可控。**M2（v0.3）= 桌面可用**：多会话并行分屏、上下文压缩、浏览器工具、定时任务。**M3（v0.6）= 连接外部**：插件 / MCP / 子代理、QQ/飞书机器人、轨迹导出回放、项目级 Skills。
 
 - **新维护者/AI 入口：`docs/HANDOFF.md`**
 - 路线图与功能清单：`docs/ROADMAP.md` · 变更记录：`CHANGELOG.md`
@@ -67,7 +67,7 @@ pnpm -r typecheck
 node packages/cli/dist/index.js chat --provider mock   # 本地冒烟
 ```
 
-结构：`packages/core`（会话内核 + agent loop + 工具系统 + Provider 缝，npm: `@harness2/core`）、`packages/cli`（npm: `harness2`）、`packages/desktop`、`packages/gateway`（占位）。
+结构：`packages/core`（会话内核 + agent loop + 工具系统 + Provider 缝，npm: `@harness2/core`）、`packages/cli`（npm: `harness2`）、`packages/desktop`、`packages/gateway`（QQ/飞书 IM 网关）。
 
 ## License
 
@@ -83,3 +83,36 @@ MIT
 - **定时任务**：`harness2 cron add "每天早上帮我看一下 XXX" --at "daily 09:00"`（或 `--every 5m`）；
   到点在独立会话执行，结果写 `~/.harness2/cron/history/`；`cron list / remove / run / history` 管理。
   连续 3 次失败自动熔断；上限 50 条。
+
+## 插件 / MCP / 子代理 / IM 网关（阶段 8-9）
+
+- **插件**：manifest 声明式权限，装载需审批——`harness2 plugin list` 查看权限清单，`plugin enable <name> [--yes]` 写入全局
+  config 的 `plugins.allow`（重启 chat/serve 后装载）；事件总线 + disposer 逆序展开；v1 与主进程同进程运行（非隔离）。
+- **MCP**：`config.json` 的 `"mcpServers"` 声明 stdio（command）或 Streamable HTTP（url）服务器，工具以
+  `mcp__<server>__<tool>` 命名空间接入；断线退避重启；`harness2 mcp list` 逐 server 连接探测。
+- **子代理**：模型可用 `subagent_start` 派发独立子会话跑子任务（独立轨迹/undo，深度默认 1，父取消传播）；
+  `subagent_continue` 向既有子会话追加消息。
+- **IM 网关**：`harness2 gateway` 把 QQ / 飞书消息桥接到本地 serve（审批回复式处理、每 chat 串行、三态私聊/群策略）；
+  凭据只存 `~/.harness2/auth.json` 的 `gateways` 段或环境变量。QQ 真机联调待用户开放平台凭据。
+
+## 轨迹导出/回放与 Skills（阶段 10）
+
+- **轨迹导出**：`harness2 export <会话目录> [-o <zip>]`——只读打包为 ZIP：主日志 + `rewind_points.jsonl`/`snapshots/`（存在时）+
+  **子代理会话**（`subagents/<id>/` 递归）。固定条目时间戳，同目录同内容导出得到逐字节相同的 zip（幂等）。
+  导出不修改会话目录任何文件。会话轨迹含用户代码与对话（属用户资产），请自行妥善保管，**不会自动上传**。
+- **回放校验**：`harness2 replay <zip>`——逐事件解析 + 投影摘要（events / messages / lastSeq / badLines + 坏行明细）；
+  空包/非 harness2 导出报错退出。回放无需 API key，**轨迹即测试夹具**（CI 零 key 可跑）。
+- **Skills**（文本指令型，无可执行脚本）：把带 YAML 简表 frontmatter 的 markdown 放进项目 `.harness2/skills/` 或全局
+  `~/.harness2/skills/`（项目同名覆盖全局 + 告警，上限 50）：
+
+  ```markdown
+  ---
+  name: commit-fix
+  description: 按团队规范写修复类提交信息
+  ---
+
+  提交信息使用 <gitmoji><type>(<scope>): <中文描述> 格式……
+  ```
+
+  每个 turn 从磁盘重扫，仅「[Skills 可用] 名称: 描述」列表注入 system；模型需要时经 `skill` 工具按需加载全文（现读磁盘）。
+  `harness2 skill list` 查看合并后的列表与覆盖告警。
