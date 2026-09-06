@@ -1,7 +1,7 @@
 # harness2 架构说明
 
 > 跨端 AI agent harness（CLI / 桌面 / IM 网关多形态）
-> 状态：随阶段推进持续更新（当前：阶段 4 —— CLI 完整体验 → M1 v0.1：chat REPL + 文件快照 + undo/redo + 会话管理）
+> 状态：随阶段推进持续更新（当前：阶段 6 —— 记忆系统（开关三态）+ 会话分叉）
 > 决策依据：`docs/ROADMAP.md` D1–D6 · `docs/research/2026-09-06-reference-analysis.md`
 
 ## 技术栈（2026-09-06 确认）
@@ -65,10 +65,12 @@ packages/
 - **Model-visible ⟺ logged 的结构性保证**：loop 的模型请求上下文唯一来源是
   `buildChatMessages(loadSession(dir))`（投影 + 活动工具事件重建），无内存旁路；
   不变量测试用独立回放断言 `mock.requests` 与日志逐步重建序列完全一致。
-- **不变量边界**：Model-visible ⟺ logged 当前覆盖 **messages**（user/assistant/tool 消息）；
-  `ChatRequest.tools`（工具 schema 列表）暂不在日志重建范围内——阶段 2 工具集固定，
-  工具配置化时再评估是否把 tools 也纳入重建。阶段 3 起该不变量通过真实 provider 的
-  wire 请求验证：E2E 测试断言 stub server 捕获的请求体与日志投影重建后的 wire 消息全等。
+- **不变量边界**：Model-visible ⟺ logged 覆盖 **messages**（user/assistant/tool 消息）；
+  **阶段 6 扩展到 system**：`ChatRequest.system` 唯一来源 = 会话日志 `memory/snapshot` 事件，
+  不变量测试断言 `mock.requests[].system` 可从日志逐步重建。`ChatRequest.tools`（工具 schema
+  列表）暂不在日志重建范围内——阶段 2 工具集固定，工具配置化时再评估是否把 tools 也纳入重建。
+  阶段 3 起该不变量通过真实 provider 的 wire 请求验证：E2E 测试断言 stub server 捕获的请求体
+  与日志投影重建后的 wire 消息全等。
 - **append-only**：取消与失败都是追加事件——模型失败/取消记 `assistant/attempt`，
   被取消的工具调用记 `ok:false` 的 `tool/result`；无任何 update/delete 路径。
 - 用户输入同样 logged：`userText` 由 loop 先写 `user/message` 再进循环。
@@ -121,6 +123,9 @@ packages/
   `rewind/marker.rewindToSeq` 写入口强校验 `1..lastSeq`，读侧对越界旧数据告警容错。
   阶段 3 增量：`assistant/message` 增加可选 `reasoning`（思考文本汇总，v1 加性字段，
   旧日志兼容）。
+  阶段 6 增量（记忆缝，加性）：`memory/snapshot`（payload `{content}`，非空字符串，
+  写入口同步拦截空 content）——把长期记忆注入内容整体冻结落盘，`content` 即
+  ChatRequest.system 原文；普通活动事件（参与 rewind 遮蔽、不进消息投影、渲染走通用兜底行）。
 - 投影语义：`rewind/marker` 之前的活动事件构成当前会话投影；被 rewind 的"影子事件"保留在日志中可导出，但不进当前上下文。
   阶段 4 增量（redo 链，向后兼容）：`reason` 以 `redo` 开头的标记按「undo/redo 约定」精确中立化
   `seq = rewindToSeq + 1` 处的被重做 undo 标记（恢复其遮蔽的事件）；n 级 undo/redo 链每次 redo 只复活一层；
@@ -164,14 +169,16 @@ packages/
 
 ## chat REPL（阶段 4 交付，packages/cli）
 
-- `harness2 chat [--session <id>] [--provider mock] [--root <dir>] [--home <dir>]`：无 --session 时
-  恢复 cwd 最近会话或新建；提示符 `> `。`--provider mock` 用内置演示脚本（两轮工具调用：write+read），
+- `harness2 chat [--session <id>] [--fork <id> [--at <seq>]] [--provider mock] [--root <dir>] [--home <dir>]`：
+  无 --session/--fork 时恢复 cwd 最近会话或新建；--fork 启动即分叉（banner 标血缘与复制事件数）；
+  提示符 `> `。`--provider mock` 用内置演示脚本（两轮工具调用：write+read），
   不加载配置、不触发审批，零 key 可用。
 - 流式渲染（`render.ts`）：text-delta 直写 stdout 不换行拼流；工具调用/结果单行（`> tool (args摘要)` /
   `< ok|FAILED [callId]`）；turn 结束摘要行；reasoning 不渲染。核心 loop 增加最小观察缝
   `TurnOptions.onStream`（text-delta/tool-call/tool-result 三类事件，纯渲染用，不参与上下文组装）。
-- 命令集（`commands.ts`）：`/new` `/sessions [关键字]` `/resume <id>` `/undo [n] [--dry-run]` `/redo`
-  `/help` `/exit`（或 Ctrl+C 两次 / 空行 Ctrl+D）；Ctrl+C 在 turn 进行中 = 取消当前 turn（AbortController）。
+- 命令集（`commands.ts`）：`/new` `/sessions [关键字]` `/resume <id>` `/fork [seq]`（阶段 6 分叉）
+  `/undo [n] [--dry-run]` `/redo` `/help` `/exit`（或 Ctrl+C 两次 / 空行 Ctrl+D）；
+  Ctrl+C 在 turn 进行中 = 取消当前 turn（AbortController）。
 - 审批交互：config.approval 判定 ask 时 REPL 内联提问 `允许执行 <tool>? [y]本次 [a]本会话总是 [n]拒绝`；
   "总是"仅存进程内会话级缓存（不落盘）。渲染与输入交错策略：turn 期间不写提示符、渲染器独占输出。
 
@@ -189,17 +196,77 @@ HTTP 控制面 + WS 事件面共用一个监听，服务 API 契约冻结 v1（�
 - **审批上抛**：Ph2 审批缝 `onAsk` → 待处理请求表（requestId → settle），客户端
   `approval-response(allow|deny)` 落定；超时（默认 120s）与 turn 取消都按拒绝处理（P2-2 口径）。
 - **HTTP 控制面（`server/http.ts`）**：`GET/POST /api/sessions`、`GET /api/sessions/:id/events`
-  （全量事件含 active 标记，切换重放来源）、`POST .../undo|redo`、`GET /api/config`
+  （全量事件含 active 标记，切换重放来源）、`POST .../undo|redo`、`POST .../fork {atSeq?}`
+  （阶段 6 分叉，返回 `{id,parentSession,copiedEvents}`）、`GET /api/config`
   （脱敏报告与 `config check` 同源，`config/report.ts` 唯一构造处，key 只显示来源标签）。
   错误一律 JSON 单行 `{error}`（400/404/405/409/500），出口过 `redactSecrets`。
 - **端口锁**：`~/.harness2/serve.lock`（复用会话锁思路：pid 存活检查，陈旧锁接管）；首个实例
   持有，第二实例拒绝启动并携带 holder 信息（桌面端据此采纳既有实例）。
 - **WS 事件面（`server/ws.ts`）**：单连接多会话订阅（`/ws`）。客户端帧：`subscribe`/
-  `unsubscribe`/`abort`/`user-message`/`approval-response`；服务端帧：`delta`（text/reasoning/tool）/
-  `event`（落盘镜像）/`turn-end`（stopReason/error/warning）/`approval-request`/`error`。
+  `unsubscribe`/`abort`/`user-message`/`approval-response`/`fork`（阶段 6，响应
+  `forked` 帧）；服务端帧：`delta`（text/reasoning/tool）/`event`（落盘镜像）/
+  `turn-end`（stopReason/error/warning）/`approval-request`/`nudge-started`/`nudge-finished`
+  （阶段 6 后台复盘提示帧，UI 自行决定展示）/`forked`/`error`。
   崩溃安全：turn 事件全部落盘，服务重启后客户端以 `/events` 重放恢复（增量按 seq 去重接入）。
 - **CLI**：`harness2 serve [--port 0] [--root] [--home] [--provider mock]`——监听成功后 stdout
   一行 JSON `{"port":N,"pid":M}`（`--port 0` 随机端口，桌面端固定用）；SIGINT/SIGTERM 优雅关闭。
+
+## 记忆系统（阶段 6 交付，`memory/`，对照 hermes 实证方案）
+
+**用户点名的记忆开关三态**（`config.memory`，缺省 `off` 尊重隐私）：
+`off`（零写入零注入零工具注册——装配层不创建 store、不注册 memory 工具、runTurn 不传 memory）
+/ `ask`（写入先进 pending 暂存，人工审批后落盘）/ `auto`（直接写入）。
+`nudgeInterval`（默认 10）= 每 N 个用户 turn 触发一次后台复盘。
+
+- **存储（`memory/store.ts`）**：`~/.harness2/memories/MEMORY.md`（agent 笔记）+ `USER.md`
+  （用户画像），条目以 `\n§\n` 分隔；**字符硬预算**（模型无关）：memory 2200 / user 1375，
+  超限由模型「删旧加新」整合、写入器按**最终态**一次性校验并强制拒绝（报剩余空间）。
+  同进程互斥（promise 链串行读改写，并发 200 写不丢更新）+ 原子写（tmp + rename）；
+  跨进程锁不做（与会话锁 P2-3 同口径，进程间由 rename 原子性兜底「后写者胜」）。
+- **漂移检测**：写前按 § 结构解析现状，手工编辑破坏结构（空切片/游离 § 行/CRLF 分隔符）
+  → 拒写 + 原文件备份 `.bak`（防手工编辑被静默覆盖）；容忍结尾多余换行与条目内 `§§` 行。
+  注入读侧按空记忆处理（不注入坏结构）。
+- **注入扫描**：新增/替换文本命中典型指令注入模式（ignore previous instructions /
+  忽略之前指令 / system prompt 泄露等启发式清单）→ **标记警告仍写入**，结果随 tool 返回。
+- **memory 工具（`memory/tool.ts`，unsafe 串行）**：`{operation: add|replace|remove,
+  target: memory|user, text?, oldText?}` 或 `operations` 批量数组（**原子执行**：全成或全不成）；
+  写入目的地缝 `MemorySink`——MemoryStore 直接落盘（auto），PendingMemorySink 暂存（ask）。
+- **冻结注入（`agent/loop.ts`）**：`runTurn` 提供 store 且为用户 turn 时——会话活动投影已有
+  `memory/snapshot` → 复用其 content（**会话内冻结**，不重读文件，prefix cache 友好）；
+  没有则读 store 组装快照、先落 `memory/snapshot` 事件再注入 `ChatRequest.system`
+  （两个文件都为空 → 不注入不落事件；老会话首个新 turn 即补快照）。
+  openai → 首条 system 消息；anthropic → 顶层 system 参数（加性缝，缺省 wire 不变）。
+- **nudge 后台复盘（`memory/nudge.ts`）**：SessionHub 持每会话计数（用户 turn 完成 +1；
+  turn 内模型调过 memory 工具 → 归零）；到 `nudgeInterval` 触发复盘 turn——roles.small
+  provider、独立系统提示（经 `memory/snapshot` 冻结进一次性临时会话，跑完即删，主日志
+  零污染）、只挂 memory 工具、对话摘要确定性截断（40 条/400 字/12000 总量）。
+  **复盘在 turn-end 回调后异步进行，不阻塞主对话**；异常静默收口（nudge-finished.error），
+  主对话无感。写入 gate：auto → 直接写；ask → 落 `~/.harness2/memories/pending/<ts>-<id>.json`
+  （记 ops + 来源会话），`harness2 memory pending|approve <id>|reject <id>` 重放执行
+  （approve 重放时预算/漂移校验照常生效，失败保留暂存——**只延迟，绝不静默丢弃**）。
+- **CLI（`harness2 memory`）**：`show`（条目/用量/漂移告警）、`clear [--target]`、
+  `pending`、`approve <id>`、`reject <id>`，均可 `--home` 覆盖数据根。
+  chat REPL 按 mode 注册 memory 工具（off 时模型根本看不到）。
+- **隐私红线**：记忆内容属用户私有数据，不进 git（测试全临时目录）、不出现在错误消息。
+- **明确不做（本阶段）**：语义检索/向量库、记忆访问统计（Tokeny 式）、记忆衰减评分、
+  桌面记忆管理 UI（HTTP memory 端点与桌面 UI 留待后续阶段）、跨会话记忆检索。
+
+## 会话分叉（阶段 6 交付，`session/fork.ts`）
+
+- `forkSession(manager, id, {atSeq?})`：读原会话**活动投影** → 截取 `seq <= atSeq`
+  （缺省 = 全部活动）的**非 header、非 rewind/marker** 事件 → 新会话 writer 按序重放
+  （新 seq、新 ts，payload 原样保留含原 turnId）→ 新 header 记 `parentSession`/`isSeeded`
+  血缘 → 返回 `{id, dir, parentSession, copiedEvents}`。**原会话字节级零改动**
+  （append-only 日志只读不写）。新会话与原会话同 cwd 组（`header.cwd` 编码同规则）；
+  缺 `header.cwd` 的会话无法定位分组 → ForkError('invalid')。
+- **明确不复制**：`rewind/marker` 与影子事件（新会话时间线从当前活动投影起步，**undo 从
+  零开始**，README 已注明）、文件快照（`rewind_points.jsonl` 属原会话目录，不迁移）。
+  `memory/snapshot` 是普通活动事件，照常复制（分叉后冻结语义继续成立）。
+- 复制中途失败：关闭半成品 writer 并删除半成品会话目录（不留半截会话在库里）。
+- **三端入口**：REPL `/fork [seq]`（分叉当前会话并切换）、`harness2 chat --fork <id> [--at <seq>]`
+  （启动即分叉）、`POST /api/sessions/:id/fork {atSeq?}` + WS op `fork`（响应 `forked` 帧）。
+  busy 会话也可分叉（fork 只读日志，与持锁写者并发安全）。
+- 桌面端 fork 按钮（分叉 UI）属后续迭代；事件面契约已就绪。
 
 ## 桌面端（阶段 5 交付，`packages/desktop`）
 
@@ -228,7 +295,7 @@ Electron 主进程 spawn `harness2 serve --port 0`（`ELECTRON_RUN_AS_NODE=1` �
 
 
 
-- ✅ P0/P1（阶段 4 交付）：`/undo` `/redo`（opencode 语义：投影截断 + 文件快照恢复，含冲突检测与 dry-run）→ P1：分叉（dsh 语义：header 血缘 parentSession）→ P1 增强：grok 三模式 rewind（对话/文件/全部独立撤回）。
+- ✅ P0/P1（阶段 4 交付）：`/undo` `/redo`（opencode 语义：投影截断 + 文件快照恢复，含冲突检测与 dry-run）；✅ 分叉（阶段 6 交付：dsh 语义 header 血缘 `parentSession`/`isSeeded` + atSeq 截取，见「会话分叉」小节）→ P1 增强：grok 三模式 rewind（对话/文件/全部独立撤回）。
 
 ## 插件机制（决策 D4，后期公开）
 

@@ -33,10 +33,23 @@ harness2 chat --provider mock   # 内置演示：写文件 + 读回，试试 /un
 harness2 chat                   # 接真实模型（roles.main）
 ```
 
-chat 内常用命令：`/new`、`/sessions [关键字]`、`/resume <id>`、`/undo [n] [--dry-run]`、`/redo`、`/exit`。
+chat 内常用命令：`/new`、`/sessions [关键字]`、`/resume <id>`、`/fork [seq]`、`/undo [n] [--dry-run]`、`/redo`、`/exit`。
 `/redo` 会恢复到撤销前状态，撤销之后新输入的消息将被移出当前上下文（仍保留在日志中，可用 `traj` 查看）。
 审批 ask 提示中的 `[a] 本会话总是` = 该工具后续所有调用不再询问（仅进程内会话级缓存，不落盘）。
 会话存储在 `~/.harness2/sessions/<工作目录编码>/<会话id>/`；`harness2 traj <会话目录>` 查看轨迹。
+
+## 记忆与分叉（阶段 6）
+
+- **记忆开关三态**（`config.json` 的 `"memory": {"mode": "off|ask|auto", "nudgeInterval": 10}`，缺省 `off`）：
+  `auto` = 模型可直接把长期记忆写入 `~/.harness2/memories/MEMORY.md`（agent 笔记，2200 字符硬预算）与
+  `USER.md`（用户画像，1375 字符硬预算），新会话开始时冻结注入；`ask` = 写入先进待审批暂存，用
+  `harness2 memory pending` → `approve <id>` / `reject <id>` 处置（只延迟、不静默丢弃）；`off` = 模型完全
+  看不到记忆工具、零读写。`harness2 memory show/clear` 管理现有记忆；手工改坏 `§` 条目结构会被
+  漂移检测拒绝写入并自动备份 `.bak`。每 `nudgeInterval` 个用户 turn 会在后台用小模型复盘一次对话
+  （不阻塞主对话；serve 模式下发 `nudge-started/finished` 提示帧）。
+- **会话分叉**：REPL `/fork [seq]` 从当前会话派生新会话（`harness2 chat --fork <id> [--at <seq>]` 亦同），
+  血缘记录在新会话 header（`parentSession`/`isSeeded`）。分叉 = 复制活动事件到新会话，原会话零改动；
+  **新会话的 undo 从零开始（文件快照不随分叉复制）**，如需恢复文件请回到原会话操作。
 
 ## 如实声明（重要）
 
