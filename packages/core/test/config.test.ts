@@ -219,6 +219,34 @@ describe('schema 校验', () => {
     expect(r.errors.some((e) => e.includes('approval.tools.bash'))).toBe(true);
   });
 
+  it('memory 段（阶段 6）：缺省 = off/10；三态枚举；nudgeInterval 1..1000；未知字段告警', () => {
+    const base = {
+      providers: { a: { protocol: 'openai', baseUrl: 'https://x' } },
+      roles: { main: { channel: 'a', model: 'm' } },
+    };
+    // 缺省 = off（尊重用户默认隐私）
+    const dflt = parseConfig(base);
+    expect(dflt.config?.memory).toEqual({ mode: 'off', nudgeInterval: 10 });
+
+    // 三态合法值
+    for (const mode of ['off', 'ask', 'auto'] as const) {
+      const r = parseConfig({ ...base, memory: { mode } });
+      expect(r.errors).toEqual([]);
+      expect(r.config?.memory.mode).toBe(mode);
+    }
+
+    // 非法 mode / 非法 nudgeInterval
+    const bad = parseConfig({ ...base, memory: { mode: 'always', nudgeInterval: 0 } });
+    expect(bad.config).toBeNull();
+    expect(bad.errors.some((e) => e.includes('memory.mode'))).toBe(true);
+    expect(bad.errors.some((e) => e.includes('memory.nudgeInterval'))).toBe(true);
+
+    // 合法自定义 + 未知字段告警
+    const ok = parseConfig({ ...base, memory: { mode: 'auto', nudgeInterval: 5, hack: true } });
+    expect(ok.config?.memory).toEqual({ mode: 'auto', nudgeInterval: 5 });
+    expect(ok.warnings.filter((w) => w.includes('memory'))).toHaveLength(1);
+  });
+
   it('models 容量字段必须为正整数；JSONC 注释与尾逗号被容忍', () => {
     const bad = parseConfig({
       providers: { a: { protocol: 'openai', baseUrl: 'https://x', models: { m: { contextWindow: -1 } } } },

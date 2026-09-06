@@ -78,6 +78,24 @@ export function serializeMemoryEntries(entries: readonly string[]): string {
   return entries.join(ENTRY_SEPARATOR);
 }
 
+/**
+ * 组装冻结进 system 的记忆快照文本（阶段 6 注入缝的唯一组装处）：
+ * 两个文件都为空（或纯空白）→ null（不注入、不落事件）；
+ * 否则带节头拼装（空文件标注「（空）」），整体作为 memory/snapshot.content 落盘。
+ */
+export function assembleMemorySnapshot(memoryContent: string, userContent: string): string | null {
+  if (memoryContent.trim().length === 0 && userContent.trim().length === 0) return null;
+  const memory = memoryContent.trim().length > 0 ? memoryContent.trimEnd() : '（空）';
+  const user = userContent.trim().length > 0 ? userContent.trimEnd() : '（空）';
+  return [
+    '以下是你的长期记忆快照（会话开始时冻结；如需更新请使用 memory 工具）：',
+    `## memory（${MEMORY_FILE_NAME}）`,
+    memory,
+    `## user（${USER_FILE_NAME}）`,
+    user,
+  ].join('\n');
+}
+
 // —— 注入扫描 ——
 
 export interface InjectionPattern {

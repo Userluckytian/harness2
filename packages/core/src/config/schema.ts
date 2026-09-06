@@ -37,11 +37,27 @@ export interface ApprovalConfig {
   tools?: Record<string, ApprovalToolRule>;
 }
 
+/**
+ * 记忆开关（阶段 6，用户点名三态）：off = 零写入零注入零工具注册（默认，尊重隐私）；
+ * ask = 模型写记忆先进 pending 暂存、人工审批后落盘；auto = 直接写入。
+ * nudgeInterval = 每 N 个用户 turn 触发一次后台复盘（mode≠off 时生效）。
+ */
+export type MemoryMode = 'off' | 'ask' | 'auto';
+
+export interface MemoryConfig {
+  mode: MemoryMode;
+  nudgeInterval: number;
+}
+
+export const MEMORY_MODES: readonly MemoryMode[] = ['off', 'ask', 'auto'];
+export const DEFAULT_MEMORY_CONFIG: MemoryConfig = { mode: 'off', nudgeInterval: 10 };
+
 /** 合并+校验后的配置（唯一合法形态） */
 export interface HarnessConfig {
   providers: Record<string, ProviderConfig>;
   roles: Record<string, RoleConfig>;
   approval: ApprovalConfig;
+  memory: MemoryConfig;
 }
 
 /** 配置错误（工厂/CLI 对其做一行友好输出；消息不携带密钥） */
@@ -72,7 +88,7 @@ function isPlainObject(v: unknown): v is Dict {
 }
 
 /** schema 内已知的顶层字段（其余忽略并告警） */
-const KNOWN_TOP_KEYS = new Set(['providers', 'roles', 'approval']);
+const KNOWN_TOP_KEYS = new Set(['providers', 'roles', 'approval', 'memory']);
 
 function collectUnknownKeys(obj: Dict, known: ReadonlySet<string>, where: string, warnings: string[]): void {
   for (const k of Object.keys(obj)) {
@@ -84,6 +100,7 @@ const PROVIDER_KNOWN_KEYS = new Set(['protocol', 'baseUrl', 'envKey', 'models'])
 const MODEL_KNOWN_KEYS = new Set(['contextWindow', 'maxOutputTokens']);
 const ROLE_KNOWN_KEYS = new Set(['channel', 'model']);
 const APPROVAL_KNOWN_KEYS = new Set(['mode', 'tools']);
+const MEMORY_KNOWN_KEYS = new Set(['mode', 'nudgeInterval']);
 
 /**
  * 校验合并后的原始 JSON（展开 ${VAR} 之后的形态），产出 HarnessConfig。
@@ -227,6 +244,38 @@ export function parseConfig(raw: unknown): ConfigParseResult {
     }
   }
 
+  // —— memory（缺省 = off，尊重用户默认隐私）——
+  const memory: MemoryConfig = { ...DEFAULT_MEMORY_CONFIG };
+  const rawMemory = raw['memory'];
+  if (rawMemory !== undefined) {
+    if (!isPlainObject(rawMemory)) {
+      errors.push('config.memory 必须是对象');
+    } else {
+      collectUnknownKeys(rawMemory, MEMORY_KNOWN_KEYS, 'memory', warnings);
+      const mode = rawMemory['mode'];
+      if (mode !== undefined) {
+        if (typeof mode !== 'string' || !MEMORY_MODES.includes(mode as MemoryMode)) {
+          errors.push(`memory.mode 必须是 ${MEMORY_MODES.join(' | ')}，实际为 ${JSON.stringify(mode)}`);
+        } else {
+          memory.mode = mode as MemoryMode;
+        }
+      }
+      const nudgeInterval = rawMemory['nudgeInterval'];
+      if (nudgeInterval !== undefined) {
+        if (
+          typeof nudgeInterval !== 'number' ||
+          !Number.isInteger(nudgeInterval) ||
+          nudgeInterval < 1 ||
+          nudgeInterval > 1000
+        ) {
+          errors.push('memory.nudgeInterval 必须是 1..1000 的整数');
+        } else {
+          memory.nudgeInterval = nudgeInterval;
+        }
+      }
+    }
+  }
+
   // —— 交叉引用校验（roles 引用存在的 channel/model）——
   for (const [role, rc] of Object.entries(roles)) {
     const provider = providers[rc.channel];
@@ -247,5 +296,5 @@ export function parseConfig(raw: unknown): ConfigParseResult {
   const safeErrors = errors.map(redactSecrets);
   const safeWarnings = warnings.map(redactSecrets);
   if (safeErrors.length > 0) return { config: null, errors: safeErrors, warnings: safeWarnings };
-  return { config: { providers, roles, approval }, errors: safeErrors, warnings: safeWarnings };
+  return { config: { providers, roles, approval, memory }, errors: safeErrors, warnings: safeWarnings };
 }

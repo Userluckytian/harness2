@@ -6,6 +6,7 @@
 import { randomUUID } from 'node:crypto';
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
+import { assembleMemorySnapshot, type MemoryStore } from '../memory/store.js';
 import { computeProjection, loadSession, type LoadedSession } from '../session/reader.js';
 import { readTextOrNull, snapshotTargetFile, type SnapshotStore } from '../session/snapshots.js';
 import { SessionWriter, type SessionAppender } from '../session/writer.js';
@@ -70,6 +71,31 @@ export function buildChatMessages(session: LoadedSession): ChatMessage[] {
 }
 
 /**
+ * 记忆快照解析（冻结语义，阶段 6）：
+ *   1. 活动投影已有 memory/snapshot 事件 → 直接复用其 content（后续轮不重读文件，
+ *      也不追加新事件——prefix cache 友好）；
+ *   2. 没有 → 读 store 两个文件组装快照（都为空 → undefined，不注入不落事件），
+ *      先落 memory/snapshot 事件再返回 content（Model-visible ⟺ logged：system
+ *      必须可从日志重建）。
+ * 漂移（手工编辑破坏 § 结构）按空记忆处理——读侧内容不注入，写侧由 store 拒绝并备份。
+ */
+async function resolveMemorySystem(writer: SessionWriter | SessionAppender, store: MemoryStore): Promise<string | undefined> {
+  const session = loadSession(writer.dir);
+  computeProjection(session);
+  for (const { event, active } of session.events) {
+    if (active && event.type === 'memory/snapshot') return event.payload.content;
+  }
+  const views = await Promise.all([store.read('memory'), store.read('user')]);
+  const snapshot = assembleMemorySnapshot(
+    views[0].drift ? '' : views[0].content,
+    views[1].drift ? '' : views[1].content,
+  );
+  if (snapshot === null) return undefined;
+  writer.append('memory/snapshot', { content: snapshot });
+  return snapshot;
+}
+
+/**
  * 运行一个用户 turn：循环执行 step（模型调用 + 工具执行）直到模型不再调用工具、
  * 达到 maxSteps、被取消或模型出错。session 可传目录或调用方已持有的 SessionWriter：
  *   - 目录 + 日志不存在 → 新建会话（sessionId 自动生成）并在结束后 close；
@@ -120,6 +146,12 @@ async function runTurnWithWriter(writer: SessionWriter | SessionAppender, option
   const startedAt = performance.now();
   const elapsed = () => Math.round(performance.now() - startedAt);
 
+  // —— 记忆注入（阶段 6）：先于 user/message（快照冻结在「首个 user turn 前」）——
+  const memorySystem =
+    options.memory !== undefined && options.userText !== undefined
+      ? await resolveMemorySystem(writer, options.memory)
+      : undefined;
+
   if (options.userText !== undefined) {
     writer.append('user/message', { text: options.userText, turnId });
   }
@@ -152,7 +184,11 @@ async function runTurnWithWriter(writer: SessionWriter | SessionAppender, option
     const toolSpecs = options.tools.list().map(
       (def): ToolSpec => ({ name: def.name, description: def.description, parameters: def.parameters }),
     );
-    const request: ChatRequest = toolSpecs.length > 0 ? { messages, tools: toolSpecs } : { messages };
+    const request: ChatRequest = {
+      ...(memorySystem !== undefined ? { system: memorySystem } : {}),
+      messages,
+      ...(toolSpecs.length > 0 ? { tools: toolSpecs } : {}),
+    };
 
     let text = '';
     let reasoning: string | undefined;

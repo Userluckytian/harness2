@@ -681,6 +681,7 @@ const FACTORY_CONFIG: HarnessConfig = {
     subagent: { channel: 'claude', model: 'claude-sonnet-4-5' },
   },
   approval: { mode: 'default' },
+  memory: { mode: 'off', nudgeInterval: 10 },
 };
 
 describe('createProvider 工厂', () => {
@@ -772,6 +773,7 @@ describe('端到端：runTurn × 本地 stub server（openai 协议，含一轮�
       },
       roles: { main: { channel: 'deepseek', model: 'deepseek-chat' } },
       approval: {},
+      memory: { mode: 'off', nudgeInterval: 10 },
     };
     const provider = createProvider(config, 'main', { auth: { channels: { deepseek: { apiKey: 'test-key-e2e' } } }, env: {} });
 

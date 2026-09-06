@@ -581,3 +581,145 @@ describe('loop demo session 生成（供手工验证 traj 渲染；设 H2_GEN_LO
     expect(existsSync(join(demoDir, SESSION_LOG_FILE))).toBe(true);
   }, 10000);
 });
+
+// ---------- 记忆开关与冻结注入（阶段 6 Task 3） ----------
+
+import { MemoryStore, assembleMemorySnapshot } from '../src/memory/store.js';
+
+describe('记忆开关与冻结注入（阶段 6）', () => {
+  it('off（不传 memory）：零注入零事件零 store 写入', async () => {
+    const dir = tmpDir();
+    const memRoot = tmpDir();
+    const store = new MemoryStore(memRoot);
+    await store.apply([{ operation: 'add', target: 'memory', text: '已有记忆' }]);
+    const provider = new MockProvider([{ text: '好的' }]);
+
+    await runTurn(dir, { provider, tools: new ToolRegistry(), cwd: dir, userText: '你好' });
+
+    expect(provider.requests[0]?.system).toBeUndefined();
+    expect(loadEvents(dir).some((e) => e.type === 'memory/snapshot')).toBe(false);
+    // off 模式对 store 完全只读（这里连读都不发生——文件内容保持不变）
+    expect(readFileSync(join(memRoot, 'MEMORY.md'), 'utf8')).toBe('已有记忆');
+  });
+
+  it('注入（mode≠off 的装配 = 传 memory）：首个 user turn 前落快照，request.system === 快照 content', async () => {
+    const dir = tmpDir();
+    const store = new MemoryStore(tmpDir());
+    await store.apply([
+      { operation: 'add', target: 'memory', text: '项目使用 pnpm monorepo' },
+      { operation: 'add', target: 'user', text: '用户偏好简体中文回复' },
+    ]);
+    const provider = new MockProvider([{ text: '收到' }]);
+
+    await runTurn(dir, { provider, tools: new ToolRegistry(), cwd: dir, userText: '你好', memory: store });
+
+    // 快照事件位于首个 user/message 之前（首个 user turn 前）
+    const types = loadEvents(dir).map((e) => e.type);
+    expect(types.indexOf('memory/snapshot')).toBeGreaterThan(-1);
+    expect(types.indexOf('memory/snapshot')).toBeLessThan(types.indexOf('user/message'));
+    const snap = loadEvents(dir).find((e) => e.type === 'memory/snapshot')!;
+    expect(snap.payload).toMatchObject({ content: assembleMemorySnapshot('项目使用 pnpm monorepo', '用户偏好简体中文回复') });
+    // Model-visible ⟺ logged 扩展到 system：请求 system === 日志快照 content
+    expect(provider.requests[0]?.system).toBe((snap.payload as { content: string }).content);
+    expect(provider.requests[0]?.messages.map((m) => m.role)).toEqual(['user']);
+  });
+
+  it('冻结语义：后续轮复用快照（store 后续变化不重读），日志只有一条 memory/snapshot', async () => {
+    const dir = tmpDir();
+    const store = new MemoryStore(tmpDir());
+    await store.apply([{ operation: 'add', target: 'memory', text: '第一轮记忆' }]);
+    const provider = new MockProvider([{ text: '一轮结束' }, { text: '二轮结束' }]);
+
+    await runTurn(dir, { provider, tools: new ToolRegistry(), cwd: dir, userText: '第一句', memory: store });
+    // 两轮之间记忆文件被外部追加
+    await store.apply([{ operation: 'add', target: 'memory', text: '第二轮新记忆' }]);
+    await runTurn(dir, { provider, tools: new ToolRegistry(), cwd: dir, userText: '第二句', memory: store });
+
+    const snaps = loadEvents(dir).filter((e) => e.type === 'memory/snapshot');
+    expect(snaps).toHaveLength(1);
+    const frozen = (snaps[0]!.payload as { content: string }).content;
+    expect(frozen).toContain('第一轮记忆');
+    expect(frozen).not.toContain('第二轮新记忆');
+    expect(provider.requests[0]?.system).toBe(frozen);
+    expect(provider.requests[1]?.system).toBe(frozen);
+  });
+
+  it('记忆全空：不注入不落事件（system undefined，日志无快照）', async () => {
+    const dir = tmpDir();
+    const store = new MemoryStore(tmpDir()); // 空 store
+    const provider = new MockProvider([{ text: '好的' }]);
+
+    await runTurn(dir, { provider, tools: new ToolRegistry(), cwd: dir, userText: '你好', memory: store });
+
+    expect(provider.requests[0]?.system).toBeUndefined();
+    expect(loadEvents(dir).some((e) => e.type === 'memory/snapshot')).toBe(false);
+  });
+
+  it('记忆文件漂移：读侧按空记忆处理（不注入坏结构，不落事件）', async () => {
+    const dir = tmpDir();
+    const memRoot = tmpDir();
+    writeFileSync(join(memRoot, 'MEMORY.md'), '条目一\n§\n条目二\n§', 'utf8'); // 末尾游离 § = 漂移
+    const store = new MemoryStore(memRoot);
+    const provider = new MockProvider([{ text: '好的' }]);
+
+    await runTurn(dir, { provider, tools: new ToolRegistry(), cwd: dir, userText: '你好', memory: store });
+
+    expect(provider.requests[0]?.system).toBeUndefined();
+    expect(loadEvents(dir).some((e) => e.type === 'memory/snapshot')).toBe(false);
+  });
+
+  it('老会话补快照（off→ask/auto 切换）：首个新 turn 补落快照并注入，其后冻结', async () => {
+    const dir = tmpDir();
+    const store = new MemoryStore(tmpDir());
+    // 第 1、2 轮 off（不传 memory）
+    const providerOff = new MockProvider([{ text: '一轮' }, { text: '二轮' }]);
+    await runTurn(dir, { provider: providerOff, tools: new ToolRegistry(), cwd: dir, userText: 'off-1' });
+    // 开 writer 续写第二轮
+    const writer = SessionWriter.open(dir, { fsync: false });
+    await runTurn(writer, { provider: providerOff, tools: new ToolRegistry(), cwd: dir, userText: 'off-2' });
+    writer.close();
+    expect(loadEvents(dir).some((e) => e.type === 'memory/snapshot')).toBe(false);
+
+    // 切到 ask/auto（装配传 memory）：第 3 轮补快照
+    await store.apply([{ operation: 'add', target: 'user', text: '切换后记住的偏好' }]);
+    const providerOn = new MockProvider([{ text: '三轮' }, { text: '四轮' }]);
+    await runTurn(dir, { provider: providerOn, tools: new ToolRegistry(), cwd: dir, userText: 'on-1', memory: store });
+    const writer2 = SessionWriter.open(dir, { fsync: false });
+    await runTurn(writer2, { provider: providerOn, tools: new ToolRegistry(), cwd: dir, userText: 'on-2', memory: store });
+    writer2.close();
+
+    const snaps = loadEvents(dir).filter((e) => e.type === 'memory/snapshot');
+    expect(snaps).toHaveLength(1);
+    const frozen = (snaps[0]!.payload as { content: string }).content;
+    expect(providerOn.requests[0]?.system).toBe(frozen);
+    expect(providerOn.requests[1]?.system).toBe(frozen);
+  });
+
+  it('不变量扩展：requests[].system 可从日志 memory/snapshot 事件逐步重建', async () => {
+    const dir = tmpDir();
+    const store = new MemoryStore(tmpDir());
+    await store.apply([{ operation: 'add', target: 'memory', text: '快照记忆 A' }]);
+    const provider = new MockProvider([{ text: 't1 完成' }, { text: 't2 完成' }]);
+    await runTurn(dir, { provider, tools: new ToolRegistry(), cwd: dir, userText: '第一轮', memory: store });
+    // 第二轮前记忆文件变化——冻结语义下请求 system 仍应等于日志快照
+    await store.apply([{ operation: 'add', target: 'memory', text: '第二域新记忆 B' }]);
+    const writer = SessionWriter.open(dir, { fsync: false });
+    await runTurn(writer, { provider, tools: new ToolRegistry(), cwd: dir, userText: '第二轮', memory: store });
+    writer.close();
+
+    // —— 独立回放：遍历日志，memory/snapshot 更新 currentSystem，step/start 快照 ——
+    const session = loadSession(dir);
+    computeProjection(session);
+    let currentSystem: string | undefined;
+    const expected: Array<{ system?: string }> = [];
+    for (const { event: e, active } of session.events) {
+      if (!active) continue;
+      if (e.type === 'memory/snapshot') currentSystem = e.payload.content;
+      else if (e.type === 'step/start') expected.push(currentSystem !== undefined ? { system: currentSystem } : {});
+    }
+    expect(provider.requests).toHaveLength(expected.length);
+    for (const [i, req] of provider.requests.entries()) {
+      expect(req.system).toBe(expected[i]!.system);
+    }
+  });
+});

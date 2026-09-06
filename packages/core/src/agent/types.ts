@@ -1,5 +1,6 @@
 // Agent loop 类型：一次用户 turn 的执行选项与结果。
 import type { ChatProvider, ToolCallRequest } from '../provider/types.js';
+import type { MemoryStore } from '../memory/store.js';
 import type { SnapshotStore } from '../session/snapshots.js';
 import type { ToolRegistry } from '../tools/registry.js';
 import type { ApprovalHandler } from '../tools/types.js';
@@ -47,6 +48,15 @@ export interface TurnOptions {
    * tool-result 在对应 tool/result 事件落盘后回调（含解析失败/拒绝/取消的失败结果）。
    */
   onStream?: (event: TurnStreamEvent) => void;
+  /**
+   * 可选：长期记忆 store（阶段 6）。装配层在 config.memory.mode ≠ off 时才提供——
+   * off 模式不传本选项 = 零注入、零事件、零 store 读取。提供且本 turn 是用户 turn
+   * （userText 提供）时：会话活动投影已有 memory/snapshot 事件 → 复用其 content 作为
+   * ChatRequest.system（会话内冻结，不重读文件，保 prefix cache 语义）；没有则读 store
+   * 组装快照、先落 memory/snapshot 事件再注入（老会话首个新 turn 即补快照）。
+   * 两个记忆文件都为空 → 不注入不落事件。
+   */
+  memory?: MemoryStore;
 }
 
 /** turn 内流式观察事件（onStream 回调 payload；纯渲染缝，非模型上下文来源） */
