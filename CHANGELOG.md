@@ -2,6 +2,25 @@
 
 本文件记录面向使用者的显著变更。发布素材源自 `docs/diary/`（每日日志的 Release note 段）。
 
+## 1.0.0 — M4「公开发布收口」（2026-09-07，代码就绪；发布待授权）
+
+首个公开发布版本（0.1/0.3/0.6 均为「代码就绪；发布待授权」，从未实际发布到 npm，见 `docs/MIGRATION.md`）。**0.6 → 1.0 无破坏性变更、零迁移**（变更索引逐项引用提交号见 `docs/MIGRATION.md`）。
+
+### 里程碑总述（M1 → M4）
+
+- **M1「CLI 可用」（v0.1）**：事件溯源会话内核（append-only JSONL、单写者、Model-visible ⟺ logged）、agent loop 与工具系统（审批分级/并发波次）、undo/redo + 独立文件快照（不依赖 git）、chat REPL（流式/审批交互/会话管理）、双协议 Provider（OpenAI-compatible / Anthropic，SSE 流式 + 工具增量）、两级配置与密钥分离、`harness2 traj` 轨迹查看器。
+- **M2「桌面可用」（v0.3）**：`harness2 serve` 服务化（HTTP 控制面 + WS 事件面、端口锁、信任域加固）、Electron 桌面端（多会话并行切换不断流/分屏拖拽/审批按钮/断线自动重启）、记忆三态（off/ask/auto + nudge 后台复盘 + pending 审批）、会话分叉、上下文压缩（75% 阈值 + 摘要可重建）、浏览器工具（Playwright + 资源管控）、定时任务（at-most-once + 熔断）。
+- **M3「连接外部」（v0.6）**：插件总线（manifest 声明式权限 + 装载审批 + disposer 逆序展开）、MCP（官方 SDK，stdio/Streamable HTTP 双传输）、子代理（独立子会话跑完整 runTurn，深度限制/取消传播/独立快照）、QQ/飞书机器人网关（官方 Bot API v2 + 回复式审批）、轨迹导出/回放（ZIP 幂等 + 子代理递归 + 坏行容错）、项目级 Skills（两级目录 + system 列表注入 + 按需加载）；**阶段 11 稳定化**：性能预算（10 万事件全操作 <1.5s）、`harness2 doctor` + 崩溃报告本地落盘（无遥测）、三平台分发矩阵（win nsis / mac dmg / linux AppImage，unsigned）、子会话工具集口径统一（CLI 与 serve 一致）。
+- **M4「公开发布收口」（本版）**：API 稳定承诺、迁移指南、文档站、发布回归汇总——见下节明细。
+
+### 阶段 12 明细（M4）
+
+- **API 稳定承诺**（`docs/API-STABILITY.md`）：1.0 起 semver 政策生效——breaking（删除/改名/声明种类变更）只进 major、加性（新增导出/可选字段）进 minor；`@harness2/core` 主入口 **372 个导出**经快照测试钉死（`packages/core/test/api-surface.test.ts`：加性不红、删除/改名/声明种类变更红 + 运行时导出交叉校验防漏报）；`@harness2/core/dist/...` 深路径不在发布映射内、不承诺。
+- **迁移指南**（`docs/MIGRATION.md`）：0.6→1.0 零迁移（逐项引用 CHANGELOG 条目与提交号）；auth.json / config schema 演进索引（0.1 起全部加性，旧文件零修改可用）；0.1→0.6 历史变更速览。
+- **文档站**：`docs/site/index.html` docsify CDN 零构建单页（README/architecture/API-STABILITY/MIGRATION/RELEASE-CHECKLIST/ROADMAP/HANDOFF/CHANGELOG）；CI 新增 `pages` job（GitHub Pages 部署，开启待仓库设置）。
+- **发布回归汇总**（`docs/RELEASE-CHECKLIST.md`）：自动化覆盖声明（**615 项测试 = 614 passed + 1 skipped**、typecheck、bench 基线、API 快照、crash-drill、口径统一断言——命令级）+ 手工清单索引（13 域，逐项链接 OPEN.md）+ 发布动作 checklist（push/NPM_TOKEN/tag/Pages/包名占用）。
+- **无运行时行为变更**：`packages/core/src/session/types.ts` 相对 0.6 零 diff；公开导出面零增删（快照基线即 1.0 面）；版本号与文档物料是本版主要产出。
+
 ## 0.6.0 — M3「连接外部」（2026-09-06，代码就绪；发布待授权）
 
 M3 里程碑（Ph8–Ph10）达成：在 M1「CLI 可用」+ M2「桌面可用」的能力累积上（流式对话/工具/undo/轨迹/记忆/压缩/浏览器/cron/桌面多会话），接通外部生态——插件、MCP、子代理、QQ/飞书机器人、轨迹资产化与 Skills。版本号沿用总控计划的里程碑编号（无 0.4/0.5 独立发布）。

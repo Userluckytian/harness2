@@ -64,18 +64,18 @@
 
 ## doctor 实机输出（本机 Windows 10.0.22631 x64 / Node v22.23.0，脱敏由 doctor 设计保证）
 
+Task 4 版本物料（1.0.0）后复跑（版本行 = 1.0.0，`harness2 --version` 同输出 1.0.0）：
+
 ```text
-harness2 doctor（0.6.0，2026-09-06T18:40:20.450Z）
+harness2 doctor（1.0.0，2026-09-06T18:50:30.949Z）
 [OK]  node: Node v22.23.0（≥22）
 [WARN] config: 未找到配置文件（全新环境——真实 provider 前先配置 config.json + auth.json，可用 harness2 config check 核对）
-       - 全局: C:\Users\hp\.harness2\config.json（不存在） · 项目: D:\AI_projects\harness2\.harness2\config.json（不存在）
-       - error: 未找到任何配置文件（全局 C:\Users\hp\.harness2\config.json 与项目 D:\AI_projects\harness2\.harness2\config.json 均不存在）
 [OK]  home: 用户数据根可写：C:\Users\hp\.harness2
 [OK]  mcp: 未配置 MCP 服务器（config.mcpServers）
-[OK]  sessions: 会话库 699 个会话全部可解析（坏行 0）
+[OK]  sessions: 会话库 711 个会话全部可解析（坏行 0）
 [OK]  skills: skills 0 个（无告警）
 结果：5 OK / 1 WARN / 0 FAIL → exit 0
 ```
 
+- Task 3 时点（0.6.0 构建）同机实跑结果形态一致（5 OK / 1 WARN / 0 FAIL；当时 699 会话）——doctor 判定跨版本稳定。
 - WARN 属环境事实（本机未配置 config.json/auth.json——密钥三不，CI 与测试环境同理零 key），doctor 判定与脱敏口径符合设计；真实 config 环境的实机核对在 OPEN（M10）。
-- 版本行显示 0.6.0 = Task 3 时点构建；Task 4 版本物料后随终验复跑更新。

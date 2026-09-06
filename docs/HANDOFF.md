@@ -1,6 +1,6 @@
 # HANDOFF — 交接入口（新维护者/AI 从这里开始）
 
-> 更新：2026-09-07（阶段 1–11 全部开发完成：M1/M2/M3 代码闭环 + 阶段 11 稳定化/分发；M3 v0.6.0 发布待授权） · 本文件是唯一交接入口，保持与实际状态同步。
+> 更新：2026-09-07（阶段 1–12 全部完成：M1/M2/M3 代码闭环 + 阶段 11 稳定化/分发 + **阶段 12 v1.0.0 收口**——API 稳定承诺/迁移指南/文档站/回归汇总/版本物料；发布动作待授权） · 本文件是唯一交接入口，保持与实际状态同步。
 
 ## 1. 项目一句话
 
@@ -11,14 +11,15 @@
 | 项 | 状态 |
 |----|------|
 | 默认分支 | `master`（注意：不是 main） |
-| 开发分支 | `feat/phase-11-stabilization`（阶段 11 工作在此；此前阶段各在其分支） |
-| 阶段 1–11 | ✅ 开发完成（内核 → loop+工具 → Provider+配置 → CLI chat+undo/redo → 服务化+桌面 → 记忆+分叉 → 浏览器+压缩+cron[M2] → 插件+MCP+subagent → QQ/飞书网关 → 轨迹导出/回放+Skills[M3] → **稳定化+分发**：性能预算、子会话口径统一、三平台构建矩阵、doctor+崩溃报告、抖动根治）；各阶段独立审查/修复/验收记录见 plans 与 issue-log |
+| 开发分支 | `feat/phase-12-v1-closeout`（阶段 12 工作在此；此前阶段各在其分支） |
+| 阶段 1–12 | ✅ 全部完成（内核 → loop+工具 → Provider+配置 → CLI chat+undo/redo → 服务化+桌面 → 记忆+分叉 → 浏览器+压缩+cron[M2] → 插件+MCP+subagent → QQ/飞书网关 → 轨迹导出/回放+Skills[M3] → 稳定化+分发 → **v1.0.0 收口**：API 导出面快照（372 导出钉死）+ API-STABILITY semver 政策 + MIGRATION + docsify 文档站（Pages job）+ RELEASE-CHECKLIST + 版本物料 1.0.0）；各阶段独立审查/验收记录见 plans 与 issue-log |
 | 阶段 9 特别说明 | 独立审查曾判 **fail**（P0 网关聋哑 + 7 P1，审查引用 QQ 官方文档纠偏），修复落地（`fb837bb`）后全量绿；**复审待基础设施恢复后补做**（fail 阶段闭环条件，见 OPEN.md） |
-| **M1 v0.1 / M2 v0.3 / M3 v0.6** | 🔶 代码/物料就绪；发布动作待人类操作：远程已建 `Userluckytian/harness2` 并授权 push；npm 包名占用检查、`NPM_TOKEN` secret、推 tag（可合并发布，见 OPEN.md） |
-| 未关闭事项 | 读 `docs/issue-log/OPEN.md`（保持为零上下文第一读；含三平台 CI 产物待远程验证、真实大会话 bench 复核、QQ/飞书真机联调清单、真实 MCP/插件验证、M1 手工验收清单、skill 真机体验） |
-| 测试 | `pnpm test`（含 build）—— core 500+1 skipped + cli 51 + desktop 41 + gateway 14 = **607 项（606 passed + 1 skipped**，`H2_GEN_LOOP_DEMO` 门控的 fixture 生成器非失败；阶段 11 已连续 3 次全量全绿，历史抖动已根治——判据改为相对时序/竞态消除/超时余量，见 issue-log 2026-09-07 §4） |
+| **M1 v0.1 / M2 v0.3 / M3 v0.6 / M4 v1.0.0** | 🔶 代码/物料全部就绪（四包版本已升 **1.0.0**）；发布动作待人类操作：`Userluckytian/harness2` 已授权 push、npm 包名占用检查、`NPM_TOKEN` secret、推 tag `v1.0.0`（合并发布，跳过 0.1/0.3/0.6 独立 tag）、开启 GitHub Pages——清单见 `docs/RELEASE-CHECKLIST.md` ③ 与 OPEN.md |
+| 未关闭事项 | 读 `docs/issue-log/OPEN.md`（保持为零上下文第一读；含 v1.0.0 发布动作、Pages 开启、三平台 CI 产物待远程验证、真实 key/真机类手工清单） |
+| 测试 | `pnpm test`（含 build）—— core 508+1 skipped + cli 51 + desktop 41 + gateway 14 = **615 项（614 passed + 1 skipped**，`H2_GEN_LOOP_DEMO` 门控的 fixture 生成器非失败；阶段 11 已连续 3 次全量全绿，阶段 12 回归 2 轮 + 终验复跑见 `docs/RELEASE-CHECKLIST.md`） |
+| API 稳定承诺 | `docs/API-STABILITY.md`（1.0 起 semver：breaking 只进 major；导出面快照测试，基线 fixture 随导出变更同步更新——更新命令见该文件） |
 | 性能基线 | `pnpm bench`（10 万事件合成日志，可复跑）——全部操作 <1.5s，无 >3s 痛点；预算表见 architecture.md「性能预算」节 |
-| 远程 | `origin → github.com/Userluckytian/harness2`（用户授权 push；NPM 发布仍待 NPM_TOKEN） |
+| 远程 | `origin → github.com/Userluckytian/harness2`（push 已授权过；NPM 发布仍待 NPM_TOKEN 与授权） |
 
 ## 3. 文档地图（按阅读顺序）
 
@@ -27,10 +28,12 @@
 3. `docs/MASTER-PLAN.md` —— **总控计划**（里程碑 M1–M4、阶段 Ph2–Ph12、横切线）——批准后为全局实施依据
 4. `docs/ROADMAP.md` —— 26 项功能清单 + 架构决策 D1–D6 + 明确不做
 5. `architecture.md` —— 技术栈与核心不变量（阶段 3 起：含 Provider 缝 / Agent loop / 工具系统 / 配置体系小节）
-6. `docs/ai-framework/plans/` —— 阶段计划（每份含零上下文交接提示词）
-7. `docs/diary/YYYY-MM-DD.md` —— 每日日志（发版 release note 素材）
-8. `docs/issue-log/` —— 问题日志（README 约定 + OPEN.md 未关闭索引）
-9. `docs/research/2026-09-06-reference-analysis.md` —— 四参考项目实证调研
+6. `docs/API-STABILITY.md` —— API 稳定承诺（semver 政策 + 导出面快照更新流程）
+7. `docs/MIGRATION.md` —— 迁移指南（0.6→1.0 零迁移 + 演进索引）· `docs/RELEASE-CHECKLIST.md` —— 发布回归汇总（发布动作清单在 ③）
+8. `docs/ai-framework/plans/` —— 阶段计划（每份含零上下文交接提示词）
+9. `docs/diary/YYYY-MM-DD.md` —— 每日日志（发版 release note 素材）
+10. `docs/issue-log/` —— 问题日志（README 约定 + OPEN.md 未关闭索引）
+11. `docs/research/2026-09-06-reference-analysis.md` —— 四参考项目实证调研
 
 ## 4. 如何继续开发（标准循环）
 
@@ -101,3 +104,5 @@
 - **bundle 必须 `--external:playwright`**（阶段 11 修复：browser 工具进 core 导出图后，playwright-core 的 chromium-bidi require 打不进 cjs 单文件）——打包产物内 browser_* 走「未安装指引」降级是设计口径；改 bundle 脚本后先 `pnpm --filter harness2 bundle` 再跑一次桌面 dist
 - **importReplay 有 256 MiB 解压上限**（前置中央目录声明体积 + 后置实际体积双闸门，`maxDecompressedBytes` 可覆盖）：改 export.ts 回放路径前先读 bench.test.ts 上限两例
 - **时序敏感测试的写法约定**（阶段 11 抖动根治）：并行性/取消类断言优先用事件相对时序（tool/result 同批落盘间隔）而非绝对墙钟上限；必须用墙钟时给出充足余量并注释依据——新增测试前读 loop.test.ts 并行波次与 tools.test.ts P1-3 的注释
+- **公开导出面变更必须同步快照基线**（阶段 12）：改 `packages/core/src/index.ts` 导出后跑 `pnpm build && H2_UPDATE_API_SNAPSHOT=1 pnpm --filter @harness2/core exec vitest run test/api-surface.test.ts` 并在同一提交更新 fixture——删除/改名/声明种类变更是 breaking（走 major），流程见 `docs/API-STABILITY.md`
+- **1.0 发布动作清单在 `docs/RELEASE-CHECKLIST.md` ③**（push/NPM_TOKEN/包名占用/tag/Pages）——全部待人类授权，勿自行执行

@@ -1,9 +1,13 @@
 # harness2
 
-自研跨端 AI agent harness（CLI / 桌面 / IM 网关多形态）。**M1（v0.1）= 终端里接真实模型干活**：流式对话、读写文件、跑命令、`/undo` `/redo`、轨迹可查、审批可控。**M2（v0.3）= 桌面可用**：多会话并行分屏、上下文压缩、浏览器工具、定时任务。**M3（v0.6）= 连接外部**：插件 / MCP / 子代理、QQ/飞书机器人、轨迹导出回放、项目级 Skills。
+<!-- 截图占位（待补，见 docs/issue-log/OPEN.md）：终端 chat 流式/工具行、桌面端多会话分屏、traj 时间线 -->
+
+自研跨端 AI agent harness（CLI / 桌面 / IM 网关多形态）。**M1（v0.1）= 终端里接真实模型干活**：流式对话、读写文件、跑命令、`/undo` `/redo`、轨迹可查、审批可控。**M2（v0.3）= 桌面可用**：多会话并行分屏、上下文压缩、浏览器工具、定时任务。**M3（v0.6）= 连接外部**：插件 / MCP / 子代理、QQ/飞书机器人、轨迹导出回放、项目级 Skills。**M4（v1.0.0）= 公开发布收口**：API 稳定承诺（semver + 导出面快照）、迁移指南、文档站、发布回归汇总——首个公开发布版本（发布动作待授权，见 `docs/RELEASE-CHECKLIST.md`）。
 
 - **新维护者/AI 入口：`docs/HANDOFF.md`**
 - 路线图与功能清单：`docs/ROADMAP.md` · 变更记录：`CHANGELOG.md`
+- API 稳定承诺：`docs/API-STABILITY.md` · 迁移指南：`docs/MIGRATION.md` · 发布回归汇总：`docs/RELEASE-CHECKLIST.md`
+- 文档站：`docs/site/index.html`（docsify 零构建单页；GitHub Pages 开启后经 CI `pages` job 部署）
 - 调研报告：`docs/research/` · 阶段计划：`docs/ai-framework/plans/`
 - 每日日志：`docs/diary/`（发版 release note 素材来源）
 - 问题日志：`docs/issue-log/`（OPEN.md 为未关闭事项索引）
