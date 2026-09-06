@@ -39,6 +39,7 @@ import {
   type MockScript,
 } from '@harness2/core';
 import { runChat, MOCK_DEMO_SCRIPT } from './chat.js';
+import { QqAdapter, startGateway, type PlatformAdapter } from '@harness2/gateway';
 
 const program = new Command();
 
@@ -708,5 +709,63 @@ function describeMcpServer(cfg: McpServerConfig): string {
 }
 
 program.addCommand(mcpCmd);
+
+// —— gateway（阶段 9）：IM 网关常驻进程（QQ/飞书 → 本地 serve）——
+program
+  .command('gateway')
+  .description('启动 IM 网关：把 QQ/飞书消息桥接到本地会话（需先配置 config.gateways 与 auth.json.gateways 凭据）')
+  .option('--root <dir>', 'serve 工作根目录（工具执行 cwd + 会话分组）', process.cwd())
+  .option('--home <dir>', '用户数据根（默认 ~/.harness2）')
+  .option('--port <n>', 'serve 监听端口（0 = 随机）', '0')
+  .action(async (opts: { root: string; home?: string; port: string }) => {
+    const { startServe } = await import('@harness2/core');
+    const home = opts.home;
+    const paths = defaultConfigPaths(opts.root, home);
+    const loaded = loadConfig({ root: opts.root, ...(home !== undefined ? { home } : {}) });
+    const auth = readAuthFile(paths.globalAuth);
+    const gwConfig = loaded.config?.gateways ?? {};
+    const gwAuth = auth.auth.gateways ?? {};
+
+    const adapters: PlatformAdapter[] = [];
+    if (gwConfig.qq !== undefined && gwConfig.qq.enabled) {
+      const cred = gwAuth.qq ?? secretFromEnv(gwConfig.qq.appSecretEnvKey, gwConfig.qq.appId);
+      if (cred === null) {
+        console.error(`error: QQ 网关凭据缺失——请在 auth.json.gateways.qq 配置 appId/appSecret（或设 ${gwConfig.qq.appSecretEnvKey ?? '对应环境变量'}）`);
+        process.exitCode = 1;
+        return;
+      }
+      adapters.push(new QqAdapter({ config: gwConfig.qq, auth: cred }));
+    }
+    if (adapters.length === 0) {
+      console.error('error: config.gateways 未配置任何启用的平台（qq/feishu）');
+      process.exitCode = 1;
+      return;
+    }
+
+    const serve = await startServe({
+      port: Number(opts.port) || 0,
+      root: opts.root,
+      ...(home !== undefined ? { home } : {}),
+    });
+    const gw = await startGateway({
+      root: opts.root,
+      ...(home !== undefined ? { home } : {}),
+      serve: { baseUrl: `http://127.0.0.1:${serve.port}`, wsUrl: `ws://127.0.0.1:${serve.port}/ws` },
+      adapters,
+    });
+    console.log(JSON.stringify({ gateway: true, platforms: adapters.map((a) => a.channel), port: serve.port }));
+    const shutdown = async (): Promise<void> => {
+      await gw.stop();
+      await serve.close();
+      process.exit(0);
+    };
+    process.on('SIGINT', () => void shutdown());
+    process.on('SIGTERM', () => void shutdown());
+  });
+
+function secretFromEnv(envKey: string | undefined, appId: string): { appId: string; appSecret: string } | null {
+  const secret = envKey !== undefined ? process.env[envKey] : undefined;
+  return typeof secret === 'string' && secret.length > 0 ? { appId, appSecret: secret } : null;
+}
 
 program.parseAsync(process.argv);

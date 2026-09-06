@@ -353,3 +353,14 @@ Electron 主进程 spawn `harness2 serve --port 0`（`ELECTRON_RUN_AS_NODE=1` �
 ## 不做
 
 见 `docs/ROADMAP.md`「明确不做」：闭源逆向、个人号逆向协议、Cordis 引入、Rust/Tauri、UI 一次做全。
+
+## IM 网关（阶段 9 交付，`packages/gateway`，对照 hermes qqbot 实证）
+
+- **形态**：`harness2 gateway` 常驻进程——进程内起 serve（与桌面同款）+ 平台适配器；**网关是 serve 的又一个观察者**（一切会话操作经 HTTP/WS API，零新写入路径）。
+- **平台适配器接口**（`types.ts`）：`onMessage/send/start/stop`；新增平台 = 新增一个适配器文件 + GATEWAY_CHANNELS 注册。
+- **QQ 适配器**（官方 Bot API v2）：appid+secret→access_token 单飞刷新（提前 60s）；WS 网关（hello/心跳/Identify/断线指数退避重连，v1 不 resume——如实声明）；REST 出站（api.sgroup.qq.com，**频率限制队列** + 429 退避 + msg_id 被动回复 + msg_seq）；平台重推去重（容量 500）；DM/群策略三态（open/allowlist/disabled，缺省 allowlist）。
+- **飞书适配器（基础）**：webhook 事件接收（url_verification 挑战应答 + im.message.receive_v1 文本解析）+ im/v1/messages 出站（tenant_access_token 单飞）。webhook 需公网可达——真机部署由用户环境决定（内网穿透/公网部署），协议面已离线测试覆盖。
+- **渲染与审批桥接**：turn 结束一次性出站（不逐 delta）；工具行摘要 ≤3 行；超长截断提示 traj；审批请求 → 平台消息「回复 [1] 允许 / [2] 拒绝」→ 下一条决策消息 → approval-response（hub 120s 超时兜底拒绝）。
+- **会话路由**：`<platform>:<chatId>` → 会话持久化（`~/.harness2/gateway/routes.json`）；每 chat 一个会话（hub 串行保证）。
+- **凭据**：appId 入 config（非密钥）；appSecret 只存 auth.json.gateways 或 env（appSecretEnvKey）——与 API key 同款脱敏出口。
+- **如实声明**：飞书 p2p/群判定留真机联调（v1 一律按私聊渲染）；subagent 子会话的审批请求在网关侧忽略（hub 超时拒绝兜底）；语音/图片/飞书卡片不在 v1。

@@ -25,6 +25,7 @@
   },
   "dependencies": {
     "@harness2/core": "workspace:^",
+    "@harness2/gateway": "workspace:*",
     "commander": "^15.0.0"
   },
   "devDependencies": {

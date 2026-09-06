@@ -70,7 +70,7 @@ async function startQqWsGateway(dispatches: Array<{ t: string; d: Record<string,
     });
   });
   cleanups.push(async () => {
-    wss.closeAllConnections(); // 终止已建立的客户端连接（wss.close 只停监听）
+    (wss as unknown as { closeAllConnections(): void }).closeAllConnections(); // 终止已建立连接（wss.close 只停监听）
     await new Promise<void>((r) => wss.close(() => r()));
   });
   return { received, port };

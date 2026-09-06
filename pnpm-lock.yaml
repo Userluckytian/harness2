@@ -16,6 +16,9 @@ importers:
       '@harness2/core':
         specifier: workspace:^
         version: link:../core
+      '@harness2/gateway':
+        specifier: workspace:*
+        version: link:../gateway
       commander:
         specifier: ^15.0.0
         version: 15.0.0
