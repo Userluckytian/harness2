@@ -364,3 +364,7 @@ Electron 主进程 spawn `harness2 serve --port 0`（`ELECTRON_RUN_AS_NODE=1` �
 - **会话路由**：`<platform>:<chatId>` → 会话持久化（`~/.harness2/gateway/routes.json`）；每 chat 一个会话（hub 串行保证）。
 - **凭据**：appId 入 config（非密钥）；appSecret 只存 auth.json.gateways 或 env（appSecretEnvKey）——与 API key 同款脱敏出口。
 - **如实声明**：飞书 p2p/群判定留真机联调（v1 一律按私聊渲染）；subagent 子会话的审批请求在网关侧忽略（hub 超时拒绝兜底）；语音/图片/飞书卡片不在 v1。
+
+## CLI gateway 命令（阶段 9 交付）
+
+`harness2 gateway --root <dir> [--home <dir>]`：进程内起 serve（端口 0）→ 按 `config.gateways` 构建适配器（凭据缺失 = 一行错误 exit 1）→ 启动平台桥接。SIGINT/SIGTERM 优雅关停（gw.stop → serve.close）。数据流与会话隔离见「IM 网关」小节。
