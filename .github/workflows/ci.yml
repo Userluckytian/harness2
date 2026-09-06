@@ -97,3 +97,34 @@ jobs:
           name: harness2-${{ matrix.name }}
           path: ${{ matrix.artifact }}
           if-no-files-found: error
+
+  # 文档站（阶段 12 Task 2）：docsify 零构建单页（docs/site/index.html）+ 根/文档 md 拷贝暂存部署。
+  # 开启前提：仓库 Settings → Pages 来源选 GitHub Actions（见 docs/issue-log/OPEN.md——待人类操作）。
+  pages:
+    name: pages (docsify)
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/master' && github.event_name == 'push'
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Stage docs site（零构建：仅文件拷贝）
+        run: |
+          mkdir -p staging
+          cp docs/site/index.html staging/
+          cp README.md architecture.md CHANGELOG.md staging/
+          cp docs/*.md staging/
+
+      - uses: actions/configure-pages@v5
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: staging
+
+      - id: deployment
+        uses: actions/deploy-pages@v4

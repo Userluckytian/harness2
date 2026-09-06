@@ -1,0 +1,68 @@
+# 迁移指南
+
+> 状态：v1.0.0（2026-09-07，阶段 12 Task 2）· 结论先行：**0.6 → 1.0 零 breaking、零迁移**
+> 依据：`CHANGELOG.md` 全部条目 + git 提交号逐项核对（本文每节均给引用，无编造步骤）
+
+## 0.6 → 1.0：零迁移
+
+**结论：从 0.6.0 升级到 1.0.0 不需要任何迁移动作**——config、auth、会话数据、代码调用全部原样可用。
+
+依据（逐项核对）：
+
+| 核对项 | 结论 | 证据 |
+|--------|------|------|
+| 事件类型（`session.v1.jsonl`） | 零变更 | 阶段 12 红线：`packages/core/src/session/types.ts` 相对 master（`fcee96a`）零 diff；验收记录 `docs/diary/2026-09-07.md` 阶段 11/12 节 |
+| 公开导出面 | 零删除/改名 | 快照基线 `packages/core/test/fixtures/api-surface-baseline.json` 即 1.0 面（372 名）；政策见 `docs/API-STABILITY.md` |
+| config schema | 零新增必填 | 阶段 12 无 schema 改动（`git log` 阶段 12 仅 test/docs 提交）；0.6.0 已声明的阶段 11 行为变化见下表 |
+| auth.json | 零变更 | 密钥面（`channels.<id>.apiKey` / `gateways`）自 0.6.0 未动（CHANGELOG 0.6.0 节；阶段 11/12 无 auth 结构提交） |
+| 版本号 | 0.6.0 → 1.0.0 | 四包 `package.json` + `CORE_VERSION`（`packages/core/src/version.ts`），纯物料 |
+
+### 0.6 → 1.0 之间唯一需要知晓的行为变化
+
+以下变化发生在阶段 11（稳定化），**已随 0.6.0 的 CHANGELOG 声明**（`CHANGELOG.md` 0.6.0「阶段 11 稳定化 + 分发」节，补节提交 `85a43eb`）——若你的源码检出早于阶段 11（提交 `fd77cc4`，2026-09-07），升级时需要知晓：
+
+- **CLI 侧子会话不再继承 memory/browser 工具**（子会话语义统一到 serve 口径：子会话 = 隔离工作空间，per-session 绑定类工具不继承）；同时子会话新增「[Skills 可用]」列表注入（加性能力）。
+- 同节其余项均为加性或纯防护：`harness2 doctor` / 崩溃报告（`1e7bbba`）、回放解压 256 MiB 上限（`37475aa`）、`redactSecrets` 补 URL 凭据模式（`bea7d74`）、三平台桌面包（`f599062`）。
+
+### 1.0 相对 0.6 的新增（全为物料，无代码行为变化）
+
+- API 稳定承诺与导出面快照（`docs/API-STABILITY.md`，测试提交 `10c1c1f`）
+- 本迁移指南、文档站（docsify）、发布前回归汇总（`docs/RELEASE-CHECKLIST.md`）
+- 版本号 1.0.0（M4 收口）
+
+## 首次公开发布说明（0.1 / 0.3 / 0.6 均未实际发到 npm）
+
+截至 1.0.0 之前，`harness2` 与 `@harness2/core` **从未发布到 npm registry**（0.1/0.3/0.6 均为「代码就绪；发布待授权」，见 `CHANGELOG.md` 各节与 `docs/issue-log/OPEN.md`）。因此：
+
+- 不存在「已发布版本升级」场景；**1.0.0 是首个公开发布版本**。
+- 此前从源码使用的用户：`git pull` → `pnpm install` → `pnpm build`，数据目录 `~/.harness2/` 原样兼容（见下「数据兼容性」）。
+
+## config / auth 演进索引（0.1 → 0.6，全部加性）
+
+历史演进均为**加性可选字段**，缺省值保证旧 config 零修改可用；无任何一次必填化或字段改名（逐项对照 `CHANGELOG.md` 与提交号）：
+
+| 配置段 | 引入 | 内容 | 证据 |
+|--------|------|------|------|
+| `providers` / `roles` / `approval` | 0.1（M1） | 双协议 Provider、角色模型、审批三模式 + per-tool 规则 | `982cea3`、`485bfb6`；CHANGELOG 0.1.0 节 |
+| `memory`（三态 off/ask/auto + nudgeInterval） | 阶段 6 | 缺省 `off`（尊重隐私，零行为） | `bad60b4`；CHANGELOG 0.3.0「其他」+ README 阶段 6 段 |
+| `browser.enabled` | 阶段 7 | 浏览器工具整体开关 | `f6246c2`；CHANGELOG 0.3.0「浏览器工具」节 |
+| `mcpServers` | 阶段 8 | MCP 服务器声明（stdio/url） | `64175a1`；CHANGELOG 0.6.0「插件 / MCP / 子代理」节 |
+| `plugins.allow` | 阶段 8 | 插件装载白名单（缺省 `[]` 不装载） | `5d99461`；同上 |
+| `gateways` | 阶段 9 | QQ/飞书网关（缺省零网关行为；auth 侧对应 `auth.json.gateways`） | `cc84873`、可选化修复 `29afae8`；CHANGELOG 0.6.0「QQ / 飞书机器人网关」节 |
+| auth.json | 0.1 起 | `channels.<id>.apiKey`（0.1，`982cea3`）+ `gateways` 段（0.6，`cc84873`）——密钥永不进 config | CHANGELOG 0.1.0「配置体系」段 |
+
+## 0.1 → 0.6 历史变更速览
+
+版本号沿用里程碑编号（无 0.2/0.4/0.5 独立发布），详细条目以 `CHANGELOG.md` 对应章节为准：
+
+| 里程碑 | 版本 | 新增能力 | 主要提交 | CHANGELOG 章节 |
+|--------|------|----------|----------|----------------|
+| M1 CLI 可用 | 0.1.0 | 事件溯源会话内核、`harness2 traj`、agent loop + 工具系统、undo/redo + 文件快照、chat REPL、双协议 Provider、配置/审批体系 | `797f654`（骨架）→ `372493e`/`a645705`（内核）→ `dd1d935`（loop）→ `fa523fb`/`0287d3f`（快照/undo）→ `7ea34cd`（REPL）→ `2cfb2f8`/`dce6f10`（Provider） | 0.1.0 全节 |
+| M2 桌面可用 | 0.3.0 | serve 服务化（HTTP+WS）、Electron 桌面（多会话/分屏/审批按钮）、记忆三态、会话分叉、上下文压缩、浏览器工具、定时任务、信任域加固 | `7aa1401`/`2f67be1`（serve）→ `f98071f`/`c25ee56`/`8ec832c`（桌面）→ `2571696`/`bad60b4`（记忆）→ `6da111e`（分叉）→ `bd88d23`/`f6246c2`/`35771f5`/`13c3aa1`（M2 三件套+加固） | 0.3.0 全节 |
+| M3 连接外部 | 0.6.0 | 插件总线、MCP、子代理、QQ/飞书网关、轨迹导出/回放、项目级 Skills、阶段 11 稳定化（doctor/性能预算/三平台分发/子会话口径统一） | `5d99461`/`64175a1`/`730a2ff`/`2780389`（阶段 8）→ `cc84873`/`e712d61`/`fb837bb`（阶段 9）→ `4452df9`/`4131956`（阶段 10）→ `37475aa`/`fd77cc4`/`f599062`/`1e7bbba`（阶段 11） | 0.6.0 全节 |
+
+## 数据兼容性（跨全版本）
+
+- 会话日志：append-only JSONL（`session.v1.jsonl`）+ 代际字段 `v`，0.1 起格式未破坏（阶段 3 加 `reasoning` 可选字段、阶段 6 加 `memory/snapshot` 事件——均为加性，见 `architecture.md`「会话事件日志」各代际条目）。
+- 记忆文件（`~/.harness2/memories/`）与会话库布局（`~/.harness2/sessions/<encoded-cwd>/`）自引入（阶段 6 / 阶段 4）未变更（`bad60b4`、`e43ab73`）。
+- 已知单向口径：分叉会话不复制文件快照、新会话 undo 从零（设计口径非迁移项，见 README「记忆与分叉」）。
