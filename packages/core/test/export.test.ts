@@ -130,6 +130,24 @@ describe('exportSession', () => {
     expect(keys).not.toContain('lock');
   });
 
+  it('条目按相对路径排序（审查 P2-1 防回归）：snapshots/ 多文件与子目录跨创建顺序稳定，导出仍字节幂等', () => {
+    const dir = join(tmpDir(), 'sess');
+    makeSimpleSession(dir, '20260906-020404-ffffff');
+    // 故意按非字典序创建 snapshots/ 下的文件（readdir 顺序跨平台不保证）
+    const snapDir = join(dir, 'snapshots');
+    mkdirSync(join(snapDir, 'sub'), { recursive: true });
+    writeFileSync(join(snapDir, 'b.txt'), 'b');
+    writeFileSync(join(snapDir, 'a.txt'), 'a');
+    writeFileSync(join(snapDir, 'sub', 'c.txt'), 'c');
+    const out1 = join(tmpDir(), 's1.zip');
+    const out2 = join(tmpDir(), 's2.zip');
+    exportSession(dir, out1);
+    exportSession(dir, out2);
+    const keys = Object.keys(unzipSync(new Uint8Array(readFileSync(out1))));
+    expect(keys).toEqual(['session.v1.jsonl', 'snapshots/a.txt', 'snapshots/b.txt', 'snapshots/sub/c.txt']);
+    expect(readFileSync(out1).equals(readFileSync(out2))).toBe(true);
+  });
+
   it('子代理会话递归打包进 subagents/<id>/；孙会话（parentSession=子 id）不入包', () => {
     const lib = makeLibrary();
     const outFile = lib.parentZip();
@@ -222,6 +240,26 @@ describe('importReplay', () => {
     const emptyZip = join(tmpDir(), 'empty.zip');
     writeFileSync(emptyZip, zipSync({}, { mtime: new Date(Date.UTC(2000, 0, 1)) }));
     expect(() => importReplay(emptyZip)).toThrow(/没有会话日志/);
+  });
+
+  it('越界 rewind/marker 告警与 loadSession 同款（审查 P2-3 防回归）：纯内存补齐，不计入 badLines', () => {
+    // 手工构造越界 marker 的会话（rewindToSeq=99 超过 lastSeq=3；parseEventLine 放行、读侧告警）
+    const ts = new Date().toISOString();
+    const lines = [
+      JSON.stringify({ v: 1, seq: 1, ts, type: 'session/header', payload: { sessionId: 'replay-oob' } }),
+      JSON.stringify({ v: 1, seq: 2, ts, type: 'user/message', payload: { text: 'hi' } }),
+      JSON.stringify({ v: 1, seq: 3, ts, type: 'rewind/marker', payload: { rewindToSeq: 99, reason: 'undo' } }),
+    ];
+    const oobZip = join(tmpDir(), 'oob.zip');
+    writeFileSync(
+      oobZip,
+      zipSync({ 'session.v1.jsonl': new TextEncoder().encode(`${lines.join('\n')}\n`) }, { mtime: new Date(Date.UTC(2000, 0, 1)) }),
+    );
+    const report = importReplay(oobZip);
+    const root = report.sessions[0]!;
+    expect(root.badLines).toBe(0); // 事件本身合法（parseEventLine 放行），越界属告警非坏行
+    expect(root.warnings).toEqual(['rewind/marker at seq 3: rewindToSeq 99 out of range (1..3)']);
+    expect(root.lastSeq).toBe(3);
   });
 
   it('zip 文件缺失：一行可读错误（不打印堆栈路径之外的内容）', () => {

@@ -61,9 +61,10 @@ function readSessionHeader(dir: string): SessionHeaderPayload | null {
 }
 
 /**
- * 白名单收集一个会话目录内应入包的文件（相对路径，'/' 分隔，排序确定）：
+ * 白名单收集一个会话目录内应入包的文件（相对路径，'/' 分隔）：
  * session.v1.jsonl（必需）+ rewind_points.jsonl + snapshots/**（存在时）。
  * lock 与其余未知文件不入包——导出结构冻结，避免把进程状态/临时文件带进资产。
+ * 收尾按 rel 排序（审查 P2-1）：readdir 顺序跨平台不保证，排序是字节幂等的一部分。
  */
 function collectSessionFiles(dir: string): Array<{ rel: string; abs: string }> {
   const logPath = join(dir, SESSION_LOG_FILE);
@@ -79,7 +80,7 @@ function collectSessionFiles(dir: string): Array<{ rel: string; abs: string }> {
   if (existsSync(snapshotsDir)) {
     files.push(...collectDirRecursive(snapshotsDir, SNAPSHOTS_DIR));
   }
-  return files;
+  return files.sort((a, b) => (a.rel < b.rel ? -1 : a.rel > b.rel ? 1 : 0));
 }
 
 /** 递归收集目录内全部文件（rel 为 '/' 分隔的包内路径；目录本身不产生条目） */
@@ -193,6 +194,7 @@ function replayFromJsonl(text: string, source: string): ReplaySessionReport {
   const events: LoadedSession['events'] = [];
   let header: SessionHeaderPayload | null = null;
   let badLines = 0;
+  let maxSeq = 0;
   for (const [i, line] of text.split('\n').entries()) {
     if (line.length === 0) continue;
     const e = parseEventLine(line);
@@ -202,7 +204,19 @@ function replayFromJsonl(text: string, source: string): ReplaySessionReport {
       continue;
     }
     if (e.type === 'session/header') header = e.payload;
+    if (e.seq > maxSeq) maxSeq = e.seq;
     events.push({ event: e, active: true });
+  }
+  // 越界 rewind/marker 告警与 loadSession（reader.ts）同款（审查 P2-3）——纯内存补齐，
+  // 使「loadSession 同款告警格式」声明完整成立（坏行计数 badLines 不含此项）
+  for (const { event } of events) {
+    if (event.type !== 'rewind/marker') continue;
+    const n = event.payload.rewindToSeq;
+    if (!Number.isInteger(n) || n < 1 || n > maxSeq) {
+      warnings.push(
+        `rewind/marker at seq ${event.seq}: rewindToSeq ${n} out of range (1..${maxSeq})`,
+      );
+    }
   }
   // id 优先取 header；无头时按包内路径推导（subagents/<id>/… → <id>），再退 'unknown'
   const pathDerived = source.startsWith('subagents/') ? source.split('/')[1] : undefined;

@@ -52,6 +52,22 @@ describe('parseSkillFrontmatter', () => {
     expect(parseSkillFrontmatter('---\nname: two words\ndescription: y\n---\n')).toBeNull();
     expect(parseSkillFrontmatter('---\nname: \ndescription: y\n---\n')).toBeNull();
   });
+
+  it('边界（审查 P2-6 防回归）：UTF-8 BOM 开头的 frontmatter 正确解析', () => {
+    // 编辑器保存 UTF-8 with BOM 时文件以 \uFEFF 开头
+    expect(parseSkillFrontmatter('\uFEFF---\nname: bom-skill\ndescription: BOM 文件\n---\n正文')).toEqual({
+      name: 'bom-skill',
+      description: 'BOM 文件',
+    });
+  });
+
+  it('边界（审查 P2-6 防回归）：CRLF（\\r\\n）换行的 frontmatter 正确解析', () => {
+    // Windows 编辑器换行
+    expect(parseSkillFrontmatter('---\r\nname: crlf-skill\r\ndescription: CRLF 文件\r\n---\r\n\r\n正文\r\n')).toEqual({
+      name: 'crlf-skill',
+      description: 'CRLF 文件',
+    });
+  });
 });
 
 describe('SkillStore.scan', () => {
@@ -79,6 +95,17 @@ describe('SkillStore.scan', () => {
     expect(scan.skills[0]!.description).toBe('项目版描述');
     expect(scan.skills[0]!.content).toContain('项目版正文');
     expect(scan.warnings.some((w) => w.includes('覆盖全局同名'))).toBe(true);
+  });
+
+  it('层内重名（审查 P2-2 防回归）：同层两个文件 frontmatter 同名 → 保留先文件，单独告警指明被丢弃路径', () => {
+    const project = tmpDir();
+    writeSkill(project, 'a-dup.md', 'dup', '先文件');
+    writeSkill(project, 'b-dup.md', 'dup', '后文件');
+    const scan = new SkillStore(project, undefined).scan();
+    expect(scan.skills).toHaveLength(1);
+    expect(scan.skills[0]!.description).toBe('先文件'); // 文件名排序在前者保留
+    expect(scan.warnings.some((w) => w.includes('层内重名 "dup"') && w.includes('b-dup.md') && w.includes('a-dup.md'))).toBe(true);
+    expect(scan.warnings.some((w) => w.includes('覆盖全局同名'))).toBe(false); // 不再误用跨级文案
   });
 
   it('上限 50：超出按名称排序截断 + 告警列出被忽略项', () => {

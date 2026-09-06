@@ -135,13 +135,26 @@ export class SkillStore {
     const global = scanLevel(this.globalDir, 'global', warnings);
     const project = scanLevel(this.projectDir, 'project', warnings);
     const byName = new Map<string, SkillEntry>();
-    for (const entry of global) byName.set(entry.name, entry);
-    for (const entry of project) {
-      if (byName.has(entry.name)) {
-        warnings.push(`skills: 项目级 "${entry.name}" 覆盖全局同名（${entry.file}）`);
+    // 同源重名（审查 P2-2）与跨级覆盖分开：层内两个文件 frontmatter 同名 → 保留
+    // 先文件（scanLevel 按文件名排序，结果确定）+ 单独告警指明被丢弃路径；跨级才是
+    // 「项目级覆盖全局同名」（此前层内重名误用覆盖文案且先文件被静默丢弃）
+    const putLevel = (entries: readonly SkillEntry[], level: 'project' | 'global'): void => {
+      for (const entry of entries) {
+        const existing = byName.get(entry.name);
+        if (existing !== undefined) {
+          if (existing.source === entry.source) {
+            warnings.push(
+              `skills: ${level === 'project' ? '项目' : '全局'}层内重名 "${entry.name}"，丢弃 ${entry.file}（保留 ${existing.file}）`,
+            );
+            continue;
+          }
+          warnings.push(`skills: 项目级 "${entry.name}" 覆盖全局同名（${entry.file}）`);
+        }
+        byName.set(entry.name, entry);
       }
-      byName.set(entry.name, entry);
-    }
+    };
+    putLevel(global, 'global');
+    putLevel(project, 'project');
     const merged = [...byName.values()].sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
     if (merged.length > SKILLS_MAX) {
       const dropped = merged.slice(SKILLS_MAX).map((s) => s.name);
