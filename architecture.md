@@ -324,9 +324,31 @@ Electron 主进程 spawn `harness2 serve --port 0`（`ELECTRON_RUN_AS_NODE=1` �
 - Origin 白名单（`file://` 与本地 http 源；无 Origin 的非浏览器客户端放行）；Host 必须为 `127.0.0.1:<port>`（阻断 DNS rebinding/网站探针）；WS upgrade 与 HTTP 同规则；WS `maxPayload` 1MiB 对齐 HTTP。
 - 信任模型声明：服务仅绑 127.0.0.1、无鉴权——本机进程均在信任域内；跨设备访问不在设计范围。loopback token 认证评估后留档（桌面 `--port 0` 随机端口已缓解）。
 
-## 插件机制（决策 D4，后期公开）
+## 插件总线（阶段 8 交付，`plugins/`，决策 D4 公开化）
 
-自研轻量总线：事件 emit/waterfall + 注册返回 disposer（学 dsh"注册即可逆"，不引 Cordis）。阶段 1–3 仅内部使用，P2 公开化。
+- 形态：`~/.harness2/plugins/<name>/manifest.json`（`{name, version, permissions}`）+ `index.js`（默认导出 `definePlugin({name, setup(ctx)})`，ESM）。
+- **声明式权限**（未声明 = 无权限，最小授权）：`tools`（true=任意工具名 / string[] 名单）、`events`（可订阅的会话事件类型或 `'*'`）、`cron`（预留声明，v1 无 cron API）。
+- **装载审批**：manifest 合法 + `config.plugins.allow` 含该名才装载（`harness2 plugin enable <name>` 打印权限清单确认后写入 allow；`disable` 撤销）。缺省 allow=[]，不审批不装载。
+- PluginContext：`registerTool`（进 ToolRegistry，重名拒绝）/ `on`（事件总线）/ `log`（插件前缀）/ `config`（深冻结只读快照）；注册类调用全部返回 disposer，**卸载 = 依获取顺序逆序展开**。
+- 事件桥接：serve 由 hub 落盘事件镜像 → 总线（`emitSessionEvent`）；chat 由 per-turn writer 包裹桥接，同源不旁路。
+- **沙箱边界（如实声明）**：v1 插件与宿主**同进程、非隔离**——权限是 API 层约束而非强制隔离，恶意代码可绕过（import 宿主模块）。worker/isolate 代码隔离已评估：实现成本与收益不匹配（跨 worker 传输工具结果/审批/事件的复杂度），留档不冒进；缓解 = allow 审批 + 权限清单明示。单插件失败（导入/setup/权限/重名）收口为跳过 + 告警，不拖垮宿主。
+
+## MCP 支持（阶段 8 交付，`mcp/client.ts`）
+
+- 官方 `@modelcontextprotocol/sdk`（锁 1.x）；config `mcpServers` 每条连接：stdio（spawn 子进程）或 url（Streamable HTTP）。
+- 工具桥接：`listTools` → 以 `mcp__<server>__<tool>` namespaced 注册（schema 透传、unsafe 默认走审批；名非法字符折叠 `_`）；调用仅依赖 `callTool` 一面（isError → ToolOutput.error，非文本块占位）。
+- 冲突策略：**本地 > 插件 > MCP**（注册顺序天然保证；MCP 与既有工具重名 → 跳过 + 告警，不覆盖）。
+- 生命周期：连接失败/中途断开 → 退避重启（1s/5s/15s，上限 3；连接稳定 30s 重置计数防误伤长期连接）→ 耗尽 = 该 server 工具全部下线（disposer）+ 告警，**单 server 故障不拖垮主进程**。`harness2 mcp list` 支持连接探测（状态 + 工具数）。
+- 范围：仅 tools（resources/prompts 不做）；适配层薄封装，SDK API 变动面最小。
+
+## Subagent（阶段 8 交付，`agent/subagent.ts`）
+
+- `subagent_start {prompt, cwd?}`：`SessionManager.create` 子会话（header：`parentSession`/`isSeeded`/`subagent` 血缘）→ **独立子会话跑完整 runTurn**（天然继承事件溯源/轨迹/undo 隔离）；结果 JSON（`childSessionId/finalText/stopReason`）进 tool/result.output。
+- `subagent_continue {childSessionId, message}`：向子会话追加消息续跑（校验血缘，只续本会话派生的子会话；目录锁冲突如实失败）。
+- **零新增事件类型**：父日志只有 tool/call + tool/result；父子以 header 血缘 + output.childSessionId 关联（桌面端工具行「子会话 ↗」跳转）。
+- **深度红线**：子会话工具集 = 宿主工具集 − subagent 工具，再按 `(depth+1) < maxDepth` 重挂（血缘重绑）；默认 maxDepth=1（子内无 subagent 工具）。maxTurns 限子会话单 turn 步数（默认 25）。
+- **取消传播**：子 runTurn 消费父 turn 的 signal——父 abort → 子 abort，子会话以 cancelled 收尾且事件照常落盘（append-only）。审批上抛同一待审批表（payload.sessionId = 子会话）。
+- v1 口径：子会话不注入记忆/压缩（短生命周期子任务，与 cron 同口径）；与父同进程非沙箱（边界与插件小节一致）。装配：hub 每会话重绑（血缘/审批按子会话），CLI chat 会话切换时重绑。
 
 ## 不做
 

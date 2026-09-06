@@ -1,6 +1,6 @@
 # HANDOFF — 交接入口（新维护者/AI 从这里开始）
 
-> 更新：2026-09-06（阶段 5/6 双验收通过；阶段 7 实现与独立审查修复完成——M2 三大件：浏览器工具/上下文压缩/定时任务） · 本文件是唯一交接入口，保持与实际状态同步。
+> 更新：2026-09-06（阶段 8 实现完成：插件总线公开化 + MCP 客户端 + subagent——扩展生态三扇门打开，待 `/accept-phase` 验收） · 本文件是唯一交接入口，保持与实际状态同步。
 
 ## 1. 项目一句话
 
@@ -11,12 +11,12 @@
 | 项 | 状态 |
 |----|------|
 | 默认分支 | `master`（注意：不是 main） |
-| 开发分支 | `feat/phase-7-browser-compaction-cron`（阶段 7 工作在此；此前阶段各在其分支） |
-| 阶段 1–6 | ✅ 全部完成并验收（内核 → loop+工具 → Provider+配置 → CLI chat+undo/redo → 服务化+桌面 → 记忆+分叉） |
-| 阶段 7（M2） | 🔶 实现+审查修复完成：Task 1–6 已提交（上下文压缩/浏览器工具/定时任务/信任域加固/发布物料/整备）；独立审查发现项已修复（P1 cron run 审批对齐 + P2×5，附防回归测试；P2×2 评估不修留档 OPEN.md，见 issue-log §14），待 `/accept-phase` 验收 |
+| 开发分支 | `feat/phase-8-plugins-mcp-subagent`（阶段 8 工作在此；此前阶段各在其分支，1–7 在 feat/phase-7-*） |
+| 阶段 1–7 | ✅ 全部完成并验收（内核 → loop+工具 → Provider+配置 → CLI chat+undo/redo → 服务化+桌面 → 记忆+分叉 → 浏览器+压缩+cron[M2]） |
+| 阶段 8 | 🔶 实现+自测完成：Task 1–5 已提交（插件总线 manifest 权限/装载审批/disposer 逆序展开；MCP 客户端 stdio+url/退避重启/namespaced 工具；subagent 独立子会话/深度限制/取消传播；hub/serve/chat 装配 + CLI plugin/mcp 命令 + 桌面前缀渲染/子会话跳转），待 `/accept-phase` 验收 |
 | **M1 v0.1 / M2 v0.3** | 🔶 代码/物料就绪；**发布动作未执行**——待人类授权：远程仓库 + push、npm 包名占用检查、`NPM_TOKEN` secret、推 tag（见 OPEN.md） |
-| 未关闭事项 | 读 `docs/issue-log/OPEN.md`（保持为零上下文第一读；含真实模型体验清单、GUI 真机清单、信任域加固结论） |
-| 测试 | `pnpm test`（含 build）—— core 383+1 skipped + cli 30 + desktop 39 = **453 项（452 passed + 1 skipped**，`H2_GEN_LOOP_DEMO` 门控的 fixture 生成器非失败；loop.test.ts 偶发抖动已登记 OPEN.md，失败先重跑甄别） |
+| 未关闭事项 | 读 `docs/issue-log/OPEN.md`（保持为零上下文第一读；含真实 MCP server 实测、第三方插件样例清单） |
+| 测试 | `pnpm test`（含 build）—— core 434+1 skipped + cli 37 + desktop 41 = **513 项（512 passed + 1 skipped**，`H2_GEN_LOOP_DEMO` 门控的 fixture 生成器非失败；loop.test/tools.test 偶发抖动已登记 OPEN.md，失败先重跑甄别） |
 | 远程 | 无（未配置 origin；push 需人类授权） |
 
 ## 3. 文档地图（按阅读顺序）
@@ -60,6 +60,7 @@
 - **桌面冒烟（阶段 5）**：`pnpm --filter @harness2/desktop smoke`——无头冒烟输出 `{ok,port,rendererLoaded,bridgeReady}`；打包后 `packages/desktop/release/win-unpacked/harness2.exe --smoke` 同样可验；GUI 交互（拖拽手感/多会话实机体验）待真机
 - **chat 冒烟（阶段 4）**：`node packages/cli/dist/index.js chat --provider mock --root <临时目录>`——演示 write+read 两轮工具 → `/undo --dry-run` → `/undo`（创建的文件被删）→ `/redo`（内容回放）→ `/sessions` → `/exit`
 - **记忆冒烟（阶段 6）**：config 写 `"memory": {"mode":"auto"}` 后 `harness2 chat` 让模型记一条偏好 → `harness2 memory show` 查看；改 `"mode":"ask"` → 让模型记忆 → `harness2 memory pending` → `approve <id>` 落盘；`off`（缺省）时模型看不到 memory 工具
+- **插件/MCP/subagent 冒烟（阶段 8）**：①插件：把样例插件放 `~/.harness2/plugins/<name>/`（manifest + ESM index.js）→ `harness2 plugin list` 看权限清单 → `plugin enable <name>` 确认 → config `plugins.allow` 出现该名 → chat/serve 重启后工具可调；②MCP：config 写 `"mcpServers": {"filesystem": {"command": "npx", "args": ["-y", "@modelcontextprotocol/server-filesystem", "/tmp"]}}` → `harness2 mcp list` 探测连接与工具数 → chat/serve 里出现 `mcp__filesystem__*` 工具；③subagent：mock REPL `harness2 chat --provider mock` 让模型派子任务（或真实模型说"派子代理去做 X"）→ 工具行 `subagent_start` → 子会话独立 traj（桌面端工具行「子会话 ↗」跳转）
 - **分叉冒烟（阶段 6）**：`harness2 chat --fork <id>`（或 REPL `/fork [seq]`）→ banner 标血缘与复制事件数 → 原会话零改动（traj 对比）；serve 模式 `POST /api/sessions/:id/fork` / WS op `fork`
 - 注意：cli 包名已改为 `harness2`（npm 发布名），根工作区更名为 `harness2-monorepo`（避免重名）；`pnpm --filter harness2` 指向 packages/cli
 - 注意：`pnpm --filter harness2 test` 在干净检出需先 build（根脚本已串 build）
@@ -85,3 +86,7 @@
 - **pnpm 11 的构建脚本白名单/overrides 在 pnpm-workspace.yaml**（allowBuilds / overrides），package.json 的 pnpm 字段已被忽略；electron 二进制下载失败可设 `ELECTRON_MIRROR=https://npmmirror.com/mirrors/electron/` 后重跑 install
 - **electron-builder 26 需要 @electron/get ≥4**（ElectronDownloadCacheMode）：已用 workspace overrides `@electron/get: ^5.1.0` 钉住，动依赖版本时注意
 - **打包后 serve 子进程 = esbuild 单文件 bundle**（packages/cli/dist-bundle/harness2-cli.cjs，经 extraResources）：jsonc-parser 必须走 ESM 入口（bundle 脚本带 `--alias:jsonc-parser=jsonc-parser/lib/esm/main.js`，UMD 运行时动态 require 打不进单文件）；改 cli 依赖后先 `pnpm --filter harness2 bundle` 并本地跑一次 bundle serve 验证
+- **插件 v1 进程内非隔离（阶段 8）**：manifest 权限是 API 层约束不是强制隔离，恶意代码可绕过——改插件层时不得弱化 allow 审批与权限清单展示；worker/isolate 隔离留档评估（见 architecture.md 插件小节）
+- **MCP 工具名 sanitize 后撞名 = 后者跳过**（`mcp__<server>__<tool>` 必须满足工具名约束 ^[a-z0-9_]+$，config 层拦 server 名，tool 名非法字符折叠 `_`）；MCP server 名在 config 校验里必须匹配 ^[a-z0-9_]+$
+- **subagent 深度红线的实现点**：`buildSubagentChildTools` 重挂时血缘重绑（parentSessionId=子会话 id、depth+1）——改 subagent.ts 前先读 subagent.test.ts（孙会话血缘/深度断言在那）；hub 侧每次 turn 按会话 id 重绑（buildTurnTools），改 SessionHub 装配前先读 assembly.test.ts
+- **阶段 8 新增依赖 `@modelcontextprotocol/sdk`（锁 ^1.30.0）**：客户端只依赖 listTools/callTool 两面（适配层薄封装，SDK 升级先跑 mcp.test.ts）；stateless Streamable HTTP server 夹具每请求新建 transport（web-standard 传输禁止跨请求复用）
