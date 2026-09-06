@@ -8,8 +8,16 @@ export interface ChannelAuth {
   apiKey: string;
 }
 
+/** IM 网关凭据（阶段 9）：appId 非密钥但为对称起见与 appSecret 一起存 gateways 段 */
+export interface GatewayAuth {
+  appId: string;
+  appSecret: string;
+}
+
 export interface AuthFile {
   channels: Record<string, ChannelAuth>;
+  /** 网关凭据（阶段 9；键 = 渠道名 'qq' | 'feishu'）。缺省/损坏 = undefined（按未配置处理） */
+  gateways?: Record<string, GatewayAuth>;
 }
 
 export function emptyAuth(): AuthFile {
@@ -66,6 +74,37 @@ export function readAuthFile(path: string): ReadAuthResult {
       auth: emptyAuth(),
       error: `auth.json.channels 缺少非空 apiKey 字段的渠道：${brokenChannels.join('、')}（已按未配置处理）`,
     };
+  }
+  // —— gateways 段（阶段 9）：appId+appSecret 双字段必填；缺/空 = 该段整体按未配置处理
+  const rawGateways = (obj as Record<string, unknown>)['gateways'];
+  if (rawGateways !== undefined) {
+    if (typeof rawGateways !== 'object' || rawGateways === null || Array.isArray(rawGateways)) {
+      return { auth, error: `auth.json.gateways 必须是对象，已按未配置处理` };
+    }
+    const brokenGateways: string[] = [];
+    const gateways: Record<string, GatewayAuth> = {};
+    for (const [name, v] of Object.entries(rawGateways)) {
+      const appId =
+        typeof v === 'object' && v !== null && typeof (v as Record<string, unknown>)['appId'] === 'string'
+          ? ((v as Record<string, unknown>)['appId'] as string)
+          : undefined;
+      const appSecret =
+        typeof v === 'object' && v !== null && typeof (v as Record<string, unknown>)['appSecret'] === 'string'
+          ? ((v as Record<string, unknown>)['appSecret'] as string)
+          : undefined;
+      if (!appId || !appSecret) {
+        brokenGateways.push(name);
+        continue;
+      }
+      gateways[name] = { appId, appSecret };
+    }
+    if (brokenGateways.length > 0) {
+      return {
+        auth,
+        error: `auth.json.gateways 缺少非空 appId/appSecret 字段的渠道：${brokenGateways.join('、')}（已按未配置处理）`,
+      };
+    }
+    auth.gateways = gateways;
   }
   return { auth };
 }

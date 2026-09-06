@@ -113,6 +113,35 @@ export interface SubagentConfig {
 
 export const DEFAULT_SUBAGENT_CONFIG: SubagentConfig = { maxDepth: 1, maxTurns: 25 };
 
+/**
+ * IM 网关渠道配置（阶段 9）：DM/群策略三态，缺省 allowlist（防滥用）。
+ * appId 非密钥可入 config；appSecret 只存 auth.json.gateways（或 env 经 appSecretEnvKey）。
+ */
+export type GatewayPolicy = 'open' | 'allowlist' | 'disabled';
+
+export interface GatewayChannelConfig {
+  /** 缺省 true：配置了该渠道即视为启用（显式关闭用 false） */
+  enabled: boolean;
+  /** QQ 开放平台 appid / 飞书 appId（非密钥，可入 config） */
+  appId: string;
+  /** appSecret 的环境变量名（解析顺序 auth.json.gateways > env；缺省只查 auth.json） */
+  appSecretEnvKey?: string;
+  /** 私聊策略（缺省 allowlist） */
+  dmPolicy: GatewayPolicy;
+  /** 群聊策略（缺省 allowlist） */
+  groupPolicy: GatewayPolicy;
+  /** allowlist 策略生效时的 chat id 白名单（openid/chat_id） */
+  allow: string[];
+}
+
+export interface GatewaysConfig {
+  qq?: GatewayChannelConfig;
+  feishu?: GatewayChannelConfig;
+}
+
+/** 网关渠道名（与 GATEWAY_CHANNELS 对齐的类型形态） */
+export type GatewayChannelName = 'qq' | 'feishu';
+
 /** 合并+校验后的配置（唯一合法形态） */
 export interface HarnessConfig {
   providers: Record<string, ProviderConfig>;
@@ -123,6 +152,8 @@ export interface HarnessConfig {
   plugins: PluginsConfig;
   mcpServers: McpServersConfig;
   subagent: SubagentConfig;
+  /** IM 网关配置（阶段 9；缺省 = {}：零网关行为） */
+  gateways: GatewaysConfig;
 }
 
 /** 配置错误（工厂/CLI 对其做一行友好输出；消息不携带密钥） */
@@ -136,6 +167,15 @@ export class ConfigError extends Error {
 export const APPROVAL_MODES: readonly ApprovalMode[] = ['default', 'acceptEdits', 'bypass'];
 export const APPROVAL_TOOL_RULES: readonly ApprovalToolRule[] = ['allow', 'ask', 'deny'];
 export const PROTOCOLS: readonly ProviderConfig['protocol'][] = ['openai', 'anthropic'];
+export const GATEWAY_POLICIES: readonly GatewayPolicy[] = ['open', 'allowlist', 'disabled'];
+/** 网关渠道名（qq / feishu；新平台 = 这里加一个名字 + gateway 包新增适配器） */
+export const GATEWAY_CHANNELS: readonly string[] = ['qq', 'feishu'];
+export const DEFAULT_GATEWAY_CHANNEL: Omit<GatewayChannelConfig, 'appId'> = {
+  enabled: true,
+  dmPolicy: 'allowlist',
+  groupPolicy: 'allowlist',
+  allow: [],
+};
 
 export interface ConfigParseResult {
   /** 校验通过时为合并后的配置；有任何 error 时为 null */
@@ -159,7 +199,7 @@ function isStringRecord(v: unknown): v is Record<string, string> {
 }
 
 /** schema 内已知的顶层字段（其余忽略并告警） */
-const KNOWN_TOP_KEYS = new Set(['providers', 'roles', 'approval', 'memory', 'browser', 'plugins', 'mcpServers', 'subagent']);
+const KNOWN_TOP_KEYS = new Set(['providers', 'roles', 'approval', 'memory', 'browser', 'plugins', 'mcpServers', 'subagent', 'gateways']);
 
 function collectUnknownKeys(obj: Dict, known: ReadonlySet<string>, where: string, warnings: string[]): void {
   for (const k of Object.keys(obj)) {
@@ -176,6 +216,8 @@ const BROWSER_KNOWN_KEYS = new Set(['enabled', 'idleDestroyMs', 'maxConcurrent']
 const PLUGINS_KNOWN_KEYS = new Set(['enabled', 'allow']);
 const MCP_SERVER_KNOWN_KEYS = new Set(['command', 'args', 'env', 'cwd', 'url', 'headers']);
 const SUBAGENT_KNOWN_KEYS = new Set(['maxDepth', 'maxTurns']);
+const GATEWAYS_KNOWN_KEYS = new Set(['qq', 'feishu']);
+const GATEWAY_CHANNEL_KNOWN_KEYS = new Set(['enabled', 'appId', 'appSecretEnvKey', 'dmPolicy', 'groupPolicy', 'allow']);
 
 /**
  * 校验合并后的原始 JSON（展开 ${VAR} 之后的形态），产出 HarnessConfig。
@@ -523,6 +565,73 @@ export function parseConfig(raw: unknown): ConfigParseResult {
     }
   }
 
+  // —— gateways（阶段 9；缺省 = {}：零网关行为）——
+  // 渠道名白名单（GATEWAY_CHANNELS）；DM/群策略缺省 allowlist（防滥用）；
+  // appId 非密钥可入 config，appSecret 只走 auth.json.gateways / env（这里不校验密钥本身）。
+  const gateways: GatewaysConfig = {};
+  const rawGateways = raw['gateways'];
+  if (rawGateways !== undefined) {
+    if (!isPlainObject(rawGateways)) {
+      errors.push('config.gateways 必须是对象');
+    } else {
+      collectUnknownKeys(rawGateways, GATEWAYS_KNOWN_KEYS, 'gateways', warnings);
+      for (const [name, v] of Object.entries(rawGateways)) {
+        if (!GATEWAY_CHANNELS.includes(name)) {
+          warnings.push(`gateways: 未知渠道 "${name}" 已忽略（支持：${GATEWAY_CHANNELS.join('、')}）`);
+          continue;
+        }
+        if (!isPlainObject(v)) {
+          errors.push(`gateways.${name} 必须是对象`);
+          continue;
+        }
+        collectUnknownKeys(v, GATEWAY_CHANNEL_KNOWN_KEYS, `gateways.${name}`, warnings);
+        const appId = v['appId'];
+        if (typeof appId !== 'string' || appId.trim() === '') {
+          errors.push(`gateways.${name}.appId 必须是非空字符串`);
+          continue;
+        }
+        const channel: GatewayChannelConfig = { ...DEFAULT_GATEWAY_CHANNEL, appId };
+        const enabled = v['enabled'];
+        if (enabled !== undefined) {
+          if (typeof enabled !== 'boolean') {
+            errors.push(`gateways.${name}.enabled 必须是布尔值`);
+            continue;
+          }
+          channel.enabled = enabled;
+        }
+        const envKey = v['appSecretEnvKey'];
+        if (envKey !== undefined) {
+          if (typeof envKey !== 'string' || envKey.trim() === '') {
+            errors.push(`gateways.${name}.appSecretEnvKey 必须是非空字符串`);
+            continue;
+          }
+          channel.appSecretEnvKey = envKey;
+        }
+        let channelOk = true;
+        for (const field of ['dmPolicy', 'groupPolicy'] as const) {
+          const policy = v[field];
+          if (policy === undefined) continue;
+          if (typeof policy !== 'string' || !GATEWAY_POLICIES.includes(policy as GatewayPolicy)) {
+            errors.push(`gateways.${name}.${field} 必须是 ${GATEWAY_POLICIES.join(' | ')}，实际为 ${JSON.stringify(policy)}`);
+            channelOk = false;
+            continue;
+          }
+          channel[field] = policy as GatewayPolicy;
+        }
+        const allow = v['allow'];
+        if (allow !== undefined) {
+          if (!Array.isArray(allow) || !allow.every((x) => typeof x === 'string' && x.trim() !== '')) {
+            errors.push(`gateways.${name}.allow 必须是非空字符串数组`);
+            channelOk = false;
+          } else {
+            channel.allow = [...(allow as string[])];
+          }
+        }
+        if (channelOk) gateways[name as GatewayChannelName] = channel;
+      }
+    }
+  }
+
   // —— 交叉引用校验（roles 引用存在的 channel/model）——
   for (const [role, rc] of Object.entries(roles)) {
     const provider = providers[rc.channel];
@@ -543,5 +652,5 @@ export function parseConfig(raw: unknown): ConfigParseResult {
   const safeErrors = errors.map(redactSecrets);
   const safeWarnings = warnings.map(redactSecrets);
   if (safeErrors.length > 0) return { config: null, errors: safeErrors, warnings: safeWarnings };
-  return { config: { providers, roles, approval, memory, browser, plugins, mcpServers, subagent }, errors: safeErrors, warnings: safeWarnings };
+  return { config: { providers, roles, approval, memory, browser, plugins, mcpServers, subagent, gateways }, errors: safeErrors, warnings: safeWarnings };
 }
