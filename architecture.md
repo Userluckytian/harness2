@@ -297,6 +297,33 @@ Electron 主进程 spawn `harness2 serve --port 0`（`ELECTRON_RUN_AS_NODE=1` �
 
 - ✅ P0/P1（阶段 4 交付）：`/undo` `/redo`（opencode 语义：投影截断 + 文件快照恢复，含冲突检测与 dry-run）；✅ 分叉（阶段 6 交付：dsh 语义 header 血缘 `parentSession`/`isSeeded` + atSeq 截取，见「会话分叉」小节）→ P1 增强：grok 三模式 rewind（对话/文件/全部独立撤回）。
 
+## 上下文压缩（阶段 7 交付，`agent/compaction.ts`）
+
+- 触发：turn 开始时估算（活动消息字符/4）> `roles.main` 模型 contextWindow × 75%。
+- 执行：`roles.small` 生成摘要（≤2000 字符）→ append `compaction/applied {summary, coveredUpToSeq}`（coveredUpToSeq = 倒数第 6 条用户/助手消息 seq）→ 近 6 条消息始终原文保留。
+- 消费：`buildChatMessages` 取**最新**一条压缩事件，把覆盖区活动消息替换为一条 `[对话摘要]` user 消息（与其后的原尾部消息合并以维持 role 交替不变量）。
+- 失败语义：摘要失败不落事件、本轮跳过、turn 不中断（下轮重试）。
+- 不变量：摘要落盘可重建——「Model-visible ⟺ logged」延伸到压缩内容。
+
+## 浏览器工具（阶段 7 交付，`tools/predefined/browser.ts`）
+
+- 6 工具：`browser_navigate/click/type/snapshot/screenshot/close`；Playwright chromium headless，**惰性动态 import**（未安装时工具返回安装指引，注册不失败）。
+- 资源红线（对照 Tokeny 实证形态）：每会话 1 个浏览器上下文、全局并发 2（超限排队）、空闲 5 分钟销毁、dispose/crash 经既有工具事件链写入轨迹。
+- ref 引用（aria snapshot）而非裸 selector；仅访问显式给出的 URL；全部 unsafe（默认审批 ask）；`config.browser.enabled=false` 整体关闭。
+- **如实声明**：bash 同理，浏览器侧下载/触发的文件改动不进 undo 文件快照。
+
+## 定时任务（阶段 7 交付，`cron/`，对照 hermes cron 实证）
+
+- jobs.json（`~/.harness2/cron/`，上限 50）；serve 内 60s tick + 跨进程 `.tick.lock` 文件锁。
+- **at-most-once**：循环任务先推进 next_run 落盘再执行（防崩溃连发补跑）。
+- 执行 = 独立临时会话跑 runTurn（roles.main + 全量工具）；结果写 `cron/history/`；serve 下 WS 通知帧。
+- 可靠性：连续 3 次失败自动熔断（enabled=false + incident 标记）；CLI `cron list/add/remove/run/history`。IM 投递在 Ph9 网关。
+
+## 信任域（阶段 7 交付，`server/trust.ts`——M2 发布前加固）
+
+- Origin 白名单（`file://` 与本地 http 源；无 Origin 的非浏览器客户端放行）；Host 必须为 `127.0.0.1:<port>`（阻断 DNS rebinding/网站探针）；WS upgrade 与 HTTP 同规则；WS `maxPayload` 1MiB 对齐 HTTP。
+- 信任模型声明：服务仅绑 127.0.0.1、无鉴权——本机进程均在信任域内；跨设备访问不在设计范围。loopback token 认证评估后留档（桌面 `--port 0` 随机端口已缓解）。
+
 ## 插件机制（决策 D4，后期公开）
 
 自研轻量总线：事件 emit/waterfall + 注册返回 disposer（学 dsh"注册即可逆"，不引 Cordis）。阶段 1–3 仅内部使用，P2 公开化。

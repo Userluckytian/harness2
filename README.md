@@ -1,6 +1,6 @@
 # harness2
 
-自研跨端 AI agent harness（CLI / 桌面 / IM 网关多形态）。**M1（v0.1）= 终端里接真实模型干活**：流式对话、读写文件、跑命令、`/undo` `/redo`、轨迹可查、审批可控。
+自研跨端 AI agent harness（CLI / 桌面 / IM 网关多形态）。**M1（v0.1）= 终端里接真实模型干活**：流式对话、读写文件、跑命令、`/undo` `/redo`、轨迹可查、审批可控。**M2（v0.3）= 桌面可用**：多会话并行分屏、上下文压缩、浏览器工具、定时任务。
 
 - **新维护者/AI 入口：`docs/HANDOFF.md`**
 - 路线图与功能清单：`docs/ROADMAP.md` · 变更记录：`CHANGELOG.md`
@@ -72,3 +72,14 @@ node packages/cli/dist/index.js chat --provider mock   # 本地冒烟
 ## License
 
 MIT
+
+## 浏览器与定时任务（阶段 7）
+
+- **浏览器工具**（agent 可用，先执行 `harness2 browser install` 安装 chromium）：
+  `browser_navigate / click / type / snapshot / screenshot / close`——模型通过 aria snapshot 引用元素操作页面，
+  不暴露裸 selector。资源管控：每会话 1 个上下文、全局并发 2、空闲 5 分钟销毁、dispose 写入轨迹。
+  `config.browser.enabled=false` 关闭；默认审批 ask。**如实声明**：仅访问用户/模型显式给出的 URL，无自动爬取；
+  截图与页面内容属会话数据。
+- **定时任务**：`harness2 cron add "每天早上帮我看一下 XXX" --at "daily 09:00"`（或 `--every 5m`）；
+  到点在独立会话执行，结果写 `~/.harness2/cron/history/`；`cron list / remove / run / history` 管理。
+  连续 3 次失败自动熔断；上限 50 条。

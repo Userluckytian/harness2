@@ -1,6 +1,6 @@
 {
   "name": "@harness2/core",
-  "version": "0.1.0",
+  "version": "0.3.0",
   "description": "@harness2/core —— 会话内核（事件溯源 JSONL 日志/投影/快照/undo）+ agent loop + 工具系统 + Provider 缝",
   "license": "MIT",
   "type": "module",

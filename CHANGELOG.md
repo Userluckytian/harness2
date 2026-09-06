@@ -2,6 +2,41 @@
 
 本文件记录面向使用者的显著变更。发布素材源自 `docs/diary/`（每日日志的 Release note 段）。
 
+## 0.3.0 — M2「桌面可用」（2026-09-06，代码就绪；发布待授权）
+
+桌面端第一版 + 三大件。版本号沿用总控计划的里程碑编号（无 0.2 独立发布）。
+
+### 桌面端（Electron，Windows 安装包）
+
+- **多会话并行**：会话内核独立进程（`harness2 serve`，仅 127.0.0.1，端口锁防双实例）；切换会话不断流——后台会话只记事件不渲染，切回时从事件日志快速重放。
+- **分屏与拖拽**：1/2/3 分栏，从会话列表拖拽绑定会话；布局持久化（`~/.harness2/desktop-layout.json`）；分栏外会话显示未读徽标。
+- **审批按钮**：工具 ask 请求在桌面端以 允许/拒绝 按钮处理（120s 超时按拒绝）。
+- 打包：nsis 安装包（unsigned）；服务随应用 spawn/断线退避重启/自动重启上限。
+
+### 上下文压缩
+
+- 长会话超模型窗口 75% 时自动以小模型（`roles.small`）生成对话摘要；`compaction/applied` 事件落盘、可从日志重建（不变量延伸到压缩）；最近 6 条消息始终保留原文；摘要失败自动跳过不中断对话。
+
+### 浏览器工具（agent 可用，需先 `harness2 browser install`）
+
+- `browser_navigate / click / type / snapshot / screenshot / close`（Playwright chromium，headless；ref 引用而非裸 selector）。
+- 资源管控：每会话 1 个浏览器上下文、全局并发 2（超限排队）、空闲 5 分钟自动销毁、销毁/崩溃写入轨迹日志。
+- 默认审批 ask（unsafe）；`config.browser.enabled=false` 可整体关闭。
+
+### 定时任务
+
+- `harness2 cron add "指令" --every 5m|--at "daily 09:00"`：任务即自然语言指令，到点在独立临时会话执行（复用主 agent 与全部工具），结果写 `~/.harness2/cron/history/`，serve 模式推送通知帧（桌面端后续接入展示）。
+- 可靠性：跨进程 tick 文件锁、**先推进 next_run 再执行**（at-most-once，防崩溃连发）、连续 3 次失败自动熔断并标记 incident、上限 50 条；`cron list/remove/run/history` 全套命令。
+
+### 安全加固（M2 发布前项）
+
+- serve 信任域：Origin 白名单（file:// 与本地 http 源）、Host 必须为 `127.0.0.1:<端口>`（阻断 DNS rebinding 与网站探针）、WS 帧上限 1MiB；HTTP 与 WS upgrade 同规则。
+
+### 其他
+
+- 会话分叉（REPL `/fork`、`chat --fork`、服务 API）；记忆系统三态开关（详见 README 阶段 6 段）。
+- `harness2 traj` 支持新事件类型（压缩/记忆快照/定时任务通知帧）。
+
 ## 0.1.0 — M1「CLI 可用」（2026-09-06）
 
 首个可用版本：**终端里接真实模型干活**。npm 包 `harness2`（命令同名），内核包 `@harness2/core` 独立发布。
