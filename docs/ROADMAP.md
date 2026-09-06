@@ -52,6 +52,8 @@
 | 18 | 定时任务 | tick + 文件锁 + at-most-once；结果通知事件 | hermes cron + grok scheduler | ✅（阶段 7：60s tick + 跨进程锁 + 先推进 next_run 再执行 + 连败熔断 + history；CLI 全套 + serve 通知帧；IM 投递在 Ph9、桌面展示待接入） |
 | 19 | undo 增强 | grok 三模式（对话/文件/全部）+ 冲突检测 + dry-run 预览 | grok rewind | ✅（阶段 4：undo/redo = 对话投影截断 + 文件快照联动恢复，冲突检测与 dry-run 预览齐备；三模式合一为单一 undo/redo 流，独立分模式留作后续增强） |
 
+> **M3 状态（2026-09-06）：代码层面达成**——#20–26 全部交付（#20/24/25 阶段 8，#21/22 阶段 9，#23/26 阶段 10）；v0.6.0 发布动作待授权（见 issue-log OPEN）。真机类残留（QQ/飞书联调、MCP/插件实测、skill 真机体验）见 OPEN.md 各清单。
+
 ## P2 扩展与生态
 
 | # | 功能 | 说明 | 主要参考 | 状态 |
@@ -59,10 +61,10 @@
 | 20 | 插件总线公开化 | 内置能力逐步插件化；第三方插件加载与沙箱边界 | dsh Profile/Bundle 思想（简化） | ✅（阶段 8：manifest 声明式权限 + allow 装载审批 + disposer 逆序展开 + 事件总线；v1 进程内非隔离如实声明，worker 隔离留档评估；内置能力插件化与插件市场不在范围） |
 | 21 | QQ Bot gateway | 官方 Bot API v2（WS+REST）、审批按钮、每 chat 串行、持久化去重；**集成前实测个人开发者权限** | hermes qqbot adapter | ✅（阶段 9：官方 v2 已实现（审查 fail→修复闭环：生命周期/重连重订阅/msg_seq 递增/429 退避）+ 回复式审批 + 频率限制队列 + 重推去重 + 三态策略；**真机联调待用户开放平台凭据**，个人开发者权限实测后收口） |
 | 22 | 飞书等其他 IM | 飞书 → Telegram/Discord 按需 | hermes platforms | ✅（阶段 9：飞书基础适配器（webhook 挑战/事件解析 + im/v1 出站 token 单飞 + 策略闸门 + token 校验 + reply API）；Telegram/Discord 按需） |
-| 23 | 轨迹导出/回放 | ZIP 导出（含子代理）；轨迹即测试夹具 | dsh session.export + snapshots | ⬜ |
+| 23 | 轨迹导出/回放 | ZIP 导出（含子代理）；轨迹即测试夹具 | dsh session.export + snapshots | ✅（阶段 10：exportSession 只读打包（session.v1.jsonl + rewind_points.jsonl/snapshots/ 白名单；子代理按 parentSession 全库扫描递归入 subagents/<id>/，lock 永不入包）+ 固定 mtime 幂等；importReplay 逐行解析（坏行计数/告警）+ 投影摘要；CLI `export`/`replay`；全量内存口径与 P2-4 同档留档，真实长会话体积待用户环境评估） |
 | 24 | MCP 支持 | 作为工具提供方接入 MCP 生态 | dsh/grok mcp | ✅（阶段 8：官方 SDK + stdio/Streamable HTTP + `mcp__<server>__<tool>` namespaced + 断线退避重启上限 3 + 崩溃不拖垮主进程；resources/prompts 仅 tools；真实第三方 server 待用户环境实测） |
 | 25 | Subagent | 深度限制、独立日志、消息互通 | dsh subagent + grok task | ✅（阶段 8：subagent_start/continue 工具 + 独立子会话完整 runTurn（零新增事件类型）+ 深度默认 1 + 父取消传播 + 审批上抛同缝；子会话跳转桌面端支持） |
-| 26 | Skills 系统 | 项目级技能注入 | dsh skill + hermes skills | ⬜ |
+| 26 | Skills 系统 | 项目级技能注入 | dsh skill + hermes skills | ✅（阶段 10：两级目录（项目 .harness2/skills/ > 全局 ~/.harness2/skills/，同名覆盖+告警）+ frontmatter 简表（name/description 必填）+ 上限 50 + 坏文件跳过；每 turn 重扫仅「名称: 描述」列表进 system（本轮内冻结），全文经 `skill` 工具按需加载（现读磁盘）；零新增事件类型；`skill list` CLI；文本指令型、无可执行脚本；真机体验待用户，见 OPEN.md） |
 
 ---
 

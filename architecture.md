@@ -1,7 +1,7 @@
 # harness2 架构说明
 
 > 跨端 AI agent harness（CLI / 桌面 / IM 网关多形态）
-> 状态：随阶段推进持续更新（当前：阶段 6 —— 记忆系统（开关三态）+ 会话分叉）
+> 状态：随阶段推进持续更新（当前：阶段 10 —— 轨迹导出/回放 + 项目级 Skills；里程碑 M3 v0.6 代码就绪）
 > 决策依据：`docs/ROADMAP.md` D1–D6 · `docs/research/2026-09-06-reference-analysis.md`
 
 ## 技术栈（2026-09-06 确认）
@@ -368,3 +368,20 @@ Electron 主进程 spawn `harness2 serve --port 0`（`ELECTRON_RUN_AS_NODE=1` �
 ## CLI gateway 命令（阶段 9 交付）
 
 `harness2 gateway --root <dir> [--home <dir>]`：进程内起 serve（端口 0）→ 按 `config.gateways` 构建适配器（凭据缺失 = 一行错误 exit 1）→ 启动平台桥接。SIGINT/SIGTERM 优雅关停（gw.stop → serve.close）。数据流与会话隔离见「IM 网关」小节。
+## 轨迹导出与回放（阶段 10 交付，`session/export.ts`）
+
+- **exportSession（只读打包）**：白名单收集——`session.v1.jsonl` 必含，`rewind_points.jsonl` / `snapshots/` 存在即含；`lock` 等进程状态与其他未知文件永不入包。子代理会话 = 在会话库 root（`<root>/<encoded-cwd>/<id>` 布局顶层；由会话目录上溯两级推导）扫描 `header.parentSession === 本会话 id` 的**直接子会话**，按 id 排序递归打包进 `subagents/<id>/`（孙会话不在冻结结构内；maxDepth>1 场景需对各层会话分别导出）。导出过程不修改会话目录任何文件（只读红线测试覆盖）。
+- **幂等**：fflate zipSync 的条目 mtime 统一固定（2000-01-01，zip DOS 时间仅支持 1980-2099）+ 条目按相对路径排序——同目录同内容两次导出得到逐字节相同的 zip。运行时依赖新增 `fflate`（纯 JS zip，无原生模块；cli 包仅测试 devDep）。
+- **importReplay（回放校验）**：解包 → 每个 `session.v1.jsonl` 逐行 parseEventLine（坏行计数 + loadSession 同款告警格式，坏行不中断后续解析）→ computeProjection → `{id, source, events, badLines, warnings, messageCount, lastSeq}` 摘要报告（内存内进行，不落盘）。包内无任何会话日志（空包/非 harness2 导出）抛错（CLI exit 1）。
+- **CLI**：`harness2 export <会话目录> [-o <zip>]`（默认输出 `<cwd>/<sessionId>.zip`）；`harness2 replay <zip>`（主会话/子会话逐行摘要 + 坏行明细）。
+- **性能口径（与 P2-4 大日志同档留档）**：导出为全量内存读取 + zipSync 一次性打包，回放为全量解包——超大日志/超大 zip 未做流式处理；子会话扫描为全库遍历（与 list/search 同口径）。真实长会话体积评估留待用户环境（见 OPEN.md）。
+- **隐私边界**：导出内容含用户代码与对话（属用户资产），只落本地文件，不自动上传。
+
+## Skills（阶段 10 交付，`skills/`）
+
+- **边界**：只做文本指令型 skill——markdown + YAML 简表 frontmatter（`name`/`description` 必填；`name` 不得含空白，值支持成对引号剥离；未知键忽略）；**无可执行脚本**（Global Constraints）。
+- **两级目录**：项目 `<cwd>/.harness2/skills/` 优先于全局 `~/.harness2/skills/`（同名项目覆盖 + 告警）；上限 50（超出按名称排序截断 + 告警列出被忽略项）；坏文件（无 frontmatter/未闭合/缺必需字段/不可读）跳过 + 告警；非 `.md` 静默忽略。`scan()`/`load()` 不抛错——目录不可读收口为空结果或告警。
+- **注入语义（与 memory 快照的关键差异）**：skills 列表**不落事件、不冻结**——每个 turn 从磁盘重扫（项目文件可中途新增/修改），仅「`[Skills 可用]` + `- name: description`」列表**追加**进 ChatRequest.system（memory 快照在前、空行分隔；同一 turn 内各 step 复用同一扫描结果，prefix cache 友好）。空 skills = 零注入；扫描告警并入 TurnResult.warning。
+- **Model-visible ⟺ logged 口径说明**：memory 快照以事件冻结（可从日志重建）；skills 列表的唯一事实源 = 磁盘目录本身（`.harness2/skills/`），属「可从磁盘状态重建」的注入内容——阶段计划 Global Constraints 明确零新增事件类型，skill 全文经 tool/call + tool/result 自然落盘。
+- **`skill` 工具（safe，只读）**：`{name}` → 返回该 skill 全文（含 frontmatter 原文），现读磁盘（加载即取最新内容）；未知名/空名 → error（提示查 system 列表）。装配：chat REPL 与 serve 启动即注册（无 config 开关——空目录即零行为），serve 经 SessionHubOptions.skills 传入 runTurn。
+- **CLI**：`harness2 skill list [--root <dir>] [--home <dir>]`（两级合并列表 + 来源标注 + 覆盖/坏文件告警走 stderr）。
