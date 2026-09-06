@@ -6,6 +6,7 @@ export * from './session/snapshots.js';
 export * from './session/manager.js';
 export * from './session/undo.js';
 export * from './session/fork.js';
+export * from './session/export.js';
 export * from './trajectory/view.js';
 export * from './provider/types.js';
 export * from './provider/mock.js';
