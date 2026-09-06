@@ -405,8 +405,10 @@ Electron 主进程 spawn `harness2 serve --port 0`（`ELECTRON_RUN_AS_NODE=1` �
   ①node ≥22；②config 可解析 + auth key 来源（`buildConfigReport` 同源，只显示 auth.json /
   env:XXX / **missing** 标签；全新环境无配置 = WARN，解析失败 = FAIL）；③`~/.harness2` 可写
   （探针文件写入+删除）；④MCP servers（缺省仅列出配置，`--probe` 实连、单 server 独立超时
-  5s、down = WARN 不 FAIL）；⑤会话库完整性（逐会话 loadSession，坏行/告警/不可读统计——
-  全库遍历与 list/search 同口径）；⑥skills 扫描摘要（两级合并计数 + 告警）。各项独立
+  5s、down = WARN 不 FAIL；config 解析失败时显示「未知」而非「未配置」——未知 ≠ 未配置）；
+  ⑤会话库完整性（逐会话 loadSession，坏行/告警/不可读统计——全库遍历与 list/search 同口径；
+  逐会话同步扫描，库大时耗时线性增长——当前 639 会话实测秒级可接受，未来可加进度行或
+  `--sessions-limit`）；⑥skills 扫描摘要（两级合并计数 + 告警）。各项独立
   try/catch（单项异常收口为该项 FAIL，不拖垮整份报告）；全部输出出口过 `redactSecrets`；
   exit 0（无 FAIL）/ 1（有 FAIL，WARN 不影响）。
 - **崩溃报告（`doctor/crash.ts`，无遥测）**：CLI 顶层 `uncaughtException` → 写

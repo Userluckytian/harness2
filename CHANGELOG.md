@@ -6,6 +6,14 @@
 
 M3 里程碑（Ph8–Ph10）达成：在 M1「CLI 可用」+ M2「桌面可用」的能力累积上（流式对话/工具/undo/轨迹/记忆/压缩/浏览器/cron/桌面多会话），接通外部生态——插件、MCP、子代理、QQ/飞书机器人、轨迹资产化与 Skills。版本号沿用总控计划的里程碑编号（无 0.4/0.5 独立发布）。
 
+### 阶段 11 稳定化 + 分发
+
+- **行为变化（显著声明）**：CLI 侧子会话不再继承 memory/browser 工具——子会话语义统一到 serve 口径（子会话 = 隔离工作空间，per-session 绑定类工具不继承）；同时子会话新增「[Skills 可用]」列表注入（与宿主同一 skills 目录，加性能力）。
+- **新增 `harness2 doctor`**：环境自检分节报告（node 版本 / config+auth 脱敏 / 目录可写 / MCP 探测 `--probe` / 会话库完整性 / skills 摘要）；崩溃报告本地落盘 `~/.harness2/crash/`（内容脱敏）——**无遥测零自动上报**，需要反馈时手动提供报告文件。
+- **回放安全**：`harness2 replay` 增加解压总体积上限（默认 256 MiB，超限友好报错）。
+- **性能基线达标声明**：10 万事件合成日志基准下全部操作 <3s（实测 <1.5s），不做性能优化；预算表见 architecture.md「性能预算」节，可 `pnpm bench` 复跑。
+- **三平台桌面包**：CI 构建矩阵补齐 mac dmg（arm64+x64）与 linux AppImage（win nsis 已有），全部 unsigned；产物附加到 GitHub Release。
+
 ### 轨迹导出与回放（阶段 10）
 
 - `harness2 export <会话目录> [-o <zip>]`：只读打包会话轨迹为 ZIP——主日志 `session.v1.jsonl` 必含，`rewind_points.jsonl`、`snapshots/` 存在即含，**子代理会话**（全库扫描 `header.parentSession` 匹配）递归入 `subagents/<id>/`；默认输出 `<当前目录>/<sessionId>.zip`。固定条目时间戳，同目录同内容两次导出得到逐字节相同的 zip（幂等）。

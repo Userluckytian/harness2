@@ -6,6 +6,7 @@
 
 | 日期 | 事项 | 状态 | 详情 |
 |------|------|------|------|
+| 2026-09-07 | **CLI 侧子会话工具集防回归测试的漂移风险（阶段 11 审查 P2-3 留档）**：subagent.test.ts 的「CLI 形态防回归钉死」用例用**模拟注册表**（手工 mimic chat.ts 的装配：builtin+memory+browser+skill）断言子会话剔除 per-session 绑定类工具——若未来 chat.ts 新增其他 per-session 工具而测试注册表未同步，测试不会红（漂移风险）。serve 侧已有真实 hub 集成测试（toolsForSession→subagent_start 全链路）不受影响。后续：把 chat.ts 基础注册表构建提炼为可测函数后，CLI 用例改用真实装配 | 已知限制（留档，提炼重构待后续阶段） | [2026-09-07.md](2026-09-07.md) |
 | 2026-09-07 | **阶段 11 残留手工验收（待用户环境）**：①真实大会话跑 bench 复核基线数字——`pnpm build && pnpm bench`（或 `H2_BENCH_EVENTS` 自定规模）在用户真实负载环境复跑，对照 architecture.md「性能预算」表；②`harness2 doctor` 实机输出核对（真实 config/auth/MCP/sessions 环境下 OK/WARN/FAIL 判定与脱敏展示）；③崩溃报告实机演练（`~/.harness2/crash/` 落盘、内容脱敏、无遥测声明） | 待处理（需人类操作：用户环境复核） | [2026-09-07.md](2026-09-07.md) |
 | 2026-09-07 | **三平台桌面包 CI 产物待远程验证**：`build-desktop` matrix（win nsis / mac dmg arm64+x64 / linux AppImage，全 unsigned）与 release.yml 三平台产物附加 GitHub Release 已配置、YAML 语法校验过、Windows 本地 nsis 构建通过（`harness2 Setup 0.6.0.exe`）；mac/linux 构建与 Release 附加待 push 后 Actions 真实运行确认（需人类操作：push 授权） | 待处理（需人类操作：push 后看 Actions） | [2026-09-07.md](2026-09-07.md) |
 | 2026-09-06 | **阶段 10 残留手工验收清单**（自动化已覆盖逻辑路径；待用户环境）：①真实长会话导出体积评估——用真实跑过若干天的 `~/.harness2/sessions/` 大会话跑 `harness2 export`（观察 zip 体积/耗时，全量内存口径是否可接受）→ `harness2 replay` 报告可用性；②skill 真机体验——`.harness2/skills/` 放真实 skill → `skill list` → chat 里确认「[Skills 可用]」注入、模型按需调 `skill` 工具加载全文的行为质量（是否恰当取用/不滥用） | 待处理（需人类操作：用户环境） | [2026-09-06.md](2026-09-06.md) §18 |
