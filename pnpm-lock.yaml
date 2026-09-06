@@ -11,7 +11,7 @@ importers:
   packages/cli:
     dependencies:
       '@harness2/core':
-        specifier: workspace:*
+        specifier: workspace:^
         version: link:../core
       commander:
         specifier: ^15.0.0

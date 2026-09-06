@@ -1,7 +1,8 @@
 {
   "name": "@harness2/core",
   "version": "0.1.0",
-  "private": true,
+  "description": "@harness2/core —— 会话内核（事件溯源 JSONL 日志/投影/快照/undo）+ agent loop + 工具系统 + Provider 缝",
+  "license": "MIT",
   "type": "module",
   "exports": {
     ".": {
@@ -9,18 +10,27 @@
       "default": "./dist/index.js"
     }
   },
+  "files": [
+    "dist"
+  ],
+  "engines": {
+    "node": ">=22"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run --passWithNoTests"
   },
+  "dependencies": {
+    "fast-glob": "^3.3.3",
+    "jsonc-parser": "^3.3.1"
+  },
   "devDependencies": {
     "@types/node": "^26.4.1",
     "typescript": "^7.0.2",
     "vitest": "^5.0.0"
-  },
-  "dependencies": {
-    "fast-glob": "^3.3.3",
-    "jsonc-parser": "^3.3.1"
   }
 }

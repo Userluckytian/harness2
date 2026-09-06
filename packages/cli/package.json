@@ -1,10 +1,20 @@
 {
-  "name": "@harness2/cli",
+  "name": "harness2",
   "version": "0.1.0",
-  "private": true,
+  "description": "跨端 AI agent harness —— 终端里接真实模型干活：流式 chat、工具执行、/undo /redo、轨迹可查",
+  "license": "MIT",
   "type": "module",
   "bin": {
     "harness2": "./dist/index.js"
+  },
+  "files": [
+    "dist"
+  ],
+  "engines": {
+    "node": ">=22"
+  },
+  "publishConfig": {
+    "access": "public"
   },
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
@@ -12,7 +22,7 @@
     "test": "vitest run --passWithNoTests"
   },
   "dependencies": {
-    "@harness2/core": "workspace:*",
+    "@harness2/core": "workspace:^",
     "commander": "^15.0.0"
   },
   "devDependencies": {

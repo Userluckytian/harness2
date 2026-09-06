@@ -1,0 +1,83 @@
+# harness2 Release：push tag v* → 三平台 build+test → pnpm publish（NPM_TOKEN）。
+# 发布为人类授权动作：NPM_TOKEN 未配置（或发布失败）时 publish 步骤跳过并告警，
+# 不阻塞 workflow（见 docs/issue-log/OPEN.md 的待授权登记）。
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  test:
+    name: test (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, ubuntu-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@v4
+
+      # 不指定 version：由 package.json 的 packageManager（pnpm@11.13.0）驱动
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Typecheck
+        run: pnpm -r typecheck
+
+      - name: Test
+        run: pnpm test
+
+  publish:
+    name: publish (npm)
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          registry-url: https://registry.npmjs.org
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build
+        run: pnpm -r build
+
+      - name: Publish（需 NPM_TOKEN；未配置时本步骤失败被吞并进入告警）
+        id: publish
+        continue-on-error: true
+        env:
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          if [ -z "$NPM_TOKEN" ]; then
+            echo "::warning::NPM_TOKEN 未配置，跳过 npm 发布（发布需人类授权，见 docs/issue-log/OPEN.md）"
+            exit 1
+          fi
+          echo "//registry.npmjs.org/:_authToken=\${NPM_TOKEN}" > ~/.npmrc
+          # workspace:^ 依赖按拓扑序发布：先内核后 CLI（pnpm publish 自动替换 workspace: 协议）
+          pnpm --filter @harness2/core publish --access public --no-git-checks
+          pnpm --filter harness2 publish --access public --no-git-checks
+
+      - name: Publish outcome
+        if: steps.publish.outcome != 'success'
+        run: |
+          echo "::warning::npm 发布未执行或失败（outcome=${{ steps.publish.outcome }}）。\
+          待办：配置 NPM_TOKEN secret 并人工授权后重跑（docs/issue-log/OPEN.md）。"

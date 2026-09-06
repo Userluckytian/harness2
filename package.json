@@ -1,5 +1,5 @@
 {
-  "name": "harness2",
+  "name": "harness2-monorepo",
   "private": true,
   "version": "0.1.0",
   "packageManager": "pnpm@11.13.0",
