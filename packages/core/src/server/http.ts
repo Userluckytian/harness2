@@ -30,6 +30,7 @@ import type { ChatProvider } from '../provider/types.js';
 import type { ApprovalDecision, ApprovalInput } from '../tools/types.js';
 import { SessionHub, HubError, type SessionHubHooks, type SessionHubMemory } from './sessions.js';
 import { attachWsServer, type WsPlane } from './ws.js';
+import { isTrustedHost, isTrustedOrigin } from './trust.js';
 
 /** 默认监听端口（--port 0 = 随机端口，桌面端固定用 0） */
 export const DEFAULT_SERVE_PORT = 46213;
@@ -299,6 +300,17 @@ interface ServeEnv {
 
 async function handleRequest(hub: SessionHub, env: ServeEnv, req: IncomingMessage, res: ServerResponse): Promise<void> {
   try {
+    // —— 信任域校验（一切路由之前；M2 发布前加固，Task 4）——
+    const origin = req.headers.origin;
+    if (typeof origin === 'string' && !isTrustedOrigin(origin)) {
+      sendJson(res, 403, { error: '拒绝访问：Origin 不在信任域（仅允许 file:// 与本地 http 源）' });
+      return;
+    }
+    const port = portOfServer(req);
+    if (port !== undefined && !isTrustedHost(typeof req.headers.host === 'string' ? req.headers.host : undefined, port)) {
+      sendJson(res, 403, { error: '拒绝访问：Host 校验失败（仅允许 127.0.0.1:<端口>）' });
+      return;
+    }
     const url = new URL(req.url ?? '/', 'http://127.0.0.1');
     await route(hub, env, req, res, url.pathname);
   } catch (e) {
@@ -308,6 +320,12 @@ async function handleRequest(hub: SessionHub, env: ServeEnv, req: IncomingMessag
     }
     sendJson(res, 500, { error: redactSecrets(`内部错误: ${(e as Error)?.message ?? String(e)}`) });
   }
+}
+
+/** 从 socket 取本机监听端口（socket 未就绪时 undefined → 跳过 Host 校验） */
+function portOfServer(req: IncomingMessage): number | undefined {
+  const localPort = (req.socket as { localPort?: number }).localPort;
+  return typeof localPort === 'number' ? localPort : undefined;
 }
 
 function hubErrorStatus(code: HubError['code']): number {

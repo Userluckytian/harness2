@@ -17,6 +17,7 @@ import type { TurnStopReason } from '../agent/types.js';
 import type { ToolCallRequest } from '../provider/types.js';
 import type { AnySessionEvent } from '../session/types.js';
 import { HubError, SessionHub, type TurnDelta } from './sessions.js';
+import { isTrustedHost, isTrustedOrigin, WS_MAX_PAYLOAD } from './trust.js';
 
 export const WS_PATH = '/ws';
 
@@ -71,9 +72,33 @@ function deltaFrame(sessionId: string, delta: TurnDelta): WsServerMessage {
   return { type: 'delta', sessionId, kind: delta.kind, text: delta.text };
 }
 
-/** 把 WS 事件面挂到 HTTP server 上（hub 观察者 → 订阅连接分发） */
+/** 把 WS 事件面挂到 HTTP server 上（hub 观察者 → 订阅连接分发）。
+ *  升级握手经信任域校验（Origin/Host 与 HTTP 同规则，Task 4）；帧上限 1MiB 对齐 HTTP。 */
 export function attachWsServer(server: Server, hub: SessionHub, options: WsPlaneOptions = {}): WsPlane {
-  const wss = new WebSocketServer({ server, path: options.path ?? WS_PATH });
+  const path = options.path ?? WS_PATH;
+  const wss = new WebSocketServer({ noServer: true, maxPayload: WS_MAX_PAYLOAD });
+  server.on('upgrade', (req, socket, head) => {
+    let pathname = '';
+    try {
+      pathname = new URL(req.url ?? '/', 'http://127.0.0.1').pathname;
+    } catch {
+      pathname = '';
+    }
+    const origin = typeof req.headers.origin === 'string' ? req.headers.origin : undefined;
+    const host = typeof req.headers.host === 'string' ? req.headers.host : undefined;
+    const address = server.address();
+    const port = address !== null && typeof address === 'object' ? address.port : undefined;
+    const trusted =
+      isTrustedOrigin(origin) &&
+      (port === undefined || isTrustedHost(host, port)) &&
+      pathname === path;
+    if (!trusted) {
+      socket.write('HTTP/1.1 403 Forbidden\r\nconnection: close\r\n\r\n');
+      socket.destroy();
+      return;
+    }
+    wss.handleUpgrade(req, socket, head, (ws) => wss.emit('connection', ws, req));
+  });
   interface Conn {
     ws: WebSocket;
     subs: Set<string>;
