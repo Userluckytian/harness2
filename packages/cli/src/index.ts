@@ -1,7 +1,8 @@
 #!/usr/bin/env node
-// harness2 CLI 入口。traj（阶段 1）、config check（阶段 3）、chat REPL（阶段 4）、serve（阶段 5）、browser/cron（阶段 7）。
+// harness2 CLI 入口。traj（阶段 1）、config check（阶段 3）、chat REPL（阶段 4）、serve（阶段 5）、browser/cron（阶段 7）、plugin/mcp（阶段 8）。
 import { Command } from 'commander';
-import { existsSync, readdirSync, readFileSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { createInterface } from 'node:readline';
 import { join, sep } from 'node:path';
 import {
   buildConfigReport,
@@ -14,21 +15,26 @@ import {
   defaultCronRoot,
   defaultMemoriesRoot,
   defaultPendingRoot,
+  defaultPluginsRoot,
+  describePermissions,
   installBrowserRuntime,
   loadConfig,
   loadSession,
+  McpManager,
   MemoryStore,
   MockProvider,
   PendingMemoryStore,
   readAuthFile,
   registerBuiltinTools,
   renderTrajectory,
+  scanPluginSources,
   startServe,
   ToolRegistry,
   DEFAULT_SERVE_PORT,
   type AuthFile,
   type ChatProvider,
   type HarnessConfig,
+  type McpServerConfig,
   type MemoryTarget,
   type MockScript,
 } from '@harness2/core';
@@ -158,9 +164,11 @@ program
   .option('--fork <id>', '从指定会话分叉新会话并继续（--at 截取事件序号）')
   .option('--at <seq>', '--fork 的截取上界（事件 seq，含）；缺省 = 全部活动事件')
   .option('--provider <name>', "provider：'mock' = 内置演示脚本（不加载配置）；缺省按配置 roles.main", 'config')
+  .option('--mock-script <file>', '覆盖 mock 演示脚本（JSON 文件，MockScript 形态；测试/演示用）')
+  .option('--mock-child-script <file>', '覆盖 mock 子会话脚本（subagent_start 派发的子会话 turn；测试/演示用）')
   .option('--root <dir>', '工作目录：工具执行 cwd + 会话分组（默认当前目录）')
   .option('--home <dir>', '覆盖用户数据根（配置 + 会话存储；测试/多环境用）')
-  .action(async (opts: { session?: string; fork?: string; at?: string; provider: string; root?: string; home?: string }) => {
+  .action(async (opts: { session?: string; fork?: string; at?: string; provider: string; mockScript?: string; mockChildScript?: string; root?: string; home?: string }) => {
     let at: number | undefined;
     if (opts.at !== undefined) {
       at = Number(opts.at);
@@ -169,12 +177,27 @@ program
         process.exit(1);
       }
     }
+    const readScript = (file: string | undefined, label: string): MockScript | undefined => {
+      if (file === undefined) return undefined;
+      try {
+        const parsed: unknown = JSON.parse(readFileSync(file, 'utf8'));
+        if (!Array.isArray(parsed)) throw new Error('必须是数组');
+        return parsed as MockScript;
+      } catch (e) {
+        console.error(`error: --${label} 读取失败: ${(e as Error).message}`);
+        process.exit(1);
+      }
+    };
+    const mockScript = readScript(opts.mockScript, 'mock-script');
+    const mockChildScript = readScript(opts.mockChildScript, 'mock-child-script');
     try {
       await runChat({
         ...(opts.session !== undefined ? { session: opts.session } : {}),
         ...(opts.fork !== undefined ? { fork: opts.fork } : {}),
         ...(at !== undefined ? { at } : {}),
         ...(opts.provider !== 'config' ? { provider: opts.provider } : {}),
+        ...(mockScript !== undefined ? { mockScript } : {}),
+        ...(mockChildScript !== undefined ? { mockChildScript } : {}),
         ...(opts.root !== undefined ? { root: opts.root } : {}),
         ...(opts.home !== undefined ? { home: opts.home } : {}),
       });
@@ -504,5 +527,179 @@ cronCmd
   });
 
 program.addCommand(cronCmd);
+
+/** plugin 命令（阶段 8）：插件查看与装载审批。插件在 ~/.harness2/plugins/<name>；
+ *  审批结果记录在全局 config 的 plugins.allow（manifest 合法 + 名单内才会装载）。 */
+const pluginCmd = new Command('plugin').description('插件管理（manifest 权限 + 装载审批）');
+
+interface PluginHomeOptions {
+  home?: string;
+}
+
+pluginCmd
+  .command('list')
+  .description('列出插件目录中的插件：manifest 权限与审批状态')
+  .option('--home <dir>', '覆盖用户数据根（测试/多环境用）')
+  .action((opts: PluginHomeOptions) => {
+    const sources = scanPluginSources(defaultPluginsRoot(opts.home));
+    if (sources.length === 0) {
+      console.log('（无插件）');
+      return;
+    }
+    const allow = readPluginsAllow(opts.home);
+    for (const s of sources) {
+      if (s.manifest === null) {
+        console.log(`${s.name}  [manifest 非法] ${s.error ?? ''}`);
+        continue;
+      }
+      const approved = allow.has(s.manifest.name);
+      console.log(`${s.manifest.name}  v${s.manifest.version}  ${approved ? '已批准（重启会话/serve 后装载）' : '未批准（plugin enable 启用）'}`);
+      console.log(`  权限: ${describePermissions(s.manifest)}`);
+    }
+  });
+
+pluginCmd
+  .command('enable')
+  .description('装载审批：打印权限清单，确认后写入全局 config 的 plugins.allow')
+  .argument('<name>', '插件名（目录名）')
+  .option('--yes', '跳过交互确认（脚本/自动化用）', false)
+  .option('--home <dir>', '覆盖用户数据根（测试/多环境用）')
+  .action(async (name: string, opts: PluginHomeOptions & { yes: boolean }) => {
+    const sources = scanPluginSources(defaultPluginsRoot(opts.home));
+    const src = sources.find((s) => s.name === name);
+    if (src === undefined || src.manifest === null) {
+      console.error(`error: 插件 ${name} 不存在或 manifest 非法${src?.error ? `（${src.error}）` : ''}`);
+      process.exit(1);
+    }
+    const manifest = src.manifest;
+    console.log(`插件 ${manifest.name} v${manifest.version} 权限清单：`);
+    console.log(`  ${describePermissions(manifest)}`);
+    console.log('注意：插件与主进程同进程运行（v1 非隔离），批准即授予上述 API 层权限。');
+    if (!opts.yes) {
+      const rl = createInterface({ input: process.stdin, output: process.stdout });
+      const answer = await new Promise<string>((resolve) => rl.question('确认批准装载? [y/N] ', resolve));
+      rl.close();
+      if (answer.trim().toLowerCase() !== 'y') {
+        console.log('已取消（未写入 config）');
+        return;
+      }
+    }
+    try {
+      mutatePluginsAllow(opts.home, (allow) => {
+        if (!allow.includes(manifest.name)) allow.push(manifest.name);
+      });
+      console.log(`已批准：plugins.allow += ${manifest.name}（重启 chat/serve 后生效）`);
+    } catch (e) {
+      console.error(`error: ${(e as Error).message}`);
+      process.exit(1);
+    }
+  });
+
+pluginCmd
+  .command('disable')
+  .description('撤销装载审批：从全局 config 的 plugins.allow 移除该插件')
+  .argument('<name>', '插件名（目录名）')
+  .option('--home <dir>', '覆盖用户数据根（测试/多环境用）')
+  .action((name: string, opts: PluginHomeOptions) => {
+    try {
+      let removed = false;
+      mutatePluginsAllow(opts.home, (allow) => {
+        const i = allow.indexOf(name);
+        if (i >= 0) {
+          allow.splice(i, 1);
+          removed = true;
+        }
+      });
+      console.log(removed ? `已撤销：plugins.allow -= ${name}（重启 chat/serve 后生效）` : `plugins.allow 中没有 ${name}（本就未批准）`);
+    } catch (e) {
+      console.error(`error: ${(e as Error).message}`);
+      process.exit(1);
+    }
+  });
+
+program.addCommand(pluginCmd);
+
+/** 读取全局 config 的 plugins.allow（config 不可用时返回空名单，不阻塞 list 展示） */
+function readPluginsAllow(home?: string): Set<string> {
+  const loaded = loadConfig({ home });
+  return new Set(loaded.config?.plugins.allow ?? []);
+}
+
+/** 原子改写全局 config 的 plugins.allow（严格 JSON；含注释的 JSONC 拒绝改写，避免静默丢注释） */
+function mutatePluginsAllow(home: string | undefined, mutate: (allow: string[]) => void): void {
+  const paths = defaultConfigPaths(undefined, home);
+  let raw: Record<string, unknown> = {};
+  if (existsSync(paths.globalConfig)) {
+    const text = readFileSync(paths.globalConfig, 'utf8');
+    try {
+      const parsed: unknown = JSON.parse(text);
+      if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
+        throw new Error('config 根节点必须是对象');
+      }
+      raw = parsed as Record<string, unknown>;
+    } catch {
+      throw new Error(`全局 config（${paths.globalConfig}）不是严格 JSON（可能含注释）——请手工编辑 plugins.allow`);
+    }
+  }
+  const plugins = (raw['plugins'] ?? {}) as Record<string, unknown>;
+  const allow = Array.isArray(plugins['allow']) ? [...(plugins['allow'] as unknown[]).filter((x): x is string => typeof x === 'string')] : [];
+  mutate(allow);
+  raw['plugins'] = { ...plugins, allow };
+  writeFileSync(paths.globalConfig, `${JSON.stringify(raw, null, 2)}\n`, 'utf8');
+}
+
+/** mcp 命令（阶段 8）：MCP 服务器查看与连接探测。 */
+const mcpCmd = new Command('mcp').description('MCP 服务器管理');
+
+mcpCmd
+  .command('list')
+  .description('列出配置的 MCP 服务器；默认逐 server 连接探测（状态 + 工具数），--no-probe 只看配置')
+  .option('--home <dir>', '覆盖用户数据根（测试/多环境用）')
+  .option('--root <dir>', '项目根目录（默认当前目录）')
+  .option('--no-probe', '不连接，只展示配置', true)
+  .action(async (opts: { home?: string; root?: string; probe: boolean }) => {
+    const loaded = loadConfig({ ...(opts.root !== undefined ? { root: opts.root } : {}), ...(opts.home !== undefined ? { home: opts.home } : {}) });
+    if (loaded.config === null) {
+      console.error(`error: ${loaded.errors[0] ?? 'config 未加载成功'}`);
+      process.exit(1);
+    }
+    const servers = loaded.config.mcpServers;
+    const names = Object.keys(servers);
+    if (names.length === 0) {
+      console.log('（未配置 MCP 服务器——config.mcpServers）');
+      return;
+    }
+    for (const w of loaded.warnings) console.error(`warning: ${w}`);
+    if (!opts.probe) {
+      for (const name of names) {
+        console.log(`${name}  ${describeMcpServer(servers[name]!)}`);
+      }
+      return;
+    }
+    // 探测：逐 server 独立连接（不重试——探测即时反馈，正式装载才退避重启）
+    for (const name of names) {
+      const cfg = servers[name]!;
+      process.stdout.write(`${name}  ${describeMcpServer(cfg)}  探测中…`);
+      const tools = new ToolRegistry();
+      const manager = new McpManager({ tools, maxRestarts: 0, timeoutMs: 8000, logSink: () => {} });
+      const report = await manager.connectAll({ [name]: cfg });
+      const status = manager.status().find((s) => s.server === name)!;
+      if (report.connected.includes(name)) {
+        console.log(`\r${name}  ${describeMcpServer(cfg)}  已连接，${status.tools.length} 个工具（mcp__${name}__*）`);
+      } else {
+        console.log(`\r${name}  ${describeMcpServer(cfg)}  连接失败：${report.failed[0]?.error ?? status.lastError ?? '未知错误'}`);
+      }
+      await manager.close();
+    }
+  });
+
+function describeMcpServer(cfg: McpServerConfig): string {
+  if ('command' in cfg) {
+    return `[stdio] ${cfg.command}${cfg.args?.length ? ` ${cfg.args.join(' ')}` : ''}`;
+  }
+  return `[url] ${cfg.url}`;
+}
+
+program.addCommand(mcpCmd);
 
 program.parseAsync(process.argv);

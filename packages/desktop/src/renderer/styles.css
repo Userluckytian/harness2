@@ -428,3 +428,18 @@ body,
   padding: 0 3px;
   margin-left: 6px;
 }
+
+/* 子会话跳转（阶段 8）：subagent 工具行的深链按钮 */
+.subagent-jump {
+  margin-left: 8px;
+  font-size: 11px;
+  color: #58a6ff;
+  background: none;
+  border: 1px solid #58a6ff;
+  border-radius: 4px;
+  padding: 0 5px;
+  cursor: pointer;
+}
+.subagent-jump:hover {
+  background: rgba(88, 166, 255, 0.15);
+}

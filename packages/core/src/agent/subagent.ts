@@ -52,6 +52,11 @@ export interface SubagentOptions {
   baseTools: ToolRegistry;
   /** 审批缝（与宿主同源；缺省 allow-all） */
   approval?: ApprovalHandler;
+  /**
+   * 审批上抛工厂（装配层注入）：子会话 ask 走与父相同的待审批通道，但 sessionId 记为
+   * 子会话 id（UI 按子会话归属展示）。与 approval 同时提供时工厂优先。
+   */
+  approvalFactory?: (childSessionId: string, signal: AbortSignal) => ApprovalHandler;
   /** 工具执行 cwd + 子会话缺省分组目录 */
   cwd: string;
   maxDepth: number;
@@ -63,6 +68,12 @@ export interface SubagentOptions {
   hooks?: SubagentHooks;
   /** 会话日志 fsync（测试可关） */
   fsync?: boolean;
+}
+
+/** 子会话 turn 的审批缝：工厂优先（按子会话 id 上抛），否则固定 handler，缺省 allow-all */
+function approvalFor(opts: SubagentOptions, childSessionId: string, signal: AbortSignal): ApprovalHandler | undefined {
+  if (opts.approvalFactory !== undefined) return opts.approvalFactory(childSessionId, signal);
+  return opts.approval;
 }
 
 /**
@@ -158,7 +169,9 @@ export function createSubagentTools(options: SubagentOptions): ToolDefinition[] 
         const result = await runTurn(observed, {
           provider: opts.provider,
           tools: buildSubagentChildTools(opts, childId),
-          ...(opts.approval !== undefined ? { approval: opts.approval } : {}),
+          ...(approvalFor(opts, childId, ctx.signal) !== undefined
+            ? { approval: approvalFor(opts, childId, ctx.signal) }
+            : {}),
           cwd: childCwd,
           userText: prompt,
           signal: ctx.signal,
@@ -228,7 +241,9 @@ export function createSubagentTools(options: SubagentOptions): ToolDefinition[] 
         const result = await runTurn(observed, {
           provider: opts.provider,
           tools: buildSubagentChildTools(opts, childSessionId),
-          ...(opts.approval !== undefined ? { approval: opts.approval } : {}),
+          ...(approvalFor(opts, childSessionId, ctx.signal) !== undefined
+            ? { approval: approvalFor(opts, childSessionId, ctx.signal) }
+            : {}),
           cwd: header.cwd ?? opts.cwd,
           userText: message,
           signal: ctx.signal,

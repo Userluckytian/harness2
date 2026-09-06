@@ -8,14 +8,18 @@ import {
   createBrowserTools,
   createMemoryTool,
   createProvider,
+  createSubagentTools,
   defaultConfigPaths,
   defaultMemoriesRoot,
   defaultPendingRoot,
+  defaultPluginsRoot,
   getSharedBrowserPool,
   loadConfig,
+  McpManager,
   MemoryStore,
   MockProvider,
   PendingMemoryStore,
+  PluginBus,
   registerBuiltinTools,
   resolveCompactionOptions,
   runTurn,
@@ -24,12 +28,17 @@ import {
   SessionManager,
   SnapshotStore,
   ToolRegistry,
+  SUBAGENT_TOOL_NAMES,
   type ApprovalHandler,
   type ApprovalInput,
   type ChatProvider,
   type CompactionOptions,
   type MemorySink,
   type MockScript,
+  type AnySessionEvent,
+  type SessionAppender,
+  type SessionEventMap,
+  type SessionEventType,
   type SessionWriter,
 } from '@harness2/core';
 import { StreamRenderer } from './render.js';
@@ -48,6 +57,10 @@ export interface ChatOptions {
   root?: string;
   /** 用户数据根：配置与会话存储（默认用户 home；测试/多环境用） */
   home?: string;
+  /** 覆盖 mock 演示脚本（测试注入；缺省 MOCK_DEMO_SCRIPT） */
+  mockScript?: MockScript;
+  /** 覆盖 mock 模式子会话脚本（subagent_start 派发的子会话 turn；测试注入） */
+  mockChildScript?: MockScript;
   /** 可注入 I/O（默认 process.stdin/stdout；测试用） */
   stdin?: NodeJS.ReadableStream;
   stdout?: import('node:stream').Writable;
@@ -77,6 +90,12 @@ export const MOCK_DEMO_SCRIPT: MockScript = [
   },
 ];
 
+/** mock 模式 subagent 子会话的缺省脚本（subagent_start / subagent_continue 派发的子会话 turn） */
+export const MOCK_CHILD_DEMO_SCRIPT: MockScript = [
+  { textChunks: ['子会话完成：', '这是子任务的结果。'] },
+  { textChunks: ['子会话继续完成：', '这是追加消息后的结果。'] },
+];
+
 // P2-3：[a] 的粒度在提示里写明（该工具后续所有调用不再询问；仅进程内会话级，不落盘）
 const APPROVAL_PROMPT = (tool: string): string =>
   `允许执行 ${tool}? [y]本次 [a]本会话总是（该工具后续所有调用不再询问） [n]拒绝 `;
@@ -103,12 +122,18 @@ export async function runChat(options: ChatOptions = {}): Promise<void> {
   let memoryStore: MemoryStore | undefined;
   // 压缩装配（阶段 7）：仅配置路径派生（mock 演示零压缩行为）
   let compaction: CompactionOptions | undefined;
+  // 阶段 8 装配（配置路径）：插件总线 / MCP / subagent 参数
+  let pluginBus: PluginBus | undefined;
+  let mcpManager: McpManager | undefined;
+  let subagentConfig: { maxDepth: number; maxTurns: number; provider?: ChatProvider } | undefined;
+  // 退出收尾（MCP 连接 / 插件订阅逆序展开）
+  const extensionDisposers: Array<() => void> = [];
   const tools = new ToolRegistry();
   registerBuiltinTools(tools);
 
   if (options.provider === 'mock') {
     // mock 演示：不接配置（零 key 可用），审批全放行
-    provider = new MockProvider(MOCK_DEMO_SCRIPT);
+    provider = new MockProvider(options.mockScript ?? MOCK_DEMO_SCRIPT);
   } else {
     const loaded = loadConfig({ root, ...(options.home !== undefined ? { home: options.home } : {}) });
     if (loaded.config === null) {
@@ -130,6 +155,18 @@ export async function runChat(options: ChatOptions = {}): Promise<void> {
     compaction = resolveCompactionOptions(loaded.config, (role) =>
       role === 'small' ? smallProvider : provider,
     );
+    // subagent 装配参数（阶段 8）：provider 取 roles.subagent（缺失回退主）；深度红线来自 config
+    let subProvider: ChatProvider | undefined;
+    try {
+      subProvider = createProvider(loaded.config, 'subagent', { authPath: paths.globalAuth });
+    } catch {
+      subProvider = undefined;
+    }
+    subagentConfig = {
+      maxDepth: loaded.config.subagent.maxDepth,
+      maxTurns: loaded.config.subagent.maxTurns,
+      ...(subProvider !== undefined ? { provider: subProvider } : {}),
+    };
     // 浏览器装配（阶段 7）：enabled 时注册 browser_* 工具（CLI 单会话，池键 = 'cli'）
     if (loaded.config.browser.enabled) {
       const pool = getSharedBrowserPool({
@@ -160,6 +197,23 @@ export async function runChat(options: ChatOptions = {}): Promise<void> {
       }
     }
     const policy = createApprovalPolicy(loaded.config.approval);
+    // 插件装载（阶段 8）：enabled 时扫描 ~/.harness2/plugins，allow 名单审批后装载进工具链。
+    // 事件订阅经 per-turn writer 包裹桥接（见 runUserTurn）；serve 模式由 hub 镜像桥接同源。
+    if (loaded.config.plugins.enabled) {
+      pluginBus = new PluginBus({ tools, config: loaded.config });
+      const report = await pluginBus.loadAll(defaultPluginsRoot(options.home), loaded.config.plugins.allow);
+      for (const w of report.warnings) renderer.line(`warning: ${w}`);
+      extensionDisposers.push(() => pluginBus?.dispose());
+    }
+    // MCP 连接（阶段 8）：逐 server 连接并注册 mcp__<server>__<tool>；失败退避重启不拖垮 REPL
+    if (Object.keys(loaded.config.mcpServers).length > 0) {
+      mcpManager = new McpManager({ tools });
+      const report = await mcpManager.connectAll(loaded.config.mcpServers);
+      for (const w of report.warnings) renderer.line(`warning: ${w}`);
+      extensionDisposers.push(() => {
+        void mcpManager?.close();
+      });
+    }
     const alwaysAllowed = new Set<string>(); // 进程内会话级缓存，不落盘
     approval = {
       decide(input: ApprovalInput) {
@@ -232,6 +286,32 @@ export async function runChat(options: ChatOptions = {}): Promise<void> {
     }
   }
 
+  // —— subagent 工具装配（阶段 8）：按当前会话 id 绑定血缘；会话切换时重绑 ——
+  // mock 模式用注入的子脚本 provider；配置模式取 roles.subagent（缺失回退主 provider）。
+  const subagentDisposers: Array<() => void> = [];
+  const bindSubagentTools = (sessionId: string): void => {
+    for (const dispose of subagentDisposers) dispose();
+    subagentDisposers.length = 0;
+    const childProvider =
+      options.provider === 'mock'
+        ? new MockProvider(options.mockChildScript ?? MOCK_CHILD_DEMO_SCRIPT)
+        : (subagentConfig?.provider ?? provider);
+    for (const def of createSubagentTools({
+      manager,
+      provider: childProvider,
+      baseTools: tools,
+      ...(approval !== undefined ? { approval } : {}),
+      cwd: root,
+      maxDepth: subagentConfig?.maxDepth ?? 1,
+      maxTurns: subagentConfig?.maxTurns ?? 25,
+      parentSessionId: sessionId,
+      depth: 0,
+    })) {
+      subagentDisposers.push(tools.register(def));
+    }
+  };
+  bindSubagentTools(current.id);
+
   // —— readline REPL ——
   const isTTY = (input as NodeJS.ReadStream & { isTTY?: boolean }).isTTY === true;
   const rl: Interface = createInterface({ input, output, prompt: '> ', terminal: isTTY });
@@ -284,6 +364,16 @@ export async function runChat(options: ChatOptions = {}): Promise<void> {
 
   function finish(): void {
     closeCurrent();
+    for (const dispose of subagentDisposers) dispose();
+    subagentDisposers.length = 0;
+    for (const dispose of extensionDisposers) {
+      try {
+        dispose();
+      } catch {
+        // 收尾异常不阻塞退出
+      }
+    }
+    extensionDisposers.length = 0;
     try {
       rl.close();
     } catch {
@@ -312,8 +402,8 @@ export async function runChat(options: ChatOptions = {}): Promise<void> {
         renderer.line(`error: ${(e as Error).message}`);
         current = newSession();
         renderer.line(`会话: ${current.id}（新建）`);
-        return;
       }
+      bindSubagentTools(current.id); // subagent 血缘随会话切换重绑（阶段 8）
       renderer.line(`会话: ${current.id}（${id === null ? '新建' : '已恢复'}）`);
     },
     requestExit() {
@@ -345,11 +435,29 @@ export async function runChat(options: ChatOptions = {}): Promise<void> {
 
   async function runUserTurn(text: string): Promise<void> {
     if (!current) return;
+    const session = current;
     const ac = new AbortController();
     currentAbort = ac;
-    const snapshots = new SnapshotStore(current.dir);
+    const snapshots = new SnapshotStore(session.dir);
+    // 插件事件桥接（阶段 8）：per-turn writer 包裹（先落盘、后回调 → 插件 on 订阅）；
+    // serve 模式由 hub 镜像桥接，同源不旁路。
+    const turnWriter: SessionWriter | SessionAppender =
+      pluginBus === undefined
+        ? session.writer
+        : {
+            dir: session.writer.dir,
+            get lastSeq(): number {
+              return session.writer.lastSeq;
+            },
+            append: <T extends SessionEventType>(type: T, payload: SessionEventMap[T]) => {
+              const event = session.writer.append(type, payload);
+              // append 按 T 构造，必属 AnySessionEvent 联合成员（此处收窄需显式断言）
+              pluginBus.emitSessionEvent(session.id, event as AnySessionEvent);
+              return event;
+            },
+          };
     try {
-      const result = await runTurn(current.writer, {
+      const result = await runTurn(turnWriter, {
         provider,
         tools,
         ...(approval !== undefined ? { approval } : {}),

@@ -1,7 +1,7 @@
 // 渲染端根组件：状态角标 + 会话侧栏（拖拽源）+ 分栏对话区（1/2/3 栏，DnD 绑定会话）。
 // 布局纯逻辑见 shared/layout.ts；持久化经主进程落 ~/.harness2/desktop-layout.json。
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
-import type { ChatItem } from './chat-model.js';
+import { displayToolName, type ChatItem } from './chat-model.js';
 import type { ConnectionStatus } from '../shared/protocol.js';
 import { MAX_PANES } from '../shared/layout.js';
 import { AppStore, type AppState } from './store.js';
@@ -109,6 +109,23 @@ function argsSummary(args: unknown): string {
   return one.length <= 80 ? one : `${one.slice(0, 80)}…`;
 }
 
+/** 子会话跳转按钮（阶段 8）：在空分栏（缺省第一栏）打开子会话轨迹 */
+function SubagentJump({ childSessionId }: { childSessionId: string }) {
+  const state = useAppState();
+  return (
+    <button
+      type="button"
+      className="subagent-jump"
+      title={`打开子会话 ${childSessionId} 轨迹`}
+      onClick={() => {
+        void controller.assignToPane(targetPaneFor(state), childSessionId);
+      }}
+    >
+      子会话 {childSessionId} ↗
+    </button>
+  );
+}
+
 export function ChatItemView({ item }: { item: ChatItem }) {
   switch (item.kind) {
     case 'turn-header':
@@ -133,11 +150,12 @@ export function ChatItemView({ item }: { item: ChatItem }) {
           <div className="text">{item.text}</div>
         </div>
       );
-    case 'tool':
+    case 'tool': {
+      const jump = item.childSessionId;
       return (
         <div className={`tool-row ${item.result ? (item.result.ok ? 'tool-ok' : 'tool-fail') : 'tool-pending'}`}>
           <span className="tool-line">
-            &gt; {item.tool} ({argsSummary(item.args)})
+            &gt; {displayToolName(item.tool)} ({argsSummary(item.args)})
           </span>
           {item.result === undefined ? (
             <span className="tool-status">运行中…</span>
@@ -146,8 +164,10 @@ export function ChatItemView({ item }: { item: ChatItem }) {
               {item.result.ok ? 'ok' : `FAILED${item.result.error !== undefined ? `: ${item.result.error}` : ''}`}
             </span>
           )}
+          {jump !== undefined && <SubagentJump childSessionId={jump} />}
         </div>
       );
+    }
     case 'attempt':
       return <div className="attempt-row">尝试失败：{item.error}</div>;
     case 'streaming':
@@ -156,7 +176,7 @@ export function ChatItemView({ item }: { item: ChatItem }) {
           {item.tool !== undefined ? (
             <div className="tool-row tool-pending">
               <span className="tool-line">
-                &gt; {item.tool} ({argsSummary(item.args)})
+                &gt; {displayToolName(item.tool)} ({argsSummary(item.args)})
               </span>
               <span className="tool-status">运行中…</span>
             </div>

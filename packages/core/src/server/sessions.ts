@@ -30,6 +30,8 @@ import { SnapshotStore } from '../session/snapshots.js';
 import { SessionManager } from '../session/manager.js';
 import { forkSession, ForkError, type ForkResult } from '../session/fork.js';
 import { redoLastUndo, undoLastTurn, UndoRedoError, type UndoRedoResult } from '../session/undo.js';
+import { createSubagentTools, SUBAGENT_TOOL_NAMES } from '../agent/subagent.js';
+import type { PluginBus } from '../plugins/bus.js';
 import type {
   AnySessionEvent,
   SessionEvent,
@@ -78,6 +80,21 @@ export interface SessionHubMemory {
   pending?: PendingMemoryStore;
 }
 
+/** hub 级 subagent 装配（阶段 8）：注入后每次 turn 按会话 id 重绑 subagent 工具（血缘/审批按子会话上抛） */
+export interface SessionHubSubagent {
+  /** 子会话 provider（roles.subagent 派生；缺省回退主 provider） */
+  provider: ChatProvider;
+  /** 深度上限（config.subagent.maxDepth；默认 1 = 子内无 subagent 工具） */
+  maxDepth: number;
+  /** 子会话单 turn 最大 step 数（config.subagent.maxTurns） */
+  maxTurns: number;
+}
+
+/** hub 级插件装配（阶段 8）：工具链已在共享注册表；这里只桥接事件总线（插件 on 订阅） */
+export interface SessionHubPlugins {
+  bus: PluginBus;
+}
+
 export interface SessionHubHooks {
   /** 落盘事件镜像（append 返回后同步回调；含 rewind/marker） */
   onEvent?(sessionId: string, event: AnySessionEvent): void;
@@ -111,6 +128,10 @@ export interface SessionHubOptions {
   compaction?: CompactionOptions;
   /** 浏览器装配（阶段 7；config.browser.enabled 时注入）——按会话绑定池键注册 browser_* 工具 */
   browser?: { pool: BrowserPool };
+  /** subagent 装配（阶段 8；config.subagent 派生）——按会话 id 绑定血缘的 subagent 工具 */
+  subagent?: SessionHubSubagent;
+  /** 插件装配（阶段 8）——插件事件订阅的桥接（emitSessionEvent） */
+  plugins?: SessionHubPlugins;
   hooks?: SessionHubHooks;
 }
 
@@ -210,6 +231,11 @@ export class SessionHub {
       throw new HubError('invalid', 'memory.mode=ask 需要装配 pending 暂存区（SessionHubMemory.pending），拒绝静默吞消息的残缺装配');
     }
     if (options.hooks !== undefined) this.addHooks(options.hooks);
+    // 插件事件桥接（阶段 8）：hub 落盘事件镜像 → 插件事件总线（插件 on 订阅的来源）
+    if (options.plugins !== undefined) {
+      const bus = options.plugins.bus;
+      this.addHooks({ onEvent: (sessionId, event) => bus.emitSessionEvent(sessionId, event) });
+    }
   }
 
   /** 注册观察者（幂等性由调用方保证）；返回退订函数 */
@@ -391,16 +417,20 @@ export class SessionHub {
   }
 
   /**
-   * turn 工具注册表：无记忆/浏览器装配时直接复用共享注册表；有则按会话换装——
-   * memory 工具按模式绑定 store/pending，browser_* 工具按会话 id 绑定池键。
+   * turn 工具注册表：无记忆/浏览器/subagent 装配时直接复用共享注册表；有则按会话换装——
+   * memory 工具按模式绑定 store/pending，browser_* 工具按会话 id 绑定池键，
+   * subagent 工具按会话 id 绑定血缘（父子审批/取消传播随之按会话上抛）。
    */
   private buildTurnTools(sessionId: string): ToolRegistry {
     const memory = this.options.memory;
     const browser = this.options.browser;
-    if (memory === undefined && browser === undefined) return this.options.tools;
+    const subagent = this.options.subagent;
+    if (memory === undefined && browser === undefined && subagent === undefined) return this.options.tools;
     const registry = new ToolRegistry();
+    const subNames = new Set<string>(SUBAGENT_TOOL_NAMES);
     for (const def of this.options.tools.list()) {
       if (def.name === 'memory') continue; // 换装按会话绑定的变体
+      if (subagent !== undefined && subNames.has(def.name)) continue; // subagent 工具按会话重绑
       registry.register(def);
     }
     if (memory !== undefined) {
@@ -408,6 +438,27 @@ export class SessionHub {
     }
     if (browser !== undefined) {
       for (const def of createBrowserTools(sessionId, browser.pool)) registry.register(def);
+    }
+    if (subagent !== undefined) {
+      for (const def of createSubagentTools({
+        manager: this.options.manager,
+        provider: subagent.provider,
+        baseTools: this.options.tools,
+        cwd: this.options.cwd,
+        maxDepth: subagent.maxDepth,
+        maxTurns: subagent.maxTurns,
+        parentSessionId: sessionId,
+        depth: 0,
+        // 子会话事件/turn-end 桥接进 hub 观察者（WS 面可见子会话流量）
+        hooks: {
+          onChildEvent: (childId, event) => this.emitEvent(childId, event),
+          onChildTurnEnd: (childId, result) => this.emitTurnEnd(childId, result),
+        },
+        // 子会话 ask 上抛同一待审批表（requestId 全局可应答；payload.sessionId = 子会话）
+        approvalFactory: (childId, signal) => this.makeApprovalHandler(childId, signal),
+      })) {
+        registry.register(def);
+      }
     }
     return registry;
   }

@@ -26,6 +26,10 @@ import { defaultPendingRoot, PendingMemoryStore } from '../memory/pending.js';
 import { SessionManager, defaultSessionsRoot } from '../session/manager.js';
 import { CronScheduler, type CronFinishedFrame } from '../cron/scheduler.js';
 import { defaultCronRoot } from '../cron/jobs.js';
+import { PluginBus } from '../plugins/bus.js';
+import { defaultPluginsRoot } from '../plugins/loader.js';
+import { McpManager } from '../mcp/client.js';
+import type { SessionHubSubagent } from './sessions.js';
 import type { ChatProvider } from '../provider/types.js';
 import type { ApprovalDecision, ApprovalInput } from '../tools/types.js';
 import { SessionHub, HubError, type SessionHubHooks, type SessionHubMemory } from './sessions.js';
@@ -135,6 +139,12 @@ export interface StartServeOptions {
   compaction?: CompactionOptions;
   /** 注入浏览器装配（阶段 7；mock/测试用）。缺省：配置加载成功且 browser.enabled 时用共享池派生 */
   browser?: { pool: ReturnType<typeof getSharedBrowserPool> };
+  /** 注入插件装配（阶段 8；mock/测试用）。缺省：config.plugins.enabled 时扫描装载 allow 名单 */
+  plugins?: { bus: PluginBus };
+  /** 注入 MCP 装配（阶段 8；mock/测试用）。缺省：config.mcpServers 非空时逐 server 连接 */
+  mcp?: { manager: McpManager };
+  /** 注入 subagent 装配（阶段 8；mock/测试用）。缺省：config.subagent 派生（provider 取 roles.subagent，缺失回退主） */
+  subagent?: SessionHubSubagent;
   /** hub 观察钩子透传（WS 事件面 / 测试用） */
   hooks?: SessionHubHooks;
 }
@@ -148,6 +158,10 @@ export interface ServeHandle {
   ws: WsPlane;
   /** 定时任务调度器（serve 常驻 tick；close 时一并停止） */
   cron: CronScheduler;
+  /** 插件总线（未启用插件时 undefined；close 时 dispose——工具/订阅逆序展开） */
+  plugins?: PluginBus;
+  /** MCP 管理器（未配置 server 时 undefined；close 时全部连接关闭 + 工具下线） */
+  mcp?: McpManager;
   /** 优雅关闭：停止调度器 → 取消运行中 turn → 拒绝待审批 → 关 hub → 关 WS → 关 HTTP → 释放端口锁 */
   close(): Promise<void>;
 }
@@ -169,11 +183,19 @@ export async function startServe(options: StartServeOptions = {}): Promise<Serve
   const home = options.home;
   const port = options.port ?? DEFAULT_SERVE_PORT;
 
+  // 共享工具注册表（本地 → 插件 → MCP → subagent 的装配基底）
+  const tools = new ToolRegistry();
+  registerBuiltinTools(tools);
+
   let provider = options.provider;
   let decide = options.decide;
   let memory: SessionHubMemory | undefined = options.memory;
   let compaction: CompactionOptions | undefined = options.compaction;
   let browser: { pool: ReturnType<typeof getSharedBrowserPool> } | undefined = options.browser;
+  let plugins: { bus: PluginBus } | undefined = options.plugins;
+  let mcp: { manager: McpManager } | undefined = options.mcp;
+  let subagent: SessionHubSubagent | undefined = options.subagent;
+  let configWarnings: string[] = [];
   if (provider === undefined) {
     const loaded = loadConfig({ root, ...(home !== undefined ? { home } : {}) });
     if (loaded.config === null) {
@@ -183,6 +205,7 @@ export async function startServe(options: StartServeOptions = {}): Promise<Serve
     provider = createProvider(loaded.config, 'main', { authPath: paths.globalAuth });
     const policy = createApprovalPolicy(loaded.config.approval);
     decide ??= (input) => policy.decide(input);
+    configWarnings = [...loaded.warnings];
     // 记忆装配：mode ≠ off 时派生（roles.small 复盘 provider；缺失回退主 provider）
     if (memory === undefined && loaded.config.memory.mode !== 'off') {
       const store = new MemoryStore(defaultMemoriesRoot(home));
@@ -222,10 +245,38 @@ export async function startServe(options: StartServeOptions = {}): Promise<Serve
         }),
       };
     }
+    // —— 插件装配（阶段 8）：enabled 时扫描 ~/.harness2/plugins 并按 allow 名单装载。
+    //    注册顺序 = 本地 → 插件 → MCP（重名冲突时先注册者优先，冲突告警不中断）。
+    if (plugins === undefined && loaded.config.plugins.enabled) {
+      const bus = new PluginBus({ tools, config: loaded.config, logSink: (l) => console.error(l) });
+      const report = await bus.loadAll(defaultPluginsRoot(home), loaded.config.plugins.allow);
+      plugins = { bus };
+      configWarnings.push(...report.warnings);
+    }
+    // —— MCP 装配（阶段 8）：逐 server 连接并注册 mcp__<server>__<tool> namespaced 工具。
+    //    单 server 失败退避重启（上限 3），不拖垮启动；tools 注册表已被 bus/mcp 复用。
+    if (mcp === undefined && Object.keys(loaded.config.mcpServers).length > 0) {
+      const manager = new McpManager({ tools, logSink: (l) => console.error(l) });
+      const report = await manager.connectAll(loaded.config.mcpServers);
+      mcp = { manager };
+      configWarnings.push(...report.warnings);
+    }
+    // —— subagent 装配（阶段 8）：provider 取 roles.subagent（缺失回退主）；深度红线来自 config
+    if (subagent === undefined) {
+      let subProvider: ChatProvider = provider;
+      try {
+        subProvider = createProvider(loaded.config, 'subagent', { authPath: paths.globalAuth });
+      } catch {
+        // roles.subagent 未配置 → 主 provider 兼任（如实降级）
+      }
+      subagent = {
+        provider: subProvider,
+        maxDepth: loaded.config.subagent.maxDepth,
+        maxTurns: loaded.config.subagent.maxTurns,
+      };
+    }
   }
 
-  const tools = new ToolRegistry();
-  registerBuiltinTools(tools);
   const hub = new SessionHub({
     manager: new SessionManager(defaultSessionsRoot(home)),
     provider,
@@ -235,9 +286,14 @@ export async function startServe(options: StartServeOptions = {}): Promise<Serve
     ...(memory !== undefined ? { memory } : {}),
     ...(compaction !== undefined ? { compaction } : {}),
     ...(browser !== undefined ? { browser } : {}),
+    ...(subagent !== undefined ? { subagent } : {}),
+    ...(plugins !== undefined ? { plugins } : {}),
     ...(options.approvalTimeoutMs !== undefined ? { approvalTimeoutMs: options.approvalTimeoutMs } : {}),
     ...(options.hooks !== undefined ? { hooks: options.hooks } : {}),
   });
+  if (configWarnings.length > 0) {
+    for (const w of configWarnings) console.error(`warning: ${w}`);
+  }
 
   const server = createServer((req, res) => {
     void handleRequest(hub, { root, home }, req, res).catch(() => {
@@ -281,11 +337,15 @@ export async function startServe(options: StartServeOptions = {}): Promise<Serve
     server,
     ws,
     cron,
+    ...(plugins !== undefined ? { plugins: plugins.bus } : {}),
+    ...(mcp !== undefined ? { mcp: mcp.manager } : {}),
     async close(): Promise<void> {
       await cron.stop();
       await hub.close();
       await ws.close();
       await new Promise<void>((resolve) => server.close(() => resolve()));
+      if (mcp !== undefined) await mcp.manager.close();
+      if (plugins !== undefined) plugins.bus.dispose();
       lock.release();
     },
   };

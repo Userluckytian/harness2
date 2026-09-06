@@ -42,12 +42,45 @@ export interface ChatItem {
   tool?: string;
   args?: unknown;
   result?: { ok: boolean; output?: string; error?: string; durationMs?: number };
+  /** subagent 工具行：子会话 id（从 tool/result.output JSON 解析；桌面端据此跳转子会话 traj） */
+  childSessionId?: string;
   // attempt
   error?: string;
   // turn-summary
   durationMs?: number;
   stopReason?: string;
   warning?: string;
+}
+
+/**
+ * 工具名展示（阶段 8）：来源前缀区分——
+ *   mcp__<server>__<tool> → 「[MCP:<server>] <tool>」；
+ *   subagent_start / subagent_continue → 「[子会话] <name>」；
+ *   其余本地/插件工具原样。
+ */
+export function displayToolName(tool: string | undefined): string {
+  if (tool === undefined) return '';
+  if (tool.startsWith('subagent_')) return `[子会话] ${tool}`;
+  if (tool.startsWith('mcp__')) {
+    const rest = tool.slice('mcp__'.length);
+    const sep = rest.indexOf('__');
+    if (sep > 0) return `[MCP:${rest.slice(0, sep)}] ${rest.slice(sep + 2)}`;
+  }
+  return tool;
+}
+
+/** 解析 subagent 工具 output JSON 中的 childSessionId（非 JSON / 缺字段 → undefined） */
+export function parseSubagentChildId(output: string | undefined): string | undefined {
+  if (output === undefined) return undefined;
+  try {
+    const parsed: unknown = JSON.parse(output);
+    if (typeof parsed === 'object' && parsed !== null && typeof (parsed as Record<string, unknown>)['childSessionId'] === 'string') {
+      return (parsed as { childSessionId: string }).childSessionId;
+    }
+  } catch {
+    // 非 JSON 输出（如失败结果）→ 无跳转
+  }
+  return undefined;
 }
 
 export function projectChatItems(events: readonly ActiveEvent[], live: LiveDelta, turnEnds: Readonly<Record<string, TurnEndInfo>>): ChatItem[] {
@@ -105,15 +138,28 @@ export function projectChatItems(events: readonly ActiveEvent[], live: LiveDelta
       case 'tool/result': {
         const idx = toolIndex.get(str(p['callId']));
         const item = idx !== undefined ? items[idx] : undefined;
+        const output = p['output'] !== undefined ? str(p['output']) : undefined;
         const result = {
           ok: p['ok'] === true,
-          ...(p['output'] !== undefined ? { output: str(p['output']) } : {}),
+          ...(output !== undefined ? { output } : {}),
           ...(p['error'] !== undefined ? { error: str(p['error']) } : {}),
           ...(p['durationMs'] !== undefined ? { durationMs: num(p['durationMs']) } : {}),
         };
-        if (item && item.kind === 'tool') item.result = result;
+        if (item && item.kind === 'tool') {
+          item.result = result;
+          // subagent 工具：解析子会话 id 供跳转（桌面端 traj 深链）
+          if (item.tool !== undefined && item.tool.startsWith('subagent_')) {
+            item.childSessionId = parseSubagentChildId(output);
+          }
+        }
         // 找不到宿主（异常日志）也不丢结果：单独成行
-        else items.push({ kind: 'tool', callId: str(p['callId']), seq: e.seq, turnId: str(p['turnId']), tool: str(p['tool']), result });
+        else {
+          const orphan: ChatItem = { kind: 'tool', callId: str(p['callId']), seq: e.seq, turnId: str(p['turnId']), tool: str(p['tool']), result };
+          if (orphan.tool !== undefined && orphan.tool.startsWith('subagent_')) {
+            orphan.childSessionId = parseSubagentChildId(output);
+          }
+          items.push(orphan);
+        }
         break;
       }
       case 'step/end': {

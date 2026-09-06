@@ -129,3 +129,37 @@ describe('delta 与落盘一致性（清空规则的数据侧）', () => {
     expect(shape.type).toBe('assistant/message');
   });
 });
+
+// —— 阶段 8：工具名来源前缀区分与子会话跳转解析 ——
+
+describe('displayToolName 来源前缀', () => {
+  it('mcp__<server>__<tool> → [MCP:server] tool；subagent_* → [子会话]；本地原样', async () => {
+    const { displayToolName } = await import('../src/renderer/chat-model.js');
+    expect(displayToolName('mcp__filesystem__read_file')).toBe('[MCP:filesystem] read_file');
+    expect(displayToolName('subagent_start')).toBe('[子会话] subagent_start');
+    expect(displayToolName('subagent_continue')).toBe('[子会话] subagent_continue');
+    expect(displayToolName('write')).toBe('write');
+    expect(displayToolName(undefined)).toBe('');
+  });
+});
+
+describe('subagent 子会话跳转', () => {
+  it('tool/result.output JSON → childSessionId 提取进 ChatItem；非 JSON/缺字段 → 无跳转', async () => {
+    const { projectChatItems, emptyLive } = await import('../src/renderer/chat-model.js');
+    seqCounter = 0;
+    const events: ActiveEvent[] = [
+      ev('user/message', { text: '派子任务', turnId: 't1' }),
+      ev('tool/call', { callId: 'c1', tool: 'subagent_start', args: { prompt: 'x' }, turnId: 't1' }),
+      ev('tool/result', {
+        callId: 'c1', ok: true, durationMs: 5, turnId: 't1',
+        output: JSON.stringify({ childSessionId: '20260906-000000-abc123', finalText: 'done', stopReason: 'end_turn' }),
+      }),
+      ev('tool/call', { callId: 'c2', tool: 'subagent_start', args: {}, turnId: 't1' }),
+      ev('tool/result', { callId: 'c2', ok: false, error: 'cancelled', turnId: 't1' }),
+    ];
+    const items = projectChatItems(events, emptyLive(), {});
+    const toolRows = items.filter((i) => i.kind === 'tool');
+    expect(toolRows[0]!.childSessionId).toBe('20260906-000000-abc123');
+    expect(toolRows[1]!.childSessionId).toBeUndefined();
+  });
+});
