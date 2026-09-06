@@ -290,8 +290,7 @@ Electron 主进程 spawn `harness2 serve --port 0`（`ELECTRON_RUN_AS_NODE=1` �
 - **冒烟**：`electron . --smoke` 无头冒烟——窗口 + mock serve + 渲染端加载 + preload 桥
   `window.harness2` 就绪后 stdout 打一行 JSON `{ok,port,rendererLoaded,bridgeReady}`（exit 0/1）。
   打包产物（win-unpacked）同样可用 `--smoke` 验证全链。GUI 手感类验收项登记 OPEN.md 待真机。
-- **打包**：electron-builder win nsis（unsigned，`publish: null` 无自动更新），产物落 `release/`；
-  cli 以 esbuild 单文件 bundle 进 extraResources（`pnpm --filter harness2 bundle`）。
+- **打包**：electron-builder 三平台（win nsis x64 / mac dmg arm64+x64 / linux AppImage x64，全部 unsigned；`publish: null` 无自动更新），产物落 `release/`；cli 以 esbuild 单文件 bundle 进 extraResources（`pnpm --filter harness2 bundle`；**playwright 标记 external**——打包产物内 browser_* 工具走「未安装指引」降级，npm 安装的 CLI 才可 `browser install`）。
 
 
 
@@ -374,7 +373,7 @@ Electron 主进程 spawn `harness2 serve --port 0`（`ELECTRON_RUN_AS_NODE=1` �
 - **幂等**：fflate zipSync 的条目 mtime 统一固定（2000-01-01，zip DOS 时间仅支持 1980-2099）+ 条目按相对路径排序——同目录同内容两次导出得到逐字节相同的 zip。运行时依赖新增 `fflate`（纯 JS zip，无原生模块；cli 包仅测试 devDep）。
 - **importReplay（回放校验）**：解包 → 每个 `session.v1.jsonl` 逐行 parseEventLine（坏行计数 + loadSession 同款告警格式，坏行不中断后续解析）→ computeProjection → `{id, source, events, badLines, warnings, messageCount, lastSeq}` 摘要报告（内存内进行，不落盘）。包内无任何会话日志（空包/非 harness2 导出）抛错（CLI exit 1）。
 - **CLI**：`harness2 export <会话目录> [-o <zip>]`（默认输出 `<cwd>/<sessionId>.zip`）；`harness2 replay <zip>`（主会话/子会话逐行摘要 + 坏行明细）。
-- **性能口径（与 P2-4 大日志同档留档）**：导出为全量内存读取 + zipSync 一次性打包，回放为全量解包——超大日志/超大 zip 未做流式处理（importReplay 亦无解压体积上限，审查 P2-5 留档见 OPEN.md）；子会话扫描为全库遍历（与 list/search 同口径）；非库布局的裸目录导出（如 fixtures）时，库 root 退化为「父目录的父」，按目录遍历容错扫描（只读——扫不到子会话即无副作用）。真实长会话体积评估留待用户环境（见 OPEN.md）。
+- **性能口径（P2-4 消化，阶段 11 基线）**：导出为全量内存读取 + zipSync 一次性打包，回放为全量解包——10 万事件基准下全部操作 <1.5s（见「性能预算」节），流式处理继续留档（无 >3s 痛点不优化）；子会话扫描为全库遍历（与 list/search 同口径）；importReplay 有解压体积上限（缺省 256 MiB，见「性能预算」节）。真实长会话体积评估留待用户环境（见 OPEN.md）。
 - **隐私边界**：导出内容含用户代码与对话（属用户资产），只落本地文件，不自动上传。
 
 ## 性能预算（阶段 11 交付，`session/bench.ts` + `scripts/bench-session.mjs`）
@@ -399,6 +398,37 @@ Electron 主进程 spawn `harness2 serve --port 0`（`ELECTRON_RUN_AS_NODE=1` �
   `maxDecompressedBytes` 参数可覆盖）——前置读 zip 中央目录声明体积（不解压即拒绝），后置核
   实际解压体积兜底声明撒谎的包；超限抛 `ReplayTooLargeError`（消息含上限值与建议，CLI exit 1）。
   解压炸弹防护为本地信任域口径（export 产物/用户自供文件，不经网络接收）。
+
+## doctor 自检与崩溃报告（阶段 11 交付，`doctor/`）
+
+- **`harness2 doctor [--root] [--home] [--probe]`**：分节报告 `[OK]/[WARN]/[FAIL]` + 明细——
+  ①node ≥22；②config 可解析 + auth key 来源（`buildConfigReport` 同源，只显示 auth.json /
+  env:XXX / **missing** 标签；全新环境无配置 = WARN，解析失败 = FAIL）；③`~/.harness2` 可写
+  （探针文件写入+删除）；④MCP servers（缺省仅列出配置，`--probe` 实连、单 server 独立超时
+  5s、down = WARN 不 FAIL）；⑤会话库完整性（逐会话 loadSession，坏行/告警/不可读统计——
+  全库遍历与 list/search 同口径）；⑥skills 扫描摘要（两级合并计数 + 告警）。各项独立
+  try/catch（单项异常收口为该项 FAIL，不拖垮整份报告）；全部输出出口过 `redactSecrets`；
+  exit 0（无 FAIL）/ 1（有 FAIL，WARN 不影响）。
+- **崩溃报告（`doctor/crash.ts`，无遥测）**：CLI 顶层 `uncaughtException` → 写
+  `~/.harness2/crash/<ISO 时间>.log`（冒号替换为 `-` 保证 Windows 文件名合法）——内容为
+  版本/时间戳/平台/Node/cwd/当前会话 id（chat 会话切换经 `noteCrashSessionId` 登记）/
+  错误消息与栈，全文过 `redactSecrets`；控制台打印路径与「手动反馈」指引。
+  **零网络发送**：报告仅本地落盘，需要反馈时由用户手动提供文件（opt-in 语义）。
+
+## 分发矩阵（阶段 11 交付，unsigned）
+
+- **electron-builder 三平台**：win nsis x64 / mac dmg（arm64+x64，`identity: null` 显式跳过
+  签名公证，CI 另设 `CSC_IDENTITY_AUTO_DISCOVERY=false` 双保险）/ linux AppImage x64；
+  产物统一落 `packages/desktop/release/`，全部 unsigned、无自动更新。
+- **CI（ci.yml `build-desktop` matrix）**：三平台各自构建 + artifact 上传（`harness2-win-setup`
+  / `harness2-mac-dmg` / `harness2-linux-appimage`），构建失败即红；桌面单测（纯逻辑 jsdom）
+  仅 windows 跑一次。
+- **Release（release.yml）**：tag 触发 → 三平台桌面包构建 → artifact → 统一附加到 GitHub
+  Release（无 Release 则 `--generate-notes` 创建）；npm publish 维持 NPM_TOKEN 条件跳过口径。
+- **本地验证口径**：Windows 本地 nsis 构建通过（`pnpm --filter @harness2/desktop dist`）+
+  workflow YAML 语法校验；mac/linux 构建待远程 CI（见 OPEN.md）。
+- **bundle 惯例**：`--external:playwright`（运行时 require；打包产物内缺失 → browser_* 工具
+  走既有「未安装指引」降级——浏览器自动化推荐 npm 安装的 CLI 入口）。
 
 ## Skills（阶段 10 交付，`skills/`）
 
