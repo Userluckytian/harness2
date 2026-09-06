@@ -40,9 +40,9 @@
 
 | # | 功能 | 说明 | 主要参考 | 状态 |
 |---|------|------|----------|------|
-| 11 | Electron 桌面壳 | React + 会话内核通过本地服务通信 | hermes desktop（HTTP+WS） | ⬜ |
-| 12 | 多会话并行 | 切换不断流；后台会话只记事件不渲染；切换后从日志快速重放 | Tokeny stream_runs | ⬜ |
-| 13 | 分屏与拖拽 | 会话列表拖拽成多窗口/分屏布局 | 用户需求 8 | ⬜ |
+| 11 | Electron 桌面壳 | React + 会话内核通过本地服务通信 | hermes desktop（HTTP+WS） | ✅（阶段 5：spawn serve + preload 桥 + 断线重启 + win nsis 打包；GUI 手感项待真机） |
+| 12 | 多会话并行 | 切换不断流；后台会话只记事件不渲染；切换后从日志快速重放 | Tokeny stream_runs | ✅（阶段 5：每会话独立事件缓冲 + /events 重放判重 + 后台徽标；实机多会话体验待真机） |
+| 13 | 分屏与拖拽 | 会话列表拖拽成多窗口/分屏布局 | 用户需求 8 | ✅（阶段 5：1/2/3 分栏引擎 + HTML5 DnD + 布局持久化 ~/.harness2/desktop-layout.json；拖拽手感待真机） |
 | 14 | 分叉（fork） | 从任意事件点派生新会话（血缘入 header） | dsh parentSession | ⬜ |
 | 15 | 记忆系统 | 开关（off/询问/自动）+ 文件记忆 + 硬预算 + 写入 gate 三态 + nudge 后台 review | hermes（全）+ Tokeny 访问统计（后期） | ⬜ |
 | 16 | 内嵌浏览器 | WebContentsView + 空闲销毁 + 并发上限 + dispose 事件进轨迹 | Tokeny Playwright 形态 | ⬜ |

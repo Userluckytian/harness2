@@ -38,3 +38,36 @@ jobs:
 
       - name: Test
         run: pnpm test
+
+  # 桌面端构建矩阵（Task 6）：win 打包产物冒烟级别验证；GUI 测试不做（见 docs/issue-log/OPEN.md）
+  desktop:
+    name: desktop build (windows)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build packages
+        run: pnpm build
+
+      - name: Desktop unit tests（纯逻辑/jsdom，无 GUI）
+        run: pnpm --filter @harness2/desktop test
+
+      - name: Package win nsis（unsigned）
+        run: pnpm --filter @harness2/desktop dist
+
+      - name: Upload nsis artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: harness2-win-setup
+          path: packages/desktop/release/*.exe
+          if-no-files-found: error

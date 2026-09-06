@@ -1,6 +1,6 @@
 # HANDOFF — 交接入口（新维护者/AI 从这里开始）
 
-> 更新：2026-09-06（阶段 4 完成，M1 v0.1 就绪待发布） · 本文件是唯一交接入口，保持与实际状态同步。
+> 更新：2026-09-06（阶段 5 实现完成：会话服务化 + Electron 桌面壳；独立验收待做） · 本文件是唯一交接入口，保持与实际状态同步。
 
 ## 1. 项目一句话
 
@@ -11,12 +11,13 @@
 | 项 | 状态 |
 |----|------|
 | 默认分支 | `master`（注意：不是 main） |
-| 开发分支 | `feat/phase-4-cli-m1`（阶段 4 全部工作在此；此前阶段各在其分支） |
+| 开发分支 | `feat/phase-5-server-desktop`（阶段 5 全部工作在此；此前阶段各在其分支） |
 | 阶段 1–3 | ✅ 已完成并验收（会话内核 33 测试 → loop+工具+mock+CI 109 测试 → Provider+配置+审批 182 测试） |
-| 阶段 4 | ✅ 实现代理自验通过（chat REPL + 文件快照 + undo/redo + 会话管理器 + M1 发布物料；253 测试）；独立验收 `/accept-phase` 待做 |
+| 阶段 4 | ✅ 已验收（M1 v0.1 就绪） |
+| 阶段 5 | 🔶 实现代理自验通过（`harness2 serve` 会话服务 [HTTP+WS/端口锁/审批上抛] + Electron 桌面壳 [spawn/断线重启/对话 UI/分屏拖拽] + win nsis 打包；306 passed + 1 skipped）；独立验收 `/accept-phase` 待做 |
 | **M1 v0.1** | 🔶 代码/物料就绪（包名 `harness2` + `@harness2/core`、CHANGELOG、README、release workflow）；**发布动作未执行**——待人类授权：远程仓库 + push、npm 包名占用检查、`NPM_TOKEN` secret、推 tag `v0.1.0`（见 OPEN.md） |
 | 未关闭事项 | 读 `docs/issue-log/OPEN.md`（保持为零上下文第一读；含真实模型 chat 手工验收清单、pause_turn 评估结论） |
-| 测试 | `pnpm test`（含 build）—— core 233 passed + 1 skipped（`H2_GEN_LOOP_DEMO` 门控的 fixture 生成器，非用例失败）+ cli 20 passed = **253 passed + 1 skipped**（2026-09-06，阶段 4 自验 + 独立审查修复轮：+5 测试） |
+| 测试 | `pnpm test`（含 build）—— core 256+1 skipped + cli 20 + desktop 37 = **313 项（312 passed + 1 skipped**，`H2_GEN_LOOP_DEMO` 门控的 fixture 生成器非失败）（2026-09-06 阶段 5 自验） |
 | 远程 | 无（未配置 origin；push 需人类授权） |
 
 ## 3. 文档地图（按阅读顺序）
@@ -56,6 +57,8 @@
 - `pnpm install` → `pnpm test`（= build + test）→ `pnpm -r typecheck`
 - 试轨迹：`node packages/cli/dist/index.js traj packages/core/fixtures/demo-session`（阶段 1 手写样例）；`node packages/cli/dist/index.js traj packages/core/fixtures/loop-demo`（阶段 2 agent loop 实跑生成的会话）
 - 查配置：`node packages/cli/dist/index.js config check`（`--root`/`--home` 可重定向路径；key 来源只显示 auth.json / env:XXX / **missing**，不显示明文）
+- **服务冒烟（阶段 5）**：`node packages/cli/dist/index.js serve --port 0 --provider mock`——stdout 一行 JSON 端口 → `curl http://127.0.0.1:<port>/api/sessions` / WS `ws://127.0.0.1:<port>/ws`
+- **桌面冒烟（阶段 5）**：`pnpm --filter @harness2/desktop smoke`——无头冒烟输出 `{ok,port,rendererLoaded,bridgeReady}`；打包后 `packages/desktop/release/win-unpacked/harness2.exe --smoke` 同样可验；GUI 交互（拖拽手感/多会话实机体验）待真机
 - **chat 冒烟（阶段 4）**：`node packages/cli/dist/index.js chat --provider mock --root <临时目录>`——演示 write+read 两轮工具 → `/undo --dry-run` → `/undo`（创建的文件被删）→ `/redo`（内容回放）→ `/sessions` → `/exit`
 - 注意：cli 包名已改为 `harness2`（npm 发布名），根工作区更名为 `harness2-monorepo`（避免重名）；`pnpm --filter harness2` 指向 packages/cli
 - 注意：`pnpm --filter harness2 test` 在干净检出需先 build（根脚本已串 build）
@@ -73,3 +76,7 @@
 - CI（ci.yml）与 release.yml 本地只做过 YAML 语法校验，Actions 真实运行待远程仓库与 push 授权（见 `docs/issue-log/OPEN.md`）。release.yml 的 publish 步骤为**条件跳过**语义：无 `NPM_TOKEN` → 明确 notice 跳过；有 token 但发布失败 → workflow 红（2026-09-06 审查修复 P1-1，勿再加 continue-on-error）
 - chat 审批内联提示：ask 等待期间下一行输入即答案（含以 / 开头的行）；取消等待用 Ctrl+C / Ctrl+D（ask 与 turn 取消信号竞速，abort 后按拒绝处理且不再吞行）——改 chat.ts 的 askUser/answerResolver 前先读 chat-cancel.test.ts
 - grep 工具优先 spawn ripgrep，CI 镜像若未装 rg 会自动回退纯 JS 扫描（行为一致但大目录更慢）
+- **sandbox preload 不能 require 相对模块**：IPC 通道名在 preload.ts 内联，与 shared/protocol.ts 的同名常量有静态一致性测试（test/protocol.test.ts）——改通道名先看这个测试
+- **pnpm 11 的构建脚本白名单/overrides 在 pnpm-workspace.yaml**（allowBuilds / overrides），package.json 的 pnpm 字段已被忽略；electron 二进制下载失败可设 `ELECTRON_MIRROR=https://npmmirror.com/mirrors/electron/` 后重跑 install
+- **electron-builder 26 需要 @electron/get ≥4**（ElectronDownloadCacheMode）：已用 workspace overrides `@electron/get: ^5.1.0` 钉住，动依赖版本时注意
+- **打包后 serve 子进程 = esbuild 单文件 bundle**（packages/cli/dist-bundle/harness2-cli.cjs，经 extraResources）：jsonc-parser 必须走 ESM 入口（bundle 脚本带 `--alias:jsonc-parser=jsonc-parser/lib/esm/main.js`，UMD 运行时动态 require 打不进单文件）；改 cli 依赖后先 `pnpm --filter harness2 bundle` 并本地跑一次 bundle serve 验证

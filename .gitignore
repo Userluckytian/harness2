@@ -15,3 +15,6 @@ docs/issue-log/*
 !docs/issue-log/OPEN.md
 dist-electron/
 release/
+
+# cli esbuild bundle
+dist-bundle/

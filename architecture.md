@@ -175,7 +175,58 @@ packages/
 - 审批交互：config.approval 判定 ask 时 REPL 内联提问 `允许执行 <tool>? [y]本次 [a]本会话总是 [n]拒绝`；
   "总是"仅存进程内会话级缓存（不落盘）。渲染与输入交错策略：turn 期间不写提示符、渲染器独占输出。
 
-## 撤回/分叉路线（决策定案）
+## 会话服务（阶段 5 交付，`core/src/server/`）
+
+**D5 落地：会话内核独立进程，UI 是观察者。** `harness2 serve`（127.0.0.1-only）是唯一内核入口：
+HTTP 控制面 + WS 事件面共用一个监听，服务 API 契约冻结 v1（见阶段 5计划）。
+
+- **服务核心（`server/sessions.ts` SessionHub）**：HTTP/WS 共用的唯一内核操作层——只经
+  SessionManager（create/resume/locate/list）、SessionWriter、runTurn、undo/redo 原语操作会话。
+  同会话用户消息串行排队（REPL 同语义），跨会话并行互不阻塞；undo/redo 直调 Ph4 内核且与
+  turn 互斥（busy 409）。观察输出两类：落盘事件镜像（`EventMirrorWriter` 包裹真实 writer，
+  append 后原样回调）与流式增量（`runTurn.onStream` 观察缝，delta 是唯一允许的"未落盘"推送，
+  且与随后落盘的最终事件一致——text/reasoning 拼接 = assistant/message 内容）。
+- **审批上抛**：Ph2 审批缝 `onAsk` → 待处理请求表（requestId → settle），客户端
+  `approval-response(allow|deny)` 落定；超时（默认 120s）与 turn 取消都按拒绝处理（P2-2 口径）。
+- **HTTP 控制面（`server/http.ts`）**：`GET/POST /api/sessions`、`GET /api/sessions/:id/events`
+  （全量事件含 active 标记，切换重放来源）、`POST .../undo|redo`、`GET /api/config`
+  （脱敏报告与 `config check` 同源，`config/report.ts` 唯一构造处，key 只显示来源标签）。
+  错误一律 JSON 单行 `{error}`（400/404/405/409/500），出口过 `redactSecrets`。
+- **端口锁**：`~/.harness2/serve.lock`（复用会话锁思路：pid 存活检查，陈旧锁接管）；首个实例
+  持有，第二实例拒绝启动并携带 holder 信息（桌面端据此采纳既有实例）。
+- **WS 事件面（`server/ws.ts`）**：单连接多会话订阅（`/ws`）。客户端帧：`subscribe`/
+  `unsubscribe`/`abort`/`user-message`/`approval-response`；服务端帧：`delta`（text/reasoning/tool）/
+  `event`（落盘镜像）/`turn-end`（stopReason/error/warning）/`approval-request`/`error`。
+  崩溃安全：turn 事件全部落盘，服务重启后客户端以 `/events` 重放恢复（增量按 seq 去重接入）。
+- **CLI**：`harness2 serve [--port 0] [--root] [--home] [--provider mock]`——监听成功后 stdout
+  一行 JSON `{"port":N,"pid":M}`（`--port 0` 随机端口，桌面端固定用）；SIGINT/SIGTERM 优雅关闭。
+
+## 桌面端（阶段 5 交付，`packages/desktop`）
+
+Electron 主进程 spawn `harness2 serve --port 0`（`ELECTRON_RUN_AS_NODE=1` 复用运行时 node 能力，
+打包后用 extraResources 的 cli 单文件 esbuild bundle，零系统 node 依赖），解析 stdout 端口行 →
+`/api/config` 健康检查 → ready。意外退出按退避自动重启（1s→2s→4s→8s→15s 封顶，上限 5 次）；
+端口锁被既有实例持有时按锁文件采纳（避免与 CLI serve 互踢）。WS 连接由主进程持有，帧转发渲染端。
+
+- **渲染进程零 Node**：`contextIsolation + nodeIntegration:false + sandbox:true` + CSP
+  `connect-src 'none'`；唯一出口 = preload `contextBridge` 暴露的 `window.harness2`
+  （listSessions/createSession/events/undo/redo/subscribe/sendMessage/abort/respondApproval/
+  onEvent/onConnectionStatus/loadLayout/saveLayout）。IPC 通道名在 preload 内联
+  （sandbox 不允许 require 相对模块），与 `shared/protocol.ts` 有静态一致性测试。
+- **多会话并行（切换不断流）**：渲染端每会话独立 SessionStream 缓冲（事件 + 在途 delta + 审批 +
+  未读），与是否正在渲染无关；切换 = 分栏绑定 + `/events` 全量重放（`mergeReplay` 判陈旧响应）
+  → WS 增量按 seq 去重接入。对话视图纯投影 `chat-model.projectChatItems`：turn 标头/气泡/
+  工具行配对/reasoning 折叠/流式光标/turn 摘要；影子事件（active=false）不渲染，undo 后重折叠。
+- **分屏**：1/2/3 栏（`shared/layout.ts` 纯引擎，normalize 唯一校验口），从会话列表 HTML5 拖拽
+  绑定；布局持久化 `~/.harness2/desktop-layout.json`（主进程读写容错）。未绑定分栏的已订阅会话
+  = "后台"，列表标"后台"并显示新消息徽标（assistant/message/turn-end 口径）。
+- **冒烟**：`electron . --smoke` 无头冒烟——窗口 + mock serve + 渲染端加载 + preload 桥
+  `window.harness2` 就绪后 stdout 打一行 JSON `{ok,port,rendererLoaded,bridgeReady}`（exit 0/1）。
+  打包产物（win-unpacked）同样可用 `--smoke` 验证全链。GUI 手感类验收项登记 OPEN.md 待真机。
+- **打包**：electron-builder win nsis（unsigned，`publish: null` 无自动更新），产物落 `release/`；
+  cli 以 esbuild 单文件 bundle 进 extraResources（`pnpm --filter harness2 bundle`）。
+
+
 
 - ✅ P0/P1（阶段 4 交付）：`/undo` `/redo`（opencode 语义：投影截断 + 文件快照恢复，含冲突检测与 dry-run）→ P1：分叉（dsh 语义：header 血缘 parentSession）→ P1 增强：grok 三模式 rewind（对话/文件/全部独立撤回）。
 

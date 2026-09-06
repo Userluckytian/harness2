@@ -11,9 +11,10 @@ import type { ConnectionStatus, StatusDetail, WsFrame } from '../shared/protocol
 
 const SMOKE = process.argv.includes('--smoke');
 
-/** serve CLI 入口：dev = 仓库内 packages/cli/dist；打包 = extraResources 的 cli（见 electron-builder.yml） */
+/** serve CLI 入口：dev = 仓库内 packages/cli/dist（tsc 产物）；打包 = extraResources 的
+ *  cli 单文件 bundle（esbuild 产出，零 node_modules 依赖，ELECTRON_RUN_AS_NODE 运行） */
 function resolveCliEntry(): string {
-  if (app.isPackaged) return join(process.resourcesPath, 'cli', 'dist', 'index.js');
+  if (app.isPackaged) return join(process.resourcesPath, 'cli', 'harness2-cli.cjs');
   return join(__dirname, '..', '..', '..', 'cli', 'dist', 'index.js');
 }
 

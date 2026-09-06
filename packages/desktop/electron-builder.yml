@@ -1,0 +1,27 @@
+# electron-builder 配置（win 先行，nsis，unsigned；产物落 release/，已 gitignore）。
+# 打包后的 serve 子进程 = extraResources 的 cli 单文件 bundle（ELECTRON_RUN_AS_NODE 运行，
+# 不依赖系统 node 与 node_modules）。
+appId: dev.harness2.desktop
+productName: harness2
+copyright: harness2
+directories:
+  output: release
+files:
+  - dist-electron/**/*
+  - dist/renderer/**/*
+  - package.json
+extraResources:
+  - from: ../cli/dist-bundle
+    to: cli
+win:
+  target:
+    - target: nsis
+      arch:
+        - x64
+nsis:
+  oneClick: true
+  perMachine: false
+  allowToChangeInstallationDirectory: false
+  deleteAppDataOnUninstall: false
+# 无自动更新（Ph11 边界；publish 留空防止意外发布配置）
+publish: null
