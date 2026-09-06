@@ -32,6 +32,9 @@ export * from './server/http.js';
 export * from './server/ws.js';
 export * from './server/trust.js';
 export * from './cron/index.js';
+export * from './plugins/types.js';
+export * from './plugins/loader.js';
+export * from './plugins/bus.js';
 
 export const CORE_VERSION = '0.3.0';
 

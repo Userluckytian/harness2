@@ -2,6 +2,8 @@
 // 红线：密钥只存 auth.json 与环境变量，绝不入 config（这里没有 key 字段，类型层面钉死）。
 // 未知字段忽略（记告警）；校验错误消息出口前经 redactSecrets 过滤（纵深防御）。
 import { redactSecrets } from './redact.js';
+// plugins/types 对本模块只有 type-only 引用（编译期擦除），此处反向引入其名称常量不构成运行时环
+import { PLUGIN_NAME_PATTERN } from '../plugins/types.js';
 
 /** 模型条目（仅容量元数据；协议行为由 provider 实现决定） */
 export interface ModelEntry {
@@ -64,6 +66,18 @@ export interface BrowserConfig {
 
 export const DEFAULT_BROWSER_CONFIG: BrowserConfig = { enabled: true, idleDestroyMs: 300_000, maxConcurrent: 2 };
 
+/**
+ * 插件配置（阶段 8）：enabled = 总开关；allow = 已批准装载的插件名（装载审批结果记录处）。
+ * 缺省 allow = []：不审批任何插件不装载（最小授权）；enabled 缺省 true，实际装载仍被
+ * allow 门控，故默认安全。
+ */
+export interface PluginsConfig {
+  enabled: boolean;
+  allow: string[];
+}
+
+export const DEFAULT_PLUGINS_CONFIG: PluginsConfig = { enabled: true, allow: [] };
+
 /** 合并+校验后的配置（唯一合法形态） */
 export interface HarnessConfig {
   providers: Record<string, ProviderConfig>;
@@ -71,6 +85,7 @@ export interface HarnessConfig {
   approval: ApprovalConfig;
   memory: MemoryConfig;
   browser: BrowserConfig;
+  plugins: PluginsConfig;
 }
 
 /** 配置错误（工厂/CLI 对其做一行友好输出；消息不携带密钥） */
@@ -101,7 +116,7 @@ function isPlainObject(v: unknown): v is Dict {
 }
 
 /** schema 内已知的顶层字段（其余忽略并告警） */
-const KNOWN_TOP_KEYS = new Set(['providers', 'roles', 'approval', 'memory', 'browser']);
+const KNOWN_TOP_KEYS = new Set(['providers', 'roles', 'approval', 'memory', 'browser', 'plugins']);
 
 function collectUnknownKeys(obj: Dict, known: ReadonlySet<string>, where: string, warnings: string[]): void {
   for (const k of Object.keys(obj)) {
@@ -115,6 +130,7 @@ const ROLE_KNOWN_KEYS = new Set(['channel', 'model']);
 const APPROVAL_KNOWN_KEYS = new Set(['mode', 'tools']);
 const MEMORY_KNOWN_KEYS = new Set(['mode', 'nudgeInterval']);
 const BROWSER_KNOWN_KEYS = new Set(['enabled', 'idleDestroyMs', 'maxConcurrent']);
+const PLUGINS_KNOWN_KEYS = new Set(['enabled', 'allow']);
 
 /**
  * 校验合并后的原始 JSON（展开 ${VAR} 之后的形态），产出 HarnessConfig。
@@ -325,6 +341,33 @@ export function parseConfig(raw: unknown): ConfigParseResult {
     }
   }
 
+  // —— plugins（阶段 8；缺省 = enabled + 空 allow：不审批任何插件即不装载）——
+  const plugins: PluginsConfig = { ...DEFAULT_PLUGINS_CONFIG };
+  const rawPlugins = raw['plugins'];
+  if (rawPlugins !== undefined) {
+    if (!isPlainObject(rawPlugins)) {
+      errors.push('config.plugins 必须是对象');
+    } else {
+      collectUnknownKeys(rawPlugins, PLUGINS_KNOWN_KEYS, 'plugins', warnings);
+      const enabled = rawPlugins['enabled'];
+      if (enabled !== undefined) {
+        if (typeof enabled !== 'boolean') {
+          errors.push('plugins.enabled 必须是布尔值');
+        } else {
+          plugins.enabled = enabled;
+        }
+      }
+      const allow = rawPlugins['allow'];
+      if (allow !== undefined) {
+        if (!Array.isArray(allow) || !allow.every((n) => typeof n === 'string' && PLUGIN_NAME_PATTERN.test(n))) {
+          errors.push('plugins.allow 必须是插件名数组（每个名字匹配 ^[a-z0-9][a-z0-9_-]{0,63}$）');
+        } else {
+          plugins.allow = [...(allow as string[])];
+        }
+      }
+    }
+  }
+
   // —— 交叉引用校验（roles 引用存在的 channel/model）——
   for (const [role, rc] of Object.entries(roles)) {
     const provider = providers[rc.channel];
@@ -345,5 +388,5 @@ export function parseConfig(raw: unknown): ConfigParseResult {
   const safeErrors = errors.map(redactSecrets);
   const safeWarnings = warnings.map(redactSecrets);
   if (safeErrors.length > 0) return { config: null, errors: safeErrors, warnings: safeWarnings };
-  return { config: { providers, roles, approval, memory, browser }, errors: safeErrors, warnings: safeWarnings };
+  return { config: { providers, roles, approval, memory, browser, plugins }, errors: safeErrors, warnings: safeWarnings };
 }
