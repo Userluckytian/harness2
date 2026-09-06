@@ -24,6 +24,8 @@ import { createApprovalPolicy } from '../approval/policy.js';
 import { defaultMemoriesRoot, MemoryStore } from '../memory/store.js';
 import { defaultPendingRoot, PendingMemoryStore } from '../memory/pending.js';
 import { SessionManager, defaultSessionsRoot } from '../session/manager.js';
+import { CronScheduler, type CronFinishedFrame } from '../cron/scheduler.js';
+import { defaultCronRoot } from '../cron/jobs.js';
 import type { ChatProvider } from '../provider/types.js';
 import type { ApprovalDecision, ApprovalInput } from '../tools/types.js';
 import { SessionHub, HubError, type SessionHubHooks, type SessionHubMemory } from './sessions.js';
@@ -143,7 +145,9 @@ export interface ServeHandle {
   server: Server;
   /** WS 事件面（路径 /ws） */
   ws: WsPlane;
-  /** 优雅关闭：取消运行中 turn → 拒绝待审批 → 关 hub → 关 WS → 关 HTTP → 释放端口锁 */
+  /** 定时任务调度器（serve 常驻 tick；close 时一并停止） */
+  cron: CronScheduler;
+  /** 优雅关闭：停止调度器 → 取消运行中 turn → 拒绝待审批 → 关 hub → 关 WS → 关 HTTP → 释放端口锁 */
   close(): Promise<void>;
 }
 
@@ -259,12 +263,25 @@ export async function startServe(options: StartServeOptions = {}): Promise<Serve
   // WS 事件面与 HTTP 共用监听（upgrade 升级到 /ws）
   const ws = attachWsServer(server, hub);
 
+  // 定时任务调度器（阶段 7）：常驻 tick + 文件锁 + at-most-once；完成帧经 WS 广播
+  const cron = new CronScheduler({
+    root: defaultCronRoot(home),
+    cwd: root,
+    provider,
+    toolsForSession: (sessionKey) => hub.toolsForSession(sessionKey),
+    ...(decide !== undefined ? { decide } : {}),
+    onFinished: (frame: CronFinishedFrame) => ws.broadcastCron(frame),
+  });
+  cron.start();
+
   return {
     port: actualPort,
     hub,
     server,
     ws,
+    cron,
     async close(): Promise<void> {
+      await cron.stop();
       await hub.close();
       await ws.close();
       await new Promise<void>((resolve) => server.close(() => resolve()));

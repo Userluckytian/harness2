@@ -30,6 +30,7 @@ export * from './agent/loop.js';
 export * from './server/sessions.js';
 export * from './server/http.js';
 export * from './server/ws.js';
+export * from './cron/index.js';
 
 export const CORE_VERSION = '0.1.0';
 

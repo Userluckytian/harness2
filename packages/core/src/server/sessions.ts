@@ -224,6 +224,11 @@ export class SessionHub {
     return this.options.manager;
   }
 
+  /** 全量工具注册表（按会话绑定 memory/browser 变体）——cron 调度执行复用同一装配 */
+  toolsForSession(sessionId: string): ToolRegistry {
+    return this.buildTurnTools(sessionId);
+  }
+
   // —— 会话生命周期 ——
 
   /** 新建会话并保持 writer 打开（服务持有，close 时统一释放） */

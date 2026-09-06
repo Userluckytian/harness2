@@ -51,6 +51,7 @@ export type WsServerMessage =
       error?: string;
     }
   | { type: 'forked'; sessionId: string; parentSession: string; copiedEvents: number }
+  | { type: 'cron'; op: 'finished'; id: string; ok: boolean; error?: string }
   | { type: 'error'; error: string };
 
 export interface WsPlaneOptions {
@@ -61,6 +62,8 @@ export interface WsPlaneOptions {
 export interface WsPlane {
   /** 关闭：断开全部连接并摘除 hub 观察者 */
   close(): Promise<void>;
+  /** cron 通知帧广播（阶段 7：不按会话订阅过滤，投递全部连接） */
+  broadcastCron(frame: Extract<WsServerMessage, { type: 'cron' }>): void;
 }
 
 function deltaFrame(sessionId: string, delta: TurnDelta): WsServerMessage {
@@ -181,6 +184,17 @@ export function attachWsServer(server: Server, hub: SessionHub, options: WsPlane
   });
 
   return {
+    broadcastCron(frame: Extract<WsServerMessage, { type: 'cron' }>): void {
+      if (conns.size === 0) return;
+      const data = JSON.stringify(frame);
+      for (const conn of conns) {
+        try {
+          conn.ws.send(data);
+        } catch {
+          // 发送失败（连接关闭中）：close 事件统一清理
+        }
+      }
+    },
     close(): Promise<void> {
       offHooks();
       return new Promise((resolve) => {
