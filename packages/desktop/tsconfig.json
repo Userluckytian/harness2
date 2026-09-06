@@ -1,0 +1,15 @@
+// 全量类型检查（noEmit）：主进程/preload/renderer/测试统一入口；
+// 产物编译见 tsconfig.electron.json（CJS）与 vite（renderer 打包）。
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "verbatimModuleSyntax": false,
+    "jsx": "react-jsx",
+    "lib": ["ES2023", "DOM", "DOM.Iterable"],
+    "types": ["node"]
+  },
+  "include": ["src", "test", "vite.config.mts", "vitest.config.mts"]
+}

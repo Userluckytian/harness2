@@ -13,3 +13,5 @@ auth.json
 docs/issue-log/*
 !docs/issue-log/README.md
 !docs/issue-log/OPEN.md
+dist-electron/
+release/

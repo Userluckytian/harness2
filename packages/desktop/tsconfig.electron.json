@@ -1,0 +1,20 @@
+// Electron 主进程 + preload 编译配置（CommonJS 产物；沙箱 preload 只能加载 CJS）。
+// 与 base 的差异：module/moduleResolution 改 CJS、关闭 verbatimModuleSyntax（CJS 产物不允许）。
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "module": "Node16",
+    "moduleResolution": "Node16",
+    "verbatimModuleSyntax": false,
+    "isolatedModules": true,
+    "outDir": "dist-electron",
+    "rootDir": "src",
+    "noEmit": false,
+    "declaration": false,
+    "declarationMap": false,
+    "sourceMap": false,
+    "types": ["node"],
+    "lib": ["ES2023", "DOM", "DOM.Iterable"]
+  },
+  "include": ["src/main/**/*", "src/preload/**/*", "src/shared/**/*"]
+}

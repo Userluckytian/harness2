@@ -1,0 +1,146 @@
+/* harness2 桌面端基础样式（Task 3 骨架；Task 4/5 增量扩展） */
+* {
+  box-sizing: border-box;
+}
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+  font-family: 'Segoe UI', 'Microsoft YaHei', system-ui, sans-serif;
+  font-size: 14px;
+  color: #e6e6e6;
+  background: #1b1d21;
+}
+
+.app {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+.topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 12px;
+  background: #24262b;
+  border-bottom: 1px solid #32353c;
+  -webkit-app-region: drag;
+}
+.brand {
+  font-weight: 600;
+  letter-spacing: 0.5px;
+}
+
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  -webkit-app-region: no-drag;
+}
+.badge .dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #888;
+}
+.badge-connected .dot {
+  background: #3fb950;
+}
+.badge-connecting .dot,
+.badge-reconnecting .dot {
+  background: #d29922;
+}
+.badge-offline .dot {
+  background: #f85149;
+}
+
+.body {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+}
+
+.sidebar {
+  width: 260px;
+  display: flex;
+  flex-direction: column;
+  background: #202226;
+  border-right: 1px solid #32353c;
+}
+.sidebar-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 12px;
+  font-weight: 600;
+}
+.btn-new {
+  background: #2f81f7;
+  border: none;
+  color: white;
+  padding: 4px 10px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+.btn-new:disabled {
+  background: #3a3d44;
+  color: #888;
+  cursor: not-allowed;
+}
+.session-list {
+  list-style: none;
+  margin: 0;
+  padding: 0 6px;
+  overflow-y: auto;
+}
+.session-empty {
+  padding: 12px;
+  color: #7d8590;
+}
+.session-item {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  width: 100%;
+  text-align: left;
+  background: transparent;
+  border: none;
+  color: inherit;
+  padding: 8px;
+  border-radius: 8px;
+  cursor: pointer;
+}
+.session-item:hover {
+  background: #2a2d33;
+}
+.session-item.selected {
+  background: #32363e;
+}
+.session-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.session-meta {
+  font-size: 12px;
+  color: #7d8590;
+}
+
+.main {
+  flex: 1;
+  display: flex;
+  min-width: 0;
+}
+.empty-state {
+  margin: auto;
+  text-align: center;
+  color: #7d8590;
+}
+.muted {
+  font-size: 12px;
+}
