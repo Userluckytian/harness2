@@ -5,19 +5,25 @@
 import { createInterface, type Interface } from 'node:readline';
 import {
   createApprovalPolicy,
+  createMemoryTool,
   createProvider,
   defaultConfigPaths,
-  defaultSessionsRoot,
+  defaultMemoriesRoot,
+  defaultPendingRoot,
   loadConfig,
+  MemoryStore,
   MockProvider,
+  PendingMemoryStore,
   registerBuiltinTools,
   runTurn,
+  defaultSessionsRoot,
   SessionManager,
   SnapshotStore,
   ToolRegistry,
   type ApprovalHandler,
   type ApprovalInput,
   type ChatProvider,
+  type MemorySink,
   type MockScript,
   type SessionWriter,
 } from '@harness2/core';
@@ -84,6 +90,8 @@ export async function runChat(options: ChatOptions = {}): Promise<void> {
   // —— provider 与审批缝 ——
   let provider: ChatProvider;
   let approval: ApprovalHandler | undefined;
+  // 记忆装配（阶段 6）：mode ≠ off 才注册 memory 工具与注入 store；off = 零记忆行为
+  let memoryStore: MemoryStore | undefined;
   const tools = new ToolRegistry();
   registerBuiltinTools(tools);
 
@@ -105,6 +113,22 @@ export async function runChat(options: ChatOptions = {}): Promise<void> {
       renderer.line(`error: ${(e as Error).message}`);
       process.exitCode = 1;
       return;
+    }
+    if (loaded.config.memory.mode !== 'off') {
+      memoryStore = new MemoryStore(defaultMemoriesRoot(options.home));
+      if (loaded.config.memory.mode === 'ask') {
+        // ask：主对话的记忆写入先进 pending 暂存（harness2 memory approve 落盘）
+        const pendingStore = new PendingMemoryStore(defaultPendingRoot(options.home), memoryStore);
+        const sink: MemorySink = {
+          apply: async (ops) => {
+            const stagedItem = await pendingStore.stage(current?.id ?? 'unknown', ops);
+            return { ok: true, warnings: [], files: [], stagedId: stagedItem.id };
+          },
+        };
+        tools.register(createMemoryTool(sink));
+      } else {
+        tools.register(createMemoryTool(memoryStore));
+      }
     }
     const policy = createApprovalPolicy(loaded.config.approval);
     const alwaysAllowed = new Set<string>(); // 进程内会话级缓存，不落盘
@@ -273,6 +297,7 @@ export async function runChat(options: ChatOptions = {}): Promise<void> {
         provider,
         tools,
         ...(approval !== undefined ? { approval } : {}),
+        ...(memoryStore !== undefined ? { memory: memoryStore } : {}),
         cwd: root,
         userText: text,
         signal: ac.signal,

@@ -18,10 +18,12 @@ import { createProvider } from '../provider/factory.js';
 import { registerBuiltinTools } from '../tools/predefined/index.js';
 import { ToolRegistry } from '../tools/registry.js';
 import { createApprovalPolicy } from '../approval/policy.js';
+import { defaultMemoriesRoot, MemoryStore } from '../memory/store.js';
+import { defaultPendingRoot, PendingMemoryStore } from '../memory/pending.js';
 import { SessionManager, defaultSessionsRoot } from '../session/manager.js';
 import type { ChatProvider } from '../provider/types.js';
 import type { ApprovalDecision, ApprovalInput } from '../tools/types.js';
-import { SessionHub, HubError, type SessionHubHooks } from './sessions.js';
+import { SessionHub, HubError, type SessionHubHooks, type SessionHubMemory } from './sessions.js';
 import { attachWsServer, type WsPlane } from './ws.js';
 
 /** 默认监听端口（--port 0 = 随机端口，桌面端固定用 0） */
@@ -121,6 +123,8 @@ export interface StartServeOptions {
   decide?: (input: ApprovalInput) => ApprovalDecision;
   /** 审批等待超时 ms（默认 120_000） */
   approvalTimeoutMs?: number;
+  /** 注入记忆装配（mode ≠ off；mock/测试用）。缺省：配置加载成功时按 config.memory 派生 */
+  memory?: SessionHubMemory;
   /** hub 观察钩子透传（WS 事件面 / 测试用） */
   hooks?: SessionHubHooks;
 }
@@ -155,6 +159,7 @@ export async function startServe(options: StartServeOptions = {}): Promise<Serve
 
   let provider = options.provider;
   let decide = options.decide;
+  let memory: SessionHubMemory | undefined = options.memory;
   if (provider === undefined) {
     const loaded = loadConfig({ root, ...(home !== undefined ? { home } : {}) });
     if (loaded.config === null) {
@@ -164,6 +169,24 @@ export async function startServe(options: StartServeOptions = {}): Promise<Serve
     provider = createProvider(loaded.config, 'main', { authPath: paths.globalAuth });
     const policy = createApprovalPolicy(loaded.config.approval);
     decide ??= (input) => policy.decide(input);
+    // 记忆装配：mode ≠ off 时派生（roles.small 复盘 provider；缺失回退主 provider）
+    if (memory === undefined && loaded.config.memory.mode !== 'off') {
+      const store = new MemoryStore(defaultMemoriesRoot(home));
+      let reviewProvider: ChatProvider = provider;
+      try {
+        reviewProvider = createProvider(loaded.config, 'small', { authPath: paths.globalAuth });
+      } catch {
+        // roles.small 未配置 → 主 provider 兼任复盘（如实降级）
+      }
+      const mode = loaded.config.memory.mode;
+      memory = {
+        store,
+        mode,
+        nudgeInterval: loaded.config.memory.nudgeInterval,
+        reviewProvider,
+        ...(mode === 'ask' ? { pending: new PendingMemoryStore(defaultPendingRoot(home), store) } : {}),
+      };
+    }
   }
 
   const tools = new ToolRegistry();
@@ -174,6 +197,7 @@ export async function startServe(options: StartServeOptions = {}): Promise<Serve
     tools,
     cwd: root,
     ...(decide !== undefined ? { decide } : {}),
+    ...(memory !== undefined ? { memory } : {}),
     ...(options.approvalTimeoutMs !== undefined ? { approvalTimeoutMs: options.approvalTimeoutMs } : {}),
     ...(options.hooks !== undefined ? { hooks: options.hooks } : {}),
   });

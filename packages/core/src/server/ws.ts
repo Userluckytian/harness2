@@ -7,6 +7,8 @@
 //   ← {type:'event', sessionId, event}              # 落盘事件镜像（含 rewind/marker）
 //   ← {type:'turn-end', sessionId, stopReason, error?, warning?}
 //   ← {type:'approval-request', sessionId, tool, args, requestId}
+//   ← {type:'nudge-started', sessionId}             # 后台复盘开始（提示帧，UI 自行决定展示）
+//   ← {type:'nudge-finished', sessionId, stopReason, toolCalls, staged, error?}
 //   ← {type:'error', error}                         # 协议/输入错误（不在契约帧型内，仅诊断）
 // 崩溃安全：turn 全部事件已落盘，服务重启后客户端以 GET /api/sessions/:id/events 重放恢复。
 import { WebSocketServer, type WebSocket } from 'ws';
@@ -37,6 +39,16 @@ export type WsServerMessage =
       warning?: string;
     }
   | { type: 'approval-request'; sessionId: string; tool: string; args: unknown; requestId: string }
+  | { type: 'nudge-started'; sessionId: string }
+  | {
+      type: 'nudge-finished';
+      sessionId: string;
+      stopReason: string;
+      toolCalls: number;
+      /** ask 模式下本次复盘新增暂存的待审批条数 */
+      staged: number;
+      error?: string;
+    }
   | { type: 'error'; error: string };
 
 export interface WsPlaneOptions {
@@ -94,6 +106,16 @@ export function attachWsServer(server: Server, hub: SessionHub, options: WsPlane
         tool: a.tool,
         args: a.args,
         requestId: a.requestId,
+      }),
+    onNudgeStarted: (sessionId) => broadcast(sessionId, { type: 'nudge-started', sessionId }),
+    onNudgeFinished: (sessionId, result) =>
+      broadcast(sessionId, {
+        type: 'nudge-finished',
+        sessionId,
+        stopReason: result.stopReason,
+        toolCalls: result.toolCalls,
+        staged: result.staged,
+        ...(result.error !== undefined ? { error: result.error } : {}),
       }),
   });
 

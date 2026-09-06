@@ -11,6 +11,14 @@ import {
   type MemoryOp,
 } from './store.js';
 
+/**
+ * 记忆写入目的地缝：MemoryStore = 直接落盘（auto / 主对话）；
+ * ask 模式的复盘/主对话写入由 PendingMemorySink 等实现暂存语义（apply 结果带 stagedId）。
+ */
+export interface MemorySink {
+  apply(ops: readonly MemoryOp[]): Promise<MemoryApplyResult & { stagedId?: string }>;
+}
+
 const OPERATION_SCHEMA = {
   type: 'object',
   properties: {
@@ -22,7 +30,7 @@ const OPERATION_SCHEMA = {
   required: ['operation', 'target'],
 } as const;
 
-export function createMemoryTool(store: MemoryStore): ToolDefinition {
+export function createMemoryTool(sink: MemorySink): ToolDefinition {
   return {
     name: 'memory',
     description:
@@ -60,14 +68,17 @@ export function createMemoryTool(store: MemoryStore): ToolDefinition {
       } else {
         return { error: 'memory: 需要 operation（单操作）或 operations（批量数组）' };
       }
-      let result: MemoryApplyResult;
+      let result: MemoryApplyResult & { stagedId?: string };
       try {
-        result = await store.apply(ops);
+        result = await sink.apply(ops);
       } catch (e) {
         return { error: `memory: ${(e as Error)?.message ?? String(e)}` };
       }
       if (!result.ok) return { error: `memory: ${result.error ?? 'unknown error'}` };
       const lines: string[] = [];
+      if (result.stagedId !== undefined) {
+        lines.push(`staged as ${result.stagedId} (等待人工审批后落盘)`);
+      }
       for (const f of result.files) {
         lines.push(
           `${memoryFileName(f.target)}: ${f.entries} entries, ${f.usedChars}/${f.budget} chars (${f.remainingChars} remaining)`,

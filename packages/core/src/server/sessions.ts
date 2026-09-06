@@ -18,7 +18,10 @@ import { randomUUID } from 'node:crypto';
 import { runTurn } from '../agent/loop.js';
 import type { TurnResult, TurnStreamEvent } from '../agent/types.js';
 import type { ApprovalDecision, ApprovalInput } from '../tools/types.js';
-import type { ToolRegistry } from '../tools/registry.js';
+import { ToolRegistry } from '../tools/registry.js';
+import { createMemoryToolForMode, runNudgeReview, type NudgeResult } from '../memory/nudge.js';
+import type { PendingMemoryStore } from '../memory/pending.js';
+import type { MemoryStore } from '../memory/store.js';
 import type { ChatProvider, ToolCallRequest } from '../provider/types.js';
 import { computeProjection, loadSession, type LoadedEvent } from '../session/reader.js';
 import { SnapshotStore } from '../session/snapshots.js';
@@ -60,6 +63,18 @@ export interface PendingApproval {
 
 export type ApprovalSettleReason = 'response' | 'timeout' | 'cancelled';
 
+/** hub 级记忆装配（阶段 6）：mode ≠ off 时由启动器注入；off 不传 = 零记忆行为 */
+export interface SessionHubMemory {
+  store: MemoryStore;
+  mode: 'ask' | 'auto';
+  /** 每 N 个用户 turn 触发一次后台复盘（模型调过 memory 工具的 turn 重置计数） */
+  nudgeInterval: number;
+  /** 复盘 provider（roles.small）；缺省 = 主 provider */
+  reviewProvider?: ChatProvider;
+  /** ask 模式暂存区；缺省 = store.root/pending */
+  pending?: PendingMemoryStore;
+}
+
 export interface SessionHubHooks {
   /** 落盘事件镜像（append 返回后同步回调；含 rewind/marker） */
   onEvent?(sessionId: string, event: AnySessionEvent): void;
@@ -71,6 +86,10 @@ export interface SessionHubHooks {
   onApprovalRequest?(approval: PendingApproval): void;
   /** 审批落定（响应/超时/取消；false = 按拒绝处理） */
   onApprovalSettled?(requestId: string, allowed: boolean, reason: ApprovalSettleReason): void;
+  /** 后台复盘开始（turn-end 之后异步触发；提示帧，UI 自行决定展示） */
+  onNudgeStarted?(sessionId: string): void;
+  /** 后台复盘结束（产出 = 记忆写入或 pending 暂存；error 存在 = 复盘失败，主对话不受影响） */
+  onNudgeFinished?(sessionId: string, result: NudgeResult): void;
 }
 
 export interface SessionHubOptions {
@@ -83,6 +102,8 @@ export interface SessionHubOptions {
   decide?: (input: ApprovalInput) => ApprovalDecision;
   /** 审批等待超时 ms（默认 120_000；超时按拒绝处理） */
   approvalTimeoutMs?: number;
+  /** 记忆装配（mode ≠ off 时注入；缺省 = 无记忆行为） */
+  memory?: SessionHubMemory;
   hooks?: SessionHubHooks;
 }
 
@@ -155,6 +176,12 @@ export class SessionHub {
   private readonly approvals = new Map<string, PendingApprovalEntry>();
   /** 运行中 turn 的 promise 集（close 时等待收尾） */
   private readonly inflight = new Set<Promise<void>>();
+  /** 每会话 nudge 计数（用户 turn 完成时 +1；turn 内调过 memory 工具 → 归零） */
+  private readonly nudgeCounts = new Map<string, number>();
+  /** 运行中 turn 是否调过 memory 工具（EventMirrorWriter 事件侧记） */
+  private readonly memoryToolUseInTurn = new Set<string>();
+  /** 运行中复盘 turn 的取消源（close 时全部取消；同会话连续复盘各自独立） */
+  private readonly reviewRunning = new Set<AbortController>();
 
   readonly approvalTimeoutMs: number;
   /** 观察者集合（WS 事件面 / 测试；addHooks 注册，返回退订函数） */
@@ -186,7 +213,10 @@ export class SessionHub {
     const entry: HubEntry = {
       id: created.id,
       dir: created.dir,
-      writer: new EventMirrorWriter(created.writer, (event) => this.emitEvent(created.id, event)),
+      writer: new EventMirrorWriter(created.writer, (event) => {
+        this.noteTurnEvent(created.id, event);
+        this.emitEvent(created.id, event);
+      }),
     };
     this.entries.set(created.id, entry);
     return { id: created.id, dir: created.dir };
@@ -229,7 +259,10 @@ export class SessionHub {
     const entry: HubEntry = {
       id,
       dir,
-      writer: new EventMirrorWriter(writer, (event) => this.emitEvent(id, event)),
+      writer: new EventMirrorWriter(writer, (event) => {
+        this.noteTurnEvent(id, event);
+        this.emitEvent(id, event);
+      }),
     };
     this.entries.set(id, entry);
     return entry;
@@ -291,10 +324,11 @@ export class SessionHub {
     const ac = new AbortController();
     this.running.set(id, ac);
     const snapshots = new SnapshotStore(entry.dir);
+    this.memoryToolUseInTurn.delete(id); // 每 turn 重置 memory 工具使用标记
     try {
       const result = await runTurn(entry.writer, {
         provider: this.options.provider,
-        tools: this.options.tools,
+        tools: this.buildTurnTools(id),
         approval: this.makeApprovalHandler(id, ac.signal),
         cwd: this.options.cwd,
         userText: text,
@@ -303,11 +337,86 @@ export class SessionHub {
         onStream: (event: TurnStreamEvent) => this.forwardStream(id, event),
       });
       this.emitTurnEnd(id, result);
+      this.bumpNudge(id); // turn-end 回调之后计数/触发复盘（异步，不阻塞主对话）
     } finally {
       this.running.delete(id);
       // 队列里还有同会话消息 → 继续泵（保持 await 顺序，串行语义）
       this.pump(id);
     }
+  }
+
+  /**
+   * turn 工具注册表：无记忆装配时直接复用共享注册表；有则按会话换装 memory 工具
+   * （auto = 直写 store；ask = 暂存 pending，来源会话归因到当前会话）。
+   */
+  private buildTurnTools(sessionId: string): ToolRegistry {
+    const memory = this.options.memory;
+    if (memory === undefined) return this.options.tools;
+    const registry = new ToolRegistry();
+    for (const def of this.options.tools.list()) {
+      if (def.name === 'memory') continue; // 换装按会话绑定的变体
+      registry.register(def);
+    }
+    registry.register(createMemoryToolForMode(memory.store, memory.mode, memory.pending, sessionId));
+    return registry;
+  }
+
+  /** EventMirrorWriter 事件侧记：运行中 turn 调过 memory 工具（nudge 计数归零依据） */
+  private noteTurnEvent(sessionId: string, event: AnySessionEvent): void {
+    if (event.type === 'tool/call' && event.payload.tool === 'memory') {
+      this.memoryToolUseInTurn.add(sessionId);
+    }
+  }
+
+  /** nudge 计数：turn 完成 +1（调过 memory 工具 → 归零）；到 nudgeInterval 触发后台复盘并归零 */
+  private bumpNudge(id: string): void {
+    const memory = this.options.memory;
+    if (memory === undefined) return;
+    if (this.memoryToolUseInTurn.has(id)) {
+      this.memoryToolUseInTurn.delete(id);
+      this.nudgeCounts.set(id, 0);
+      return;
+    }
+    const count = (this.nudgeCounts.get(id) ?? 0) + 1;
+    if (count < memory.nudgeInterval) {
+      this.nudgeCounts.set(id, count);
+      return;
+    }
+    this.nudgeCounts.set(id, 0);
+    this.startNudgeReview(id);
+  }
+
+  /** 后台复盘：fire-and-forget（inflight 跟踪，close 时取消并等待）；异常在 runNudgeReview 内收口 */
+  private startNudgeReview(id: string): void {
+    const memory = this.options.memory;
+    const entry = this.entries.get(id);
+    if (memory === undefined || entry === undefined) return;
+    const ac = new AbortController();
+    this.reviewRunning.add(ac);
+    const run = runNudgeReview({
+      provider: memory.reviewProvider ?? this.options.provider,
+      store: memory.store,
+      mode: memory.mode,
+      sessionId: id,
+      sessionDir: entry.dir,
+      cwd: this.options.cwd,
+      ...(memory.pending !== undefined ? { pending: memory.pending } : {}),
+      signal: ac.signal,
+      onStarted: (sessionId) => this.emitNudgeStarted(sessionId),
+      onFinished: (result) => this.emitNudgeFinished(result.sessionId, result),
+    })
+      .then(() => {})
+      .catch(() => {});
+    this.inflight.add(run);
+    void run.finally(() => {
+      this.inflight.delete(run);
+      this.reviewRunning.delete(ac);
+    });
+  }
+
+  /** 测试/诊断用：nudge 计数快照 */
+  nudgeCount(id: string): number {
+    return this.nudgeCounts.get(id) ?? 0;
   }
 
   private forwardStream(id: string, event: TurnStreamEvent): void {
@@ -412,6 +521,26 @@ export class SessionHub {
     }
   }
 
+  private emitNudgeStarted(sessionId: string): void {
+    for (const l of this.listeners) {
+      try {
+        l.onNudgeStarted?.(sessionId);
+      } catch {
+        // 观察者异常不回写内核
+      }
+    }
+  }
+
+  private emitNudgeFinished(sessionId: string, result: NudgeResult): void {
+    for (const l of this.listeners) {
+      try {
+        l.onNudgeFinished?.(sessionId, result);
+      } catch {
+        // 观察者异常不回写内核
+      }
+    }
+  }
+
   private makeApprovalHandler(sessionId: string, signal: AbortSignal) {
     const decide = this.options.decide;
     return {
@@ -450,9 +579,10 @@ export class SessionHub {
 
   // —— 收尾 ——
 
-  /** 关闭：取消运行中 turn → 拒绝全部待审批 → 等待收尾 → 关闭全部 writer（释放目录锁） */
+  /** 关闭：取消运行中 turn 与复盘 → 拒绝全部待审批 → 等待收尾 → 关闭全部 writer（释放目录锁） */
   async close(): Promise<void> {
     for (const ac of this.running.values()) ac.abort();
+    for (const ac of this.reviewRunning.values()) ac.abort();
     for (const pending of this.approvals.values()) pending.settle(false, 'cancelled');
     while (this.inflight.size > 0) {
       await Promise.all([...this.inflight]);
