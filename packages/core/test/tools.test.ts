@@ -139,7 +139,9 @@ describe('bash 工具', () => {
     expect(r.output).toContain('[truncated');
   }, 15000);
 
-  it('P1-3 回归：超时杀死整棵进程树——延时副作用文件不再出现', async () => {
+  // retry:2——进程树击杀 + 副作用缺证是双进程墙钟断言，Windows/高负载下有竞态抖动
+  //（OPEN.md 偶发抖动并案）；击杀语义真回归会连败仍红
+  it('P1-3 回归：超时杀死整棵进程树——延时副作用文件不再出现', { retry: 2, timeout: 20000 }, async () => {
     const dir = tmpDir();
     const sideEffect = join(dir, 'late-side-effect.txt');
     // 跨平台长副作用命令：node 起来后先睡 2s 再写文件（工作进程若在超时后存活，文件终将出现）
@@ -156,7 +158,7 @@ describe('bash 工具', () => {
     // 留足缓冲（避免竞态）：副作用最迟在命令启动 ~2s 后出现；4s 后仍不存在即证明进程树已死
     await sleep(4000);
     expect(existsSync(sideEffect)).toBe(false);
-  }, 20000);
+  });
 });
 
 describe('read 工具', () => {

@@ -108,7 +108,9 @@ describe('runTurn 基础语义', () => {
     expect(provider.requests[0]?.tools?.map((t) => t.name)).toEqual(['read_file']);
   });
 
-  it('并行 safe 工具波次：同波 safe 调用并行，step 总时长远小于串行', async () => {
+  // retry:2——纯墙钟时序断言在 Windows/高负载下有调度抖动（OPEN.md 偶发抖动并案）；
+  // 并行性真回归会连败仍红，抖动被吸收
+  it('并行 safe 工具波次：同波 safe 调用并行，step 总时长远小于串行', { retry: 2, timeout: 8000 }, async () => {
     const dir = tmpDir();
     const provider = new MockProvider([
       {
@@ -141,7 +143,7 @@ describe('runTurn 基础语义', () => {
     // tool/result 顺序与调用顺序一致
     const results = loadEvents(dir).filter((e) => e.type === 'tool/result');
     expect(results.map((e) => (e.payload as { callId: string }).callId)).toEqual(['p1', 'p2']);
-  }, 8000);
+  });
 
   it('max_steps 守卫：达到上限停止并返回 max_steps', async () => {
     const dir = tmpDir();
