@@ -1,6 +1,6 @@
 # 阶段 8：插件总线公开化 + MCP + Subagent
 
-> **状态：** 实现完成（Task 1–5 全部提交：5d99461 / 64175a1 / 730a2ff / 2780389 / 文档整备；512 passed + 1 skipped；待 `/accept-phase` 验收。总控计划 Ph8，2026-09-06 批准；基线 = 阶段 7 验收）
+> **状态：** ✅ 已完成——2026-09-06 编排者验收通过（独立审查 pass-with-fixes → 4 P1 + 6 P2 全部修复（`5e9f048`，修复代理被并发限制打断于交卷前、实际已完成提交）：MCP scheduleRestart 幂等闸门堵竞态僵尸、maxTurns 1..200 解除契约矛盾、插件抢名降级不崩 chat、子会话独立快照兑现红线。重跑证据：pnpm test **527 项（526 passed + 1 skipped）**、typecheck 3 包 Done、P1 抽查属实、0 敏感文件。真实 MCP server 实测与第三方插件样例待用户环境，见 OPEN.md）
 > **For agentic workers:** 按 Task 顺序执行；每 Task 测完再进下一 Task。
 > **交接提示词**见文末「给接手 AI 的完整提示词」。
 > **元规范:** `docs/ai-framework/phased-plan-driven.md`
