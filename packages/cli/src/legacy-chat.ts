@@ -11,6 +11,7 @@ import { StreamRenderer } from './render.js';
 import { handleCommand, parseCommand, type CommandContext } from './commands.js';
 import { MODE_ALIAS_LABEL, MODE_ALIAS_ORDER, MODE_ALIAS_TO_CORE, describeMode, parseModeAlias } from './mode-alias.js';
 import { matchCommands } from './command-registry.js';
+import { expandContextRefs, hasContextRefs } from './context-ref.js';
 import {
   ASK_CANCELLED,
   ChatSetupAbort,
@@ -154,7 +155,13 @@ export async function runLegacyReadlineChat(options: ChatOptions = {}): Promise<
   };
 
   async function runUserTurn(text: string): Promise<void> {
-    const result = await runtime.runUserTurn(text, (event) => {
+    // @file/@dir 引用解析（发送前预处理；回显仍用原始 text）
+    let sendText = text;
+    if (hasContextRefs(text)) {
+      const ref = expandContextRefs(text, { cwd: root, root });
+      if (ref.hasRefs && ref.header.length > 0) sendText = `${ref.header}\n\n${text}`;
+    }
+    const result = await runtime.runUserTurn(sendText, (event) => {
       if (event.type === 'text-delta') renderer.textDelta(event.text);
       else if (event.type === 'tool-call') renderer.toolCall(event.call.name, event.call.arguments);
       else if (event.type === 'reasoning-delta') {

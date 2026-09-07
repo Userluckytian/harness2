@@ -14,6 +14,7 @@ import { SelectList } from './SelectList.js';
 import { ConfirmDialog } from './ConfirmDialog.js';
 import { useTurnStream, type TurnSnapshot } from './useTurnStream.js';
 import { parseCommand, HELP_TEXT } from '../commands.js';
+import { expandContextRefs, hasContextRefs } from '../context-ref.js';
 import { CORE_MODE_TO_ALIAS, MODE_ALIAS_ORDER, MODE_ALIAS_LABEL, MODE_ALIAS_TO_CORE, type ModeAlias } from '../mode-alias.js';
 import type { ApprovalMode } from '@harness2/core';
 import { getContextUsage } from '@harness2/core';
@@ -293,7 +294,13 @@ function InkShell({
     setBusy(true);
     setSettled((l) => [...l, `> ${text}`]);
     try {
-      result = await runtime.runUserTurn(text, handler);
+      // @file/@dir 引用解析（发送前预处理；回显保持原始 text；无引用时直接用原文）
+      let sendText = text;
+      if (hasContextRefs(text)) {
+        const ref = expandContextRefs(text, { cwd: runtime.root, root: runtime.root });
+        if (ref.hasRefs && ref.header.length > 0) sendText = `${ref.header}\n\n${text}`;
+      }
+      result = await runtime.runUserTurn(sendText, handler);
       commit();
       if (result !== undefined) {
         // turn 摘要（对齐 legacy 的 [end_turn ...] 行）
