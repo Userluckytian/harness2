@@ -5,7 +5,7 @@
 //   - 路径先试相对 cwd，找不到再试相对项目 root；
 //   - 文件 UTF-8 读取（单文件 64KB 截断保护 + 截断提示）；目录列出直接子项（不递归）；
 //   - 失败/不存在跳过并在引用块末尾追加 `[@x 未找到，已忽略]`。
-import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
+import { existsSync, openSync, readSync, readFileSync, readdirSync, statSync, closeSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 
 const DEFAULT_MAX_FILE_BYTES = 64 * 1024;
@@ -82,7 +82,16 @@ export function expandContextRefs(
         let content: string;
         let note = '';
         if (stat.size > maxFileBytes) {
-          content = readFileSync(resolved, 'utf8').slice(0, maxFileBytes);
+          // 限长读取（open/read 前缀 N 字节，避免大文件整体进内存）
+          const buf = Buffer.alloc(maxFileBytes);
+          const fd = openSync(resolved, 'r');
+          let n = 0;
+          try {
+            n = readSync(fd, buf, 0, maxFileBytes, 0);
+          } finally {
+            closeSync(fd);
+          }
+          content = buf.subarray(0, n).toString('utf8');
           note = `（已截断：单文件 > ${Math.round(maxFileBytes / 1024)}KB，仅前 64KB）`;
         } else {
           content = readFileSync(resolved, 'utf8');

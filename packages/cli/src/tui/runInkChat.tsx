@@ -44,16 +44,30 @@ export function createDialogController(): {
   open: (req: DialogRequest) => void;
   getPending: () => DialogRequest | null;
   clear: () => void;
+  /** 订阅 pending 变化（open/clear），供 InkShell 驱动 React 重渲染同步审批弹窗 */
+  subscribe: (fn: () => void) => () => void;
 } {
   let pending: DialogRequest | null = null;
+  const subs = new Set<() => void>();
+  const notify = () => {
+    for (const fn of subs) fn();
+  };
   return {
     open: (req) => {
       pending?.resolve(); // 清掉旧挂起（理论上一时刻只有一个）
       pending = req;
+      notify();
     },
     getPending: () => pending,
     clear: () => {
       pending = null;
+      notify();
+    },
+    subscribe: (fn) => {
+      subs.add(fn);
+      return () => {
+        subs.delete(fn);
+      };
     },
   };
 }
@@ -127,15 +141,14 @@ function InkShell({
     if (text.length > 0) setSettled((l) => [...l, text]);
   });
 
-  // 同步 dialog controller 里的挂起请求（审批弹窗）到 overlay
+  // 同步 dialog controller 里的挂起请求（审批弹窗）到 overlay。
+  // dialog 是外置稳定对象（open 只改闭包），须经订阅计数驱动 effect 重跑（审查 P0 修复）
+  const [reqTick, setReqTick] = useState(0);
+  React.useEffect(() => dialog.subscribe(() => setReqTick((t) => t + 1)), [dialog]);
+
   React.useEffect(() => {
     const req = dialog.getPending();
-    if (req === null) {
-      if (typeof closeOverlayRef.current === 'function') {
-        // 只清 approval 类型（不由命令触发的）；命令用 setOverlay 直接管理
-      }
-      return;
-    }
+    if (req === null) return;
     closeOverlayRef.current = () => {
       req.resolve();
       dialog.clear();
@@ -148,7 +161,7 @@ function InkShell({
         setOverlay(null);
       }),
     );
-  }, [dialog]);
+  }, [dialog, reqTick]);
 
   // T8：busy 期间按 r 展开/收起当前 turn 的推理折叠块（Composer 此时不接管，互不冲突）
   useInput(
