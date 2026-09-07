@@ -100,11 +100,14 @@ describe('settings:updateConfig 契约', () => {
     expect(res.error).toContain('不允许写入密钥');
   });
 
-  it('plan 审批模式被内核拒绝（ApprovalMode 暂不支持）', () => {
+  it('plan 审批模式已被内核支持（终端轨道 T1 新增第四态，桌面合并后同样接受）', () => {
     const home = tempHome();
     const res = updateSettingsConfig(home, { approval: { mode: 'plan' } });
-    expect(res.ok).toBe(false);
-    expect(res.error).toBeDefined();
+    expect(res.ok).toBe(true);
+    const raw = JSON.parse(readFileSync(join(home, '.harness2', 'config.json'), 'utf8')) as {
+      approval?: { mode?: string };
+    };
+    expect(raw.approval?.mode).toBe('plan');
   });
 });
 
