@@ -240,6 +240,7 @@ program
   .option('--mock-child-script <file>', '覆盖 mock 子会话脚本（subagent_start 派发的子会话 turn；测试/演示用）')
   .option('--root <dir>', '工作目录：工具执行 cwd + 会话分组（默认当前目录）')
   .option('--home <dir>', '覆盖用户数据根（配置 + 会话存储；测试/多环境用）')
+  .option('--no-tui', '强制走 legacy readline 路径（关闭自动 TUI；也可用 HARNESS2_NO_TUI=1）')
   .action(async (opts: { session?: string; fork?: string; at?: string; provider: string; mockScript?: string; mockChildScript?: string; root?: string; home?: string }) => {
     let at: number | undefined;
     if (opts.at !== undefined) {
