@@ -13,6 +13,8 @@ export interface Controller {
   replaySession(id: string): Promise<void>;
   sendMessage(id: string, text: string): Promise<void>;
   abort(id: string): Promise<void>;
+  /** B5：撤销会话最近一次被快照追踪的修改（调用既有 api.undo；失败经 store.applyFrame 报错） */
+  undoSession(id: string): Promise<void>;
   respondApproval(requestId: string, decision: 'allow' | 'deny'): Promise<void>;
   /** 启动时读取持久化布局（~/.harness2/desktop-layout.json 经主进程） */
   initLayout(): Promise<void>;
@@ -121,6 +123,16 @@ export function createController(store: AppStore, api: Harness2Api): Controller 
         await api.abort(id);
       } catch {
         // 通道未连接：无可取消的运行中 turn
+      }
+    },
+    async undoSession(id: string): Promise<void> {
+      try {
+        await api.undo(id);
+        // undo 后事件流会收到 rewind 标记（applyFrame 重折叠），无需手动刷新；
+        // 仅确保会话列表元数据（mtime/条数）与磁盘一致（尽力而为）
+        await refreshSessions();
+      } catch (e) {
+        store.applyFrame({ type: 'error', error: `撤销失败: ${(e as Error).message}` });
       }
     },
     async respondApproval(requestId: string, decision: 'allow' | 'deny'): Promise<void> {

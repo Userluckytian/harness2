@@ -16,12 +16,68 @@ import { readMetadata, writeMetadataPatch } from './metadata-file.js';
 import { readAuthMasked, readSettingsConfig, updateAuth, updateSettingsConfig } from './config-file.js';
 import { getCrashReports, getDoctorReport } from './diagnostics.js';
 import { getContextUsageFallback } from './context-usage.js';
+import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { execFile as execFileCb } from 'node:child_process';
-import { readFileSync } from 'node:fs';
-import { resolve, relative } from 'node:path';
+import { join, resolve, relative } from 'node:path';
 import { promisify } from 'node:util';
+import { homedir } from 'node:os';
 
 const execFile = promisify(execFileCb);
+
+/** 会话目录布局：<home>/.harness2/sessions/<encoded-cwd>/<sessionId>/（与 core session/manager 一致） */
+const SESSIONS_DIR_NAME = 'sessions';
+
+/** 递归列出 sessions 根下的 cwd 目录（一层；结构固定 <encoded-cwd>/<sessionId>） */
+function sessionCwdDirs(root: string): string[] {
+  try {
+    return readdirSync(root)
+      .map((name) => join(root, name))
+      .filter((p) => statSync(p).isDirectory());
+  } catch {
+    return [];
+  }
+}
+
+/** 定位给定 sessionId 对应的会话目录（在 sessions 树里按目录名匹配；找不到返回 null） */
+function sessionDirFor(sessionId: string, home?: string): string | null {
+  const sessionsRoot = join(home ?? homedir(), '.harness2', SESSIONS_DIR_NAME);
+  if (!existsSync(sessionsRoot)) return null;
+  for (const cwdDir of sessionCwdDirs(sessionsRoot)) {
+    const maybe = join(cwdDir, sessionId);
+    if (existsSync(maybe) && statSync(maybe).isDirectory()) return maybe;
+  }
+  return null;
+}
+
+/** 读 rewind_points.jsonl，返回 seq 匹配的条目（解析失败/撕裂行跳过，与 core SnapshotStore 同策略） */
+function readSnapshotEntry(sessionId: string, seq: number, home?: string): { file: string; before: string | null; after: string | null } | null {
+  const dir = sessionDirFor(sessionId, home);
+  if (dir === null) return null;
+  const filePath = join(dir, 'rewind_points.jsonl');
+  let text: string;
+  try {
+    text = readFileSync(filePath, 'utf8');
+  } catch {
+    return null; // 不存在 / 读失败
+  }
+  for (const line of text.split('\n')) {
+    if (line.length === 0) continue;
+    let obj: unknown;
+    try {
+      obj = JSON.parse(line);
+    } catch {
+      continue; // 撕裂/损坏行：跳过
+    }
+    if (typeof obj !== 'object' || obj === null) continue;
+    const e = obj as Record<string, unknown>;
+    if (e['v'] === 1 && e['seq'] === seq && typeof e['file'] === 'string') {
+      const before = e['before'] === null ? null : typeof e['before'] === 'string' ? e['before'] : null;
+      const after = e['after'] === null ? null : typeof e['after'] === 'string' ? e['after'] : null;
+      return { file: e['file'], before, after };
+    }
+  }
+  return null;
+}
 
 /** 读 git 分支（主进程执行；非 git 目录/无 .git → null） */
 async function gitBranchForDir(dir: string): Promise<string | null> {
@@ -289,6 +345,18 @@ export function createBridge(deps: BridgeDeps): Bridge {
         const sid = typeof args['sessionId'] === 'string' ? args['sessionId'] : '';
         if (sid.length === 0) return { usage: null, label: '—' };
         return getContextUsageFallback(sid, { home: deps.home });
+      }
+      case 'getSnapshotForCall': {
+        const sid = typeof args['sessionId'] === 'string' ? args['sessionId'] : '';
+        const seqRaw = args['seq'];
+        const seq = typeof seqRaw === 'number' && Number.isInteger(seqRaw) ? seqRaw : NaN;
+        if (sid.length === 0 || !Number.isInteger(seq)) {
+          return { ok: false, error: '参数非法' };
+        }
+        // 只读：定位会话目录读 rewind_points.jsonl 的 seq 条目（渲染端零 Node；不写任何文件）
+        const entry = readSnapshotEntry(sid, seq, deps.home);
+        if (entry === null) return { ok: false, error: '未找到对应快照' };
+        return { ok: true, entry };
       }
       case 'readFileForRef':
         return readFileForRefMain(

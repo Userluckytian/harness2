@@ -82,6 +82,7 @@ function makeFakeApi(): Harness2Api {
     settingsGetCrashReports: vi.fn(async () => []),
     gitBranch: vi.fn(async () => 'heads/feat/desktop-settings'),
     getContextUsage: vi.fn(async () => ({ usage: 0.45, label: '45%' })),
+    getSnapshotForCall: vi.fn(async () => ({ ok: false, error: '未找到对应快照' })),
     readFileForRef: vi.fn(async () => ({ ok: false, error: '未找到' })),
     notify: vi.fn(async () => undefined),
     metadataGet: vi.fn(async () => ({})),

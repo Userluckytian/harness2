@@ -7,6 +7,7 @@ import { MAX_PANES } from '../shared/layout.js';
 import { applyTheme } from './theme.js';
 import { SettingsDialog } from './components/SettingsDialog.js';
 import { ConversationHeader } from './components/ConversationHeader.js';
+import { DiffCard } from './components/DiffCard.js';
 import { AppStore, type AppState, type SessionMeta } from './store.js';
 import { createController } from './app-controller.js';
 import { filterSessionList } from '../shared/metadata.js';
@@ -276,6 +277,15 @@ function argsSummary(args: unknown): string {
   return one.length <= 80 ? one : `${one.slice(0, 80)}…`;
 }
 
+/** write/edit 的目标文件（args.file_path；缺失返回 undefined，供 diff 卡标题兜底） */
+function diffTargetFile(args: unknown): string | undefined {
+  if (typeof args === 'object' && args !== null) {
+    const fp = (args as Record<string, unknown>)['file_path'];
+    if (typeof fp === 'string' && fp.length > 0) return fp;
+  }
+  return undefined;
+}
+
 /** 子会话跳转按钮（阶段 8）：在空分栏（缺省第一栏）打开子会话轨迹 */
 function SubagentJump({ childSessionId }: { childSessionId: string }) {
   const state = useAppState();
@@ -293,7 +303,7 @@ function SubagentJump({ childSessionId }: { childSessionId: string }) {
   );
 }
 
-export function ChatItemView({ item }: { item: ChatItem }) {
+export function ChatItemView({ item, sessionId }: { item: ChatItem; sessionId?: string }) {
   switch (item.kind) {
     case 'turn-header':
       return <div className="turn-header">── turn</div>;
@@ -319,19 +329,32 @@ export function ChatItemView({ item }: { item: ChatItem }) {
       );
     case 'tool': {
       const jump = item.childSessionId;
+      // B5 diff 卡片：write/edit 成功且有快照序（seq = rewind_points.jsonl 条目键）时展示真实红绿 diff
+      const showDiff = (item.tool === 'write' || item.tool === 'edit') && sessionId !== undefined;
+      const targetFile = diffTargetFile(item.args);
       return (
-        <div className={`tool-row ${item.result ? (item.result.ok ? 'tool-ok' : 'tool-fail') : 'tool-pending'}`}>
-          <span className="tool-line">
-            &gt; {displayToolName(item.tool)} ({argsSummary(item.args)})
-          </span>
-          {item.result === undefined ? (
-            <span className="tool-status">运行中…</span>
-          ) : (
-            <span className="tool-status">
-              {item.result.ok ? 'ok' : `FAILED${item.result.error !== undefined ? `: ${item.result.error}` : ''}`}
+        <div className={`tool-entry${item.result ? (item.result.ok ? 'tool-ok' : 'tool-fail') : 'tool-pending'}`}>
+          <div className={`tool-row ${item.result ? (item.result.ok ? 'tool-ok' : 'tool-fail') : 'tool-pending'}`}>
+            <span className="tool-line">
+              &gt; {displayToolName(item.tool)} ({argsSummary(item.args)})
             </span>
+            {item.result === undefined ? (
+              <span className="tool-status">运行中…</span>
+            ) : (
+              <span className="tool-status">
+                {item.result.ok ? 'ok' : `FAILED${item.result.error !== undefined ? `: ${item.result.error}` : ''}`}
+              </span>
+            )}
+            {jump !== undefined && <SubagentJump childSessionId={jump} />}
+          </div>
+          {showDiff && item.result?.ok && (
+            <DiffCard
+              sessionId={sessionId}
+              seq={item.seq}
+              file={targetFile}
+              onUndo={() => void controller.undoSession(sessionId)}
+            />
           )}
-          {jump !== undefined && <SubagentJump childSessionId={jump} />}
         </div>
       );
     }
@@ -408,7 +431,7 @@ export function ChatView({ streamId }: { streamId: string | null }) {
     <div className="chat">
       <div className="messages" ref={scrollRef}>
         {items.map((item, i) => (
-          <ChatItemView key={item.callId ?? item.seq ?? `i${i}`} item={item} />
+          <ChatItemView key={item.callId ?? item.seq ?? `i${i}`} item={item} sessionId={streamId} />
         ))}
         {items.length === 0 && <div className="empty-state">发送第一条消息开始对话</div>}
       </div>

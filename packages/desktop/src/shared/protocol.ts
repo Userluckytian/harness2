@@ -159,6 +159,15 @@ export interface ContextUsageShape {
   label: string;
 }
 
+/** getSnapshotForCall 响应（读写 rewind_points.jsonl 单条；before/after null = 文件当时不存在） */
+export interface SnapshotForCallShape {
+  ok: boolean;
+  /** 命中条目（seq 匹配的 tool/call 快照） */
+  entry?: { file: string; before: string | null; after: string | null };
+  /** 未命中 / 读取失败 / 参数非法时的一行错误 */
+  error?: string;
+}
+
 /** 会话展示态覆层 entry（B3：desktop-metadata.json 单会话元数据；title/archived/deleted 均可选） */
 export interface SessionMetadataEntryShape {
   title?: string;
@@ -196,6 +205,7 @@ export type InvokeCommand =
   | { cmd: 'settings:getCrashReports' }
   | { cmd: 'gitBranch'; dir: string }
   | { cmd: 'getContextUsage'; sessionId: string }
+  | { cmd: 'getSnapshotForCall'; sessionId: string; seq: number }
   | { cmd: 'readFileForRef'; path: string; cwd: string }
   | { cmd: 'notify'; title: string; body: string; sessionId?: string }
   | { cmd: 'metadata:get' }
@@ -237,6 +247,8 @@ export interface Harness2Api {
   gitBranch(dir: string): Promise<string | null>;
   /** 读上下文占用（core getContextUsage 经 IPC；与终端 /context 同一数据源） */
   getContextUsage(sessionId: string): Promise<ContextUsageShape>;
+  /** 读指定 tool/call 事件 seq 对应的文件快照（rewind_points.jsonl 单条；只读） */
+  getSnapshotForCall(sessionId: string, seq: number): Promise<SnapshotForCallShape>;
   /** 读 @file 引用内容（主进程 fs，64KB 截断；失败返回 null） */
   readFileForRef(path: string, cwd: string): Promise<{ ok: boolean; content?: string; truncated?: boolean; error?: string }>;
   /** 任务完成系统通知（主进程 Electron Notification） */

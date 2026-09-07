@@ -71,6 +71,7 @@ function makeFakeApi() {
     settingsGetCrashReports: vi.fn(async () => []),
     gitBranch: vi.fn(async () => 'main'),
     getContextUsage: vi.fn(async () => ({ usage: 0.5, label: '50%' })),
+    getSnapshotForCall: vi.fn(async () => ({ ok: false, error: '未找到对应快照' })),
     readFileForRef: vi.fn(async () => ({ ok: false, error: '未找到' })),
     notify: vi.fn(async () => undefined),
     metadataGet: vi.fn(async () => ({})),

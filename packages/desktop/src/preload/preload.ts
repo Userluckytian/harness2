@@ -40,6 +40,7 @@ const api: Harness2Api = {
   settingsGetCrashReports: () => ipcRenderer.invoke(IPC_INVOKE, { cmd: 'settings:getCrashReports' }),
   gitBranch: (dir: string) => ipcRenderer.invoke(IPC_INVOKE, { cmd: 'gitBranch', dir }),
   getContextUsage: (sessionId: string) => ipcRenderer.invoke(IPC_INVOKE, { cmd: 'getContextUsage', sessionId }),
+  getSnapshotForCall: (sessionId: string, seq: number) => ipcRenderer.invoke(IPC_INVOKE, { cmd: 'getSnapshotForCall', sessionId, seq }),
   readFileForRef: (path: string, cwd: string) => ipcRenderer.invoke(IPC_INVOKE, { cmd: 'readFileForRef', path, cwd }),
   notify: (title: string, body: string, sessionId?: string) => ipcRenderer.invoke(IPC_INVOKE, { cmd: 'notify', title, body, sessionId }),
   metadataGet: () => ipcRenderer.invoke(IPC_INVOKE, { cmd: 'metadata:get' }),

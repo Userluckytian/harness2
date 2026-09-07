@@ -1063,3 +1063,116 @@ body,
   color: var(--danger);
   background: var(--danger-soft);
 }
+
+/* B5 diff 卡片：write/edit 真实红绿 diff 卡片 */
+.tool-entry {
+  margin-top: 6px;
+}
+.diff-card {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  margin: 6px 0;
+  max-width: 100%;
+  overflow: hidden;
+}
+.diff-degraded {
+  border-style: dashed;
+}
+.diff-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 4px 10px;
+  background: var(--surface2);
+  border-bottom: 1px solid var(--border);
+  min-height: 28px;
+}
+.diff-title {
+  font-size: 12px;
+  font-family: Consolas, monospace;
+  color: var(--fg-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 70%;
+}
+.diff-error {
+  font-size: 11px;
+  color: var(--fg-dim);
+  font-style: italic;
+  margin-left: auto;
+}
+.diff-undo {
+  font-size: 12px;
+  padding: 2px 10px;
+  border: 1px solid var(--danger);
+  background: var(--surface);
+  color: var(--danger);
+  border-radius: 6px;
+  cursor: pointer;
+  white-space: nowrap;
+  margin-left: auto;
+}
+.diff-undo:hover {
+  background: var(--danger-soft);
+}
+.diff-body {
+  font-family: Consolas, monospace;
+  font-size: 12.5px;
+  line-height: 1.55;
+  overflow-x: auto;
+}
+.diff-line {
+  display: flex;
+  padding: 0 10px;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+.diff-add {
+  background: var(--ok-soft);
+}
+.diff-del {
+  background: var(--danger-soft);
+}
+.diff-ctx {
+  background: transparent;
+}
+.diff-mark {
+  flex-shrink: 0;
+  width: 14px;
+  text-align: center;
+  user-select: none;
+  color: var(--fg-dim);
+}
+.diff-add .diff-mark {
+  color: var(--ok);
+}
+.diff-del .diff-mark {
+  color: var(--danger);
+}
+.diff-text {
+  flex: 1;
+  min-width: 0;
+}
+.diff-empty {
+  color: var(--fg-muted);
+  font-style: italic;
+  padding: 8px 10px;
+}
+.diff-toggle {
+  display: block;
+  width: 100%;
+  text-align: center;
+  font-size: 12px;
+  padding: 4px 10px;
+  border: none;
+  background: transparent;
+  color: var(--fg-muted);
+  cursor: pointer;
+  font-family: Consolas, monospace;
+}
+.diff-toggle:hover {
+  background: var(--muted);
+  color: var(--fg);
+}
