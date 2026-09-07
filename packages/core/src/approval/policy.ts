@@ -6,7 +6,8 @@
 //   plan        —— safe=allow / 其余 deny（per-tool 仍可覆盖）
 // per-tool 规则（allow|ask|deny）可覆盖任何 mode（含 bypass 下的 ask/deny）。
 // 未列出的工具按 safe=allow / unsafe=ask 处理（安全集 = 只读工具，可注入覆盖）。
-import type { ApprovalConfig, ApprovalToolRule } from '../config/schema.js';
+// T6 增强：mode 可经第二参运行时传入（CLI /mode 切换、不落盘），缺省取 cfg.mode。
+import type { ApprovalConfig, ApprovalMode, ApprovalToolRule } from '../config/schema.js';
 import type { ApprovalDecision, ApprovalHandler, ApprovalInput } from '../tools/types.js';
 
 /** 缺省安全集：只读工具（对齐 tools/predefined 的 read/glob/grep） */
@@ -23,8 +24,9 @@ export interface ConfiguredApprovalHandler extends ApprovalHandler {
 export function createApprovalPolicy(
   cfg: ApprovalConfig | undefined,
   safeTools: ReadonlySet<string> = DEFAULT_SAFE_TOOLS,
+  modeOverride?: ApprovalMode,
 ): ConfiguredApprovalHandler {
-  const mode = cfg?.mode ?? 'default';
+  const mode: ApprovalMode = modeOverride ?? cfg?.mode ?? 'default';
   const rules: Record<string, ApprovalToolRule> = cfg?.tools ?? {};
   return {
     decide(input: ApprovalInput): ApprovalDecision {
