@@ -2,8 +2,10 @@
 // 布局纯逻辑见 shared/layout.ts；持久化经主进程落 ~/.harness2/desktop-layout.json。
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { displayToolName, type ChatItem } from './chat-model.js';
-import type { ConnectionStatus } from '../shared/protocol.js';
+import type { ConnectionStatus, SettingsPreferencesShape, SettingsTheme } from '../shared/protocol.js';
 import { MAX_PANES } from '../shared/layout.js';
+import { applyTheme } from './theme.js';
+import { SettingsDialog } from './components/SettingsDialog.js';
 import { AppStore, type AppState } from './store.js';
 import { createController } from './app-controller.js';
 
@@ -365,10 +367,31 @@ export function PaneArea(): React.ReactNode {
 export function App(): React.ReactNode {
   const state = useAppState();
   const statusInfo = STATUS_LABEL[state.status];
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [theme, setTheme] = useState<SettingsTheme>('warmPaper');
   // controller 生命周期挂组件：启动事件订阅 + 布局加载（卸载时退订）
   useEffect(() => {
     void controller.initLayout();
     return controller.start();
+  }, []);
+  // 主题：启动时读取偏好并应用；设置页改主题时 onThemeChange 即时切换
+  useEffect(() => {
+    void window.harness2.settingsGetPreferences().then((p: SettingsPreferencesShape) => {
+      setTheme(p.theme);
+      applyTheme(p.theme);
+    }).catch(() => {});
+  }, []);
+  useEffect(() => applyTheme(theme), [theme]);
+  // Ctrl+, / Cmd+, 打开设置
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent): void => {
+      if ((e.ctrlKey || e.metaKey) && e.key === ',') {
+        e.preventDefault();
+        setSettingsOpen((v) => !v);
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
   }, []);
   return (
     <div className="app">
@@ -376,6 +399,9 @@ export function App(): React.ReactNode {
         <span className="brand">harness2</span>
         <span className="topbar-right">
           <span className="hint">最多 {MAX_PANES} 分屏并行</span>
+          <button type="button" className="btn-settings" title="设置 (Ctrl+,)" onClick={() => setSettingsOpen(true)}>
+            ⚙
+          </button>
           <StatusBadge status={state.status} error={state.statusDetail?.error} />
         </span>
       </header>
@@ -383,6 +409,14 @@ export function App(): React.ReactNode {
         <SessionList />
         <PaneArea />
       </div>
+      <SettingsDialog
+        open={settingsOpen}
+        onClose={() => setSettingsOpen(false)}
+        onThemeChange={(t) => {
+          setTheme(t);
+          applyTheme(t);
+        }}
+      />
     </div>
   );
 }

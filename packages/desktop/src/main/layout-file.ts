@@ -1,10 +1,10 @@
 // 分屏布局持久化（主进程）：~/.harness2/desktop-layout.json 读写。
 // 读容错：文件缺失/损坏/形状非法 → defaultLayout（normalizeLayout 统一校验）；
-// 写前先 normalize（防 IPC 侧传入非法结构落盘）。
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+// 写前先 normalize（防 IPC 侧传入非法结构落盘）。公共读写逻辑见 json-file.ts（B2 抽取共用）。
 import { homedir } from 'node:os';
-import { dirname, join } from 'node:path';
+import { join } from 'node:path';
 import { defaultLayout, normalizeLayout, type DesktopLayout } from '../shared/layout.js';
+import { readJsonWithDefault, writeJsonNormalized } from './json-file.js';
 
 export const LAYOUT_FILE = 'desktop-layout.json';
 
@@ -13,21 +13,11 @@ export function layoutFilePath(home: string): string {
 }
 
 export function readLayout(home: string): DesktopLayout {
-  const path = layoutFilePath(home);
-  if (!existsSync(path)) return defaultLayout();
-  try {
-    return normalizeLayout(JSON.parse(readFileSync(path, 'utf8')));
-  } catch {
-    return defaultLayout();
-  }
+  return readJsonWithDefault(layoutFilePath(home), normalizeLayout, defaultLayout);
 }
 
 export function writeLayout(home: string, layout: unknown): DesktopLayout {
-  const normalized = normalizeLayout(layout);
-  const path = layoutFilePath(home);
-  mkdirSync(dirname(path), { recursive: true });
-  writeFileSync(path, `${JSON.stringify(normalized, null, 2)}\n`, 'utf8');
-  return normalized;
+  return writeJsonNormalized(layoutFilePath(home), layout, normalizeLayout);
 }
 
 /** 默认 home（进程级；测试不依赖） */
