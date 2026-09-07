@@ -177,6 +177,19 @@ V1 纯黑 OLED 太压抑 → **默认改浅色**（`#F1F5F9` 底 / 白卡 / 蓝 
 
 ---
 
+## 12. dsh「一切皆插件」调研 + 我们接入评估（用户：自己做部分功能 + 用户从市场自装）
+
+> 基于本地 `D:/AI_Projects/deepseek-harness`（b150a55；`git pull` 因 GitHub 网络中断失败，本地分析）。
+
+**dsh 机制**：①插件=npm 包（`apply(ctx)` 注册工具/服务/事件，`defineTool` 有 schema 校验/exec.token/signal）；②`cordis.yml` 清单（id/name/config）+ profile/bundle/patch 组合；③**客户端动态装载 + 框架级审批面板**（模型 `cordis_run` → 全局 overlay → 允许/拒绝；插件分 host 半 + browser 半）；④`gen-*-catalog` 生成**插件/工具/配置目录**（市场注册表）。
+
+**我们接入评估**：
+- ❌ 重写为 Cordis 内核 —— 不现实（~60 包 monorepo，与现有事件溯源内核冲突）。
+- ✅ **建在自有插件系统上，借鉴 dsh 市场理念**：harness2 已有插件（manifest 权限+审批+事件总线），增补 —— ①标准插件包 manifest；②**插件市场面板**（列举/搜/装/启/审批）；③**运行时装载 + 框架级审批**（仿 cordis_run overlay）；④**能力 seam 化**（工具/命令/Chat 节点/设置卡/MCP/Skills/子代理，对应 dsh ctx.tools/commands/ConversationNodeDefinition/settings）。
+- ⚠️ 直接跑 dsh 生态插件 —— 依赖其 Cordis 上下文，无法直跑；需适配层（大工程），务实做自己的市场。
+
+---
+
 ## 11. V5 · 暖纸皮色调 + plan 模式（当前最佳）
 
 - **暖纸皮色调**（ui-ux-pro-max「warm paper」）：背景 `#F6EFE3` 奶油纸（带细点纹理）、surface `#FFFCF6`、琥珀 accent `#C7743B`、暖石 ink `#3B2E21`、olive 成功、Calistoga 标题 + Inter 正文。柔和护眼，摒弃冷灰。
