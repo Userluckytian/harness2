@@ -1,0 +1,322 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>harness2 · V3 交互原型（对话优先）</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+<style>
+:root{
+  --bg:#F1F5F9; --surface:#fff; --surface2:#F8FAFC; --muted:#EEF2F7;
+  --border:#E2E8F0; --border2:#CBD5E1;
+  --fg:#0F172A; --fg-muted:#64748B; --fg-dim:#94A3B8;
+  --accent:#2563EB; --accent-soft:#DBEAFE;
+  --ok:#16A34A; --ok-soft:#DCFCE7; --warn:#D97706; --warn-soft:#FEF3C7; --danger:#DC2626; --danger-soft:#FEE2E2;
+  --code-bg:#0B1220; --code-fg:#E2E8F0;
+  --shadow:0 1px 3px rgba(15,23,42,.06),0 12px 32px rgba(15,23,42,.12);
+  --radius:12px;
+  font-family:'Inter',system-ui,sans-serif;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font-size:14px}
+svg{display:block}.i{width:16px;height:16px;stroke:currentColor;stroke-width:1.7;fill:none;stroke-linecap:round;stroke-linejoin:round}
+.app{display:flex;flex-direction:column;height:100vh}
+/* top */
+.top{display:flex;align-items:center;gap:10px;height:50px;padding:0 14px;background:var(--surface);border-bottom:1px solid var(--border);z-index:20}
+.logo{width:22px;height:22px;border-radius:7px;display:grid;place-items:center;background:linear-gradient(135deg,var(--accent),#1d4ed8);color:#fff;font-weight:800;font-size:13px}
+.brand{font-weight:700}
+.sessname{font-size:13px;color:var(--fg-muted);font-family:'JetBrains Mono',monospace}
+.spacer{flex:1}
+.pill{display:inline-flex;align-items:center;gap:6px;padding:4px 10px;border-radius:999px;font-size:12px;background:var(--muted);border:1px solid var(--border);color:var(--fg-muted)}
+.ctx{display:inline-flex;align-items:center;gap:6px;font-size:12px;color:var(--fg-muted)}
+.ctx .b{width:100px;height:6px;border-radius:999px;background:var(--muted);overflow:hidden;border:1px solid var(--border)}
+.ctx .f{height:100%;background:linear-gradient(90deg,var(--ok),var(--accent))}
+.iconbtn{display:grid;place-items:center;width:32px;height:32px;border-radius:9px;border:1px solid var(--border);background:var(--surface);color:var(--fg-muted);cursor:pointer}
+.iconbtn:hover{color:var(--fg);border-color:var(--accent)}
+.iconbtn.on{background:var(--accent-soft);color:var(--accent);border-color:var(--accent)}
+/* body */
+.body{display:flex;flex:1;min-height:0}
+/* left rail (sessions) */
+.rail{width:232px;display:flex;flex-direction:column;background:var(--surface);border-right:1px solid var(--border)}
+.rail.collapsed{width:0;border:none;overflow:hidden}
+.railhead{display:flex;align-items:center;justify-content:space-between;padding:12px 14px}
+.railhead .t{font-size:11px;font-weight:700;letter-spacing:.5px;color:var(--fg-muted);text-transform:uppercase}
+.btn{padding:6px 12px;border-radius:9px;border:none;font-weight:600;font-size:13px;cursor:pointer;background:var(--accent);color:#fff}
+.btn.ghost{background:transparent;border:1px solid var(--border);color:var(--fg-muted)}
+.search{margin:0 12px 8px;display:flex;align-items:center;gap:8px;padding:7px 10px;background:var(--muted);border:1px solid var(--border);border-radius:9px;color:var(--fg-muted)}
+.search input{flex:1;background:none;border:none;color:var(--fg);outline:none;font:inherit}
+.sessions{list-style:none;margin:0;padding:0 6px;overflow-y:auto;flex:1}
+.sess{display:flex;flex-direction:column;gap:3px;width:100%;padding:8px 10px;border:1px solid transparent;border-radius:10px;background:transparent;cursor:pointer;color:inherit}
+.sess:hover{background:var(--muted)}
+.sess.active{background:var(--surface2);border-color:var(--border)}
+.sess .r{display:flex;align-items:center;gap:6px;font-size:13px}
+.sess .n{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.sess .m{font-size:11px;color:var(--fg-muted)}
+.planpct{font-size:10px;color:var(--accent);display:inline-flex;align-items:center;gap:4px}
+.badge{margin-left:auto;background:var(--accent);color:#fff;border-radius:999px;font-size:10px;padding:0 6px}
+/* main chat */
+.main{flex:1;display:flex;min-width:0;background:var(--bg)}
+.chat{display:flex;flex-direction:column;flex:1;min-width:0}
+.msgs{flex:1;overflow-y:auto;padding:18px 22px;display:flex;flex-direction:column;gap:12px}
+.mu{max-width:66%;align-self:flex-end;background:var(--accent-soft);border:1px solid var(--accent);border-radius:14px;padding:8px 12px}
+.mu .w{display:block;font-size:11px;opacity:.75;margin-bottom:2px}
+.ma{align-self:flex-start;display:flex;flex-direction:column;gap:8px;width:100%;max-width:860px}
+.ma .w{font-size:11px;color:var(--fg-muted);display:flex;gap:6px;align-items:center}
+.ma .txt{white-space:pre-wrap;line-height:1.65;font-size:13.5px}
+.reason{font-size:12px;color:var(--fg-muted);border-left:2px solid var(--border2);padding-left:8px}
+.reason summary{cursor:pointer}
+/* PLAN CARD (点1) */
+.plan{background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:12px 14px;box-shadow:var(--shadow)}
+.plan .ph{display:flex;align-items:center;gap:8px;font-weight:600;font-size:13px;margin-bottom:8px}
+.plan .ph .pct{margin-left:auto;font-size:12px;color:var(--accent);font-family:'JetBrains Mono',monospace}
+.plan .pbar{height:6px;border-radius:999px;background:var(--muted);overflow:hidden;margin-bottom:10px;border:1px solid var(--border)}
+.plan .pbar i{display:block;height:100%;background:linear-gradient(90deg,var(--ok),var(--accent));width:57%}
+.planitem{display:flex;align-items:center;gap:10px;padding:5px 0;font-size:13px}
+.planitem .cb{width:17px;height:17px;border-radius:5px;border:1.5px solid var(--border2);display:grid;place-items:center;cursor:pointer;flex-shrink:0;color:#fff}
+.planitem.done .cb{background:var(--ok);border-color:var(--ok)}
+.planitem .tx{flex:1}
+.planitem.done .tx{text-decoration:line-through;color:var(--fg-muted)}
+.planitem .st{font-size:10px;color:var(--fg-muted)}
+.planitem.done .st{color:var(--ok)}
+.tool{display:flex;flex-direction:column;gap:6px;font-family:'JetBrains Mono',monospace;font-size:12px;background:var(--surface);border:1px solid var(--border);border-radius:11px;padding:8px 11px}
+.tool .th{display:flex;align-items:center;gap:8px}
+.tool .ic{width:22px;height:22px;border-radius:7px;display:grid;place-items:center;background:var(--muted);border:1px solid var(--border)}
+.tool .nm{font-weight:600}.tool .args{color:var(--fg-muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1}
+.st{font-size:11px;padding:1px 8px;border-radius:999px}
+.st.ok{color:var(--ok);background:var(--ok-soft)}.st.run{color:var(--warn);background:var(--warn-soft)}.st.fail{color:var(--danger);background:var(--danger-soft)}
+.code{margin-top:2px;border:1px solid var(--border);border-radius:9px;overflow:hidden}
+.code .ch{display:flex;align-items:center;gap:8px;background:var(--surface2);padding:5px 10px;font-size:11px;color:var(--fg-muted);border-bottom:1px solid var(--border)}
+.code .ch .f{color:var(--fg);margin-left:auto;font-family:'JetBrains Mono',monospace}
+.code pre{margin:0;background:var(--code-bg);color:var(--code-fg);font:12px/1.6 'JetBrains Mono',monospace;overflow:auto;padding:8px 0}
+.code .cl{display:flex;padding:0 12px}
+.code .cl .n{width:26px;text-align:right;color:var(--fg-dim);opacity:.4;user-select:none}
+.code .cl .t{white-space:pre;padding:0 10px}
+.code .cl.hl{background:rgba(37,99,235,.22)}
+.code .cl.hl .t{color:var(--accent);font-weight:600}
+.code .cl.dim .t{color:var(--fg-dim);opacity:.55}
+.compose{display:flex;flex-direction:column;gap:8px;padding:10px 18px;background:var(--surface);border-top:1px solid var(--border)}
+.slash{display:flex;flex-direction:column;gap:2px;padding:5px;background:var(--muted);border:1px solid var(--border);border-radius:10px;font-size:12.5px}
+.slash .r{display:flex;gap:8px;align-items:center;padding:5px 8px;border-radius:7px}
+.slash .r.hl{background:var(--surface2)}
+.slash .c{font-weight:600;color:var(--accent);font-family:'JetBrains Mono',monospace}
+.slash .ds{color:var(--fg-muted)}
+.cbox{display:flex;align-items:flex-end;gap:8px}
+.cbox textarea{flex:1;resize:none;height:48px;background:var(--muted);color:var(--fg);border:1px solid var(--border);border-radius:10px;padding:10px;font:inherit;outline:none}
+.cbox textarea:focus{border-color:var(--accent)}
+.cbtns{display:flex;gap:6px;align-items:center;padding-bottom:2px}
+.cbtns .iconbtn{width:30px;height:34px}
+.cbtns .solid{background:var(--accent);border-color:var(--accent);color:#fff}
+/* right workbench (Codex-style) */
+.wbench{width:320px;display:none;flex-direction:column;background:var(--surface);border-left:1px solid var(--border)}
+.wbench.open{display:flex}
+.wb-tabs{display:flex;gap:2px;padding:6px;background:var(--muted);border-bottom:1px solid var(--border)}
+.wb-tab{flex:1;padding:6px;border:none;background:transparent;border-radius:8px;font-size:12px;color:var(--fg-muted);cursor:pointer}
+.wb-tab.active{background:var(--surface);color:var(--fg);font-weight:600;box-shadow:var(--shadow)}
+.wb-body{flex:1;overflow:auto;padding:10px}
+.treeitem{display:flex;align-items:center;gap:6px;padding:4px 6px;border-radius:6px;font-size:12.5px;cursor:pointer;font-family:'JetBrains Mono',monospace;color:var(--fg-muted)}
+.treeitem:hover{background:var(--muted);color:var(--fg)}
+.treeitem.folder{color:var(--fg);font-weight:500}
+.treeitem .dir{margin-right:auto}
+/* settings modal (点2: 居中弹窗) */
+.overlay{position:fixed;inset:0;background:rgba(15,23,42,.45);display:none;place-items:center;z-index:50}
+.overlay.open{display:grid}
+.modal{width:620px;max-height:82vh;display:flex;flex-direction:column;background:var(--surface);border:1px solid var(--border);border-radius:16px;box-shadow:var(--shadow);overflow:hidden}
+.mhead{display:flex;align-items:center;padding:14px 18px;border-bottom:1px solid var(--border)}
+.mhead .t{font-weight:700;font-size:15px}
+.mhead .x{margin-left:auto}
+.mside{display:flex;flex:1;min-height:0}
+.menu{width:150px;padding:10px 8px;background:var(--surface2);border-right:1px solid var(--border)}
+.mi{width:100%;display:flex;align-items:center;gap:8px;padding:8px 10px;border:none;background:transparent;border-radius:8px;font-size:13px;color:var(--fg-muted);cursor:pointer;text-align:left}
+.mi.active{background:var(--accent-soft);color:var(--accent);font-weight:600}
+.mbody{flex:1;padding:16px 20px;overflow:auto}
+.sec h3{font-size:13px;margin:0 0 12px}
+.row{display:flex;align-items:center;gap:10px;padding:9px 0;border-bottom:1px solid var(--border)}
+.row:last-child{border-bottom:none}
+.row .k{width:120px;font-size:13px;color:var(--fg-muted)}
+.row .v{flex:1;font-family:'JetBrains Mono',monospace;font-size:12.5px;background:var(--muted);border:1px solid var(--border);border-radius:8px;padding:6px 10px}
+.gate{display:flex;align-items:center;gap:10px;padding:10px;background:var(--surface2);border:1px solid var(--border);border-radius:10px;margin-bottom:8px}
+.gate .gicon{width:32px;height:32px;border-radius:8px;display:grid;place-items:center;color:#fff;font-weight:700}
+.gate .gm{flex:1}
+.gate .gname{font-weight:600;font-size:13px}
+.gate .gmeta{font-size:11px;color:var(--fg-muted)}
+.gate .gst{font-size:11px}
+.sw{width:34px;height:20px;border-radius:999px;background:var(--border2);position:relative;cursor:pointer;flex-shrink:0}
+.sw.on{background:var(--ok)}
+.sw::after{content:"";position:absolute;top:2px;left:2px;width:16px;height:16px;border-radius:50%;background:#fff;transition:.2s}
+.sw.on::after{left:16px}
+.note{margin-top:10px;font-size:11.5px;color:var(--fg-muted)}
+.legend{position:fixed;left:12px;bottom:12px;z-index:9;font-size:11px;color:var(--fg-muted);background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:8px 10px;max-width:250px}
+.legend b{color:var(--fg)}
+</style>
+</head>
+<body>
+<div class="app">
+  <!-- TOP -->
+  <div class="top">
+    <span class="logo">h</span><span class="brand">harness2</span>
+    <span class="sessname">会话 #a3f2 · 添加用户认证 + 重构查询</span>
+    <div class="spacer"></div>
+    <span class="pill">🤖 big-pickle</span>
+    <span class="ctx">上下文 <span class="b"><span class="f" style="width:42%"></span></span>42%</span>
+    <button class="iconbtn" title="工作区" onclick="toggleWb()">▤</button>
+    <button class="iconbtn" title="命令面板">⌘K</button>
+    <button class="iconbtn" title="设置" onclick="openSettings()">⚙</button>
+  </div>
+
+  <div class="body">
+    <!-- LEFT SESSION RAIL -->
+    <aside class="rail" id="rail">
+      <div class="railhead"><span class="t">会话</span><button class="btn" style="padding:4px 10px;font-size:12px">＋</button></div>
+      <div class="search"><svg class="i"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3-3"/></svg><input placeholder="搜索…"/></div>
+      <ul class="sessions">
+        <li><div class="sess active">
+          <div class="r"><span class="n">添加用户认证 + 重构查询</span></div>
+          <div class="r"><span class="planpct">☑ 计划 4/7</span><span class="m" style="margin-left:auto">13:02</span></div>
+        </div></li>
+        <li><div class="sess">
+          <div class="r"><span class="n">检索今日3件时政要闻</span><span class="badge">2</span></div>
+          <div class="m">11:46 · 25层</div>
+        </div></li>
+        <li><div class="sess"><div class="r"><span class="n">迁移 docs 到 docsify</span></div><div class="m">10:02 · 后台</div></div></li>
+        <li><div class="sess"><div class="r"><span class="n">修复桌面白屏</span></div><div class="m">09:31</div></div></li>
+      </ul>
+    </aside>
+
+    <!-- MAIN CHAT (chat-first) -->
+    <div class="main">
+      <div class="chat">
+        <div class="msgs">
+          <div class="mu"><span class="w">你</span>帮我给用户模块加 JWT 认证，把 fetch 查询改成 React Query，并补测试。</div>
+          <div class="ma">
+            <span class="w">助理 · big-pickle</span>
+            <details class="reason"><summary>思考</summary>这是一个多步骤任务，我先列一个计划并逐步执行；每完成一步我会在计划里划掉。</details>
+            <div class="txt">好的，我列一个执行计划，按步骤推进：</div>
+          </div>
+
+          <!-- PLAN CARD (点1: 完成一项划掉一项) -->
+          <div class="plan">
+            <div class="ph">☑ 执行计划<span class="pct">4 / 7</span></div>
+            <div class="pbar"><i></i></div>
+            <div class="planitem done"><span class="cb">✓</span><span class="tx">1. 梳理现有 auth 模块与 fetch 调用点</span><span class="st">已完成</span></div>
+            <div class="planitem done"><span class="cb">✓</span><span class="tx">2. 实现 JWT 签发/校验（src/auth/jwt.ts）</span><span class="st">已完成</span></div>
+            <div class="planitem"><span class="cb"></span><span class="tx">3. 接入 React Query（useQuery/mutations）</span><span class="st">进行中</span></div>
+            <div class="planitem"><span class="cb"></span><span class="tx">4. 补 auth 单测（含 401/过期 token）</span><span class="st">待办</span></div>
+            <div class="planitem"><span class="cb"></span><span class="tx">5. 更新 README 认证示例</span><span class="st">待办</span></div>
+          </div>
+
+          <!-- tool example -->
+          <div class="tool"><div class="th"><span class="ic"><svg class="i"><path d="M4 5a2 2 0 012-2h4l2 3h6a2 2 0 012 2v9a2 2 0 01-2 2H6a2 2 0 01-2-2z"/></svg></span><span class="nm">edit</span><span class="args">src/auth/jwt.ts</span><span class="st ok">ok</span></div></div>
+          <div class="tool"><div class="th"><span class="ic"><svg class="i"><path d="M4 6h16M4 12h16M4 18h16"/></svg></span><span class="nm">bash</span><span class="args">pnpm --filter @harness2/core test -- auth</span><span class="st ok">ok · 12s</span></div></div>
+
+          <!-- code block (auto-expanded, point3: 右侧也可开工作区) -->
+          <div class="code"><div class="ch">src/auth/jwt.ts <span class="f">已编辑</span></div>
+            <pre>
+<div class="cl"><span class="n">12</span><span class="t">import jwt from 'jsonwebtoken';</span></div>
+<div class="cl dim"><span class="n">13</span><span class="t">export const sign = (u) =&gt; jwt.sign(u, SECRET);</span></div>
+<div class="cl hl"><span class="n">14</span><span class="t">export const verifyToken = (t, s) =&gt;</span></div>
+<div class="cl hl"><span class="n">15</span><span class="t">  jwt.verify(t, s, {algorithms:['HS256']});</span></div>
+<div class="cl dim"><span class="n">16</span><span class="t">export default { sign, verifyToken };</span></div></pre>
+          </div>
+          <div class="ma"><span class="w">助理</span><div class="txt">JWT 已接入，计划第 2 项完成。继续第 3 步。</div><div class="w" style="color:var(--fg-dim)">[完 · steps 5 · toolCalls 3]</div></div>
+        </div>
+
+        <div class="compose">
+          <div class="slash">
+            <div class="r hl"><span class="c">/plan</span><span class="ds">让 AI 制定并维护执行计划</span></div>
+            <div class="r"><span class="c">/todo</span><span class="ds">查看当前计划进度</span></div>
+            <div class="r"><span class="c">/resume</span><span class="ds">继续上次会话</span></div>
+          </div>
+          <div class="cbox"><textarea>继续，把查询也迁移到 React Query</textarea><div class="cbtns"><button class="iconbtn">↩</button><button class="iconbtn">⟲</button><button class="iconbtn solid">↑</button></div></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- RIGHT WORKBENCH (Codex-style) -->
+    <div class="wbench" id="wbench">
+      <div class="wb-tabs">
+        <button class="wb-tab active" onclick="wb('tree',this)">文件</button>
+        <button class="wb-tab" onclick="wb('diff',this)">Diff</button>
+        <button class="wb-tab" onclick="wb('term',this)">终端</button>
+      </div>
+      <div class="wb-body" id="wb-body">
+        <div class="treeitem folder">📦 packages</div>
+        <div class="treeitem">&nbsp;&nbsp;📁 core</div>
+        <div class="treeitem">&nbsp;&nbsp;&nbsp;&nbsp;src/auth/jwt.ts</div>
+        <div class="treeitem folder" style="margin-top:6px">📦 src</div>
+        <div class="treeitem">&nbsp;&nbsp;📁 views/Login</div>
+        <div class="treeitem">&nbsp;&nbsp;&nbsp;&nbsp;index.tsx</div>
+        <div class="treeitem">&nbsp;&nbsp;&nbsp;&nbsp;useLogin.ts</div>
+        <div class="treeitem">&nbsp;&nbsp;📁 api</div>
+        <div class="treeitem">&nbsp;&nbsp;&nbsp;&nbsp;auth.ts</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- SETTINGS MODAL (点2: 居中弹窗) -->
+  <div class="overlay" id="overlay" onclick="if(event.target===this)closeSettings()">
+    <div class="modal">
+      <div class="mhead"><span class="t">设置</span><button class="iconbtn x" onclick="closeSettings()">✕</button></div>
+      <div class="mside">
+        <div class="menu">
+          <button class="mi active" onclick="sec(this,'models')">模型与角色</button>
+          <button class="mi" onclick="sec(this,'theme')">主题</button>
+          <button class="mi" onclick="sec(this,'gateway')">IM 网关</button>
+          <button class="mi" onclick="sec(this,'cron')">定时任务</button>
+          <button class="mi" onclick="sec(this,'about')">关于</button>
+        </div>
+        <div class="mbody">
+          <div class="sec" id="sec-models">
+            <h3>模型与角色</h3>
+            <div class="row"><span class="k">主模型</span><span class="v">big-pickle（local）</span></div>
+            <div class="row"><span class="k">小模型（摘要）</span><span class="v">deepseek-v4-flash</span></div>
+            <div class="row"><span class="k">子代理模型</span><span class="v">muse-spark-1.3</span></div>
+            <div class="row"><span class="k">上下文窗口</span><span class="v">200K</span></div>
+          </div>
+          <div class="sec" id="sec-theme" style="display:none">
+            <h3>主题</h3>
+            <div class="row"><span class="k">模式</span><span class="v">浅色（默认，不压抑）</span><button class="btn ghost">切换暗色</button></div>
+            <div class="note">默认浅色，规避纯黑压抑；暗色可选。</div>
+          </div>
+          <div class="sec" id="sec-gateway" style="display:none">
+            <h3>IM 网关（QQ / 飞书）</h3>
+            <div class="gate"><div class="gicon" style="background:#12b7f5">Q</div><div class="gm"><div class="gname">QQ</div><div class="gmeta">appId 在 config.json.gateways.qq · appSecret 在 auth.json.gateways.qq</div></div><div class="gst" style="color:var(--ok)">● 已配置</div></div>
+            <div class="gate"><div class="gicon" style="background:#3370ff">✈</div><div class="gm"><div class="gname">飞书</div><div class="gmeta">config.json.gateways.feishu · auth.json.gateways.feishu</div></div><div class="gst" style="color:var(--warn)">○ 未启用</div></div>
+            <div class="note">现状：仅配置文件 + CLI（<code>harness2 gateway</code>）；此处为可视化配置入口占位。</div>
+          </div>
+          <div class="sec" id="sec-cron" style="display:none">
+            <h3>定时任务（cron）</h3>
+            <div class="row"><span class="k">每日新闻汇总</span><span class="v">daily 09:00</span><span class="sw on"></span></div>
+            <div class="row"><span class="k">性能基线</span><span class="v">weekly mon 10:00</span><span class="sw on"></span></div>
+            <div class="row"><span class="k">喝水提醒（桌宠）</span><span class="v">every 90m</span><span class="sw on"></span></div>
+            <div class="note">已有 cron（CLI），此处为桌面端管理入口；桌宠为后续功能占位。</div>
+          </div>
+          <div class="sec" id="sec-about" style="display:none">
+            <h3>关于</h3>
+            <div class="row"><span class="k">版本</span><span class="v">harness2 1.0.0</span></div>
+            <div class="row"><span class="k">会话内核</span><span class="v">事件溯源 · 单写者 · 崩溃一致</span></div>
+            <div class="row"><span class="k">数据</span><span class="v">仅本地，无遥测</span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="legend"><b>V3 修正</b> · 对话优先 + 内联计划划掉 + 设置=居中弹窗 + Codex 式左右工作区</div>
+</div>
+
+<script>
+/* plan checkbox -> strikethrough */
+document.querySelectorAll('.planitem .cb').forEach(c=>c.onclick=()=>{const it=c.closest('.planitem');it.classList.toggle('done');c.textContent=it.classList.contains('done')?'✓':'';const done=document.querySelectorAll('.planitem.done').length;const tot=document.querySelectorAll('.planitem').length;document.querySelector('.plan .pct').textContent=done+' / '+tot;document.querySelector('.plan .pbar i').style.width=Math.round(done/tot*100)+'%';});
+/* right workbench */
+function toggleWb(){document.getElementById('wbench').classList.toggle('open');}
+function wb(name,btn){document.querySelectorAll('.wb-tab').forEach(x=>x.classList.remove('active'));btn.classList.add('active');const b=document.getElementById('wb-body');b.innerHTML={tree:'<div class="treeitem folder">📦 packages</div><div class="treeitem">&nbsp;&nbsp;📁 core</div><div class="treeitem">&nbsp;&nbsp;&nbsp;&nbsp;src/auth/jwt.ts.ts</div>',diff:'<div class="treeitem" style="color:var(--ok)">+ 14  verifyToken</div><div class="treeitem" style="color:var(--ok)">+ 15    jwt.verify</div><div class="treeitem" style="color:var(--danger)">- 13  old verify</div>',term:'<div class="treeitem">$ pnpm test -- auth &nbsp; ✓ 12s</div><div class="treeitem" style="color:var(--muted)">$ _ </div>'}[name];}
+/* settings modal */
+function openSettings(){document.getElementById('overlay').classList.add('open');}
+function closeSettings(){document.getElementById('overlay').classList.remove('open');}
+function sec(btn,id){document.querySelectorAll('.mi').forEach(x=>x.classList.remove('active'));btn.classList.add('active');document.querySelectorAll('.sec').forEach(s=>s.style.display='none');document.getElementById('sec-'+id).style.display='block';}
+document.addEventListener('keydown',e=>{if(e.key==='Escape')closeSettings();});
+</script>
+</body>
+</html>
