@@ -36,12 +36,26 @@ export function turnSummaryLine(result: TurnResult): string {
 export class StreamRenderer {
   private wroteText = false;
 
-  constructor(private readonly out: RenderOutput) {}
+  constructor(
+    private readonly out: RenderOutput,
+    /** TTY 色支持：false 时 reasoning 只用文本标记，避免非 TTY/CI 的 ANSI 乱码 */
+    private readonly color = false,
+  ) {}
 
   /** provider 文本增量：直写 stdout，不换行拼流 */
   textDelta(text: string): void {
     if (text.length === 0) return;
     this.out.write(text);
+    this.wroteText = true;
+  }
+
+  /** 推理过程增量（仅 /reasoning on 时由 REPL 转发）：灰色斜体；无色模式用 [reasoning] 标记 */
+  reasoning(text: string): void {
+    if (text.length === 0) return;
+    const styled = this.color
+      ? `\x1b[90m\x1b[3m${text}\x1b[0m`
+      : `[reasoning] ${oneLine(text)}`;
+    this.out.write(styled);
     this.wroteText = true;
   }
 

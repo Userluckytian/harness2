@@ -132,6 +132,9 @@ export interface ChatRuntime {
   mode: () => ApprovalMode;
   /** 切换到指定审批模式；切出 plan 时顺带清空 alwaysAllowed；返回新 mode */
   setMode: (mode: ApprovalMode) => ApprovalMode;
+  /** 推理过程展示开关（两路径共用同一状态，默认 off，仅当前会话生效） */
+  reasoning: () => boolean;
+  setReasoning: (on: boolean) => boolean;
   noteCrash: (id?: string) => void;
   finish: (hooks: { closeReadline?: () => void; destroyInput?: () => void }) => Promise<void>;
 }
@@ -166,6 +169,9 @@ export async function setupChatSession(
   tools.register(createSkillTool(skillsStore));
 
   const alwaysAllowed = new Set<string>(); // 进程内会话级缓存，不落盘
+
+  // 推理过程展示开关（两路径共享，仅当前会话进程内生效，默认关）
+  let reasoningEnabled = false;
 
   // 运行时审批模式（仅当前进程/会话，不落盘）。policy 随 mode 重建；
   // default 捕获时 approvalCfg 未定义（mock 分支无审批），mode 切换仅改状态。
@@ -415,7 +421,8 @@ export async function setupChatSession(
           if (event.type === 'text-delta') onStream({ type: 'text-delta', text: event.text });
           else if (event.type === 'tool-call') onStream({ type: 'tool-call', call: event.call });
           else if (event.type === 'reasoning-delta') {
-            // reasoning 增量：REPL 不渲染（与落盘展示口径一致）
+            // reasoning 增量：默认不渲染（legacy 保持折叠）；开启后转给调用方（ink 展示）
+            if (reasoningEnabled) onStream({ type: 'reasoning-delta', text: event.text });
           } else onStream({ type: 'tool-result', callId: event.callId, ok: event.ok, error: event.error });
         },
       });
@@ -502,6 +509,11 @@ export async function setupChatSession(
     clearAlwaysAllowed: () => alwaysAllowed.clear(),
     mode: () => currentMode,
     setMode: (next: ApprovalMode) => applyMode(next),
+    reasoning: () => reasoningEnabled,
+    setReasoning: (on: boolean) => {
+      reasoningEnabled = on;
+      return reasoningEnabled;
+    },
     noteCrash: (id?: string) => noteCrashSessionId(id),
     finish,
   };

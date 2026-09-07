@@ -8,11 +8,15 @@ export interface ToolCallState {
   callId: string;
   tool: string;
   summary: string;
+  /** 工具参数原始 JSON 串（供 DiffCard 解析变更片段，如 edit.old_text/new_text） */
+  args: string;
   status: 'pending' | 'ok' | 'failed';
 }
 
 export interface TurnSnapshot {
   text: string;
+  /** 当前 turn 流式累积的推理过程（仅 live；commit 后丢弃，因默认 off 且落定期退化） */
+  reasoning: string;
   tools: ToolCallState[];
 }
 
@@ -30,8 +34,8 @@ export interface UseTurnStream {
 const FLUSH_MS = 50;
 
 export function useTurnStream(onCommit: (snapshot: TurnSnapshot) => void): UseTurnStream {
-  const [live, setLive] = useState<TurnSnapshot>({ text: '', tools: [] });
-  const bufferRef = useRef<TurnSnapshot>({ text: '', tools: [] });
+  const [live, setLive] = useState<TurnSnapshot>({ text: '', reasoning: '', tools: [] });
+  const bufferRef = useRef<TurnSnapshot>({ text: '', reasoning: '', tools: [] });
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const scheduledRef = useRef(false);
   const toolsByIdRef = useRef(new Map<string, ToolCallState>());
@@ -44,6 +48,7 @@ export function useTurnStream(onCommit: (snapshot: TurnSnapshot) => void): UseTu
       timerRef.current = null;
       setLive({
         text: bufferRef.current.text,
+        reasoning: bufferRef.current.reasoning,
         tools: Array.from(toolsByIdRef.current.values()),
       });
     }, FLUSH_MS);
@@ -53,12 +58,15 @@ export function useTurnStream(onCommit: (snapshot: TurnSnapshot) => void): UseTu
     const buf = bufferRef.current;
     if (event.type === 'text-delta') {
       buf.text += event.text;
+    } else if (event.type === 'reasoning-delta') {
+      buf.reasoning += event.text;
     } else if (event.type === 'tool-call') {
       const summary = summarizeArgs(event.call.arguments);
       toolsByIdRef.current.set(event.call.id, {
         callId: event.call.id,
         tool: event.call.name,
         summary,
+        args: event.call.arguments,
         status: 'pending',
       });
       buf.text += buf.text.length > 0 && !buf.text.endsWith('\n') ? '\n' : '';
@@ -82,6 +90,7 @@ export function useTurnStream(onCommit: (snapshot: TurnSnapshot) => void): UseTu
     }
     const snapshot: TurnSnapshot = {
       text: bufferRef.current.text,
+      reasoning: bufferRef.current.reasoning,
       tools: Array.from(toolsByIdRef.current.values()),
     };
     onCommit(snapshot);
@@ -89,9 +98,9 @@ export function useTurnStream(onCommit: (snapshot: TurnSnapshot) => void): UseTu
   }, [onCommit]);
 
   const reset = useCallback(() => {
-    bufferRef.current = { text: '', tools: [] };
+    bufferRef.current = { text: '', reasoning: '', tools: [] };
     toolsByIdRef.current.clear();
-    setLive({ text: '', tools: [] });
+    setLive({ text: '', reasoning: '', tools: [] });
   }, []);
 
   return { live, handler, commit, reset };

@@ -52,7 +52,8 @@ export async function runLegacyReadlineChat(options: ChatOptions = {}): Promise<
   const root = options.root !== undefined ? options.root : process.cwd();
   const input = options.stdin ?? process.stdin;
   const output = options.stdout ?? process.stdout;
-  const renderer = new StreamRenderer({ write: (t) => output.write(t) });
+  const isTTY = (input as NodeJS.ReadStream & { isTTY?: boolean }).isTTY === true;
+  const renderer = new StreamRenderer({ write: (t) => output.write(t) }, isTTY);
 
   // —— 共享装配（provider/审批/记忆/压缩/插件/MCP/subagent/会话解析；与 ink 路径同一份） ——
   let runtime: ChatRuntime;
@@ -69,7 +70,6 @@ export async function runLegacyReadlineChat(options: ChatOptions = {}): Promise<
   }
 
   // —— readline REPL ——
-  const isTTY = (input as NodeJS.ReadStream & { isTTY?: boolean }).isTTY === true;
   const rl: Interface = createInterface({
     input,
     output,
@@ -158,10 +158,29 @@ export async function runLegacyReadlineChat(options: ChatOptions = {}): Promise<
       if (event.type === 'text-delta') renderer.textDelta(event.text);
       else if (event.type === 'tool-call') renderer.toolCall(event.call.name, event.call.arguments);
       else if (event.type === 'reasoning-delta') {
-        // reasoning 增量：REPL 不渲染（与落盘展示口径一致；服务层用它推送 reasoning delta）
+        // reasoning 增量：默认不渲染（折叠）；/reasoning on 时由 setup 仅在该态转发到此
+        if (event.type === 'reasoning-delta' && runtime.reasoning()) renderer.reasoning(event.text);
       } else renderer.toolResult(event.callId, event.ok, event.error);
     });
     renderer.turnEnd(result);
+  }
+
+  /** /reasoning：查看/切换推理过程展示（on|off，默认 off；两路径共用同一状态） */
+  function handleReasoningCommand(rest: string): void {
+    const arg = rest.trim().toLowerCase();
+    if (arg.length === 0) {
+      renderer.line(`推理展示: ${runtime.reasoning() ? '开启' : '关闭'}（/reasoning on|off）`);
+      return;
+    }
+    if (arg === 'on') {
+      runtime.setReasoning(true);
+      renderer.line('推理展示已开启（灰色斜体折叠输出）。');
+    } else if (arg === 'off') {
+      runtime.setReasoning(false);
+      renderer.line('推理展示已关闭。');
+    } else {
+      renderer.line(`error: 未知参数 ${rest}（用 on|off，或留空查看当前状态）`);
+    }
   }
 
   /** /mode：无参列出四选项与说明；带参直接应用别名（两路径共用 mode-alias 文案与映射） */
@@ -200,7 +219,7 @@ export async function runLegacyReadlineChat(options: ChatOptions = {}): Promise<
         } else if (parsed.name === '/compact') {
           renderer.line('压缩将在下一次 turn 开始时自动检查并执行；若已超阈值会自动触发。');
         } else if (parsed.name === '/reasoning') {
-          renderer.line('推理过程展示默认关闭（/reasoning on|off），后续版本提供展开交互。');
+          handleReasoningCommand(parsed.rest);
         } else if (parsed.name === '/tasks') {
           renderer.line('任务列表请使用 `harness2 cron list` 查看（REPL 只读展示将在后续版本提供）。');
         } else {

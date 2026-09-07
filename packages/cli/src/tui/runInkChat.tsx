@@ -2,7 +2,7 @@
 // 门控（T0 决策）：isTTY && !(HARNESS2_NO_TUI || --no-tui) && (HARNESS2_TUI=1 || 现代终端 || 默认全量)。
 // 装配与 legacy 共用 setupChatSession（禁止两套装配）；渲染走 React state 桥接。
 import React, { useRef, useState } from 'react';
-import { render, useApp, Box, Text } from 'ink';
+import { render, useApp, useInput, Box, Text } from 'ink';
 import { setupChatSession, type ChatRuntime, type TurnResult } from '../chat-setup.js';
 import type { ChatOptions } from '../legacy-chat.js';
 import { StatusBar } from './StatusBar.js';
@@ -114,9 +114,12 @@ function InkShell({
   const { exit } = useApp();
   const [settled, setSettled] = useState<string[]>(bootLines);
   const [busy, setBusy] = useState(false);
+  // T8：推理折叠块展开态（turn 内按 r 切换；busy 期间由 InkShell 层 useInput 接管）
+  const [reasoningExpanded, setReasoningExpanded] = useState(false);
   // T5/T6：单一浮层宿主。命令与审批都经 overlay 呈现；存在即互斥接管键盘。
   const [overlay, setOverlay] = useState<React.ReactNode>(null);
   const closeOverlayRef = useRef<() => void>(() => undefined);
+  const overlayOpen = overlay !== null;
 
   const { live, handler, commit, reset } = useTurnStream((snapshot: TurnSnapshot) => {
     const text = snapshot.text.trim();
@@ -145,6 +148,15 @@ function InkShell({
       }),
     );
   }, [dialog]);
+
+  // T8：busy 期间按 r 展开/收起当前 turn 的推理折叠块（Composer 此时不接管，互不冲突）
+  useInput(
+    (input, key) => {
+      // 推理折叠展开快捷键：busy 期间按 r（enter/空格等由 Composer 处理）
+      if (input.toLowerCase() === 'r' && !key.ctrl && !key.meta) setReasoningExpanded((v) => !v);
+    },
+    { isActive: busy && !overlayOpen },
+  );
 
   function sendSystem(line: string): void {
     setSettled((l) => [...l, line]);
@@ -237,9 +249,26 @@ function InkShell({
       case '/compact':
         sendSystem('压缩将在下一次 turn 开始时自动检查并执行；若已超阈值会自动触发。');
         return;
-      case '/reasoning':
-        sendSystem('推理过程展示默认关闭（/reasoning on|off），T8 实现展开交互。');
+      case '/reasoning': {
+        const arg = rest.trim().toLowerCase();
+        if (arg.length === 0) {
+          sendSystem(`推理展示: ${runtime.reasoning() ? '开启' : '关闭'}（/reasoning on|off）`);
+          return;
+        }
+        if (arg === 'on') {
+          runtime.setReasoning(true);
+          sendSystem('推理展示已开启（turn 内按 r 展开/收起折叠块）。');
+          return;
+        }
+        if (arg === 'off') {
+          runtime.setReasoning(false);
+          setReasoningExpanded(false);
+          sendSystem('推理展示已关闭。');
+          return;
+        }
+        sendSystem(`error: 未知参数 ${rest}（用 on|off，或留空查看当前状态）`);
         return;
+      }
       case '/tasks':
         sendSystem('任务列表请使用 `harness2 cron list` 查看（REPL 只读展示将在后续版本提供）。');
         return;
@@ -277,16 +306,15 @@ function InkShell({
       setSettled((l) => [...l, `error: ${(e as Error)?.message ?? String(e)}`]);
     } finally {
       setBusy(false);
+      setReasoningExpanded(false);
     }
   }
-
-  const overlayOpen = overlay !== null;
 
   return (
     <Box flexDirection="column" flexGrow={1}>
       <StatusBar runtime={runtime} />
       {overlayOpen ? <OverlayHost>{overlay}</OverlayHost> : null}
-      <Transcript settled={settled} liveText={live.text} liveTools={live.tools} busy={busy} />
+      <Transcript settled={settled} liveText={live.text} liveTools={live.tools} reasoningText={live.reasoning} busy={busy} reasoningExpanded={reasoningExpanded} />
       <Composer busy={busy} active={!overlayOpen} onSend={(t) => void submit(t)} onExit={() => exit(0)} />
     </Box>
   );
