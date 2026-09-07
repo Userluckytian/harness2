@@ -99,9 +99,11 @@ export type TurnStreamHandler = (event: StreamEvent) => void;
 /** 与 legacy onStream 对齐的事件联合 */
 export type StreamEvent =
   | { type: 'text-delta'; text: string }
-  | { type: 'tool-call'; call: { name: string; arguments: string } }
+  | { type: 'tool-call'; call: { id: string; name: string; arguments: string } }
   | { type: 'reasoning-delta'; text: string }
   | { type: 'tool-result'; callId: string; ok: boolean; error?: string };
+
+export type { TurnResult } from '@harness2/core';
 
 /** 共享会话装配与 turn 执行的结果 */
 export interface ChatRuntime {

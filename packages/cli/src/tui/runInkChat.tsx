@@ -2,11 +2,13 @@
 // 门控（T0 决策）：isTTY && !(HARNESS2_NO_TUI || --no-tui) && (HARNESS2_TUI=1 || 现代终端 || 默认全量)。
 // 装配与 legacy 共用 setupChatSession（禁止两套装配）；渲染走 React state 桥接。
 import React, { useState } from 'react';
-import { render, useApp, Box, Text } from 'ink';
-import { setupChatSession, type ChatRuntime } from '../chat-setup.js';
+import { render, useApp, Box } from 'ink';
+import { setupChatSession, type ChatRuntime, type TurnResult } from '../chat-setup.js';
 import type { ChatOptions } from '../legacy-chat.js';
-import { SummaryBar, Transcript, type StreamChunk } from './App.js';
+import { SummaryBar } from './App.js';
 import { Composer } from './Composer.js';
+import { Transcript } from './Transcript.js';
+import { useTurnStream, type TurnSnapshot } from './useTurnStream.js';
 
 /** 现代终端检测：Windows Terminal（WT_SESSION）或 VS Code 终端（TERM_PROGRAM=vscode） */
 export function isModernTerminal(env: NodeJS.ProcessEnv = process.env): boolean {
@@ -57,41 +59,33 @@ function InkShell({
   onExit: () => void;
 }): React.ReactElement {
   const { exit } = useApp();
-  const [lines, setLines] = useState<string[]>(bootLines);
-  const [stream, setStream] = useState<StreamChunk>({ text: '', busy: false });
+  const [settled, setSettled] = useState<string[]>(bootLines);
   const [busy, setBusy] = useState(false);
+
+  const { live, handler, commit, reset } = useTurnStream((snapshot: TurnSnapshot) => {
+    const text = snapshot.text.trim();
+    if (text.length > 0) setSettled((l) => [...l, text]);
+  });
 
   async function submit(text: string): Promise<void> {
     if (text.trim().length === 0 || busy) return;
-    let accumulated = '';
+    reset();
+    let result: TurnResult | undefined;
     setBusy(true);
-    setLines((l) => [...l, `> ${text}`]);
-    setStream({ text: '', busy: true });
+    setSettled((l) => [...l, `> ${text}`]);
     try {
-      const result = await runtime.runUserTurn(text, (event) => {
-        if (event.type === 'text-delta') {
-          accumulated += event.text;
-          setStream((s) => ({ ...s, text: accumulated }));
-        } else if (event.type === 'tool-call') {
-          const args = event.call.arguments.replace(/\s+/g, ' ').slice(0, 72);
-          accumulated = `${accumulated}${accumulated.length > 0 && !accumulated.endsWith('\n') ? '\n' : ''}> ${event.call.name} (${args})\n`;
-          setStream((s) => ({ ...s, text: accumulated }));
-        } else if (event.type === 'tool-result') {
-          accumulated = `${accumulated}${!accumulated.endsWith('\n') ? '\n' : ''}< ${event.ok ? 'ok' : 'FAILED'} [${event.callId}]${event.error ? ` ${event.error}` : ''}\n`;
-          setStream((s) => ({ ...s, text: accumulated }));
-        }
-      });
-      const doneText = accumulated.trim();
-      if (doneText.length > 0) setLines((l) => [...l, doneText]);
-      // turn 摘要（对齐 legacy 的 [end_turn ...] 行）
-      const parts = [`[${result.stopReason}`, `steps ${result.steps}`, `toolCalls ${result.toolCalls}`];
-      if (result.error !== undefined) parts.push(`error: ${result.error}`);
-      if (result.warning !== undefined) parts.push(`warning: ${result.warning}`);
-      setLines((l) => [...l, parts.join(' · ') + ']']);
+      result = await runtime.runUserTurn(text, handler);
+      commit();
+      if (result !== undefined) {
+        // turn 摘要（对齐 legacy 的 [end_turn ...] 行）
+        const parts = [`[${result.stopReason}`, `steps ${result.steps}`, `toolCalls ${result.toolCalls}`];
+        if (result.error !== undefined) parts.push(`error: ${result.error}`);
+        if (result.warning !== undefined) parts.push(`warning: ${result.warning}`);
+        setSettled((l) => [...l, parts.join(' · ') + ']']);
+      }
     } catch (e) {
-      setLines((l) => [...l, `error: ${(e as Error)?.message ?? String(e)}`]);
+      setSettled((l) => [...l, `error: ${(e as Error)?.message ?? String(e)}`]);
     } finally {
-      setStream({ text: '', busy: false });
       setBusy(false);
     }
   }
@@ -99,7 +93,7 @@ function InkShell({
   return (
     <Box flexDirection="column" flexGrow={1}>
       <SummaryBar runtime={runtime} />
-      <Transcript lines={lines} stream={stream} />
+      <Transcript settled={settled} liveText={live.text} liveTools={live.tools} busy={busy} />
       <Composer busy={busy} onSend={(t) => void submit(t)} onExit={() => exit(0)} />
     </Box>
   );
