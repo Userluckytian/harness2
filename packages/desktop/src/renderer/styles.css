@@ -656,6 +656,68 @@ body,
 .pane-unbind:hover {
   color: var(--danger);
 }
+
+/* —— B4 对话头（cwd / 分支 / 模型 / 上下文水条） —— */
+.pane-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 3px 10px;
+  background: var(--surface2);
+  border-bottom: 1px solid var(--border);
+  font-size: 11px;
+  color: var(--fg-muted);
+  min-height: 22px;
+}
+.pane-header-cwd {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 40%;
+}
+.pane-header-branch {
+  white-space: nowrap;
+  color: var(--fg-dim);
+}
+.pane-header-branch-icon {
+  font-size: 12px;
+}
+.pane-header-model {
+  white-space: nowrap;
+  color: var(--accent);
+  font-weight: 500;
+}
+.pane-header-usage {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.ctx-bar {
+  width: 48px;
+  height: 6px;
+  border-radius: 3px;
+  background: var(--muted);
+  overflow: hidden;
+}
+.ctx-bar-fill {
+  height: 100%;
+  border-radius: 3px;
+  transition: width 0.3s ease;
+}
+.ctx-ok {
+  background: linear-gradient(90deg, var(--ok), var(--accent));
+}
+.ctx-warn {
+  background: linear-gradient(90deg, var(--warn), var(--danger));
+}
+.ctx-label {
+  font-size: 10px;
+  color: var(--fg-dim);
+  min-width: 28px;
+  text-align: right;
+}
+
 .chat {
   display: flex;
   flex-direction: column;

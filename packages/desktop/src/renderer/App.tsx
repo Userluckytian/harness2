@@ -6,6 +6,7 @@ import type { ConnectionStatus, SettingsPreferencesShape, SettingsTheme } from '
 import { MAX_PANES } from '../shared/layout.js';
 import { applyTheme } from './theme.js';
 import { SettingsDialog } from './components/SettingsDialog.js';
+import { ConversationHeader } from './components/ConversationHeader.js';
 import { AppStore, type AppState, type SessionMeta } from './store.js';
 import { createController } from './app-controller.js';
 import { filterSessionList } from '../shared/metadata.js';
@@ -519,6 +520,9 @@ export function PaneArea(): React.ReactNode {
                   </button>
                 )}
               </div>
+              {sid !== null && session !== undefined && (
+                <ConversationHeader sessionId={sid} cwd={session.cwd} />
+              )}
               <ChatView streamId={sid} />
             </section>
           );
