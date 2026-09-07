@@ -1,8 +1,9 @@
 // 审批策略配置化：从 config.approval 构造 Ph2 的 ApprovalHandler 审批缝。
-// 优先级：per-tool 规则 > mode 推导；mode 三态：
+// 优先级：per-tool 规则 > mode 推导；mode 四态：
 //   default     —— safe=allow / 其余 ask
 //   acceptEdits —— write/edit=allow，其余同 default
 //   bypass      —— 全 allow
+//   plan        —— safe=allow / 其余 deny（per-tool 仍可覆盖）
 // per-tool 规则（allow|ask|deny）可覆盖任何 mode（含 bypass 下的 ask/deny）。
 // 未列出的工具按 safe=allow / unsafe=ask 处理（安全集 = 只读工具，可注入覆盖）。
 import type { ApprovalConfig, ApprovalToolRule } from '../config/schema.js';
@@ -30,6 +31,7 @@ export function createApprovalPolicy(
       const rule = rules[input.tool];
       if (rule !== undefined) return rule; // per-tool 最高优先级
       if (mode === 'bypass') return 'allow';
+      if (mode === 'plan') return safeTools.has(input.tool) ? 'allow' : 'deny';
       if (mode === 'acceptEdits' && EDIT_TOOLS.has(input.tool)) return 'allow';
       return safeTools.has(input.tool) ? 'allow' : 'ask';
     },
