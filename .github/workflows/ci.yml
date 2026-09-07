@@ -33,9 +33,11 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      # 浏览器工具测试用（惰性依赖：chromium 二进制不随 npm 安装，测试对缺失自动 skip）
+      # 浏览器工具测试用（惰性依赖：chromium 二进制不随 npm 安装，测试对缺失自动 skip）。
+      # playwright 是 @harness2/core 的依赖，须在 core 包内 exec（根目录无该二进制，否则报
+      # "Command playwright not found"——2026-09-07 审查发现三平台 test job 卡在此步）
       - name: Install chromium (browser tools tests)
-        run: pnpm exec playwright install chromium
+        run: pnpm --filter @harness2/core exec playwright install chromium
 
       # typecheck 必须在 build 之后：core 的 api-surface.test.ts 引用 dist/（gitignored），
       # 全新 runner 上 dist 不存在，先 build 才能让 typecheck 解析到 dist/index.js。
@@ -111,6 +113,7 @@ jobs:
     runs-on: ubuntu-latest
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
     permissions:
+      contents: read
       pages: write
       id-token: write
     environment:

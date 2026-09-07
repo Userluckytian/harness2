@@ -35,6 +35,9 @@ mac:
         - arm64
         - x64
 linux:
+  # AppImage 文件名：不能取 scoped 包名 @harness2/desktop 的派生名（@harness2desktop 含 @ 非法），
+  # 显式用安全名——2026-09-07 审查发现 linux-appimage 打包失败（win/mac 不走该命名，未受影响）
+  executableName: harness2
   target:
     - target: AppImage
       arch:
