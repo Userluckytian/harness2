@@ -1,18 +1,15 @@
-// chat 命令集：/new /sessions /resume /undo /redo /help /exit。
+// chat 命令集：/new /sessions /resume /undo /redo /help /exit /mode /context /compact /reasoning /tasks。
 // 命令是 REPL 状态机的薄操作层：所有会话写入都经 core（undo/redo 只追加 rewind/marker）。
+// 命令元数据（名称+一句话）从两路径共享的 command-registry 读取；本文件只保留执行逻辑。
 import type { SessionManager, SessionWriter, SnapshotStore } from '@harness2/core';
 import { redoLastUndo, undoLastTurn } from '@harness2/core';
+import { COMMAND_REGISTRY, commandNameWithSlash } from './command-registry.js';
+
+const COMMAND_LIST = COMMAND_REGISTRY.map((c) => `  ${commandNameWithSlash(c.name).padEnd(12)}${c.description}`);
 
 export const HELP_TEXT = [
   '命令：',
-  '  /new                   新建会话',
-  '  /sessions [关键字]     列出当前目录的会话（带关键字时改为全文搜索）',
-  '  /resume <id>           恢复指定会话',
-  '  /fork [seq]            从当前会话分叉新会话（seq = 截取到的事件序号，缺省全部活动）',
-  '  /undo [n] [--dry-run]  撤销最近 n 个用户 turn（--dry-run 仅预览，不落盘）',
-  '  /redo                  重做最近一次撤销（可连续多次逐层恢复）',
-  '  /help                  显示本帮助',
-  '  /exit                  退出（等价：Ctrl+C 两次，或空行按 Ctrl+D）',
+  ...COMMAND_LIST,
   '说明：',
   '  - write/edit 工具的文件改动会进文件快照，可被 /undo 恢复（创建的文件将被删除）；',
   '    bash 命令造成的改动不进快照，/undo 无法恢复它（如实声明）。',

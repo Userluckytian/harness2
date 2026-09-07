@@ -29,7 +29,7 @@ export interface RoleConfig {
   model: string;
 }
 
-export type ApprovalMode = 'default' | 'acceptEdits' | 'bypass';
+export type ApprovalMode = 'default' | 'acceptEdits' | 'bypass' | 'plan';
 export type ApprovalToolRule = 'allow' | 'ask' | 'deny';
 
 /** 审批配置：三 mode + per-tool 规则（per-tool 优先于 mode 推导） */
@@ -164,7 +164,7 @@ export class ConfigError extends Error {
   }
 }
 
-export const APPROVAL_MODES: readonly ApprovalMode[] = ['default', 'acceptEdits', 'bypass'];
+export const APPROVAL_MODES: readonly ApprovalMode[] = ['default', 'acceptEdits', 'bypass', 'plan'];
 export const APPROVAL_TOOL_RULES: readonly ApprovalToolRule[] = ['allow', 'ask', 'deny'];
 export const PROTOCOLS: readonly ProviderConfig['protocol'][] = ['openai', 'anthropic'];
 export const GATEWAY_POLICIES: readonly GatewayPolicy[] = ['open', 'allowlist', 'disabled'];

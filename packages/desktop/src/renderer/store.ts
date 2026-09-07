@@ -30,6 +30,7 @@ import {
   type LiveDelta,
   type TurnEndInfo,
 } from './chat-model.js';
+import { normalizeMetadata, displayTitle, isArchived, type SessionMetadataEntry, type SessionMetadataMap } from '../shared/metadata.js';
 
 export interface SessionMeta {
   id: string;
@@ -67,10 +68,12 @@ export interface AppState {
   selectedId: string | null;
   /** 分屏布局（1..3 栏；渲染端唯一事实来自这里，持久化经主进程落盘） */
   layout: DesktopLayout;
+  /** 会话展示态覆层（B3：desktop-metadata.json；title/archived 覆盖层，不碰事件日志） */
+  metadata: SessionMetadataMap;
 }
 
 export function initialState(): AppState {
-  return { rev: 0, status: 'connecting', sessions: [], selectedId: null, layout: defaultLayout() };
+  return { rev: 0, status: 'connecting', sessions: [], selectedId: null, layout: defaultLayout(), metadata: {} };
 }
 
 export class AppStore {
@@ -119,6 +122,49 @@ export class AppStore {
 
   addSession(summary: SessionMeta): void {
     this.set({ sessions: [summary, ...this.state.sessions.filter((s) => s.id !== summary.id)] });
+  }
+
+  // —— 会话展示态覆层（B3：重命名/归档；纯内存 + 持久化经主进程 metadata:set） ——
+
+  /** 应用整体覆层（metadata:get 响应）：normalize 后整份替换（磁盘是唯一事实源） */
+  applyMetadata(raw: unknown): void {
+    this.set({ metadata: normalizeMetadata(raw) });
+  }
+
+  /** 更新单条会话展示态（title/archived/deleted 字段级合并）；返回值供 controller 与磁盘回读对账 */
+  updateMetadata(id: string, patch: { title?: string; archived?: boolean; deleted?: boolean }): void {
+    const current = this.state.metadata[id] ?? {};
+    const entry: SessionMetadataEntry = { ...current };
+    if ('title' in patch) {
+      const t = patch.title;
+      if (typeof t === 'string' && t.trim().length > 0) entry.title = t.trim();
+      else delete entry.title;
+    }
+    if ('archived' in patch) entry.archived = patch.archived === true;
+    if ('deleted' in patch) entry.deleted = patch.deleted === true;
+    const nextMetadata: SessionMetadataMap = { ...this.state.metadata };
+    if (Object.keys(entry).length === 0) delete nextMetadata[id]; // 空条目不落盘
+    else nextMetadata[id] = entry;
+    this.set({ metadata: nextMetadata });
+  }
+
+  /** 取某会话展示标题（覆层 title 优先；无 → firstUserText 回落） */
+  displayTitleFor(id: string): string | null {
+    return displayTitle(this.state.metadata, id);
+  }
+
+  /** 某会话是否已归档（覆层判定） */
+  isArchived(id: string): boolean {
+    return isArchived(this.state.metadata, id);
+  }
+
+  /** 从当前视图移除会话（删除/归档隐藏的渲染端清理）：侧栏去项 + 分栏解绑 + 选中清理 */
+  removeSessionFromView(id: string): void {
+    this.set({
+      sessions: this.state.sessions.filter((s) => s.id !== id),
+      layout: { panes: this.state.layout.panes.map((p) => (p.sessionId === id ? { sessionId: null } : { ...p })) },
+      ...(this.state.selectedId === id ? { selectedId: null } : {}),
+    });
   }
 
   // —— 分屏布局 ——
@@ -181,6 +227,19 @@ export class AppStore {
     const s = this.streams.get(id);
     if (!s) return [];
     return projectChatItems(s.events, s.live, s.turnEnds);
+  }
+
+  /** 最近一条落盘 assistant 正文（通知摘要数据源；无 assistant 消息返回 ''） */
+  assistantText(id: string): string {
+    const s = this.streams.get(id);
+    if (!s) return '';
+    for (let i = s.events.length - 1; i >= 0; i--) {
+      const e = s.events[i]!;
+      if (!e.active || e.type !== 'assistant/message') continue;
+      const t = (e.payload as Record<string, unknown>)['text'];
+      return typeof t === 'string' ? t : '';
+    }
+    return '';
   }
 
   /**

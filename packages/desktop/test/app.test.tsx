@@ -8,6 +8,7 @@ import type {
   ConnectionStatus,
   Harness2Api,
   SessionEventsPayloadShape,
+  SettingsPreferencesShape,
   StatusDetail,
   WsFrame,
 } from '../src/shared/protocol.js';
@@ -48,6 +49,37 @@ function makeFakeApi() {
     loadLayout: vi.fn(async () => undefined),
     saveLayout: vi.fn(async () => undefined),
     getStatus: vi.fn(async () => ({ status: 'connected' as ConnectionStatus })),
+    settingsGetConfig: vi.fn(async () => ({
+      providers: {},
+      roles: {},
+      approval: { mode: 'default' },
+      memory: { mode: 'off', nudgeInterval: 10 },
+      browser: { enabled: true, idleDestroyMs: 300_000, maxConcurrent: 2 },
+      plugins: { enabled: true, allow: [] },
+      mcpServers: {},
+      subagent: { maxDepth: 1, maxTurns: 25 },
+      sources: { global: true, project: false },
+      warnings: [],
+      errors: [],
+    })),
+    settingsUpdateConfig: vi.fn(async () => ({ ok: true })),
+    settingsGetAuthMasked: vi.fn(async () => ({ channels: [], gateways: [] })),
+    settingsUpdateAuth: vi.fn(async () => ({ ok: true })),
+    settingsGetPreferences: vi.fn(async () => ({ theme: 'warmPaper' } as SettingsPreferencesShape)),
+    settingsSetPreferences: vi.fn(async (p: unknown) => p as SettingsPreferencesShape),
+    settingsGetDoctorReport: vi.fn(async () => ({ checks: [], exitCode: 0 as const })),
+    settingsGetCrashReports: vi.fn(async () => []),
+    gitBranch: vi.fn(async () => 'main'),
+    getContextUsage: vi.fn(async () => ({ usage: 0.5, label: '50%' })),
+    getSnapshotForCall: vi.fn(async () => ({ ok: false, error: '未找到对应快照' })),
+    readFileForRef: vi.fn(async () => ({ ok: false, error: '未找到' })),
+    notify: vi.fn(async () => undefined),
+    metadataGet: vi.fn(async () => ({})),
+    metadataSet: vi.fn(async (id: string, patch: { title?: string; archived?: boolean; deleted?: boolean }) => {
+      const meta: Record<string, { title?: string; archived?: boolean; deleted?: boolean }> = {};
+      meta[id] = patch;
+      return meta;
+    }),
     onEvent: vi.fn((cb: (f: WsFrame) => void) => {
       eventListeners.push(cb);
       return () => {};

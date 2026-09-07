@@ -30,6 +30,22 @@ const api: Harness2Api = {
   loadLayout: () => ipcRenderer.invoke(IPC_INVOKE, { cmd: 'loadLayout' }),
   saveLayout: (layout: unknown) => ipcRenderer.invoke(IPC_INVOKE, { cmd: 'saveLayout', layout }),
   getStatus: () => ipcRenderer.invoke(IPC_INVOKE, { cmd: 'getStatus' }),
+  settingsGetConfig: () => ipcRenderer.invoke(IPC_INVOKE, { cmd: 'settings:getConfig' }),
+  settingsUpdateConfig: (patch: Record<string, unknown>) => ipcRenderer.invoke(IPC_INVOKE, { cmd: 'settings:updateConfig', patch }),
+  settingsGetAuthMasked: () => ipcRenderer.invoke(IPC_INVOKE, { cmd: 'settings:getAuthMasked' }),
+  settingsUpdateAuth: (patch: Record<string, unknown>) => ipcRenderer.invoke(IPC_INVOKE, { cmd: 'settings:updateAuth', patch }),
+  settingsGetPreferences: () => ipcRenderer.invoke(IPC_INVOKE, { cmd: 'settings:getPreferences' }),
+  settingsSetPreferences: (preferences: unknown) => ipcRenderer.invoke(IPC_INVOKE, { cmd: 'settings:setPreferences', preferences }),
+  settingsGetDoctorReport: () => ipcRenderer.invoke(IPC_INVOKE, { cmd: 'settings:getDoctorReport' }),
+  settingsGetCrashReports: () => ipcRenderer.invoke(IPC_INVOKE, { cmd: 'settings:getCrashReports' }),
+  gitBranch: (dir: string) => ipcRenderer.invoke(IPC_INVOKE, { cmd: 'gitBranch', dir }),
+  getContextUsage: (sessionId: string) => ipcRenderer.invoke(IPC_INVOKE, { cmd: 'getContextUsage', sessionId }),
+  getSnapshotForCall: (sessionId: string, seq: number) => ipcRenderer.invoke(IPC_INVOKE, { cmd: 'getSnapshotForCall', sessionId, seq }),
+  readFileForRef: (path: string, cwd: string) => ipcRenderer.invoke(IPC_INVOKE, { cmd: 'readFileForRef', path, cwd }),
+  notify: (title: string, body: string, sessionId?: string) => ipcRenderer.invoke(IPC_INVOKE, { cmd: 'notify', title, body, sessionId }),
+  metadataGet: () => ipcRenderer.invoke(IPC_INVOKE, { cmd: 'metadata:get' }),
+  metadataSet: (id: string, patch: { title?: string; archived?: boolean; deleted?: boolean }) =>
+    ipcRenderer.invoke(IPC_INVOKE, { cmd: 'metadata:set', id, patch }),
   onEvent: (listener: (frame: WsFrame) => void) => {
     const wrapped = (_e: Electron.IpcRendererEvent, frame: WsFrame): void => listener(frame);
     ipcRenderer.on(IPC_EVENT, wrapped);

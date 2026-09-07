@@ -1,7 +1,7 @@
 // Electron 主进程入口：spawn serve → 桥接 IPC → 创建窗口（contextIsolation + preload）。
 // --smoke 冒烟模式：无头窗口 + mock 服务就绪 + 渲染端加载完成后向 stdout 打一行 JSON 并退出
 // （自动化冒烟；窗口交互/拖拽等 GUI 项仍需真机人工验收，见 docs/issue-log/OPEN.md）。
-import { app, BrowserWindow } from 'electron';
+import { app, BrowserWindow, Menu } from 'electron';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { homedir, tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -82,6 +82,19 @@ function startDesktop(opts: { show: boolean; provider: 'mock' | 'config'; home?:
   });
   win.webContents.on('preload-error', (_e, path, err) => {
     console.error(JSON.stringify({ level: 'preload-error', path, message: err.message }));
+  });
+  // B1 保留调试能力：移除应用菜单后默认加速键不再注册，
+  // 手动挂 Ctrl+Shift+I / Cmd+Opt+I 打开 DevTools（渲染层零 Node 不受影响）。
+  win.webContents.on('before-input-event', (event, input) => {
+    const isDevtoolsKey =
+      input.type === 'keyDown' &&
+      input.key.toLowerCase() === 'i' &&
+      ((process.platform === 'darwin' && input.meta && input.alt) ||
+        (process.platform !== 'darwin' && input.control && input.shift));
+    if (isDevtoolsKey) {
+      event.preventDefault();
+      win.webContents.toggleDevTools();
+    }
   });
   void win.loadFile(join(__dirname, '..', '..', 'dist', 'renderer', 'index.html'));
 
@@ -174,6 +187,27 @@ if (SMOKE) {
   void runSmoke();
 } else {
   void app.whenReady().then(() => {
+    // B1 菜单精简：移除 File/Edit/View/Window/Help 整套默认菜单。
+    // 非 macOS 直接移除整个应用菜单；macOS 系统菜单栏需保留一项 App 菜单
+    // （含关于/退出/开发者工具三条，保留 Ctrl+Shift+I 调试能力）。
+    if (process.platform === 'darwin') {
+      Menu.setApplicationMenu(
+        Menu.buildFromTemplate([
+          {
+            label: app.name,
+            submenu: [
+              { role: 'about', label: '关于 harness2' },
+              { type: 'separator' },
+              { role: 'quit', label: '退出 harness2' },
+              { type: 'separator' },
+              { role: 'toggleDevTools', label: '开发者工具' },
+            ],
+          },
+        ]),
+      );
+    } else {
+      Menu.setApplicationMenu(null);
+    }
     startDesktop({ show: true, provider: process.env['H2_PROVIDER'] === 'mock' ? 'mock' : 'config' });
   });
   app.on('window-all-closed', () => {
