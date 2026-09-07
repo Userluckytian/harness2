@@ -36,7 +36,12 @@ export type WsFrame =
       warning?: string;
     }
   | { type: 'approval-request'; sessionId: string; tool: string; args: unknown; requestId: string }
-  | { type: 'error'; error: string };
+  | { type: 'error'; error: string }
+  /**
+   * 本地回传帧（非服务帧）：系统通知被点击 → 主进程聚焦窗口并把该帧推给渲染端，
+   * 渲染端据此 selectSession 跳转。走既有的 IPC_EVENT 通道，无需新建 IPC。
+   */
+  | { type: 'notify/click'; sessionId: string };
 
 /** 会话事件（core session/types.ts 同形；渲染端只需最小字段） */
 export interface SessionEventShape {

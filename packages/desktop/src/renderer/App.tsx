@@ -2,7 +2,7 @@
 // 布局纯逻辑见 shared/layout.ts；持久化经主进程落 ~/.harness2/desktop-layout.json。
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { displayToolName, type ChatItem } from './chat-model.js';
-import type { ConnectionStatus, SettingsPreferencesShape, SettingsTheme } from '../shared/protocol.js';
+import type { ConnectionStatus, SettingsNotifyDetails, SettingsPreferencesShape, SettingsTheme, WsFrame } from '../shared/protocol.js';
 import { MAX_PANES } from '../shared/layout.js';
 import { applyTheme, themeLabel } from './theme.js';
 import { SettingsDialog } from './components/SettingsDialog.js';
@@ -11,6 +11,7 @@ import { DiffCard } from './components/DiffCard.js';
 import { AppStore, type AppState, type SessionMeta } from './store.js';
 import { createController } from './app-controller.js';
 import { filterSessionList } from '../shared/metadata.js';
+import { NOTIFY_WINDOW_TITLE, composeNotifyContent, shouldNotifyOnTurnEnd } from '../shared/notify.js';
 import { CommandPalette, JUMP_TO_SESSION_ID, type PaletteCommand, type PaletteSession } from './components/CommandPalette.js';
 
 /** 主题循环顺序（命令面板「切换主题」按序推进） */
@@ -588,20 +589,50 @@ export function App(): React.ReactNode {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [theme, setTheme] = useState<SettingsTheme>('warmPaper');
+  const [notifyDetails, setNotifyDetails] = useState<SettingsNotifyDetails>('minimal');
   // controller 生命周期挂组件：启动事件订阅 + 布局加载（卸载时退订）
   useEffect(() => {
     void controller.initLayout();
     return controller.start();
   }, []);
-  // 主题：启动时读取偏好并应用；设置页改主题时 onThemeChange 即时切换
+  // 主题/通知偏好：启动时读取并应用；设置页保存后 onPreferenceChange 即时同步（保存回调里更新各状态）
   useEffect(() => {
     void window.harness2.settingsGetPreferences().then((p: SettingsPreferencesShape) => {
       setTheme(p.theme);
+      setNotifyDetails(p.notifyDetails);
       applyTheme(p.theme);
     }).catch(() => {});
   }, []);
   useEffect(() => applyTheme(theme), [theme]);
-  // Ctrl+, / Cmd+, 打开设置
+  // B7 任务完成系统通知：turn-end 且「窗口非聚焦 + 该会话不可见」→ 弹系统通知。
+  // 判定必须发生在这两者同时成立时（聚焦抖动/窗口失焦瞬间到位），因此逐帧结算；
+  // document.hasFocus() 为浏览器 API（渲染进程零 Node），助手完成后窗口不聚焦即触发。
+  // 未读徽标由 store 独立处理（不重复）；点击通知则主进程聚焦 + notify/click 帧 → selectSession。
+  // listener 只挂载一次（避免随 sessions/metadata 更新重建导致帧丢失竞态）；内部经
+  // store.getState() 读最新会话/覆层数据，notifyDetails 用 ref 取当前偏好。
+  const notifyDetailsRef = useRef(notifyDetails);
+  notifyDetailsRef.current = notifyDetails;
+  useEffect(() => {
+    return controller.startObservingFrames((frame) => {
+      queueMicrotask(() => {
+        if (frame.type !== 'turn-end' || frame.sessionId.length === 0) return;
+        const st = store.getState();
+        const summary = st.sessions.find((s) => s.id === frame.sessionId);
+        if (summary === undefined || store.peekStream(frame.sessionId) === undefined) return; // 会话未知/尚未缓冲：不弹
+        const windowFocused = document.hasFocus();
+        const sessionVisible = !store.isBackground(frame.sessionId);
+        if (!shouldNotifyOnTurnEnd({ windowFocused, visible: sessionVisible })) return; // 前台/该会话可见时不弹
+        // 完整级别带回复摘要（前 80 字），精简级别只标题（尊重设置弹窗的 notifyDetails 偏好）
+        const body = notifyDetailsRef.current === 'full' ? store.assistantText(frame.sessionId) : '';
+        const { title, body: composedBody } = composeNotifyContent({
+          title: store.displayTitleFor(frame.sessionId),
+          firstUserText: summary.firstUserText,
+          replyText: body,
+        });
+        void window.harness2.notify(title, composedBody, frame.sessionId).catch(() => {});
+      });
+    });
+  }, [controller]);
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent): void => {
       if ((e.ctrlKey || e.metaKey) && e.key === ',') {

@@ -229,6 +229,19 @@ export class AppStore {
     return projectChatItems(s.events, s.live, s.turnEnds);
   }
 
+  /** 最近一条落盘 assistant 正文（通知摘要数据源；无 assistant 消息返回 ''） */
+  assistantText(id: string): string {
+    const s = this.streams.get(id);
+    if (!s) return '';
+    for (let i = s.events.length - 1; i >= 0; i--) {
+      const e = s.events[i]!;
+      if (!e.active || e.type !== 'assistant/message') continue;
+      const t = (e.payload as Record<string, unknown>)['text'];
+      return typeof t === 'string' ? t : '';
+    }
+    return '';
+  }
+
   /**
    * 切换/重放：GET /api/sessions/:id/events 的全量应用。
    * 与缓冲判重（mergeReplay）：陈旧响应（lastSeq 更小）不应用。

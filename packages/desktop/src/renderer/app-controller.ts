@@ -2,11 +2,13 @@
 // 纯逻辑（可注入假 api 单测）；React 组件只读 store + 调 controller 方法。
 // 切换会话流程（多会话切换不断流核心路径）：subscribe → /events 全量重放（store 判重）
 // → 后续增量由 WS 帧按 seq 去重追加；后台会话的帧持续缓冲进各自 SessionStream。
-import type { Harness2Api } from '../shared/protocol.js';
+import type { Harness2Api, WsFrame } from '../shared/protocol.js';
 import type { AppStore } from './store.js';
 
 export interface Controller {
   start(): () => void;
+  /** 额外帧观察：App 侧副作用（如 B7 系统通知）不侵入 store；返回退订 */
+  startObservingFrames(listener: (frame: WsFrame) => void): () => void;
   refreshSessions(): Promise<void>;
   newSession(): Promise<void>;
   selectSession(id: string): Promise<void>;
@@ -32,6 +34,21 @@ export interface Controller {
 }
 
 export function createController(store: AppStore, api: Harness2Api): Controller {
+  /** 订阅 start() 的帧监听集合：store 主消费 + App 副作用（B7 通知）一条通道转发 */
+  const frameListeners = new Set<(frame: WsFrame) => void>();
+
+  const dispatchFrame = (frame: WsFrame): void => {
+    // B7 通知点击回传帧（本地产生，非服务帧）：聚焦窗口后跳转到对应会话。
+    // 点击时窗口已被主进程 focus/restore，渲染端 selectSession 在已可见窗口内切换。
+    // 该帧不回传 store（非会话数据帧）。
+    if (frame.type === 'notify/click') {
+      void selectSession(frame.sessionId);
+      return;
+    }
+    store.applyFrame(frame);
+    for (const listener of [...frameListeners]) listener(frame);
+  };
+
   const refreshSessions = async (): Promise<void> => {
     try {
       store.setSessions(await api.listSessions());
@@ -56,6 +73,13 @@ export function createController(store: AppStore, api: Harness2Api): Controller 
     }
   };
 
+  /** 切换会话并重放（notify/click 回传与命令面板共用） */
+  const selectSession = async (id: string): Promise<void> => {
+    await subscribeSession(id);
+    store.select(id);
+    await replaySession(id); // 切换 = 全量重放（含 active 标记），随后增量按 seq 去重接入
+  };
+
   const persistLayout = async (): Promise<void> => {
     try {
       await api.saveLayout(store.getState().layout);
@@ -70,7 +94,9 @@ export function createController(store: AppStore, api: Harness2Api): Controller 
         store.applyStatus(status, detail);
         if (status === 'connected') void refreshSessions();
       });
-      const eventUnsub = api.onEvent((frame) => store.applyFrame(frame));
+      const eventUnsub = api.onEvent((frame) => {
+        dispatchFrame(frame);
+      });
       // 主动查询一次当前状态：onConnectionStatus 只订阅，可能错过启动前已发出的 connected
       // （2026-09-07 修复：新建会话按钮 disabled={status!=='connected'}，状态竞态会导致永远灰着）
       void api.getStatus().then((s) => {
@@ -83,6 +109,12 @@ export function createController(store: AppStore, api: Harness2Api): Controller 
       return () => {
         statusUnsub();
         eventUnsub();
+      };
+    },
+    startObservingFrames(listener: (frame: WsFrame) => void): () => void {
+      frameListeners.add(listener);
+      return () => {
+        frameListeners.delete(listener);
       };
     },
     refreshSessions,
@@ -103,11 +135,7 @@ export function createController(store: AppStore, api: Harness2Api): Controller 
         store.applyFrame({ type: 'error', error: (e as Error).message });
       }
     },
-    async selectSession(id: string): Promise<void> {
-      await subscribeSession(id);
-      store.select(id);
-      await replaySession(id); // 切换 = 全量重放（含 active 标记），随后增量按 seq 去重接入
-    },
+    selectSession,
     replaySession,
     async sendMessage(id: string, text: string): Promise<void> {
       store.markSending(id);

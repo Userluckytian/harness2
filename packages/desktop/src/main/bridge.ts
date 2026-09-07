@@ -1,7 +1,8 @@
 // 主进程桥：IPC 命令分发（渲染端唯一入口）+ 服务 WS 连接（事件帧转发给渲染端）。
 // 安全边界：渲染进程零 Node——一切经 ipcRenderer.invoke('harness2:invoke') 到这里，
 // 这里只与 127.0.0.1 的本地 serve 通信；WS 帧（含密钥三不约束的脱敏事件）原样转发。
-import { ipcMain, type IpcMainInvokeEvent } from 'electron';
+import { BrowserWindow, Notification, dialog, ipcMain, type IpcMainInvokeEvent } from 'electron';
+import { composeNotifyContent } from '../shared/notify.js';
 import type {
   ConnectionStatus,
   InvokeCommand,
@@ -174,6 +175,41 @@ export function createBridge(deps: BridgeDeps): Bridge {
       deps.sendEvent(frame);
     } catch {
       // 窗口已销毁：忽略
+    }
+  };
+
+  /**
+   * 系统通知触发（B7）：渲染端判定「窗口非聚焦 + 会话不可见」后经 IPC 调到这里。
+   * - Notification 支持时原生弹通知；点击 → 聚焦窗口 + 回传 notify/click 帧（渲染端跳会话）
+   * - 不支持的原生平台（部分 Linux/打包环境）回退 Electron 对话框（同为"待点击"交互，仍能聚焦跳转）
+   * 渲染端不等待结果（fire-and-forget）；本函数永不抛错。
+   */
+  const triggerNotification = ({ title, body, sessionId }: { title: string; body: string; sessionId?: string }): void => {
+    const n = new Notification({ title, body, silent: false });
+    n.on('click', () => {
+      const win = BrowserWindow.getAllWindows()[0];
+      if (win !== undefined) {
+        if (win.isMinimized()) win.restore();
+        win.show();
+        win.focus();
+      }
+      if (sessionId !== undefined && sessionId.length > 0) {
+        sendFrame({ type: 'notify/click', sessionId });
+      }
+    });
+    try {
+      if (Notification.isSupported()) n.show();
+      else {
+        dialog.showMessageBox({
+          type: 'info',
+          title,
+          message: title,
+          detail: body,
+          buttons: [sessionId !== undefined && sessionId.length > 0 ? '查看会话' : '好'],
+        });
+      }
+    } catch {
+      // 通知失败（无桌面通知能力/被系统禁用）：静默，不打断会话
     }
   };
 
@@ -363,6 +399,19 @@ export function createBridge(deps: BridgeDeps): Bridge {
           typeof args['path'] === 'string' ? args['path'] : '',
           typeof args['cwd'] === 'string' ? args['cwd'] : deps.root,
         );
+      case 'notify': {
+        // 渲染端已做触发判定（notify/click 回传）；主进程只负责弹通知 + 点击回传。
+        // 兜底规范化：title/body 由渲染端 composeNotifyContent 生成；此处再走一遍保证
+        // 即便渲染端传空/异常，通知内容也符合「标题或 harness2 + 80 字摘要」契约。
+        const composed = composeNotifyContent({
+          title: typeof args['title'] === 'string' && args['title'].length > 0 ? args['title'] : null,
+          firstUserText: null,
+          replyText: typeof args['body'] === 'string' ? args['body'] : '',
+        });
+        const sessionId = typeof args['sessionId'] === 'string' && args['sessionId'].length > 0 ? args['sessionId'] : undefined;
+        triggerNotification({ title: composed.title, body: composed.body, sessionId });
+        return null;
+      }
       default:
         throw new InvokeError(`未知命令 ${cmd}`);
     }
