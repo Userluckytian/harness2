@@ -5,6 +5,7 @@ import { ipcMain, type IpcMainInvokeEvent } from 'electron';
 import type {
   ConnectionStatus,
   InvokeCommand,
+  SessionSummaryShape,
   StatusDetail,
   WsFrame,
 } from '../shared/protocol.js';
@@ -144,7 +145,12 @@ export function createBridge(deps: BridgeDeps): Bridge {
     switch (cmd) {
       case 'listSessions': {
         const cwd = args['cwd'];
-        return httpJson(`${base}/api/sessions${typeof cwd === 'string' && cwd.length > 0 ? `?cwd=${encodeURIComponent(cwd)}` : ''}`);
+        // serve 返回 { sessions: [...] }，但 Harness2Api.listSessions 契约是数组 → 这里取 .sessions
+        // （2026-09-07 修：此前返回整个对象，渲染端 [...sessions] 展开对象抛错，会话列表永不更新）
+        const body = await httpJson<{ sessions: SessionSummaryShape[] }>(
+          `${base}/api/sessions${typeof cwd === 'string' && cwd.length > 0 ? `?cwd=${encodeURIComponent(cwd)}` : ''}`,
+        );
+        return body.sessions;
       }
       case 'createSession':
         return httpJson(`${base}/api/sessions`, {

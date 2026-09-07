@@ -83,6 +83,11 @@ export function createController(store: AppStore, api: Harness2Api): Controller 
         await refreshSessions();
         store.select(created.id);
         await replaySession(created.id);
+        // 自动打入首个空分栏：否则只出现在侧栏，用户会感觉「新建没反应」
+        // （2026-09-07 用户报告：点新建无变化）
+        const empty = store.getState().layout.panes.findIndex((p) => p.sessionId === null);
+        store.assignToPane(empty >= 0 ? empty : 0, created.id);
+        await persistLayout();
       } catch (e) {
         // 避免「点击无反应」：失败也反馈到状态栏（此前为未处理 rejection）
         store.applyFrame({ type: 'error', error: (e as Error).message });
