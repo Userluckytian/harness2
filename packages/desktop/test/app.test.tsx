@@ -47,6 +47,7 @@ function makeFakeApi() {
     respondApproval: vi.fn(async () => undefined),
     loadLayout: vi.fn(async () => undefined),
     saveLayout: vi.fn(async () => undefined),
+    getStatus: vi.fn(async () => ({ status: 'connected' as ConnectionStatus })),
     onEvent: vi.fn((cb: (f: WsFrame) => void) => {
       eventListeners.push(cb);
       return () => {};

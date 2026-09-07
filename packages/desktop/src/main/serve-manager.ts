@@ -149,8 +149,15 @@ export class ServeManager {
   private port: number | null = null;
 
   status: ServeManagerStatus = 'offline';
+  /** 最近一次状态详情（供 getStatus 主动查询；port/error/attemptsLeft） */
+  private statusDetail: StatusDetail | undefined;
 
   constructor(private readonly options: ServeManagerOptions) {}
+
+  /** 当前状态 + 详情（渲染端启动时经 getStatus 主动查询，避免只靠可能错过的 onStatus 事件） */
+  getStatus(): { status: ServeManagerStatus; detail?: StatusDetail } {
+    return { status: this.status, detail: this.statusDetail };
+  }
 
   get baseUrl(): string {
     if (this.port === null) throw new Error('serve 未就绪');
@@ -168,6 +175,7 @@ export class ServeManager {
 
   private setStatus(status: ServeManagerStatus, detail?: StatusDetail): void {
     this.status = status;
+    this.statusDetail = detail;
     this.options.onStatus?.(status, detail);
   }
 

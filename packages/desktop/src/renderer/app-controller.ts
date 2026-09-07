@@ -61,6 +61,14 @@ export function createController(store: AppStore, api: Harness2Api): Controller 
         if (status === 'connected') void refreshSessions();
       });
       const eventUnsub = api.onEvent((frame) => store.applyFrame(frame));
+      // 主动查询一次当前状态：onConnectionStatus 只订阅，可能错过启动前已发出的 connected
+      // （2026-09-07 修复：新建会话按钮 disabled={status!=='connected'}，状态竞态会导致永远灰着）
+      void api.getStatus().then((s) => {
+        store.applyStatus(s.status, s.detail);
+        if (s.status === 'connected') void refreshSessions();
+      }).catch(() => {
+        // 通道尚未就绪：等 onConnectionStatus 事件补齐
+      });
       void refreshSessions();
       return () => {
         statusUnsub();
@@ -69,11 +77,16 @@ export function createController(store: AppStore, api: Harness2Api): Controller 
     },
     refreshSessions,
     async newSession(): Promise<void> {
-      const created = await api.createSession(); // cwd 由主进程补齐（渲染进程零 Node/零文件系统）
-      await subscribeSession(created.id);
-      await refreshSessions();
-      store.select(created.id);
-      await replaySession(created.id);
+      try {
+        const created = await api.createSession(); // cwd 由主进程补齐（渲染进程零 Node/零文件系统）
+        await subscribeSession(created.id);
+        await refreshSessions();
+        store.select(created.id);
+        await replaySession(created.id);
+      } catch (e) {
+        // 避免「点击无反应」：失败也反馈到状态栏（此前为未处理 rejection）
+        store.applyFrame({ type: 'error', error: (e as Error).message });
+      }
     },
     async selectSession(id: string): Promise<void> {
       await subscribeSession(id);

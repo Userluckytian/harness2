@@ -192,6 +192,8 @@ export function createBridge(deps: BridgeDeps): Bridge {
         return readLayout(deps.home);
       case 'saveLayout':
         return writeLayout(deps.home, args['layout']);
+      case 'getStatus':
+        return deps.serve.getStatus();
       default:
         throw new InvokeError(`未知命令 ${cmd}`);
     }

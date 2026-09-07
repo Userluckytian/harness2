@@ -29,6 +29,7 @@ const api: Harness2Api = {
     ipcRenderer.invoke(IPC_INVOKE, { cmd: 'respondApproval', requestId, decision }),
   loadLayout: () => ipcRenderer.invoke(IPC_INVOKE, { cmd: 'loadLayout' }),
   saveLayout: (layout: unknown) => ipcRenderer.invoke(IPC_INVOKE, { cmd: 'saveLayout', layout }),
+  getStatus: () => ipcRenderer.invoke(IPC_INVOKE, { cmd: 'getStatus' }),
   onEvent: (listener: (frame: WsFrame) => void) => {
     const wrapped = (_e: Electron.IpcRendererEvent, frame: WsFrame): void => listener(frame);
     ipcRenderer.on(IPC_EVENT, wrapped);

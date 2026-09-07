@@ -94,7 +94,8 @@ export type InvokeCommand =
   | { cmd: 'abort'; sessionId: string }
   | { cmd: 'respondApproval'; requestId: string; decision: 'allow' | 'deny' }
   | { cmd: 'loadLayout' }
-  | { cmd: 'saveLayout'; layout: unknown };
+  | { cmd: 'saveLayout'; layout: unknown }
+  | { cmd: 'getStatus' };
 
 /** window.harness2 的形状（preload contextBridge 暴露） */
 export interface Harness2Api {
@@ -110,6 +111,8 @@ export interface Harness2Api {
   respondApproval(requestId: string, decision: 'allow' | 'deny'): Promise<void>;
   loadLayout(): Promise<unknown>;
   saveLayout(layout: unknown): Promise<void>;
+  /** 主动查询当前连接状态（onConnectionStatus 只订阅、可能错过启动前已发出的 connected，用于补齐初始状态） */
+  getStatus(): Promise<{ status: ConnectionStatus; detail?: StatusDetail }>;
   /** 订阅服务事件帧（delta/event/turn-end/approval-request/error）；返回退订函数 */
   onEvent(listener: (frame: WsFrame) => void): () => void;
   /** 订阅连接状态变化；返回退订函数 */
