@@ -6,10 +6,11 @@
 // 渲染器独占输出；审批提问由 REPL 直接写问题文本并拦截下一行输入作答案。
 // 审批"总是允许"仅存进程内会话级缓存，绝不落盘。
 import { createInterface, type Interface } from 'node:readline';
-import { SnapshotStore } from '@harness2/core';
+import { SnapshotStore, getContextUsage } from '@harness2/core';
 import { StreamRenderer } from './render.js';
 import { handleCommand, parseCommand, type CommandContext } from './commands.js';
 import { MODE_ALIAS_LABEL, MODE_ALIAS_ORDER, MODE_ALIAS_TO_CORE, describeMode, parseModeAlias } from './mode-alias.js';
+import { matchCommands } from './command-registry.js';
 import {
   ASK_CANCELLED,
   ChatSetupAbort,
@@ -69,7 +70,21 @@ export async function runLegacyReadlineChat(options: ChatOptions = {}): Promise<
 
   // —— readline REPL ——
   const isTTY = (input as NodeJS.ReadStream & { isTTY?: boolean }).isTTY === true;
-  const rl: Interface = createInterface({ input, output, prompt: '> ', terminal: isTTY });
+  const rl: Interface = createInterface({
+    input,
+    output,
+    prompt: '> ',
+    terminal: isTTY,
+    // Tab 补全（terminal 模式生效）：命令名阶段从两路径共享注册表读，非命令不补全
+    completer: (line: string) => {
+      const trimmed = line.trim();
+      if (!trimmed.startsWith('/')) return [[], line];
+      // 命令名阶段（尝试补全命令名本身；带空格进入参数阶段不补全）
+      const namePart = trimmed.split(' ')[0] ?? '';
+      const hits = matchCommands(namePart);
+      return [hits, namePart];
+    },
+  });
   let exiting = false;
   let busy = false;
   const queue: string[] = [];
@@ -176,6 +191,18 @@ export async function runLegacyReadlineChat(options: ChatOptions = {}): Promise<
       if (parsed !== null) {
         if (parsed.name === '/mode') {
           handleModeCommand(parsed.rest);
+        } else if (parsed.name === '/context') {
+          const current = runtime.getCurrent();
+          const usage = current !== null ? getContextUsage(current.dir) : undefined;
+          renderer.line(
+            `上下文占用: ${usage === undefined ? '—（无活动会话）' : `${Math.round(usage * 100)}%`}`,
+          );
+        } else if (parsed.name === '/compact') {
+          renderer.line('压缩将在下一次 turn 开始时自动检查并执行；若已超阈值会自动触发。');
+        } else if (parsed.name === '/reasoning') {
+          renderer.line('推理过程展示默认关闭（/reasoning on|off），后续版本提供展开交互。');
+        } else if (parsed.name === '/tasks') {
+          renderer.line('任务列表请使用 `harness2 cron list` 查看（REPL 只读展示将在后续版本提供）。');
         } else {
           handleCommand(parsed, ctx);
         }

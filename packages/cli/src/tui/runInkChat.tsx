@@ -16,6 +16,7 @@ import { useTurnStream, type TurnSnapshot } from './useTurnStream.js';
 import { parseCommand, HELP_TEXT } from '../commands.js';
 import { CORE_MODE_TO_ALIAS, MODE_ALIAS_ORDER, MODE_ALIAS_LABEL, MODE_ALIAS_TO_CORE, type ModeAlias } from '../mode-alias.js';
 import type { ApprovalMode } from '@harness2/core';
+import { getContextUsage } from '@harness2/core';
 
 /** 现代终端检测：Windows Terminal（WT_SESSION）或 VS Code 终端（TERM_PROGRAM=vscode） */
 export function isModernTerminal(env: NodeJS.ProcessEnv = process.env): boolean {
@@ -224,6 +225,23 @@ function InkShell({
         return;
       case '/sessions':
         openSessions();
+        return;
+      case '/context': {
+        const current = runtime.getCurrent();
+        const usage = current !== null ? getContextUsage(current.dir) : undefined;
+        sendSystem(
+          `上下文占用: ${usage === undefined ? '—（无活动会话）' : `${Math.round(usage * 100)}%`}`,
+        );
+        return;
+      }
+      case '/compact':
+        sendSystem('压缩将在下一次 turn 开始时自动检查并执行；若已超阈值会自动触发。');
+        return;
+      case '/reasoning':
+        sendSystem('推理过程展示默认关闭（/reasoning on|off），T8 实现展开交互。');
+        return;
+      case '/tasks':
+        sendSystem('任务列表请使用 `harness2 cron list` 查看（REPL 只读展示将在后续版本提供）。');
         return;
       case '/exit':
         exit(0);

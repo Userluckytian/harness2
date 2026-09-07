@@ -5,6 +5,7 @@
 // 退出逻辑经 onExit 回调上交（复用 existing 退出语义）。
 import React from 'react';
 import { useInput, Box, Text } from 'ink';
+import { matchCommands } from '../command-registry.js';
 
 export interface ComposerProps {
   /** 双行视觉提示当前输入多行状态 */
@@ -20,9 +21,16 @@ export interface ComposerProps {
 export function Composer({ busy = false, active = true, onSend, onExit }: ComposerProps): React.ReactElement {
   const [value, setValue] = React.useState('');
   const [cursor, setCursor] = React.useState(0);
+  const [candidateIndex, setCandidateIndex] = React.useState(0);
   const historyRef = React.useRef<string[]>([]);
   const historyIdxRef = React.useRef(-1);
   const lastCtrlCAtRef = React.useRef(0);
+
+  // 命令名阶段：value 以 / 开头且不含空格/换行（输入单个命令名，未进入参数）
+  const commandNameActive = value.startsWith('/') && !value.includes(' ') && !value.includes('\n');
+  const candidates = commandNameActive ? matchCommands(value) : [];
+  // 防越界：候选变化后 clamp 高亮索引
+  const safeCandidateIndex = candidates.length === 0 ? 0 : Math.min(candidateIndex, candidates.length - 1);
 
   const insertAt = (text: string, pos: number, insert: string): string => text.slice(0, pos) + insert + text.slice(pos);
   const removeAt = (text: string, pos: number, count: number): string => text.slice(0, pos) + text.slice(pos + count);
@@ -30,6 +38,28 @@ export function Composer({ busy = false, active = true, onSend, onExit }: Compos
   useInput(
     (input, key) => {
       if (busy) return; // turn 期间不响应输入（发送后清空，缓冲由上层策略处理）
+
+      // —— 命令名阶段：↑↓ 切候选、Tab 补全候选（不发送）；其余按键照常（含字符输入） ——
+      if (candidates.length > 0) {
+        if (key.upArrow) {
+          setCandidateIndex((i) => (i - 1 + candidates.length) % candidates.length);
+          return;
+        }
+        if (key.downArrow) {
+          setCandidateIndex((i) => (i + 1) % candidates.length);
+          return;
+        }
+        if (key.tab) {
+          const chosen = candidates[safeCandidateIndex];
+          if (chosen !== undefined) {
+            setValue(chosen);
+            setCursor(chosen.length);
+            setCandidateIndex(0);
+          }
+          return;
+        }
+        // 其余按键落到普通输入流（Enter 触发 onSend 等）
+      }
 
     if (key.ctrl && input === 'c') {
       const now = Date.now();
@@ -143,6 +173,19 @@ export function Composer({ busy = false, active = true, onSend, onExit }: Compos
         <Text color="green">&gt; </Text>
         <Text>{visualValue}</Text>
       </Box>
+      {candidates.length > 0 && (
+        <Box flexDirection="column" marginTop={1}>
+          {candidates.map((c, i) => (
+            <Box key={c} minWidth={1}>
+              <Text color={i === safeCandidateIndex ? 'cyan' : undefined}>
+                {i === safeCandidateIndex ? '› ' : '  '}
+                {c}
+              </Text>
+            </Box>
+          ))}
+          <Text color="gray">↑↓ 切换 · Tab 补全 · Enter 发送当前内容</Text>
+        </Box>
+      )}
     </Box>
   );
 }
