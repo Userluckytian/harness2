@@ -1,16 +1,20 @@
 // 渲染端根组件：状态角标 + 会话侧栏（拖拽源）+ 分栏对话区（1/2/3 栏，DnD 绑定会话）。
 // 布局纯逻辑见 shared/layout.ts；持久化经主进程落 ~/.harness2/desktop-layout.json。
-import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { displayToolName, type ChatItem } from './chat-model.js';
 import type { ConnectionStatus, SettingsPreferencesShape, SettingsTheme } from '../shared/protocol.js';
 import { MAX_PANES } from '../shared/layout.js';
-import { applyTheme } from './theme.js';
+import { applyTheme, themeLabel } from './theme.js';
 import { SettingsDialog } from './components/SettingsDialog.js';
 import { ConversationHeader } from './components/ConversationHeader.js';
 import { DiffCard } from './components/DiffCard.js';
 import { AppStore, type AppState, type SessionMeta } from './store.js';
 import { createController } from './app-controller.js';
 import { filterSessionList } from '../shared/metadata.js';
+import { CommandPalette, JUMP_TO_SESSION_ID, type PaletteCommand, type PaletteSession } from './components/CommandPalette.js';
+
+/** 主题循环顺序（命令面板「切换主题」按序推进） */
+const THEME_CYCLE: readonly SettingsTheme[] = ['warmPaper', 'dark', 'system'];
 
 export const store = new AppStore();
 export const controller = createController(store, window.harness2);
@@ -237,6 +241,7 @@ export function SessionList(): React.ReactNode {
         </button>
       </div>
       <input
+        id="session-search-input"
         className="session-search"
         placeholder="搜索会话…"
         value={query}
@@ -555,10 +560,33 @@ export function PaneArea(): React.ReactNode {
   );
 }
 
+/** 主题循环：warmPaper → dark → system → warmPaper（命令面板「切换主题」用） */
+export function cycleTheme(current: SettingsTheme): SettingsTheme {
+  const i = THEME_CYCLE.indexOf(current);
+  return THEME_CYCLE[(i + 1) % THEME_CYCLE.length] ?? 'warmPaper';
+}
+
+/** 有序「可跳转」会话（未归档且未删除；按 mtime 降序）的 id 列表 */
+function selectableSessionIds(state: AppState): string[] {
+  const { active } = filterSessionList(state.sessions, state.metadata, '');
+  return active.map((s) => s.id);
+}
+
+/** 在会话列表中相对当前选中移动 ±1（回绕）；返回新 id 或 null（无会话） */
+export function moveSession(state: AppState, delta: -1 | 1): string | null {
+  const ids = selectableSessionIds(state);
+  if (ids.length === 0) return null;
+  const cur = state.selectedId;
+  const curIdx = cur !== null ? ids.indexOf(cur) : -1;
+  const next = curIdx >= 0 ? (curIdx + delta + ids.length) % ids.length : 0;
+  return ids[next] ?? null;
+}
+
 export function App(): React.ReactNode {
   const state = useAppState();
   const statusInfo = STATUS_LABEL[state.status];
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [paletteOpen, setPaletteOpen] = useState(false);
   const [theme, setTheme] = useState<SettingsTheme>('warmPaper');
   // controller 生命周期挂组件：启动事件订阅 + 布局加载（卸载时退订）
   useEffect(() => {
@@ -584,6 +612,68 @@ export function App(): React.ReactNode {
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
   }, []);
+  // Ctrl+K / Cmd+K 命令面板（与 Ctrl+, Ctrl+N Ctrl+F 共存；屏蔽浏览器默认"定位链接"）
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent): void => {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
+        e.preventDefault();
+        setPaletteOpen((v) => !v);
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, []);
+
+  // 命令面板的「跳转会话」候选（展示标题优先，占位空会话）
+  const activeSessions = selectableSessionIds(state);
+  const paletteSessions: PaletteSession[] = useMemo(
+    () =>
+      activeSessions.map((id) => {
+        const s = state.sessions.find((it) => it.id === id);
+        const label = store.displayTitleFor(id) ?? s?.firstUserText ?? '';
+        return { id, label: label.length > 0 ? label : '(空会话)' };
+      }),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [state.sessions, state.metadata, activeSessions.join('|')],
+  );
+
+  // 命令表（纯数据；副作用全在 run 回调里，经 controller/state 注入）
+  const commands: PaletteCommand[] = useMemo(() => {
+    const focusSearch = (): void => {
+      const el = document.getElementById('session-search-input');
+      el?.focus();
+      el?.scrollIntoView({ block: 'nearest' });
+    };
+    const cycleThemeAction = (): void => {
+      const next = cycleTheme(theme);
+      setTheme(next);
+      applyTheme(next);
+      void window.harness2.settingsSetPreferences({ theme: next });
+    };
+    const nextId = moveSession(state, 1);
+    const prevId = moveSession(state, -1);
+    const archiveId = state.selectedId;
+    return [
+      { id: 'newSession', label: '新建会话', hint: 'Ctrl+N', run: () => void controller.newSession() },
+      { id: 'nextSession', label: '切到下一个会话', run: () => { if (nextId !== null) void controller.selectSession(nextId); } },
+      { id: 'prevSession', label: '上一个会话', run: () => { if (prevId !== null) void controller.selectSession(prevId); } },
+      { id: 'openSettings', label: '打开设置', hint: 'Ctrl+,', run: () => setSettingsOpen(true) },
+      { id: 'cycleTheme', label: `切换主题（当前：${themeLabel(theme)}）`, run: cycleThemeAction },
+      { id: 'helpShortcuts', label: '帮助 / 快捷键说明', run: () => setSettingsOpen(true) },
+      { id: 'setPanes1', label: '切换为单栏（1 栏）', run: () => void controller.setPaneCount(1) },
+      { id: 'setPanes2', label: '切换为双栏（2 栏）', run: () => void controller.setPaneCount(2) },
+      { id: 'setPanes3', label: '切换为三栏（3 栏）', run: () => void controller.setPaneCount(3) },
+      {
+        id: 'archiveCurrent',
+        label: '归档当前会话',
+        run: () => { if (archiveId !== null) void controller.archiveSession(archiveId, true); },
+      },
+      { id: 'search', label: '搜索会话…', hint: '聚焦侧栏搜索', run: focusSearch },
+      // 特殊命令：进入「跳转会话」选择态（组件识别 JUMP_TO_SESSION_ID 后切换为会话过滤）
+      { id: JUMP_TO_SESSION_ID, label: '跳转到会话…', run: () => {} },
+    ];
+  }, [state, theme]);
+
   return (
     <div className="app">
       <header className="topbar">
@@ -607,6 +697,13 @@ export function App(): React.ReactNode {
           setTheme(t);
           applyTheme(t);
         }}
+      />
+      <CommandPalette
+        open={paletteOpen}
+        onClose={() => setPaletteOpen(false)}
+        commands={commands}
+        sessions={paletteSessions}
+        onSelectSession={(id) => void controller.selectSession(id)}
       />
     </div>
   );
