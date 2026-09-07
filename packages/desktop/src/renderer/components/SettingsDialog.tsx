@@ -595,8 +595,6 @@ export function SettingsDialog({
     if (open) void reload();
   }, [open, reload]);
 
-  if (!open) return null;
-
   const savePrefs = async (next: SettingsPreferencesShape): Promise<void> => {
     const saved = await window.harness2.settingsSetPreferences(next);
     setPrefs(saved);
@@ -635,6 +633,8 @@ export function SettingsDialog({
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [prefs, cfg, auth, active],
   );
+
+  if (!open) return null;
 
   return (
     <div className="settings-overlay" onClick={onClose}>
