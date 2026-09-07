@@ -1,0 +1,425 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>harness2 · 工作台重设计</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+<style>
+  :root{
+    --bg:#020617; --surface:#0F172A; --surface2:#1E293B; --muted:#1A1E2F;
+    --border:#334155; --fg:#F8FAFC; --fg-muted:#94A3B8;
+    --accent:#22C55E; --info:#3B82F6; --warn:#F59E0B; --danger:#EF4444; --ring:#0F172A;
+    --shadow:0 8px 30px rgba(0,0,0,.45);
+    --radius:12px;
+    font-family:'Inter',system-ui,sans-serif;
+  }
+  *{box-sizing:border-box}
+  html,body{height:100%;margin:0}
+  body{background:var(--bg);color:var(--fg);font-size:14px;overflow:hidden}
+  .app{display:flex;flex-direction:column;height:100%}
+  svg{display:block}
+  .i{width:16px;height:16px;stroke:currentColor;stroke-width:1.6;fill:none;stroke-linecap:round;stroke-linejoin:round}
+  /* ===== topbar ===== */
+  .topbar{display:flex;align-items:center;gap:14px;height:48px;padding:0 14px;background:var(--surface);border-bottom:1px solid var(--border)}
+  .brand{display:flex;align-items:center;gap:8px;font-weight:700;letter-spacing:.4px}
+  .brand .logo{width:20px;height:20px;border-radius:6px;background:linear-gradient(135deg,var(--accent),#15803d);display:grid;place-items:center;color:#04160b;font-weight:800;font-size:12px}
+  .conn{display:inline-flex;align-items:center;gap:6px;font-size:12px;color:var(--fg-muted);padding:3px 10px;border-radius:999px;background:var(--muted);border:1px solid var(--border)}
+  .conn .dot{width:8px;height:8px;border-radius:50%;background:var(--accent)}
+  .spacer{flex:1}
+  .model{display:inline-flex;align-items:center;gap:6px;font-size:12.5px;background:var(--muted);border:1px solid var(--border);padding:4px 10px;border-radius:8px;color:var(--fg);cursor:pointer}
+  .model:hover{border-color:var(--accent)}
+  .model .caret{color:var(--fg-muted)}
+  /* context water bar (G4) */
+  .ctx{display:flex;align-items:center;gap:8px;font-size:12px;color:var(--fg-muted)}
+  .ctx .bar{width:120px;height:6px;border-radius:999px;background:var(--muted);overflow:hidden;border:1px solid var(--border)}
+  .ctx .fill{height:100%;width:42%;background:linear-gradient(90deg,var(--accent),var(--info))}
+  .ctx .fill.warn{background:var(--warn)}
+  .kbd{display:inline-flex;align-items:center;gap:4px;font-size:12px;color:var(--fg-muted);border:1px solid var(--border);border-radius:8px;padding:4px 8px;cursor:pointer}
+  .kbd:hover{border-color:var(--accent);color:var(--fg)}
+  .iconbtn{display:grid;place-items:center;width:30px;height:30px;border-radius:8px;border:1px solid transparent;color:var(--fg-muted);cursor:pointer;background:transparent}
+  .iconbtn:hover{background:var(--muted);color:var(--fg)}
+  /* ===== body ===== */
+  .body{display:flex;flex:1;min-height:0}
+  /* sidebar */
+  .sidebar{width:264px;display:flex;flex-direction:column;background:var(--surface);border-right:1px solid var(--border)}
+  .side-search{margin:10px;display:flex;align-items:center;gap:8px;padding:7px 10px;background:var(--muted);border:1px solid var(--border);border-radius:8px;color:var(--fg-muted)}
+  .side-search input{flex:1;background:transparent;border:none;color:var(--fg);outline:none;font:inherit}
+  .side-search input::placeholder{color:var(--fg-muted)}
+  .side-meta{display:flex;align-items:center;justify-content:space-between;padding:0 12px 8px}
+  .side-meta .t{font-size:11px;font-weight:600;letter-spacing:.4px;color:var(--fg-muted);text-transform:uppercase}
+  .btn-new{display:inline-flex;align-items:center;gap:4px;background:var(--accent);color:#04160b;border:none;border-radius:8px;padding:5px 10px;font-weight:600;font-size:12.5px;cursor:pointer}
+  .btn-new:hover{filter:brightness(1.1)}
+  .sessions{list-style:none;margin:0;padding:0 6px;overflow-y:auto;flex:1}
+  .session{display:flex;flex-direction:column;gap:2px;width:100%;text-align:left;background:transparent;border:none;color:inherit;padding:9px 10px;border-radius:10px;cursor:pointer}
+  .session:hover{background:var(--muted)}
+  .session.active{background:var(--surface2);box-shadow:inset 0 0 0 1px var(--border)}
+  .session .title{display:flex;align-items:center;gap:6px;font-size:13px}
+  .session .title .name{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1}
+  .session .meta{font-size:11px;color:var(--fg-muted)}
+  .badge-unread{margin-left:auto;background:var(--info);color:#fff;border-radius:999px;font-size:10px;padding:0 6px}
+  .tag{font-size:10px;border-radius:5px;padding:0 4px;border:1px solid}
+  .tag.bg{color:var(--warn);border-color:var(--warn)}
+  .tag.sub{color:var(--info);border-color:var(--info)}
+  /* main panes */
+  .main{flex:1;display:flex;flex-direction:column;min-width:0}
+  .pane-toolbar{display:flex;align-items:center;gap:6px;padding:6px 12px;background:var(--surface);border-bottom:1px solid var(--border)}
+  .pane-count{background:var(--muted);border:1px solid var(--border);color:var(--fg-muted);border-radius:7px;padding:2px 10px;font-size:12px;cursor:pointer}
+  .pane-count.active{background:var(--accent);border-color:var(--accent);color:#04160b}
+  .pane-row{display:flex;flex:1;min-height:0}
+  .pane{flex:1;display:flex;flex-direction:column;min-width:0;border-right:1px solid var(--border)}
+  .pane:last-child{border-right:none}
+  .pane-head{display:flex;align-items:center;gap:8px;padding:6px 12px;background:var(--surface2);border-bottom:1px solid var(--border);font-size:12px}
+  .pane-head .plabel{display:flex;align-items:center;gap:6px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1}
+  .pane-head .psub{font-size:11px;color:var(--fg-muted)}
+  .pane-actions{display:flex;gap:4px}
+  .pane-actions .iconbtn{width:24px;height:24px}
+  /* chat */
+  .chat{display:flex;flex-direction:column;flex:1;min-height:0}
+  .messages{flex:1;overflow-y:auto;padding:16px 18px;display:flex;flex-direction:column;gap:12px}
+  .msg-user{max-width:78%;align-self:flex-end;background:var(--info);border-radius:12px;padding:8px 12px;white-space:pre-wrap}
+  .msg-user .who{display:block;font-size:11px;opacity:.8;margin-bottom:2px}
+  .msg-ai{max-width:100%;align-self:flex-start;display:flex;flex-direction:column;gap:8px;width:100%}
+  .msg-ai .who{font-size:11px;color:var(--fg-muted);display:flex;align-items:center;gap:6px}
+  .msg-ai .body{white-space:pre-wrap;line-height:1.6;font-size:13.5px}
+  .reason{font-size:12px;color:var(--fg-muted);border-left:2px solid var(--border);padding-left:8px;margin:2px 0}
+  .reason summary{cursor:pointer}
+  /* tool call row */
+  .tool{display:flex;flex-direction:column;gap:6px;font-family:'JetBrains Mono',monospace;font-size:12px;background:var(--muted);border:1px solid var(--border);border-radius:10px;padding:8px 10px}
+  .tool-head{display:flex;align-items:center;gap:8px}
+  .tool-icon{width:22px;height:22px;border-radius:6px;display:grid;place-items:center;background:var(--surface2);border:1px solid var(--border)}
+  .tool-head .name{font-weight:600;color:var(--fg)}
+  .tool-head .args{color:var(--fg-muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1}
+  .status{font-size:11px;display:inline-flex;align-items:center;gap:4px;padding:1px 7px;border-radius:999px}
+  .status.ok{color:var(--accent);background:rgba(34,197,94,.12)}
+  .status.run{color:var(--warn);background:rgba(245,158,11,.12)}
+  .status.fail{color:var(--danger);background:rgba(239,68,68,.12)}
+  /* diff card (G2) */
+  .diff{display:flex;flex-direction:column;gap:0;border:1px solid var(--border);border-radius:8px;overflow:hidden;margin-top:2px}
+  .diff .df-head{display:flex;align-items:center;gap:8px;background:var(--surface2);padding:5px 10px;font-size:11px;color:var(--fg-muted)}
+  .df-head .file{color:var(--fg);margin-left:auto;font-family:'JetBrains Mono',monospace}
+  .df-lines{display:flex;flex-direction:column;font-size:11.5px;line-height:1.55}
+  .df-ln{display:flex;gap:8px;padding:0 10px}
+  .df-ln .n{width:24px;text-align:right;color:var(--fg-muted);opacity:.5;user-select:none}
+  .df-ln.add{background:rgba(34,197,94,.08)}
+  .df-ln.add .g::before{content:"+"}
+  .df-ln.del{background:rgba(239,68,68,.08)}
+  .df-ln.del .g::before{content:"−"}
+  .df-ln .g{width:12px;color:var(--fg-muted)}
+  .df-ln.add .g{color:var(--accent)}
+  .df-ln.del .g{color:var(--danger)}
+  .df-actions{display:flex;gap:8px;padding:7px 10px;background:var(--surface2);border-top:1px solid var(--border)}
+  .btn-sm{border:none;border-radius:7px;padding:4px 12px;font-size:12px;cursor:pointer;font-weight:600}
+  .btn-acc{background:var(--accent);color:#04160b}
+  .btn-rej{background:transparent;border:1px solid var(--border);color:var(--fg-muted)}
+  .btn-sm:hover{filter:brightness(1.08)}
+  /* subagent tree (G6) */
+  .subtree{display:flex;flex-wrap:wrap;gap:8px;margin-top:4px}
+  .subcard{display:flex;align-items:center;gap:8px;background:var(--surface);border:1px solid var(--info);border-radius:8px;padding:5px 8px;font-size:11px;color:var(--fg)}
+  .subcard .sdot{width:8px;height:8px;border-radius:50%;background:var(--info)}
+  .subcard .branch{color:var(--fg-muted);font-family:'JetBrains Mono',monospace}
+  .subcard .jump{color:var(--info);cursor:pointer}
+  .subcard .jump:hover{text-decoration:underline}
+  /* composer + approval */
+  .approval{display:flex;align-items:center;gap:10px;padding:8px 16px;border-top:1px solid var(--warn);background:rgba(245,158,11,.06);font-size:13px}
+  .approval .sqlabel{font-family:'JetBrains Mono',monospace;font-size:12px;color:var(--warn)}
+  .approval button{border:none;border-radius:8px;padding:5px 14px;font-weight:600;font-size:12.5px;cursor:pointer;color:#fff}
+  .approval .allow{background:var(--accent);color:#04160b}
+  .approval .deny{background:var(--danger)}
+  .approval .always{background:transparent;border:1px solid var(--border);color:var(--fg-muted)}
+  .composer{display:flex;flex-direction:column;gap:8px;padding:10px 14px;border-top:1px solid var(--border);background:var(--surface)}
+  .slash{display:flex;flex-direction:column;gap:4px;padding:6px;background:var(--muted);border:1px solid var(--border);border-radius:10px;font-size:12.5px}
+  .slash .row{display:flex;align-items:center;gap:8px;padding:5px 8px;border-radius:7px}
+  .slash .row.hl{background:var(--surface2)}
+  .slash .cmd{font-weight:600;color:var(--accent);font-family:'JetBrains Mono',monospace}
+  .slash .desc{color:var(--fg-muted)}
+  .composer-box{display:flex;align-items:flex-end;gap:8px}
+  .composer-box textarea{flex:1;resize:none;height:52px;background:var(--muted);color:var(--fg);border:1px solid var(--border);border-radius:10px;padding:10px;font:inherit;outline:none}
+  .composer-box textarea:focus{border-color:var(--accent)}
+  .chip-at{display:inline-flex;align-items:center;gap:6px;font-size:12px;background:var(--surface2);border:1px solid var(--info);border-radius:7px;padding:2px 7px;color:var(--info)}
+  .composer-btns{display:flex;gap:8px;align-items:center;padding-bottom:2px}
+  .btn{border:none;border-radius:9px;padding:8px 16px;font-weight:600;font-size:13px;cursor:pointer}
+  .btn-primary{background:var(--accent);color:#04160b}
+  .btn-ghost{background:transparent;border:1px solid var(--border);color:var(--fg-muted)}
+  .btn-stop{background:var(--danger)}
+  .btn:hover{filter:brightness(1.08)}
+  /* command palette (G5) overlay */
+  .overlay{position:fixed;inset:0;background:rgba(0,0,0,.55);display:none;place-items:start center;padding-top:12vh;z-index:20}
+  .palette{width:560px;background:var(--surface);border:1px solid var(--border);border-radius:14px;box-shadow:var(--shadow);overflow:hidden}
+  .palette input{width:100%;background:var(--muted);border:none;border-bottom:1px solid var(--border);color:var(--fg);padding:14px 16px;font:inherit;outline:none}
+  .palette .items{display:flex;flex-direction:column;padding:6px}
+  .palette .ci{display:flex;align-items:center;gap:12px;padding:9px 10px;border-radius:8px;font-size:13.5px;cursor:pointer}
+  .palette .ci.hl{background:var(--surface2)}
+  .palette .ci .ic{color:var(--fg-muted)}
+  .palette .ci .kbd{margin-left:auto;font-size:11px}
+  .palette .cat{font-size:10px;letter-spacing:.4px;color:var(--fg-muted);text-transform:uppercase;padding:8px 10px 4px}
+  /* legend */
+  .legend{position:fixed;left:12px;bottom:12px;z-index:9;display:flex;flex-direction:column;gap:6px;font-size:11px;color:var(--fg-muted);background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:10px 12px;max-width:260px}
+  .legend b{color:var(--fg)}
+  .legend .g{color:var(--accent)}
+  .legend .i{color:var(--info)}
+  .legend .w{color:var(--warn)}
+  .legend .d{color:var(--danger)}
+  .muted{color:var(--fg-muted);font-size:12px}
+  .divider{height:1px;background:var(--border);margin:4px 0}
+</style>
+</head>
+<body>
+<div class="app">
+
+  <!-- TOP BAR -->
+  <div class="topbar">
+    <div class="brand"><span class="logo">h</span> harness2</div>
+    <div class="conn"><span class="dot"></span> 已连接 · local/big-pickle</div>
+    <div class="spacer"></div>
+    <!-- 模型切换 (G8) -->
+    <div class="model" title="切换会话模型">big-pickle <span class="caret">⌄</span></div>
+    <!-- 上下文预算水条 (G4) -->
+    <div class="ctx" title="上下文用量 84K / 200K">
+      上下文
+      <span class="bar"><span class="fill"></span></span>
+      <span>42%</span>
+    </div>
+    <div class="kbd" onclick="openPalette()"><span>⌘</span><span>K</span></div>
+    <button class="iconbtn" title="设置"><svg class="i"><path d="M3 4h18M3 9h12M3 14h18M3 19h9"/></svg></button>
+  </div>
+
+  <div class="body">
+    <!-- SIDEBAR -->
+    <aside class="sidebar">
+      <div class="side-search"><svg class="i"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3-3"/></svg><input placeholder="搜索会话…"/></div>
+      <div class="side-meta"><span class="t">会话</span><button class="btn-new"><svg class="i" style="width:13px;height:13px"><path d="M12 5v14M5 12h14"/></svg>新建</button></div>
+      <ul class="sessions">
+        <li><button class="session active">
+          <span class="title"><span class="name">添加用户认证 + 重构查询</span><span class="tag sub">子代理×2</span></span>
+          <span class="meta">12:41 · 8层 · 43 条消息</span>
+        </button></li>
+        <li><button class="session">
+          <span class="title"><span class="name">检索今日3件时政要闻</span><span class="badge-unread">2</span></span>
+          <span class="meta">11:46 · 25层 · 3 条消息</span>
+        </button></li>
+        <li><button class="session">
+          <span class="title"><span class="name">迁移 docs 到 docsify</span><span class="tag bg">后台</span></span>
+          <span class="meta">10:02 · 后台运行中</span>
+        </button></li>
+        <li><button class="session">
+          <span class="title"><span class="name">修复桌面白屏</span></span>
+          <span class="meta">09:31 · 6层 · 21 条消息</span>
+        </button></li>
+      </ul>
+    </aside>
+
+    <!-- MAIN -->
+    <div class="main">
+      <div class="pane-toolbar">
+        <span class="muted">分屏</span>
+        <button class="pane-count active">2 栏</button>
+        <button class="pane-count">3 栏</button>
+        <span class="muted" style="margin-left:auto">拖拽会话到分栏 · @ 引用文件</span>
+      </div>
+      <div class="pane-row">
+
+        <!-- ---- PANE 1 : coding session ---- -->
+        <section class="pane">
+          <div class="pane-head">
+            <span class="plabel">添加用户认证 + 重构查询 <span class="psub">· big-pickle</span></span>
+            <div class="pane-actions">
+              <button class="iconbtn" title="轨迹"><svg class="i"><path d="M3 4h4M13 4h4M7 4c2 8 8 12 14 12"/> <path d="M3 12h4M3 16h4M3 20h4"/></svg></button>
+              <button class="iconbtn" title="展开"><svg class="i"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></svg></button>
+            </div>
+          </div>
+          <div class="chat">
+            <div class="messages">
+              <div class="msg-user"><span class="who">你</span>帮我给用户模块加 JWT 认证，并顺手把 fetch 查询改成 React Query</div>
+
+              <div class="msg-ai">
+                <span class="who">助理 · big-pickle</span>
+                <details class="reason"><summary>思考（已折叠）</summary>先看现有 auth 模块，再规划：1) 加 JWT 签发/校验；2) 用 React Query 替换 fetch；3) 补测试。我先读文件，同时派一个子代理去研究现有测试。</details>
+                <div class="body">我先读这两个文件，并派一个子代理整理测试现状。</div>
+              </div>
+
+              <!-- tool: read (multiple) -->
+              <div class="tool">
+                <div class="tool-head">
+                  <span class="tool-icon"><svg class="i"><path d="M4 5a2 2 0 012-2h4l2 3h6a2 2 0 012 2v9a2 2 0 01-2 2H6a2 2 0 01-2-2z"/></svg></span>
+                  <span class="name">read</span><span class="args">src/auth/*.ts, src/api/*.ts</span>
+                  <span class="status ok">ok · 1.2s</span>
+                </div>
+              </div>
+
+              <!-- tool: subagent_start (G6 tree) -->
+              <div class="tool">
+                <div class="tool-head">
+                  <span class="tool-icon"><svg class="i"><circle cx="12" cy="6" r="2"/><circle cx="6" cy="18" r="2"/><circle cx="18" cy="18" r="2"/><path d="M12 8v6M6 18h12"/></svg></span>
+                  <span class="name">subagent_start</span><span class="args">梳理现有测试并列出缺口</span>
+                  <span class="status ok">ok · 6.4s</span>
+                </div>
+                <div class="subtree">
+                  <div class="subcard"><span class="sdot"></span> 子会话 <span class="branch">#a3f2</span> · 测试盘点 <span class="jump">↗ 查看</span></div>
+                  <div class="subcard" style="border-color:var(--warn)"><span class="sdot" style="background:var(--warn)"></span> 子会话 <span class="branch">#b9c1</span> · 重构建议 <span class="jump">↗ 查看</span></div>
+                </div>
+              </div>
+
+              <!-- tool: edit with diff review (G2) -->
+              <div class="tool">
+                <div class="tool-head">
+                  <span class="tool-icon"><svg class="i"><path d="M12 20h9M16.5 3.5a2.1 2.1 0 013 3L7 19l-4 1 1-4z"/></svg></span>
+                  <span class="name">edit</span><span class="args">src/auth/jwt.ts</span>
+                  <span class="status ok">ok · 0.9s</span>
+                </div>
+                <div class="diff">
+                  <div class="df-head"><span>拟变更</span><span class="file">src/auth/jwt.ts</span></div>
+                  <div class="df-lines">
+                    <div class="df-ln del"><span class="n">14</span><span class="g"></span><span>export const verify = (t)&#123;…&#125;</span></div>
+                    <div class="df-ln add"><span class="n">14</span><span class="g"></span><span>export const verifyToken = (t, secret)&#123;</span></div>
+                    <div class="df-ln add"><span class="n">15</span><span class="g"></span><span>  return jwt.verify(t, secret, &#123;algorithms:['HS256']&#125;);</span></div>
+                    <div class="df-ln add"><span class="n">16</span><span class="g"></span><span>&#125;</span></div>
+                  </div>
+                  <div class="df-actions">
+                    <button class="btn-sm btn-acc">接受</button>
+                    <button class="btn-sm btn-rej">拒绝</button>
+                    <button class="btn-sm btn-rej">查看全量 diff</button>
+                  </div>
+                </div>
+              </div>
+
+              <!-- tool: bash test run -->
+              <div class="tool">
+                <div class="tool-head">
+                  <span class="tool-icon"><svg class="i"><path d="M4 6h16M4 12h16M4 18h16"/><circle cx="10" cy="6" r="1"/><circle cx="14" cy="12" r="1"/><circle cx="8" cy="18" r="1"/></svg></span>
+                  <span class="name">bash</span><span class="args">pnpm --filter @harness2/core test -- auth</span>
+                  <span class="status ok">ok · 12.3s</span>
+                </div>
+              </div>
+
+              <div class="tool">
+                <div class="tool-head">
+                  <span class="tool-icon"><svg class="i"><path d="M4 6h16M4 12h16M4 18h16"/></svg></span>
+                  <span class="name">bash</span><span class="args">git add -A && git commit -m "feat(auth) JWT"</span>
+                  <span class="status run">运行中…</span>
+                </div>
+              </div>
+
+              <div class="msg-ai">
+                <div class="body">认证模块已接入，查询已迁移到 React Query，测试通过。正在提交。</div>
+                <div class="turn-summary muted">[end_turn · steps 8 · toolCalls 6]</div>
+              </div>
+            </div>
+
+            <!-- approval bar -->
+            <div class="approval">
+              <span class="sqlabel">bash → git commit</span>
+              <span>允许执行 <b>bash</b>？</span>
+              <button class="allow">允许</button>
+              <button class="deny">拒绝</button>
+              <button class="always">本会话总是允许</button>
+            </div>
+
+            <!-- composer with slash + @file -->
+            <div class="composer">
+              <div class="slash">
+                <div class="row hl"><svg class="i"><path d="M12 5v14M5 12h14"/></svg><span class="cmd">/undo</span><span class="desc">撤销最近一次文件/对话改动</span></div>
+                <div class="row"><svg class="i"><path d="M8 3v8M4 15v6M16 3v6M20 12v9"/></svg><span class="cmd">/traj</span><span class="desc">查看本会话轨迹时间线</span></div>
+                <div class="row"><svg class="i"><path d="M4 7h16M4 12h16M4 17h16"/></svg><span class="cmd">/fork</span><span class="desc">从当前点派生新会话</span></div>
+              </div>
+              <div class="composer-box">
+                <textarea>继续，把重构的查询也迁移到查询层</textarea>
+                <div class="composer-btns">
+                  <button class="btn btn-ghost">↩</button>
+                  <button class="btn btn-ghost">⟲</button>
+                  <button class="btn btn-primary">发送</button>
+                </div>
+              </div>
+              <div class="chip-at">@ src/api/user.ts <span style="color:var(--fg-muted)">✕</span></div>
+            </div>
+          </div>
+        </section>
+
+        <!-- ---- PANE 2 : news session ---- -->
+        <section class="pane">
+          <div class="pane-head">
+            <span class="plabel">检索今日3件时政要闻 <span class="psub">· big-pickle</span></span>
+            <div class="pane-actions"><button class="iconbtn" title="轨迹"><svg class="i"><path d="M3 4h4M13 4h4M7 4c2 8 8 12 14 12"/></svg></button></div>
+          </div>
+          <div class="chat">
+            <div class="messages">
+              <div class="msg-user"><span class="who">你</span>帮我检索今日3件时政要闻</div>
+              <div class="msg-ai"><span class="who">助理</span><div class="body">我先打开权威新闻源。</div></div>
+              <div class="tool">
+                <div class="tool-head">
+                  <span class="tool-icon"><svg class="i"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3-3"/></svg></span>
+                  <span class="name">browser_navigate</span><span class="args">https://www.news.cn/politics/</span>
+                  <span class="status fail">fail · browser 未安装</span>
+                </div>
+                <div class="muted" style="font-size:11px">建议：运行 <code>harness2 browser install</code> 安装 chromium</div>
+              </div>
+              <div class="tool">
+                <div class="tool-head">
+                  <span class="tool-icon"><svg class="i"><path d="M4 7l5 5-5 5M11 17h9"/></svg></span>
+                  <span class="name">bash</span><span class="args">curl -sL news.cn/politics -o p.html</span>
+                  <span class="status ok">ok · 2.1s</span>
+                </div>
+              </div>
+              <div class="tool">
+                <div class="tool-head">
+                  <span class="tool-icon"><svg class="i"><path d="M4 6h16M4 12h16M4 18h16"/></svg></span>
+                  <span class="name">bash</span><span class="args">python parse_news.py p.html</span>
+                  <span class="status fail">exit 255 · 编码/命令问题</span>
+                </div>
+                <div class="muted" style="font-size:11px;color:var(--warn)">⚠ 系统提示：Windows 下 bash 走了 cmd，Unix 命令缺失；已记录为待处理 Bug</div>
+              </div>
+              <div class="msg-ai">
+                <div class="turn-summary muted">[max_steps · steps 25 · toolCalls 24]</div>
+                <div class="muted" style="color:var(--danger)">该 turn 因步数耗尽未回复（见设计说明 §3.1）</div>
+              </div>
+            </div>
+            <div class="composer">
+              <div class="composer-box">
+                <textarea>用它打开的页面继续</textarea>
+                <div class="composer-btns"><button class="btn btn-primary">发送</button><button class="btn btn-ghost">⟲</button></div>
+              </div>
+            </div>
+          </div>
+        </section>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- COMMAND PALETTE (G5) -->
+<div class="overlay" id="overlay" onclick="if(event.target===this)closePalette()">
+  <div class="palette">
+    <input id="pal" placeholder="输入命令或跳转到会话…" autofocus />
+    <div class="items">
+      <div class="cat">操作</div>
+      <div class="ci hl"><span class="ic"><svg class="i"><path d="M12 5v14M5 12h14"/></svg></span>新建会话<span class="kbd">⌘N</span></div>
+      <div class="ci"><span class="ic"><svg class="i"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3-3"/></svg></span>跳转到：添加用户认证 + 重构查询</div>
+      <div class="ci"><span class="ic"><svg class="i"><path d="M12 20h9"/></svg></span>切换模型：big-pickle → deepseek-v4-flash</div>
+      <div class="cat">会话命令</div>
+      <div class="ci"><span class="ic"><svg class="i"><path d="M8 3v8M16 3v6"/></svg></span>/traj 时间线</div>
+      <div class="ci"><span class="ic"><svg class="i"><path d="M4 7h16"/></svg></span>/undo 撤销最近改动</div>
+      <div class="ci"><span class="ic"><svg class="i"><path d="M8 3v8M4 15v6"/></svg></span>/fork 派生会话</div>
+    </div>
+  </div>
+</div>
+
+<!-- legend -->
+<div class="legend">
+  <b>重设计要点</b>
+  <span><span class="g">●</span> context 预算水条</span>
+  <span><span class="i">●</span> Diff 审查卡片（可接受/拒绝）</span>
+  <span><span class="g">●</span> 子代理树 + 深链</span>
+  <span><span class="i">●</span> 命令面板 ⌘K / 模型切换 / 文件引用</span>
+  <span><span class="w">●</span> 轨迹视图（见 agent-trace.html）</span>
+</div>
+
+<script>
+function openPalette(){document.getElementById('overlay').style.display='grid';document.getElementById('pal').focus();}
+function closePalette(){document.getElementById('overlay').style.display='none';}
+document.addEventListener('keydown',e=>{if((e.metaKey||e.ctrlKey)&&e.key.toLowerCase()==='k'){e.preventDefault();openPalette();}});
+document.addEventListener('keydown',e=>{if(e.key==='Escape')closePalette();});
+</script>
+</body>
+</html>
