@@ -176,7 +176,24 @@ V1 纯黑 OLED 太压抑 → **默认改浅色**（`#F1F5F9` 底 / 白卡 / 蓝 
 
 ---
 
-## 9. 桌宠提醒参考（仅记录，不分析）
+## 9. 权限模式对比（用户问：我们做权限限制了吗 + 调研本地 harness）
+
+**harness2 现状（已有审批）**：`packages/core/src/approval/policy.ts` —— `approval.mode` 三态：`default`（safe=放行/其余询问）、`acceptEdits`（write/edit 放行，其余同 default）、`bypass`（全放行）；**per-tool 规则**（allow/ask/deny）可覆盖任何 mode；safe 集合 = 只读工具（可注入覆盖）。CLI REPL 有 `允许执行 <tool>? [y/a/n]`，桌面端有审批条（允许/拒绝/本会话总是允许）。
+
+**本地 harness 权限模式（`~/` 下找到 .claude / .cursor / .config/opencode / .gemini / .windsurf；它们的配置多为默认值；opencode 已装包中二进制含权限模式字符串）**：
+
+| 工具 | 权限模式 | 说明 |
+|------|---------|------|
+| **opencode** | `ask / accept / bypass / plan` | `permission.mode` + per-tool；`plan` = 先出计划再确认执行 |
+| **Claude Code** | `default / acceptEdits / bypassPermissions / plan` | `permissions`(allow/deny/ask 列表) + 权限模式；`/plan` 计划模式 |
+| **Cursor** | allow/deny/ask + acceptEdits + Agent 计划模式 | settings 配置 |
+| **Gemini / Windsurf** | 类似 ask/accept/bypass | — |
+
+**结论 / 缺口**：harness2 的 `default/acceptEdits/bypass` 已覆盖「每次执行前询问」与「完全控制」；**缺一个独立的「计划模式（plan）」**——让 agent 先输出执行计划、等用户确认后再逐项执行（OpenCode/Claude Code 都有）。我们 V4 已做「计划划掉卡」，但**没有把执行门禁绑到计划确认上**。建议后续：新增 approval mode `plan`（agent 先给计划 → 用户确认/修改 → 再执行，执行中同步划掉计划卡）。
+
+---
+
+## 10. 桌宠提醒参考（仅记录，不分析）
 
 - 用户点名参考：**u-tools 喵提醒**（https://www.u-tools.cn/plugins/detail/喵提醒/ ）—— 仅作为「桌面宠物提醒（如喝水）」的功能参考记录在此，**不做分析/设计**，后续如需实现再单独评估。
 
