@@ -9,6 +9,9 @@ const pkgRoot = dirname(fileURLToPath(import.meta.url));
 export default defineConfig({
   root: resolve(pkgRoot, 'src/renderer'),
   plugins: [react()],
+  // 用相对路径：Electron 经 file:// 加载 index.html，绝对路径 /assets/... 会拼成 file:///assets/...
+  // 导致 js/css 全打不开而白屏（2026-09-07 桌面白屏根因；冒烟只看 did-finish-load 与 preload，查不到）
+  base: './',
   build: {
     outDir: resolve(pkgRoot, 'dist/renderer'),
     emptyOutDir: true,
