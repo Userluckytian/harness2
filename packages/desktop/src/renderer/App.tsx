@@ -12,6 +12,7 @@ import { AppStore, type AppState, type SessionMeta } from './store.js';
 import { createController } from './app-controller.js';
 import { filterSessionList } from '../shared/metadata.js';
 import { NOTIFY_WINDOW_TITLE, composeNotifyContent, shouldNotifyOnTurnEnd } from '../shared/notify.js';
+import { resolveFileRefs } from '../shared/file-ref.js';
 import { CommandPalette, JUMP_TO_SESSION_ID, type PaletteCommand, type PaletteSession } from './components/CommandPalette.js';
 
 /** 主题循环顺序（命令面板「切换主题」按序推进） */
@@ -430,7 +431,19 @@ export function ChatView({ streamId }: { streamId: string | null }) {
   const send = (): void => {
     if (draftText.length === 0 || stream.running) return;
     setDraft('');
-    void controller.sendMessage(streamId, draftText);
+    // B8 @file 引用：文本含 @ 且当前会话有 cwd → 经 IPC 解析并把代码块拼到消息最前。
+    // cwd 未知/为空时按无 @ 处理（不报错、不发 IPC）；UI 输入框内容保持不变（用户仍看到原文本）。
+    const session = streamId !== null ? state.sessions.find((s) => s.id === streamId) : undefined;
+    const cwd = session?.cwd;
+    if (cwd && cwd.length > 0 && draftText.includes('@')) {
+      void resolveFileRefs(draftText, cwd, (path, c) => window.harness2.readFileForRef(path, c)).then(
+        ({ finalText }) => {
+          void controller.sendMessage(streamId!, finalText);
+        },
+      );
+      return;
+    }
+    void controller.sendMessage(streamId!, draftText);
   };
 
   return (
