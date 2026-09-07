@@ -21,7 +21,7 @@
     "build": "tsc -p tsconfig.build.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run --passWithNoTests",
-    "bundle": "esbuild src/index.ts --bundle --platform=node --format=cjs --outfile=dist-bundle/harness2-cli.cjs --alias:jsonc-parser=jsonc-parser/lib/esm/main.js --external:playwright"
+    "bundle": "esbuild src/serve-entry.ts --bundle --platform=node --format=cjs --outfile=dist-bundle/harness2-cli.cjs --alias:jsonc-parser=jsonc-parser/lib/esm/main.js --external:playwright"
   },
   "dependencies": {
     "@harness2/core": "workspace:^",
