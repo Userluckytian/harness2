@@ -8,6 +8,7 @@ import type { ChatOptions } from '../legacy-chat.js';
 import { SummaryBar } from './App.js';
 import { Composer } from './Composer.js';
 import { Transcript } from './Transcript.js';
+import { OverlayHost } from './OverlayHost.js';
 import { useTurnStream, type TurnSnapshot } from './useTurnStream.js';
 
 /** 现代终端检测：Windows Terminal（WT_SESSION）或 VS Code 终端（TERM_PROGRAM=vscode） */
@@ -61,6 +62,8 @@ function InkShell({
   const { exit } = useApp();
   const [settled, setSettled] = useState<string[]>(bootLines);
   const [busy, setBusy] = useState(false);
+  // T5：单一浮层宿主。T6 起由 /mode 等命令填充 activeOverlay；当前仅占位互斥。
+  const [overlay, setOverlay] = useState<React.ReactNode>(null);
 
   const { live, handler, commit, reset } = useTurnStream((snapshot: TurnSnapshot) => {
     const text = snapshot.text.trim();
@@ -90,11 +93,14 @@ function InkShell({
     }
   }
 
+  const overlayOpen = overlay !== null;
+
   return (
     <Box flexDirection="column" flexGrow={1}>
       <SummaryBar runtime={runtime} />
+      {overlayOpen ? <OverlayHost>{overlay}</OverlayHost> : null}
       <Transcript settled={settled} liveText={live.text} liveTools={live.tools} busy={busy} />
-      <Composer busy={busy} onSend={(t) => void submit(t)} onExit={() => exit(0)} />
+      <Composer busy={busy} active={!overlayOpen} onSend={(t) => void submit(t)} onExit={() => exit(0)} />
     </Box>
   );
 }

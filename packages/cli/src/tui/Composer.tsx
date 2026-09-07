@@ -9,13 +9,15 @@ import { useInput, Box, Text } from 'ink';
 export interface ComposerProps {
   /** 双行视觉提示当前输入多行状态 */
   busy?: boolean;
+  /** 输入焦点（浮层打开时 false，卸载非激活键盘监听实现互斥） */
+  active?: boolean;
   /** Enter 发送（携带清空后的内容；由调用方决定语义） */
   onSend: (text: string) => void;
   /** Ctrl+C 两次 / 空 buffer 时 Ctrl+D 的上交退出钩子 */
   onExit: () => void;
 }
 
-export function Composer({ busy = false, onSend, onExit }: ComposerProps): React.ReactElement {
+export function Composer({ busy = false, active = true, onSend, onExit }: ComposerProps): React.ReactElement {
   const [value, setValue] = React.useState('');
   const [cursor, setCursor] = React.useState(0);
   const historyRef = React.useRef<string[]>([]);
@@ -25,8 +27,9 @@ export function Composer({ busy = false, onSend, onExit }: ComposerProps): React
   const insertAt = (text: string, pos: number, insert: string): string => text.slice(0, pos) + insert + text.slice(pos);
   const removeAt = (text: string, pos: number, count: number): string => text.slice(0, pos) + text.slice(pos + count);
 
-  useInput((input, key) => {
-    if (busy) return; // turn 期间不响应输入（发送后清空，缓冲由上层策略处理）
+  useInput(
+    (input, key) => {
+      if (busy) return; // turn 期间不响应输入（发送后清空，缓冲由上层策略处理）
 
     if (key.ctrl && input === 'c') {
       const now = Date.now();
@@ -127,7 +130,9 @@ export function Composer({ busy = false, onSend, onExit }: ComposerProps): React
         return next;
       });
     }
-  });
+  },
+  { isActive: active && !busy },
+);
 
   const visualValue = value.replace(/\n/g, '¶\n');
 
