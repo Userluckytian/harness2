@@ -156,7 +156,8 @@ describe('崩溃报告（doctor/crash.ts，无遥测）', () => {
       expect(existsSync(path!)).toBe(true);
       const content = readText(path!);
       expect(content).toContain(`version: ${CORE_VERSION}`);
-      expect(content).toContain('platform: win32');
+      // 平台/架构动态取，勿写死 win32（crash.ts 写的是 `${platform} ${arch}`，非 windows 会红）
+      expect(content).toContain(`platform: ${process.platform} ${process.arch}`);
       expect(content).toContain('session: 20260907-000000-000042');
       expect(content).toContain('request failed');
       expect(content).not.toContain('sk-abcdef123456');
