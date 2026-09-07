@@ -16,7 +16,7 @@ import { readPreferences, writePreferences } from './preferences-file.js';
 import { readMetadata, writeMetadataPatch } from './metadata-file.js';
 import { readAuthMasked, readSettingsConfig, updateAuth, updateSettingsConfig } from './config-file.js';
 import { getCrashReports, getDoctorReport } from './diagnostics.js';
-import { getContextUsageFallback } from './context-usage.js';
+import { getContextUsageForSession } from './context-usage.js';
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { execFile as execFileCb } from 'node:child_process';
 import { join, resolve, relative } from 'node:path';
@@ -380,7 +380,7 @@ export function createBridge(deps: BridgeDeps): Bridge {
       case 'getContextUsage': {
         const sid = typeof args['sessionId'] === 'string' ? args['sessionId'] : '';
         if (sid.length === 0) return { usage: null, label: '—' };
-        return getContextUsageFallback(sid, { home: deps.home });
+        return getContextUsageForSession(sid, { home: deps.home });
       }
       case 'getSnapshotForCall': {
         const sid = typeof args['sessionId'] === 'string' ? args['sessionId'] : '';

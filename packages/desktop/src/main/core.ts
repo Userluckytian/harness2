@@ -20,6 +20,7 @@ export const {
   redactSecrets,
   runDoctor,
   crashReportDir,
+  getContextUsage,
   DEFAULT_BROWSER_CONFIG,
   DEFAULT_MEMORY_CONFIG,
   DEFAULT_PLUGINS_CONFIG,

@@ -29,6 +29,7 @@ export * from './skills/store.js';
 export * from './skills/tool.js';
 export * from './agent/types.js';
 export * from './agent/compaction.js';
+export * from './agent/contextUsage.js';
 export * from './agent/loop.js';
 export * from './agent/subagent.js';
 export * from './server/sessions.js';
