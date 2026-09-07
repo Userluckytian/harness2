@@ -9,6 +9,7 @@ import { createInterface, type Interface } from 'node:readline';
 import { SnapshotStore } from '@harness2/core';
 import { StreamRenderer } from './render.js';
 import { handleCommand, parseCommand, type CommandContext } from './commands.js';
+import { MODE_ALIAS_LABEL, MODE_ALIAS_ORDER, MODE_ALIAS_TO_CORE, describeMode, parseModeAlias } from './mode-alias.js';
 import {
   ASK_CANCELLED,
   ChatSetupAbort,
@@ -148,12 +149,36 @@ export async function runLegacyReadlineChat(options: ChatOptions = {}): Promise<
     renderer.turnEnd(result);
   }
 
+  /** /mode：无参列出四选项与说明；带参直接应用别名（两路径共用 mode-alias 文案与映射） */
+  function handleModeCommand(rest: string): void {
+    if (rest.length === 0) {
+      renderer.line(`当前模式: ${describeMode(runtime.mode())}`);
+      renderer.line('可选模式:');
+      for (const alias of MODE_ALIAS_ORDER) {
+        renderer.line(`  ${alias}\t${MODE_ALIAS_LABEL[alias]}`);
+      }
+      renderer.line('用法: /mode <别名>（如 /mode plan）');
+      return;
+    }
+    const alias = parseModeAlias(rest);
+    if (alias === undefined) {
+      renderer.line(`error: 未知模式 ${rest}（可选: ${MODE_ALIAS_ORDER.join(', ')}）`);
+      return;
+    }
+    runtime.setMode(MODE_ALIAS_TO_CORE[alias]);
+    renderer.line(`已切换模式: ${alias}（${MODE_ALIAS_LABEL[alias]}）`);
+  }
+
   async function handleLine(line: string): Promise<void> {
     busy = true;
     try {
       const parsed = parseCommand(line);
       if (parsed !== null) {
-        handleCommand(parsed, ctx);
+        if (parsed.name === '/mode') {
+          handleModeCommand(parsed.rest);
+        } else {
+          handleCommand(parsed, ctx);
+        }
       } else if (line.trim().length === 0) {
         // 空行：无操作（Ctrl+D = EOF 由 readline close 处理）
       } else {

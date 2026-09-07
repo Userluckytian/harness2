@@ -34,6 +34,8 @@ import {
   SnapshotStore,
   ToolRegistry,
   SUBAGENT_TOOL_NAMES,
+  type ApprovalConfig,
+  type ConfiguredApprovalHandler,
   type ApprovalHandler,
   type ApprovalInput,
   type ChatProvider,
@@ -46,8 +48,10 @@ import {
   type SessionEventMap,
   type SessionEventType,
   type SessionWriter,
+  type ApprovalMode,
 } from '@harness2/core';
 import type { ChatOptions } from './legacy-chat.js';
+import { PLAN_MODE_SYSTEM_PREFIX, CORE_MODE_TO_ALIAS, type ModeAlias } from './mode-alias.js';
 
 /** --provider mock 的内置演示脚本：两轮工具调用（write 文件 + read 验证） */
 export const MOCK_DEMO_SCRIPT: MockScript = [
@@ -112,6 +116,8 @@ export interface ChatRuntime {
   tools: ToolRegistry;
   skillsStore: SkillStore;
   sessionManager: SessionManager;
+  /** 工作目录（config 加载根目录，cwd） */
+  root: string;
   getCurrent: () => ChatSession | null;
   switchSession: (id: string | null, opts?: { print?: (t: string) => void }) => void;
   fork: (at?: number, opts?: { print?: (t: string) => void }) => void;
@@ -122,6 +128,10 @@ export interface ChatRuntime {
   closeCurrent: () => void;
   /** 清空 /mode 从 plan 切换时的会话级 alwaysAllowed 缓存（供路径调用） */
   clearAlwaysAllowed: () => void;
+  /** 当前审批模式（仅当前进程/会话生效，不写回 config.json） */
+  mode: () => ApprovalMode;
+  /** 切换到指定审批模式；切出 plan 时顺带清空 alwaysAllowed；返回新 mode */
+  setMode: (mode: ApprovalMode) => ApprovalMode;
   noteCrash: (id?: string) => void;
   finish: (hooks: { closeReadline?: () => void; destroyInput?: () => void }) => Promise<void>;
 }
@@ -156,6 +166,20 @@ export async function setupChatSession(
   tools.register(createSkillTool(skillsStore));
 
   const alwaysAllowed = new Set<string>(); // 进程内会话级缓存，不落盘
+
+  // 运行时审批模式（仅当前进程/会话，不落盘）。policy 随 mode 重建；
+  // default 捕获时 approvalCfg 未定义（mock 分支无审批），mode 切换仅改状态。
+  let approvalCfg: ApprovalConfig | undefined;
+  let currentMode: ApprovalMode = 'default';
+  let policy: ConfiguredApprovalHandler | undefined;
+  const applyMode = (next: ApprovalMode): ApprovalMode => {
+    currentMode = next;
+    if (approvalCfg !== undefined) {
+      policy = createApprovalPolicy(approvalCfg, undefined, next);
+    }
+    if (next !== 'plan') alwaysAllowed.clear(); // 切出 plan 清会话级审批缓存
+    return next;
+  };
 
   if (options.provider === 'mock') {
     provider = new MockProvider(options.mockScript ?? MOCK_DEMO_SCRIPT);
@@ -217,7 +241,9 @@ export async function setupChatSession(
         tools.register(createMemoryTool(memoryStore));
       }
     }
-    const policy = createApprovalPolicy(loaded.config.approval);
+    approvalCfg = loaded.config.approval;
+    currentMode = approvalCfg?.mode ?? 'default';
+    policy = createApprovalPolicy(approvalCfg);
     if (loaded.config.plugins.enabled) {
       pluginBus = new PluginBus({ tools, config: loaded.config });
       const report = await pluginBus.loadAll(defaultPluginsRoot(options.home), loaded.config.plugins.allow);
@@ -233,7 +259,7 @@ export async function setupChatSession(
     approval = {
       decide(input: ApprovalInput) {
         if (alwaysAllowed.has(input.tool)) return 'allow';
-        return policy.decide(input);
+        return policy?.decide(input) ?? 'ask';
       },
       async onAsk(input: ApprovalInput) {
         const answer = await hooks.askApproval(
@@ -354,6 +380,10 @@ export async function setupChatSession(
     const session = current;
     const ac = new AbortController();
     currentAbort = ac;
+    // plan 模式：每条 user message 前追加系统前缀（文案两路径共用 mode-alias）
+    if (currentMode === 'plan' && text.trim().length > 0) {
+      text = `${PLAN_MODE_SYSTEM_PREFIX}\n${text}`;
+    }
     const snapshots = new SnapshotStore(session.dir);
     const turnWriter: SessionWriter | SessionAppender =
       pluginBus === undefined
@@ -462,6 +492,7 @@ export async function setupChatSession(
     tools,
     skillsStore,
     sessionManager: manager,
+    root,
     getCurrent: () => current,
     switchSession,
     fork,
@@ -469,6 +500,8 @@ export async function setupChatSession(
     abortTurn: () => currentAbort?.abort(),
     closeCurrent,
     clearAlwaysAllowed: () => alwaysAllowed.clear(),
+    mode: () => currentMode,
+    setMode: (next: ApprovalMode) => applyMode(next),
     noteCrash: (id?: string) => noteCrashSessionId(id),
     finish,
   };
