@@ -10,7 +10,7 @@
 
 | 项 | 状态 |
 |----|------|
-| 默认分支 | `main`（2026-09-07 应用户要求从 `master` 平移建立，内容完全一致；`master` 同步保留，两者随 push 同步更新。历史文档中提及 `master` 的均指同一条开发主线） |
+| 默认分支 | `main`（**唯一分支**，2026-09-07 确立：从 master 平移建立后，应用户要求删除了 master 与全部 feat/phase-* 分支——内容零丢失，12 阶段全部包含于 main。历史文档提及 master/feat/phase-* 的均指已并入 main 的历史） |
 | 开发分支 | `feat/phase-12-v1-closeout`（阶段 12 工作在此；此前阶段各在其分支） |
 | 阶段 1–12 | ✅ 全部完成（内核 → loop+工具 → Provider+配置 → CLI chat+undo/redo → 服务化+桌面 → 记忆+分叉 → 浏览器+压缩+cron[M2] → 插件+MCP+subagent → QQ/飞书网关 → 轨迹导出/回放+Skills[M3] → 稳定化+分发 → **v1.0.0 收口**：API 导出面快照（372 导出钉死）+ API-STABILITY semver 政策 + MIGRATION + docsify 文档站（Pages job）+ RELEASE-CHECKLIST + 版本物料 1.0.0）；各阶段独立审查/验收记录见 plans 与 issue-log |
 | 阶段 9 特别说明 | 独立审查曾判 **fail**（P0 网关聋哑 + 7 P1，审查引用 QQ 官方文档纠偏），修复落地（`fb837bb`）后全量绿；**复审待基础设施恢复后补做**（fail 阶段闭环条件，见 OPEN.md） |
