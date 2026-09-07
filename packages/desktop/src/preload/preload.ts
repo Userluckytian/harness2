@@ -42,6 +42,9 @@ const api: Harness2Api = {
   getContextUsage: (sessionId: string) => ipcRenderer.invoke(IPC_INVOKE, { cmd: 'getContextUsage', sessionId }),
   readFileForRef: (path: string, cwd: string) => ipcRenderer.invoke(IPC_INVOKE, { cmd: 'readFileForRef', path, cwd }),
   notify: (title: string, body: string, sessionId?: string) => ipcRenderer.invoke(IPC_INVOKE, { cmd: 'notify', title, body, sessionId }),
+  metadataGet: () => ipcRenderer.invoke(IPC_INVOKE, { cmd: 'metadata:get' }),
+  metadataSet: (id: string, patch: { title?: string; archived?: boolean; deleted?: boolean }) =>
+    ipcRenderer.invoke(IPC_INVOKE, { cmd: 'metadata:set', id, patch }),
   onEvent: (listener: (frame: WsFrame) => void) => {
     const wrapped = (_e: Electron.IpcRendererEvent, frame: WsFrame): void => listener(frame);
     ipcRenderer.on(IPC_EVENT, wrapped);

@@ -159,6 +159,17 @@ export interface ContextUsageShape {
   label: string;
 }
 
+/** 会话展示态覆层 entry（B3：desktop-metadata.json 单会话元数据；title/archived/deleted 均可选） */
+export interface SessionMetadataEntryShape {
+  title?: string;
+  archived?: boolean;
+  /** 删除隐藏标记（serve 无 delete API；仅覆层标记，事件数据仍在托管下） */
+  deleted?: boolean;
+}
+
+/** metadata:get / metadata:set 的响应（整体覆层映射 sessionId → entry） */
+export type SessionMetadataMapShape = Record<string, SessionMetadataEntryShape>;
+
 // —— IPC 调用命令 ——
 
 export type InvokeCommand =
@@ -186,7 +197,9 @@ export type InvokeCommand =
   | { cmd: 'gitBranch'; dir: string }
   | { cmd: 'getContextUsage'; sessionId: string }
   | { cmd: 'readFileForRef'; path: string; cwd: string }
-  | { cmd: 'notify'; title: string; body: string; sessionId?: string };
+  | { cmd: 'notify'; title: string; body: string; sessionId?: string }
+  | { cmd: 'metadata:get' }
+  | { cmd: 'metadata:set'; id: string; patch: { title?: string; archived?: boolean; deleted?: boolean } };
 
 /** window.harness2 的形状（preload contextBridge 暴露） */
 export interface Harness2Api {
@@ -228,6 +241,10 @@ export interface Harness2Api {
   readFileForRef(path: string, cwd: string): Promise<{ ok: boolean; content?: string; truncated?: boolean; error?: string }>;
   /** 任务完成系统通知（主进程 Electron Notification） */
   notify(title: string, body: string, sessionId?: string): Promise<void>;
+  /** 读会话展示态覆层整体（~/.harness2/desktop-metadata.json；损坏回退空映射） */
+  metadataGet(): Promise<SessionMetadataMapShape>;
+  /** 合并写回单个会话的展示态 patch（title/archived/deleted；返回更新后整体） */
+  metadataSet(id: string, patch: { title?: string; archived?: boolean; deleted?: boolean }): Promise<SessionMetadataMapShape>;
   /** 订阅服务事件帧（delta/event/turn-end/approval-request/error）；返回退订函数 */
   onEvent(listener: (frame: WsFrame) => void): () => void;
   /** 订阅连接状态变化；返回退订函数 */

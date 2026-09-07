@@ -73,6 +73,12 @@ function makeFakeApi() {
     getContextUsage: vi.fn(async () => ({ usage: 0.5, label: '50%' })),
     readFileForRef: vi.fn(async () => ({ ok: false, error: '未找到' })),
     notify: vi.fn(async () => undefined),
+    metadataGet: vi.fn(async () => ({})),
+    metadataSet: vi.fn(async (id: string, patch: { title?: string; archived?: boolean; deleted?: boolean }) => {
+      const meta: Record<string, { title?: string; archived?: boolean; deleted?: boolean }> = {};
+      meta[id] = patch;
+      return meta;
+    }),
     onEvent: vi.fn((cb: (f: WsFrame) => void) => {
       eventListeners.push(cb);
       return () => {};

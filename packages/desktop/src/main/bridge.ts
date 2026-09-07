@@ -12,6 +12,7 @@ import type {
 import { readLayout, writeLayout } from './layout-file.js';
 import type { ServeManager } from './serve-manager.js';
 import { readPreferences, writePreferences } from './preferences-file.js';
+import { readMetadata, writeMetadataPatch } from './metadata-file.js';
 import { readAuthMasked, readSettingsConfig, updateAuth, updateSettingsConfig } from './config-file.js';
 import { getCrashReports, getDoctorReport } from './diagnostics.js';
 import { getContextUsageFallback } from './context-usage.js';
@@ -261,6 +262,21 @@ export function createBridge(deps: BridgeDeps): Bridge {
         return readPreferences(deps.home);
       case 'settings:setPreferences':
         return writePreferences(deps.home, args['preferences']);
+      case 'metadata:get':
+        return readMetadata(deps.home);
+      case 'metadata:set': {
+        const id = typeof args['id'] === 'string' ? args['id'] : '';
+        if (id.length === 0) throw new InvokeError('metadata:set 缺少会话 id');
+        const rawPatch = args['patch'];
+        if (typeof rawPatch !== 'object' || rawPatch === null) throw new InvokeError('metadata:set patch 必须是对象');
+        const patch = rawPatch as { title?: string; archived?: boolean; deleted?: boolean; [k: string]: unknown };
+        // 只接受白名单字段（title 字符串 / archived|deleted 布尔），其余注入字段一律忽略（校验统一在 normalizeMetadata）
+        return writeMetadataPatch(deps.home, id, {
+          ...(typeof patch.title === 'string' ? { title: patch.title } : {}),
+          ...(typeof patch.archived === 'boolean' ? { archived: patch.archived } : {}),
+          ...(typeof patch.deleted === 'boolean' ? { deleted: patch.deleted } : {}),
+        });
+      }
       case 'settings:getDoctorReport':
         return getDoctorReport(deps.home, deps.root);
       case 'settings:getCrashReports':

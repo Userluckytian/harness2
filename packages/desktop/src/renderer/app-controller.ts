@@ -16,6 +16,14 @@ export interface Controller {
   respondApproval(requestId: string, decision: 'allow' | 'deny'): Promise<void>;
   /** 启动时读取持久化布局（~/.harness2/desktop-layout.json 经主进程） */
   initLayout(): Promise<void>;
+  /** 启动时读取会话展示态覆层（~/.harness2/desktop-metadata.json；重命名/归档的展示源） */
+  initMetadata(): Promise<void>;
+  /** 重命名会话（仅展示态 title 覆层，不碰事件日志）；返回新覆层整体 */
+  renameSession(id: string, title: string): Promise<void>;
+  /** 归档/恢复（archived 覆盖层软删除；数据仍在，可随时恢复） */
+  archiveSession(id: string, archived: boolean): Promise<void>;
+  /** 物理删除（serve 无 delete API；本轮 = 覆层 deleted 标记 + 从侧栏移除，不伪造删除） */
+  deleteSession(id: string): Promise<void>;
   /** 分栏数变化 / 会话分配：更新 store 并持久化；绑定的会话自动订阅+重放 */
   setPaneCount(count: number): Promise<void>;
   assignToPane(paneIndex: number, sessionId: string | null): Promise<void>;
@@ -128,6 +136,43 @@ export function createController(store: AppStore, api: Harness2Api): Controller 
       } catch {
         // 布局加载失败：保持默认
       }
+    },
+    async initMetadata(): Promise<void> {
+      try {
+        store.applyMetadata(await api.metadataGet());
+      } catch {
+        // 覆层加载失败：保持空（回退默认展示）
+      }
+    },
+    async renameSession(id: string, title: string): Promise<void> {
+      store.updateMetadata(id, { title });
+      try {
+        // 磁盘为唯一事实源：写回后整体回读校准（含 normalize 丢弃的空 title 等边界）
+        store.applyMetadata(await api.metadataSet(id, { title }));
+      } catch (e) {
+        store.applyFrame({ type: 'error', error: `重命名保存失败: ${(e as Error).message}` });
+      }
+    },
+    async archiveSession(id: string, archived: boolean): Promise<void> {
+      store.updateMetadata(id, { archived });
+      try {
+        store.applyMetadata(await api.metadataSet(id, { archived }));
+      } catch (e) {
+        store.applyFrame({ type: 'error', error: `归档保存失败: ${(e as Error).message}` });
+      }
+    },
+    async deleteSession(id: string): Promise<void> {
+      // 核实（2026-09-07）：serve API 无物理删除端点（core/src/server/http.ts route() 仅
+      // GET/POST /api/sessions、GET events、POST fork/undo/redo）→ 如实降级：覆层 deleted
+      // 标记（侧栏隐藏，数据保留）+ 从当前视图移除；**绝不伪造物理删除**（事件日志原样保留，
+      // 如需物理清理走 serve 数据目录/CLI）。
+      store.updateMetadata(id, { deleted: true });
+      try {
+        await api.metadataSet(id, { deleted: true });
+      } catch (e) {
+        store.applyFrame({ type: 'error', error: `删除标记保存失败: ${(e as Error).message}` });
+      }
+      store.removeSessionFromView(id);
     },
     async setPaneCount(count: number): Promise<void> {
       store.applyPaneCount(count);
