@@ -1,0 +1,473 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>harness2 · 交互原型 V2</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+<style>
+:root{
+  --bg:#F1F5F9; --surface:#FFFFFF; --surface2:#F8FAFC; --muted:#F1F5F9;
+  --border:#E2E8F0; --border2:#CBD5E1;
+  --fg:#0F172A; --fg-muted:#64748B; --fg-dim:#94A3B8;
+  --accent:#2563EB; --accent-soft:#DBEAFE;
+  --ok:#16A34A; --ok-soft:#DCFCE7; --warn:#D97706; --warn-soft:#FEF3C7; --danger:#DC2626; --danger-soft:#FEE2E2;
+  --code-bg:#0B1220; --code-fg:#E2E8F0; --code-line:#1E293B;
+  --shadow:0 1px 3px rgba(15,23,42,.06),0 8px 24px rgba(15,23,42,.08);
+  --radius:12px;
+  font-family:'Inter',system-ui,sans-serif;
+}
+[data-theme="dark"]{
+  --bg:#0B1220; --surface:#0F1B2E; --surface2:#132135; --muted:#152238;
+  --border:#23334d; --border2:#2f4368;
+  --fg:#E2E8F0; --fg-muted:#94A3B8; --fg-dim:#64748B;
+  --accent:#60A5FA; --accent-soft:#1e3a8a;
+  --ok:#34D399; --ok-soft:#0a3b2e; --warn:#FBBF24; --warn-soft:#3a2f10; --danger:#F87171; --danger-soft:#3a1414;
+  --code-bg:#0a0f1a; --code-fg:#cbd5e1; --code-line:#152238;
+  --shadow:0 1px 3px rgba(0,0,0,.4),0 8px 24px rgba(0,0,0,.4);
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font-size:14px}
+h1,h2,h3{margin:0}
+svg{display:block}.i{width:16px;height:16px;stroke:currentColor;stroke-width:1.7;fill:none;stroke-linecap:round;stroke-linejoin:round}
+.app{display:flex;flex-direction:column;height:100vh}
+/* topbar */
+.top{display:flex;align-items:center;gap:10px;height:52px;padding:0 16px;background:var(--surface);border-bottom:1px solid var(--border);position:relative;z-index:30}
+.logo{width:22px;height:22px;border-radius:7px;display:grid;place-items:center;background:linear-gradient(135deg,var(--accent),#1d4ed8);color:#fff;font-weight:800;font-size:13px}
+.brand{font-weight:700}
+.tabs{display:flex;gap:2px;margin-left:10px;background:var(--muted);border:1px solid var(--border);padding:3px;border-radius:10px}
+.tab{padding:5px 12px;border-radius:8px;font-size:13px;color:var(--fg-muted);cursor:pointer;border:none;background:transparent}
+.tab.active{background:var(--surface);color:var(--fg);box-shadow:var(--shadow);font-weight:600}
+.spacer{flex:1}
+.pill{display:inline-flex;align-items:center;gap:6px;padding:4px 10px;border-radius:999px;font-size:12px;background:var(--muted);border:1px solid var(--border);color:var(--fg-muted)}
+.pill .dot{width:8px;height:8px;border-radius:50%;background:var(--ok)}
+.iconbtn{display:grid;place-items:center;width:32px;height:32px;border-radius:9px;border:1px solid var(--border);background:var(--surface);color:var(--fg-muted);cursor:pointer}
+.iconbtn:hover{color:var(--fg)}
+.iconbtn.solid{background:var(--accent);border-color:var(--accent);color:#fff}
+/* body */
+.body{display:flex;flex:1;min-height:0}
+.view{display:none;flex:1;min-height:0}
+.view.active{display:flex}
+/* sidebar */
+.side{width:270px;display:flex;flex-direction:column;background:var(--surface);border-right:1px solid var(--border)}
+.shead{display:flex;align-items:center;justify-content:space-between;padding:12px 14px}
+.shead .t{font-size:11px;font-weight:700;letter-spacing:.5px;color:var(--fg-muted);text-transform:uppercase}
+.btn{padding:6px 12px;border-radius:9px;border:none;font-weight:600;font-size:13px;cursor:pointer;background:var(--accent);color:#fff}
+.btn.ghost{background:transparent;border:1px solid var(--border);color:var(--fg-muted)}
+.btn:hover{filter:brightness(1.05)}
+.search{margin:0 14px 8px;display:flex;align-items:center;gap:8px;padding:7px 10px;background:var(--muted);border:1px solid var(--border);border-radius:9px;color:var(--fg-muted)}
+.search input{flex:1;background:none;border:none;color:var(--fg);outline:none;font:inherit}
+.sessions{list-style:none;margin:0;padding:0 8px;overflow-y:auto;flex:1}
+.sess{position:relative;display:flex;flex-direction:column;gap:3px;width:100%;text-align:left;padding:9px 10px;border:1px solid transparent;border-radius:11px;background:transparent;cursor:pointer;color:inherit}
+.sess:hover{background:var(--muted)}
+.sess.active{background:var(--surface2);border-color:var(--border)}
+.sess .row{display:flex;align-items:center;gap:6px;font-size:13px}
+.sess .name{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.sess .meta{font-size:11px;color:var(--fg-muted)}
+.sess .ops{position:absolute;right:8px;top:8px;display:none;gap:4px}
+.sess:hover .ops{display:flex}
+.op{display:grid;place-items:center;width:24px;height:24px;border-radius:7px;border:1px solid var(--border);background:var(--surface);color:var(--fg-muted);cursor:pointer}
+.op:hover{color:var(--fg);border-color:var(--accent)}
+.op.danger:hover{color:var(--danger);border-color:var(--danger)}
+.badge{margin-left:auto;background:var(--accent);color:#fff;border-radius:999px;font-size:10px;padding:0 6px}
+.tag{font-size:10px;border-radius:5px;padding:0 4px;border:1px solid}
+.tag.bg{color:var(--warn);border-color:var(--warn)}
+.tag.sub{color:var(--accent);border-color:var(--accent)}
+/* main content */
+.main{flex:1;display:flex;flex-direction:column;min-width:0;background:var(--bg)}
+/* workspace view: chat */
+.ws{display:flex;flex-direction:column;flex:1;min-height:0}
+.chathead{display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:9px 16px;background:var(--surface);border-bottom:1px solid var(--border);font-size:12px}
+.ctx{display:inline-flex;align-items:center;gap:6px;color:var(--fg-muted)}
+.ctx .b{width:110px;height:6px;border-radius:999px;background:var(--muted);overflow:hidden;border:1px solid var(--border)}
+.ctx .f{height:100%;background:linear-gradient(90deg,var(--ok),var(--accent))}
+.ctx .f.warn{background:var(--warn)}
+.chatbody{display:flex;flex:1;min-height:0}
+.msgs{flex:1;overflow-y:auto;padding:16px 20px;display:flex;flex-direction:column;gap:12px}
+.mu{max-width:70%;align-self:flex-end;background:var(--accent-soft);border:1px solid var(--accent);border-radius:14px;padding:8px 12px}
+.mu .w{display:block;font-size:11px;opacity:.75;margin-bottom:2px}
+.ma{align-self:flex-start;display:flex;flex-direction:column;gap:8px;width:100%}
+.ma .w{font-size:11px;color:var(--fg-muted);display:flex;gap:6px;align-items:center}
+.ma .txt{white-space:pre-wrap;line-height:1.6;font-size:13.5px}
+.reason{font-size:12px;color:var(--fg-muted);border-left:2px solid var(--border2);padding-left:8px}
+.reason summary{cursor:pointer}
+.tool{display:flex;flex-direction:column;gap:6px;font-family:'JetBrains Mono',monospace;font-size:12px;background:var(--surface);border:1px solid var(--border);border-radius:11px;padding:8px 11px}
+.tool .th{display:flex;align-items:center;gap:8px}
+.tool .ic{width:22px;height:22px;border-radius:7px;display:grid;place-items:center;background:var(--muted);border:1px solid var(--border)}
+.tool .nm{font-weight:600}
+.tool .args{color:var(--fg-muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1}
+.st{font-size:11px;padding:1px 8px;border-radius:999px}
+.st.ok{color:var(--ok);background:var(--ok-soft)}
+.st.run{color:var(--warn);background:var(--warn-soft)}
+.st.fail{color:var(--danger);background:var(--danger-soft)}
+.codeview{margin-top:2px;border:1px solid var(--border);border-radius:9px;overflow:hidden}
+.codeview .ch{display:flex;align-items:center;gap:8px;background:var(--surface2);padding:5px 10px;font-size:11px;color:var(--fg-muted);border-bottom:1px solid var(--border)}
+.codeview .ch .file{color:var(--fg);margin-left:auto;font-family:'JetBrains Mono',monospace}
+.codeview pre{margin:0;background:var(--code-bg);color:var(--code-fg);font:12px/1.6 'JetBrains Mono',monospace;overflow:auto;max-height:150px;padding:8px 0}
+.codeline{display:flex;padding:0 12px}
+.codeline .n{width:28px;text-align:right;color:var(--fg-dim);opacity:.4;user-select:none}
+.codeline .t{white-space:pre;padding:0 10px}
+.codeline.hl{background:rgba(37,99,235,.22)}
+.codeline.hl .t{color:var(--accent);font-weight:600}
+.codeline.dim{color:var(--fg-dim);opacity:.55}
+.codeline.dim .t{color:var(--fg-dim)}
+.approval{display:flex;align-items:center;gap:10px;padding:8px 16px;border-top:1px solid var(--warn);background:var(--warn-soft);font-size:13px}
+.approval .lbl{font-family:'JetBrains Mono',monospace;font-size:12px;color:var(--warn)}
+.approval button{border:none;border-radius:8px;padding:5px 13px;font-weight:600;font-size:12px;cursor:pointer}
+.approval .a{background:var(--ok);color:#fff}.approval .d{background:var(--danger);color:#fff}.approval .n{background:transparent;border:1px solid var(--border);color:var(--fg-muted)}
+.compose{display:flex;flex-direction:column;gap:8px;padding:10px 16px;background:var(--surface);border-top:1px solid var(--border)}
+.slash{display:flex;flex-direction:column;gap:2px;padding:5px;background:var(--muted);border:1px solid var(--border);border-radius:10px;font-size:12.5px}
+.slash .r{display:flex;gap:8px;align-items:center;padding:5px 8px;border-radius:7px}
+.slash .r.hl{background:var(--surface2)}
+.slash .c{font-weight:600;color:var(--accent);font-family:'JetBrains Mono',monospace}
+.slash .ds{color:var(--fg-muted)}
+.cbox{display:flex;align-items:flex-end;gap:8px}
+.cbox textarea{flex:1;resize:none;height:48px;background:var(--muted);color:var(--fg);border:1px solid var(--border);border-radius:10px;padding:10px;font:inherit;outline:none}
+.cbox textarea:focus{border-color:var(--accent)}
+.cbtns{display:flex;gap:6px;align-items:center;padding-bottom:2px}
+.cbtns .iconbtn{width:30px;height:34px}
+/* codemap view */
+.cm{display:flex;flex-direction:column;flex:1;min-height:0;padding:14px 18px;gap:12px}
+.cm-bar{display:flex;align-items:center;gap:10px;background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:10px 14px}
+.cm-bar .q{flex:1;font-size:13px}
+.cm-bar .sim{display:inline-flex;align-items:center;gap:6px;font-size:12px;color:var(--fg-muted)}
+.simweb{border:1px solid var(--border);border-radius:12px;background:var(--surface);overflow:hidden;box-shadow:var(--shadow)}
+.simweb .bar{display:flex;align-items:center;gap:8px;padding:8px 12px;background:var(--surface2);border-bottom:1px solid var(--border);font-size:12px;color:var(--fg-muted)}
+.simweb .dots{display:flex;gap:5px}
+.simweb .dots i{width:10px;height:10px;border-radius:50%;background:var(--border2)}
+.simweb .url{flex:1;text-align:center;font-size:12px}
+.simbody{padding:26px;display:flex;flex-direction:column;gap:14px;align-items:center;min-height:150px}
+.simbtn{background:linear-gradient(135deg,var(--accent),#1d4ed8);color:#fff;border:none;border-radius:10px;padding:11px 26px;font-size:14px;font-weight:600;cursor:pointer}
+.simbtn.sel{outline:3px solid var(--ok);outline-offset:2px;background:linear-gradient(135deg,#059669,#047857)}
+.simtitle{font-size:13px;color:var(--fg-muted)}
+/* flow graph */
+.flow-wrap{position:relative;background:var(--surface);border:1px solid var(--border);border-radius:14px;overflow:hidden;min-height:190px}
+.flow-canvas{position:relative;width:1000px;height:230px;transition:transform .15s ease;cursor:grab}
+.flow-canvas.drag{cursor:grabbing}
+.flow-nodes{position:absolute;inset:0}
+.fnode{position:absolute;display:flex;flex-direction:column;gap:3px;width:170px;background:var(--surface);border:1px solid var(--border2);border-radius:11px;padding:8px 10px;box-shadow:var(--shadow);cursor:pointer}
+.fnode:hover{border-color:var(--accent)}
+.fnode.sel{border-color:var(--accent);background:var(--accent-soft)}
+.fnode .fh{display:flex;align-items:center;gap:6px;font-size:12px;font-weight:600;color:var(--accent)}
+.fnode .fh .tagm{font-size:10px;color:var(--fg-muted);font-weight:500}
+.fnode .fd{font-size:11px;color:var(--fg-muted);line-height:1.4}
+.fedge{position:absolute;height:2px;background:var(--border2);transform-origin:left center}
+.fedge.arrow::after{content:"";position:absolute;right:-4px;top:-4px;width:0;height:0;border:5px solid transparent;border-left-color:var(--border2)}
+.fhint{position:absolute;right:10px;top:8px;font-size:11px;color:var(--fg-dim)}
+/* code+flow bottom */
+.flow-code{display:flex;flex-direction:column;background:var(--code-bg);border:1px solid var(--border);border-radius:14px;overflow:hidden;flex:1}
+.flow-code .ch{display:flex;align-items:center;gap:8px;padding:7px 13px;background:rgba(255,255,255,.04);border-bottom:1px solid rgba(255,255,255,.08);font-size:12px;color:var(--fg-dim)}
+.flow-code .ch .f{margin-left:auto;font-family:'JetBrains Mono',monospace}
+.flow-code pre{margin:0;overflow:auto;flex:1;padding:0;font:12.5px/1.7 'JetBrains Mono',monospace;color:var(--code-fg)}
+.flow-code .cl{display:flex;padding:0 14px;cursor:pointer}
+.flow-code .cl .n{width:30px;text-align:right;color:var(--fg-dim);opacity:.35;user-select:none}
+.flow-code .cl .t{white-space:pre;padding:0 12px;flex:1}
+.flow-code .cl.hot{background:rgba(37,99,235,.28)}
+.flow-code .cl.hot .t{color:#93C5FD;font-weight:600}
+.flow-code .cl.dimch{color:var(--fg-dim);opacity:.5}
+.flow-code .cl.dimch .t{color:var(--fg-dim)}
+.flow-code .cl[contenteditable]:focus{outline:1px solid var(--accent)}
+/* tasks view */
+.tasks{display:flex;gap:16px;padding:16px 18px;flex:1;min-height:0}
+.taskcol{flex:1;display:flex;flex-direction:column;gap:10px;background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:14px}
+.taskcol h3{font-size:13px;display:flex;align-items:center;gap:8px}
+.cronlist{display:flex;flex-direction:column;gap:6px}
+.cron{display:flex;align-items:center;gap:8px;background:var(--surface2);border:1px solid var(--border);border-radius:10px;padding:8px 10px;font-size:13px}
+.cron .desc{flex:1}
+.cron .at{font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--fg-muted)}
+.cron .sw{width:34px;height:20px;border-radius:999px;background:var(--border2);position:relative;cursor:pointer}
+.cron .sw.on{background:var(--ok)}
+.cron .sw::after{content:"";position:absolute;top:2px;left:2px;width:16px;height:16px;border-radius:50%;background:#fff;transition:.2s}
+.cron .sw.on::after{left:16px}
+.taskadd{display:flex;gap:6px;margin-top:4px}
+.taskadd input{flex:1;background:var(--muted);border:1px solid var(--border);border-radius:8px;padding:7px 10px;color:var(--fg);font:inherit;outline:none}
+.todo{display:flex;flex-direction:column;gap:6px}
+.todoitem{display:flex;align-items:center;gap:8px;background:var(--surface2);border:1px solid var(--border);border-radius:9px;padding:7px 10px;font-size:13px}
+.todoitem input{width:15px;height:15px;accent-color:var(--ok)}
+.todoitem.done .tx{text-decoration:line-through;color:var(--fg-muted)}
+.todoitem .pri{margin-left:auto;font-size:10px;color:var(--fg-muted)}
+/* pet */
+.pet{position:fixed;right:22px;bottom:22px;z-index:50;display:flex;flex-direction:column;align-items:center;gap:6px}
+.pet .bubble{background:var(--surface);border:1px solid var(--border);border-radius:14px 14px 4px 14px;box-shadow:var(--shadow);padding:8px 12px;font-size:12px;max-width:180px}
+.pet .peticon{width:58px;height:58px;border-radius:50%;background:linear-gradient(135deg,#fbbf24,#f59e0b);display:grid;place-items:center;box-shadow:var(--shadow);cursor:pointer;font-size:24px}
+.pet .peticon.fly{transform:translateY(-6px)}
+/* settings view */
+.settings{flex:1;overflow-y:auto;padding:18px 20px;display:flex;flex-direction:column;gap:14px;max-width:720px}
+.card{background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:16px}
+.card h3{font-size:13px;margin-bottom:10px;display:flex;align-items:center;gap:8px}
+.card .row{display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--border)}
+.card .row:last-child{border-bottom:none}
+.card .row .k{width:130px;font-size:13px;color:var(--fg-muted)}
+.card .row .v{flex:1;font-family:'JetBrains Mono',monospace;font-size:12.5px;background:var(--muted);border:1px solid var(--border);border-radius:8px;padding:6px 10px}
+.card .gate{display:flex;align-items:center;gap:10px;padding:10px;background:var(--surface2);border:1px solid var(--border);border-radius:10px;margin-bottom:8px}
+.card .gate .gicon{width:34px;height:34px;border-radius:9px;display:grid;place-items:center;color:#fff;font-weight:700}
+.card .gate .gname{font-weight:600;font-size:13px}
+.card .gate .gmeta{font-size:11px;color:var(--fg-muted)}
+.card .gate .gstate{margin-left:auto;font-size:11px}
+.legend{margin-top:16px;color:var(--fg-muted);font-size:11.5px;display:flex;gap:10px;flex-wrap:wrap}
+.legend b{color:var(--fg)}
+@media (max-width:900px){ .side{display:none} }
+</style>
+</head>
+<body>
+<div class="app" data-theme="light">
+  <!-- TOPBAR -->
+  <div class="top">
+    <div class="logo">h</div><span class="brand">harness2</span>
+    <div class="tabs">
+      <button class="tab active" data-view="ws">工作台</button>
+      <button class="tab" data-view="code">代码·调用链</button>
+      <button class="tab" data-view="tasks">定时·桌宠</button>
+      <button class="tab" data-view="settings">设置</button>
+    </div>
+    <div class="spacer"></div>
+    <span class="pill"><span class="dot"></span> 已连接 · local/big-pickle</span>
+    <button class="iconbtn" title="主题切换" onclick="toggleTheme()">◐</button>
+  </div>
+
+  <div class="body">
+    <!-- ============ 工作台 ============ -->
+    <div class="view active" id="view-ws">
+      <aside class="side">
+        <div class="shead"><span class="t">会话</span><button class="btn">＋ 新建</button></div>
+        <div class="search"><svg class="i"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3-3"/></svg><input placeholder="搜索会话…"/></div>
+        <ul class="sessions">
+          <li>
+            <div class="sess active">
+              <div class="ops"><button class="op" title="重命名">✎</button><button class="op" title="归档">🗄</button><button class="op danger" title="删除">✕</button></div>
+              <div class="row"><span class="name">添加用户认证 + 重构查询</span><span class="tag sub">子代理×2</span></div>
+              <div class="meta">12:41 · 8层 · 43条</div>
+            </div>
+          </li>
+          <li>
+            <div class="sess">
+              <div class="ops"><button class="op">✎</button><button class="op">🗄</button><button class="op danger">✕</button></div>
+              <div class="row"><span class="name">检索今日3件时政要闻</span><span class="badge">2</span></div>
+              <div class="meta">11:46 · 25层 · 3条</div>
+            </div>
+          </li>
+          <li><div class="sess"><div class="row"><span class="name">迁移 docs 到 docsify</span><span class="tag bg">后台</span></div><div class="meta">10:02 · 后台运行中</div></div></li>
+          <li><div class="sess"><div class="row"><span class="name">修复桌面白屏</span></div><div class="meta">09:31 · 6层 · 21条</div></div></li>
+        </ul>
+      </aside>
+
+      <div class="main">
+        <div class="ws">
+          <!-- rich chat header (点2: cwd/branch/model/context/todo) -->
+          <div class="chathead">
+            <span class="pill">📁 <b>packages/desktop</b></span>
+            <span class="pill">〈 main</span>
+            <span class="pill">🤖 big-pickle</span>
+            <span class="ctx">上下文 <span class="b"><span class="f" style="width:42%"></span></span> 42%</span>
+            <span class="pill" title="Todo/计划">☑ <b>Todo</b> 3</span>
+            <span class="pill" title="定时任务">⏰ <b>2</b></span>
+            <div class="spacer"></div>
+            <button class="iconbtn" title="命令面板 ⌘K">⌘K</button>
+          </div>
+          <div class="chatbody">
+            <div class="msgs">
+              <div class="mu"><span class="w">你</span>帮我给用户模块加 JWT 认证，并顺手把 fetch 查询改成 React Query</div>
+              <div class="ma">
+                <span class="w">助理 · big-pickle</span>
+                <details class="reason"><summary>思考</summary>先读 auth 模块 => 规划：(1) JWT 签发/校验 (2) React Query 替换 (3) 补测试。派个子代理看测试。</details>
+                <div class="txt">我先读文件，并派子代理整理测试现状。</div>
+              </div>
+              <div class="tool"><div class="th"><span class="ic"><svg class="i"><path d="M4 5a2 2 0 012-2h4l2 3h6a2 2 0 012 2v9a2 2 0 01-2 2H6a2 2 0 01-2-2z"/></svg></span><span class="nm">read</span><span class="args">src/auth/*.ts, src/api/*.ts</span><span class="st ok">ok</span></div></div>
+              <!-- subagent + code viewer (点3) -->
+              <div class="tool"><div class="th"><span class="ic"><svg class="i"><circle cx="6" cy="6" r="2"/><circle cx="18" cy="18" r="2"/><path d="M6 8v8M18 16V8M6 16h12"/></svg></span><span class="nm">subagent_start</span><span class="args">梳理测试缺口</span><span class="st ok">ok</span></div>
+                <div class="st" style="color:var(--accent)">子会话 #a3f2 · 测试盘点 <b>↗</b></div>
+              </div>
+              <!-- edit with code viewer -->
+              <div class="tool"><div class="th"><span class="ic"><svg class="i"><path d="M12 20h9M16.5 3.5a2.1 2.1 0 013 3L7 19l-4 1 1-4z"/></svg></span><span class="nm">edit</span><span class="args">src/auth/jwt.ts</span><span class="st ok">ok</span></div>
+                <div class="codeview"><div class="ch">文件查看 <span class="file">src/auth/jwt.ts</span></div>
+                  <pre><div class="codeline dim"><span class="n">12</span><span class="t">import jwt from 'jsonwebtoken';</span></div>
+<div class="codeline"><span class="n">13</span><span class="t">export const sign = (u) =&gt; jwt.sign(u, SECRET);</span></div>
+<div class="codeline hl"><span class="n">14</span><span class="t">export const verifyToken = (t, s) =&gt;</span></div>
+<div class="codeline hl"><span class="n">15</span><span class="t">  jwt.verify(t, s, {algorithms:['HS256']});</span></div>
+<div class="codeline dim"><span class="n">16</span><span class="t">export default { sign, verifyToken };</span></div></pre>
+                </div>
+              </div>
+              <div class="tool"><div class="th"><span class="ic"><svg class="i"><path d="M4 6h16M4 12h16M4 18h16"/></svg></span><span class="nm">bash</span><span class="args">pnpm --filter @harness2/core test -- auth</span><span class="st ok">ok · 12s</span></div></div>
+            </div>
+            <div class="approval"><span class="lbl">bash → git commit</span><span>允许执行？</span><button class="a">允许</button><button class="d">拒绝</button><button class="n">本会话总是允许</button></div>
+            <div class="compose">
+              <div class="slash">
+                <div class="r hl"><span class="c">/undo</span><span class="ds">撤销最近文件/对话改动</span></div>
+                <div class="r"><span class="c">/traj</span><span class="ds">会话轨迹时间线</span></div>
+                <div class="r"><span class="c">/fork</span><span class="ds">派生新会话</span></div>
+              </div>
+              <div class="cbox"><textarea>继续，把查询也迁移到查询层</textarea><div class="cbtns"><button class="iconbtn" title="撤销">↩</button><button class="iconbtn" title="重做">⟲</button><button class="iconbtn solid" title="发送">↑</button></div></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ============ 代码·调用链 (codemap) ============ -->
+    <div class="view" id="view-code">
+      <div class="cm">
+        <div class="cm-bar">
+          <span style="font-family:'JetBrains Mono',monospace">模拟页面</span>
+          <div class="spacer"></div>
+          <span class="sim">选中「登录」按钮 → 提问「梳理这个按钮的调用逻辑」，得到上图下码</span>
+        </div>
+        <div class="simweb">
+          <div class="bar"><span class="dots"><i></i><i></i><i></i></span><span class="url">http://localhost:5173/login</span></div>
+          <div class="simbody">
+            <div class="simtitle">登录页</div>
+            <button class="simbtn" id="loginBtn" onclick="selectLogin()">登 录</button>
+            <div class="simtitle" style="font-size:11px;color:var(--accent)" id="selHint">（点击左侧「登录」按钮，或点这里的按钮）</div>
+          </div>
+        </div>
+
+        <!-- 上图：调用链流图 -->
+        <div class="flow-wrap" id="flowWrap">
+          <div class="flow-canvas" id="flowCanvas">
+            <div class="flow-hint" style="position:absolute;right:12px;top:10px;font-size:11px;color:var(--fg-dim)">可拖动 · 点击卡片定位下方代码</div>
+            <div id="flowNodes"></div>
+          </div>
+        </div>
+
+        <!-- 下码：调用链代码，高亮 + 可编辑 -->
+        <div class="flow-code">
+          <div class="ch">调用链代码（非调用链已变暗；仍可直接编辑全文件）<span class="f">src/views/Login/index.tsx</span></div>
+          <pre id="codePane"></pre>
+        </div>
+      </div>
+    </div>
+
+    <!-- ============ 定时·桌宠 ============ -->
+    <div class="view" id="view-tasks">
+      <div class="tasks">
+        <div class="taskcol">
+          <h3>⏰ 定时任务（cron）</h3>
+          <div class="cronlist">
+            <div class="cron"><div class="desc">每天早上帮我汇总前一天新闻</div><span class="at">daily 09:00</span><span class="sw on"></span></div>
+            <div class="cron"><div class="desc">每周一跑性能基线 <code>pnpm bench</code></div><span class="at">weekly mon 10:00</span><span class="sw on"></span></div>
+            <div class="cron"><div class="desc">提醒我喝水（桌宠）</div><span class="at">every 90m</span><span class="sw on"></span></div>
+          </div>
+          <div class="taskadd"><input value="新增任务，如：每 2 小时备份会话 "/><button class="btn">添加</button></div>
+          <div class="legend"><b>说明：</b>harness2 已有 cron（CLI），此面板为桌面端可视化接入；桌宠提醒为后续功能占位。</div>
+        </div>
+        <div class="taskcol">
+          <h3>☑ Todo / 计划</h3>
+          <div class="todo">
+            <div class="todoitem"><input type="checkbox" checked/><span class="tx">加 JWT 签发/校验</span><span class="pri">P0</span></div>
+            <div class="todoitem"><input type="checkbox" checked/><span class="tx">fetch → React Query</span><span class="pri">P1</span></div>
+            <div class="todoitem"><input type="checkbox"/><span class="tx">补 auth 单测</span><span class="pri">P1</span></div>
+            <div class="todoitem"><input type="checkbox"/><span class="tx">重命名会话标题</span><span class="pri">P2</span></div>
+          </div>
+          <div class="taskadd"><input placeholder="添加 todo…"/><button class="btn">＋</button></div>
+        </div>
+      </div>
+      <div class="pet"><div class="bubble" id="petBubble" style="display:none">该喝水啦 💧 起来活动下~</div><div class="peticon" onclick="togglePet()">🐾</div></div>
+    </div>
+
+    <!-- ============ 设置 ============ -->
+    <div class="view" id="view-settings">
+      <div class="settings">
+        <div class="card">
+          <h3>🔌 IM 网关（点 8：QQ / 飞书在哪配）</h3>
+          <div class="gate"><div class="gicon" style="background:#12b7f5">Q</div><div class="gname">QQ</div><div class="gmeta">官方 Bot API v2 · appId 配置在 config.json.gateways.qq · appSecret 在 auth.json.gateways.qq</div><div class="gstate" style="color:#16a34a">● 已配置</div></div>
+          <div class="gate"><div class="gicon" style="background:#3370ff">✈</div><div class="gname">飞书</div><div class="gmeta">webhook 挑战 + im/v1 出站 · config.json.gateways.feishu · auth.json.gateways.feishu</div><div class="gstate" style="color:#d97706">○ 未启用</div></div>
+          <div class="legend"><b>现状：</b>仅配置文件 + CLI（<code>harness2 gateway</code>）配置，无 GUI —— 本面板为可视化配置入口占位。</div>
+        </div>
+        <div class="card">
+          <h3>🤖 模型与角色</h3>
+          <div class="row"><span class="k">主模型</span><span class="v">big-pickle（local）</span></div>
+          <div class="row"><span class="k">小模型（摘要）</span><span class="v">deepseek-v4-flash</span></div>
+          <div class="row"><span class="k">子代理模型</span><span class="v">muse-spark-1.3</span></div>
+        </div>
+        <div class="card">
+          <h3>🎨 主题</h3>
+          <div class="row"><span class="k">当前</span><span class="v">浅色（默认，不压抑）</span><span class="btn ghost" onclick="toggleTheme()">切换暗色</span></div>
+          <div class="legend"><b>点 6：</b>默认浅色，规避纯黑 OLED 的压抑感；暗色为可选。</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- cook: 桌宠浮动 -->
+  <div class="pet" id="petFloat" style="display:none"><div class="peticon">🐾</div></div>
+</div>
+
+<script>
+/* ---- tabs ---- */
+document.querySelectorAll('.tab').forEach(t=>t.onclick=()=>{
+  document.querySelectorAll('.tab').forEach(x=>x.classList.remove('active'));
+  document.querySelectorAll('.view').forEach(x=>x.classList.remove('active'));
+  t.classList.add('active');
+  document.getElementById('view-'+t.dataset.view).classList.add('active');
+});
+/* ---- theme ---- */
+function toggleTheme(){const a=document.querySelector('.app');a.dataset.theme=a.dataset.theme==='dark'?'light':'dark';}
+/* ---- codemap: flow nodes + code sync ---- */
+const NODES=[
+  {id:1,x:10,y:20,icon:'▢',tag:'按钮',title:'登录按钮 登录',desc:'用户在登录页点击「登录」'},
+  {id:2,x:210,y:20,icon:'ƒ',tag:'onClick',title:'onClick 处理',desc:'调用 handleLogin()，读取表单'},
+  {id:3,x:410,y:20,icon:'ƒ',tag:'hook',title:'useLogin() 校验',desc:'本地校验 + 组装 payload'},
+  {id:4,x:610,y:20,icon:'↗',tag:'api',title:'authApi.login()',desc:'POST /api/auth/login'},
+  {id:5,x:810,y:20,icon:'☁',tag:'backend',title:'POST /auth/login',desc:'校验凭据 → 返回 JWT'},
+];
+const CODE=[
+  [12,'import { useLogin } from "./useLogin";'],
+  [14,'export default function Login() {'],
+  [15,'  const { handleLogin, loading } = useLogin();'],
+  [16,'  return <button onClick={handleLogin}>登录</button>;'],
+  [17,'}'],
+  ['', '— src/hooks/useLogin.ts —'],
+  [3,'export const useLogin = () => {'],
+  [4,'  const { mutate, isLoading } = useQuery(["login"], async (p) => {'],
+  [5,'    const r = await authApi.login(p);'],
+  [6,'    return r.data;'],
+  [7,'  });'],
+  [8,'  return { handleLogin: mutate, loading: isLoading };'],
+  [9,'};'],
+  ['', '— src/api/auth.ts —'],
+  [2,'export const login = async (payload) =>'],
+  [3,'  api.post("/auth/login", payload);'],
+];
+const HOT=[ [14,15,16],[4,5,6],[2,3] ]; // node->code line groups (1-indexed per block)
+function buildFlow(){
+  const box=document.getElementById('flowNodes');box.innerHTML='';
+  NODES.forEach(n=>{
+    const d=document.createElement('div');d.className='fnode';d.style.left=n.x+'px';d.style.top=n.y+'px';
+    d.innerHTML=`<div class="fh">${n.icon} ${n.title.substr(0,8)} <span class="tagm">${n.tag}</span></div><div class="fd">${n.desc}</div>`;
+    d.onclick=()=>{document.querySelectorAll('.fnode').forEach(x=>x.classList.remove('sel'));d.classList.add('sel');syncCode(n.id);};
+    box.appendChild(d);
+  });
+}
+function syncCode(nodeId){
+  const pre=document.getElementById('codePane');pre.innerHTML='';
+  const groups=HOT[nodeId-1]; // array of line numbers (per-block)
+  let li=0; // code index
+  CODE.forEach(([no,text],idx)=>{
+    const isHot=groups.includes(no);
+    const blockMark=text.startsWith('—');
+    const cl=document.createElement('div');
+    cl.className='cl'+(isHot?' hot':(blockMark?' null':' dimch'));
+    cl.innerHTML=`<span class="n">${no}</span><span class="t" contenteditable="true">${text}</span>`;
+    pre.appendChild(cl);
+  });
+}
+function selectLogin(){
+  document.getElementById('loginBtn').classList.add('sel');
+  document.getElementById('selHint').textContent='已选中「登录」→ 正在梳理调用逻辑…';
+  buildFlow();syncCode(1);
+  document.querySelector('.fnode').classList.add('sel');
+}
+/* canvas drag */
+const canvas=document.getElementById('flowCanvas');let px=0,py=0,drag=false,sx=0,sy=0,tx=0,ty=0;
+canvas.addEventListener('pointerdown',e=>{drag=true;canvas.classList.add('drag');sx=e.clientX;sy=e.clientY;tx=px;ty=py;canvas.setPointerCapture(e.pointerId);});
+canvas.addEventListener('pointermove',e=>{if(!drag)return;px=tx+(e.clientX-sx);py=ty+(e.clientY-sy);canvas.style.transform='translate('+px+'px,'+py+'px)';});
+window.addEventListener('pointerup',()=>{drag=false;canvas.classList.remove('drag');});
+/* todo checkbox */
+document.querySelectorAll('.todoitem input').forEach(c=>c.onchange=()=>c.closest('.todoitem').classList.toggle('done',c.checked));
+/* pet */
+function togglePet(){const b=document.getElementById('petBubble');b.style.display=b.style.display==='none'?'block':'none';}
+buildFlow();
+</script>
+</body>
+</html>
