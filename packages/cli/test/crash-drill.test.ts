@@ -85,8 +85,10 @@ describe('演练②：serve 强杀 → 陈旧端口锁接管恢复', () => {
     const lockBefore = JSON.parse(readFileSync(lockPath, 'utf8')) as { pid: number; port: number };
     expect(lockBefore.pid).toBe(first.proc.pid); // 锁持有者 = serve 子进程自身
 
-    // 强杀（无优雅关闭——不走 handle.close 的锁释放路径，模拟崩溃）
-    first.proc.kill();
+    // 强杀（无优雅关闭——不走 handle.close 的锁释放路径，模拟崩溃）。
+    // 必须用 SIGKILL：Unix 上默认 kill() 发 SIGTERM → serve 的 shutdown 会优雅删锁，
+    // 与“锁残留”预期冲突（仅 Windows 因无 SIGTERM 而通过）；SIGKILL 不可被处理，三平台锁都残留。
+    first.proc.kill('SIGKILL');
     expect(await waitExit(first.proc)).toBe('closed');
     expect(existsSync(lockPath)).toBe(true); // 崩溃语义：锁未释放
 
@@ -95,7 +97,7 @@ describe('演练②：serve 强杀 → 陈旧端口锁接管恢复', () => {
     const portB = await second.portLine;
     expect(portB).not.toBeNull();
     expect(portB!.pid).toBe(second.proc.pid); // 锁内容更新为新实例
-    second.proc.kill();
+    second.proc.kill('SIGKILL');
     expect(await waitExit(second.proc)).toBe('closed');
     // 优雅路径之外结束：锁再次残留（不影响下次接管——陈旧锁判定已由本用例验证）
   });
