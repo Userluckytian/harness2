@@ -35,6 +35,12 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      # typecheck 必须在 build 之后：core 的 api-surface.test.ts 引用 dist/（gitignored），
+      # 全新 runner 上 dist 不存在，先 build 才能让 typecheck 解析到 dist/index.js。
+      # （2026-09-07 审查发现的顺序缺陷：原顺序 install→typecheck→test 在干净环境必然 TS2307）
+      - name: Build packages
+        run: pnpm build
+
       - name: Typecheck
         run: pnpm -r typecheck
 
