@@ -52,8 +52,31 @@ export function createDeliverySession(
 
 // —— queue 上限 ——
 
+/** 是否还有空位：只统计「活跃排队（state==='queued'）」项；恢复的 paused 项不计入上限
+ *  （S5 carry-over：重启恢复的历史 accepted 不占满 20，不阻塞新 submit）。 */
 export function deliveryHasSlot(s: DeliverySession): boolean {
-  return s.queue.length < s.maxQueue;
+  const active = s.queue.filter((q) => q.state === 'queued').length;
+  return active < s.maxQueue;
+}
+
+/**
+ * continue 清场（S5 carry-over）：把全部 paused（重启恢复）项从活队列移除（出队/清位）。
+ * paused 项已不是「待执行的新提交」（恢复项正文不入 journal，无法忠实重放），
+ * 移出后不再占用队列槽位、也不可能被重复受理/执行。返回被清出项的 id 与恢复的占位正文
+ * （正文为空 = journal 不存正文，真实重放需调用方按 ref 回填）。调用方负责把已清出项
+ * 真正交给执行管线（sendUserMessage）。
+ */
+export function continueQueue(s: DeliverySession): Array<{ id: ClientMessageId; rawText: string }> {
+  const removed: Array<{ id: ClientMessageId; rawText: string }> = [];
+  for (let i = s.queue.length - 1; i >= 0; i--) {
+    const item = s.queue[i]!;
+    if (item.state === 'paused') {
+      removed.push({ id: item.id, rawText: item.rawText });
+      s.queue.splice(i, 1);
+      s.contentKeys.delete(item.id);
+    }
+  }
+  return removed.reverse();
 }
 
 // —— submit 幂等 ——

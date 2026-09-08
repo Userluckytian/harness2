@@ -15,6 +15,7 @@
 //   v1 口径其余不变：子会话不注入记忆/压缩（短生命周期子任务，与 cron 执行同口径）；
 //   非沙箱——子会话与父同进程运行，隔离边界与插件小节一致（architecture.md 如实声明）。
 import { resolve, isAbsolute } from 'node:path';
+import { randomUUID } from 'node:crypto';
 import { loadSession } from '../session/reader.js';
 import { SESSION_ID_PATTERN } from '../session/manager.js';
 import { SnapshotStore } from '../session/snapshots.js';
@@ -29,6 +30,9 @@ import type { SkillStore } from '../skills/store.js';
 import { BROWSER_TOOL_NAMES } from '../tools/predefined/browser.js';
 import { ToolRegistry } from '../tools/registry.js';
 import type { ToolDefinition, ToolContext, ApprovalHandler } from '../tools/types.js';
+import { isTerminalTaskState } from '../interaction/types.js';
+import { TaskCoordinator } from './task-coordinator.js';
+import type { TaskRunResult, TaskSpec, TaskWriteMode } from './task-coordinator.js';
 
 /** subagent 工具名（装配层据此从子会话工具集剔除，实现深度限制） */
 export const SUBAGENT_TOOL_NAMES = ['subagent_start', 'subagent_continue'] as const;
@@ -90,6 +94,16 @@ export interface SubagentOptions {
   hooks?: SubagentHooks;
   /** 会话日志 fsync（测试可关） */
   fsync?: boolean;
+  /** S5：后台任务协调器（装配层注入）。与 background:true 配合时 subagent_start 注册为后台任务，立返 taskId。 */
+  coordinator?: TaskCoordinator;
+  /** S5：Hub 级 registerTask（设置 taskSessions 归属映射 + 走协调器调度；用于 journal 录入）。
+   *  缺省时退化为 coordinator.register（无 session 归属映射，journal 不落账）。 */
+  registerTask?: (spec: TaskSpec) => { taskId: string };
+  /** S5：subagent_start 是否注册为后台任务（仅 coordinator 注入时生效；缺省 false = 现状同步 inline）。
+   *  开启后父 turn 不阻塞等子任务结果；后台走协调器只读 K=2 / 写串行。 */
+  background?: boolean;
+  /** S5：后台子代理任务的资源型（仅 background 时生效；缺省 'write' = 子会话可能写文件）。 */
+  taskWriteMode?: TaskWriteMode;
 }
 
 /** 子会话 turn 的审批缝：工厂优先（按子会话 id 上抛），否则固定 handler，缺省 allow-all */
@@ -128,6 +142,8 @@ export function buildSubagentChildTools(options: SubagentOptions, childSessionId
  */
 export function createSubagentTools(options: SubagentOptions): ToolDefinition[] {
   const opts = options;
+  // S5：后台任务结果暂存（taskId → subagent_start 输出 JSON；subagent_continue 收 status/结果用）
+  const taskOutcomes = new Map<string, string>();
 
   const startTool: ToolDefinition = {
     name: 'subagent_start',
@@ -188,6 +204,48 @@ export function createSubagentTools(options: SubagentOptions): ToolDefinition[] 
         opts.hooks?.onChildTurnEnd?.(childId, result);
         return JSON.stringify(out);
       };
+      // S5 后台模式：注册进协调器（只读 K=2 / 写串行），立返 taskId（不阻塞父 turn）。
+      // 父 cancel → 协调器经其 controller signal abort 该 run → 子 runTurn 取消（父子隔离：
+      // 取消只作用于该 run，不 abort 父会话本身的 turn）。
+      if (opts.background && opts.coordinator !== undefined) {
+        const taskId = `bg-${childId}`;
+        const run = async (signal: AbortSignal): Promise<TaskRunResult> => {
+          try {
+            const result = await runTurn(observed, {
+              provider: opts.provider,
+              tools: buildSubagentChildTools(opts, childId),
+              ...(approvalFor(opts, childId, signal) !== undefined
+                ? { approval: approvalFor(opts, childId, signal) }
+                : {}),
+              // 阶段 11 口径统一（加性）：子会话注入宿主同款 skills 列表
+              ...(opts.skills !== undefined ? { skills: opts.skills } : {}),
+              cwd: childCwd,
+              userText: prompt,
+              signal,
+              maxSteps: Math.max(1, opts.maxTurns),
+              snapshots: new SnapshotStore(created.dir),
+            });
+            const output = finishOutput(result);
+            taskOutcomes.set(taskId, output);
+            return { ok: result.stopReason === 'end_turn', error: result.error, output };
+          } finally {
+            created.writer.close();
+          }
+        };
+        const spec: TaskSpec = {
+          taskId,
+          sessionId: opts.parentSessionId,
+          background: true,
+          writeMode: opts.taskWriteMode ?? 'write',
+          prompt,
+          run,
+        };
+        // Hub 注册缝：优先走 registerTask（设置 taskSessions 归属映射 → journal 落账），
+        // 退化为 coordinator.register（无 session 归属，journal 不落账但协调器仍调度）。
+        const reg = opts.registerTask ?? opts.coordinator?.register.bind(opts.coordinator);
+        reg?.(spec as never);
+        return { output: JSON.stringify({ taskId, childSessionId: childId, state: 'running' }) };
+      }
       try {
         // 取消传播：子 runTurn 消费父 turn 的 signal——父 abort → 子 abort（事件照常落盘）
         // P1-4：子会话独立文件快照（rewind_points.jsonl 落子会话目录）——hub.undo(childId)
@@ -217,17 +275,40 @@ export function createSubagentTools(options: SubagentOptions): ToolDefinition[] 
 
   const continueTool: ToolDefinition = {
     name: 'subagent_continue',
-    description: '向此前派发的子会话追加一条消息并继续其任务（返回新结果）。',
+    description: '向此前派发的子会话追加一条消息并继续其任务（返回新结果）；或给 background taskId 查询后台任务状态/结果。',
     parameters: {
       type: 'object',
       properties: {
         childSessionId: { type: 'string', description: 'subagent_start 返回的子会话 id' },
         message: { type: 'string', description: '追加给子会话的消息' },
+        taskId: { type: 'string', description: 'S5 可选：后台任务 id；提供时返回其当前状态/最终结果（不做续跑）' },
       },
       required: ['childSessionId', 'message'],
     },
     async execute(args: unknown, ctx: ToolContext) {
-      const { childSessionId, message } = (args ?? {}) as { childSessionId?: unknown; message?: unknown };
+      const { childSessionId, message, taskId } = (args ?? {}) as {
+        childSessionId?: unknown;
+        message?: unknown;
+        taskId?: unknown;
+      };
+      // S5 后台任务 status/结果收口：给了 taskId 就查协调器（不再做续跑；childSessionId/message 忽略）
+      if (taskId !== undefined) {
+        if (typeof taskId !== 'string' || taskId.trim() === '') {
+          return { error: 'taskId 必须是非空字符串' };
+        }
+        if (opts.coordinator === undefined) return { error: '后台任务协调器未装配' };
+        const st = opts.coordinator.status(taskId);
+        if (st === undefined) return { error: `后台任务不存在: ${taskId}` };
+        if (!isTerminalTaskState(st.state)) {
+          return { output: JSON.stringify({ taskId, state: st.state }) };
+        }
+        const out = taskOutcomes.get(taskId);
+        if (out !== undefined) return { output: out };
+        // S5 跨 turn：协调器持久结果正文（fresh per-turn tools 取不到本 turn 外 taskOutcomes 时兜底）
+        const stored = opts.coordinator.resultOf?.(taskId);
+        if (stored?.output !== undefined) return { output: stored.output };
+        return { output: JSON.stringify({ taskId, childSessionId, state: st.state }) };
+      }
       if (typeof childSessionId !== 'string' || childSessionId.trim() === '') {
         return { error: 'childSessionId 必须是非空字符串' };
       }
