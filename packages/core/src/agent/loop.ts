@@ -337,6 +337,7 @@ async function runTurnWithWriter(writer: SessionWriter | SessionAppender, option
         toolCalls: toolCallsTotal,
         durationMs: elapsed(),
         error: msg,
+        turnId,
       };
     };
     // —— S4b 有界 attempt 重试（仅约束在本模型 step 内、完整工具计划未提交前）——
@@ -351,13 +352,13 @@ async function runTurnWithWriter(writer: SessionWriter | SessionAppender, option
         for await (const chunk of provider.streamChat(request, { signal })) {
           if (chunk.type === 'text-delta') {
             text += chunk.text;
-            options.onStream?.({ type: 'text-delta', text: chunk.text });
+            options.onStream?.({ type: 'text-delta', text: chunk.text, turnId });
           } else if (chunk.type === 'reasoning-delta') {
             reasoning = (reasoning ?? '') + chunk.text; // reasoning 汇总进 assistant/message.reasoning（日志展示），不回传模型
-            options.onStream?.({ type: 'reasoning-delta', text: chunk.text }); // 观察缝（阶段 5 服务层增量推送用；REPL 不渲染）
+            options.onStream?.({ type: 'reasoning-delta', text: chunk.text, turnId }); // 观察缝（阶段 5 服务层增量推送用；REPL 不渲染）
           } else if (chunk.type === 'tool-call') {
             calls.push(chunk.call);
-            options.onStream?.({ type: 'tool-call', call: chunk.call });
+            options.onStream?.({ type: 'tool-call', call: chunk.call, turnId });
           } else if (chunk.type === 'usage') usage = chunk.usage;
           else if (chunk.type === 'done') providerStop = chunk.stopReason;
         }
@@ -419,6 +420,7 @@ async function runTurnWithWriter(writer: SessionWriter | SessionAppender, option
         toolCalls: toolCallsTotal,
         durationMs: elapsed(),
         error: stepError,
+        turnId,
       };
     }
 
@@ -513,13 +515,13 @@ async function runTurnWithWriter(writer: SessionWriter | SessionAppender, option
     for (const p of pending) {
       if (p.parseError !== undefined) {
         writer.append('tool/result', { callId: p.callId, tool: p.tool, ok: false, error: p.parseError, turnId });
-        options.onStream?.({ type: 'tool-result', callId: p.callId, ok: false, error: p.parseError });
+        options.onStream?.({ type: 'tool-result', callId: p.callId, ok: false, error: p.parseError, turnId });
         continue;
       }
       const r = byCallId.get(p.callId);
       if (!r) {
         writer.append('tool/result', { callId: p.callId, tool: p.tool, ok: false, error: 'executor lost result', turnId });
-        options.onStream?.({ type: 'tool-result', callId: p.callId, ok: false, error: 'executor lost result' });
+        options.onStream?.({ type: 'tool-result', callId: p.callId, ok: false, error: 'executor lost result', turnId });
         continue;
       }
       writer.append('tool/result', {
@@ -535,6 +537,7 @@ async function runTurnWithWriter(writer: SessionWriter | SessionAppender, option
         type: 'tool-result',
         callId: r.callId,
         ok: r.ok,
+        turnId,
         ...(r.error !== undefined ? { error: r.error } : {}),
       });
     }
@@ -549,6 +552,7 @@ async function runTurnWithWriter(writer: SessionWriter | SessionAppender, option
     steps,
     toolCalls: toolCallsTotal,
     durationMs: elapsed(),
+    turnId,
     ...(finalText !== undefined ? { finalText } : {}),
     ...(error !== undefined ? { error } : {}),
     ...(warning !== undefined ? { warning } : {}),

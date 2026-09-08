@@ -96,12 +96,14 @@ export interface TurnOptions {
   executionObserver?: ExecutionLifecycleObserver;
 }
 
-/** turn 内流式观察事件（onStream 回调 payload；纯渲染缝，非模型上下文来源） */
+/** turn 内流式观察事件（onStream 回调 payload；纯渲染缝，非模型上下文来源）。
+ *  turnId = 本 turn 的真实 id（loop 单点生成，落盘 user/message 等事件同源）——
+ *  S3c2 复用为 delta 展示投影归属，保证增量帧与重放事件可对上同一 turn。 */
 export type TurnStreamEvent =
-  | { type: 'text-delta'; text: string }
-  | { type: 'reasoning-delta'; text: string }
-  | { type: 'tool-call'; call: ToolCallRequest }
-  | { type: 'tool-result'; callId: string; ok: boolean; error?: string };
+  | { type: 'text-delta'; text: string; turnId: string }
+  | { type: 'reasoning-delta'; text: string; turnId: string }
+  | { type: 'tool-call'; call: ToolCallRequest; turnId: string }
+  | { type: 'tool-result'; callId: string; ok: boolean; error?: string; turnId: string };
 
 export interface TurnResult {
   stopReason: TurnStopReason;
@@ -110,6 +112,8 @@ export interface TurnResult {
   /** 已提交执行器的工具调用数 */
   toolCalls: number;
   durationMs: number;
+  /** 本 turn 的真实 id（与 user/message 等落盘事件同源；S3c2 展示投影归属用） */
+  turnId?: string;
   /** end_turn 时的最终 assistant 文本 */
   finalText?: string;
   /** error/cancelled 时的错误摘要 */

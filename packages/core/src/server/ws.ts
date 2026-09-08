@@ -41,8 +41,13 @@ import type {
   SubmitAck,
   SubmitRequest,
 } from '../interaction/types.js';
-import { assertSequentialChunk, isCancelTargetKind, isSubmitIntent, isValidEpoch, isValidLastSeq } from '../interaction/types.js';
+import { isCancelTargetKind, isSubmitIntent, isValidEpoch, isValidLastSeq } from '../interaction/types.js';
 import { HubError, SessionHub, type TurnDelta } from './sessions.js';
+import type { ResumeStateProvider } from '../interaction/resume-state.js';
+// S3c2 起 DeltaAttribution/WatermarkCursor/ResumeStateProvider 移驻 interaction/resume-state.ts
+// （hub 与传输共用、避免 sessions↔ws 模块环）；此处重新导出保持 S3c1 公开导出面不变。
+export { WatermarkCursor } from '../interaction/resume-state.js';
+export type { DeltaAttribution, ResumeStateProvider } from '../interaction/resume-state.js';
 import { isTrustedHost, isTrustedOrigin, normalizeOriginHeader, WS_MAX_PAYLOAD } from './trust.js';
 
 export const WS_PATH = '/ws';
@@ -134,75 +139,8 @@ export interface WsPlane {
   broadcastCron(frame: Extract<WsServerMessage, { type: 'cron' }>): void;
 }
 
-/**
- * S3c2 接线缝：resume/cancel/submit 的实际执行/队列状态提供者。
- * 返回类型对齐 S0 共享契约；本层（S3c1 传输帧）只做帧定义、校验与转发。
- * 未接线（不注入）时：resumeSnapshot 无法协商 → 会话已存在则回 error 帧告知未支持；
- * submitAck 回 unknown（≠rejected，调用方不得当拒绝）；cancelAck 回 unknown。
- */
-export interface ResumeStateProvider {
-  /** 构造 resume-snapshot 的除 epoch/replay 外的在途/队列状态；null = 会话不存在或未接线 */
-  resumeSnapshot(req: ResumeSubscriptionRequest): Omit<ResumeSnapshot, 'epoch' | 'replay'> | null;
-  /** submit 帧的幂等 ack（实际 durable 入队归 S3c2 delivery 接线） */
-  submitAck(req: SubmitRequest): SubmitAck;
-  /** cancel 帧的三态 ack（实际取消传播归 S3c2 接线） */
-  cancelAck(req: CancelRequest): CancelAck;
-}
-
-/** delta 展示投影的归属（turn/attempt 身份；S3c2 由 hub 依据流状态提供） */
-export interface DeltaAttribution {
-  turnId: string;
-  attemptId: string;
-}
-
-/**
- * 带水位的 delta 传输映射（纯逻辑，S3c1）：每个 (session, attempt, kind) 维护独立 text/reasoning 水位。
- * accept 按调用方给出的 chunkOffset（对齐 S0 DeliveryDeltaFrame）判定连续性：首块必须 offset==0，
- * 续块必须 offset == 上一块 offset + 上一块文本长度（S0 assertSequentialChunk）；重复/重叠（迟到 offset）
- * 与缺口（超前 offset）丢弃返回 null。这是**展示投影**的流水位，不写任何日志事件，不破坏事件溯源。
- */
-export class WatermarkCursor {
-  /** key = sessionId\0attemptId → 最新已放行块（kind 各自独立） */
-  private readonly textLast = new Map<string, { offset: number; text: string }>();
-  private readonly reasoningLast = new Map<string, { offset: number; text: string }>();
-
-  private key(sessionId: string, attemptId: string): string {
-    return `${sessionId}\u0000${attemptId}`;
-  }
-
-  /** 判定并登记一块连续 delta；不连续（重复/重叠/缺口）丢弃返回 null。chunkOffset 由调用方（流/重放源）给定。 */
-  accept(
-    sessionId: string,
-    delta: Extract<TurnDelta, { kind: 'text' | 'reasoning' }>,
-    att: DeltaAttribution,
-    chunkOffset: number,
-  ): DeliveryDeltaFrame | null {
-    const map = delta.kind === 'text' ? this.textLast : this.reasoningLast;
-    const key = this.key(sessionId, att.attemptId);
-    const prev = map.get(key);
-    // 首块：chunkOffset 必须为 0；续块：必须严格接续（assertSequentialChunk）
-    const ok = prev === undefined
-      ? chunkOffset === 0 && isValidOffset(chunkOffset)
-      : assertSequentialChunk({ chunkOffset: prev.offset, text: prev.text }, chunkOffset);
-    if (!ok) return null;
-    const frame: DeliveryDeltaFrame =
-      delta.kind === 'text'
-        ? { type: 'text-delta', sessionId, turnId: att.turnId, attemptId: att.attemptId, chunkOffset, text: delta.text }
-        : { type: 'reasoning-delta', sessionId, turnId: att.turnId, attemptId: att.attemptId, chunkOffset, text: delta.text };
-    map.set(key, { offset: chunkOffset, text: delta.text });
-    return frame;
-  }
-
-  /** 重置某会话指定 attempt 水位（attempt-final 落定后调用；新 attempt 从 0 计数） */
-  reset(sessionId: string, attemptId: string): void {
-    this.textLast.delete(this.key(sessionId, attemptId));
-    this.reasoningLast.delete(this.key(sessionId, attemptId));
-  }
-}
-
-function isValidOffset(v: number): boolean {
-  return Number.isInteger(v) && v >= 0;
-}
+// —— S3c1 传输层只做帧定义、校验与转发；实际执行/队列状态经 ResumeStateProvider 缝委托
+//    （已移驻 interaction/resume-state.ts 由本文件重新导出，见文件头 import） ——
 
 function deltaFrame(sessionId: string, delta: TurnDelta): WsServerMessage {
   if (delta.kind === 'tool') return { type: 'delta', sessionId, kind: 'tool', call: delta.call };
@@ -258,6 +196,8 @@ export function attachWsServer(server: Server, hub: SessionHub, options: WsPlane
     subs: Set<string>;
     /** S3c1：客户端最近确认的连接代次（旧 epoch 的 resume/帧丢弃） */
     epoch: number;
+    /** S3c2：已成功 resume-subscription → 带水位帧消费者。旧客户端（未 resume）继续收旧 delta 形状 */
+    v2: boolean;
   }
   const conns = new Set<Conn>();
   const resumeState = options.resumeState;
@@ -278,9 +218,27 @@ export function attachWsServer(server: Server, hub: SessionHub, options: WsPlane
     }
   };
 
+  /** S3c2 谓词投递：仅满足 match 的连接收到（旧 delta 只给非 v2、水位帧只给 v2） */
+  const broadcastWhere = (frame: WsServerMessage, match: (conn: Conn) => boolean): void => {
+    if (conns.size === 0) return;
+    const data = JSON.stringify(frame);
+    for (const conn of conns) {
+      if (!match(conn)) continue;
+      try {
+        conn.ws.send(data);
+      } catch {
+        // 发送失败（连接关闭中）：close 事件统一清理
+      }
+    }
+  };
+
   const offHooks = hub.addHooks({
     onEvent: (sessionId, event) => broadcast(sessionId, { type: 'event', sessionId, event }),
-    onDelta: (sessionId, delta) => broadcast(sessionId, deltaFrame(sessionId, delta)),
+    // 旧 delta 帧：仅投递未升级（非 v2）连接；v2 连接消费带水位帧
+    onDelta: (sessionId, delta) => broadcastWhere(deltaFrame(sessionId, delta), (c) => !c.v2 && c.subs.has(sessionId)),
+    // S3c2 带水位增量 / attempt 终态：仅投递已恢复订阅（v2）的连接
+    onDeliveryDelta: (sessionId, frame) => broadcastWhere(frame, (c) => c.v2 && c.subs.has(sessionId)),
+    onAttemptFinal: (sessionId, frame) => broadcastWhere(frame, (c) => c.v2 && c.subs.has(sessionId)),
     onTurnEnd: (sessionId, result) =>
       broadcast(sessionId, {
         type: 'turn-end',
@@ -303,7 +261,7 @@ export function attachWsServer(server: Server, hub: SessionHub, options: WsPlane
   });
 
   wss.on('connection', (ws: WebSocket) => {
-    const conn: Conn = { ws, subs: new Set<string>(), epoch: 0 };
+    const conn: Conn = { ws, subs: new Set<string>(), epoch: 0, v2: false };
     conns.add(conn);
     ws.on('message', (data: unknown) => {
       let msg: WsClientMessage;
@@ -369,6 +327,7 @@ export function attachWsServer(server: Server, hub: SessionHub, options: WsPlane
               sendSafe(ws, { type: 'error', error: `resume 未支持或会话无恢复状态（S3c2 未接线）: ${msg.sessionId}` });
               break;
             }
+            conn.v2 = true; // 成功恢复订阅 → 后续 delta/attempt-final 走带水位帧
             sendSafe(ws, {
               type: 'resume-snapshot',
               sessionId: msg.sessionId,

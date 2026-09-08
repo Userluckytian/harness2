@@ -15,12 +15,33 @@
 // turn 串行语义：同会话用户消息排队（同 REPL busy 队列），跨会话并行互不阻塞；
 // undo/redo 与 turn 互斥（busy 会话上拒绝，避免 rewind marker 与 turn 事件交错落盘）。
 import { randomUUID } from 'node:crypto';
-import { resolve } from 'node:path';
+import { resolve, join } from 'node:path';
+import { existsSync } from 'node:fs';
 import { runTurn } from '../agent/loop.js';
 import type { CompactionOptions, TurnResult, TurnStreamEvent } from '../agent/types.js';
 import type { ApprovalDecision, ApprovalInput, ToolResult } from '../tools/types.js';
-import type { ApprovalRequestContract, ApprovalResponseAck, ApprovalResponseDecision } from '../interaction/types.js';
+import type {
+  ApprovalRequestContract,
+  ApprovalResponseAck,
+  ApprovalResponseDecision,
+  AttemptFinalFrame,
+  AttemptSnapshot,
+  CancelAck,
+  CancelRequest,
+  DeliveryDeltaFrame,
+  ResumeSnapshot,
+  ResumeSubscriptionRequest,
+  SubmitAck,
+  SubmitRequest,
+  TaskContract,
+} from '../interaction/types.js';
 import { isApprovalDecision } from '../interaction/types.js';
+import { RUNTIME_JOURNAL_FILE, RuntimeJournal } from '../interaction/runtime-journal.js';
+import type { TaskTransitionEntry } from '../interaction/runtime-journal.js';
+import { createDeliverySession, recoverQueue, submitDelivery } from '../interaction/delivery.js';
+import type { DeliverySession } from '../interaction/delivery.js';
+import { WatermarkCursor } from '../interaction/resume-state.js';
+import type { ResumeStateProvider } from '../interaction/resume-state.js';
 import { ApprovalQueue, type ApprovalQueueCard } from '../interaction/approval-queue.js';
 import type { ToolExecutionRequest } from '../tools/executor.js';
 import { ToolRegistry } from '../tools/registry.js';
@@ -106,6 +127,10 @@ export interface SessionHubHooks {
   onEvent?(sessionId: string, event: AnySessionEvent): void;
   /** 流式增量（turn 进行中逐片回调；text/reasoning 与随后 assistant/message 一致） */
   onDelta?(sessionId: string, delta: TurnDelta): void;
+  /** S3c2 带水位的增量帧（展示投影；与 onDelta 同源，但带真实 turnId + 合成 attemptId + chunkOffset） */
+  onDeliveryDelta?(sessionId: string, frame: DeliveryDeltaFrame): void;
+  /** S3c2 turn 落定帧（display 终态归属：completed/failed/cancelled；对应 attempt-final 帧） */
+  onAttemptFinal?(sessionId: string, frame: AttemptFinalFrame): void;
   /** turn 结束（stopReason：end_turn/error/cancelled/max_steps/…） */
   onTurnEnd?(sessionId: string, result: TurnResult): void;
   /**
@@ -215,7 +240,13 @@ interface HubEntry {
   writer: EventMirrorWriter;
 }
 
-export class SessionHub {
+/** S3c2：会话级 delivery（journal 单写 + queue）。journal 落在会话目录 runtime.v1.jsonl */
+interface HubDelivery {
+  session: DeliverySession;
+  journal: RuntimeJournal;
+}
+
+export class SessionHub implements ResumeStateProvider {
   private readonly entries = new Map<string, HubEntry>();
   /** 每会话待处理用户消息队列（busy 时入队，turn 结束后 pump——同 REPL 语义） */
   private readonly pendingTexts = new Map<string, string[]>();
@@ -235,6 +266,18 @@ export class SessionHub {
   private readonly reviewRunning = new Set<AbortController>();
   /** 已告警过的 subagent 重名工具（P1-3：每名只告警一次，不随每 turn 刷屏） */
   private readonly subagentNameConflictsWarned = new Set<string>();
+  /** S3c2：每会话 delivery（journal 单写 + queue；journal 在会话目录 runtime.v1.jsonl） */
+  private readonly deliveries = new Map<string, HubDelivery>();
+  /** 已被派发进 turn 管线的 queue 下标（防 submit 幂等回执重复派发） */
+  private readonly dispatched = new Map<string, number>();
+  /** 运行中 turn 的展示投影身份（real turnId 来自 loop；attemptId 由 hub 按 turn 合成） */
+  private readonly turnDisplay = new Map<string, { turnId: string; attemptId: string; textLen: number; reasoningLen: number }>();
+  /** turnId → sessionId（cancel 按 turnId 定位会话语境；turn 结束清理） */
+  private readonly runningTurnId = new Map<string, string>();
+  /** 本进程内已确认取消的 turnId（cancel-ack=cancelled 依据；一次性语义） */
+  private readonly cancelledTurns = new Set<string>();
+  /** 带水位的 delta 展示投影映射（跨会话共享；每 (session, attempt, kind) 独立） */
+  private readonly watermark = new WatermarkCursor();
 
   readonly approvalTimeoutMs: number;
   /** 观察者集合（WS 事件面 / 测试；addHooks 注册，返回退订函数） */
@@ -428,18 +471,21 @@ export class SessionHub {
         ...(this.options.compaction !== undefined ? { compaction: this.options.compaction } : {}),
       });
       this.emitTurnEnd(id, result);
+      this.finalizeAttempt(id, result);
       this.bumpNudge(id); // turn-end 回调之后计数/触发复盘（异步，不阻塞主对话）
     } catch (e) {
       // 复审 P2-3：非预期异常（provider 抛错之外的装配/快照/写盘错误）也要给客户端
       // turn-end 收口——否则 pump 的防御性静默 catch 会让消息凭空消失。
       // error 消息过 redactSecrets 再出站（错误路径最后闸门）。
-      this.emitTurnEnd(id, {
+      const errorResult: TurnResult = {
         stopReason: 'error',
         steps: 0,
         toolCalls: 0,
         durationMs: 0,
         error: redactSecrets((e as Error)?.message ?? String(e)),
-      });
+      };
+      this.emitTurnEnd(id, errorResult);
+      this.finalizeAttempt(id, errorResult);
       throw e; // rethrow-safe：pump 已有防御性兜底，不留未处理拒绝
     } finally {
       this.running.delete(id);
@@ -571,10 +617,16 @@ export class SessionHub {
   }
 
   private forwardStream(id: string, event: TurnStreamEvent): void {
+    // S3c2：任一流事件都登记 running turn 展示身份（real turnId 来自 loop；activeAttempt/水位依据）
+    const disp = this.turnDisplayFor(id, event.turnId);
     if (event.type === 'text-delta') {
       this.emitDelta(id, { kind: 'text', text: event.text });
+      disp.textLen += event.text.length;
+      this.acceptWatermark(id, { kind: 'text', text: event.text }, disp, disp.textLen - event.text.length);
     } else if (event.type === 'reasoning-delta') {
       this.emitDelta(id, { kind: 'reasoning', text: event.text });
+      disp.reasoningLen += event.text.length;
+      this.acceptWatermark(id, { kind: 'reasoning', text: event.text }, disp, disp.reasoningLen - event.text.length);
     } else if (event.type === 'tool-call') {
       this.emitDelta(id, { kind: 'tool', call: event.call });
     }
@@ -677,6 +729,191 @@ export class SessionHub {
     return this.approvals.respond(requestId, decision);
   }
 
+  // —— S3c2 submit / cancel / resumeSnapshot（实现 ResumeStateProvider 缝；ws.ts 传输层经此转发） ——
+
+  /** 会话级 delivery：打开/新建 runtime journal 并恢复 queue（重启默认 paused，不自动执行）。
+   *   journal 单写 = 本 hub（进程内 RuntimeJournal 守卫 + pid 锁文件）；与 session.log 写者协调同一
+   *   hub 出口，不引入双写冲突。会话锁被占 → HubError('locked')；未知会话 → HubError('not_found')。 */
+  private deliveryFor(id: string): HubDelivery {
+    const entry = this.entryFor(id);
+    const existing = this.deliveries.get(id);
+    if (existing !== undefined) return existing;
+    const journalPath = join(entry.dir, RUNTIME_JOURNAL_FILE);
+    const journalExists = existsSync(journalPath);
+    let journal: RuntimeJournal;
+    try {
+      journal = journalExists ? RuntimeJournal.open(entry.dir) : RuntimeJournal.create(entry.dir);
+    } catch (e) {
+      if ((e as Error).name === 'RuntimeJournalLockedError') {
+        throw new HubError('locked', (e as Error).message);
+      }
+      throw e;
+    }
+    const session = createDeliverySession(journal, id);
+    if (journalExists) {
+      // 重启恢复：先前 durable accepted 一律 state:paused（正文置空，不惊喜执行；S5 补任务化）
+      for (const q of recoverQueue(entry.dir, { sessionId: id })) session.queue.push(q);
+    }
+    const hd: HubDelivery = { session, journal };
+    this.deliveries.set(id, hd);
+    return hd;
+  }
+
+  /** submit 走 delivery：S3b 幂等原语（durable-then-ack）；accepted 后按顺序派发进既有 turn 管线。 */
+  submitAck(req: SubmitRequest): SubmitAck {
+    this.assertValidSessionId(req.sessionId);
+    const hd = this.deliveryFor(req.sessionId);
+    // S0 契约：intent=steer 必须带 expectedTurnId（steer 全语义归 S6，本阶段不在缺省时静默入队）
+    if (req.intent === 'steer' && req.expectedTurnId === undefined) {
+      return {
+        clientMessageId: req.clientMessageId,
+        sessionId: req.sessionId,
+        state: 'rejected',
+        reason: 'intent=steer 需要 expectedTurnId（steer 接线归后续阶段）',
+      };
+    }
+    const ack = submitDelivery(hd.session, req);
+    if (ack.state === 'accepted') this.dispatchQueued(req.sessionId);
+    return ack;
+  }
+
+  /** queue 启动：把 durable accepted 项按顺序送进既有 turn 启动路径（sendUserMessage → runTurn）。
+   *   已 paused（重启恢复）/ 已派发（dispatched 水位）项跳过；不写第二套正文，turn 启动仍由
+   *   session.log 投影驱动（事件溯源不破坏）。 */
+  private dispatchQueued(sessionId: string): void {
+    const hd = this.deliveries.get(sessionId);
+    if (hd === undefined) return;
+    const start = this.dispatched.get(sessionId) ?? 0;
+    for (let i = start; i < hd.session.queue.length; i++) {
+      const item = hd.session.queue[i]!;
+      if (item.state !== 'queued') continue;
+      if (item.rawText.trim().length === 0) continue; // 空正文不派发（恢复项 paused 不会走到）
+      this.dispatched.set(sessionId, i + 1);
+      try {
+        this.sendUserMessage(sessionId, item.rawText);
+      } catch {
+        // 派发失败（如会话被其他进程锁定）不阻断 ack；幂等键保留，客户端重试经 judgeSubmission 收敛
+      }
+    }
+  }
+
+  /** cancel 接线：target.turn 按运行中 turnId 定位会话语境 → abort（stopping）；已确认取消的 turn → cancelled；
+   *   其他（未运行/未知）→ unknown（不冒充已取消）。target.task 未接线（S5 任务注册表）→ unknown。 */
+  cancelAck(req: CancelRequest): CancelAck {
+    if (req.target.kind === 'turn') {
+      const sessionId = this.runningTurnId.get(req.target.id);
+      if (sessionId !== undefined) {
+        this.abort(sessionId); // 取消当前 turn；已完成工具变更不撤销（executor 不因 abort 回滚文件）
+        return { requestId: req.requestId, state: 'stopping' };
+      }
+      if (this.cancelledTurns.has(req.target.id)) {
+        return { requestId: req.requestId, state: 'cancelled' };
+      }
+      return { requestId: req.requestId, state: 'unknown' };
+    }
+    return { requestId: req.requestId, state: 'unknown' };
+  }
+
+  /** resume-snapshot 在途/队列状态组装（replay 范围由 ws.ts 层以磁盘投影计算）。
+   *   activeAttempt 由运行中 turn 的展示投影给出；tasks 由 journal task/transition 重建；
+   *   pendingApprovals 由 hub 审批队列提供；queue = 活队列（重启恢复 = paused）。 */
+  resumeSnapshot(req: ResumeSubscriptionRequest): Omit<ResumeSnapshot, 'epoch' | 'replay'> | null {
+    this.assertValidSessionId(req.sessionId);
+    let hd: HubDelivery;
+    try {
+      hd = this.deliveryFor(req.sessionId);
+    } catch (e) {
+      if (e instanceof HubError && e.code === 'not_found') return null;
+      throw e;
+    }
+    const active = this.activeAttemptFor(req.sessionId);
+    return {
+      ...(active !== undefined ? { activeAttempt: active } : {}),
+      tasks: this.tasksFor(req.sessionId),
+      pendingApprovals: this.pendingApprovalsFor(req.sessionId),
+      queue: hd.session.queue,
+    };
+  }
+
+  /** 运行中 turn 的 attempt 展示快照（S0 AttemptSnapshot）；未运行/无流事件 → undefined */
+  private activeAttemptFor(sessionId: string): AttemptSnapshot | undefined {
+    if (!this.running.has(sessionId)) return undefined;
+    const disp = this.turnDisplay.get(sessionId);
+    if (disp === undefined) return undefined;
+    return {
+      attemptId: disp.attemptId,
+      turnId: disp.turnId,
+      textChunkOffset: disp.textLen,
+      reasoningChunkOffset: disp.reasoningLen,
+      status: this.pendingApprovalsFor(sessionId).length > 0 ? 'waiting-approval' : 'running',
+    };
+  }
+
+  /** tasks：由 journal task/transition 重建（最后一条迁移 = 当前状态）；无任务记录 = [] */
+  private tasksFor(id: string): TaskContract[] {
+    const hd = this.deliveries.get(id);
+    if (hd === undefined) return [];
+    const byTask = new Map<string, TaskTransitionEntry>();
+    for (const e of hd.journal.readEntries().entries) {
+      if (e.kind === 'task/transition') byTask.set(e.taskId, e);
+    }
+    return [...byTask.entries()].map(([taskId, t]) => ({
+      taskId,
+      ...(t.parentTaskId !== undefined ? { parentTaskId: t.parentTaskId } : {}),
+      background: t.payload.background ?? false,
+      state: t.payload.to,
+      ...(t.ts !== undefined ? { updatedAt: t.ts } : {}),
+    }));
+  }
+
+  // —— S3c2 展示投影：流事件 → 带水位 delta 帧 / turn 落定帧 ——
+
+  /** 取/建运行中 turn 的展示身份（real turnId 来自 loop 单点生成；attemptId 按 turn 合成） */
+  private turnDisplayFor(sessionId: string, turnId: string): { turnId: string; attemptId: string; textLen: number; reasoningLen: number } {
+    const existing = this.turnDisplay.get(sessionId);
+    if (existing !== undefined && existing.turnId === turnId) return existing;
+    const created = { turnId, attemptId: `att-${turnId.slice(0, 8)}`, textLen: 0, reasoningLen: 0 };
+    this.turnDisplay.set(sessionId, created);
+    this.runningTurnId.set(turnId, sessionId);
+    return created;
+  }
+
+  /** WatermarkCursor 接流事件：接受连续块 → onDeliveryDelta；同 attempt 内重启（provider 重试从 0 重流）
+   *   先重置水位再接受（展示投影连续，不丢重试内容）。 */
+  private acceptWatermark(
+    sessionId: string,
+    delta: { kind: 'text' | 'reasoning'; text: string },
+    disp: { turnId: string; attemptId: string },
+    offset: number,
+  ): void {
+    let frame = this.watermark.accept(sessionId, delta, disp, offset);
+    if (frame === null && offset === 0) {
+      this.watermark.reset(sessionId, disp.attemptId);
+      frame = this.watermark.accept(sessionId, delta, disp, offset);
+    }
+    if (frame !== null) this.emitDeliveryDelta(sessionId, frame);
+  }
+
+  /** turn 落定：display 终态帧（attempt-final）+ cancel 确认记忆 + 运行身份清理 */
+  private finalizeAttempt(sessionId: string, result: TurnResult): void {
+    const disp = this.turnDisplay.get(sessionId);
+    if (disp === undefined) return;
+    const state = result.stopReason === 'cancelled' ? 'cancelled' : result.stopReason === 'error' ? 'failed' : 'completed';
+    const frame: AttemptFinalFrame = {
+      type: 'attempt-final',
+      sessionId,
+      turnId: disp.turnId,
+      attemptId: disp.attemptId,
+      state,
+      ...(result.finalText !== undefined ? { finalText: result.finalText } : {}),
+      ...(result.error !== undefined ? { error: result.error } : {}),
+    };
+    this.emitAttemptFinal(sessionId, frame);
+    if (result.stopReason === 'cancelled') this.cancelledTurns.add(disp.turnId);
+    this.runningTurnId.delete(disp.turnId);
+    this.turnDisplay.delete(sessionId);
+  }
+
   /** 送达链：自身会话 + 祖先（subagent 血缘；父审批请求投递给落地父 + 全程祖先，child 结束前父可见） */
   private deliveryChain(sessionId: string): string[] {
     const chain = [sessionId];
@@ -706,6 +943,26 @@ export class SessionHub {
     for (const l of this.listeners) {
       try {
         l.onDelta?.(sessionId, delta);
+      } catch {
+        // 观察者异常不回写内核
+      }
+    }
+  }
+
+  private emitDeliveryDelta(sessionId: string, frame: DeliveryDeltaFrame): void {
+    for (const l of this.listeners) {
+      try {
+        l.onDeliveryDelta?.(sessionId, frame);
+      } catch {
+        // 观察者异常不回写内核
+      }
+    }
+  }
+
+  private emitAttemptFinal(sessionId: string, frame: AttemptFinalFrame): void {
+    for (const l of this.listeners) {
+      try {
+        l.onAttemptFinal?.(sessionId, frame);
       } catch {
         // 观察者异常不回写内核
       }
@@ -852,6 +1109,9 @@ export class SessionHub {
     }
     for (const entry of this.entries.values()) entry.writer.close();
     this.entries.clear();
+    // S3c2：关闭各会话 delivery journal（释放 pid 锁；与 session.log writer 顺次收口）
+    for (const hd of this.deliveries.values()) hd.journal.close();
+    this.deliveries.clear();
     this.pendingTexts.clear();
   }
 

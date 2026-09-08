@@ -1,13 +1,26 @@
-// S3c1 WS/HTTP 可恢复订阅（resumeSubscription + cancel + submit 帧层）测试。
+// S3c1 WS/HTTP 可恢复订阅（resumeSubscription + cancel + submit 帧层）测试 +
+// S3c2 会话接线（submit 幂等经 hub / queue 重启恢复 paused / cancel 不撤销已完成文件变更 /
+//       resume-snapshot 在途审批 / v2 连接带水位 delta）。
 // 覆盖：resume-subscription → resume-snapshot（replay 无缺口 + 快照含 activeAttempt/tasks/
 //       pendingApprovals/queue）、旧 epoch 丢弃、重复 offset 丢弃、delta 带水位、cancel 三态 ack、
-//       submit ack、旧客户端帧不崩。
-// 只测传输帧层（server/ws.ts）：实际执行/队列接线归 S3c2，经注入的 resumeStateProvider 缝观察。
+//       submit ack、旧客户端帧不崩、S3c2 接线语义。
 import { afterEach, describe, expect, it } from 'vitest';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
+import { createServer } from 'node:http';
 import { join } from 'node:path';
-import { startServe, MockProvider, type ServeHandle, type WsServerMessage } from '../src/index.js';
+import {
+  attachWsServer,
+  defaultSessionsRoot,
+  MockProvider,
+  registerBuiltinTools,
+  SessionHub,
+  SessionManager,
+  startServe,
+  ToolRegistry,
+  type ServeHandle,
+  type WsServerMessage,
+} from '../src/index.js';
 import type {
   CancelRequest,
   CancelAck,
@@ -146,22 +159,35 @@ describe('resume-subscription → resume-snapshot（传输帧层）', () => {
     client.close();
   });
 
-  it('resumeStateProvider 未接线 → error 帧（会话已存在但恢复未支持），不崩', async () => {
-    // 不注入 resumeState → 默认 null
-    const handle = await startServe({
-      port: 0,
-      home: tmpDir('h2-resume-home-'),
-      root: tmpDir('h2-resume-root-'),
+  it('resumeStateProvider 未接线 → error 帧（传输缝保留：不注入缝时回错误），不崩', async () => {
+    // S3c2 起 startServe 默认接 hub；未接线路径走传输缝直接构造（不经 startServe）
+    const home = tmpDir('h2-resume-home-');
+    const root = tmpDir('h2-resume-root-');
+    const tools = new ToolRegistry();
+    registerBuiltinTools(tools);
+    const hub = new SessionHub({
+      manager: new SessionManager(defaultSessionsRoot(home)),
       provider: new MockProvider([{ textChunks: ['回复'] }]),
+      tools,
+      cwd: root,
     });
-    handles.push(handle);
-    const id = await createSession(handle);
-    const client = new WsClient(`ws://127.0.0.1:${handle.port}/ws`);
-    await client.open;
-    client.send({ op: 'resume-subscription', sessionId: id, lastSeq: 0, epoch: 1 });
-    const err = await client.waitFor((f) => f.type === 'error', 'error 帧');
-    expect(err.type === 'error' && err.error).toContain('resume');
-    client.close();
+    const server = createServer();
+    const plane = attachWsServer(server, hub); // 不注入 resumeState → 未接线
+    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+    const port = (server.address() as { port: number }).port;
+    const id = hub.create(root).id;
+    try {
+      const client = new WsClient(`ws://127.0.0.1:${port}/ws`);
+      await client.open;
+      client.send({ op: 'resume-subscription', sessionId: id, lastSeq: 0, epoch: 1 });
+      const err = await client.waitFor((f) => f.type === 'error', 'error 帧');
+      expect(err.type === 'error' && err.error).toContain('resume');
+      client.close();
+    } finally {
+      await plane.close();
+      await hub.close();
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+    }
   });
 });
 
@@ -296,5 +322,218 @@ describe('旧客户端兼容（帧形状不变）', () => {
     // 旧 turn-end 形状不变
     expect(end.type === 'turn-end' && end.stopReason).toBe('end_turn');
     client.close();
+  });
+});
+
+describe('S3c2：submit 幂等接线（durable-then-ack + 按序派发不重复）', () => {
+  it('同 id 同内容 → receipt 复用不重复派发；同 id 不同内容 → rejected', async () => {
+    const handle = await startServe({
+      port: 0,
+      home: tmpDir('h2-resume-home-'),
+      root: tmpDir('h2-resume-root-'),
+      provider: new MockProvider([{ textChunks: ['幂等回复'] }]),
+    });
+    handles.push(handle);
+    const id = await createSession(handle);
+    const client = new WsClient(`ws://127.0.0.1:${handle.port}/ws`);
+    await client.open;
+    client.send({ op: 'subscribe', sessionId: id });
+    // 新提交 → accepted（queueSeq 0）
+    client.send({ op: 'submit', clientMessageId: 'cm-1', sessionId: id, rawText: '同一个动作', intent: 'queue' });
+    const a1 = await client.waitFor((f) => f.type === 'submit-ack' && f.state === 'accepted' && f.clientMessageId === 'cm-1', 'accepted');
+    expect(a1.type === 'submit-ack' && a1.queueSeq).toBe(0);
+    // 等首个 turn 落定
+    await client.waitFor((f) => f.type === 'turn-end', 'turn-end');
+    // 同 id 同内容 → receipt 复用（仍 accepted，不再派发新 turn）
+    client.send({ op: 'submit', clientMessageId: 'cm-1', sessionId: id, rawText: '同一个动作', intent: 'queue' });
+    // 同 id 不同内容 → rejected（幂等键冲突，不登记）
+    client.send({ op: 'submit', clientMessageId: 'cm-1', sessionId: id, rawText: '换个说法', intent: 'queue' });
+    const rj = await client.waitFor((f) => f.type === 'submit-ack' && f.state === 'rejected', 'rejected');
+    expect(rj.type === 'submit-ack' && rj.reason).toContain('duplicate');
+    await sleep(400);
+    // 全程只有 1 个 turn（重复提交未产生第二条执行）
+    const turnEnds = client.frames.filter((f) => f.type === 'turn-end').length;
+    expect(turnEnds).toBe(1);
+    // resume-snapshot queue 只有一项（幂等键未被重复登记）
+    client.send({ op: 'resume-subscription', sessionId: id, lastSeq: 0, epoch: 2 });
+    const snap = await client.waitFor((f) => f.type === 'resume-snapshot', 'resume-snapshot');
+    expect(snap.type === 'resume-snapshot' && snap.snapshot.queue.length).toBe(1);
+    expect(snap.type === 'resume-snapshot' && snap.snapshot.queue[0]).toMatchObject({ id: 'cm-1', state: 'queued', intent: 'queue' });
+    client.close();
+  });
+});
+
+describe('S3c2：queue 重启恢复（recoverQueue paused + 不自动执行）', () => {
+  it('durable accepted 重启后恢复为 paused；未重新提交不产生新 turn', async () => {
+    const home = tmpDir('h2-resume-home-');
+    const root = tmpDir('h2-resume-root-');
+    const A = await startServe({ port: 0, home, root, provider: new MockProvider([{ textChunks: ['A 执行'] }]) });
+    handles.push(A);
+    const id = await createSession(A);
+    const a = new WsClient(`ws://127.0.0.1:${A.port}/ws`);
+    await a.open;
+    a.send({ op: 'subscribe', sessionId: id });
+    a.send({ op: 'submit', clientMessageId: 'cm-A', sessionId: id, rawText: '持久任务', intent: 'queue' });
+    await a.waitFor((f) => f.type === 'submit-ack' && f.state === 'accepted', 'ack A');
+    await a.waitFor((f) => f.type === 'turn-end', 'turn-end A');
+    a.close();
+    await A.close();
+    // 重启 B：同一 home/root，会话目录按 id 恢复
+    const B = await startServe({ port: 0, home, root, provider: new MockProvider([{ textChunks: ['B 不应执行'] }]) });
+    handles.push(B);
+    const b = new WsClient(`ws://127.0.0.1:${B.port}/ws`);
+    await b.open;
+    b.send({ op: 'subscribe', sessionId: id });
+    b.send({ op: 'resume-subscription', sessionId: id, lastSeq: 0, epoch: 1 });
+    const snap = await b.waitFor((f) => f.type === 'resume-snapshot', 'snapshot B');
+    expect(snap.type === 'resume-snapshot' && snap.snapshot.queue.length).toBe(1);
+    expect(snap.type === 'resume-snapshot' && snap.snapshot.queue[0]?.state).toBe('paused');
+    // 恢复项仍 paused：未重新提交 → 无新 turn（无 user/message 事件、无 turn-end）
+    await sleep(500);
+    const ev = b.frames.filter((f) => f.type === 'event' && f.event.type === 'user/message').length;
+    expect(ev).toBe(0);
+    expect(b.frames.filter((f) => f.type === 'turn-end').length).toBe(0);
+    b.close();
+  });
+});
+
+describe('S3c2：cancel 接线（不撤销已完成文件变更）', () => {
+  it('write 提交后 cancel → stopping；turn cancelled；文件保留；二次 cancel=cancelled；未知=unknown', async () => {
+    const root = tmpDir('h2-resume-root-');
+    const fileCwd = tmpDir('h2-resume-file-');
+    const outPath = join(fileCwd, 'out.txt');
+    const handle = await startServe({
+      port: 0,
+      home: tmpDir('h2-resume-home-'),
+      root,
+      provider: new MockProvider([
+        { toolCalls: [{ id: 'call-w', name: 'write', arguments: JSON.stringify({ file_path: outPath, content: '已写入内容' }) }] },
+        { textChunks: ['继续生成后续内容持续流式输出'], chunkDelayMs: 300 },
+      ]),
+      decide: () => 'allow',
+    });
+    handles.push(handle);
+    const id = await createSession(handle, fileCwd);
+    const client = new WsClient(`ws://127.0.0.1:${handle.port}/ws`);
+    await client.open;
+    client.send({ op: 'subscribe', sessionId: id });
+    client.send({ op: 'user-message', sessionId: id, text: '写入一个文件' });
+    // 真实 turnId 来自 user/message 事件镜像（与 delta/attempt-final 同源）
+    const ev = await client.waitFor((f) => f.type === 'event' && f.event.type === 'user/message', 'user/message event');
+    if (ev.type !== 'event') throw new Error('unreachable: ev');
+    const turnId = (ev.event as { payload?: { turnId?: string } }).payload?.turnId;
+    expect(typeof turnId).toBe('string');
+    expect(typeof turnId === 'string' && turnId.length).toBeGreaterThan(0);
+    // 等 write 提交（工具已完成，文件落地）
+    await client.waitFor(
+      (f) => f.type === 'event' && f.event.type === 'tool/result' && f.event.payload.ok === true,
+      'write tool/result',
+    );
+    expect(existsSync(outPath)).toBe(true);
+    // 流式仍在进行 → cancel（target.turn 含真实 turnId）
+    client.send({ op: 'cancel', requestId: 'cnl-1', target: { kind: 'turn', id: turnId as string } });
+    const a = await client.waitFor((f) => f.type === 'cancel-ack' && f.requestId === 'cnl-1', 'cancel-ack stopping');
+    expect(a.type === 'cancel-ack' && a.state).toBe('stopping');
+    const end = await client.waitFor((f) => f.type === 'turn-end' && f.stopReason === 'cancelled', 'turn-end cancelled');
+    expect(end.type === 'turn-end' && end.stopReason).toBe('cancelled');
+    // 文件保留（cancel 不撤销已完成工具变更）
+    expect(readFileSync(outPath, 'utf8')).toBe('已写入内容');
+    // 二次 cancel 同 turn → cancelled（一次性确认记忆）
+    client.send({ op: 'cancel', requestId: 'cnl-2', target: { kind: 'turn', id: turnId as string } });
+    const c2 = await client.waitFor((f) => f.type === 'cancel-ack' && f.requestId === 'cnl-2', 'cancel-ack cancelled');
+    expect(c2.type === 'cancel-ack' && c2.state).toBe('cancelled');
+    // 未知 turn → unknown（不冒充已取消）
+    client.send({ op: 'cancel', requestId: 'cnl-3', target: { kind: 'turn', id: 'turn-does-not-exist' } });
+    const c3 = await client.waitFor((f) => f.type === 'cancel-ack' && f.requestId === 'cnl-3', 'cancel-ack unknown');
+    expect(c3.type === 'cancel-ack' && c3.state).toBe('unknown');
+    client.close();
+  });
+});
+
+describe('S3c2：resume-snapshot 在途审批（activeAttempt waiting-approval + pendingApprovals）', () => {
+  it('审批挂起中的 turn → 重连快照带 activeAttempt.wiating-approval 与 pendingApprovals', async () => {
+    const handle = await startServe({
+      port: 0,
+      home: tmpDir('h2-resume-home-'),
+      root: tmpDir('h2-resume-root-'),
+      provider: new MockProvider([
+        { toolCalls: [{ id: 'call-w', name: 'write', arguments: JSON.stringify({ file_path: join(tmpDir('h2-resume-ap-'), 'tmp.txt'), content: 'x' }) }] },
+        { textChunks: ['写完了'] },
+      ]),
+      decide: () => 'ask',
+    });
+    handles.push(handle);
+    const id = await createSession(handle);
+    const a = new WsClient(`ws://127.0.0.1:${handle.port}/ws`);
+    await a.open;
+    a.send({ op: 'subscribe', sessionId: id });
+    a.send({ op: 'user-message', sessionId: id, text: '写入' });
+    const ar = await a.waitFor((f) => f.type === 'approval-request', 'approval-request');
+    const requestId = ar.type === 'approval-request' ? ar.requestId : '';
+    expect(requestId.length).toBeGreaterThan(0);
+    // 第二连接（v2）重连快照：在途 attempt 挂起 + 待审批卡一起带上
+    const b = new WsClient(`ws://127.0.0.1:${handle.port}/ws`);
+    await b.open;
+    b.send({ op: 'subscribe', sessionId: id });
+    b.send({ op: 'resume-subscription', sessionId: id, lastSeq: 0, epoch: 1 });
+    const snap = await b.waitFor((f) => f.type === 'resume-snapshot', 'snapshot');
+    expect(snap.type === 'resume-snapshot' && snap.snapshot.activeAttempt?.status).toBe('waiting-approval');
+    expect(snap.type === 'resume-snapshot' && snap.snapshot.pendingApprovals.map((p) => p.requestId)).toContain(requestId);
+    b.close();
+    // 放行 → 写工具完成、turn 自然结束
+    a.send({ op: 'approval-response', requestId, decision: 'allow' });
+    const end = await a.waitFor((f) => f.type === 'turn-end' && f.stopReason === 'end_turn', 'turn-end end_turn');
+    expect(end.type === 'turn-end' && end.stopReason).toBe('end_turn');
+    a.close();
+  });
+});
+
+describe('S3c2：v2 连接带水位 delta + attempt-final（旧连接继续旧形状）', () => {
+  it('resume 后 text-delta 连续（turnId/attemptId/chunkOffset）+ attempt-final completed；旧连接只收旧 delta', async () => {
+    const handle = await startServe({
+      port: 0,
+      home: tmpDir('h2-resume-home-'),
+      root: tmpDir('h2-resume-root-'),
+      provider: new MockProvider([{ textChunks: ['你好', '世界'], chunkDelayMs: 30 }]),
+    });
+    handles.push(handle);
+    const id = await createSession(handle);
+    const legacy = new WsClient(`ws://127.0.0.1:${handle.port}/ws`);
+    await legacy.open;
+    legacy.send({ op: 'subscribe', sessionId: id });
+    const v2 = new WsClient(`ws://127.0.0.1:${handle.port}/ws`);
+    await v2.open;
+    v2.send({ op: 'subscribe', sessionId: id });
+    v2.send({ op: 'resume-subscription', sessionId: id, lastSeq: 0, epoch: 1 });
+    await v2.waitFor((f) => f.type === 'resume-snapshot', 'snapshot');
+    // legacy 触发 turn（两连接都订阅）
+    legacy.send({ op: 'user-message', sessionId: id, text: '流式测试' });
+    // v2：两个 text-delta 连续（chunkOffset 0 → 2），归属一致
+    const d0 = await v2.waitFor((f) => f.type === 'text-delta', 'text-delta 0');
+    const d1 = await v2.waitFor((f) => f.type === 'text-delta', 'text-delta 1', v2.frames.length);
+    if (d0.type !== 'text-delta') throw new Error('unreachable: d0');
+    if (d1.type !== 'text-delta') throw new Error('unreachable: d1');
+    expect(d0.chunkOffset).toBe(0);
+    expect(d0.text).toBe('你好');
+    expect(d1.chunkOffset).toBe(2);
+    expect(d1.text).toBe('世界');
+    expect(d0.turnId).toBe(d1.turnId);
+    expect(d0.attemptId).toBe(d1.attemptId);
+    expect(d0.attemptId).toBe(`att-${d0.turnId.slice(0, 8)}`);
+    // v2：turn 落定 attempt-final completed（归属同一 turnId）
+    const fin = await v2.waitFor((f) => f.type === 'attempt-final', 'attempt-final');
+    if (fin.type !== 'attempt-final') throw new Error('unreachable: fin');
+    expect(fin.state).toBe('completed');
+    expect(fin.turnId).toBe(d0.turnId);
+    // v2 连接没收到旧形状 delta
+    expect(v2.frames.filter((f) => f.type === 'delta').length).toBe(0);
+    // legacy 连接：同一 turn 收到旧形状 delta（text），且不带水位帧
+    const ld = await legacy.waitFor((f) => f.type === 'delta' && f.kind === 'text', 'legacy delta');
+    if (ld.type !== 'delta' || ld.kind !== 'text') throw new Error('unreachable: ld');
+    expect(ld.text === '你好').toBe(true);
+    await sleep(200);
+    expect(legacy.frames.filter((f) => f.type === 'text-delta').length).toBe(0);
+    legacy.close();
+    v2.close();
   });
 });

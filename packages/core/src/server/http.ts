@@ -333,11 +333,8 @@ export async function startServe(options: StartServeOptions = {}): Promise<Serve
   }
 
   // WS 事件面与 HTTP 共用监听（upgrade 升级到 /ws）
-  const ws = attachWsServer(
-    server,
-    hub,
-    options.resumeState !== undefined ? { resumeState: options.resumeState } : {},
-  );
+  // S3c2：startServe 默认接 hub（会话接线：delivery/journal/approval 全挂）
+  const ws = attachWsServer(server, hub, { resumeState: options.resumeState ?? hub });
 
   // 定时任务调度器（阶段 7）：常驻 tick + 文件锁 + at-most-once；完成帧经 WS 广播
   const cron = new CronScheduler({
