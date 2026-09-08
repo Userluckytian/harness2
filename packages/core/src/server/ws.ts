@@ -1,22 +1,47 @@
-// WS 事件面（服务 API 契约 v1）：单连接多会话订阅；hub 观察者分发到订阅连接。
+// WS 事件面（服务 API 契约 v1 + S3c1 可恢复订阅/取消/提交帧）：单连接多会话订阅；hub 观察者分发。
 // 消息契约（全部 JSON 单帧）：
 //   → {op:'subscribe'|'unsubscribe', sessionId} / {op:'abort', sessionId}
 //   → {op:'user-message', sessionId, text}          # 触发 runTurn（同会话串行排队）
 //   → {op:'approval-response', requestId, decision} # 审批往返（allow/deny）
-//   ← {type:'delta', sessionId, kind:'text'|'reasoning', text} / {kind:'tool', call}
+//   → {op:'resume-subscription', sessionId, lastSeq, epoch}  # S3c1 带水位重连握手 → resume-snapshot
+//   → {op:'cancel', requestId, target:{kind,id}, expectedId?} # S3c1 取消 ack（三态）
+//   → {op:'submit', clientMessageId, sessionId, rawText, intent, references?, expectedTurnId?} # S3c1 帧+校验
+//   ← {type:'delta', sessionId, kind:'text'|'reasoning', text} / {kind:'tool', call}   # 旧帧形状不变
+//   ← {type:'text-delta'|'reasoning-delta', sessionId, turnId, attemptId, chunkOffset, text} # S0 带水位
+//   ← {type:'attempt-final', sessionId, turnId, attemptId, state, finalText?, error?}  # S0 终态归属
+//   ← {type:'resume-snapshot', epoch, replay, activeAttempt?, tasks, pendingApprovals, queue}
+//   ← {type:'cancel-ack', requestId, state}         # stopping | cancelled | unknown
+//   ← {type:'submit-ack', clientMessageId, sessionId, state, reason?, queueSeq?}
 //   ← {type:'event', sessionId, event}              # 落盘事件镜像（含 rewind/marker）
 //   ← {type:'turn-end', sessionId, stopReason, error?, warning?}
 //   ← {type:'approval-request', sessionId, tool, args, requestId, scope, expiresAt, cwd?, taskId?, parentTaskId?}
-//   ← {type:'nudge-started', sessionId}             # 后台复盘开始（提示帧，UI 自行决定展示）
-//   ← {type:'nudge-finished', sessionId, stopReason, toolCalls, staged, error?}
+//   ← {type:'nudge-started', sessionId} / {type:'nudge-finished', sessionId, stopReason, toolCalls, staged, error?}
+//   ← {type:'forked', sessionId, parentSession, copiedEvents} / {type:'cron', op:'finished', ...}
 //   ← {type:'error', error}                         # 协议/输入错误（不在契约帧型内，仅诊断）
-// 崩溃安全：turn 全部事件已落盘，服务重启后客户端以 GET /api/sessions/:id/events 重放恢复。
+// S3c1 只动传输帧层（不引入 session 日志事件类型变更）。resume/cancel/submit 的实际执行/队列
+// 接线归 S3c2：本层经注入的 resumeStateProvider 缝消费，未接线时回相应 unknown/error，不冒充。
+// 事件溯源不破坏：text/reasoning/reasoning-* delta 是**展示投影**，非模型上下文；模型可见输入仍
+// 由 session.log 投影。旧客户端继续既有帧（未强制 protocolVersion=2 不突然切形状）。
 import { WebSocketServer, type WebSocket } from 'ws';
 import type { Server } from 'node:http';
 import type { TurnStopReason } from '../agent/types.js';
 import type { ToolCallRequest } from '../provider/types.js';
 import type { AnySessionEvent } from '../session/types.js';
-import type { ApprovalRequestContract, ApprovalScope } from '../interaction/types.js';
+import type {
+  ApprovalRequestContract,
+  ApprovalScope,
+  AttemptFinalFrame,
+  CancelAck,
+  CancelAckState,
+  CancelRequest,
+  DeliveryDeltaFrame,
+  MessageReference,
+  ResumeSnapshot,
+  ResumeSubscriptionRequest,
+  SubmitAck,
+  SubmitRequest,
+} from '../interaction/types.js';
+import { assertSequentialChunk, isCancelTargetKind, isSubmitIntent, isValidEpoch, isValidLastSeq } from '../interaction/types.js';
 import { HubError, SessionHub, type TurnDelta } from './sessions.js';
 import { isTrustedHost, isTrustedOrigin, normalizeOriginHeader, WS_MAX_PAYLOAD } from './trust.js';
 
@@ -28,11 +53,30 @@ export type WsClientMessage =
   | { op: 'abort'; sessionId: string }
   | { op: 'user-message'; sessionId: string; text: string }
   | { op: 'approval-response'; requestId: string; decision: 'allow' | 'deny' }
-  | { op: 'fork'; sessionId: string; atSeq?: number };
+  | { op: 'fork'; sessionId: string; atSeq?: number }
+  // S3c1 新增帧（对齐 S0 共享契约；旧客户端不感知）
+  | { op: 'resume-subscription'; sessionId: string; lastSeq: number; epoch: number }
+  | { op: 'cancel'; requestId: string; target: { kind: 'turn' | 'task'; id: string }; expectedId?: string }
+  | {
+      op: 'submit';
+      clientMessageId: string;
+      sessionId: string;
+      rawText: string;
+      intent: 'queue' | 'steer';
+      references?: MessageReference[];
+      expectedTurnId?: string;
+    };
 
 export type WsServerMessage =
   | { type: 'delta'; sessionId: string; kind: 'text' | 'reasoning'; text: string }
   | { type: 'delta'; sessionId: string; kind: 'tool'; call: ToolCallRequest }
+  // S3c1/S0 带水位增量（展示投影）：chunkOffset 单调，续块 = 上一块 offset + 文本长度
+  | { type: 'text-delta'; sessionId: string; turnId: string; attemptId: string; chunkOffset: number; text: string }
+  | { type: 'reasoning-delta'; sessionId: string; turnId: string; attemptId: string; chunkOffset: number; text: string }
+  | { type: 'attempt-final'; sessionId: string; turnId: string; attemptId: string; state: AttemptFinalFrame['state']; finalText?: string; error?: string }
+  | { type: 'resume-snapshot'; sessionId: string; epoch: number; snapshot: ResumeSnapshot }
+  | { type: 'cancel-ack'; requestId: string; state: CancelAckState }
+  | { type: 'submit-ack'; clientMessageId: string; sessionId: string; state: SubmitAck['state']; reason?: string; queueSeq?: number }
   | { type: 'event'; sessionId: string; event: AnySessionEvent }
   | {
       type: 'turn-end';
@@ -74,6 +118,13 @@ export type WsServerMessage =
 export interface WsPlaneOptions {
   /** 升级路径（默认 /ws） */
   path?: string;
+  /**
+   * S3c1 → S3c2 接线缝：resume/cancel/submit 的**实际状态**提供者。
+   * S3c1 只做传输帧：resume-snapshot 的 replay 从磁盘投影派生，activeAttempt/tasks/
+   * pendingApprovals/queue 与 cancel/submit 的 ack 一律经此缝委托（S3c2 接线 hub/交付）。
+   * 未注入（或返回 null / 缺省 unknown）时如实回 unknown/error，不冒充已接线执行。
+   */
+  resumeState?: ResumeStateProvider;
 }
 
 export interface WsPlane {
@@ -81,6 +132,76 @@ export interface WsPlane {
   close(): Promise<void>;
   /** cron 通知帧广播（阶段 7：不按会话订阅过滤，投递全部连接） */
   broadcastCron(frame: Extract<WsServerMessage, { type: 'cron' }>): void;
+}
+
+/**
+ * S3c2 接线缝：resume/cancel/submit 的实际执行/队列状态提供者。
+ * 返回类型对齐 S0 共享契约；本层（S3c1 传输帧）只做帧定义、校验与转发。
+ * 未接线（不注入）时：resumeSnapshot 无法协商 → 会话已存在则回 error 帧告知未支持；
+ * submitAck 回 unknown（≠rejected，调用方不得当拒绝）；cancelAck 回 unknown。
+ */
+export interface ResumeStateProvider {
+  /** 构造 resume-snapshot 的除 epoch/replay 外的在途/队列状态；null = 会话不存在或未接线 */
+  resumeSnapshot(req: ResumeSubscriptionRequest): Omit<ResumeSnapshot, 'epoch' | 'replay'> | null;
+  /** submit 帧的幂等 ack（实际 durable 入队归 S3c2 delivery 接线） */
+  submitAck(req: SubmitRequest): SubmitAck;
+  /** cancel 帧的三态 ack（实际取消传播归 S3c2 接线） */
+  cancelAck(req: CancelRequest): CancelAck;
+}
+
+/** delta 展示投影的归属（turn/attempt 身份；S3c2 由 hub 依据流状态提供） */
+export interface DeltaAttribution {
+  turnId: string;
+  attemptId: string;
+}
+
+/**
+ * 带水位的 delta 传输映射（纯逻辑，S3c1）：每个 (session, attempt, kind) 维护独立 text/reasoning 水位。
+ * accept 按调用方给出的 chunkOffset（对齐 S0 DeliveryDeltaFrame）判定连续性：首块必须 offset==0，
+ * 续块必须 offset == 上一块 offset + 上一块文本长度（S0 assertSequentialChunk）；重复/重叠（迟到 offset）
+ * 与缺口（超前 offset）丢弃返回 null。这是**展示投影**的流水位，不写任何日志事件，不破坏事件溯源。
+ */
+export class WatermarkCursor {
+  /** key = sessionId\0attemptId → 最新已放行块（kind 各自独立） */
+  private readonly textLast = new Map<string, { offset: number; text: string }>();
+  private readonly reasoningLast = new Map<string, { offset: number; text: string }>();
+
+  private key(sessionId: string, attemptId: string): string {
+    return `${sessionId}\u0000${attemptId}`;
+  }
+
+  /** 判定并登记一块连续 delta；不连续（重复/重叠/缺口）丢弃返回 null。chunkOffset 由调用方（流/重放源）给定。 */
+  accept(
+    sessionId: string,
+    delta: Extract<TurnDelta, { kind: 'text' | 'reasoning' }>,
+    att: DeltaAttribution,
+    chunkOffset: number,
+  ): DeliveryDeltaFrame | null {
+    const map = delta.kind === 'text' ? this.textLast : this.reasoningLast;
+    const key = this.key(sessionId, att.attemptId);
+    const prev = map.get(key);
+    // 首块：chunkOffset 必须为 0；续块：必须严格接续（assertSequentialChunk）
+    const ok = prev === undefined
+      ? chunkOffset === 0 && isValidOffset(chunkOffset)
+      : assertSequentialChunk({ chunkOffset: prev.offset, text: prev.text }, chunkOffset);
+    if (!ok) return null;
+    const frame: DeliveryDeltaFrame =
+      delta.kind === 'text'
+        ? { type: 'text-delta', sessionId, turnId: att.turnId, attemptId: att.attemptId, chunkOffset, text: delta.text }
+        : { type: 'reasoning-delta', sessionId, turnId: att.turnId, attemptId: att.attemptId, chunkOffset, text: delta.text };
+    map.set(key, { offset: chunkOffset, text: delta.text });
+    return frame;
+  }
+
+  /** 重置某会话指定 attempt 水位（attempt-final 落定后调用；新 attempt 从 0 计数） */
+  reset(sessionId: string, attemptId: string): void {
+    this.textLast.delete(this.key(sessionId, attemptId));
+    this.reasoningLast.delete(this.key(sessionId, attemptId));
+  }
+}
+
+function isValidOffset(v: number): boolean {
+  return Number.isInteger(v) && v >= 0;
 }
 
 function deltaFrame(sessionId: string, delta: TurnDelta): WsServerMessage {
@@ -135,8 +256,11 @@ export function attachWsServer(server: Server, hub: SessionHub, options: WsPlane
   interface Conn {
     ws: WebSocket;
     subs: Set<string>;
+    /** S3c1：客户端最近确认的连接代次（旧 epoch 的 resume/帧丢弃） */
+    epoch: number;
   }
   const conns = new Set<Conn>();
+  const resumeState = options.resumeState;
 
   const broadcast = (sessionId: string, frame: WsServerMessage): void => broadcastTo([sessionId], frame);
 
@@ -179,7 +303,7 @@ export function attachWsServer(server: Server, hub: SessionHub, options: WsPlane
   });
 
   wss.on('connection', (ws: WebSocket) => {
-    const conn: Conn = { ws, subs: new Set<string>() };
+    const conn: Conn = { ws, subs: new Set<string>(), epoch: 0 };
     conns.add(conn);
     ws.on('message', (data: unknown) => {
       let msg: WsClientMessage;
@@ -226,6 +350,72 @@ export function attachWsServer(server: Server, hub: SessionHub, options: WsPlane
               sessionId: r.id,
               parentSession: r.parentSession,
               copiedEvents: r.copiedEvents,
+            });
+            break;
+          }
+          case 'resume-subscription': {
+            // S3c1 可恢复订阅握手：旧 epoch（< 本连接已确认代次）直接丢弃；
+            // replay 范围以磁盘投影为准（fromSeq = lastSeq+1 → 服务端 lastSeq），
+            // 防止 snapshot 与后续 delta 之间空窗；在途/队列状态经 resumeState 缝委托。
+            if (msg.epoch < conn.epoch) break; // 旧 epoch 丢弃（不发帧）
+            conn.epoch = msg.epoch;
+            // 校验会话存在（未知会话 → error 帧）
+            hub.locate(msg.sessionId);
+            const fromSeq = msg.lastSeq + 1;
+            const toSeq = hub.events(msg.sessionId).lastSeq;
+            const state =
+              resumeState !== undefined ? resumeState.resumeSnapshot({ sessionId: msg.sessionId, lastSeq: msg.lastSeq, epoch: msg.epoch }) : null;
+            if (state === null) {
+              sendSafe(ws, { type: 'error', error: `resume 未支持或会话无恢复状态（S3c2 未接线）: ${msg.sessionId}` });
+              break;
+            }
+            sendSafe(ws, {
+              type: 'resume-snapshot',
+              sessionId: msg.sessionId,
+              epoch: msg.epoch,
+              snapshot: { epoch: msg.epoch, replay: { fromSeq, toSeq }, ...state },
+            });
+            break;
+          }
+          case 'cancel': {
+            // S3c1 cancel 帧：三态 ack 经 resumeState.cancelAck 决定（S3c2 接线执行）；
+            // 缺省（未接线）回 unknown，绝不冒充已取消。expectedId 交由 provider 做并发防护。
+            if (resumeState === undefined) {
+              sendSafe(ws, { type: 'cancel-ack', requestId: msg.requestId, state: 'unknown' });
+              break;
+            }
+            const ack = resumeState.cancelAck({ requestId: msg.requestId, target: msg.target, expectedId: msg.expectedId });
+            sendSafe(ws, { type: 'cancel-ack', requestId: ack.requestId, state: ack.state });
+            break;
+          }
+          case 'submit': {
+            // S3c1 submit 帧定义 + 校验；实际 durable 入队/ack 归 S3c2 delivery 接线。
+            // 缺省（未接线）回 unknown（≠rejected，调用方不得当拒绝处理）。
+            if (resumeState === undefined) {
+              sendSafe(ws, {
+                type: 'submit-ack',
+                clientMessageId: msg.clientMessageId,
+                sessionId: msg.sessionId,
+                state: 'unknown',
+                reason: 'submit 未接线（S3c2）; unknown ≠ rejected',
+              });
+              break;
+            }
+            const ack = resumeState.submitAck({
+              clientMessageId: msg.clientMessageId,
+              sessionId: msg.sessionId,
+              rawText: msg.rawText,
+              intent: msg.intent,
+              ...(msg.references !== undefined ? { references: msg.references } : {}),
+              ...(msg.expectedTurnId !== undefined ? { expectedTurnId: msg.expectedTurnId } : {}),
+            });
+            sendSafe(ws, {
+              type: 'submit-ack',
+              clientMessageId: ack.clientMessageId,
+              sessionId: ack.sessionId,
+              state: ack.state,
+              ...(ack.reason !== undefined ? { reason: ack.reason } : {}),
+              ...(ack.queueSeq !== undefined ? { queueSeq: ack.queueSeq } : {}),
             });
             break;
           }
@@ -280,7 +470,7 @@ function sendSafe(ws: WebSocket, frame: WsServerMessage): void {
   }
 }
 
-const OPS = new Set(['subscribe', 'unsubscribe', 'abort', 'user-message', 'approval-response', 'fork']);
+const OPS = new Set(['subscribe', 'unsubscribe', 'abort', 'user-message', 'approval-response', 'fork', 'resume-subscription', 'cancel', 'submit']);
 
 export function parseClientMessage(data: unknown): WsClientMessage {
   let obj: unknown;
@@ -316,6 +506,45 @@ export function parseClientMessage(data: unknown): WsClientMessage {
         throw new Error('atSeq 必须是 >= 1 的整数');
       }
       return { op, sessionId: requireString(m['sessionId'], 'sessionId'), atSeq };
+    }
+    case 'resume-subscription': {
+      const lastSeq = m['lastSeq'];
+      const epoch = m['epoch'];
+      if (!isValidLastSeq(lastSeq)) throw new Error('lastSeq 必须是非负整数');
+      if (!isValidEpoch(epoch)) throw new Error('epoch 必须是非负整数');
+      return { op, sessionId: requireString(m['sessionId'], 'sessionId'), lastSeq, epoch };
+    }
+    case 'cancel': {
+      const target = m['target'];
+      if (typeof target !== 'object' || target === null) throw new Error('target 必须是对象');
+      const t = target as Record<string, unknown>;
+      if (!isCancelTargetKind(t['kind'])) throw new Error("target.kind 必须是 'turn' | 'task'");
+      const id = requireString(t['id'], 'target.id');
+      const expectedId = m['expectedId'];
+      if (expectedId !== undefined && (typeof expectedId !== 'string' || expectedId.length === 0)) {
+        throw new Error('expectedId 必须是非空字符串');
+      }
+      const requestId = requireString(m['requestId'], 'requestId');
+      return expectedId === undefined
+        ? { op, requestId, target: { kind: t['kind'] as 'turn' | 'task', id } }
+        : { op, requestId, target: { kind: t['kind'] as 'turn' | 'task', id }, expectedId };
+    }
+    case 'submit': {
+      const intent = m['intent'];
+      if (!isSubmitIntent(intent)) throw new Error("intent 必须是 'queue' | 'steer'");
+      const references = m['references'];
+      if (references !== undefined && !Array.isArray(references)) throw new Error('references 必须是数组');
+      const expectedTurnId = m['expectedTurnId'];
+      if (expectedTurnId !== undefined && (typeof expectedTurnId !== 'string' || expectedTurnId.length === 0)) {
+        throw new Error('expectedTurnId 必须是非空字符串');
+      }
+      const clientMessageId = requireString(m['clientMessageId'], 'clientMessageId');
+      const sessionId = requireString(m['sessionId'], 'sessionId');
+      const rawText = requireString(m['rawText'], 'rawText');
+      const refs = references !== undefined ? { references: references as MessageReference[] } : {};
+      return expectedTurnId === undefined
+        ? { op, clientMessageId, sessionId, rawText, intent, ...refs }
+        : { op, clientMessageId, sessionId, rawText, intent, ...refs, expectedTurnId };
     }
   }
 }

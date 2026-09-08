@@ -151,6 +151,8 @@ export interface StartServeOptions {
   skills?: SkillStore;
   /** hub 观察钩子透传（WS 事件面 / 测试用） */
   hooks?: SessionHubHooks;
+  /** S3c1 → S3c2 接线缝：resume/cancel/submit 实际状态提供者（缺省未接线 → unknown/error） */
+  resumeState?: import('./ws.js').ResumeStateProvider;
 }
 
 export interface ServeHandle {
@@ -331,7 +333,11 @@ export async function startServe(options: StartServeOptions = {}): Promise<Serve
   }
 
   // WS 事件面与 HTTP 共用监听（upgrade 升级到 /ws）
-  const ws = attachWsServer(server, hub);
+  const ws = attachWsServer(
+    server,
+    hub,
+    options.resumeState !== undefined ? { resumeState: options.resumeState } : {},
+  );
 
   // 定时任务调度器（阶段 7）：常驻 tick + 文件锁 + at-most-once；完成帧经 WS 广播
   const cron = new CronScheduler({
