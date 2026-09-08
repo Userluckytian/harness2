@@ -15,6 +15,7 @@ import {
   type WsServerMessage,
 } from '../src/index.js';
 import { SESSION_LOG_FILE } from '../src/session/types.js';
+import type { ApprovalDecision, ApprovalInput } from '../src/tools/types.js';
 
 const dirs: string[] = [];
 const handles: ServeHandle[] = [];
@@ -80,13 +81,14 @@ class WsClient {
   }
 }
 
-async function start(opts: { script?: MockScript; approvalTimeoutMs?: number } = {}): Promise<ServeHandle> {
+async function start(opts: { script?: MockScript; approvalTimeoutMs?: number; decide?: (input: ApprovalInput) => ApprovalDecision } = {}): Promise<ServeHandle> {
   const handle = await startServe({
     port: 0,
     home: tmpDir('h2-ws-home-'),
     root: tmpDir('h2-ws-root-'),
     provider: new MockProvider(opts.script ?? [{ textChunks: ['回复。'] }]),
     ...(opts.approvalTimeoutMs !== undefined ? { approvalTimeoutMs: opts.approvalTimeoutMs } : {}),
+    ...(opts.decide !== undefined ? { decide: opts.decide } : {}),
   });
   handles.push(handle);
   return handle;
@@ -155,6 +157,7 @@ describe('WS 订阅与流式全链', () => {
         { toolCalls: [{ id: 'call-1', name: 'glob', arguments: JSON.stringify({ pattern: '*' }) }] },
         { textChunks: ['完成'] },
       ],
+      decide: () => 'allow',
     });
     const id = await createSession(handle);
     const client = new WsClient(`ws://127.0.0.1:${handle.port}/ws`);

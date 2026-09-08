@@ -378,7 +378,7 @@ describe('审批上抛（onAsk → 待处理请求表）', () => {
     expect(toolResult.payload.error).toContain('denied by approval policy');
   });
 
-  it('allow / deny 往返：respondApproval 落定审批；未知 requestId 返回 false', async () => {
+  it('allow / deny 往返：respondApproval 明确 ack 落定审批；未知 requestId 返回 unknown', async () => {
     const { c, hooks } = captureHooks();
     const script: MockScript = [...toolTurn('c-allow'), ...toolTurn('c-deny')];
     const handle = await start({ hooks, provider: new MockProvider(script), decide: () => 'ask' });
@@ -388,15 +388,24 @@ describe('审批上抛（onAsk → 待处理请求表）', () => {
     // 第一轮：allow → 工具真实执行
     handle.hub.sendUserMessage(id, '第一个审批');
     await waitFor(c.approvalRequests, 1);
-    expect(handle.hub.respondApproval('no-such-request-id', 'allow')).toBe(false);
-    expect(handle.hub.respondApproval(c.approvalRequests[0]!.requestId, 'allow')).toBe(true);
+    expect(handle.hub.respondApproval('no-such-request-id', 'allow')).toEqual({
+      requestId: 'no-such-request-id',
+      state: 'unknown',
+    });
+    expect(handle.hub.respondApproval(c.approvalRequests[0]!.requestId, 'allow')).toEqual({
+      requestId: c.approvalRequests[0]!.requestId,
+      state: 'applied',
+    });
     expect(c.approvalSettled[0]!).toMatchObject({ allowed: true, reason: 'response' });
     await waitForTurnEnds(c, 1);
 
     // 第二轮：deny → 按拒绝处理
     handle.hub.sendUserMessage(id, '第二个审批');
     await waitFor(c.approvalRequests, 2);
-    expect(handle.hub.respondApproval(c.approvalRequests[1]!.requestId, 'deny')).toBe(true);
+    expect(handle.hub.respondApproval(c.approvalRequests[1]!.requestId, 'deny')).toEqual({
+      requestId: c.approvalRequests[1]!.requestId,
+      state: 'applied',
+    });
     await waitForTurnEnds(c, 2);
 
     const events = await api(handle, 'GET', `/api/sessions/${id}/events`);

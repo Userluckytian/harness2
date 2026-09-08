@@ -19,6 +19,9 @@ import { resolve } from 'node:path';
 import { runTurn } from '../agent/loop.js';
 import type { CompactionOptions, TurnResult, TurnStreamEvent } from '../agent/types.js';
 import type { ApprovalDecision, ApprovalInput, ToolResult } from '../tools/types.js';
+import type { ApprovalRequestContract, ApprovalResponseAck, ApprovalResponseDecision } from '../interaction/types.js';
+import { isApprovalDecision } from '../interaction/types.js';
+import { ApprovalQueue, type ApprovalQueueCard } from '../interaction/approval-queue.js';
 import type { ToolExecutionRequest } from '../tools/executor.js';
 import { ToolRegistry } from '../tools/registry.js';
 import { createMemoryToolForMode, runNudgeReview, type NudgeResult } from '../memory/nudge.js';
@@ -61,7 +64,7 @@ export type TurnDelta =
   | { kind: 'reasoning'; text: string }
   | { kind: 'tool'; call: ToolCallRequest };
 
-/** 待处理审批请求（上抛给 HTTP/WS 客户端；decision 只有 allow/deny 两态） */
+/** S2 历史类型（API 面兼容保留）：审批上抛已升级为 ApprovalRequestContract（含 scope/expiresAt/cwd） */
 export interface PendingApproval {
   requestId: string;
   sessionId: string;
@@ -69,7 +72,7 @@ export interface PendingApproval {
   args: unknown;
 }
 
-export type ApprovalSettleReason = 'response' | 'timeout' | 'cancelled';
+export type ApprovalSettleReason = 'response' | 'timeout' | 'cancelled' | 'expired';
 
 /** hub 级记忆装配（阶段 6）：mode ≠ off 时由启动器注入；off 不传 = 零记忆行为 */
 export interface SessionHubMemory {
@@ -105,8 +108,11 @@ export interface SessionHubHooks {
   onDelta?(sessionId: string, delta: TurnDelta): void;
   /** turn 结束（stopReason：end_turn/error/cancelled/max_steps/…） */
   onTurnEnd?(sessionId: string, result: TurnResult): void;
-  /** 审批上抛：进入待处理请求表后回调 */
-  onApprovalRequest?(approval: PendingApproval): void;
+  /**
+   * 审批上抛：进入待处理队列后回调。deliverTo = 送达链（自身会话 + 祖先父子会话）——
+   * 父/子/孙订阅者都能收到该卡（child 审批在子会话结束前对父可见）。
+   */
+  onApprovalRequest?(approval: ApprovalRequestContract, deliverTo: string[]): void;
   /** 审批落定（响应/超时/取消；false = 按拒绝处理） */
   onApprovalSettled?(requestId: string, allowed: boolean, reason: ApprovalSettleReason): void;
   /** 后台复盘开始（turn-end 之后异步触发；提示帧，UI 自行决定展示） */
@@ -124,7 +130,7 @@ export interface SessionHubOptions {
   tools: ToolRegistry;
   /** 工具执行 cwd + 新会话分组目录 */
   cwd: string;
-  /** 策略决策缝（缺省 allow-all；服务启动时由 config 构造注入） */
+  /** 策略决策缝（ask/allow/deny/auto/bypass 落这里；hub 缺省 ask——绝不静默允许） */
   decide?: (input: ApprovalInput) => ApprovalDecision;
   /** 审批等待超时 ms（默认 120_000；超时按拒绝处理） */
   approvalTimeoutMs?: number;
@@ -209,18 +215,16 @@ interface HubEntry {
   writer: EventMirrorWriter;
 }
 
-interface PendingApprovalEntry {
-  approval: PendingApproval;
-  settle: (allowed: boolean, reason: ApprovalSettleReason) => void;
-}
-
 export class SessionHub {
   private readonly entries = new Map<string, HubEntry>();
   /** 每会话待处理用户消息队列（busy 时入队，turn 结束后 pump——同 REPL 语义） */
   private readonly pendingTexts = new Map<string, string[]>();
   /** 每会话运行中的 turn 取消源 */
   private readonly running = new Map<string, AbortController>();
-  private readonly approvals = new Map<string, PendingApprovalEntry>();
+  /** 多并发结构化审批队列（requestId 级独立卡片；含授权缓存与已落定记忆） */
+  private readonly approvals = new ApprovalQueue();
+  /** subagent 血缘：childId → parentId（hub 层记录；交付链 / 后代待审批展开用） */
+  private readonly subagentChildren = new Map<string, string>();
   /** 运行中 turn 的 promise 集（close 时等待收尾） */
   private readonly inflight = new Set<Promise<void>>();
   /** 每会话 nudge 计数（用户 turn 完成时 +1；turn 内调过 memory 工具 → 归零） */
@@ -492,8 +496,13 @@ export class SessionHub {
           onChildEvent: (childId, event) => this.emitEvent(childId, event),
           onChildTurnEnd: (childId, result) => this.emitTurnEnd(childId, result),
         },
-        // 子会话 ask 上抛同一待审批表（requestId 全局可应答；payload.sessionId = 子会话）
-        approvalFactory: (childId, signal) => this.makeApprovalHandler(childId, signal),
+        // 子会话 ask 上抛同一待审批队列（requestId 全局可应答；payload.sessionId = 子会话）。
+        // S2：血缘在工厂闭包记录（childId→parentId），工厂三参签名修 maxDepth>1 血缘——
+        // 孙会话父 = 落地子会话（非顶父；交付链/后代 BFS 随之准确）
+        approvalFactory: (childId, parentId, signal) => {
+          this.subagentChildren.set(childId, parentId);
+          return this.makeApprovalHandler(childId, signal);
+        },
         // 阶段 11 口径统一（加性）：子会话注入宿主同款 skills 列表（与 chat REPL 一致）
         ...(this.options.skills !== undefined ? { skills: this.options.skills } : {}),
       })) {
@@ -632,17 +641,53 @@ export class SessionHub {
 
   // —— 审批上抛 ——
 
-  /** 待处理审批表快照（诊断用） */
-  listPendingApprovals(): PendingApproval[] {
-    return [...this.approvals.values()].map((p) => p.approval);
+  /** 全部待处理审批快照（含 scope/expiresAt 全量契约；诊断/订阅重放用） */
+  listPendingApprovals(): ApprovalRequestContract[] {
+    return this.approvals.listPending();
   }
 
-  /** 审批响应：命中待处理请求则落定；返回 false = requestId 不存在（已超时/已取消） */
-  respondApproval(requestId: string, decision: 'allow' | 'deny'): boolean {
-    const pending = this.approvals.get(requestId);
-    if (!pending) return false;
-    pending.settle(decision === 'allow', 'response');
-    return true;
+  /** 指定会话可见的待处理审批：自身 + 后代（subagent 血缘 BFS 展开）——重连恢复/父侧下钻用 */
+  pendingApprovalsFor(sessionId: string): ApprovalRequestContract[] {
+    this.assertValidSessionId(sessionId);
+    const childrenOf = new Map<string, string[]>(); // parentId → childIds
+    for (const [child, parent] of this.subagentChildren) {
+      const list = childrenOf.get(parent) ?? [];
+      list.push(child);
+      childrenOf.set(parent, list);
+    }
+    const scope = new Set<string>([sessionId]);
+    const queue = [sessionId];
+    while (queue.length > 0) {
+      const current = queue.shift()!;
+      for (const child of childrenOf.get(current) ?? []) {
+        if (!scope.has(child)) {
+          scope.add(child);
+          queue.push(child);
+        }
+      }
+    }
+    return this.approvals.listPending().filter((a) => scope.has(a.sessionId));
+  }
+
+  /** 审批响应：明确 ack（applied/duplicate/expired/unknown）；非法/未知 requestId 不抛错 */
+  respondApproval(requestId: string, decision: ApprovalResponseDecision): ApprovalResponseAck {
+    if (!isApprovalDecision(decision)) {
+      return { requestId, state: 'unknown' };
+    }
+    return this.approvals.respond(requestId, decision);
+  }
+
+  /** 送达链：自身会话 + 祖先（subagent 血缘；父审批请求投递给落地父 + 全程祖先，child 结束前父可见） */
+  private deliveryChain(sessionId: string): string[] {
+    const chain = [sessionId];
+    let current = sessionId;
+    for (let i = 0; i < 64; i++) {
+      const parent = this.subagentChildren.get(current);
+      if (parent === undefined) break;
+      chain.push(parent);
+      current = parent;
+    }
+    return chain;
   }
 
   // —— 观察者分发（异常互不影响：单观察者抛错不阻断其他分发与内核） ——
@@ -720,37 +765,77 @@ export class SessionHub {
   private makeApprovalHandler(sessionId: string, signal: AbortSignal) {
     const decide = this.options.decide;
     return {
-      decide: (input: ApprovalInput): ApprovalDecision => decide?.(input) ?? 'allow',
+      // 「本会话总是」授权缓存预检：已授权工具直接 allow（队列授权语义，不重问 UI）；
+      // 否则落策略（缺省 ask——绝不静默允许；旧执行器级 allow-all 默认仍由 loop 级保留）。
+      decide: (input: ApprovalInput): ApprovalDecision => {
+        if (this.approvals.grantFor(sessionId).has(input.tool)) return 'allow';
+        return decide?.(input) ?? 'ask';
+      },
       onAsk: async (input: ApprovalInput): Promise<boolean> => {
-        const approval: PendingApproval = {
+        // onAsk 只在 decide='ask' 时被 loop 调用：卡片协议 = 一次性授权（scope.once）。
+        const approval: ApprovalRequestContract = {
           requestId: randomUUID(),
           sessionId,
           tool: input.tool,
           args: input.args,
+          cwd: this.sessionCwd(sessionId),
+          scope: { mode: 'once' },
+          expiresAt: new Date(Date.now() + this.approvalTimeoutMs).toISOString(),
         };
         return new Promise<boolean>((resolve) => {
           let settled = false;
-          const settle = (allowed: boolean, reason: ApprovalSettleReason): void => {
+          let timer: NodeJS.Timeout | undefined;
+          const notify = (allowed: boolean, reason: ApprovalSettleReason): void => {
             if (settled) return;
             settled = true;
             clearTimeout(timer);
             signal.removeEventListener('abort', onAbort);
-            this.approvals.delete(approval.requestId);
-            for (const l of this.listeners) l.onApprovalSettled?.(approval.requestId, allowed, reason);
+            this.emitApprovalSettled(approval.requestId, allowed, reason);
             resolve(allowed);
           };
-          const timer = setTimeout(() => settle(false, 'timeout'), this.approvalTimeoutMs);
-          const onAbort = (): void => settle(false, 'cancelled');
+          // 登记失败（卡片 self-contain 校验不过，如 scope 越界/重复 id）：**不进队列**、按拒绝
+          // 落定（fail-closed，无悬挂卡、不下发 UI）
+          const node: ApprovalQueueCard = {
+            approval,
+            settle: (allowed, reason) => notify(allowed, reason),
+          };
+          timer = setTimeout(
+            () => this.approvals.settle(approval.requestId, false, 'timeout'),
+            this.approvalTimeoutMs,
+          );
+          if (!this.approvals.register(node)) {
+            clearTimeout(timer);
+            notify(false, 'cancelled');
+            return;
+          }
+          const onAbort = (): void => this.approvals.settle(approval.requestId, false, 'cancelled');
           if (signal.aborted) {
-            settle(false, 'cancelled');
+            this.approvals.settle(approval.requestId, false, 'cancelled');
             return;
           }
           signal.addEventListener('abort', onAbort, { once: true });
-          this.approvals.set(approval.requestId, { approval, settle });
-          for (const l of this.listeners) l.onApprovalRequest?.(approval);
+          // 多点送达：自身 + 祖先（hub 层决定，观察者只广播）
+          const deliverTo = this.deliveryChain(sessionId);
+          for (const l of this.listeners) {
+            try {
+              l.onApprovalRequest?.(approval, deliverTo);
+            } catch {
+              // 观察者异常不回写内核
+            }
+          }
         });
       },
     };
+  }
+
+  private emitApprovalSettled(requestId: string, allowed: boolean, reason: ApprovalSettleReason): void {
+    for (const l of this.listeners) {
+      try {
+        l.onApprovalSettled?.(requestId, allowed, reason);
+      } catch {
+        // 观察者异常不回写内核
+      }
+    }
   }
 
   // —— 收尾 ——
@@ -761,7 +846,7 @@ export class SessionHub {
     this.pendingTexts.clear();
     for (const ac of this.running.values()) ac.abort();
     for (const ac of this.reviewRunning.values()) ac.abort();
-    for (const pending of this.approvals.values()) pending.settle(false, 'cancelled');
+    this.approvals.settleAll('cancelled');
     while (this.inflight.size > 0) {
       await Promise.all([...this.inflight]);
     }

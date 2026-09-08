@@ -64,6 +64,7 @@ describe('SessionHub subagent 装配', () => {
       tools,
       cwd: root,
       subagent: { provider: new MockProvider([{ toolCalls: [{ id: 'cc1', name: 'child_tool', arguments: '{}' }] }, { text: 'child done' }]), maxDepth: 1, maxTurns: 5 },
+      decide: () => 'allow',
       approvalTimeoutMs: 2000,
       hooks: {},
     });

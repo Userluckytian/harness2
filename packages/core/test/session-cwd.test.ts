@@ -72,7 +72,7 @@ describe('SessionHub 每会话真实 cwd（A/B 不串）', () => {
       { toolCalls: [{ id: 'b2', name: 'read', arguments: JSON.stringify({ file_path: 'note.txt' }) }] },
       { text: 'B read' },
     ];
-    const hub = new SessionHub({ manager, provider: new MockProvider(script), tools, cwd: root });
+    const hub = new SessionHub({ manager, provider: new MockProvider(script), tools, cwd: root, decide: () => 'allow' });
     const turnEnds: Array<{ id: string; stopReason: string }> = [];
     hub.addHooks({
       onTurnEnd: (id, result) => turnEnds.push({ id, stopReason: result.stopReason }),
@@ -114,7 +114,7 @@ describe('SessionHub 每会话真实 cwd（A/B 不串）', () => {
     ];
 
     // hub1：创建会话，跑一轮（落 header cwd 与 seed.txt）
-    const hub1 = new SessionHub({ manager, provider: new MockProvider(scripts[0]!), tools, cwd: root });
+    const hub1 = new SessionHub({ manager, provider: new MockProvider(scripts[0]!), tools, cwd: root, decide: () => 'allow' });
     const done1 = new Promise<void>((resolve) => {
       hub1.addHooks({ onTurnEnd: (id) => { if (id === created.id) resolve(); } } satisfies SessionHubHooks);
     });
@@ -125,7 +125,7 @@ describe('SessionHub 每会话真实 cwd（A/B 不串）', () => {
     expect(readFileSync(join(projectA, 'seed.txt'), 'utf8')).toBe('seed');
 
     // hub2：同 manager 恢复会话（entryFor 走 resume → header.cwd），再跑一轮
-    const hub2 = new SessionHub({ manager, provider: new MockProvider(scripts[1]!), tools, cwd: root });
+    const hub2 = new SessionHub({ manager, provider: new MockProvider(scripts[1]!), tools, cwd: root, decide: () => 'allow' });
     const done2 = new Promise<void>((resolve) => {
       hub2.addHooks({ onTurnEnd: (id) => { if (id === created.id) resolve(); } } satisfies SessionHubHooks);
     });

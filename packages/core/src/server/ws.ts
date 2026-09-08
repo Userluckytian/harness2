@@ -6,7 +6,7 @@
 //   ← {type:'delta', sessionId, kind:'text'|'reasoning', text} / {kind:'tool', call}
 //   ← {type:'event', sessionId, event}              # 落盘事件镜像（含 rewind/marker）
 //   ← {type:'turn-end', sessionId, stopReason, error?, warning?}
-//   ← {type:'approval-request', sessionId, tool, args, requestId}
+//   ← {type:'approval-request', sessionId, tool, args, requestId, scope, expiresAt, cwd?, taskId?, parentTaskId?}
 //   ← {type:'nudge-started', sessionId}             # 后台复盘开始（提示帧，UI 自行决定展示）
 //   ← {type:'nudge-finished', sessionId, stopReason, toolCalls, staged, error?}
 //   ← {type:'error', error}                         # 协议/输入错误（不在契约帧型内，仅诊断）
@@ -16,6 +16,7 @@ import type { Server } from 'node:http';
 import type { TurnStopReason } from '../agent/types.js';
 import type { ToolCallRequest } from '../provider/types.js';
 import type { AnySessionEvent } from '../session/types.js';
+import type { ApprovalRequestContract, ApprovalScope } from '../interaction/types.js';
 import { HubError, SessionHub, type TurnDelta } from './sessions.js';
 import { isTrustedHost, isTrustedOrigin, normalizeOriginHeader, WS_MAX_PAYLOAD } from './trust.js';
 
@@ -40,7 +41,22 @@ export type WsServerMessage =
       error?: string;
       warning?: string;
     }
-  | { type: 'approval-request'; sessionId: string; tool: string; args: unknown; requestId: string }
+  | {
+      type: 'approval-request';
+      sessionId: string;
+      tool: string;
+      args: unknown;
+      requestId: string;
+      /** scope：once=一次性 / 「本会话总是」（框定 sessionId；跨 session 卡片会被策略层拒收） */
+      scope: ApprovalScope;
+      /** 过期时刻 ISO；迟到将被拒（客户端可据此计时自弃） */
+      expiresAt: string;
+      /** 卡片归属会话 cwd（S1 起工具执行基于它；重连后客户端可展示） */
+      cwd?: string;
+      /** 桌面端任务分组链路（加性字段；旧客户端忽略） */
+      taskId?: string;
+      parentTaskId?: string;
+    }
   | { type: 'nudge-started'; sessionId: string }
   | {
       type: 'nudge-finished';
@@ -70,6 +86,22 @@ export interface WsPlane {
 function deltaFrame(sessionId: string, delta: TurnDelta): WsServerMessage {
   if (delta.kind === 'tool') return { type: 'delta', sessionId, kind: 'tool', call: delta.call };
   return { type: 'delta', sessionId, kind: delta.kind, text: delta.text };
+}
+
+/** 审批上抛帧（卡片契约 → 出站；scope/expiresAt 必填，cwd/taskId/parentTaskId 加性） */
+function approvalFrame(a: ApprovalRequestContract): WsServerMessage {
+  return {
+    type: 'approval-request',
+    sessionId: a.sessionId,
+    tool: a.tool,
+    args: a.args,
+    requestId: a.requestId,
+    scope: a.scope,
+    expiresAt: a.expiresAt,
+    ...(a.cwd !== undefined ? { cwd: a.cwd } : {}),
+    ...(a.taskId !== undefined ? { taskId: a.taskId } : {}),
+    ...(a.parentTaskId !== undefined ? { parentTaskId: a.parentTaskId } : {}),
+  };
 }
 
 /** 把 WS 事件面挂到 HTTP server 上（hub 观察者 → 订阅连接分发）。
@@ -106,11 +138,14 @@ export function attachWsServer(server: Server, hub: SessionHub, options: WsPlane
   }
   const conns = new Set<Conn>();
 
-  const broadcast = (sessionId: string, frame: WsServerMessage): void => {
+  const broadcast = (sessionId: string, frame: WsServerMessage): void => broadcastTo([sessionId], frame);
+
+  /** 按送达链投递：订阅命中 deliverTo 任一会话即广播（父/子/孙订阅者都能收到该审批卡） */
+  const broadcastTo = (deliverTo: string[], frame: WsServerMessage): void => {
     if (conns.size === 0) return;
     const data = JSON.stringify(frame);
     for (const conn of conns) {
-      if (!conn.subs.has(sessionId)) continue;
+      if (!deliverTo.some((id) => conn.subs.has(id))) continue;
       try {
         conn.ws.send(data);
       } catch {
@@ -130,14 +165,7 @@ export function attachWsServer(server: Server, hub: SessionHub, options: WsPlane
         ...(result.error !== undefined ? { error: result.error } : {}),
         ...(result.warning !== undefined ? { warning: result.warning } : {}),
       }),
-    onApprovalRequest: (a) =>
-      broadcast(a.sessionId, {
-        type: 'approval-request',
-        sessionId: a.sessionId,
-        tool: a.tool,
-        args: a.args,
-        requestId: a.requestId,
-      }),
+    onApprovalRequest: (a, deliverTo) => broadcastTo(deliverTo, approvalFrame(a)),
     onNudgeStarted: (sessionId) => broadcast(sessionId, { type: 'nudge-started', sessionId }),
     onNudgeFinished: (sessionId, result) =>
       broadcast(sessionId, {
@@ -166,6 +194,10 @@ export function attachWsServer(server: Server, hub: SessionHub, options: WsPlane
           case 'subscribe': {
             hub.locate(msg.sessionId); // 未知会话 → error 帧
             conn.subs.add(msg.sessionId);
+            // S2 重连恢复：订阅即补发该会话（含后代 subagent）的待处理审批卡
+            for (const a of hub.pendingApprovalsFor(msg.sessionId)) {
+              sendSafe(ws, approvalFrame(a));
+            }
             break;
           }
           case 'unsubscribe': {
@@ -181,7 +213,9 @@ export function attachWsServer(server: Server, hub: SessionHub, options: WsPlane
             break;
           }
           case 'approval-response': {
-            hub.respondApproval(msg.requestId, msg.decision); // false = 已超时/取消：静默忽略
+            // ack（applied/duplicate/expired/unknown）不回帧：经 HTTP respond 返回；
+            // 此处迟到/重复响应按队列已落定天然收敛（duplicate/expired/unknown 均静默）
+            hub.respondApproval(msg.requestId, msg.decision);
             break;
           }
           case 'fork': {

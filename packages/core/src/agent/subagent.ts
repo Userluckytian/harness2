@@ -72,7 +72,7 @@ export interface SubagentOptions {
    * 审批上抛工厂（装配层注入）：子会话 ask 走与父相同的待审批通道，但 sessionId 记为
    * 子会话 id（UI 按子会话归属展示）。与 approval 同时提供时工厂优先。
    */
-  approvalFactory?: (childSessionId: string, signal: AbortSignal) => ApprovalHandler;
+  approvalFactory?: (childSessionId: string, parentSessionId: string, signal: AbortSignal) => ApprovalHandler;
   /** 工具执行 cwd + 子会话缺省分组目录 */
   cwd: string;
   maxDepth: number;
@@ -94,7 +94,7 @@ export interface SubagentOptions {
 
 /** 子会话 turn 的审批缝：工厂优先（按子会话 id 上抛），否则固定 handler，缺省 allow-all */
 function approvalFor(opts: SubagentOptions, childSessionId: string, signal: AbortSignal): ApprovalHandler | undefined {
-  if (opts.approvalFactory !== undefined) return opts.approvalFactory(childSessionId, signal);
+  if (opts.approvalFactory !== undefined) return opts.approvalFactory(childSessionId, opts.parentSessionId, signal);
   return opts.approval;
 }
 

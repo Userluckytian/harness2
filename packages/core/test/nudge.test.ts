@@ -21,6 +21,7 @@ import {
 } from '../src/memory/nudge.js';
 import { SessionWriter } from '../src/session/writer.js';
 import { defaultSessionsRoot } from '../src/session/manager.js';
+import type { ApprovalDecision, ApprovalInput } from '../src/tools/types.js';
 
 const dirs: string[] = [];
 function tmpDir(prefix = 'h2-nudge-'): string {
@@ -47,6 +48,7 @@ function makeHub(opts: {
   review?: MockScript;
   mode?: 'ask' | 'auto';
   nudgeInterval?: number;
+  decide?: (input: ApprovalInput) => ApprovalDecision;
 }): HubFixture {
   const root = tmpDir();
   const manager = new SessionManager(defaultSessionsRoot(root));
@@ -61,6 +63,7 @@ function makeHub(opts: {
       return r;
     })(),
     cwd: root,
+    ...(opts.decide !== undefined ? { decide: opts.decide } : {}),
     ...(opts.review !== undefined || opts.mode !== undefined
       ? {
           memory: {
@@ -274,6 +277,7 @@ describe('SessionHub nudge 计数与触发', () => {
       ],
       review: [{ text: '无需记忆' }],
       nudgeInterval: 2,
+      decide: () => 'allow',
     });
     fx.hub.sendUserMessage(fx.sessionId, '第一句');
     while (fx.hub.isBusy(fx.sessionId)) await sleep(20);
@@ -428,7 +432,7 @@ describe('SessionHub 装配校验（审查 P2-1）', () => {
       new SessionHub({
         manager,
         provider: new MockProvider([{ text: 'x' }]),
-        tools: new ToolRegistry(),
+tools: new ToolRegistry(),
         cwd: root,
         memory: memory as never,
       });
