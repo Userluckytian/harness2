@@ -32,7 +32,8 @@ import type {
 } from '../provider/types.js';
 import { ToolExecutor, type ExecutedToolResult, type ToolExecutionRequest } from '../tools/executor.js';
 import type { ToolRegistry } from '../tools/registry.js';
-import type { TurnOptions, TurnResult, TurnStopReason } from './types.js';
+import type { SteerSink, TurnOptions, TurnResult, TurnStopReason } from './types.js';
+import type { SteerRequest } from '../interaction/types.js';
 import {
   classifyAttemptError,
   createRetryBudget,
@@ -243,6 +244,40 @@ async function runTurnWithWriter(writer: SessionWriter | SessionAppender, option
   const startedAt = performance.now();
   const elapsed = () => Math.round(performance.now() - startedAt);
 
+  // —— S6 控制输入（steer）——只在安全 step 边界消费；不进日志投影 ——
+  const steers = options.steer;
+  // must-complete = 无法保证取消（cancelGuaranteed!==true）的工具名单：上一步执行了它时不强制另开 step
+  const mustCompleteTools = new Set<string>();
+  for (const td of options.tools.list()) {
+    if (td.cancelGuaranteed !== true) mustCompleteTools.add(td.name);
+  }
+  const seenSteerIds = new Set<string>();
+  // 已在上一步边界消费、待叠加到下一步请求的控制文本（不落盘，单步有效）
+  let pendingControls: string[] = [];
+  /** 判定一条 steer：stale（turn 不符）→ 保 draft；重复 id → 拒；否则接受（返回待叠加文本） */
+  const resolveOne = (s: SteerRequest): string | undefined => {
+    if (s.expectedTurnId !== turnId) {
+      steers?.resolve({ id: s.id, expectedTurnId: s.expectedTurnId, state: 'stale', draftKept: true });
+      return undefined;
+    }
+    if (seenSteerIds.has(s.id)) {
+      steers?.resolve({ id: s.id, expectedTurnId: s.expectedTurnId, state: 'rejected' });
+      return undefined;
+    }
+    seenSteerIds.add(s.id);
+    steers?.resolve({ id: s.id, expectedTurnId: s.expectedTurnId, state: 'accepted' });
+    return s.text;
+  };
+  /** 边界消费：把一个待应用 steer 取走并判定；返回是否已消费 */
+  const drainBoundary = (): void => {
+    if (steers === undefined) return;
+    let s: SteerRequest | undefined;
+    while ((s = steers.take()) !== undefined) {
+      const text = resolveOne(s);
+      if (text !== undefined) pendingControls.push(text);
+    }
+  };
+
   // —— 记忆注入（阶段 6）：先于 user/message（快照冻结在「首个 user turn 前」）——
   const memorySystem =
     options.memory !== undefined && options.userText !== undefined
@@ -279,6 +314,8 @@ async function runTurnWithWriter(writer: SessionWriter | SessionAppender, option
   const retryBudget = createRetryBudget();
   const earlyWarnings = [compactionWarning, skillsWarning].filter((w): w is string => w !== undefined);
   let warning: string | undefined = earlyWarnings.length > 0 ? earlyWarnings.join('；') : undefined;
+  // S6：上一步是否执行过 must-complete（无法保证取消）工具——是则本边界不强制另开 step（steer 排队）
+  let lastStepMustComplete = false;
 
   // eslint 结构：每个 step = step/start → 请求（日志投影）→ 模型流 → 事件落盘 → step/end
   while (true) {
@@ -303,6 +340,10 @@ async function runTurnWithWriter(writer: SessionWriter | SessionAppender, option
         ? `${memorySystem}\n\n${skillsSystem}`
         : (memorySystem ?? skillsSystem);
     const messages = buildChatMessages(loadSession(writer.dir));
+    // S6：上一步边界消费的 steer 作为**控制输入**叠加（追加一条 user 控制消息），
+    // 不写入 session.log（不进投影、不伪造 user/message 正文）；单步有效，next 重置。
+    for (const ctrl of pendingControls) messages.push({ role: 'user', content: ctrl });
+    pendingControls = [];
     const toolSpecs = options.tools.list().map(
       (def): ToolSpec => ({ name: def.name, description: def.description, parameters: def.parameters }),
     );
@@ -544,7 +585,32 @@ async function runTurnWithWriter(writer: SessionWriter | SessionAppender, option
     toolCallsTotal += calls.length;
 
     writer.append('step/end', { stepId, turnId, durationMs: Math.round(performance.now() - stepStartedAt) });
+    // S6 安全 step 边界：本 step 完整往返完成（模型流 + 工具波浪均已落地）后才消费 steer。
+    // 上一步执行过 must-complete（无法保证取消）工具 → 不强制另开 step，steer 排队等干净边界；
+    // 否则消费一条 steer（id 去重）叠加到下一 step 请求（控制输入，不进投影）。
+    lastStepMustComplete = calls.some((c) => mustCompleteTools.has(c.name));
+    if (!lastStepMustComplete) {
+      drainBoundary();
+    } else {
+      pendingControls = [];
+    }
     // 继续下一 step：工具结果已落盘，下一请求由日志投影重建（含 tool role 消息）
+  }
+
+  // S6 turn 结束（end_turn/error/cancelled/max_steps 等）：把尚未在边界应用的剩余 steer
+  // 逐一明确回帧（不静默丢）：stale → 保 draft；其余（干净边界未及到达）→ rejected（窗口已关闭）。
+  if (steers !== undefined) {
+    let s: SteerRequest | undefined;
+    while ((s = steers.take()) !== undefined) {
+      if (s.expectedTurnId !== turnId) {
+        steers.resolve({ id: s.id, expectedTurnId: s.expectedTurnId, state: 'stale', draftKept: true });
+      } else if (seenSteerIds.has(s.id)) {
+        steers.resolve({ id: s.id, expectedTurnId: s.expectedTurnId, state: 'rejected' });
+      } else {
+        seenSteerIds.add(s.id);
+        steers.resolve({ id: s.id, expectedTurnId: s.expectedTurnId, state: 'rejected' });
+      }
+    }
   }
 
   return {

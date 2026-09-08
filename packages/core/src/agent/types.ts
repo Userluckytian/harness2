@@ -6,6 +6,28 @@ import type { SnapshotStore } from '../session/snapshots.js';
 import type { ToolRegistry } from '../tools/registry.js';
 import type { ApprovalHandler } from '../tools/types.js';
 import type { ExecutionLifecycleObserver } from '../tools/executor.js';
+import type { SteerRequest, SteerResult } from '../interaction/types.js';
+
+/**
+ * S6 控制输入（steer）通道。外部实现把绑定到某 turn 的 steer 塞进队列；loop 在每个
+ * 安全 step 边界消费一个 `take()`，并把结果经 `resolve()` 回帧（ack）——调用方不得丢。
+ * 语义由 loop：只有 `expectedTurnId === 当前 turnId` 才接受；同 id 只生效一次。
+ * steer 是控制输入：只在下一 step 的请求上叠加一条 control user 消息，**不写入
+ * session.log**（不进投影、不污染 user/message 正文）。模型可见输入 = 日志投影 + 单次
+ * 控制叠加（文档化取舍，见 task-S6-report）。
+ */
+export interface SteerSink {
+  /** 出队一个待应用的 steer（仅当 loop 处于可应用边界才调用）；无 → undefined */
+  take(): SteerRequest | undefined;
+  /** 上报一次 steer 处理结果（accepted/stale/rejected），调用方据此发 ack 回帧；不丢 */
+  resolve(result: SteerResult): void;
+}
+
+/** 一条已应用 steer 的 id（供 loop 内最近一步判断用）；不落盘 */
+export interface AppliedSteerRecord {
+  id: string;
+  text: string;
+}
 
 /**
  * Turn 终止原因：end_turn/error/cancelled/max_steps 为 loop 自身状态；
@@ -94,6 +116,17 @@ export interface TurnOptions {
    * 供 S3 delivery 的 callId 状态、S7 toolExecutionView 使用；纯观察，不落第二套日志。
    */
   executionObserver?: ExecutionLifecycleObserver;
+  /**
+   * 可选：S6 控制输入（steer）通道。提供时 loop 在每个安全 step 边界消费一个 steer：
+   *   - 只接受 expectedTurnId === 本 turnId 的 steer（其余 stale 拒绝 + draftKept）；
+   *   - 同 steer id 只生效一次（重复 → rejected，不双注入）；
+   *   - 上一步执行了 must-complete（cancelGuaranteed:false）工具时，steer 排队等干净边界
+   *     （不强行另开 step、不打断 provider 当前流）；
+   *   - 接受的 steer 作为**控制输入**叠加在下一 step 请求末尾（一条 user 控制消息），
+   *     不写入 session.log（不进投影，不伪造 user/message 正文）。
+   * 不提供 = 零 steer 行为（既有 loop 路径完全不变）。
+   */
+  steer?: SteerSink;
 }
 
 /** turn 内流式观察事件（onStream 回调 payload；纯渲染缝，非模型上下文来源）。
