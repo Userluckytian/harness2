@@ -33,6 +33,16 @@ import type {
 import { ToolExecutor, type ExecutedToolResult, type ToolExecutionRequest } from '../tools/executor.js';
 import type { ToolRegistry } from '../tools/registry.js';
 import type { TurnOptions, TurnResult, TurnStopReason } from './types.js';
+import {
+  classifyAttemptError,
+  createRetryBudget,
+  effectiveDelay,
+  backoffSeconds,
+  waitWithAbort,
+  RetryAbortError,
+  type EffectiveDelay,
+} from '../interaction/retry-policy.js';
+import { RETRY_MAX_EXTRA_PER_TURN, RETRY_MAX_TOTAL_WAIT_SECONDS } from '../interaction/types.js';
 
 export const DEFAULT_MAX_STEPS = 25;
 
@@ -265,6 +275,8 @@ async function runTurnWithWriter(writer: SessionWriter | SessionAppender, option
   let finalText: string | undefined;
   let stopReason: TurnStopReason = 'end_turn';
   let error: string | undefined;
+  // S4b：重试预算为整 turn 共享（per-turn 额外 ≤6 + 累计等待 ≤120s），跨 step 累计
+  const retryBudget = createRetryBudget();
   const earlyWarnings = [compactionWarning, skillsWarning].filter((w): w is string => w !== undefined);
   let warning: string | undefined = earlyWarnings.length > 0 ? earlyWarnings.join('；') : undefined;
 
@@ -306,9 +318,11 @@ async function runTurnWithWriter(writer: SessionWriter | SessionAppender, option
     let providerStop: ProviderStopReason | undefined; // done 块透传的流终止原因（P2-4）
     const calls: ToolCallRequest[] = [];
     // 取消分类公共出口：半截尝试以 assistant/attempt 记录（append-only），绝不冒充 assistant/message
-    const finishCancelled = (msg: string): TurnResult => {
+    // text 为半截产出（可展开渲染），但从不作为完整 assistant/message 落盘
+    const finishCancelled = (msg: string, partialText?: string): TurnResult => {
       writer.append('assistant/attempt', {
         error: `cancelled: ${msg}`,
+        ...(partialText !== undefined && partialText.length > 0 ? { text: partialText } : {}),
         model: provider.name,
         turnId,
       });
@@ -325,29 +339,75 @@ async function runTurnWithWriter(writer: SessionWriter | SessionAppender, option
         error: msg,
       };
     };
-    try {
-      for await (const chunk of provider.streamChat(request, { signal })) {
-        if (chunk.type === 'text-delta') {
-          text += chunk.text;
-          options.onStream?.({ type: 'text-delta', text: chunk.text });
-        } else if (chunk.type === 'reasoning-delta') {
-          reasoning = (reasoning ?? '') + chunk.text; // reasoning 汇总进 assistant/message.reasoning（日志展示），不回传模型
-          options.onStream?.({ type: 'reasoning-delta', text: chunk.text }); // 观察缝（阶段 5 服务层增量推送用；REPL 不渲染）
-        } else if (chunk.type === 'tool-call') {
-          calls.push(chunk.call);
-          options.onStream?.({ type: 'tool-call', call: chunk.call });
-        } else if (chunk.type === 'usage') usage = chunk.usage;
-        else if (chunk.type === 'done') providerStop = chunk.stopReason;
+    // —— S4b 有界 attempt 重试（仅约束在本模型 step 内、完整工具计划未提交前）——
+    // 不变量：重试新 attempt 复用本 step 开头的日志投影 request（同一已落盘投影），
+    // 不内存旁路重建；新 attempt 从零文本开始，绝不续拼旧半句。
+    // 已完成工具结果在日志权威，网络失败只重试「未完成的模型 attempt」，不重跑工具。
+    let stepError: string | undefined; // 非取消终止：写入 error 通道并结束本 step/turn
+    let chainAttempt = 0; // 当前失败链退避档位序号（2/10/30；第 4 次起 30 封顶）
+    let modelOk = false;
+    while (!modelOk) {
+      try {
+        for await (const chunk of provider.streamChat(request, { signal })) {
+          if (chunk.type === 'text-delta') {
+            text += chunk.text;
+            options.onStream?.({ type: 'text-delta', text: chunk.text });
+          } else if (chunk.type === 'reasoning-delta') {
+            reasoning = (reasoning ?? '') + chunk.text; // reasoning 汇总进 assistant/message.reasoning（日志展示），不回传模型
+            options.onStream?.({ type: 'reasoning-delta', text: chunk.text }); // 观察缝（阶段 5 服务层增量推送用；REPL 不渲染）
+          } else if (chunk.type === 'tool-call') {
+            calls.push(chunk.call);
+            options.onStream?.({ type: 'tool-call', call: chunk.call });
+          } else if (chunk.type === 'usage') usage = chunk.usage;
+          else if (chunk.type === 'done') providerStop = chunk.stopReason;
+        }
+        modelOk = true;
+      } catch (e) {
+        const msg = (e as Error)?.message ?? String(e);
+        if (signal?.aborted === true) return finishCancelled(msg, text);
+        // 失败的尝试以追加事件记录（append-only），text 保留为「不完整」可展开
+        writer.append('assistant/attempt', {
+          error: msg,
+          ...(text.length > 0 ? { text } : {}),
+          model: provider.name,
+          turnId,
+        });
+        const classification = classifyAttemptError(e);
+        // 不可恢复（401/403/参数/quota/取消/拒绝/内容过滤）或预算耗尽 → 不重试，直接停止并告知
+        if (!classification.retryable) {
+          stepError = msg;
+          break;
+        }
+        if (!retryBudget.canRetry()) {
+          stepError = `${msg}（重试预算已耗尽：per-turn 额外 ${RETRY_MAX_EXTRA_PER_TURN} 次 / 累计 ${RETRY_MAX_TOTAL_WAIT_SECONDS}s，停止自动重试）`;
+          break;
+        }
+        // 退避：Retry-After 优先（尊重剩余预算），否则按链档位 + 抖动
+        const eff: EffectiveDelay =
+          classification.retryAfterSeconds !== undefined
+            ? effectiveDelay(classification.retryAfterSeconds, retryBudget)
+            : effectiveDelay(backoffSeconds(chainAttempt, Math.random), retryBudget);
+        if (eff.stop) {
+          stepError = eff.reason;
+          break;
+        }
+        retryBudget.record(eff.delayMs);
+        chainAttempt += 1;
+        try {
+          await waitWithAbort(eff.delayMs, signal);
+        } catch (abortE) {
+          if (abortE instanceof RetryAbortError) return finishCancelled(abortE.message);
+          throw abortE;
+        }
+        // 新 attempt 从零文本开始（不续拼旧半句）
+        text = '';
+        reasoning = undefined;
+        usage = undefined;
+        providerStop = undefined;
+        calls.length = 0;
       }
-    } catch (e) {
-      const msg = (e as Error)?.message ?? String(e);
-      if (signal?.aborted === true) return finishCancelled(msg);
-      // 失败的尝试以追加事件记录（append-only）
-      writer.append('assistant/attempt', {
-        error: msg,
-        model: provider.name,
-        turnId,
-      });
+    }
+    if (stepError !== undefined) {
       writer.append('step/end', {
         stepId,
         turnId,
@@ -358,13 +418,13 @@ async function runTurnWithWriter(writer: SessionWriter | SessionAppender, option
         steps,
         toolCalls: toolCallsTotal,
         durationMs: elapsed(),
-        error: msg,
+        error: stepError,
       };
     }
 
     // provider 契约允许 abort 时正常结束迭代而非抛错：这里补检信号再分类（P2-1），
     // 半截文本不得落 assistant/message 被记成 end_turn。
-    if (signal?.aborted) return finishCancelled(abortReasonMessage(signal));
+    if (signal?.aborted) return finishCancelled(abortReasonMessage(signal), text);
 
     writer.append('assistant/message', {
       text,

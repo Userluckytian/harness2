@@ -71,6 +71,7 @@ export interface AssistantMessagePayload {
 /** 失败/被取消的模型尝试单独记录（对照 dsh assistant/attempt） */
 export interface AssistantAttemptPayload {
   error: string;
+  text?: string;
   model?: string;
   turnId?: string;
 }

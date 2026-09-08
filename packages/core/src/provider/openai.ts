@@ -87,13 +87,14 @@ interface WireChunk {
 /** OpenAI-compatible 错误帧 type → ProviderError code（未知 type 一律 api_error）（P1-1） */
 const ERROR_TYPE_TO_CODE: Record<string, string> = {
   invalid_request_error: 'invalid_request',
-  authentication_error: 'auth_error',
-  auth_error: 'auth_error',
-  permission_error: 'permission_denied',
+  authentication_error: '401',
+  auth_error: '401',
+  permission_error: '403',
   not_found_error: 'not_found',
-  rate_limit_error: 'rate_limit',
-  insufficient_quota: 'insufficient_quota',
-  server_error: 'server_error',
+  rate_limit_error: '429',
+  insufficient_quota: 'quota',
+  insufficient_balance: 'quota',
+  server_error: 'server_5xx',
 };
 
 /** finish_reason → done.stopReason 白名单透传（P2-4），未知值归 end_turn */
@@ -163,9 +164,20 @@ export class OpenAICompatProvider implements ChatProvider {
 
     if (!res.ok) {
       const text = await res.text().catch(() => '');
+      const httpCode = String(res.status);
+      const normalizedCode = res.status === 429 ? '429'
+        : res.status === 503 ? '503'
+        : res.status >= 400 && res.status < 500 ? httpCode
+        : res.status >= 500 ? 'server_5xx'
+        : httpCode;
+      const retryAfterRaw = res.headers.get('retry-after');
+      const retryAfter = retryAfterRaw !== null ? Number(retryAfterRaw) : undefined;
+      const retryAfterSeconds = typeof retryAfter === 'number' && Number.isFinite(retryAfter) && retryAfter > 0
+        ? retryAfter : undefined;
       throw new ProviderError(
         redactedSummary(`HTTP ${res.status} ${res.statusText || ''}: ${text}`),
-        `http_${res.status}`,
+        normalizedCode,
+        retryAfterSeconds,
       );
     }
     if (!res.body) throw new ProviderError('响应缺少 body', 'network');

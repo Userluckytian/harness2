@@ -307,7 +307,8 @@ describe('OpenAI-compatible：错误与异常路径', () => {
     const provider = makeProvider(stub.url);
     await expect(collect(provider, { messages: [{ role: 'user', content: 'x' }] })).rejects.toMatchObject({
       name: 'ProviderError',
-      code: 'server_error',
+      // S4b：server_error 归一为 server_5xx（可恢复 5xx 码）
+      code: 'server_5xx',
     });
   });
 
@@ -328,7 +329,8 @@ describe('OpenAI-compatible：错误与异常路径', () => {
     const msg = (err as Error).message;
     expect(msg).not.toContain('sk-real-secret-9911');
     expect(msg).toContain('[REDACTED]');
-    expect((err as { code?: string }).code).toBe('auth_error');
+    // S4b：authentication_error/auth_error 归一为 401（S4a 错误分类接线的不可恢复码）
+    expect((err as { code?: string }).code).toBe('401');
   });
 
   it('连接被拒（无服务）→ ProviderError(network) 且消息脱敏', async () => {
@@ -565,7 +567,8 @@ describe('Anthropic：错误与异常路径', () => {
     expect(msg).toContain('overloaded_error');
     expect(msg).not.toContain('secret-tok-1122');
     // P2-3：error 事件保留原 code，不被 catch 误包成 stream_truncated
-    expect((err as { code?: string }).code).toBe('api_error');
+    // S4b：overloaded_error 归一为 429（可恢复重试码）
+    expect((err as { code?: string }).code).toBe('429');
   });
 
   it('P2-4 回归：stop_reason max_tokens/refusal/pause_turn 透传（pause_turn → paused）', async () => {

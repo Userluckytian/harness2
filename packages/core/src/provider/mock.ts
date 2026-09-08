@@ -13,10 +13,19 @@ export interface MockReply {
   reasoningChunks?: string[];
   toolCalls?: ToolCallRequest[];
   usage?: ProviderUsage;
-  /** 非空时 streamChat 抛 ProviderError（错误注入） */
-  error?: string;
+  /**
+   * 非空时 streamChat 抛 ProviderError（错误注入）。
+   * 数字 → ProviderError(String(n))（如 429/503/401/400）；
+   * 其他字符串 → ProviderError(s, s)（s 视为错误码，如 'stream_truncated'/'network'；
+   * 常规描述串如 'boom: network down' 会归为 unknown 码，loop 不默认重试）。
+   */
+  error?: string | number;
+  /** error 为非空时透传的 Retry-After 秒数（S4b 接线测试） */
+  retryAfterSeconds?: number;
   /** 每个 text-delta 之间的延迟 ms（模拟流式节奏，供取消测试） */
   chunkDelayMs?: number;
+  /** true = 产出完 text/reasoning/tool-calls 后抛 ProviderError(stream_truncated)（模拟半截断流）；缺省正常 done */
+  truncateAfter?: boolean;
 }
 
 export type MockScript = readonly MockReply[];
@@ -45,7 +54,11 @@ export class MockProvider implements ChatProvider {
       throw new ProviderError(`mock script exhausted (${this.cursor} of ${this.script.length} consumed)`);
     }
     this.cursor += 1;
-    if (reply.error) throw new ProviderError(reply.error);
+    if (reply.error !== undefined && reply.error !== null) {
+      // 数字 → 码；字符串 → 其本身即码（未知码归类 unknown，loop 不默认重试）
+      const code = typeof reply.error === 'number' ? String(reply.error) : (reply.error as string);
+      throw new ProviderError(reply.error + '', code, reply.retryAfterSeconds);
+    }
 
     for (const reasoning of reply.reasoningChunks ?? []) {
       if (reply.chunkDelayMs) await sleep(reply.chunkDelayMs);
@@ -63,6 +76,9 @@ export class MockProvider implements ChatProvider {
       yield { type: 'tool-call', call };
     }
     if (reply.usage) yield { type: 'usage', usage: reply.usage };
+    if (reply.truncateAfter) {
+      throw new ProviderError('连接在流结束前中断（mock 注入断流）', 'stream_truncated', reply.retryAfterSeconds);
+    }
     yield { type: 'done', stopReason: reply.toolCalls?.length ? 'tool_use' : 'end_turn' };
   }
 }

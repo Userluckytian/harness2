@@ -101,6 +101,7 @@ export class ProviderError extends Error {
   constructor(
     message: string,
     readonly code?: string,
+    readonly retryAfterSeconds?: number,
   ) {
     super(message);
     this.name = 'ProviderError';
