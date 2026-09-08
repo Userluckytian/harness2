@@ -16,6 +16,7 @@ import {
   isApprovalExpired,
   isCancelAckState,
   isCancelTargetKind,
+  isNonNegativeInteger,
   isValidChunkOffset,
   isValidEpoch,
   isValidLastSeq,
@@ -23,8 +24,10 @@ import {
   isSubmitIntent,
   isTerminalTaskState,
   queueHasSlot,
+  scopeConfinesToSession,
   PROTOCOL_VERSION,
 } from '../src/interaction/types.js';
+import { invalidFixtures, validFixtures } from './fixtures/interaction-protocol.js';
 
 describe('身份与协议版本（I1 §6）', () => {
   it('protocolVersion=2（WS 能力协商底线，桌面/终端共用）', () => {
@@ -73,6 +76,15 @@ describe('submit 契约（intent 合法值 + queue 上限）', () => {
 });
 
 describe('水位/epoch 有效性（resumeSubscription + delta chunkOffset）', () => {
+  it('非负整数原语：直接校验数值/整数/边界/类型', () => {
+    expect(isNonNegativeInteger(0)).toBe(true);
+    expect(isNonNegativeInteger(7)).toBe(true);
+    expect(isNonNegativeInteger(-1)).toBe(false);
+    expect(isNonNegativeInteger(1.5)).toBe(false);
+    expect(isNonNegativeInteger('7')).toBe(false);
+    expect(isNonNegativeInteger(undefined)).toBe(false);
+  });
+
   it('chunkOffset 必须是非负整数（0 起始单调 +1 水位）', () => {
     expect(isValidChunkOffset(0)).toBe(true);
     expect(isValidChunkOffset(1)).toBe(true);
@@ -127,6 +139,12 @@ describe('approval 契约（decision + 过期 + 作用域）', () => {
 
   it('未过期：未来 expiresAt → false（仍有待批窗口）', () => {
     expect(isApprovalExpired(new Date(Date.now() + 60_000).toISOString())).toBe(false);
+  });
+
+  it('「本会话总是」作用域必须框定在请求自身 sessionId 内（跨会话拒绝泄漏）', () => {
+    expect(scopeConfinesToSession({ mode: 'once' }, 's')).toBe(true);
+    expect(scopeConfinesToSession({ mode: 'session', sessionId: 's' }, 's')).toBe(true);
+    expect(scopeConfinesToSession({ mode: 'session', sessionId: 'other-session' }, 's')).toBe(false);
   });
 });
 
@@ -240,5 +258,43 @@ describe('重试错误码分类（S4 实现，S0 只冻结枚举位）', () => {
   it('未知码 → unknown（不猜、不默认重试）', () => {
     expect(classifyRetryable('unknown-code')).toBe('unknown');
     expect(classifyRetryable('')).toBe('unknown');
+  });
+});
+
+describe('协议 fixtures 自洽校验（S0 fixtures 供 S1-S7 复用）', () => {
+  it('合法帧样例通过对应校验', () => {
+    expect(isSubmitIntent(validFixtures.submitQueued.intent)).toBe(true);
+    expect(isSubmitIntent(validFixtures.submitSteer.intent)).toBe(true);
+    expect(validFixtures.submitAckAccepted.state).toBe('accepted');
+    expect(validFixtures.submitAckUnknown.state).toBe('unknown');
+    expect(validFixtures.submitAckUnknown.state).not.toBe('rejected'); // unknown ≠ rejected
+    expect(isValidChunkOffset(validFixtures.resumeSnapshot.activeAttempt!.textChunkOffset)).toBe(true);
+    expect(isValidEpoch(validFixtures.resumeSnapshot.epoch)).toBe(true);
+    expect(isValidLastSeq(validFixtures.resumeSnapshot.replay.fromSeq)).toBe(true);
+    expect(isApprovalDecision(validFixtures.approvalResponse.decision)).toBe(true);
+    expect(isApprovalExpired(validFixtures.approvalRequest.expiresAt)).toBe(false);
+    expect(scopeConfinesToSession(validFixtures.approvalRequest.scope, validFixtures.approvalRequest.sessionId)).toBe(true);
+    expect(isCancelTargetKind(validFixtures.cancelTurn.target.kind)).toBe(true);
+    expect(isCancelAckState(validFixtures.cancelAckStopping.state)).toBe(true);
+    expect(isCancelAckState(validFixtures.cancelAckCancelled.state)).toBe(true);
+    expect(isTerminalTaskState('completed')).toBe(true);
+    expect(canTaskTransition(validFixtures.taskContract.state, 'completed')).toBe(true);
+    expect(isValidSteerRequest(validFixtures.steerRequest)).toBe(true);
+    expect(validFixtures.steerStaleResult.state).toBe('stale');
+    expect(validFixtures.steerStaleResult.draftKept).toBe(true);
+    expect(assertSequentialChunk({ chunkOffset: validFixtures.textDelta.chunkOffset, text: validFixtures.textDelta.text }, 6)).toBe(true);
+    expect(isValidChunkOffset(validFixtures.reasoningDelta.chunkOffset)).toBe(true);
+    expect(validFixtures.attemptFinal.state).toBe('completed');
+  });
+
+  it('非法/边界帧样例被相应校验拒绝', () => {
+    expect(isSubmitIntent(invalidFixtures.badIntent.intent)).toBe(false);
+    expect(isValidChunkOffset(invalidFixtures.badChunkOffset.chunkOffset)).toBe(false);
+    expect(isValidLastSeq(invalidFixtures.badLastSeq.lastSeq)).toBe(false);
+    expect(isValidEpoch(invalidFixtures.badEpoch.epoch)).toBe(false);
+    expect(isApprovalExpired(invalidFixtures.expiredApproval.expiresAt)).toBe(true);
+    expect(scopeConfinesToSession(invalidFixtures.crossSessionScope.scope, invalidFixtures.crossSessionScope.sessionId)).toBe(false);
+    expect(canTaskTransition(invalidFixtures.terminalRegression.from, invalidFixtures.terminalRegression.to)).toBe(false);
+    expect(isValidSteerRequest(invalidFixtures.unboundSteer)).toBe(false);
   });
 });

@@ -102,7 +102,7 @@ export const validFixtures = {
     args: { path: 'README.md', content: '...' },
     cwd: 'D:\\Projects\\demo',
     scope: { mode: 'session', sessionId: '20260908-090000-abc123' },
-    expiresAt: '2026-09-08T01:05:00.000Z',
+    expiresAt: '2099-01-01T00:00:00.000Z',
   } satisfies ApprovalRequestContract,
   approvalResponse: { requestId: 'apr-11', decision: 'allow' } satisfies ApprovalResponse,
   /** respond 的 decision ack：明确三态之外还有 unknown */

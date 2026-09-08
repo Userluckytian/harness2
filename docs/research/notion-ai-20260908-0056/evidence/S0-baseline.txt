@@ -71,11 +71,11 @@ ServeLockError: serve 端口锁被占用（pid 39984, port 61753）；如需接�
 
 ### 4.4 与 S0 新增内容的隔离验证
 
-S0 新增测试 `test/interaction-types.test.ts`（29 用例）独立运行：
+S0 新增测试 `test/interaction-types.test.ts`（33 用例，含 fixtures 自洽校验）独立运行：
 
 ```
 Test Files  1 passed (1)
-     Tests  29 passed (29)
+     Tests  33 passed (33)
 LASTEXITCODE=0
 ```
 
@@ -86,5 +86,5 @@ LASTEXITCODE=0
 | `pnpm --filter @harness2/core build` | `LASTEXITCODE=0`（含 interaction/types 导出） |
 | `pnpm --filter @harness2/core typecheck` | `LASTEXITCODE=0` |
 | `H2_UPDATE_API_SNAPSHOT=1 … vitest run test/api-surface.test.ts` | 7 passed，`LASTEXITCODE=0`（加性导出基线已更新） |
-| `vitest run test/interaction-types.test.ts` | 29 passed，`LASTEXITCODE=0` |
-| `pnpm --filter @harness2/core test` 全量复核（改动后） | **35/35 文件，549 passed | 1 skipped，`LASTEXITCODE=0`**（S0 前的 3 个 fork 环境失败随陈旧锁 PID 真死而转绿；见 §4.3） |
+| `vitest run test/interaction-types.test.ts` | 33 passed，`LASTEXITCODE=0` |
+| `pnpm --filter @harness2/core test` 全量复核（改动后） | **35/35 文件，553 passed | 1 skipped，`LASTEXITCODE=0`**（S0 前的 3 个 fork 环境失败随陈旧锁 PID 真死而转绿；见 §4.3） |
