@@ -13,6 +13,7 @@ export * from './provider/mock.js';
 export * from './provider/openai.js';
 export * from './provider/anthropic.js';
 export * from './provider/factory.js';
+export * from './interaction/types.js';
 export * from './config/index.js';
 export * from './config/report.js';
 export * from './tools/types.js';

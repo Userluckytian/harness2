@@ -1,0 +1,90 @@
+# S0-baseline.txt —— 基线四命令真实输出（2026-09-08，改动前）
+
+> 环境：`D:/AI_Projects/wt-harness2/feat-notion-i1-runtime`（branch `feat/notion-i1-runtime`，baseline `e7c1fce`）
+> Shell：PowerShell 5.1，分行执行，每条记录 `LASTEXITCODE`。Node 输出含 pnpm PS 包装噪声（stderr 交错），以退出码与 vitest/tsc 摘要为准。
+
+---
+
+## 1. pnpm install --frozen-lockfile
+
+```
+Scope: all 5 workspace projects
+Already up to date
+Done in 302ms using pnpm v11.13.0
+LASTEXITCODE=0
+```
+
+## 2. pnpm -r build （实质 4/5 workspace：core/desktop/gateway/cli）
+
+```
+Scope: 4 of 5 workspace projects
+packages/core build: Done
+packages/desktop build: constructing (tsc -p tsconfig.electron.json && vite build)
+packages/gateway build: Done
+packages/cli build: Done
+packages/desktop build: vite v8.2.2 built in 117ms
+LASTEXITCODE=0
+```
+
+## 3. pnpm -r typecheck
+
+```
+Scope: 4 of 5 workspace projects
+packages/core typecheck: Done
+packages/gateway typecheck: Done
+packages/desktop typecheck: Done
+packages/cli typecheck: Done
+LASTEXITCODE=0
+```
+
+## 4. pnpm --filter @harness2/core test （`vitest run --passWithNoTests`）
+
+```
+Test Files  1 failed | 33 passed (34)
+     Tests  3 failed | 517 passed | 1 skipped (521)
+   Duration 16.51s
+LASTEXITCODE=1
+```
+
+### 4.1 失败明细（3 项，全部 `test/fork.test.ts` hub/HTTP/WS 分叉入口）
+
+三条用例均抛 `ServeLockError`：
+
+```
+ServeLockError: serve 端口锁被占用（pid 39984, port 61753）；如需接管请先停止既有 harness2 serve
+    acquireServeLock src/server/http.ts:104:11  ← isPidAlive(39984)=true
+```
+
+### 4.2 根因（环境遗留，非本 Task/S0 引入；本 Task 不碰 server/*）
+
+- 机器 `%USERPROFILE%\.harness2\serve.lock` 内容：`{"pid":39984,"port":61753,"ts":"2026-09-07T16:25:54.118Z"}`。
+- 调查：`Get-Process -Id 39984` → **进程不存在**（"找不到进程标识为 39984 的进程"）；`tasklist /FI "PID eq 39984"` 同样无匹配。
+- 即：该锁是**陈旧锁**（2026-09-07 遗留），PID 39984 已被系统回收，运行时被 `isPidAlive` 误判为存活（探活语义为 `process.kill(pid,0)`，属已知 Windows 陈旧锁误判窗口），启动测试 server 抛 `ServeLockError`。
+- 其余全部 `startServe` 测试（assembly/cron/server/trust/ws）都传了 `home` 参数隔离锁目录，只有 `fork.test.ts` 三处 `startServe` 未传 `home`（用真实 `~/.harness2` 锁），故仅这三个用例受波及。
+
+### 4.3 处置（显式列旧失败，不归咎环境后跳过）
+
+- **不在 S0 静默跳过**：本文件如实记录失败与根因；`fork.test` 锁隔离缺口应归共享后续 Task 或终端轨修复（建议：`startServe` 三处补 `home` 临时目录，与其它测试一致）。
+- 本 Task（S0）文件范围不含 `server/*` 与 `test/fork.test.ts`，不擅改。
+- 该陈旧锁 + PID 回收属**瞬时窗口**：改动后全量复核时同一批 `fork.test` 三用例已随 PID 39984 真死而转绿（见 §5 末行），旧失败与实现无关，但仍在此显式留档（不「归咎环境后跳过不做记录」）。
+- `~/.harness2/serve.lock` 为陈旧锁；删除属用户环境操作，需人类授权后执行（未自动处理）。
+
+### 4.4 与 S0 新增内容的隔离验证
+
+S0 新增测试 `test/interaction-types.test.ts`（29 用例）独立运行：
+
+```
+Test Files  1 passed (1)
+     Tests  29 passed (29)
+LASTEXITCODE=0
+```
+
+## 5. S0 追加命令（改动后状态更新）
+
+| 命令 | 结果 |
+|------|------|
+| `pnpm --filter @harness2/core build` | `LASTEXITCODE=0`（含 interaction/types 导出） |
+| `pnpm --filter @harness2/core typecheck` | `LASTEXITCODE=0` |
+| `H2_UPDATE_API_SNAPSHOT=1 … vitest run test/api-surface.test.ts` | 7 passed，`LASTEXITCODE=0`（加性导出基线已更新） |
+| `vitest run test/interaction-types.test.ts` | 29 passed，`LASTEXITCODE=0` |
+| `pnpm --filter @harness2/core test` 全量复核（改动后） | **35/35 文件，549 passed | 1 skipped，`LASTEXITCODE=0`**（S0 前的 3 个 fork 环境失败随陈旧锁 PID 真死而转绿；见 §4.3） |
