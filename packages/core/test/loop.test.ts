@@ -314,7 +314,9 @@ describe('runTurn 取消语义', () => {
       { text: 'never' },
     ]);
     const registry = new ToolRegistry();
-    registry.register(makeTool('cancel_trigger', async () => { await sleep(10); ac.abort(); return { output: 'triggered' }; }));
+    registry.register(
+      makeTool('cancel_trigger', async () => { await sleep(10); ac.abort(); return { output: 'triggered' }; }, { cancelGuaranteed: true }),
+    );
     registry.register(
       makeTool('sleep_probe', async () => { await sleep(200); return { output: 'done' }; }, { concurrencySafe: true }),
     );

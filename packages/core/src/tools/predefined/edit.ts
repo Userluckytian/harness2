@@ -20,6 +20,8 @@ export const editTool: ToolDefinition = {
   },
   // lockKey 不声明：unsafe 调用本就独占执行（串行），按路径加锁是无效实现（P2-7）；
   // lockKey 字段为 Ph3 并发模型预留（见 tools/types.ts）。
+  // cancelGuaranteed：readFileSync + writeAtomic 同步原子完成——未启动即取消，已启动即完整。
+  cancelGuaranteed: true,
   execute: async (rawArgs, ctx) => {
     const args = expectObject(rawArgs, 'edit');
     const filePath = resolve(ctx.cwd, expectString(args, 'file_path', 'edit'));

@@ -55,6 +55,9 @@ export const bashTool: ToolDefinition = {
     required: ['command'],
   },
   // unsafe（默认）：不声明 concurrencySafe
+  // cancelGuaranteed：abort/timeout 触发整棵进程树击杀（taskkill /T /F 或负 PID）并等待 close；
+  // 脱离进程组的守护进程是文档化例外（见文件头已知限制）。
+  cancelGuaranteed: true,
   execute: (rawArgs, ctx) =>
     new Promise<ToolOutput>((resolve) => {
       let command: string;

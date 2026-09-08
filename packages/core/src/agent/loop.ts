@@ -429,7 +429,13 @@ async function runTurnWithWriter(writer: SessionWriter | SessionAppender, option
         runnable.length > 0
           ? await executor.runWave(
               runnable.map((p): ToolExecutionRequest => ({ callId: p.callId, tool: p.tool, args: p.args })),
-              { signal: envSignal, cwd: options.cwd, ...snapshotHooks },
+              {
+                signal: envSignal,
+                cwd: options.cwd,
+                ...snapshotHooks,
+                // S1：执行生命周期观察透传（真正开始才 onExecuteStart，终态一次 onExecuteEnd）
+                ...(options.executionObserver !== undefined ? { observer: options.executionObserver } : {}),
+              },
             )
           : [];
     } catch (e) {

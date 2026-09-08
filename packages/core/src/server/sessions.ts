@@ -15,9 +15,11 @@
 // turn 串行语义：同会话用户消息排队（同 REPL busy 队列），跨会话并行互不阻塞；
 // undo/redo 与 turn 互斥（busy 会话上拒绝，避免 rewind marker 与 turn 事件交错落盘）。
 import { randomUUID } from 'node:crypto';
+import { resolve } from 'node:path';
 import { runTurn } from '../agent/loop.js';
 import type { CompactionOptions, TurnResult, TurnStreamEvent } from '../agent/types.js';
-import type { ApprovalDecision, ApprovalInput } from '../tools/types.js';
+import type { ApprovalDecision, ApprovalInput, ToolResult } from '../tools/types.js';
+import type { ToolExecutionRequest } from '../tools/executor.js';
 import { ToolRegistry } from '../tools/registry.js';
 import { createMemoryToolForMode, runNudgeReview, type NudgeResult } from '../memory/nudge.js';
 import type { PendingMemoryStore } from '../memory/pending.js';
@@ -111,6 +113,9 @@ export interface SessionHubHooks {
   onNudgeStarted?(sessionId: string): void;
   /** 后台复盘结束（产出 = 记忆写入或 pending 暂存；error 存在 = 复盘失败，主对话不受影响） */
   onNudgeFinished?(sessionId: string, result: NudgeResult): void;
+  /** 工具执行生命周期（S1，S3 delivery / S7 toolExecutionView 消费；纯观察，不落第二套日志） */
+  onExecuteStart?(sessionId: string, req: ToolExecutionRequest): void;
+  onExecuteEnd?(sessionId: string, req: ToolExecutionRequest, result: ToolResult): void;
 }
 
 export interface SessionHubOptions {
@@ -140,6 +145,11 @@ export interface SessionHubOptions {
 
 /** undo n>1 提示的层数上限（与 chat /undo 参数口径一致） */
 const UNDO_MAX_N = 100;
+
+/** header.cwd 有效时原样返回（旧日志可缺省），否则回退全局 cwd */
+function headerCwdOr(headerCwd: string | undefined | null, fallback: string): string {
+  return typeof headerCwd === 'string' && headerCwd.trim().length > 0 ? headerCwd : fallback;
+}
 
 // sessionId 合法格式（SESSION_ID_PATTERN，自 session/manager.ts 导入）：路径穿越防御——
 // id 会拼进会话目录路径，`../x` 之类的穿越原语必须在 hub 出口处拒绝；
@@ -194,6 +204,8 @@ class EventMirrorWriter {
 interface HubEntry {
   id: string;
   dir: string;
+  /** 每会话真实 cwd（header 真值；S1 起工具执行基于它，A/B 会话互不串） */
+  cwd: string;
   writer: EventMirrorWriter;
 }
 
@@ -262,9 +274,11 @@ export class SessionHub {
   create(cwd: string): { id: string; dir: string } {
     this.assertNonEmpty(cwd, 'cwd');
     const created = this.options.manager.create(cwd);
+    // entry.cwd = header 真值（manager.create 落盘 resolve(cwd)）——工具执行与快照解析都用它
     const entry: HubEntry = {
       id: created.id,
       dir: created.dir,
+      cwd: resolve(cwd),
       writer: new EventMirrorWriter(created.writer, (event) => {
         this.noteTurnEvent(created.id, event);
         this.emitEvent(created.id, event);
@@ -300,10 +314,9 @@ export class SessionHub {
   private entryFor(id: string): HubEntry {
     const existing = this.entries.get(id);
     if (existing) return existing;
-    const dir = this.locate(id);
-    let writer: SessionWriter;
+    let resumed: ReturnType<SessionManager['resume']>;
     try {
-      writer = this.options.manager.resume(id).writer;
+      resumed = this.options.manager.resume(id);
     } catch (e) {
       if ((e as Error).name === 'SessionLockedError') {
         throw new HubError('locked', `会话被其他进程占用（${(e as Error).message}）`);
@@ -312,14 +325,21 @@ export class SessionHub {
     }
     const entry: HubEntry = {
       id,
-      dir,
-      writer: new EventMirrorWriter(writer, (event) => {
+      dir: resumed.dir,
+      // S1：每会话真实 cwd 从 header 读（旧日志缺 header.cwd 时回退 hub 全局 cwd）
+      cwd: headerCwdOr(resumed.header?.cwd, this.options.cwd),
+      writer: new EventMirrorWriter(resumed.writer, (event) => {
         this.noteTurnEvent(id, event);
         this.emitEvent(id, event);
       }),
     };
     this.entries.set(id, entry);
     return entry;
+  }
+
+  /** S1：会话执行 cwd（entries 内存值；未注册回退 hub 全局 cwd） */
+  private sessionCwd(id: string): string {
+    return this.entries.get(id)?.cwd ?? this.options.cwd;
   }
 
   /** 全量事件（含 active 标记）：切换会话时的重放来源；只读、不取锁 */
@@ -386,10 +406,15 @@ export class SessionHub {
         provider: this.options.provider,
         tools: this.buildTurnTools(id),
         approval: this.makeApprovalHandler(id, ac.signal),
-        cwd: this.options.cwd,
+        cwd: entry.cwd, // S1：每会话真实 cwd（从此前审计的 this.options.cwd 改为 header 真值）
         userText: text,
         signal: ac.signal,
         snapshots,
+        // S1：执行生命周期观察接线（S3 delivery / S7 toolExecutionView 消费；纯观察）
+        executionObserver: {
+          onExecuteStart: (req) => this.emitExecuteStart(id, req),
+          onExecuteEnd: (req, result) => this.emitExecuteEnd(id, req, result),
+        },
         onStream: (event: TurnStreamEvent) => this.forwardStream(id, event),
         // 审查 P1-1：serve/desktop 路径同样注入记忆 store（缺此前主会话零快照、system 恒空）
         ...(this.options.memory !== undefined ? { memory: this.options.memory.store } : {}),
@@ -457,7 +482,7 @@ export class SessionHub {
         manager: this.options.manager,
         provider: subagent.provider,
         baseTools: this.options.tools,
-        cwd: this.options.cwd,
+        cwd: this.sessionCwd(sessionId), // S1：子会话默认 root = 父会话真实 cwd（不取 hub 全局）
         maxDepth: subagent.maxDepth,
         maxTurns: subagent.maxTurns,
         parentSessionId: sessionId,
@@ -516,7 +541,7 @@ export class SessionHub {
       mode: memory.mode,
       sessionId: id,
       sessionDir: entry.dir,
-      cwd: this.options.cwd,
+      cwd: entry.cwd, // 复盘与主 turn 同款：用会话真实 cwd（不取 hub 全局）
       ...(memory.pending !== undefined ? { pending: memory.pending } : {}),
       signal: ac.signal,
       onStarted: (sessionId) => this.emitNudgeStarted(sessionId),
@@ -666,6 +691,26 @@ export class SessionHub {
     for (const l of this.listeners) {
       try {
         l.onNudgeFinished?.(sessionId, result);
+      } catch {
+        // 观察者异常不回写内核
+      }
+    }
+  }
+
+  private emitExecuteStart(sessionId: string, req: ToolExecutionRequest): void {
+    for (const l of this.listeners) {
+      try {
+        l.onExecuteStart?.(sessionId, req);
+      } catch {
+        // 观察者异常不回写内核
+      }
+    }
+  }
+
+  private emitExecuteEnd(sessionId: string, req: ToolExecutionRequest, result: ToolResult): void {
+    for (const l of this.listeners) {
+      try {
+        l.onExecuteEnd?.(sessionId, req, result);
       } catch {
         // 观察者异常不回写内核
       }

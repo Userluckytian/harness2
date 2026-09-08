@@ -43,6 +43,14 @@ export interface ToolDefinition {
    * 因此 unsafe 工具（如 write/edit）不声明它；待 Ph3 引入新的并发模型时再启用。
    */
   lockKey?(args: unknown): string;
+  /**
+   * 可选：取消保证（S1）。声明 true = 工具一旦被外部取消（ctx.signal abort），
+   * 执行器可以保证它及时停止（观察 signal 完成收尾 / 原子完成 / 进程树击杀）。
+   * 声明后执行中取消的结果归一为 `cancelled`；**未声明**的第三方/黑盒工具在执行中
+   * 被取消时无法保证是否已停止，取消结果归一为 `unknown`（UI 区分「已取消」与
+   * 「取消未知」，见 tools/executor.ts）。
+   */
+  cancelGuaranteed?: boolean;
 }
 
 // ---- 审批缝（阶段 3 细化）----

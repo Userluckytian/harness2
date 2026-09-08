@@ -5,6 +5,7 @@ import type { SkillStore } from '../skills/store.js';
 import type { SnapshotStore } from '../session/snapshots.js';
 import type { ToolRegistry } from '../tools/registry.js';
 import type { ApprovalHandler } from '../tools/types.js';
+import type { ExecutionLifecycleObserver } from '../tools/executor.js';
 
 /**
  * Turn 终止原因：end_turn/error/cancelled/max_steps 为 loop 自身状态；
@@ -87,6 +88,12 @@ export interface TurnOptions {
    * 本轮跳过（TurnResult.warning 告知），turn 不中断。
    */
   compaction?: CompactionOptions;
+  /**
+   * 可选：工具执行生命周期观察（S1）。透传给 ToolExecutor 的 env.observer——
+   * 真正启动才 onExecuteStart，每个提交调用终态回调一次 onExecuteEnd（含未启动的取消/拒绝）。
+   * 供 S3 delivery 的 callId 状态、S7 toolExecutionView 使用；纯观察，不落第二套日志。
+   */
+  executionObserver?: ExecutionLifecycleObserver;
 }
 
 /** turn 内流式观察事件（onStream 回调 payload；纯渲染缝，非模型上下文来源） */

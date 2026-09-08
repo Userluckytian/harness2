@@ -82,6 +82,8 @@ describe('ToolExecutor.execute', () => {
     reg.register(
       makeTool({
         name: 'cancellable',
+        // 观察 signal 并 throwIfAborted 即保证及时停止 → 取消归一为 cancelled（S1 契约）
+        cancelGuaranteed: true,
         execute: async (_args, ctx) => {
           await sleep(50);
           ctx.signal.throwIfAborted();
