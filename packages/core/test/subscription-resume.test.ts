@@ -186,22 +186,29 @@ describe('cancel 三态 ack（传输帧层）', () => {
     client.close();
   });
 
-  it('接线 provider 回 stopping → 转发原样；坏 expectedId 仍由 provider 决定', async () => {
+  it('接线 provider 回 stopping → 转发原样；坏 expectedId 仍由 provider 决定；cancelled 端到端触发', async () => {
     const handle = await startServe({
       port: 0,
       home: tmpDir('h2-resume-home-'),
       root: tmpDir('h2-resume-root-'),
       provider: new MockProvider([{ textChunks: ['回复'] }]),
       resumeState: provider({
-        cancelAck: (req) => (req.target.id === 'turn-7' ? { requestId: req.requestId, state: 'stopping' } : { requestId: req.requestId, state: 'cancelled' }),
+        cancelAck: (req) =>
+          req.target.id === 'turn-7' ? { requestId: req.requestId, state: 'stopping' } : { requestId: req.requestId, state: 'cancelled' },
       }),
     });
     handles.push(handle);
     const client = new WsClient(`ws://127.0.0.1:${handle.port}/ws`);
     await client.open;
+    // stopping branch
     client.send({ op: 'cancel', requestId: 'cnl-1', target: { kind: 'turn', id: 'turn-7' }, expectedId: 'turn-7' });
-    const a = await client.waitFor((f) => f.type === 'cancel-ack', 'cancel-ack stopping');
+    const a = await client.waitFor((f) => f.type === 'cancel-ack' && (f.type === 'cancel-ack' ? f.requestId : '') === 'cnl-1', 'cancel-ack stopping', 0);
     expect(a.type === 'cancel-ack' && a.state).toBe('stopping');
+    // cancelled branch (provider 对 id != turn-7 回 cancelled；传输层原样转发)
+    client.send({ op: 'cancel', requestId: 'cnl-2', target: { kind: 'task', id: 'task-9' }, expectedId: 'task-9' });
+    const c = await client.waitFor((f) => f.type === 'cancel-ack' && (f.type === 'cancel-ack' ? f.requestId : '') === 'cnl-2', 'cancel-ack cancelled', 0);
+    expect(c.type === 'cancel-ack' && c.state).toBe('cancelled');
+    expect(c.type === 'cancel-ack' && c.requestId).toBe('cnl-2');
     client.close();
   });
 });
