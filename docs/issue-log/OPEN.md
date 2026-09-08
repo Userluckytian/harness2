@@ -5,6 +5,8 @@
 > 元约定：`docs/issue-log/README.md`（AGENTS.md 强制遵循第 6 条）
 >
 > **当前主方向（2026-09-08 用户确认）：采用 R2「Grok 终端复刻 + 功能优先桌面 harness」**，主流成为 `docs/ai-framework/plans/2026-09-08-phase-aggressive-{core-foundation,cli-interaction,desktop-interaction}.md`（共享底座 S0–S7 / 终端 T0–T5 / 桌面 D0–D6），依据 `docs/research/notion-ai-20260908-0056/`。原「09-07 终端 T0–T9 / 桌面 B0–B9 优化」与「阶段 13 交互复刻」方向已废止。
+>
+> **共享底座 S0–S7 ✅ 已完成（2026-09-08，worktree `feat/notion-i1-runtime`，17 commits 评审通过，`pnpm -r test` 全绿 exit 0，未 push）。** 后续终端 T0–T5 / 桌面 D0–D6 开工前先消费下列「S0–S7 移交桌面/CLI」5 项 open risk 与 `.superpowers/sdd/2026-09-08-phase-aggressive-core-foundation/progress.md` 台账。
 
 | 日期 | 事项 | 状态 | 详情 |
 |------|------|------|------|
@@ -50,3 +52,8 @@
 | 2026-09-06 | **Windows Terminal 实机 REPL 体验待人工**：`── turn` 标头渲染、颜色/光标/长行折行、审批内联提示与 Ctrl+C 取消（含审批 ask 等待中 Ctrl+C）的实机手感——自动化仅覆盖逻辑路径（piped/进程内测试），真机 tty 行为待用户在 Windows Terminal 逐项核对（可并入下方 M1 手工验收清单执行） | 待处理（需人工实机核对） | [2026-09-06.md](2026-09-06.md) |
 | 2026-09-06 | CI 待远程验证：`.github/workflows/ci.yml` 三平台 test matrix + build-desktop 桌面包构建 matrix 已建并通过本地 YAML 语法校验（2026-09-06 审查修复 P1-1：删除 version 输入改由 packageManager 驱动，待远程一并验证；阶段 11 增 build-desktop 三平台构建与 release.yml 三平台产物附加 GitHub Release，Windows 本地 nsis 构建已通过——另见 2026-09-07 三平台 CI 产物待远程验证行），Actions 真实运行需远程仓库 + push 授权（需人类操作）。`release.yml` 同过 js-yaml 本地语法校验（2026-09-06 审查修复 P1-1 后复验：publish 步骤改 NPM_TOKEN 条件跳过 + 失败即红），真实运行同待远程 | 待处理（需人类操作） | [2026-09-06.md](2026-09-06.md) |
 | 2026-09-07 | **桌面系统通知（原 09-07 桌面 B7）——真机手工验收待补**（自动化已覆盖纯函数/主进程 mock/渲染端 jsdom：通知正文 80 字摘要、`shouldNotifyOnTurnEnd` 触发判定、bridge notify case 弹窗/回退/点击回传、App 非前台弹+前台不弹）；以下待 Windows 实机人工核对：①后台会话（分栏外/非选中）跑长任务至 turn 结束 → 窗口**失焦时**收到系统通知（标题=会话覆层标题或 firstUserText，正文=完整级别带前 80 字摘要 / 精简级别仅标题，受 SettingsDialog 的 notifyDetails 偏好控制），**窗口聚焦时不弹**；②点击通知 → 主进程聚焦/还原窗口 + 会话列表与该会话跳转选中；③不支持桌面通知的环境回退为对话框（仍可点「查看会话」跳转）。功能已并入 main（b6c93b7），仅真机验收待补（原 09-07 桌面计划已废止） | 待处理（需人工实机核对） | [2026-09-07.md](2026-09-07.md) |
+| 2026-09-08 | **S0-S7 移交桌面/CLI —— 风险第 1 项：journal 与 session.log 跨文件无原子**。崩溃窗口对账依赖 judgeSubmission（durable accepted 才 ack）；continueQueue 清场后 paused 正文不入 journal，需调用方按 ref 回填（桌面/终端层做真实重放验证）。责任：continue 派发时 resolveText 回填；桌面 D 阶段重放验证 | 待处理（桌面/CLI 阶段消化） | [2026-09-08.md](2026-09-08.md) §5 |
+| 2026-09-08 | **S0-S7 移交桌面/CLI —— 风险第 2 项：cancelAck turn 分支 expectedId 仅 target.id 字符串相等校验**，无 turn 代次语义；重连重放旧 cancel 帧可能与复用 turnId 的新 turn 撞车。后续：turn 身份加代次/发起时点字段 | 待处理（桌面/CLI 阶段消化） | [2026-09-08.md](2026-09-08.md) §5 |
+| 2026-09-08 | **S0-S7 移交桌面/CLI —— 风险第 3 项：assistant/attempt 半截文本字段展示语义未定**（S4b 引入可选 text）；桌面渲染需显式区分半截 attempt 与完整 assistant message，不得误当完整正文 | 待处理（桌面/CLI 阶段消化） | [2026-09-08.md](2026-09-08.md) §5 |
+| 2026-09-08 | **S0-S7 移交桌面/CLI —— 风险第 4 项：retry 预算整 turn 共享但重启即清零**；崩溃窗口不覆盖已耗预算。后续如需持久化预算，归 S6 调度类扩展 | 待处理（桌面/CLI 阶段消化） | [2026-09-08.md](2026-09-08.md) §5 |
+| 2026-09-08 | **S0-S7 移交桌面/CLI —— 风险第 5 项：plan-state 目标锚定用时间戳（Date.parse ts <= anchor）**；多会话并发时首任务归属/目标证据存在时钟敏感歧义。后续可换 seq/水位锚定 | 待处理（桌面/CLI 阶段消化） | [2026-09-08.md](2026-09-08.md) §5 |
