@@ -43,6 +43,16 @@ import {
 } from './sessions.js';
 import { attachWsServer, type WsPlane } from './ws.js';
 import { isTrustedHost, isTrustedOrigin, normalizeOriginHeader } from './trust.js';
+import {
+  createServeSecurityStats,
+  extractServeToken,
+  generateServeToken,
+  isServeTokenValid,
+  serveRequireTokenFromEnv,
+  serveTokenFromEnv,
+  warnServeNoTokenOnce,
+  type ServeSecurityStats,
+} from './security.js';
 
 /** 默认监听端口（--port 0 = 随机端口，桌面端固定用 0） */
 export const DEFAULT_SERVE_PORT = 46213;
@@ -58,6 +68,8 @@ export interface ServeLockContent {
   pid: number;
   port: number;
   ts: string;
+  /** A3-1：本次 serve 实例的一次性 token（0600 锁文件；desktop 旧版解析忽略该字段） */
+  token?: string;
 }
 
 export function serveLockPath(home?: string): string {
@@ -103,17 +115,24 @@ function readServeLock(path: string): ServeLockContent | null {
  * 获取端口锁（listen 成功后调用）：持有者存活 → ServeLockError；
  * 陈旧/损坏锁 → 接管。返回 release（close 时删除锁文件；已不存在则静默）。
  */
-export function acquireServeLock(port: number, home?: string): { release(): void } {
+export function acquireServeLock(port: number, home?: string, token?: string): { release(): void } {
   const path = serveLockPath(home);
   const existing = readServeLock(path);
   if (existing && isPidAlive(existing.pid)) {
     throw new ServeLockError(existing.pid, existing.port);
   }
   mkdirSync(dirname(path), { recursive: true }); // ~/.harness2 链缺失时自动创建（与会话布局一致）
+  // A3-1：token 随锁文件下发（mode 0600，POSIX 生效；Windows 尽力而为）——同用户进程仍可读，
+  // 该限制如实记入 issue-log 遗留（无 OS 级 peer 认证时的固有边界）。
   writeFileSync(
     path,
-    JSON.stringify({ pid: process.pid, port, ts: new Date().toISOString() } satisfies ServeLockContent),
-    'utf8',
+    JSON.stringify({
+      pid: process.pid,
+      port,
+      ts: new Date().toISOString(),
+      ...(token !== undefined ? { token } : {}),
+    } satisfies ServeLockContent),
+    { encoding: 'utf8', mode: 0o600 },
   );
   return {
     release(): void {
@@ -161,6 +180,12 @@ export interface StartServeOptions {
   resumeState?: import('./ws.js').ResumeStateProvider;
   /** S7：provider 装配元数据（缺省 = config 加载成功时按 roles.main 派生；注入 provider 时可不传，见 hub.runConfigView） */
   providerMeta?: SessionHubProviderMeta;
+  /** A3-1：预置 token（缺省 = HARNESS2_SERVE_TOKEN 或启动时随机生成；测试注入用） */
+  token?: string;
+  /** A3-1：严格模式（缺省 = HARNESS2_SERVE_REQUIRE_TOKEN；true 时无 token 一律 401） */
+  requireToken?: boolean;
+  /** A3-2：WS 面附加选项（帧超限记账回调等；auth 由 startServe 统一注入） */
+  wsOptions?: import('./ws.js').WsPlaneOptions;
 }
 
 export interface ServeHandle {
@@ -178,6 +203,10 @@ export interface ServeHandle {
   mcp?: McpManager;
   /** 优雅关闭：停止调度器 → 取消运行中 turn → 拒绝待审批 → 关 hub → 关 WS → 关 HTTP → 释放端口锁 */
   close(): Promise<void>;
+  /** A3-1：本实例一次性 token（只经此返回值/0600 锁文件暴露；不入日志） */
+  token: string;
+  /** A3-1/A3-2：安全计数（兼容回退/token 拒绝/WS 超限等） */
+  security: ServeSecurityStats;
 }
 
 /** 配置不可用等启动期错误（CLI 一行输出 exit 1） */
@@ -196,6 +225,10 @@ export async function startServe(options: StartServeOptions = {}): Promise<Serve
   const root = options.root ?? process.cwd();
   const home = options.home;
   const port = options.port ?? DEFAULT_SERVE_PORT;
+  // A3-1：一次性 token（预置 > 环境变量 > 随机生成）+ 严格模式开关 + 安全计数
+  const token = options.token ?? serveTokenFromEnv() ?? generateServeToken();
+  const requireToken = options.requireToken ?? serveRequireTokenFromEnv();
+  const security = createServeSecurityStats();
 
   // 共享工具注册表（本地 → 插件 → MCP → subagent 的装配基底）
   const tools = new ToolRegistry();
@@ -341,7 +374,7 @@ export async function startServe(options: StartServeOptions = {}): Promise<Serve
   }
 
   const server = createServer((req, res) => {
-    void handleRequest(hub, { root, home }, req, res).catch(() => {
+    void handleRequest(hub, { root, home }, { token, requireToken, stats: security }, req, res).catch(() => {
       // handleRequest 内部已兜底；这里防御 handler 本身抛错
       if (!res.headersSent) sendJson(res, 500, { error: '内部错误' });
       res.end();
@@ -355,7 +388,7 @@ export async function startServe(options: StartServeOptions = {}): Promise<Serve
 
   let lock: { release(): void };
   try {
-    lock = acquireServeLock(actualPort, home);
+    lock = acquireServeLock(actualPort, home, token);
   } catch (e) {
     hub.close().catch(() => {});
     server.close();
@@ -364,7 +397,13 @@ export async function startServe(options: StartServeOptions = {}): Promise<Serve
 
   // WS 事件面与 HTTP 共用监听（upgrade 升级到 /ws）
   // S3c2：startServe 默认接 hub（会话接线：delivery/journal/approval 全挂）
-  const ws = attachWsServer(server, hub, { resumeState: options.resumeState ?? hub });
+  // A3-1：WS 升级与 HTTP 同口径 token 校验（auth 统一注入，调用方不可覆盖）
+  // A3-2：帧超限断连记账（计数 + 日志 + 可注入 onFrameOversize）
+  const ws = attachWsServer(server, hub, {
+    ...options.wsOptions,
+    resumeState: options.resumeState ?? hub,
+    auth: { token, requireToken, stats: security },
+  });
 
   // 定时任务调度器（阶段 7）：常驻 tick + 文件锁 + at-most-once；完成帧经 WS 广播
   const cron = new CronScheduler({
@@ -383,6 +422,8 @@ export async function startServe(options: StartServeOptions = {}): Promise<Serve
     server,
     ws,
     cron,
+    token,
+    security,
     ...(plugins !== undefined ? { plugins: plugins.bus } : {}),
     ...(mcp !== undefined ? { mcp: mcp.manager } : {}),
     async close(): Promise<void> {
@@ -404,12 +445,26 @@ interface ServeEnv {
   home?: string;
 }
 
-async function handleRequest(hub: SessionHub, env: ServeEnv, req: IncomingMessage, res: ServerResponse): Promise<void> {
+/** A3-1：HTTP/WS 共用的 token 鉴权上下文（由 startServe 构造并注入，路由层不可绕过） */
+interface ServeAuthContext {
+  token: string;
+  requireToken: boolean;
+  stats: ServeSecurityStats;
+}
+
+async function handleRequest(
+  hub: SessionHub,
+  env: ServeEnv,
+  auth: ServeAuthContext,
+  req: IncomingMessage,
+  res: ServerResponse,
+): Promise<void> {
   try {
     // —— 信任域校验（一切路由之前；M2 发布前加固，Task 4）——
     // P2-5（阶段 7 审查）：重复 Origin 头可能解析为 string[]——先取首值规范化再校验，不容绕过
     const origin = normalizeOriginHeader(req.headers.origin);
     if (typeof origin === 'string' && !isTrustedOrigin(origin)) {
+      auth.stats.trustRejected += 1;
       sendJson(res, 403, { error: '拒绝访问：Origin 不在信任域（仅允许 file:// 与本地 http 源）' });
       return;
     }
@@ -418,10 +473,17 @@ async function handleRequest(hub: SessionHub, env: ServeEnv, req: IncomingMessag
       port !== undefined &&
       !isTrustedHost(typeof req.headers.host === 'string' ? req.headers.host : undefined, port)
     ) {
+      auth.stats.trustRejected += 1;
       sendJson(res, 403, { error: '拒绝访问：Host 校验失败（仅允许 127.0.0.1:<端口>）' });
       return;
     }
     const url = new URL(req.url ?? '/', 'http://127.0.0.1');
+    // —— A3-1：一次性 token（在白名单之后、路由之前；错误 token 绝不回退）——
+    const gate = checkServeToken(auth, req, url);
+    if (!gate.ok) {
+      sendJson(res, 401, { error: gate.error });
+      return;
+    }
     await route(hub, env, req, res, url.pathname);
   } catch (e) {
     if (e instanceof HubError) {
@@ -430,6 +492,33 @@ async function handleRequest(hub: SessionHub, env: ServeEnv, req: IncomingMessag
     }
     sendJson(res, 500, { error: redactSecrets(`内部错误: ${(e as Error)?.message ?? String(e)}`) });
   }
+}
+
+/**
+ * A3-1 token 门禁（HTTP 侧；WS upgrade 在 ws.ts 用同一组 helper 与同一统计对象）：
+ *   - 带 token：必须匹配，否则 401（任何模式下都不回退——防“故意送错 token 触发降级”）；
+ *   - 不带 token：严格模式 401；兼容模式放行并计数 + 一次性告警（不误挡既有 desktop/CLI）。
+ */
+function checkServeToken(
+  auth: ServeAuthContext,
+  req: IncomingMessage,
+  url: URL,
+): { ok: true } | { ok: false; error: string } {
+  const provided = extractServeToken(req.headers, url);
+  if (provided !== undefined) {
+    if (!isServeTokenValid(provided, auth.token)) {
+      auth.stats.invalidTokenRejected += 1;
+      return { ok: false, error: '拒绝访问：serve token 无效' };
+    }
+    return { ok: true };
+  }
+  if (auth.requireToken) {
+    auth.stats.noTokenRejected += 1;
+    return { ok: false, error: '拒绝访问：缺少 serve token（严格模式）' };
+  }
+  auth.stats.noTokenAllowed += 1;
+  warnServeNoTokenOnce();
+  return { ok: true };
 }
 
 /** 从 socket 取本机监听端口（socket 未就绪时 undefined → 跳过 Host 校验） */

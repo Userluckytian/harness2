@@ -4,7 +4,8 @@
 //   - Host：必须为 127.0.0.1:<port>（无 Host 的非浏览器客户端放行）——阻断 DNS rebinding
 //     与「网站探针」直接以域名访问本地端口；
 //   - HTTP 与 WS upgrade 同一规则（均经本模块判定）。
-// loopback token 认证评估后留档不实现（桌面 --port 0 随机端口已缓解，见 OPEN.md）。
+// A3-1（阶段 15）：在本白名单之上加**启动时一次性 token**，实现与统计在 ./security.ts
+//   （不在此模块再导出，避免为纯加固改动膨胀公开导出面）。
 export const TRUSTED_ORIGIN_PATTERN = /^(?:file:\/\/|http:\/\/localhost(?::\d+)?|http:\/\/127\.0\.0\.1(?::\d+)?)$/i;
 
 /** Origin 是否在信任域（undefined = 客户端未携带，放行） */

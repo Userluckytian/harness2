@@ -50,6 +50,7 @@ import type { ResumeStateProvider } from '../interaction/resume-state.js';
 export { WatermarkCursor } from '../interaction/resume-state.js';
 export type { DeltaAttribution, ResumeStateProvider } from '../interaction/resume-state.js';
 import { isTrustedHost, isTrustedOrigin, normalizeOriginHeader, WS_MAX_PAYLOAD } from './trust.js';
+import { extractServeToken, isServeTokenValid, warnServeNoTokenOnce, type ServeSecurityStats } from './security.js';
 
 export const WS_PATH = '/ws';
 
@@ -152,6 +153,11 @@ export interface WsPlaneOptions {
    * 未注入（或返回 null / 缺省 unknown）时如实回 unknown/error，不冒充已接线执行。
    */
   resumeState?: ResumeStateProvider;
+  /**
+   * A3-1：WS 升级握手 token 鉴权（startServe 统一注入；未注入 = 仅白名单校验，向后兼容）。
+   * 与 HTTP 同口径：带 token 必须匹配，不带 token 则严格模式拒 / 兼容模式放行并计数。
+   */
+  auth?: { token: string; requireToken: boolean; stats?: ServeSecurityStats };
 }
 
 export interface WsPlane {
@@ -186,27 +192,52 @@ function approvalFrame(a: ApprovalRequestContract): WsServerMessage {
 }
 
 /** 把 WS 事件面挂到 HTTP server 上（hub 观察者 → 订阅连接分发）。
- *  升级握手经信任域校验（Origin/Host 与 HTTP 同规则，Task 4）；帧上限 1MiB 对齐 HTTP。 */
+ *  升级握手经信任域校验（Origin/Host 与 HTTP 同规则，Task 4）+ A3-1 token 鉴权；
+ *  帧上限 1MiB 对齐 HTTP。 */
 export function attachWsServer(server: Server, hub: SessionHub, options: WsPlaneOptions = {}): WsPlane {
   const path = options.path ?? WS_PATH;
+  const auth = options.auth;
+  const stats = auth?.stats;
   const wss = new WebSocketServer({ noServer: true, maxPayload: WS_MAX_PAYLOAD });
   server.on('upgrade', (req, socket, head) => {
-    let pathname = '';
+    let url: URL;
     try {
-      pathname = new URL(req.url ?? '/', 'http://127.0.0.1').pathname;
+      url = new URL(req.url ?? '/', 'http://127.0.0.1');
     } catch {
-      pathname = '';
+      url = new URL('http://127.0.0.1/');
     }
     // P2-5（阶段 7 审查）：与 HTTP 同口径——重复 Origin 头取首值规范化后再校验
     const origin = normalizeOriginHeader(req.headers.origin);
     const host = typeof req.headers.host === 'string' ? req.headers.host : undefined;
     const address = server.address();
     const port = address !== null && typeof address === 'object' ? address.port : undefined;
-    const trusted = isTrustedOrigin(origin) && (port === undefined || isTrustedHost(host, port)) && pathname === path;
+    const trusted =
+      isTrustedOrigin(origin) && (port === undefined || isTrustedHost(host, port)) && url.pathname === path;
     if (!trusted) {
+      if (stats !== undefined) stats.trustRejected += 1;
       socket.write('HTTP/1.1 403 Forbidden\r\nconnection: close\r\n\r\n');
       socket.destroy();
       return;
+    }
+    // A3-1：token 门禁（与 HTTP checkServeToken 同口径；错误 token 绝不回退）
+    if (auth !== undefined) {
+      const provided = extractServeToken(req.headers, url);
+      if (provided !== undefined) {
+        if (!isServeTokenValid(provided, auth.token)) {
+          if (stats !== undefined) stats.invalidTokenRejected += 1;
+          socket.write('HTTP/1.1 401 Unauthorized\r\nconnection: close\r\n\r\n');
+          socket.destroy();
+          return;
+        }
+      } else if (auth.requireToken) {
+        if (stats !== undefined) stats.noTokenRejected += 1;
+        socket.write('HTTP/1.1 401 Unauthorized\r\nconnection: close\r\n\r\n');
+        socket.destroy();
+        return;
+      } else {
+        if (stats !== undefined) stats.noTokenAllowed += 1;
+        warnServeNoTokenOnce();
+      }
     }
     wss.handleUpgrade(req, socket, head, (ws) => wss.emit('connection', ws, req));
   });
