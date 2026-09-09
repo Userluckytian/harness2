@@ -1,10 +1,12 @@
-// A1-1 验收测试：Windows shell 探测（config.bash.shell > Git Bash > cmd 回退）。
+// A1-1 / A1-2 验收测试：Windows shell 探测（config.bash.shell > Git Bash > cmd 回退）
+// 与子进程输出统一 UTF-8 解码（Windows GBK 不乱码）。
 // 零外部依赖：探测用注入的 env/exists；真机用例仅在 Windows 上跑（CI Linux 自动跳过）。
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { resolveBashShell } from '../src/tools/shell.js';
+import { decodeProcessOutput, OutputCollector } from '../src/tools/process-output.js';
 import { bashTool } from '../src/tools/predefined/bash.js';
 import type { ToolOutput } from '../src/tools/types.js';
 
@@ -107,6 +109,44 @@ describe('A1-1 shell 探测顺序', () => {
   });
 });
 
+describe('A1-2 输出统一 UTF-8 解码', () => {
+  it('合法 UTF-8：中文与 emoji 原样保留', () => {
+    const text = '中文 emoji 😀 完成';
+    expect(decodeProcessOutput(Buffer.from(text, 'utf8'))).toBe(text);
+  });
+
+  it('GBK 字节（非法 UTF-8）在 Windows 平台按 GBK 解码为中文', () => {
+    // “中文测试” 的 GBK 字节
+    const gbk = Buffer.from([0xd6, 0xd0, 0xce, 0xc4, 0xb2, 0xe2, 0xca, 0xd4]);
+    expect(decodeProcessOutput(gbk, { platform: 'win32' })).toBe('中文测试');
+    // 非 Windows 平台不做 GBK 猜测：退回宽松 UTF-8，绝不抛错
+    const posix = decodeProcessOutput(gbk, { platform: 'linux' });
+    expect(posix).toContain('\uFFFD');
+  });
+
+  it('空输出与纯 ASCII 稳定', () => {
+    expect(decodeProcessOutput(Buffer.alloc(0))).toBe('');
+    expect(decodeProcessOutput(Buffer.from('ok\n', 'utf8'))).toBe('ok\n');
+  });
+
+  it('OutputCollector 按字节累积后解码：多字节字符跨 chunk 不断裂', () => {
+    const text = '中文😀';
+    const bytes = Buffer.from(text, 'utf8');
+    const collector = new OutputCollector(1024);
+    // 故意按字节切碎（模拟 stdout 分片），逐片 push
+    for (const byte of bytes) collector.push(Buffer.from([byte]));
+    expect(collector.decode()).toBe(text);
+  });
+
+  it('OutputCollector 超过字节上限后停止累积（防失控输出吃满内存）', () => {
+    const collector = new OutputCollector(4);
+    collector.push(Buffer.from('abcdefgh'));
+    collector.push(Buffer.from('ij'));
+    expect(collector.capturedBytes).toBe(8);
+    expect(collector.decode()).toBe('abcdefgh');
+  });
+});
+
 describe.skipIf(!IS_WINDOWS)('Windows 真机：bash 工具走 Git Bash / cmd 回退', () => {
   it('Git Bash：ls / pwd / head 经真实 shell 成功执行', async () => {
     const file = join(tmpDir(), 'sample.txt');
@@ -127,6 +167,24 @@ describe.skipIf(!IS_WINDOWS)('Windows 真机：bash 工具走 Git Bash / cmd 回
     expect(head.output).toContain('first line');
 
     expect(base.length).toBeGreaterThan(0);
+  }, 30_000);
+
+  it('cmd 回退：cmd 内建命令 ver 生效（证明确实走 cmd.exe），未知命令错误可读且 GBK 不乱码', async () => {
+    const ver = await runBash('ver', 'cmd.exe');
+    expect(ver.error).toBeUndefined();
+    expect(ver.output ?? '').toMatch(/Windows/i);
+
+    const missing = await runBash('h2_no_such_command_abc', 'cmd.exe');
+    expect(missing.error).toMatch(/exit code/);
+    expect(missing.output ?? '').not.toContain('\uFFFD');
+    expect(missing.output ?? '').toMatch(/不是内部或外部命令|is not recognized/i);
+  }, 30_000);
+
+  it('UTF-8 输出端到端：中文 + emoji 不乱码', async () => {
+    const cmd = `node -e "process.stdout.write('\\u4e2d\\u6587 \\ud83d\\ude00')"`;
+    const r = await runBash(cmd);
+    expect(r.error).toBeUndefined();
+    expect(r.output).toBe('中文 😀');
   }, 30_000);
 
   it('配置的 shell 路径不存在：spawn 失败错误里带实际使用的 shell，便于自纠', async () => {

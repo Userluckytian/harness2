@@ -3,6 +3,8 @@
 // shell 选择（A1-1）：Windows 不再硬走 cmd.exe——探测顺序 config.bash.shell >
 // Git Bash（GIT_BASH / 常见路径 / PATH 里的 Git）> cmd 回退（见 ../shell.ts；
 // doctor 报告实际使用的 shell）。
+// 输出解码（A1-2）：stdout/stderr 按字节累积后统一解码（严格 UTF-8 → Windows 下 GBK 回退），
+// 避免多字节字符跨 chunk 断裂与 GBK 乱码进入模型上下文（见 ../process-output.ts）。
 //
 // 超时/取消时杀死整个进程树（P1-3）：
 //   - Windows：taskkill /pid <pid> /T /F（按父子关系树杀，覆盖 shell 与工作子进程；
@@ -13,11 +15,12 @@
 import { spawn, type ChildProcess } from 'node:child_process';
 import type { ToolDefinition, ToolOutput } from '../types.js';
 import { expectObject, expectString, optionalNumber, truncateText } from './common.js';
+import { OutputCollector } from '../process-output.js';
 import { loadConfiguredBashShell, resolveBashShell } from '../shell.js';
 
 export const MAX_BASH_OUTPUT_CHARS = 32 * 1024;
 export const DEFAULT_BASH_TIMEOUT_MS = 30_000;
-const MAX_CAPTURE_CHARS = 16 * 1024 * 1024; // 输出回收上限（防失控命令吃满内存；超限后停止追加，不再像 exec 那样杀进程）
+const MAX_CAPTURE_BYTES = 16 * 1024 * 1024; // 输出回收上限（防失控命令吃满内存；超限后停止追加，不再像 exec 那样杀进程）
 
 const IS_WINDOWS = process.platform === 'win32';
 
@@ -56,7 +59,7 @@ export const bashTool: ToolDefinition = {
   name: 'bash',
   description:
     'Run a shell command in the session working directory. ' +
-    'Returns combined stdout+stderr (truncated to 32KB). ' +
+    'Returns combined stdout+stderr (truncated to 32KB, decoded as UTF-8 with a GBK fallback on Windows). ' +
     'On Windows the shell is Git Bash when available (config.bash.shell > GIT_BASH/common paths > cmd.exe fallback). ' +
     'Non-zero exit codes are reported as errors with the captured output preserved for diagnosis. ' +
     'On timeout/cancellation the whole process tree is killed (Windows: taskkill /T /F; POSIX: process-group kill), ' +
@@ -97,11 +100,11 @@ export const bashTool: ToolDefinition = {
       const configured = ctx.bashShell ?? loadConfiguredBashShell(ctx.cwd);
       const shell = resolveBashShell({ configured });
 
-      let stdout = '';
-      let stderr = '';
       let timedOut = false;
       let spawnFailure: Error | undefined;
       let settled = false;
+      const stdout = new OutputCollector(MAX_CAPTURE_BYTES);
+      const stderr = new OutputCollector(MAX_CAPTURE_BYTES);
 
       // 直接 spawn（Git Bash / 配置的 bash 兼容 shell）：`<shell> -c <command>`。
       // Node 的 shell:true（POSIX /bin/sh、Windows cmd.exe）保留旧行为：
@@ -138,7 +141,8 @@ export const bashTool: ToolDefinition = {
         settled = true;
         if (timer !== undefined) clearTimeout(timer);
         ctx.signal.removeEventListener('abort', onAbort);
-        const combined = `${stdout}${stderr}`.replace(/\r\n/g, '\n');
+        // A1-2：完整累积后统一解码（严格 UTF-8 → Windows GBK 回退），多字节不跨 chunk 断裂
+        const combined = `${stdout.decode()}${stderr.decode()}`.replace(/\r\n/g, '\n');
         if (ctx.signal.aborted) return resolve({ error: 'cancelled' });
         if (timedOut) {
           return resolve({
@@ -167,12 +171,8 @@ export const bashTool: ToolDefinition = {
         resolve({ output: truncateText(combined, MAX_BASH_OUTPUT_CHARS) || '(no output)' });
       };
 
-      child.stdout?.on('data', (chunk: Buffer) => {
-        if (stdout.length < MAX_CAPTURE_CHARS) stdout += chunk.toString('utf8');
-      });
-      child.stderr?.on('data', (chunk: Buffer) => {
-        if (stderr.length < MAX_CAPTURE_CHARS) stderr += chunk.toString('utf8');
-      });
+      child.stdout?.on('data', (chunk: Buffer) => stdout.push(chunk));
+      child.stderr?.on('data', (chunk: Buffer) => stderr.push(chunk));
       // spawn 本身失败（极少见：shell 找不到等）——close 不一定触发，这里直接收尾
       child.on('error', (e) => {
         spawnFailure ??= e;
