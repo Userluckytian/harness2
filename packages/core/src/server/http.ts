@@ -34,7 +34,7 @@ import { McpManager } from '../mcp/client.js';
 import type { SessionHubSubagent } from './sessions.js';
 import type { ChatProvider } from '../provider/types.js';
 import type { ApprovalDecision, ApprovalInput } from '../tools/types.js';
-import { SessionHub, HubError, type SessionHubHooks, type SessionHubMemory } from './sessions.js';
+import { SessionHub, HubError, type SessionHubHooks, type SessionHubMemory, type SessionHubProviderMeta } from './sessions.js';
 import { attachWsServer, type WsPlane } from './ws.js';
 import { isTrustedHost, isTrustedOrigin, normalizeOriginHeader } from './trust.js';
 
@@ -153,6 +153,8 @@ export interface StartServeOptions {
   hooks?: SessionHubHooks;
   /** S3c1 → S3c2 接线缝：resume/cancel/submit 实际状态提供者（缺省未接线 → unknown/error） */
   resumeState?: import('./ws.js').ResumeStateProvider;
+  /** S7：provider 装配元数据（缺省 = config 加载成功时按 roles.main 派生；注入 provider 时可不传，见 hub.runConfigView） */
+  providerMeta?: SessionHubProviderMeta;
 }
 
 export interface ServeHandle {
@@ -209,6 +211,10 @@ export async function startServe(options: StartServeOptions = {}): Promise<Serve
   let plugins: { bus: PluginBus } | undefined = options.plugins;
   let mcp: { manager: McpManager } | undefined = options.mcp;
   let subagent: SessionHubSubagent | undefined = options.subagent;
+  let providerMeta: SessionHubProviderMeta | undefined = options.providerMeta;
+  let approvalConfig: import('../config/schema.js').ApprovalConfig | undefined;
+  let contextWindow: number | undefined;
+  let maxOutputTokens: number | undefined;
   let configWarnings: string[] = [];
   if (provider === undefined) {
     const loaded = loadConfig({ root, ...(home !== undefined ? { home } : {}) });
@@ -220,6 +226,21 @@ export async function startServe(options: StartServeOptions = {}): Promise<Serve
     const policy = createApprovalPolicy(loaded.config.approval);
     decide ??= (input) => policy.decide(input);
     configWarnings = [...loaded.warnings];
+    // S7：run-config 装配元数据 = config 同源（roles.main + providers.<channel> 派生；非第二套配置存储）
+    const mainRole = loaded.config.roles['main'];
+    if (mainRole !== undefined) {
+      providerMeta ??= {
+        role: 'main',
+        channel: mainRole.channel,
+        model: mainRole.model,
+        protocol: loaded.config.providers[mainRole.channel]?.protocol ?? 'openai',
+        name: provider.name,
+      };
+      const modelCfg = loaded.config.providers[mainRole.channel]?.models?.[mainRole.model];
+      contextWindow = modelCfg?.contextWindow;
+      maxOutputTokens = modelCfg?.maxOutputTokens;
+    }
+    approvalConfig = loaded.config.approval;
     // 记忆装配：mode ≠ off 时派生（roles.small 复盘 provider；缺失回退主 provider）
     if (memory === undefined && loaded.config.memory.mode !== 'off') {
       const store = new MemoryStore(defaultMemoriesRoot(home));
@@ -305,6 +326,11 @@ export async function startServe(options: StartServeOptions = {}): Promise<Serve
     ...(skills !== undefined ? { skills } : {}),
     ...(options.approvalTimeoutMs !== undefined ? { approvalTimeoutMs: options.approvalTimeoutMs } : {}),
     ...(options.hooks !== undefined ? { hooks: options.hooks } : {}),
+    // S7：run-config 只读投影的装配来源（真实状态，非自造）
+    ...(providerMeta !== undefined ? { providerMeta } : {}),
+    ...(approvalConfig !== undefined ? { approvalConfig } : {}),
+    ...(contextWindow !== undefined ? { contextWindow } : {}),
+    ...(maxOutputTokens !== undefined ? { maxOutputTokens } : {}),
   });
   if (configWarnings.length > 0) {
     for (const w of configWarnings) console.error(`warning: ${w}`);
@@ -435,8 +461,8 @@ async function route(hub: SessionHub, env: ServeEnv, req: IncomingMessage, res: 
     sendJson(res, 405, { error: `方法 ${req.method} 不被支持（可用：GET/POST /api/sessions）` });
     return;
   }
-  // /api/sessions/:id/*
-  const sessionMatch = /^\/api\/sessions\/([^/]+)(\/events|\/undo|\/redo|\/fork)?$/.exec(pathname);
+  // /api/sessions/:id/*（sessions? 兼容单复数；S7 只读查询端点同挂在会话名下）
+  const sessionMatch = /^\/api\/sessions?\/([^/]+)(\/events|\/undo|\/redo|\/fork|\/run-config|\/plan-state|\/execution-view|\/change-review)?$/.exec(pathname);
   if (sessionMatch) {
     // 复审 P2-4：畸形百分号编码（如 %E0%A4%A）decode 抛 URIError——按 400 输入错误处理，而非 500
     let id: string;
@@ -448,6 +474,28 @@ async function route(hub: SessionHub, env: ServeEnv, req: IncomingMessage, res: 
     const sub = sessionMatch[2] ?? '';
     if (sub === '/events' && req.method === 'GET') {
       sendJson(res, 200, hub.events(id));
+      return;
+    }
+    // —— S7 只读查询端点：全部 GET、只读投影、失败走明确 error 帧（404/400/405），不触发任何执行/写 ——
+    if (sub === '/run-config' && req.method === 'GET') {
+      sendJson(res, 200, hub.runConfigView(id));
+      return;
+    }
+    if (sub === '/plan-state' && req.method === 'GET') {
+      const plan = hub.planStateView(id);
+      if (plan === null) {
+        sendJson(res, 404, { error: '会话暂无计划数据（无 task/transition 账本）' });
+        return;
+      }
+      sendJson(res, 200, plan);
+      return;
+    }
+    if (sub === '/execution-view' && req.method === 'GET') {
+      sendJson(res, 200, { views: hub.executionViews(id) });
+      return;
+    }
+    if (sub === '/change-review' && req.method === 'GET') {
+      sendJson(res, 200, hub.changeReviewView(id));
       return;
     }
     if (sub === '/fork' && req.method === 'POST') {

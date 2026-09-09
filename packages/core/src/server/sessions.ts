@@ -40,8 +40,13 @@ import type {
   SessionId,
 } from '../interaction/types.js';
 import { isApprovalDecision, TASK_STATES } from '../interaction/types.js';
-import { RUNTIME_JOURNAL_FILE, RuntimeJournal } from '../interaction/runtime-journal.js';
+import { RUNTIME_JOURNAL_FILE, RuntimeJournal, readEntries } from '../interaction/runtime-journal.js';
 import type { TaskTransitionEntry } from '../interaction/runtime-journal.js';
+import { buildEffectiveRunConfig, type EffectiveRunConfig, type EffectiveRunConfigInput } from '../interaction/run-config.js';
+import { loadPlanState, type PlanState } from '../interaction/plan-state.js';
+import { buildToolExecutionView, type ToolExecutionTrace, type ToolExecutionView } from '../interaction/execution-view.js';
+import { reviewChangeSet, type ChangeSet } from '../interaction/change-review.js';
+import type { ApprovalConfig, MemoryMode } from '../config/schema.js';
 import { createDeliverySession, recoverQueue, submitDelivery, continueQueue } from '../interaction/delivery.js';
 import type { DeliverySession } from '../interaction/delivery.js';
 import { TaskCoordinator, reconstructTasks } from '../agent/task-coordinator.js';
@@ -100,6 +105,16 @@ export interface PendingApproval {
 }
 
 export type ApprovalSettleReason = 'response' | 'timeout' | 'cancelled' | 'expired';
+
+/** S7：provider 装配元数据（run-config 只读投影的装配来源；与 config.roles/providers 同源，非第二套配置存储） */
+export interface SessionHubProviderMeta {
+  role: string;
+  channel: string;
+  model: string;
+  protocol: 'openai' | 'anthropic';
+  /** provider 标识（channel/model；与 ChatProvider.name 一致） */
+  name: string;
+}
 
 /** hub 级记忆装配（阶段 6）：mode ≠ off 时由启动器注入；off 不传 = 零记忆行为 */
 export interface SessionHubMemory {
@@ -185,6 +200,14 @@ export interface SessionHubOptions {
   hooks?: SessionHubHooks;
   /** S5 后台任务协调器（缺省 = hub 内部单例；跨会话共享写锁 = 全局串行） */
   taskCoordinator?: TaskCoordinator;
+  /** S7：provider 装配元数据（启动器从已加载 config 派生；缺省 = 注入 provider 的 name 推导，见 runConfigView） */
+  providerMeta?: SessionHubProviderMeta;
+  /** S7：审批策略装配来源（config.approval 同源；缺省 = default 空规则） */
+  approvalConfig?: ApprovalConfig;
+  /** S7：roles.main 模型容量元数据（config.providers.<channel>.models 派生；缺省不声明） */
+  contextWindow?: number;
+  /** S7：roles.main 模型 maxOutputTokens（config.providers.<channel>.models 派生；缺省不声明） */
+  maxOutputTokens?: number;
 }
 
 /** undo n>1 提示的层数上限（与 chat /undo 参数口径一致） */
@@ -197,6 +220,23 @@ function isTaskState(v: unknown): v is TaskState {
 /** header.cwd 有效时原样返回（旧日志可缺省），否则回退全局 cwd */
 function headerCwdOr(headerCwd: string | undefined | null, fallback: string): string {
   return typeof headerCwd === 'string' && headerCwd.trim().length > 0 ? headerCwd : fallback;
+}
+
+/** 实际 shell（S7 execution-view 记录来源；Windows = %ComSpec%，POSIX = /bin/sh；缺省不臆造） */
+function detectShell(): string {
+  if (process.platform === 'win32') return process.env.ComSpec ?? 'cmd.exe';
+  return '/bin/sh';
+}
+
+/** S7 执行视图生命周期记录（hub 内存纯观察，不落盘） */
+interface ExecTraceRecord {
+  startedAt?: string;
+  executedArgs?: unknown;
+  endedAt?: string;
+  ok?: boolean;
+  output?: string;
+  error?: string;
+  durationMs?: number;
 }
 
 // sessionId 合法格式（SESSION_ID_PATTERN，自 session/manager.ts 导入）：路径穿越防御——
@@ -299,6 +339,10 @@ export class SessionHub implements ResumeStateProvider {
   readonly tasks: TaskCoordinator;
   /** 任务归属会话（taskId → 会话 id；task/transition 落该会话 journal） */
   private readonly taskSessions = new Map<TaskId, SessionId>();
+  /** S7 执行视图源：sessionId → callId → 生命周期观察记录（内存纯观察，不落盘、不写第二套日志） */
+  private readonly execTraces = new Map<string, Map<string, ExecTraceRecord>>();
+  /** S7：每会话已生效配置 revision（turn 启动时 +1；run-config 只读投影的 snapshot 来源） */
+  private readonly configRevisions = new Map<string, number>();
 
   readonly approvalTimeoutMs: number;
   /** 观察者集合（WS 事件面 / 测试；addHooks 注册，返回退订函数） */
@@ -428,6 +472,98 @@ export class SessionHub implements ResumeStateProvider {
     };
   }
 
+  // —— S7 四契约只读查询（桌面接线；全部只读投影，不触发执行/写/审批） ——
+
+  /** run-config：有效运行配置只读视图（脱敏 + 深度冻结）。装配来源 = hub 真实状态
+   *  （provider 元数据/审批策略/工具集/每会话 cwd/容量），不建第二套配置存储。 */
+  runConfigView(id: string): EffectiveRunConfig {
+    this.assertValidSessionId(id);
+    this.locate(id); // 404 校验会话存在（只读定位，不取锁）；未注册会话回退全局 cwd
+    const root = this.options.cwd;
+    const cwd = this.sessionCwd(id);
+    const now = new Date().toISOString();
+    const input: EffectiveRunConfigInput = {
+      session: { sessionId: id, root, cwd, cwdFromHeader: cwd !== root },
+      provider: this.options.providerMeta ?? this.fallbackProviderMeta(),
+      ...(this.options.approvalConfig !== undefined ? { approval: this.options.approvalConfig } : {}),
+      memoryMode: this.options.memory?.mode ?? 'off',
+      tools: this.toolsForSession(id).list().map((d) => d.name),
+      ...(this.options.skills !== undefined
+        ? { skills: this.options.skills.scan().skills.map((s) => ({ name: s.name, source: s.source })) }
+        : {}),
+      ...(this.options.contextWindow !== undefined ? { contextWindow: this.options.contextWindow } : {}),
+      ...(this.options.maxOutputTokens !== undefined ? { maxOutputTokens: this.options.maxOutputTokens } : {}),
+      snapshot: { revision: this.configRevisions.get(id) ?? 0, capturedAt: now, effectiveAt: now },
+    };
+    return buildEffectiveRunConfig(input);
+  }
+
+  /** plan-state：从磁盘账本/会话日志重建计划状态（只读；无 task/transition 账本 → null） */
+  planStateView(id: string): PlanState | null {
+    this.assertValidSessionId(id);
+    const dir = this.locate(id);
+    return loadPlanState(dir);
+  }
+
+  /** execution-view：命令执行只读视图（真实 shell/exitCode 归属）。来源 = 会话日志 tool/call
+   *  （plannedArgs/turnId）+ hub 生命周期观察记录（startedAt/终态）+ env（cwd/shell）。
+   *  纯投影：不执行、不写盘。 */
+  executionViews(id: string): ToolExecutionView[] {
+    this.assertValidSessionId(id);
+    const dir = this.locate(id);
+    const cwd = this.sessionCwd(id);
+    const shell = detectShell();
+    const session = loadSession(dir);
+    computeProjection(session); // 只取当前投影内的活动 tool/call（影子事件不展示）
+    const perCall = this.execTraces.get(id) ?? new Map<string, ExecTraceRecord>();
+    // taskId 归属：journal call/started 账本（S3a 单写；只读扫描）
+    const taskOfCall = new Map<string, string>();
+    for (const e of readEntries(dir).entries) {
+      if (e.kind === 'call/started' && e.taskId !== undefined) taskOfCall.set(e.callId, e.taskId);
+    }
+    const views: ToolExecutionView[] = [];
+    for (const { event, active } of session.events) {
+      if (!active || event.type !== 'tool/call') continue;
+      const call = event.payload;
+      const rec = perCall.get(call.callId);
+      const trace: ToolExecutionTrace = {
+        callId: call.callId,
+        ...(taskOfCall.get(call.callId) !== undefined ? { taskId: taskOfCall.get(call.callId) } : {}),
+        ...(call.turnId !== undefined ? { turnId: call.turnId } : {}),
+        tool: call.tool,
+        plannedArgs: call.args,
+        cwd,
+        ...(shell !== undefined ? { shell } : {}),
+        ...(rec?.startedAt !== undefined ? { executedArgs: rec.executedArgs, startedAt: rec.startedAt } : {}),
+        ...(rec?.endedAt !== undefined
+          ? { endedAt: rec.endedAt, ok: rec.ok, output: rec.output, error: rec.error, durationMs: rec.durationMs }
+          : {}),
+      };
+      views.push(buildToolExecutionView(trace));
+    }
+    return views;
+  }
+
+  /** change-review：变更审查只读报告（拟议 vs 真实 diff / 外部修改标 dirty；不触发恢复/写盘） */
+  changeReviewView(id: string): ChangeSet {
+    this.assertValidSessionId(id);
+    const dir = this.locate(id);
+    return reviewChangeSet(new SnapshotStore(dir));
+  }
+
+  /** 注入 provider 而无装配元数据时的诚实回退：从 ChatProvider.name 推导（channel/model）；protocol 缺省按 openai（桌面配置路径恒走真实元数据） */
+  private fallbackProviderMeta(): SessionHubProviderMeta {
+    const name = this.options.provider.name;
+    const [channel, model] = name.split('/');
+    return {
+      role: 'main',
+      channel: channel ?? name,
+      model: model ?? name,
+      protocol: 'openai',
+      name,
+    };
+  }
+
   // —— turn 流转 ——
 
   /** 用户消息：入该会话串行队列（busy 即排队，同 REPL）；未知会话先 ensureOpen */
@@ -469,6 +605,8 @@ export class SessionHub implements ResumeStateProvider {
   private async runOne(id: string, entry: HubEntry, text: string): Promise<void> {
     const ac = new AbortController();
     this.running.set(id, ac);
+    // S7：turn 启动 = 新配置 revision（run-config 只读投影的 snapshot 依据）
+    this.configRevisions.set(id, (this.configRevisions.get(id) ?? 0) + 1);
     const snapshots = new SnapshotStore(entry.dir);
     this.memoryToolUseInTurn.delete(id); // 每 turn 重置 memory 工具使用标记
     try {
@@ -1116,6 +1254,14 @@ export class SessionHub implements ResumeStateProvider {
   }
 
   private emitExecuteStart(sessionId: string, req: ToolExecutionRequest): void {
+    // S7 记录（内存观察）：工具真正启动时点 + 真实执行参数（onExecuteStart 的 req 即真实参数）
+    const perSession = this.execTraces.get(sessionId) ?? new Map<string, ExecTraceRecord>();
+    perSession.set(req.callId, {
+      ...(perSession.get(req.callId) ?? {}),
+      startedAt: new Date().toISOString(),
+      executedArgs: req.args,
+    });
+    this.execTraces.set(sessionId, perSession);
     for (const l of this.listeners) {
       try {
         l.onExecuteStart?.(sessionId, req);
@@ -1126,6 +1272,17 @@ export class SessionHub implements ResumeStateProvider {
   }
 
   private emitExecuteEnd(sessionId: string, req: ToolExecutionRequest, result: ToolResult): void {
+    // S7 记录（内存观察）：终态一次（含未启动的拒绝/取消/未知工具）
+    const perSession = this.execTraces.get(sessionId) ?? new Map<string, ExecTraceRecord>();
+    perSession.set(req.callId, {
+      ...(perSession.get(req.callId) ?? {}),
+      endedAt: new Date().toISOString(),
+      ok: result.ok,
+      ...(result.output !== undefined ? { output: result.output } : {}),
+      ...(result.error !== undefined ? { error: result.error } : {}),
+      ...(result.durationMs !== undefined ? { durationMs: result.durationMs } : {}),
+    });
+    this.execTraces.set(sessionId, perSession);
     for (const l of this.listeners) {
       try {
         l.onExecuteEnd?.(sessionId, req, result);
