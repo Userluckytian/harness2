@@ -14,12 +14,15 @@
 
 | 项 | 值 | 填写人 / 日期 |
 |----|----|----------------|
-| 起始 commit | `d38fc4a` | — |
-| `pnpm test` 基线通过数 | 待填 | |
-| `pnpm test` 基线耗时 | 待填 | |
-| `pnpm -r typecheck` 结果 | 待填 | |
-| `origin/main` 同步确认 | 待填 | |
-| 工作分支 | `chore/phase15-quality-closeout` | |
+| 起始 commit | `6437a60`（计划书写 `d38fc4a`，其后仅计划文档提交；此为实测开工 tip） | 执行者 A0 / 2026-09-09 |
+| `pnpm test` 基线通过数 | **core 789 passed + 1 skipped**（57 files）· gateway 14 · desktop 158 · cli 71 → **合计 1032 passed + 1 skipped**（94 files） | 执行者 A0 / 2026-09-09 |
+| `pnpm test` 基线耗时 | **42s**（`pnpm test` 含 `pnpm -r build` 前置，exit 0） | 执行者 A0 / 2026-09-09 |
+| `pnpm -r typecheck` 结果 | ✅ 4 包全过（core/cli/desktop/gateway），exit 0，**8s** | 执行者 A0 / 2026-09-09 |
+| API 导出面基线 | 计划/文档写 **372**，实测 fixture 为 **489**（不一致，原因见下方注） | 执行者 A0 / 2026-09-09 |
+| `origin/main` 同步确认 | **未 push**；本地分支领先 `origin/main` 31 commit（口径：只提交本地，push 待人类授权，已记 issue-log 遗留风险 + 第 7 节） | 执行者 A0 / 2026-09-09 |
+| 工作分支 | `chore/phase15-quality-closeout` | — |
+
+> **注（API 导出面 372 → 489 差异说明）：** `docs/API-STABILITY.md`、`docs/MIGRATION.md`、`docs/RELEASE-CHECKLIST.md` 与阶段 15 计划书均写「372 个导出」，但仓库实际基线 `packages/core/test/fixtures/api-surface-baseline.json` 现有 **489** 个导出。差异来自阶段 14 S0–S7 的**加性**导出增长（fixture 逐次提交：`af14166` 440 → `f895fc3` 443 → `78487dc` 446 → `82459fe` 448 → `3fbb5e6` 486 → `c63b7b2` 489）；API 快照测试对**新增导出不判红**，故测试全绿而文档数字未同步。**本次不改这些文档**（不在 A0/B1 允许路径内），已记 issue-log 遗留风险，建议归 B5 文档欠账处理。
 
 ---
 
@@ -27,7 +30,7 @@
 
 | 节点 | 内容 | 状态 | 确认人 / 时间 |
 |------|------|------|----------------|
-| **N0** | A0 + B1 完成，第 0 节基线数据已填 | ⬜ | |
+| **N0** | A0 + B1 完成，第 0 节基线数据已填 | ✅ | 执行者 / 2026-09-09（A0 `7efc0c5` + B1 `2a287e7`） |
 | **N1** | B2 完成：lint/CI 落地，全量格式化已独占一个 `🎨style` 提交（**在任何逻辑改动之前**） | ⬜ | |
 | **N2** | A1 合入，Windows P0 闭环 | ⬜ | |
 | **N3** | A3 合入，serve 安全基线达成 | ⬜ | |
@@ -39,7 +42,7 @@
 
 | # | 标准 | 通过条件 | 状态 | 证据（命令 + 输出位置） | 日期 |
 |---|------|----------|------|--------------------------|------|
-| A-1 | 仓库卫生 | `git status` 干净；`origin/main` 一致；根与四包版本一致 | ⬜ | | |
+| A-1 | 仓库卫生 | ✅ | `git status` 干净；根 `package.json` `0.1.0`→`1.0.0` 与四包（cli/core/desktop/gateway）一致；`.tmp-head-check/` 已删并加 `.tmp-*/` 忽略；`git check-ignore -v` 命中 `dist-bundle/`、`release/`、`dist-electron/`、`.tmp-*/`；`origin/main` **按人类口径未同步**（领先 31，push 待授权，见第 7 节） | 2026-09-09 |
 | A-2 | Windows shell 与编码 | `windows-bash.test.ts` 全绿；中文/emoji 无乱码 | ⬜ | | |
 | A-3 | 工具失败熔断 | `stopReason=tool_failures` 且 finalText 非空 | ⬜ | | |
 | A-4 | 参数缺失可自纠 | error 含 schema 片段与最小示例 | ⬜ | | |
@@ -60,7 +63,7 @@
 
 | # | 标准 | 通过条件 | 状态 | 证据（命令 + 输出位置） | 日期 |
 |---|------|----------|------|--------------------------|------|
-| B-1 | OPEN.md 只剩待办 | 逐条为待办；DECISIONS.md 保留全部历史 | ⬜ | | |
+| B-1 | OPEN.md 只剩待办 | ✅ | OPEN.md 60→42 行、数据行 47→28（-40%）；19 条「已关闭/已评估不修/已评估推迟/已知限制/口径登记/已被取代」迁入新建 `docs/issue-log/DECISIONS.md`；脚本核验「原 47 = OPEN 28 + DECISIONS 19，逐字一致」；顶部已加 DECISIONS.md 索引 + 阶段 15 计划文档位置（总纲/acceptance/review-brief/executor）；为让 DECISIONS.md 入库，`.gitignore` 补 `!docs/issue-log/DECISIONS.md` | 2026-09-09 |
 | B-2 | lint 可跑 | `pnpm lint` 本地干净 | ⬜ | | |
 | B-3 | lint 入 CI | CI 中 lint 为必过项且绿 | ⬜ | | |
 | B-4 | 格式化提交干净 | `🎨style` 提交无逻辑变更 | ⬜ | | |
@@ -103,7 +106,7 @@
 | B3 | 丙（专职审查者） | | 只读子代理 | | | |
 | B4 | 丙（专职审查者） | | 只读子代理 | | | |
 | A5 / B5（复审与文档） | 丙（专职审查者） | | 只读子代理 | | | |
-| A0 / B1（Day1 事后核，不阻塞合入） | 丙（专职审查者） | | — | | | |
+| A0 / B1（Day1 事后核，不阻塞合入） | 丙（专职审查者） | ✅ 自评通过（待丙事后核） | — | — | — | 2026-09-09 |
 
 > 结论只写 ✅ 通过 / ⚠️ 有条件通过 / ❌ 不通过。⚠️ 与 ❌ 的问题清单必须写进第 6 节。
 
@@ -124,6 +127,7 @@
 | 项 | 未执行原因 | 补做条件 | 状态 |
 |----|------------|----------|------|
 | A2-2 云端厂商真机差异 | 需 DeepSeek / 智谱 GLM / Anthropic 官方 key（本地网关是路由器，覆盖不了各家 reasoning 字段、限流与错误码差异） | 拿到云端 key 后立即补做，**不得用本地网关或 stub 冒充**；A2-1 本地双协议环境已就绪，不属于本表 | ⬜ |
+| A0 `origin/main` 同步（push 备份） | 人类 2026-09-09 明确本阶段不 push（本地长期领先远端，当前口径只提交本地） | 人类授权后 push（分支 `chore/phase15-quality-closeout` 或合入 main 后 push） | ⬜ |
 | B6 发布三件 | 需人类逐项授权 | 授权后执行 | ⬜ |
 | （待填） | | | |
 
