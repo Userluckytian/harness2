@@ -48,6 +48,15 @@ import { RETRY_MAX_EXTRA_PER_TURN, RETRY_MAX_TOTAL_WAIT_SECONDS } from '../inter
 export const DEFAULT_MAX_STEPS = 25;
 /** A1-3：连续工具失败熔断阈值（默认 5）。与 maxSteps 独立：任一工具成功即重置计数。 */
 const DEFAULT_MAX_CONSECUTIVE_TOOL_FAILURES = 5;
+/** P2-3 修复：熔断文案里的失败详情字符上限。工具失败 error 可达 MB 级（如 grep 捕获 8MB 输出），
+ *  直接拼进 assistant/message 会灌爆会话日志与下一轮模型上下文，故截断后附「已截断」注明。 */
+const CIRCUIT_ERROR_MAX_CHARS = 500;
+
+/** 截断熔断文案中的失败详情（超长只保留前 CIRCUIT_ERROR_MAX_CHARS 字符 + 原文长度） */
+function truncateCircuitError(text: string): string {
+  if (text.length <= CIRCUIT_ERROR_MAX_CHARS) return text;
+  return `${text.slice(0, CIRCUIT_ERROR_MAX_CHARS)}…（已截断，原文 ${text.length} 字符）`;
+}
 
 /**
  * 从会话日志重建模型请求消息列表（provider/types.ts 中映射规则的唯一实现）：
@@ -638,7 +647,7 @@ async function runTurnWithWriter(writer: SessionWriter | SessionAppender, option
       const failure = lastToolFailure ?? { tool: 'unknown', error: 'unknown error' };
       const circuitText =
         `连续 ${consecutiveToolFailures} 次工具调用失败，已自动停止以避免继续空转（阈值 ${maxConsecutiveToolFailures}）。` +
-        `最近一次失败：${failure.tool} — ${failure.error}。` +
+        `最近一次失败：${failure.tool} — ${truncateCircuitError(failure.error)}。` +
         `请检查工具参数或运行环境（shell/网络/依赖）后重试；也可以直接告诉我换一种做法。`;
       writer.append('assistant/message', { text: circuitText, model: provider.name, turnId });
       options.onStream?.({ type: 'text-delta', text: circuitText, turnId });

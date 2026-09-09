@@ -139,6 +139,31 @@ describe('A1-3 连续工具失败熔断', () => {
     expect(result.stopReason).toBe('max_steps');
     expect(result.steps).toBe(3);
   });
+
+  it('P2-3：超大失败详情先截断再拼进熔断文案（finalText 与 assistant/message 均有界）', async () => {
+    const dir = tmpDir();
+    const huge = 'E'.repeat(120_000); // 模拟 grep 捕获的超大 error
+    const provider = new MockProvider(calls('huge_fail', 6));
+    const registry = new ToolRegistry();
+    registry.register(tool('huge_fail', async () => ({ error: huge })));
+
+    const result = await runTurn(dir, { provider, tools: registry, cwd: dir, userText: 'x' });
+
+    expect(result.stopReason).toBe('tool_failures');
+    expect(result.finalText).toBeDefined();
+    expect(result.finalText!.length).toBeGreaterThan(0);
+    expect(result.finalText!.length).toBeLessThan(1000); // 不再随 error 线性膨胀
+    expect(result.finalText).toContain('连续 5 次工具调用失败');
+    expect(result.finalText).toContain('已截断');
+    expect(result.finalText).toContain('原文 120000 字符');
+    // 落盘 assistant/message 同样有界：下一轮模型上下文不会灌入 MB 级失败详情
+    const assistant = loadEvents(dir).find(
+      (e): e is Extract<AnySessionEvent, { type: 'assistant/message' }> =>
+        e.type === 'assistant/message' && e.payload.text.includes('已截断'),
+    );
+    expect(assistant).toBeDefined();
+    expect(assistant!.payload.text).toBe(result.finalText);
+  });
 });
 
 describe('A1-4 缺必填参数：schema 片段 + 最小正确调用示例', () => {
@@ -192,6 +217,35 @@ describe('A1-4 缺必填参数：schema 片段 + 最小正确调用示例', () =
     expect(r.error).toContain('arguments must be an object');
     expect(r.error).toContain('file_path');
     expect(r.error).toContain('最小正确调用示例');
+  });
+
+  it('P1-1：anyOf「多选一」必填 schema 不被执行器硬拦，由工具自身校验', async () => {
+    const registry = new ToolRegistry();
+    registry.register({
+      name: 'either_tool',
+      description: 'either a, or b+c',
+      parameters: {
+        type: 'object',
+        properties: { a: { type: 'string' }, b: { type: 'string' }, c: { type: 'string' } },
+        anyOf: [{ required: ['a'] }, { required: ['b', 'c'] }],
+      },
+      execute: (args) => {
+        const r = (args ?? {}) as Record<string, unknown>;
+        if (r['a'] === undefined && (r['b'] === undefined || r['c'] === undefined)) {
+          return { error: 'either a, or b+c' };
+        }
+        return { output: 'ok' };
+      },
+    });
+    const executor = new ToolExecutor(registry);
+    // 只满足第二分支：旧实现按顶层 required 会误杀，现应放行到工具并成功
+    const r1 = await executor.execute(req('either_tool', { b: '1', c: '2' }), env);
+    expect(r1.ok).toBe(true);
+    expect(r1.output).toBe('ok');
+    // 两分支都不满足：执行器不拦，错误来自工具自身（而非 A1-4 的「缺少必填参数」）
+    const r2 = await executor.execute(req('either_tool', {}, 'c2'), env);
+    expect(r2.ok).toBe(false);
+    expect(r2.error).toBe('either a, or b+c');
   });
 });
 

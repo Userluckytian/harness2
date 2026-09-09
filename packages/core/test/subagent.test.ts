@@ -383,6 +383,9 @@ describe('subagent_continue', () => {
     expect((await continueDef.execute({ childSessionId: '20260906-000000-000001' }, CALL_CTX)).error).toContain(
       'message',
     );
+    // P1-1：缺参错误必须指出 taskId 只读查询这条合法替代路径（不误导）
+    expect((await continueDef.execute({}, CALL_CTX)).error).toContain('taskId');
+    expect((await continueDef.execute({ message: 'm' }, CALL_CTX)).error).toContain('taskId');
   });
 });
 

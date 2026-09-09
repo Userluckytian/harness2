@@ -12,6 +12,7 @@ import {
   registerBuiltinTools,
   SessionHub,
   SessionManager,
+  ToolExecutor,
   ToolRegistry,
   runTurn,
   SnapshotStore,
@@ -382,11 +383,17 @@ describe('S5 生产路径：后台子代理任务（buildTurnTools → createSub
       coordinator: hub.tasks,
       background: true,
     });
-    const cont = defs.find((d) => d.name === 'subagent_continue')!;
-    const r = await cont.execute({ taskId: meta.taskId, childSessionId: '', message: '' }, {
-      cwd: root,
-      signal: new AbortController().signal,
-    } as never);
+    // P1-1 修复回归：只传 taskId 经 ToolExecutor 端到端——不得被 A1-4 必填参数预校验误拦，
+    // 且能真实取到协调器里的后台任务状态/结果。
+    const contRegistry = new ToolRegistry();
+    for (const d of defs) contRegistry.register(d);
+    const contExecutor = new ToolExecutor(contRegistry);
+    const r = await contExecutor.execute(
+      { callId: 'cont-taskid', tool: 'subagent_continue', args: { taskId: meta.taskId } },
+      { cwd: root, signal: new AbortController().signal },
+    );
+    expect(r.ok).toBe(true);
+    expect(r.error).toBeUndefined();
     const parsed = JSON.parse(r.output!) as { childSessionId: string; stopReason: string; finalText?: string };
     expect(parsed.stopReason).toBe('end_turn');
     expect(parsed.finalText).toBeDefined();

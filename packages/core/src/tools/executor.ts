@@ -107,6 +107,11 @@ function minimalCallExample(def: ToolDefinition, keys: readonly string[]): strin
  * 在审批之后、工具执行之前拦截：不执行工具；审批请求时机保持不变（兼容既有网关审批链路）。
  */
 function describeMissingRequiredArgs(def: ToolDefinition, args: unknown): string | undefined {
+  const params = def.parameters as { anyOf?: unknown; oneOf?: unknown } | undefined;
+  // P1-1 修复：anyOf/oneOf = 「多选一」必填组合（如 subagent_continue: taskId 或
+  // childSessionId+message；MCP inputSchema 透传同理）。执行器无法在不误杀合法分支的前提下
+  // 硬拦，故不做执行器级拦截，交给工具/服务端自身校验（任一分支满足即通过）。
+  if (Array.isArray(params?.anyOf) || Array.isArray(params?.oneOf)) return undefined;
   const required = requiredParamNames(def);
   if (required.length === 0) return undefined;
   const example = minimalCallExample(def, required);
