@@ -1,6 +1,10 @@
 # harness2
 
-<!-- 截图占位（待补，见 docs/issue-log/OPEN.md）：终端 chat 流式/工具行、桌面端多会话分屏、traj 时间线 -->
+> **截图区（待真机截图补入，人工项，见 `docs/issue-log/OPEN.md` 与阶段 15 验收表第 8 节）。** 以下三张真实 UI 截图请在真机运行后放入 `docs/screenshots/` 并按文件名约定命名，然后删除本段说明：
+>
+> 1. `docs/screenshots/cli-chat.png` —— 终端 chat 流式对话 + 工具调用行
+> 2. `docs/screenshots/desktop-multi.png` —— 桌面端多会话分屏
+> 3. `docs/screenshots/traj-timeline.png` —— traj 轨迹时间线视图
 
 自研跨端 AI agent harness（CLI / 桌面 / IM 网关多形态）。**M1（v0.1）= 终端里接真实模型干活**：流式对话、读写文件、跑命令、`/undo` `/redo`、轨迹可查、审批可控。**M2（v0.3）= 桌面可用**：多会话并行分屏、上下文压缩、浏览器工具、定时任务。**M3（v0.6）= 连接外部**：插件 / MCP / 子代理、QQ/飞书机器人、轨迹导出回放、项目级 Skills。**M4（v1.0.0）= 公开发布收口**：API 稳定承诺（semver + 导出面快照）、迁移指南、文档站、发布回归汇总——首个公开发布版本（发布动作待授权，见 `docs/RELEASE-CHECKLIST.md`）。
 
