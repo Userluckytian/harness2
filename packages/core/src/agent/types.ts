@@ -39,7 +39,16 @@ export interface AppliedSteerRecord {
  * paused = provider 请求暂停（Anthropic pause_turn），续跑未实现（登记 OPEN.md）。
  */
 export type TurnStopReason =
-  'end_turn' | 'error' | 'cancelled' | 'max_steps' | 'length' | 'content_filter' | 'max_tokens' | 'refusal' | 'paused';
+  | 'end_turn'
+  | 'error'
+  | 'cancelled'
+  | 'max_steps'
+  | 'tool_failures'
+  | 'length'
+  | 'content_filter'
+  | 'max_tokens'
+  | 'refusal'
+  | 'paused';
 
 /**
  * 上下文压缩选项（阶段 7，Task 1）。提供时 runTurn 在每个 turn 开始检查触发：
@@ -62,6 +71,13 @@ export interface TurnOptions {
   approval?: ApprovalHandler;
   /** 单 turn 最大 step 数（模型调用次数），默认 25 */
   maxSteps?: number;
+  /**
+   * A1-3 连续工具失败熔断：连续失败达到此数（默认 5）→ turn 以 stopReason='tool_failures'
+   * 结束并产出非空 finalText（不再空跑到 maxSteps）。任一工具成功即重置计数。
+   * 0/负数 = 关闭熔断（只受 maxSteps 约束）。与 interaction/retry-policy 的「有界重试」
+   * 是两套独立机制：后者重试模型 attempt，本项熔断的是工具连续失败。
+   */
+  maxConsecutiveToolFailures?: number;
   /** 外部取消信号（用户中断等） */
   signal?: AbortSignal;
   /** 工具执行的工作目录 */

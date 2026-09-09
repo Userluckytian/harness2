@@ -46,6 +46,8 @@ import {
 import { RETRY_MAX_EXTRA_PER_TURN, RETRY_MAX_TOTAL_WAIT_SECONDS } from '../interaction/types.js';
 
 export const DEFAULT_MAX_STEPS = 25;
+/** A1-3：连续工具失败熔断阈值（默认 5）。与 maxSteps 独立：任一工具成功即重置计数。 */
+const DEFAULT_MAX_CONSECUTIVE_TOOL_FAILURES = 5;
 
 /**
  * 从会话日志重建模型请求消息列表（provider/types.ts 中映射规则的唯一实现）：
@@ -243,6 +245,7 @@ function abortReasonMessage(signal: AbortSignal): string {
 async function runTurnWithWriter(writer: SessionWriter | SessionAppender, options: TurnOptions): Promise<TurnResult> {
   const turnId = randomUUID();
   const maxSteps = Math.max(1, options.maxSteps ?? DEFAULT_MAX_STEPS);
+  const maxConsecutiveToolFailures = options.maxConsecutiveToolFailures ?? DEFAULT_MAX_CONSECUTIVE_TOOL_FAILURES;
   const executor = new ToolExecutor(options.tools, options.approval);
   const provider = options.provider;
   const signal = options.signal;
@@ -319,6 +322,18 @@ async function runTurnWithWriter(writer: SessionWriter | SessionAppender, option
   let finalText: string | undefined;
   let stopReason: TurnStopReason = 'end_turn';
   let error: string | undefined;
+  // A1-3：连续工具失败计数（成功即归零）；触发阈值时以 tool_failures 收尾并给非空 finalText
+  let consecutiveToolFailures = 0;
+  let lastToolFailure: { tool: string; error: string } | undefined;
+  const recordToolResult = (tool: string, ok: boolean, failure?: string): void => {
+    if (ok) {
+      consecutiveToolFailures = 0;
+      lastToolFailure = undefined;
+      return;
+    }
+    consecutiveToolFailures += 1;
+    lastToolFailure = { tool, error: failure ?? 'unknown error' };
+  };
   // S4b：重试预算为整 turn 共享（per-turn 额外 ≤6 + 累计等待 ≤120s），跨 step 累计
   const retryBudget = createRetryBudget();
   /** FixC D1：turn 结束时随结果暴露预算快照（桌面读 used/remaining/stopReason） */
@@ -576,6 +591,7 @@ async function runTurnWithWriter(writer: SessionWriter | SessionAppender, option
       if (p.parseError !== undefined) {
         writer.append('tool/result', { callId: p.callId, tool: p.tool, ok: false, error: p.parseError, turnId });
         options.onStream?.({ type: 'tool-result', callId: p.callId, ok: false, error: p.parseError, turnId });
+        recordToolResult(p.tool, false, p.parseError);
         continue;
       }
       const r = byCallId.get(p.callId);
@@ -588,6 +604,7 @@ async function runTurnWithWriter(writer: SessionWriter | SessionAppender, option
           turnId,
         });
         options.onStream?.({ type: 'tool-result', callId: p.callId, ok: false, error: 'executor lost result', turnId });
+        recordToolResult(p.tool, false, 'executor lost result');
         continue;
       }
       writer.append('tool/result', {
@@ -606,8 +623,30 @@ async function runTurnWithWriter(writer: SessionWriter | SessionAppender, option
         turnId,
         ...(r.error !== undefined ? { error: r.error } : {}),
       });
+      recordToolResult(p.tool, r.ok, r.error);
     }
     toolCallsTotal += calls.length;
+
+    // A1-3 熔断：连续失败达阈值 → 停止并给面向用户的非空回复（禁止空回复）。
+    // 文本同时落 assistant/message 与 onStream，保证 desktop（事件投影）与 CLI（流式）
+    // 两个客户端都看得到；stopReason 如实为 tool_failures。
+    if (
+      maxConsecutiveToolFailures > 0 &&
+      consecutiveToolFailures >= maxConsecutiveToolFailures &&
+      signal?.aborted !== true // 取消优先：用户中断不应被熔断文案冒充
+    ) {
+      const failure = lastToolFailure ?? { tool: 'unknown', error: 'unknown error' };
+      const circuitText =
+        `连续 ${consecutiveToolFailures} 次工具调用失败，已自动停止以避免继续空转（阈值 ${maxConsecutiveToolFailures}）。` +
+        `最近一次失败：${failure.tool} — ${failure.error}。` +
+        `请检查工具参数或运行环境（shell/网络/依赖）后重试；也可以直接告诉我换一种做法。`;
+      writer.append('assistant/message', { text: circuitText, model: provider.name, turnId });
+      options.onStream?.({ type: 'text-delta', text: circuitText, turnId });
+      finalText = circuitText;
+      stopReason = 'tool_failures';
+      writer.append('step/end', { stepId, turnId, durationMs: Math.round(performance.now() - stepStartedAt) });
+      break;
+    }
 
     writer.append('step/end', { stepId, turnId, durationMs: Math.round(performance.now() - stepStartedAt) });
     // S6 安全 step 边界：本 step 完整往返完成（模型流 + 工具波浪均已落地）后才消费 steer。
