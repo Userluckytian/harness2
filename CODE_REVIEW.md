@@ -29,7 +29,7 @@
 
 ### 5. 性能考虑
 
-- 缓存在的使用和失效
+- 缓存的使用和失效
 - 数据库查询的优化
 - 重复计算的避免
 
@@ -46,3 +46,47 @@
 - [ ] 资源正确释放
 - [ ] 符合提交规范
 - [ ] 代码经过审查
+
+## harness2 专属红线（项目不变量）
+
+> 本节为 **harness2（本仓库）** 专属审查红线，2026-09-09 增补。通用清单（上）适用于所有项目；本节是**硬性不变量**，审查时逐条核对，违反即阻塞合入。权威定义见 `architecture.md` 与 `AGENTS.md`。
+
+### 红线 1：Model-visible ⟺ logged（模型可见的事件必有日志）
+
+- 任何会进入模型上下文的消息/事件（用户输入、assistant 回复、工具调用与结果、系统注入）必须同时落在会话日志（`runtime.v1.jsonl`）中；日志里没有的事件不得出现在模型视野，模型视野里的事件不得漏记。
+- 审查：改动 agent/投影/日志链路时，核对「模型看到什么」与「日志写了什么」一致；`session/reader.ts`、`trajectory/export.ts` 的回放结果必须与日志逐事件一致。
+
+### 红线 2：append-only 单写者（写日志只有单一执行者）
+
+- 永久会话事件只追加、不回改（undo/redo 也只追加 rewind 标记）；同一会话同一时刻**只有一个执行者**写日志（会话内串行），跨进程/跨请求不得并发追加。
+- 审查：新增写日志路径时必须走既有单写者通道（hub / runtime-journal），不得另开旁路；任何「修改历史事件」「并发追加」的实现一律打回。
+
+### 红线 3：core 与 UI 解耦
+
+- `@harness2/core` 不依赖任何 UI 层（cli ink / desktop renderer / gateway 界面）；UI 只消费 core 暴露的会话投影、事件流与命令接口。
+- 审查：core 的 import 图不得出现 react / ink / electron；UI 侧不得绕过 core 直接操作会话文件或日志。
+
+### 红线 4：文件快照独立于 git（bash 副作用不入快照）
+
+- `/undo` 的文件恢复只覆盖 `write`/`edit` 工具的 before/after 快照；bash 命令造成的文件改动**不进快照**、不可用 `/undo` 恢复——这是有意的边界，不是缺陷。
+- 审查：新增工具若产生文件副作用，必须明确声明是否纳入快照；快照逻辑不得扩展为「记录 bash 副作用」。
+
+### 红线 5：密钥脱敏闸门
+
+- 任何输出面（stdout / 日志 / 错误消息 / 会话事件 / 配置文件回显）都不得出现 `sk-*`、token、密码等密钥明文；`config check` 永不打印明文 key。
+- 审查：对改动涉及的所有出口做「密钥前缀全文检索」；`auth.json` 与真实用户凭证绝不入库。
+
+### 红线 6：审批机制不得弱化
+
+- `tools/executor.ts` 的 safe 并发 / unsafe 独占 / 同 lockKey 串行，以及 approval 审批链路（ask 的 y/a/n、会话级 always、gateway 回复式审批）是既有安全基线，任何改动不得降低其约束力。
+- 审查：改动涉及工具执行或审批时，确认未跳过审批、未放大并发、未放宽 lockKey 语义。
+
+### 红线 7：导出面变更必须同步 api-surface 快照
+
+- 改 `packages/core/src/index.ts` 的导出面（新增/改名/删除导出）必须在**同一提交**更新 `packages/core/test/fixtures/api-surface-baseline.json` 快照：`H2_UPDATE_API_SNAPSHOT=1 pnpm --filter @harness2/core exec vitest run test/api-surface.test.ts`。
+- 审查：diff 中出现 `core/src/index.ts` 时，必须同时看到 fixture 快照的对应变更；只有 fixture 更新没有源码变更（或反之）视为不一致打回。
+
+### 红线 8：插件边界如实声明（v1 同进程非隔离）
+
+- v1 插件与主进程**同进程运行（非隔离）**，manifest 权限仅为 API 层约束，**不提供沙箱**——任何文档、提示语、输出不得暗示有沙箱/隔离。
+- 审查：改插件相关文案时核对 README / 文档站 / `plugin list` 输出三处声明仍在；不得新增「已隔离/沙箱」措辞。
