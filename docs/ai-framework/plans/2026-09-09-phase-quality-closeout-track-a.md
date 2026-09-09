@@ -6,8 +6,9 @@
 > **对侧轨道：** 轨道 B（工程化与产品面）`…-track-b.md`——**不要动**根 lint 配置、`packages/cli`、`packages/desktop`、`docs/**`、`README.md`、`coding-standards.md`、`CODE_REVIEW.md`
 > **元规范：** `docs/ai-framework/phased-plan-driven.md`
 
-**Goal：** 让 harness2 在 Windows 上真正可用、让三端 provider 第一次经过真机验证、让 serve 达到可发布的安全基线，并把 R2 两轨都要动的 `server/sessions.ts` 提前拆开。
+**Goal：** 让 harness2 在 Windows 上真正可用、让 provider 两条协议（openai / anthropic）第一次经过**真实模型**端到端验证、让 serve 达到可发布的安全基线，并把 R2 两轨都要动的 `server/sessions.ts` 提前拆开。
 **实施档位：** 全能（开发 + 测试 + 代码审查）；A2 为豪华档端到端，由人类签收。
+**测试环境（人类已提供，A2 开箱即测）：** 本地统一网关 `http://127.0.0.1:40080/v1` · key `sk-unified-local` · 模型 `big-pickle`（200K 上下文、**纯文本模型**）。2026-09-09 已实测双协议连通，配置写法与陷阱见 A2。
 **子代理：** 启用（代码审查 + 验收）；人工审查由**专职审查者（丙）**承担，见 `…-review-brief.md`，你不需要审乙的代码。
 **worktree / 分支：** 从最新 `main`（代码基线 tip `d38fc4a`，其后只有计划文档提交）建 `feat/runtime-hardening`。
 
@@ -21,6 +22,7 @@
 | P0 | `AGENTS.md`、`CODE_REVIEW.md`、`docs/issue-log/OPEN.md` |
 | P0 | `packages/core/src/tools/`（bash / executor / 内置工具）、`packages/core/src/agent/loop.ts` |
 | P0 | `packages/core/src/server/{http.ts,ws.ts,sessions.ts}` |
+| P0 | `packages/core/src/provider/{openai.ts,anthropic.ts,factory.ts}`、`packages/core/src/config/schema.ts`（A2 要用：协议路径拼接与 providers/roles 校验） |
 | P1 | `architecture.md`、`docs/API-STABILITY.md`、`packages/core/test/{tools,loop}.test.ts` |
 | P1 | `docs/ai-framework/plans/2026-09-08-phase-aggressive-core-foundation.md`（S0–S7 契约，**只读，不改**） |
 | P2 | `docs/issue-log/2026-09-07.md`（Windows 空回复案发记录） |
@@ -102,24 +104,90 @@
 
 ---
 
-### A2 — 三端真实模型端到端验证（Day 4 · 1–2 天 · 需人类提供 key）
+### A2 — 真实模型端到端验证（Day 4 · 1–2 天 · 环境已就绪，无需外部 key）
 
-**现状：** provider 协议全部只过了 127.0.0.1 stub，DeepSeek / 智谱 GLM / Anthropic **从未实机验证**。这是产品最核心路径，发布前必须补。**开工前找人类要 key；无 key 则本阶段顺延，在 acceptance.md 登记「未执行」，不得用 stub 冒充。**
+**现状：** provider 协议此前只过了 127.0.0.1 stub，真实模型**从未实机验证**。这是产品最核心路径，发布前必须补。
 
-三端各过一遍：
+#### A2-1（必做）本地统一网关 — 人类已提供，2026-09-09 实测通过
+
+| 项 | 值 |
+|----|----|
+| Base URL | `http://127.0.0.1:40080/v1` |
+| Key | `sk-unified-local`（本地网关口令，非云端机密；仍只写 auth.json 或环境变量，**不入库、不进日志**） |
+| 模型 | `big-pickle` |
+| 上下文 | 200K → `contextWindow: 200000` |
+| 模态 | **纯文本大模型**（无视觉/多模态；相关用例直接记 ➖，不要伪造） |
+
+实测结论（写计划时用 PowerShell 直连，可复现）：
+
+| 端点 | 协议 | 实测结果 |
+|------|------|----------|
+| `GET /v1/models` | — | 200，列表含 `big-pickle` |
+| `POST /v1/chat/completions`（`Authorization: Bearer …`） | OpenAI 兼容 | 200；非流式带 `reasoning_content` 与 `usage{prompt_tokens,completion_tokens,total_tokens}`；`stream:true` 返回 `text/event-stream`，delta 先 `reasoning_content` 后 `content`，收尾依次是 `finish_reason=stop` 帧 → `choices:[]` 的 usage 帧 → `data: [DONE]` |
+| `POST /v1/messages`（`x-api-key` + `anthropic-version: 2023-06-01`） | Anthropic 原生 | 200；content 块为 `thinking` + `text`，`stop_reason=end_turn`，`usage{input_tokens,output_tokens}`；流式事件序列 `message_start` → `ping` → `content_block_start/delta(thinking_delta)/stop` → `content_block_start/delta(text_delta)/stop` → `message_delta`（带 stop_reason 与 usage）→ `message_stop` |
+
+**⚠️ baseUrl 最容易踩的坑（写错就是 404，先看 `config/schema.ts` 第 18 行注释）：**
+- `protocol: "openai"` → 代码请求 `{baseUrl}/chat/completions`，baseUrl **要带 `/v1`**：`http://127.0.0.1:40080/v1`
+- `protocol: "anthropic"` → 代码请求 `{baseUrl}/v1/messages`，baseUrl **不能带 `/v1`**：`http://127.0.0.1:40080`
+
+**配置（用 `--home` 指向临时目录，不许改人类的 `~/.harness2`，见总纲 Global Constraints 第 6 条）：**
+
+新建独立 home，例如 `D:/tmp/h2-a2-home`，写 `D:/tmp/h2-a2-home/.harness2/config.json`：
+
+```json
+{
+  "providers": {
+    "local-oai": {
+      "protocol": "openai",
+      "baseUrl": "http://127.0.0.1:40080/v1",
+      "envKey": "LOCAL_UNIFIED_KEY",
+      "models": { "big-pickle": { "contextWindow": 200000, "maxOutputTokens": 8192 } }
+    },
+    "local-ant": {
+      "protocol": "anthropic",
+      "baseUrl": "http://127.0.0.1:40080",
+      "envKey": "LOCAL_UNIFIED_KEY",
+      "models": { "big-pickle": { "contextWindow": 200000, "maxOutputTokens": 8192 } }
+    }
+  },
+  "roles": {
+    "main": { "channel": "local-oai", "model": "big-pickle" },
+    "small": { "channel": "local-oai", "model": "big-pickle" }
+  },
+  "approval": { "mode": "default", "tools": { "bash": "ask" } }
+}
+```
+
+再写 `D:/tmp/h2-a2-home/.harness2/auth.json`（key 解析顺序 auth.json > env）：
+
+```json
+{ "channels": { "local-oai": { "apiKey": "sk-unified-local" }, "local-ant": { "apiKey": "sk-unified-local" } } }
+```
+
+验 anthropic 渠道时把 `roles.main.channel` 改成 `local-ant` 再跑一遍。所有命令都加 `--home D:/tmp/h2-a2-home`——`config check`、`doctor`、`chat`、`serve`、`mcp list`、`plugin`、`memory` 均支持 `--home`，`config check` 与 `doctor` 还支持 `--root`。
+
+**开工第一步：** 直连 `http://127.0.0.1:40080/v1/models`（带 `Authorization: Bearer sk-unified-local`）确认 200；网关没起来就找人类，别改代码猜错误。
+
+两个渠道（`local-oai` / `local-ant`）各过一遍下面八项：
 
 | # | 项目 | 通过条件 |
 |---|------|----------|
-| 1 | `harness2 config check` | key 来源正确，**不得打印明文** |
+| 1 | `harness2 config check --home <临时home> --root .` | 两渠道各显示 protocol 与 baseUrl、`models: big-pickle`、`main -> local-oai/big-pickle`；key 来源显示 `auth.json`（或 `env:LOCAL_UNIFIED_KEY`）；**输出里不得出现 `sk-unified-local` 明文** |
 | 2 | `harness2 chat` 一轮对话 + 一次工具调用 | SSE 流式渲染、tool_calls 组装、`reasoning_content`/`thinking` 展示、usage 统计、错误脱敏均正常 |
 | 3 | undo/redo/审批/会话 | `/undo --dry-run` → `/undo`（文件复原）→ `/redo`（内容回放）→ 审批 ask 的 y/a/n → `/sessions` 搜索 → `/exit` |
 | 4 | 记忆三态 | off / ask / auto + nudge 复盘；手工改坏 `§` 结构应被拒并生成 .bak |
 | 5 | MCP 与插件 | filesystem server `mcp list` 探测 + `mcp__filesystem__*` 真实调用；第三方插件从零装载 + `plugin enable` |
-| 6 | 桌面端 | 接真实 provider 走一遍对话 / 流式 / 审批 / undo（**找乙配合，他熟 desktop**） |
+| 6 | 桌面端 | 接本地网关走一遍对话 / 流式 / 审批 / undo（**找乙配合，他熟 desktop**） |
+| 7 | 上下文与压缩 | 声明 200K 时压缩阈值 ≈ 150K token，**别真堆长文**：临时把该渠道 `contextWindow` 改成 4000 触发一次压缩，确认压缩事件与摘要落盘、后续回答不崩，再改回 200000 |
+| 8 | 失败与降级 | 故意把 baseUrl 写错（如 anthropic 渠道错带 `/v1`）→ 报错可读且不含 key 明文；停掉网关 → `network` 类错误经有界重试（2/10/30s）后给出**非空** finalText，不得空回复 |
 
-- **产出：** 当天 `docs/issue-log/<日期>.md` 逐项 pass/fail + 真实输出片段；三端行为差异（reasoning 字段、usage 帧、流式细节）写进 `architecture.md` 的 Provider 小节。
-- **Commit：** `📝docs(core): 三端真机验证结论与 provider 差异记录（A2）`
-- **验收：** 清单全绿或缺陷已登记；OPEN.md 中「待 key」条目**交由乙同步关闭**。
+#### A2-2（可选，缺 key 就记 ➖）真实云端厂商
+
+DeepSeek / 智谱 GLM / Anthropic 官方各过同一份清单。**本地网关通过 ≠ 云端通过**——它是路由器（响应 id 形如 `router-…`），覆盖不了各家 reasoning 字段命名、429/配额限流、错误码与脱敏文案、超长上下文真实行为、tool_calls 细节差异。无云端 key 时在 acceptance.md 第 7 节登记 ➖ 并写明补做条件，**不得用 A2-1 或 stub 顶替**。
+
+- **产出：** 当天 `docs/issue-log/<日期>.md` 逐项 pass/fail + 真实输出片段（先脱敏）；两条协议的行为差异（`reasoning_content` vs `thinking` 块、usage 帧位置、`[DONE]` vs `message_stop`）写进 `architecture.md` 的 Provider 小节；跨人可见的结论同时填 acceptance.md 的 A-7 / A-7b。
+- **Commit：** `📝docs(core): 真机验证结论与 provider 双协议差异记录（A2）`
+- **验收：** A2-1 八项全绿或缺陷已登记；A2-2 有 key 同样处理、无 key 记 ➖；OPEN.md 中「待 key」条目**交由乙同步改写**（本地网关已解除依赖，只剩云端厂商待补）。
 
 ---
 
@@ -182,7 +250,8 @@
 | A-4 | 参数缺失可自纠 | error 含 schema 片段与最小示例 | 自动化 |
 | A-5 | 进程树击杀未回归 | 超时/取消用例全绿（Windows） | 自动化 |
 | A-6 | Windows 真机 | 同类联网检索任务不再空回复，附 traj 摘要 | 人类 |
-| A-7 | 三端真机六项清单 | 逐项 pass 或登记缺陷；key 不落盘 | 人类签收 |
+| A-7 | A2-1 本地网关八项清单 | `local-oai` 与 `local-ant` 两渠道逐项 pass 或登记缺陷；输出无 key 明文 | 人类签收 |
+| A-7b | A2-2 云端厂商差异（可选） | 有 key 则逐项 pass；无 key 记 ➖ 并写明补做条件 | 人类签收 |
 | A-8 | serve 鉴权 | `serve-security.test.ts` 全绿 + curl 越权被拒输出 | 自动化 + 手工 |
 | A-9 | playwright 可选 | 无 playwright 环境 import 不报错、`browser_*` 返回指引 | 自动化 |
 | A-10 | sessions.ts 拆分 | < 25KB 且拆分前后同组测试结果一致 | 自动化 + 丙复核 |
@@ -199,7 +268,9 @@
 | Windows shell 探测在他人机器上路径不同 | 探测顺序可配置（`config.bash.shell` 最高优先级）+ doctor 输出实际 shell |
 | 熔断阈值误伤长任务 | 阈值可配置；只统计**连续**失败；触发时给出可行动 finalText 而非静默结束 |
 | 安全加固挡住自家客户端 | 完成即让乙跑 desktop smoke + CLI serve 冒烟 |
-| 无 key 导致 A2 无法进行 | 顺延不阻塞 A3；登记「未执行」，token 充足时补做 |
+| 本地网关通过 ≠ 云端厂商通过 | A2-1 必做（环境已就绪）；A2-2 缺 key 记 ➖，不得由 A2-1 或 stub 顶替 |
+| 本地网关未启动 / 端口 40080 被占 | 先直连 `/v1/models` 确认 200 再动 harness2；网关不可用则 A2 顺延，不阻塞 A3 |
+| 200K 上下文导致压缩路径测不到 | 临时把渠道 `contextWindow` 调成 4000 触发压缩，验完改回，别真堆 15 万 token |
 | sessions.ts 拆分与 R2 两轨未来改动冲突 | 拆分前在群里同步 T/D 轨 owner；拆完当天合流 |
 
 ---
@@ -224,9 +295,17 @@ A1（最高优先级）：修 Windows 可用性四件事——bash 工具优先 
 并回归 tools.test.ts/loop.test.ts，特别确认超时与取消时 Windows taskkill /T /F 进程树击杀仍生效。
 参照案发会话 20260907-032949-546d13（跑满 25 步、finalText 为空）。完成合入后通知轨道 B（同步点 S1）。
 
-A2（需人类给 key，无 key 就顺延并登记「未执行」，不得用 stub 冒充）：DeepSeek/智谱GLM/Anthropic 三端
-各跑六项清单（config check 不打印明文 / chat 一轮含工具调用 / undo-redo-审批-sessions / 记忆三态 /
-MCP filesystem 与插件装载 / 桌面端一遍），逐项 pass-fail 写 issue-log，三端差异写 architecture.md Provider 小节。
+A2（环境已就绪，无需外部 key）：人类提供了本地统一网关 http://127.0.0.1:40080/v1，key sk-unified-local，
+模型 big-pickle（200K 上下文、纯文本大模型，多模态用例直接记 ➖）。已实测 /v1/models、/v1/chat/completions、
+/v1/messages 三个端点均 200 且 SSE 正常。建两个渠道各测一遍：local-oai（protocol openai，baseUrl 带 /v1）
+与 local-ant（protocol anthropic，baseUrl 不带 /v1——代码自己拼 /v1/messages，写错就是 404）。
+配置写进临时 home（如 D:/tmp/h2-a2-home）并给所有命令加 --home，禁止改人类的 ~/.harness2。
+八项清单：config check（不打印明文）/ chat 一轮含工具调用 / undo-redo-审批-sessions / 记忆三态 /
+MCP filesystem 与插件装载 / 桌面端一遍（找乙配合）/ 临时把 contextWindow 改 4000 验压缩 /
+错误与降级（baseUrl 写错、网关停掉都必须给非空 finalText 且不泄 key）。
+逐项 pass-fail 写 issue-log，结论填 acceptance.md 的 A-7，两协议差异写 architecture.md Provider 小节。
+A2-2（云端 DeepSeek/智谱GLM/Anthropic 官方）需真 key，无 key 就在 acceptance 第 7 节记 ➖；
+本地网关通过不等于云端通过，不得顶替。
 
 A3：serve 加 Origin-Host 白名单与一次性 token；WS 帧上限对齐 HTTP 1 MiB 且超限断连记账；
 playwright 从 core 的 runtime dependencies 移到可选依赖并保留未安装降级。新增 serve-security.test.ts。
@@ -248,5 +327,5 @@ A5：独立复审阶段 9 IM 网关（曾判 fail 未复审），重点 startGat
 ## 残留手工验收清单（轨道 A）
 
 1. Windows 真机手感：IME、滚动、Ctrl+C 中断、长输出截断。
-2. 三端真机体验签收（人类，含桌面端一轮）。
+2. 真机体验签收（人类）：本地网关 `local-oai` / `local-ant` 各一轮，含桌面端一轮；云端厂商有 key 才做，否则记 ➖。
 3. serve 鉴权后，人类在自己机器上确认 CLI 与桌面仍能正常连上。
