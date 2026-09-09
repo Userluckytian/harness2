@@ -1,9 +1,39 @@
 # 阶段 9：QQ / 飞书 IM 网关
 
-> **状态：** ✅ 已完成——2026-09-06 编排者验收通过。过程：实现代理两次并发中断（接手代理收尾）→ 独立审查 **verdict: fail**（P0 网关聋哑 + 7 P1，审查引用 QQ 官方文档纠正 msg_seq/token 契约）→ 修复代理两次中断后编排者代修（`fb837bb`：生命周期/重连重订阅/msg_seq 递增/飞书策略与鉴权/CLI 飞书分支）→ 全量复验 540 passed + 1 skipped。**复审待基础设施恢复后补做**（fail 阶段闭环条件）；真实联调待用户 QQ/飞书凭据，见 OPEN.md
+> **状态：** ✅ 已完成——2026-09-06 编排者验收通过。过程：实现代理两次并发中断（接手代理收尾）→ 独立审查 **verdict: fail**（P0 网关聋哑 + 7 P1，审查引用 QQ 官方文档纠正 msg_seq/token 契约）→ 修复代理两次中断后编排者代修（`fb837bb`：生命周期/重连重订阅/msg_seq 递增/飞书策略与鉴权/CLI 飞书分支）→ 全量复验 540 passed + 1 skipped。**复审已补：有条件通过**（阶段 15 A5，2026-09-09，四段结论见下方「复审结论（A5，2026-09-09）」）；真实联调待用户 QQ/飞书凭据，见 OPEN.md
 > **For agentic workers:** 按 Task 顺序执行；每 Task 测完再进下一 Task。
 > **交接提示词**见文末「给接手 AI 的完整提示词」。
 > **元规范:** `docs/ai-framework/phased-plan-driven.md`
+
+---
+
+## 复审结论（A5，2026-09-09 · 阶段 15 独立复审）
+
+> 阶段 15 A5 对本阶段（曾判 fail、修复后从未复审）做了独立复审，完整证据登记在验收表 A-11，3 个 P1 已下放到第 6 节。**本阶段既有状态不变**——fail 阶段闭环条件由此满足（复审已补），本次为复审结论归位记录。
+
+**① 结论：有条件通过**（非全绿）
+
+`startGateway` 生命周期 / 断线重连重订阅 / `msg_seq` 严格递增 三关注点核心行为全部正确（源码走查 + 7 个临时观察用例运行时实证），复跑测试全绿且与基线一致；但 3 个 P1（含原 fail「测试缺口」未闭环）须显式下放，故「有条件」，**不得写「已验证 ✅ 通过」**。
+
+**② 依据**
+
+- 复跑 `pnpm --filter @harness2/gateway test` → **5 files / 14 passed**（router 4 / feishu 2 / qq 4 / gateway-approval 2 / serve-client 2，3.8s；stderr 仅两条设计内告警）——与基线逐项一致，非 flaky。
+- 三关注点运行时实证：startGateway 重复启动幂等（serve-client.ts:92 readyPromise 单飞，服务端仅 1 连接）、异常退出释放（serve-client.ts:177-189 closed+clearTimeout+ws.close，gateway-ws.ts:37-43 stop 清定时器）、断线重连重订阅（serve-client.ts:105-125 close 后 1s 重连，open 后按 Set 重发全量 subscribed、serve 侧按连接存储 ws.ts:336、bridge 重建审批卡 ws.ts:338-341）、msg_seq 按 msg_id 递增（adapter.ts:73-82 同步赋值 + enqueue 保序，同 msg_id 4 条 seq=[1,2,3,4]）。
+- 红线核查：零新写入路径（仅经 serve API）、密钥脱敏、无造假绿（测试名真实命中）。
+
+**③ 遗留与边界（3 个 P1 清单，已下放）**
+
+- **P1-1** feishu 端口冲突挂死（adapter.ts:86-90 listen error 不落定）→ 下阶段上阶段遗留：`listen` 错误路径 reject 而非挂起，端口冲突如实报错退出
+- **P1-2** 并发建双会话（router.ts:60-68 无在途去重）→ 下阶段：per-key 在途 promise 去重（in-flight map）或对 chatKey 串行化
+- **P1-3** 原「测试缺口」未闭环（`fb837bb` 零新增测试；QQ 心跳/重连/msg_seq 等无自动化回归）→ 下阶段：补断线重连+重订阅、msg_seq 递增、startGateway 断言、飞书策略/token 校验、QQ WS 心跳/op7/op9/退避 5 类回归测试
+- P2 6 条记录不阻塞；msg_seq 与 QQ 契约的真机行为需真机凭据（OPEN.md 已登记）
+
+**④ 附带说明**
+
+- 完整证据与下放登记：验收表 A-11（四段结论）与第 6 节（3 个 P1 下放，状态 ⬜）；**可往下走**，但 P1 必须写进下阶段「上阶段遗留」。
+- 本次归位仅更新状态行并新增本小节，不改动本阶段实现与既有验收结论。
+
+---
 
 **Goal:** 让用户在 QQ 里直接用 harness2（主场景），飞书同架构跟进。网关是 serve 的另一个"观察者"（D5 一致：经 HTTP/WS 桥接，零新写入路径）；QQ 走**官方 Bot API v2**（不做个人号逆向）。
 **Architecture:** `packages/gateway` 独立常驻进程：连接本地 serve（复用桌面端同款 HTTP/WS 桥）+ 平台适配器（收消息 → 会话路由 → WS user-message；事件帧 → 平台出站渲染）。平台适配器统一接口（对照 hermes `BasePlatformAdapter`），新增平台 = 新增一个适配器文件。
