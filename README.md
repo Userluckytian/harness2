@@ -91,7 +91,8 @@ MIT
 ## 插件 / MCP / 子代理 / IM 网关（阶段 8-9）
 
 - **插件**：manifest 声明式权限，装载需审批——`harness2 plugin list` 查看权限清单，`plugin enable <name> [--yes]` 写入全局
-  config 的 `plugins.allow`（重启 chat/serve 后装载）；事件总线 + disposer 逆序展开；v1 与主进程同进程运行（非隔离）。
+  config 的 `plugins.allow`（重启 chat/serve 后装载）；事件总线 + disposer 逆序展开。**安全边界（如实声明）：v1 插件与主进程
+  同进程运行（非隔离），manifest 权限仅为 API 层约束，不提供沙箱**——装载前请确认插件来源可信。
 - **MCP**：`config.json` 的 `"mcpServers"` 声明 stdio（command）或 Streamable HTTP（url）服务器，工具以
   `mcp__<server>__<tool>` 命名空间接入；断线退避重启；`harness2 mcp list` 逐 server 连接探测。
 - **子代理**：模型可用 `subagent_start` 派发独立子会话跑子任务（独立轨迹/undo，深度默认 1，父取消传播）；

@@ -33,6 +33,8 @@ export function registerPluginCommand(program: Command): void {
         return;
       }
       const allow = readPluginsAllow(opts.home);
+      // B4-3：如实声明 v1 插件同进程非隔离边界——manifest 权限只是 API 层约束，不是沙箱
+      console.log('注意：v1 插件与主进程同进程运行（非隔离），manifest 权限仅为 API 层约束，不提供沙箱。');
       for (const s of sources) {
         if (s.manifest === null) {
           console.log(`${s.name}  [manifest 非法] ${s.error ?? ''}`);
@@ -62,7 +64,9 @@ export function registerPluginCommand(program: Command): void {
       const manifest = src.manifest;
       console.log(`插件 ${manifest.name} v${manifest.version} 权限清单：`);
       console.log(`  ${describePermissions(manifest)}`);
-      console.log('注意：插件与主进程同进程运行（v1 非隔离），批准即授予上述 API 层权限。');
+      console.log(
+        '注意：v1 插件与主进程同进程运行（非隔离），manifest 权限仅为 API 层约束，不提供沙箱；批准即授予上述 API 层权限。',
+      );
       if (!opts.yes) {
         const rl = createInterface({ input: process.stdin, output: process.stdout });
         const answer = await new Promise<string>((resolve) => rl.question('确认批准装载? [y/N] ', resolve));

@@ -24,6 +24,22 @@
         <li><a href="#/CHANGELOG">变更记录</a></li>
       </ul>
     </nav>
+    <!-- 安全边界（如实声明）：v1 插件与主进程同进程运行（非隔离），manifest 权限仅为 API 层约束，不提供沙箱。
+         B4-3 要求文档站显著位置可见；docsify 只替换 #app，此静态注记常驻每一页顶部。 -->
+    <div
+      style="
+        max-width: 860px;
+        margin: 14px auto 0;
+        padding: 8px 14px;
+        font-size: 13px;
+        color: #b44;
+        border: 1px solid #e0b4b4;
+        border-radius: 6px;
+        background: #fdf6f6;
+      "
+    >
+      插件安全边界（如实声明）：v1 插件与主进程同进程运行（非隔离），manifest 权限仅为 API 层约束，不提供沙箱。
+    </div>
     <script>
       window.$docsify = {
         name: 'harness2',
