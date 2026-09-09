@@ -136,7 +136,9 @@ describe('PluginBus 装载与审批', () => {
     expect(report.warnings).toEqual([]);
     const def = tools.get('p_hello')!;
     expect(def).toBeDefined();
-    expect(def.execute({}, { signal: new AbortController().signal, cwd: '.' })).toEqual({ output: 'hello-from-plugin' });
+    expect(def.execute({}, { signal: new AbortController().signal, cwd: '.' })).toEqual({
+      output: 'hello-from-plugin',
+    });
     expect(lines).toEqual(['[plugin:demo] setup done']);
     expect(bus.loadedNames()).toEqual(['demo']);
   });
@@ -164,7 +166,10 @@ describe('PluginBus 装载与审批', () => {
 
   it('manifest 缺失/非法/index.js 缺失/导入失败 → 逐个跳过，单插件失败不拖垮批次', async () => {
     const root = tmpDir();
-    writePlugin(root, 'a_ok', { manifest: manifest('a_ok'), code: "export default { name: 'a_ok', setup() { globalThis.__a_ok_ran = true; } };" });
+    writePlugin(root, 'a_ok', {
+      manifest: manifest('a_ok'),
+      code: "export default { name: 'a_ok', setup() { globalThis.__a_ok_ran = true; } };",
+    });
     writePlugin(root, 'b_nomanifest', { noEntry: true });
     rmSync(join(root, 'b_nomanifest', 'manifest.json'), { force: true });
     writePlugin(root, 'c_badmanifest', { rawManifest: '{"name":"c_badmanifest"}' });
@@ -238,7 +243,9 @@ describe('PluginBus 权限约束与重名降级', () => {
     expect(lines.join('\n')).toContain('"read" 跳过');
     expect(lines.join('\n')).toContain('tool already registered: read');
     expect(tools.get('read')!.execute).toBe(readTool.execute); // 本地工具未被顶替
-    expect(tools.get('p_clash_ok')!.execute({}, { signal: new AbortController().signal, cwd: '.' })).toEqual({ output: 'ok' });
+    expect(tools.get('p_clash_ok')!.execute({}, { signal: new AbortController().signal, cwd: '.' })).toEqual({
+      output: 'ok',
+    });
   });
 
   it('插件间重名 → 先装载者保留该工具，后者该工具跳过但插件仍装载（同名插件整只跳过不变）', async () => {
@@ -263,7 +270,9 @@ describe('PluginBus 权限约束与重名降级', () => {
     expect(report.loaded.map((l) => l.name)).toEqual(['first', 'second']);
     expect(report.loaded[1]!.tools).toEqual([]); // second 的 p_shared 被跳过
     expect(lines.join('\n')).toContain('tool already registered: p_shared');
-    expect(tools.get('p_shared')!.execute({}, { signal: new AbortController().signal, cwd: '.' })).toEqual({ output: 'first' });
+    expect(tools.get('p_shared')!.execute({}, { signal: new AbortController().signal, cwd: '.' })).toEqual({
+      output: 'first',
+    });
   });
 
   it('tools 白名单越权 / 未声明 tools → registerTool 抛 PluginError → 跳过', async () => {
@@ -342,10 +351,18 @@ describe('PluginBus 事件订阅', () => {
 
     const sessionId = '20260906-000000-aaaaaa';
     bus.emitSessionEvent(sessionId, {
-      v: 1, seq: 1, ts: 't', type: 'user/message', payload: { text: 'hello' },
+      v: 1,
+      seq: 1,
+      ts: 't',
+      type: 'user/message',
+      payload: { text: 'hello' },
     } as never);
     bus.emitSessionEvent(sessionId, {
-      v: 1, seq: 2, ts: 't', type: 'tool/result', payload: { callId: 'c1', ok: true },
+      v: 1,
+      seq: 2,
+      ts: 't',
+      type: 'tool/result',
+      payload: { callId: 'c1', ok: true },
     } as never);
     expect(lines).toContain('[plugin:watcher] um:hello');
     expect(lines).toContain('[plugin:star] star:hello');

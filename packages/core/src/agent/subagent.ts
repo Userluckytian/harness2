@@ -274,7 +274,8 @@ export function createSubagentTools(options: SubagentOptions): ToolDefinition[] 
 
   const continueTool: ToolDefinition = {
     name: 'subagent_continue',
-    description: '向此前派发的子会话追加一条消息并继续其任务（返回新结果）；或给 background taskId 查询后台任务状态/结果。',
+    description:
+      '向此前派发的子会话追加一条消息并继续其任务（返回新结果）；或给 background taskId 查询后台任务状态/结果。',
     parameters: {
       type: 'object',
       properties: {

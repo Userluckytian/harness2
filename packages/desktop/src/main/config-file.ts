@@ -119,7 +119,10 @@ export function readSettingsConfig(home: string, root: string): SettingsConfigSh
   const shape: SettingsConfigShape = {
     providers,
     roles,
-    approval: { mode: cfg.approval.mode ?? 'default', ...(cfg.approval.tools !== undefined ? { tools: cfg.approval.tools } : {}) },
+    approval: {
+      mode: cfg.approval.mode ?? 'default',
+      ...(cfg.approval.tools !== undefined ? { tools: cfg.approval.tools } : {}),
+    },
     memory: { mode: cfg.memory.mode, nudgeInterval: cfg.memory.nudgeInterval },
     browser: {
       enabled: cfg.browser.enabled,
@@ -136,7 +139,12 @@ export function readSettingsConfig(home: string, root: string): SettingsConfigSh
   };
   for (const [name, m] of Object.entries(cfg.mcpServers)) {
     if ('command' in m) {
-      shape.mcpServers[name] = { command: m.command, ...(m.args !== undefined ? { args: m.args } : {}), ...(m.env !== undefined ? { env: m.env } : {}), ...(m.cwd !== undefined ? { cwd: m.cwd } : {}) };
+      shape.mcpServers[name] = {
+        command: m.command,
+        ...(m.args !== undefined ? { args: m.args } : {}),
+        ...(m.env !== undefined ? { env: m.env } : {}),
+        ...(m.cwd !== undefined ? { cwd: m.cwd } : {}),
+      };
     } else {
       shape.mcpServers[name] = { url: m.url, ...(m.headers !== undefined ? { headers: m.headers } : {}) };
     }
@@ -149,7 +157,10 @@ export function readSettingsConfig(home: string, root: string): SettingsConfigSh
  * - 顶层 key 必须在白名单内；含密钥字段名（apiKey/appSecret/...）直接拒绝。
  * - 写全局（项目配置存在时合并后以项目为准，UI 已标注写全局）。
  */
-export function updateSettingsConfig(home: string, patch: Record<string, unknown>): { ok: boolean; config?: SettingsConfigShape; warnings?: string[]; error?: string } {
+export function updateSettingsConfig(
+  home: string,
+  patch: Record<string, unknown>,
+): { ok: boolean; config?: SettingsConfigShape; warnings?: string[]; error?: string } {
   if (typeof patch !== 'object' || patch === null || Array.isArray(patch)) {
     return { ok: false, error: 'patch 必须是对象' };
   }

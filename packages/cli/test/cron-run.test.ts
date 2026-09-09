@@ -98,11 +98,10 @@ describe('cron run 审批对齐（审查 P1-1）', () => {
       'utf8',
     );
 
-    const proc = spawn(
-      'node',
-      [cliEntry, 'cron', 'run', 'cron-p11', '--home', home, '--root', root],
-      { stdio: ['ignore', 'pipe', 'pipe'], env: { ...process.env, H2_CRON_RUN_TEST_KEY: 'test-key' } },
-    );
+    const proc = spawn('node', [cliEntry, 'cron', 'run', 'cron-p11', '--home', home, '--root', root], {
+      stdio: ['ignore', 'pipe', 'pipe'],
+      env: { ...process.env, H2_CRON_RUN_TEST_KEY: 'test-key' },
+    });
     let stdout = '';
     let stderr = '';
     proc.stdout!.on('data', (c: Buffer) => (stdout += c.toString('utf8')));

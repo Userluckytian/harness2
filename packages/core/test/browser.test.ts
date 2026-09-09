@@ -23,7 +23,9 @@ function tmpDir(): string {
 }
 
 const pools: BrowserPool[] = [];
-function smallPool(opts: { idleDestroyMs?: number; maxConcurrent?: number; loader?: () => Promise<unknown> } = {}): BrowserPool {
+function smallPool(
+  opts: { idleDestroyMs?: number; maxConcurrent?: number; loader?: () => Promise<unknown> } = {},
+): BrowserPool {
   const pool = new BrowserPool({
     ...(opts.idleDestroyMs !== undefined ? { idleDestroyMs: opts.idleDestroyMs } : {}),
     ...(opts.maxConcurrent !== undefined ? { maxConcurrent: opts.maxConcurrent } : {}),
@@ -241,12 +243,14 @@ describe.skipIf(!hasChromium)('浏览器全链（真实 headless chromium + 本�
     let inFlight = 0;
     let peak = 0;
     const run = (key: string): Promise<void> =>
-      pool.withPage(key, async () => {
-        inFlight += 1;
-        peak = Math.max(peak, inFlight);
-        await sleep(120);
-        inFlight -= 1;
-      }).then(() => {});
+      pool
+        .withPage(key, async () => {
+          inFlight += 1;
+          peak = Math.max(peak, inFlight);
+          await sleep(120);
+          inFlight -= 1;
+        })
+        .then(() => {});
     await Promise.all([run('c1'), run('c2'), run('c3')]);
     expect(peak).toBe(2); // 第三个排队
     expect(pool.size).toBeLessThanOrEqual(2); // 存活上下文同样受限

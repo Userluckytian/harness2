@@ -145,7 +145,10 @@ function handleUndo(rest: string, ctx: CommandContext): void {
   const snapshots = ctx.snapshots();
   for (let i = 0; i < parsed.count; i++) {
     try {
-      const r = undoLastTurn(current.writer, { ...(snapshots !== undefined ? { snapshots } : {}), dryRun: parsed.dryRun });
+      const r = undoLastTurn(current.writer, {
+        ...(snapshots !== undefined ? { snapshots } : {}),
+        dryRun: parsed.dryRun,
+      });
       if (parsed.dryRun) {
         ctx.print(`预览（未执行）：将撤回 ${r.messages} 条消息，rewind 到 seq ${r.rewindToSeq}`);
       } else {
@@ -183,7 +186,16 @@ function handleRedo(ctx: CommandContext): void {
 }
 
 /** 打印文件恢复计划/结果（dryRun 与实际执行共用格式） */
-function printFiles(files: ReadonlyArray<{ file: string; target: string | null; restored: boolean; externallyModified: boolean; error?: string }>, print: (t: string) => void): void {
+function printFiles(
+  files: ReadonlyArray<{
+    file: string;
+    target: string | null;
+    restored: boolean;
+    externallyModified: boolean;
+    error?: string;
+  }>,
+  print: (t: string) => void,
+): void {
   for (const f of files) {
     const action = f.target === null ? '删除创建的文件' : `恢复内容 ${previewOf(f.target)}`;
     const state = f.error !== undefined ? `失败（${f.error}）` : f.restored ? '已执行' : '待执行';

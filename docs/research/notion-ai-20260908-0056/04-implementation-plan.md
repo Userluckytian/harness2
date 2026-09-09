@@ -51,17 +51,17 @@
 
 ## 4. 阶段开头：遗留与新发现
 
-| 项目 | 来源与证据 | 本版入口 | 状态 |
-|---|---|---|---|
-| 旧api-surface超时、旧真机欠账 | 上轮聊天结果，非本轮复测 | S0重新build后复跑，不先归因环境 | 未复测 |
-| TUI忙时无取消接线、退出可能留Promise/timer/锁 | runInkChat.tsx:83-112,166-173；chat-setup.ts:469-507 | T0 | 源码发现，待进程级复现 |
-| 取消后后续工具仍可能先execute | core/tools/executor.ts:96-101,123-180 | S1 | 源码控制流风险，先红后绿 |
-| TUI审批只工具名、单pending、授权scope漂移 | chat-setup.ts:264-282,435-449,525-527 | S2/T0 | 待自动化复现 |
-| TUI命令表与执行分叉、历史卡片丢失 | command-registry/commands/runInkChat；Transcript | T0/T3 | 源码确认 |
-| WS重连未补订阅/审批，delta无attempt水位 | core/server/ws.ts:24-50,166-170；desktop/main/bridge.ts:215-252 | S3/D0 | 源码确认 |
-| desktop IME/草稿/强拉到底 | App.tsx:403-413,430-494 | D1/D2 | 源码风险，真机待证 |
-| child审批可能在子任务可见前被过滤 | subagent.ts输出时机；ws.ts按子订阅过滤 | S2/S5 | 故障注入必测 |
-| 每会话执行cwd取hub全局cwd | core/server/sessions.ts:384-394,456-465 | S1 | A/B临时项目测试 |
+| 项目                                          | 来源与证据                                                      | 本版入口                        | 状态                     |
+| --------------------------------------------- | --------------------------------------------------------------- | ------------------------------- | ------------------------ |
+| 旧api-surface超时、旧真机欠账                 | 上轮聊天结果，非本轮复测                                        | S0重新build后复跑，不先归因环境 | 未复测                   |
+| TUI忙时无取消接线、退出可能留Promise/timer/锁 | runInkChat.tsx:83-112,166-173；chat-setup.ts:469-507            | T0                              | 源码发现，待进程级复现   |
+| 取消后后续工具仍可能先execute                 | core/tools/executor.ts:96-101,123-180                           | S1                              | 源码控制流风险，先红后绿 |
+| TUI审批只工具名、单pending、授权scope漂移     | chat-setup.ts:264-282,435-449,525-527                           | S2/T0                           | 待自动化复现             |
+| TUI命令表与执行分叉、历史卡片丢失             | command-registry/commands/runInkChat；Transcript                | T0/T3                           | 源码确认                 |
+| WS重连未补订阅/审批，delta无attempt水位       | core/server/ws.ts:24-50,166-170；desktop/main/bridge.ts:215-252 | S3/D0                           | 源码确认                 |
+| desktop IME/草稿/强拉到底                     | App.tsx:403-413,430-494                                         | D1/D2                           | 源码风险，真机待证       |
+| child审批可能在子任务可见前被过滤             | subagent.ts输出时机；ws.ts按子订阅过滤                          | S2/S5                           | 故障注入必测             |
+| 每会话执行cwd取hub全局cwd                     | core/server/sessions.ts:384-394,456-465                         | S1                              | A/B临时项目测试          |
 
 “未做”与“失败”分开登记。不因自动测试绿就移除Windows输入法/原生窗口验收。
 
@@ -84,17 +84,17 @@
 
 **功能闭环：**打开项目 → 检查有效模型/权限/工具 → 新建或恢复会话 → 引用文件/指令 → 只读计划或执行任务 → 审批 → 读取/搜索/修改/运行测试 → 审查实际变更 → 继续修复或安全撤销 → 保存和恢复会话。
 
-| 能力 | 用户必须能做什么 | 权威来源与不能伪造的边界 | 对应任务 |
-|---|---|---|---|
-| 工作区/会话 | 选本地项目；查看真实root/cwd/分支；新建、恢复、切换、分叉会话；查看历史 | 以会话header和文件系统为准，A/B项目不串cwd/草稿；脏工作树不自动清理 | S1/D0/D5 |
-| 模型/角色/配置 | 查看当前provider/model、main/subagent等角色、工具连接与错误；修改可用配置并知道何时生效 | 读取core有效配置，不是仅保存UI偏好；新turn冻结配置快照；运行中改模型只影响下一turn，凭据不进renderer/日志 | S7/D0/D6 |
-| 上下文/指令 | 浏览/搜索文件，选区或路径引用；查看本轮引用、项目指令/skills来源、上下文占用与压缩状态 | 复用现有解析/注入路径，防重复注入；UI显示原始输入，模型可见展开内容可追溯；未知token值显示未知 | S7/D1/D5/D6 |
-| 计划→执行 | plan模式只读研究，给出目标/步骤/待确认事项；用户明确切到执行权限后继续；显示每步待执行/进行中/受阻/完成 | 自然语言计划不是授权；不能画完列表就标已执行；执行结果绑定turn/task/tool证据 | S2/S7/D3/D6 |
-| 工具/命令 | 看到read/glob/grep/write/edit、shell/MCP的参数、状态与真实结果；发起或由agent运行测试，失败可继续修复 | 显示真实shell、cwd、开始/结束、stdout/stderr或明确标注合并输出、exit code、取消/超时；Windows不冒称cmd为bash | S1/S7/D2/D6 |
-| 权限/审批 | 理解当前mode、写/命令/网络能力；看实际命令、路径、参数、拟议修改和父子来源；允许一次/拒绝/撤销作用域授权 | 审批不等于OS沙箱；没有OS隔离明确显示；项目外/敏感操作按真实策略处理；不因点击“执行计划”自动bypass | S2/S7/D3 |
-| 变更审查 | 按本轮/子任务查看改了哪些文件、真实before/after与diff；打开文件；选择支持粒度的undo/redo | 模型总结不是diff；保留任务前既有用户改动，检测执行后外部修改；不确定来源标明，禁止静默覆盖 | S1/S7/D2/D5 |
-| 任务/子代理 | 启动即见状态，查看子会话/失败原因/进度，等待/继续/单独停止；父子审批统一可见 | 复用S5调度，只读受限并发，写资源互斥；未知结果不报成功，后台任务不能随关面板失去控制 | S5/D3/D4 |
-| 交付/恢复/预算 | 运行时可输入/排队；取消、断线重连、失败继续；看重试/step预算/上下文限制及停因 | ack与本地发送分开；取消确认与请求分开；服务重启不假恢复进程；重连不重跑副作用 | S3/S4/S7/D1/D4 |
+| 能力           | 用户必须能做什么                                                                                         | 权威来源与不能伪造的边界                                                                                     | 对应任务       |
+| -------------- | -------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------ | -------------- |
+| 工作区/会话    | 选本地项目；查看真实root/cwd/分支；新建、恢复、切换、分叉会话；查看历史                                  | 以会话header和文件系统为准，A/B项目不串cwd/草稿；脏工作树不自动清理                                          | S1/D0/D5       |
+| 模型/角色/配置 | 查看当前provider/model、main/subagent等角色、工具连接与错误；修改可用配置并知道何时生效                  | 读取core有效配置，不是仅保存UI偏好；新turn冻结配置快照；运行中改模型只影响下一turn，凭据不进renderer/日志    | S7/D0/D6       |
+| 上下文/指令    | 浏览/搜索文件，选区或路径引用；查看本轮引用、项目指令/skills来源、上下文占用与压缩状态                   | 复用现有解析/注入路径，防重复注入；UI显示原始输入，模型可见展开内容可追溯；未知token值显示未知               | S7/D1/D5/D6    |
+| 计划→执行      | plan模式只读研究，给出目标/步骤/待确认事项；用户明确切到执行权限后继续；显示每步待执行/进行中/受阻/完成  | 自然语言计划不是授权；不能画完列表就标已执行；执行结果绑定turn/task/tool证据                                 | S2/S7/D3/D6    |
+| 工具/命令      | 看到read/glob/grep/write/edit、shell/MCP的参数、状态与真实结果；发起或由agent运行测试，失败可继续修复    | 显示真实shell、cwd、开始/结束、stdout/stderr或明确标注合并输出、exit code、取消/超时；Windows不冒称cmd为bash | S1/S7/D2/D6    |
+| 权限/审批      | 理解当前mode、写/命令/网络能力；看实际命令、路径、参数、拟议修改和父子来源；允许一次/拒绝/撤销作用域授权 | 审批不等于OS沙箱；没有OS隔离明确显示；项目外/敏感操作按真实策略处理；不因点击“执行计划”自动bypass            | S2/S7/D3       |
+| 变更审查       | 按本轮/子任务查看改了哪些文件、真实before/after与diff；打开文件；选择支持粒度的undo/redo                 | 模型总结不是diff；保留任务前既有用户改动，检测执行后外部修改；不确定来源标明，禁止静默覆盖                   | S1/S7/D2/D5    |
+| 任务/子代理    | 启动即见状态，查看子会话/失败原因/进度，等待/继续/单独停止；父子审批统一可见                             | 复用S5调度，只读受限并发，写资源互斥；未知结果不报成功，后台任务不能随关面板失去控制                         | S5/D3/D4       |
+| 交付/恢复/预算 | 运行时可输入/排队；取消、断线重连、失败继续；看重试/step预算/上下文限制及停因                            | ack与本地发送分开；取消确认与请求分开；服务重启不假恢复进程；重连不重跑副作用                                | S3/S4/S7/D1/D4 |
 
 **界面约束仅为可用性：**导航、会话输入、执行日志、变更审查、设置/任务/审批入口可用普通tabs或面板组织，没有规定必须左树右栏或可调布局。已有1/2/3分屏保留，新增面板拖调、主题和动画不列必交。IME/草稿隔离/长输出折叠/稳定滚动/加载失败入口/键盘焦点不可省；上翻阅读日志时不得被新token强拉到底。
 
@@ -106,16 +106,16 @@
 
 **桌面完全移除视觉相似度闸门：**不要求安装Codex/CodexMonitor作视觉基准，不以配色、布局、动画、截图相似度决定完成。以下F1-F8必须全部走通，证据为真实事件/命令输出/文件diff/恢复结果；可用录屏说明操作，但不替代执行证据。
 
-| 流程 | 验收操作 | 成功标准 |
-|---|---|---|
-| F1 项目与会话 | 打开临时项目A，引用README询问结构；切B再恢复A、分叉会话 | root/cwd、模型/指令来源可见；文件读取确在A/B各自目录；草稿/历史不串；分叉不改原会话 |
-| F2 只读计划 | plan模式要求修改文件并执行危险写命令；先产出计划，再由用户切换执行模式 | plan阶段无文件/命令写副作用；切权限是显式动作；UI显示本轮实际生效配置，不假称计划等于授权 |
-| F3 修改并测试 | agent修改一个临时函数，运行测试；制造一次测试失败，让agent继续修复并重跑 | 有tool参数/命令/shell/cwd/output/退出码；失败真实显示、修复后以新测试结果判定；最终摘要链接实际diff和测试记录 |
-| F4 审批与拒绝 | 写/命令及子任务同时ask，拒绝一项；中途断线、重复点击响应 | 全部待批可见、拒绝项未执行、ack前不消失；作用域授权不泄漏到B会话 |
-| F5 变更与撤销 | 项目起始已有用户未提交改动；agent改另一处；用户在agent结束后再改文件，然后执行undo/redo | 展示任务变更与既有改动的区别；无冲突路径可复原；外部修改冲突被提示并阻止静默覆盖；粒度如实显示 |
-| F6 子任务控制 | 派2个只读任务，查看子进度/审批；停止一个并继续另一个 | 实际执行有重叠、父子归属清楚；停止不误伤兄弟；结果与状态可恢复；失败不冒充完成 |
-| F7 断流与队列 | 发送后丢ack、途中断WS、provider中途EOF、取消退避，最后重启UI/serve | 不重复提交/工具副作用；重订阅恢复状态；预算耗尽有明确停因；服务死亡任务标中断/unknown；未启动队列恢复paused |
-| F8 配置与上下文 | 选择可用模型，注入文件/项目指令/skill，触发上下文压缩；模拟provider/MCP不可用 | 请求实际使用选定配置，运行中配置不突变；输入可追溯；压缩状态与失败可见，密钥脱敏；无配置/连接失败有可行动提示 |
+| 流程            | 验收操作                                                                                | 成功标准                                                                                                      |
+| --------------- | --------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------- |
+| F1 项目与会话   | 打开临时项目A，引用README询问结构；切B再恢复A、分叉会话                                 | root/cwd、模型/指令来源可见；文件读取确在A/B各自目录；草稿/历史不串；分叉不改原会话                           |
+| F2 只读计划     | plan模式要求修改文件并执行危险写命令；先产出计划，再由用户切换执行模式                  | plan阶段无文件/命令写副作用；切权限是显式动作；UI显示本轮实际生效配置，不假称计划等于授权                     |
+| F3 修改并测试   | agent修改一个临时函数，运行测试；制造一次测试失败，让agent继续修复并重跑                | 有tool参数/命令/shell/cwd/output/退出码；失败真实显示、修复后以新测试结果判定；最终摘要链接实际diff和测试记录 |
+| F4 审批与拒绝   | 写/命令及子任务同时ask，拒绝一项；中途断线、重复点击响应                                | 全部待批可见、拒绝项未执行、ack前不消失；作用域授权不泄漏到B会话                                              |
+| F5 变更与撤销   | 项目起始已有用户未提交改动；agent改另一处；用户在agent结束后再改文件，然后执行undo/redo | 展示任务变更与既有改动的区别；无冲突路径可复原；外部修改冲突被提示并阻止静默覆盖；粒度如实显示                |
+| F6 子任务控制   | 派2个只读任务，查看子进度/审批；停止一个并继续另一个                                    | 实际执行有重叠、父子归属清楚；停止不误伤兄弟；结果与状态可恢复；失败不冒充完成                                |
+| F7 断流与队列   | 发送后丢ack、途中断WS、provider中途EOF、取消退避，最后重启UI/serve                      | 不重复提交/工具副作用；重订阅恢复状态；预算耗尽有明确停因；服务死亡任务标中断/unknown；未启动队列恢复paused   |
+| F8 配置与上下文 | 选择可用模型，注入文件/项目指令/skill，触发上下文压缩；模拟provider/MCP不可用           | 请求实际使用选定配置，运行中配置不突变；输入可追溯；压缩状态与失败可见，密钥脱敏；无配置/连接失败有可行动提示 |
 
 F1-F8任一未通过，不得宣称“桌面harness功能完成”；美化可独立排到后续版本。
 
@@ -158,30 +158,30 @@ F1-F8任一未通过，不得宣称“桌面harness功能完成”；美化可�
 
 所有新增路径为建议，S0可细化但不改变职责。每Task执行：先写失败用例→最小实现→指定测试→记录证据→独立小commit。每项验收初始均为未执行。
 
-| ID | 负责人/依赖 | Files与动作 | 完成条件/关键用例 |
-|---|---|---|---|
-| S0 | 共享，无 | 新增`packages/core/src/interaction/types.ts`与协议fixtures；核对原types/protocol；新增本方案专属evidence目录 | 冻结共享契约、Grok终端12场景与桌面F1-F8功能清单、基线命令真实结果；先盘点已有harness能力再补缺，不为视觉重写核心 |
-| S1 | 共享，S0 | 修改tools/executor.ts、内置副作用工具、server/sessions.ts；建议新增执行生命周期观察接口 | 已取消execute计数0；审批后竞态不启动第二write；不合作工具unknown；每session从header得到真实cwd，A/B目录不串 |
-| S2 | 共享，S1 | 提炼结构化approval队列；修改server/ws/sessions与agent/subagent.ts | 两并发审批不覆盖；父用户在child结束前见审批；response ack、scope、过期、重连恢复；不得无授权自动allow |
-| S3 | 共享，S1/S2 | 新增interaction/runtime-journal.ts、delivery.ts；修改server/ws/http/sessions与session可选元数据 | 重复submit只一次接受；ack丢失/跨文件崩溃可对账；snapshot+replay+delta无缺口；queue可恢复且不在重启后自动执行 |
-| S4 | 共享，S3 | provider/types/adapters、agent/loop/types；建议interaction/retry-policy.ts | 429/503/EOF/401分开；预算/Retry-After/退避取消；工具调用半截不执行；已完成工具不重跑；finalText为空仍有可行动结果 |
-| S5 | 共享，S2/S3 | agent/subagent.ts + 新增agent/task-coordinator.ts；工具注册/资源锁；CLI/server仅接线 | 注册ack后立即handle；只读capability过滤后K=2真实重叠；共享写全局串行；status/wait/continue/cancel与父子隔离/终态单调 |
-| S6 | 共享，S3/S4/S5 | loop控制输入+interaction types+投影兼容测试 | 安全step边界steer；stale拒绝且保draft；重复id不双注入；无法取消工具时不强行新step |
-| S7 | 共享，S1/S2/S3；先于桌面闭环联调 | 核查并补齐config/schema/load、agent/types/loop、tools/types/executor、session/snapshots与server/http/sessions；拟新增interaction/run-config.ts、plan-state.ts、execution-view.ts、change-review.ts，最终路径由S0确认 | 有效模型/角色/权限与指令来源真实可见；运行配置按turn冻结；命令输出/退出码与变更归属可查询；plan状态有证据；undo冲突检测。复用既有接口，禁止做第二套工具执行器或配置存储 |
-| T0 | TUI，S0；审批接S2 | runInkChat.tsx、chat-setup.ts、commands.ts、command-registry.ts | 全局abortTurn；幂等shutdown调用finish并清timer；`/exit`进程退出/锁释放；legacy/Ink核心命令一致，能力缺失明确disabled |
-| T1 | TUI，T0 | 建tui/input state/reducer/normalize/layout与focus；替换Composer | grapheme/视觉cursor/软折行/词编辑；history往返；IME/候选/Enter优先级；busy可draft；不把提示塞正文 |
-| T2 | TUI，T1 | 新增tui/input/paste.ts与terminal-capabilities.ts | 分片paste一次原子插入、CRLF/chip/1MB限额；raw/alt screen/resize/cleanup；Windows四场景能力闸门通过再默认开启 |
-| T3 | TUI，T1/S3 | typed transcript/reducer/viewport；改Transcript/useTurnStream/StatusBar | 结构事件身份、真实tool output/diff；历史卡片可展开；session切换重投影；follow/anchor/高度缓存；context按revision刷新 |
-| T4 | TUI，T2/T3/S4/S5 | task/approval/retry/queue panels与scheduler | 有界UI批处理、输入优先、final flush；两审批/多任务；重试倒计时可停；step解释→工具→解释顺序保真 |
-| T5 | TUI，T4/S6 | 兼容steer与legacy；新增PTY/进程/压力fixture | 所有已实现commands可用；无timer/子进程/锁遗留；参考12场景终端部分录屏签收 |
-| D0 | Desktop，S0/S3；S7接线可分步 | shared/protocol、preload、main/bridge、renderer/app-controller/store | 盘点真实后端能力并绑定受限adapter；恢复订阅/ack；暴露有效配置、工具、执行结果与变更查询；无配置/连接失败可处理。renderer仍零Node、不暴露任意fs/shell |
-| D1 | Desktop，D0 | features/composer；store session-draft；shared/file-ref+main读接口 | IME不误发；session草稿/附件持久；可靠queue；原始输入与模型上下文分离；项目指令/文件引用来源可见；路径边界/字节预算/二进制测试 |
-| D2 | Desktop，D0/S7 | features/timeline、拟新增features/execution、chat-model、store、DiffCard | 真实tool/命令日志、参数/shell/cwd/输出/exit code/取消状态；大输出范围读取、复制、错误详情；稳定滚动与局部更新，达到性能预算。优先复用渲染原语，不为样式全面重做 |
-| D3 | Desktop，D1/D2/S2/S5/S7 | 拟新增PlanPanel、TaskPanel、ApprovalCenter；重用现有设置/命令入口 | 计划/执行状态有证据；模式切换明确且不自动提权；主子审批/早期任务发现/等待/继续/停止可用；只读并发与写互斥真实生效；不是只有状态卡 |
-| D4 | Desktop，D3/S4 | 错误/重试/加载失败、恢复与通知；shared能力门控 | F4/F6/F7闭环；不永久loading、不假报停止；断线补任务/审批/队列，关窗口行为明确；steer仅S6交付后启用，可靠排队可独立验收 |
-| D5 | Desktop，D0/S1/S7；可与D1-D4并行 | 拟新增features/workspace、features/changes；改main/bridge、controller、DiffCard与已有会话入口 | F1/F5：选择项目/新建恢复分叉、文件浏览搜索引用、按任务聚合变更、实际diff、可支持粒度undo/redo；保留用户脏改动、外部改动冲突阻止覆盖；不做完整Git/PTY工作台 |
-| D6 | Desktop，D1-D5/S7 | 复用SettingsDialog/CommandPalette；补有效配置/上下文面板、F1-F8 e2e fixtures与执行证据 | F2/F3/F8：桌面选模型配置真正生效，plan→执行→修改→失败测试→修复重跑→变更审查→恢复可完整操作；工具/MCP/skills/预算诊断可见，禁止只接mock。全F流程通过才交桌面 |
-| V0 | 独立验收，全轨 | 仅本版测试证据/缺陷表与录屏产物，不自动改共享文档 | 集成commit上复跑全量+故障矩阵+真机；P0/P1未闭环不得发布；给出通过/有条件/不通过 |
+| ID  | 负责人/依赖                      | Files与动作                                                                                                                                                                                                          | 完成条件/关键用例                                                                                                                                                       |
+| --- | -------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| S0  | 共享，无                         | 新增`packages/core/src/interaction/types.ts`与协议fixtures；核对原types/protocol；新增本方案专属evidence目录                                                                                                         | 冻结共享契约、Grok终端12场景与桌面F1-F8功能清单、基线命令真实结果；先盘点已有harness能力再补缺，不为视觉重写核心                                                        |
+| S1  | 共享，S0                         | 修改tools/executor.ts、内置副作用工具、server/sessions.ts；建议新增执行生命周期观察接口                                                                                                                              | 已取消execute计数0；审批后竞态不启动第二write；不合作工具unknown；每session从header得到真实cwd，A/B目录不串                                                             |
+| S2  | 共享，S1                         | 提炼结构化approval队列；修改server/ws/sessions与agent/subagent.ts                                                                                                                                                    | 两并发审批不覆盖；父用户在child结束前见审批；response ack、scope、过期、重连恢复；不得无授权自动allow                                                                   |
+| S3  | 共享，S1/S2                      | 新增interaction/runtime-journal.ts、delivery.ts；修改server/ws/http/sessions与session可选元数据                                                                                                                      | 重复submit只一次接受；ack丢失/跨文件崩溃可对账；snapshot+replay+delta无缺口；queue可恢复且不在重启后自动执行                                                            |
+| S4  | 共享，S3                         | provider/types/adapters、agent/loop/types；建议interaction/retry-policy.ts                                                                                                                                           | 429/503/EOF/401分开；预算/Retry-After/退避取消；工具调用半截不执行；已完成工具不重跑；finalText为空仍有可行动结果                                                       |
+| S5  | 共享，S2/S3                      | agent/subagent.ts + 新增agent/task-coordinator.ts；工具注册/资源锁；CLI/server仅接线                                                                                                                                 | 注册ack后立即handle；只读capability过滤后K=2真实重叠；共享写全局串行；status/wait/continue/cancel与父子隔离/终态单调                                                    |
+| S6  | 共享，S3/S4/S5                   | loop控制输入+interaction types+投影兼容测试                                                                                                                                                                          | 安全step边界steer；stale拒绝且保draft；重复id不双注入；无法取消工具时不强行新step                                                                                       |
+| S7  | 共享，S1/S2/S3；先于桌面闭环联调 | 核查并补齐config/schema/load、agent/types/loop、tools/types/executor、session/snapshots与server/http/sessions；拟新增interaction/run-config.ts、plan-state.ts、execution-view.ts、change-review.ts，最终路径由S0确认 | 有效模型/角色/权限与指令来源真实可见；运行配置按turn冻结；命令输出/退出码与变更归属可查询；plan状态有证据；undo冲突检测。复用既有接口，禁止做第二套工具执行器或配置存储 |
+| T0  | TUI，S0；审批接S2                | runInkChat.tsx、chat-setup.ts、commands.ts、command-registry.ts                                                                                                                                                      | 全局abortTurn；幂等shutdown调用finish并清timer；`/exit`进程退出/锁释放；legacy/Ink核心命令一致，能力缺失明确disabled                                                    |
+| T1  | TUI，T0                          | 建tui/input state/reducer/normalize/layout与focus；替换Composer                                                                                                                                                      | grapheme/视觉cursor/软折行/词编辑；history往返；IME/候选/Enter优先级；busy可draft；不把提示塞正文                                                                       |
+| T2  | TUI，T1                          | 新增tui/input/paste.ts与terminal-capabilities.ts                                                                                                                                                                     | 分片paste一次原子插入、CRLF/chip/1MB限额；raw/alt screen/resize/cleanup；Windows四场景能力闸门通过再默认开启                                                            |
+| T3  | TUI，T1/S3                       | typed transcript/reducer/viewport；改Transcript/useTurnStream/StatusBar                                                                                                                                              | 结构事件身份、真实tool output/diff；历史卡片可展开；session切换重投影；follow/anchor/高度缓存；context按revision刷新                                                    |
+| T4  | TUI，T2/T3/S4/S5                 | task/approval/retry/queue panels与scheduler                                                                                                                                                                          | 有界UI批处理、输入优先、final flush；两审批/多任务；重试倒计时可停；step解释→工具→解释顺序保真                                                                          |
+| T5  | TUI，T4/S6                       | 兼容steer与legacy；新增PTY/进程/压力fixture                                                                                                                                                                          | 所有已实现commands可用；无timer/子进程/锁遗留；参考12场景终端部分录屏签收                                                                                               |
+| D0  | Desktop，S0/S3；S7接线可分步     | shared/protocol、preload、main/bridge、renderer/app-controller/store                                                                                                                                                 | 盘点真实后端能力并绑定受限adapter；恢复订阅/ack；暴露有效配置、工具、执行结果与变更查询；无配置/连接失败可处理。renderer仍零Node、不暴露任意fs/shell                    |
+| D1  | Desktop，D0                      | features/composer；store session-draft；shared/file-ref+main读接口                                                                                                                                                   | IME不误发；session草稿/附件持久；可靠queue；原始输入与模型上下文分离；项目指令/文件引用来源可见；路径边界/字节预算/二进制测试                                           |
+| D2  | Desktop，D0/S7                   | features/timeline、拟新增features/execution、chat-model、store、DiffCard                                                                                                                                             | 真实tool/命令日志、参数/shell/cwd/输出/exit code/取消状态；大输出范围读取、复制、错误详情；稳定滚动与局部更新，达到性能预算。优先复用渲染原语，不为样式全面重做         |
+| D3  | Desktop，D1/D2/S2/S5/S7          | 拟新增PlanPanel、TaskPanel、ApprovalCenter；重用现有设置/命令入口                                                                                                                                                    | 计划/执行状态有证据；模式切换明确且不自动提权；主子审批/早期任务发现/等待/继续/停止可用；只读并发与写互斥真实生效；不是只有状态卡                                       |
+| D4  | Desktop，D3/S4                   | 错误/重试/加载失败、恢复与通知；shared能力门控                                                                                                                                                                       | F4/F6/F7闭环；不永久loading、不假报停止；断线补任务/审批/队列，关窗口行为明确；steer仅S6交付后启用，可靠排队可独立验收                                                  |
+| D5  | Desktop，D0/S1/S7；可与D1-D4并行 | 拟新增features/workspace、features/changes；改main/bridge、controller、DiffCard与已有会话入口                                                                                                                        | F1/F5：选择项目/新建恢复分叉、文件浏览搜索引用、按任务聚合变更、实际diff、可支持粒度undo/redo；保留用户脏改动、外部改动冲突阻止覆盖；不做完整Git/PTY工作台              |
+| D6  | Desktop，D1-D5/S7                | 复用SettingsDialog/CommandPalette；补有效配置/上下文面板、F1-F8 e2e fixtures与执行证据                                                                                                                               | F2/F3/F8：桌面选模型配置真正生效，plan→执行→修改→失败测试→修复重跑→变更审查→恢复可完整操作；工具/MCP/skills/预算诊断可见，禁止只接mock。全F流程通过才交桌面             |
+| V0  | 独立验收，全轨                   | 仅本版测试证据/缺陷表与录屏产物，不自动改共享文档                                                                                                                                                                    | 集成commit上复跑全量+故障矩阵+真机；P0/P1未闭环不得发布；给出通过/有条件/不通过                                                                                         |
 
 ### 可以并行的边界
 
@@ -211,23 +211,23 @@ pnpm -r test
 
 ## 9. 验收总表（全部待执行）
 
-| 编号 | 硬性通过条件 | 责任 |
-|---|---|---|
-| A1 | 中文IME确认不发、真正发送一次、emoji/组合字符不拆坏、粘贴不执行命令 | 单测+用户Windows真机 |
-| A2 | busy仍能draft/queue；A/B会话/分屏不串草稿；引用失败输入可恢复 | 自动化+真机 |
-| A3 | 取消后未开始工具execute计数0；不合作工具unknown；停止不等于undo | core自动化/独立审查 |
-| A4 | TUI退出0/SIGINT130符合契约、raw screen恢复、锁/MCP/timer收尾 | 进程/PTY+真机 |
-| A5 | WS断线期间服务继续：无需手切会话，最终文本/任务/审批恢复，无重复turn | 故障注入 |
-| A6 | accepted ack丢失与崩溃窗口对账，无盲目重跑副作用；超出保留窗口明确unknown | 故障注入/审查 |
-| A7 | 429/5xx/EOF有界重试；401/取消不重试；退避可停；失败attempt独立 | 自动化 |
-| A8 | 子任务完成前可见/可读/可审批；2只读实际并行、共享写无冲突；继续/取消不越父关系 | 自动化+两端联调 |
-| A9 | 持久日志/replay/live/undo/redo投影一致；旧v1会话可读；现有命令/设置/分屏不退化 | 全量回归 |
-| A10 | 滚动不强拉、历史卡片可展开、前插/resize锚点稳定、性能预算有真实trace | 压力测试+用户 |
-| A11-T | Grok终端12场景对照核心满分、整体≥90%，差异用户签收；TUI目标未削弱 | 用户真机 |
-| A11-D | 桌面F1-F8全部走通；不验视觉相似度，普通界面可交付；核心运行功能无占位 | 自动化+用户真机 |
-| A13 | 模型/角色/权限/指令/上下文是实际生效值；plan不执行写操作，显式切模式不等于bypass | core/desktop集成+审查 |
-| A14 | agent修改→运行测试失败→修复重跑→真实输出/exit code/diff→安全undo/redo完整闭环；不覆盖用户既有/后续修改 | 临时仓库端到端 |
-| A12 | build/typecheck/test真实命中且全通过；独立审查无未闭环P0/P1；许可复制清单齐全 | 独立验收 |
+| 编号  | 硬性通过条件                                                                                           | 责任                  |
+| ----- | ------------------------------------------------------------------------------------------------------ | --------------------- |
+| A1    | 中文IME确认不发、真正发送一次、emoji/组合字符不拆坏、粘贴不执行命令                                    | 单测+用户Windows真机  |
+| A2    | busy仍能draft/queue；A/B会话/分屏不串草稿；引用失败输入可恢复                                          | 自动化+真机           |
+| A3    | 取消后未开始工具execute计数0；不合作工具unknown；停止不等于undo                                        | core自动化/独立审查   |
+| A4    | TUI退出0/SIGINT130符合契约、raw screen恢复、锁/MCP/timer收尾                                           | 进程/PTY+真机         |
+| A5    | WS断线期间服务继续：无需手切会话，最终文本/任务/审批恢复，无重复turn                                   | 故障注入              |
+| A6    | accepted ack丢失与崩溃窗口对账，无盲目重跑副作用；超出保留窗口明确unknown                              | 故障注入/审查         |
+| A7    | 429/5xx/EOF有界重试；401/取消不重试；退避可停；失败attempt独立                                         | 自动化                |
+| A8    | 子任务完成前可见/可读/可审批；2只读实际并行、共享写无冲突；继续/取消不越父关系                         | 自动化+两端联调       |
+| A9    | 持久日志/replay/live/undo/redo投影一致；旧v1会话可读；现有命令/设置/分屏不退化                         | 全量回归              |
+| A10   | 滚动不强拉、历史卡片可展开、前插/resize锚点稳定、性能预算有真实trace                                   | 压力测试+用户         |
+| A11-T | Grok终端12场景对照核心满分、整体≥90%，差异用户签收；TUI目标未削弱                                      | 用户真机              |
+| A11-D | 桌面F1-F8全部走通；不验视觉相似度，普通界面可交付；核心运行功能无占位                                  | 自动化+用户真机       |
+| A13   | 模型/角色/权限/指令/上下文是实际生效值；plan不执行写操作，显式切模式不等于bypass                       | core/desktop集成+审查 |
+| A14   | agent修改→运行测试失败→修复重跑→真实输出/exit code/diff→安全undo/redo完整闭环；不覆盖用户既有/后续修改 | 临时仓库端到端        |
+| A12   | build/typecheck/test真实命中且全通过；独立审查无未闭环P0/P1；许可复制清单齐全                          | 独立验收              |
 
 Windows目标：Windows10 LTSC；Windows Terminal+PS5.1、VS Code集成终端、传统控制台、非TTY；桌面100/125/150%DPI、中文路径/空格/junction、通知点击定位。macOS/Linux未测不可宣称通过。
 

@@ -4,12 +4,7 @@
 //   标记之后新追加的事件属于新分支、默认活动。
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import {
-  SESSION_LOG_FILE,
-  type AnySessionEvent,
-  type SessionHeaderPayload,
-  parseEventLine,
-} from './types.js';
+import { SESSION_LOG_FILE, type AnySessionEvent, type SessionHeaderPayload, parseEventLine } from './types.js';
 
 export interface LoadedEvent {
   event: AnySessionEvent;
@@ -78,9 +73,7 @@ export function loadSession(dir: string): LoadedSession {
     if (event.type !== 'rewind/marker') continue;
     const n = event.payload.rewindToSeq;
     if (!Number.isInteger(n) || n < 1 || n > maxSeq) {
-      warnings.push(
-        `rewind/marker at seq ${event.seq}: rewindToSeq ${n} out of range (1..${maxSeq})`,
-      );
+      warnings.push(`rewind/marker at seq ${event.seq}: rewindToSeq ${n} out of range (1..${maxSeq})`);
     }
   }
   return { dir, header, events, warnings };
@@ -165,7 +158,5 @@ export function computeProjection(session: LoadedSession): SessionProjection {
 
 /** 全量导出（含影子事件）为 JSONL 文本 —— 供归档/迁移/回放测试使用 */
 export function exportAllEvents(session: LoadedSession): string {
-  return session.events
-    .map((x) => JSON.stringify(x.event))
-    .join('\n');
+  return session.events.map((x) => JSON.stringify(x.event)).join('\n');
 }

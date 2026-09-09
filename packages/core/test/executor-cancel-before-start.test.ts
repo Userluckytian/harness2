@@ -33,7 +33,13 @@ describe('executor-cancel-before-start（取消后不执行副作用）', () => 
     let executed = 0;
     const reg = new ToolRegistry();
     reg.register(
-      makeTool({ name: 'counter', execute: async () => { executed += 1; return { output: 'x' }; } }),
+      makeTool({
+        name: 'counter',
+        execute: async () => {
+          executed += 1;
+          return { output: 'x' };
+        },
+      }),
     );
     const r = await new ToolExecutor(reg).execute(req('c1', 'counter'), { signal: ac.signal, cwd });
     expect(executed).toBe(0);
@@ -46,7 +52,13 @@ describe('executor-cancel-before-start（取消后不执行副作用）', () => 
     let executed = 0;
     const reg = new ToolRegistry();
     reg.register(
-      makeTool({ name: 'write_guard', execute: async () => { executed += 1; return { output: 'x' }; } }),
+      makeTool({
+        name: 'write_guard',
+        execute: async () => {
+          executed += 1;
+          return { output: 'x' };
+        },
+      }),
     );
     let release!: () => void;
     const gate = new Promise<void>((r) => (release = r));
@@ -116,11 +128,25 @@ describe('executor-cancel-before-start（取消后不执行副作用）', () => 
     const order: string[] = [];
     const reg = new ToolRegistry();
     reg.register(
-      makeTool({ name: 'first', execute: async () => { order.push('first'); await sleep(30); return { output: '1' }; } }),
+      makeTool({
+        name: 'first',
+        execute: async () => {
+          order.push('first');
+          await sleep(30);
+          return { output: '1' };
+        },
+      }),
     );
     let second = 0;
     reg.register(
-      makeTool({ name: 'second', execute: async () => { second += 1; order.push('second'); return { output: '2' }; } }),
+      makeTool({
+        name: 'second',
+        execute: async () => {
+          second += 1;
+          order.push('second');
+          return { output: '2' };
+        },
+      }),
     );
     const p = new ToolExecutor(reg).runWave([req('a', 'first'), req('b', 'second')], { signal: ac.signal, cwd });
     await sleep(10);
@@ -140,7 +166,10 @@ describe('executor-cancel-before-start（取消后不执行副作用）', () => 
       makeTool({
         name: 'safe_ro',
         concurrencySafe: true,
-        execute: async () => { executed += 1; return { output: 'x' }; },
+        execute: async () => {
+          executed += 1;
+          return { output: 'x' };
+        },
       }),
     );
     ac.abort();
@@ -158,11 +187,25 @@ describe('executor-cancel-before-start（取消后不执行副作用）', () => 
     const order: string[] = [];
     const reg = new ToolRegistry();
     reg.register(
-      makeTool({ name: 'slow_unsafe', execute: async () => { order.push('first'); await sleep(40); return { output: '1' }; } }),
+      makeTool({
+        name: 'slow_unsafe',
+        execute: async () => {
+          order.push('first');
+          await sleep(40);
+          return { output: '1' };
+        },
+      }),
     );
     let second = 0;
     reg.register(
-      makeTool({ name: 'second_unsafe', execute: async () => { second += 1; order.push('second'); return { output: '2' }; } }),
+      makeTool({
+        name: 'second_unsafe',
+        execute: async () => {
+          second += 1;
+          order.push('second');
+          return { output: '2' };
+        },
+      }),
     );
     const p = new ToolExecutor(reg).runWave([req('a', 'slow_unsafe'), req('b', 'second_unsafe')], {
       signal: ac.signal,
@@ -185,7 +228,13 @@ describe('executor 执行生命周期观察（S3/S7 消费）', () => {
     const events: string[] = [];
     const reg = new ToolRegistry();
     reg.register(
-      makeTool({ name: 'never', execute: async () => { executed += 1; return { output: 'x' }; } }),
+      makeTool({
+        name: 'never',
+        execute: async () => {
+          executed += 1;
+          return { output: 'x' };
+        },
+      }),
     );
     ac.abort();
     const r = await new ToolExecutor(reg).execute(req('c1', 'never'), {
@@ -208,7 +257,11 @@ describe('executor 执行生命周期观察（S3/S7 消费）', () => {
       makeTool({
         name: 'obs',
         cancelGuaranteed: true,
-        execute: async (_a, ctx) => { await sleep(40); ctx.signal.throwIfAborted(); return { output: 'x' }; },
+        execute: async (_a, ctx) => {
+          await sleep(40);
+          ctx.signal.throwIfAborted();
+          return { output: 'x' };
+        },
       }),
     );
     const events: string[] = [];

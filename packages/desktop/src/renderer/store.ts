@@ -30,7 +30,13 @@ import {
   type LiveDelta,
   type TurnEndInfo,
 } from './chat-model.js';
-import { normalizeMetadata, displayTitle, isArchived, type SessionMetadataEntry, type SessionMetadataMap } from '../shared/metadata.js';
+import {
+  normalizeMetadata,
+  displayTitle,
+  isArchived,
+  type SessionMetadataEntry,
+  type SessionMetadataMap,
+} from '../shared/metadata.js';
 
 export interface SessionMeta {
   id: string;
@@ -104,7 +110,10 @@ export class AppStore {
   // —— 会话列表 /选中/状态 ——
 
   applyStatus(status: ConnectionStatus, detail?: StatusDetail): void {
-    this.set({ status, ...(detail !== undefined || this.state.statusDetail !== undefined ? { statusDetail: detail } : {}) });
+    this.set({
+      status,
+      ...(detail !== undefined || this.state.statusDetail !== undefined ? { statusDetail: detail } : {}),
+    });
   }
 
   setSessions(sessions: SessionSummaryShape[]): void {
@@ -143,7 +152,8 @@ export class AppStore {
     if ('archived' in patch) entry.archived = patch.archived === true;
     if ('deleted' in patch) entry.deleted = patch.deleted === true;
     const nextMetadata: SessionMetadataMap = { ...this.state.metadata };
-    if (Object.keys(entry).length === 0) delete nextMetadata[id]; // 空条目不落盘
+    if (Object.keys(entry).length === 0)
+      delete nextMetadata[id]; // 空条目不落盘
     else nextMetadata[id] = entry;
     this.set({ metadata: nextMetadata });
   }
@@ -338,7 +348,6 @@ export class AppStore {
     }
     this.notify();
   }
-
 }
 
 /** 事件流里最后一个出现的 turnId（turn-end 帧不带 turnId，归属最近 turn） */

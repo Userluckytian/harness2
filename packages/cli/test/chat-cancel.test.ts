@@ -75,19 +75,25 @@ describe('chat 审批等待可取消（P2-2：ask 与 turn 取消信号竞速）
       }),
       'utf8',
     );
-    writeFileSync(join(home, '.harness2', 'auth.json'), JSON.stringify({ channels: { stub: { apiKey: 'cancel-test-key-secret' } } }), 'utf8');
+    writeFileSync(
+      join(home, '.harness2', 'auth.json'),
+      JSON.stringify({ channels: { stub: { apiKey: 'cancel-test-key-secret' } } }),
+      'utf8',
+    );
     writeFileSync(join(work, 'approved.txt'), 'approved 内容', 'utf8');
 
     // 第 1 次请求：read 工具调用（触发 ask）；第 2 次请求：取消后新 turn 的纯文本回复
-    scripts.push(
-      TOOL_CALL_FRAMES('call-1', '{"file_path":"approved.txt"}'),
-      TEXT_FRAMES('第二轮读取完成'),
-    );
+    scripts.push(TOOL_CALL_FRAMES('call-1', '{"file_path":"approved.txt"}'), TEXT_FRAMES('第二轮读取完成'));
 
     const input = new PassThrough();
     (input as unknown as { isTTY: boolean }).isTTY = true; // 让 chat 走 terminal 模式（SIGINT 可注入）
     let out = '';
-    const output = new Writable({ write(c, _enc, cb) { out += c.toString('utf8'); cb(); } });
+    const output = new Writable({
+      write(c, _enc, cb) {
+        out += c.toString('utf8');
+        cb();
+      },
+    });
 
     const chatDone = runChat({ home, root: work, stdin: input, stdout: output });
     try {

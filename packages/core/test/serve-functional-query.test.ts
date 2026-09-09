@@ -105,17 +105,27 @@ function writeConfigHome(home: string): void {
     }),
     'utf8',
   );
-  writeFileSync(join(cfgDir, 'auth.json'), JSON.stringify({ channels: { ds: { apiKey: 'sk-plain-secret-987654' } } }), 'utf8');
+  writeFileSync(
+    join(cfgDir, 'auth.json'),
+    JSON.stringify({ channels: { ds: { apiKey: 'sk-plain-secret-987654' } } }),
+    'utf8',
+  );
 }
 
-const SENSITIVE_NAMES = new Set(['apikey', 'api_key', 'api-key', 'key', 'token', 'secret', 'password', 'authorization']);
+const SENSITIVE_NAMES = new Set([
+  'apikey',
+  'api_key',
+  'api-key',
+  'key',
+  'token',
+  'secret',
+  'password',
+  'authorization',
+]);
 function assertNoSensitiveKeys(value: unknown, path = 'json'): void {
   if (value === null || typeof value !== 'object') return;
   for (const [k, v] of Object.entries(value)) {
-    expect(
-      SENSITIVE_NAMES.has(k.toLowerCase()),
-      `${path}.${k} 是敏感字段名，不应出现在只读查询响应`,
-    ).toBe(false);
+    expect(SENSITIVE_NAMES.has(k.toLowerCase()), `${path}.${k} 是敏感字段名，不应出现在只读查询响应`).toBe(false);
     assertNoSensitiveKeys(v, `${path}.${k}`);
   }
 }
@@ -212,7 +222,11 @@ describe('FixA /plan-state：账本重建只读 + 展示不触发审批放行', 
       home: tmpDir('h2-fq-home-'),
       root: tmpDir('h2-fq-root-'),
       provider: new MockProvider([
-        { toolCalls: [{ id: 'call-w', name: 'write', arguments: JSON.stringify({ file_path: 'hello.txt', content: 'v2' }) }] },
+        {
+          toolCalls: [
+            { id: 'call-w', name: 'write', arguments: JSON.stringify({ file_path: 'hello.txt', content: 'v2' }) },
+          ],
+        },
         { textChunks: ['完成'] },
       ]),
       decide: () => 'ask',
@@ -226,7 +240,13 @@ describe('FixA /plan-state：账本重建只读 + 展示不触发审批放行', 
     const journal = RuntimeJournal.create(dir, { fsync: false });
     try {
       const tx = (taskId: string, parentTaskId: string | undefined, from: string, to: string): void => {
-        journal.append({ kind: 'task/transition', taskId, ...(parentTaskId !== undefined ? { parentTaskId } : {}), from: from as never, to: to as never });
+        journal.append({
+          kind: 'task/transition',
+          taskId,
+          ...(parentTaskId !== undefined ? { parentTaskId } : {}),
+          from: from as never,
+          to: to as never,
+        });
       };
       tx('task-root', undefined, 'registered', 'queued');
       tx('task-root', undefined, 'queued', 'starting');
@@ -312,7 +332,9 @@ describe('FixA /execution-view：真实 shell/exitCode 归属 + cwd 归属 + 脱
             {
               id: 'call-bash',
               name: 'bash',
-              arguments: JSON.stringify({ command: `node -e "console.log('marker-exec-view'); console.log('sk-abcdefgh123456'); process.exit(7)"` }),
+              arguments: JSON.stringify({
+                command: `node -e "console.log('marker-exec-view'); console.log('sk-abcdefgh123456'); process.exit(7)"`,
+              }),
             },
           ],
         },
@@ -368,7 +390,11 @@ describe('FixA /change-review：外部修改标 dirty 不静默覆盖', () => {
       home: tmpDir('h2-fq-home-'),
       root: tmpDir('h2-fq-root-'),
       provider: new MockProvider([
-        { toolCalls: [{ id: 'call-w', name: 'write', arguments: JSON.stringify({ file_path: 'hello.txt', content: 'v2' }) }] },
+        {
+          toolCalls: [
+            { id: 'call-w', name: 'write', arguments: JSON.stringify({ file_path: 'hello.txt', content: 'v2' }) },
+          ],
+        },
         { textChunks: ['完成'] },
       ]),
       decide: () => 'allow',

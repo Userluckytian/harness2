@@ -54,33 +54,36 @@ export function useTurnStream(onCommit: (snapshot: TurnSnapshot) => void): UseTu
     }, FLUSH_MS);
   }, []);
 
-  const handler: TurnStreamHandler = useCallback((event) => {
-    const buf = bufferRef.current;
-    if (event.type === 'text-delta') {
-      buf.text += event.text;
-    } else if (event.type === 'reasoning-delta') {
-      buf.reasoning += event.text;
-    } else if (event.type === 'tool-call') {
-      const summary = summarizeArgs(event.call.arguments);
-      toolsByIdRef.current.set(event.call.id, {
-        callId: event.call.id,
-        tool: event.call.name,
-        summary,
-        args: event.call.arguments,
-        status: 'pending',
-      });
-      buf.text += buf.text.length > 0 && !buf.text.endsWith('\n') ? '\n' : '';
-      buf.text += `> ${event.call.name} (${summary})\n`;
-    } else if (event.type === 'tool-result') {
-      const existing = toolsByIdRef.current.get(event.callId);
-      if (existing) {
-        existing.status = event.ok ? 'ok' : 'failed';
-        if (event.error) existing.summary = event.error;
+  const handler: TurnStreamHandler = useCallback(
+    (event) => {
+      const buf = bufferRef.current;
+      if (event.type === 'text-delta') {
+        buf.text += event.text;
+      } else if (event.type === 'reasoning-delta') {
+        buf.reasoning += event.text;
+      } else if (event.type === 'tool-call') {
+        const summary = summarizeArgs(event.call.arguments);
+        toolsByIdRef.current.set(event.call.id, {
+          callId: event.call.id,
+          tool: event.call.name,
+          summary,
+          args: event.call.arguments,
+          status: 'pending',
+        });
+        buf.text += buf.text.length > 0 && !buf.text.endsWith('\n') ? '\n' : '';
+        buf.text += `> ${event.call.name} (${summary})\n`;
+      } else if (event.type === 'tool-result') {
+        const existing = toolsByIdRef.current.get(event.callId);
+        if (existing) {
+          existing.status = event.ok ? 'ok' : 'failed';
+          if (event.error) existing.summary = event.error;
+        }
+        buf.text += `\n< ${event.ok ? 'ok' : 'FAILED'} [${event.callId}]${event.error ? ` ${event.error}` : ''}\n`;
       }
-      buf.text += `\n< ${event.ok ? 'ok' : 'FAILED'} [${event.callId}]${event.error ? ` ${event.error}` : ''}\n`;
-    }
-    scheduleFlush();
-  }, [scheduleFlush]);
+      scheduleFlush();
+    },
+    [scheduleFlush],
+  );
 
   const commit = useCallback((): TurnSnapshot => {
     if (timerRef.current !== null) {

@@ -61,108 +61,108 @@ export function Composer({ busy = false, active = true, onSend, onExit }: Compos
         // 其余按键落到普通输入流（Enter 触发 onSend 等）
       }
 
-    if (key.ctrl && input === 'c') {
-      const now = Date.now();
-      if (now - lastCtrlCAtRef.current < 2000) {
-        onExit();
+      if (key.ctrl && input === 'c') {
+        const now = Date.now();
+        if (now - lastCtrlCAtRef.current < 2000) {
+          onExit();
+          return;
+        }
+        lastCtrlCAtRef.current = now;
+        setValue((v) => v + '（再按一次 Ctrl+C 退出）');
+        setCursor((c) => c + 1);
         return;
       }
-      lastCtrlCAtRef.current = now;
-      setValue((v) => v + '（再按一次 Ctrl+C 退出）');
-      setCursor((c) => c + 1);
-      return;
-    }
-    if (key.ctrl && input === 'd') {
-      if (value.trim().length === 0) onExit();
-      return;
-    }
-    if (key.shift && key.return) {
-      // Shift+Enter 续行（不发送）
-      setValue((v) => {
-        const next = insertAt(v, cursor, '\n');
-        setCursor((c) => c + 1);
-        return next;
-      });
-      return;
-    }
-    if (key.return) {
-      const text = value;
-      if (text.trim().length === 0) return;
-      if (text.trimEnd().endsWith('\\')) {
-        // 行尾 \ 续行（不发送，去掉该反斜杠后换行）
+      if (key.ctrl && input === 'd') {
+        if (value.trim().length === 0) onExit();
+        return;
+      }
+      if (key.shift && key.return) {
+        // Shift+Enter 续行（不发送）
         setValue((v) => {
-          const trimmed = v.trimEnd().slice(0, -1);
-          const next = trimmed + '\n';
-          setCursor(next.length);
+          const next = insertAt(v, cursor, '\n');
+          setCursor((c) => c + 1);
           return next;
         });
         return;
       }
-      setValue('');
-      setCursor(0);
-      historyRef.current.push(text);
-      historyIdxRef.current = -1;
-      onSend(text);
-      return;
-    }
-    if (key.upArrow) {
-      const hist = historyRef.current;
-      if (hist.length === 0) return;
-      const idx = historyIdxRef.current < 0 ? hist.length - 1 : Math.max(0, historyIdxRef.current - 1);
-      historyIdxRef.current = idx;
-      setValue(hist[idx] ?? '');
-      setCursor((hist[idx] ?? '').length);
-      return;
-    }
-    if (key.downArrow) {
-      const hist = historyRef.current;
-      if (hist.length === 0 || historyIdxRef.current < 0) return;
-      const idx = historyIdxRef.current + 1;
-      if (idx >= hist.length) {
+      if (key.return) {
+        const text = value;
+        if (text.trim().length === 0) return;
+        if (text.trimEnd().endsWith('\\')) {
+          // 行尾 \ 续行（不发送，去掉该反斜杠后换行）
+          setValue((v) => {
+            const trimmed = v.trimEnd().slice(0, -1);
+            const next = trimmed + '\n';
+            setCursor(next.length);
+            return next;
+          });
+          return;
+        }
         setValue('');
         setCursor(0);
+        historyRef.current.push(text);
         historyIdxRef.current = -1;
+        onSend(text);
         return;
       }
-      historyIdxRef.current = idx;
-      setValue(hist[idx] ?? '');
-      setCursor((hist[idx] ?? '').length);
-      return;
-    }
-    if (key.leftArrow) {
-      setCursor((c) => Math.max(0, c - 1));
-      return;
-    }
-    if (key.rightArrow) {
-      setCursor((c) => Math.min(value.length, c + 1));
-      return;
-    }
-    if (key.backspace) {
-      if (cursor === 0) return;
-      setValue((v) => removeAt(v, cursor - 1, 1));
-      setCursor((c) => c - 1);
-      return;
-    }
-    if (key.delete) {
-      if (cursor >= value.length) return;
-      setValue((v) => removeAt(v, cursor, 1));
-      return;
-    }
-    if (key.escape) {
-      setValue('');
-      setCursor(0);
-      return;
-    }
-    if (input !== undefined && input !== '' && !key.ctrl && !key.meta) {
-      setValue((v) => {
-        const next = insertAt(v, cursor, input);
-        setCursor((c) => c + input.length);
-        return next;
-      });
-    }
-  },
-  { isActive: active && !busy },
-);
+      if (key.upArrow) {
+        const hist = historyRef.current;
+        if (hist.length === 0) return;
+        const idx = historyIdxRef.current < 0 ? hist.length - 1 : Math.max(0, historyIdxRef.current - 1);
+        historyIdxRef.current = idx;
+        setValue(hist[idx] ?? '');
+        setCursor((hist[idx] ?? '').length);
+        return;
+      }
+      if (key.downArrow) {
+        const hist = historyRef.current;
+        if (hist.length === 0 || historyIdxRef.current < 0) return;
+        const idx = historyIdxRef.current + 1;
+        if (idx >= hist.length) {
+          setValue('');
+          setCursor(0);
+          historyIdxRef.current = -1;
+          return;
+        }
+        historyIdxRef.current = idx;
+        setValue(hist[idx] ?? '');
+        setCursor((hist[idx] ?? '').length);
+        return;
+      }
+      if (key.leftArrow) {
+        setCursor((c) => Math.max(0, c - 1));
+        return;
+      }
+      if (key.rightArrow) {
+        setCursor((c) => Math.min(value.length, c + 1));
+        return;
+      }
+      if (key.backspace) {
+        if (cursor === 0) return;
+        setValue((v) => removeAt(v, cursor - 1, 1));
+        setCursor((c) => c - 1);
+        return;
+      }
+      if (key.delete) {
+        if (cursor >= value.length) return;
+        setValue((v) => removeAt(v, cursor, 1));
+        return;
+      }
+      if (key.escape) {
+        setValue('');
+        setCursor(0);
+        return;
+      }
+      if (input !== undefined && input !== '' && !key.ctrl && !key.meta) {
+        setValue((v) => {
+          const next = insertAt(v, cursor, input);
+          setCursor((c) => c + input.length);
+          return next;
+        });
+      }
+    },
+    { isActive: active && !busy },
+  );
 
   const visualValue = value.replace(/\n/g, '¶\n');
 

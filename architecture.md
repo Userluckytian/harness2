@@ -6,16 +6,16 @@
 
 ## 技术栈（2026-09-06 确认）
 
-| 分类 | 技术 | 版本 | 说明 |
-|------|------|------|------|
-| 语言 | TypeScript（strict） | 5.x | 全栈同语言 |
-| 运行时 | Node.js | ≥22 | LTS |
-| 包管理 | pnpm workspaces | 11.x | 备选 npm workspaces（Windows 符号链接异常时降级） |
-| 测试 | vitest | 3.x | 含快照回放测试 |
-| CLI 框架 | commander | 14.x | 轻量命令解析 |
-| 桌面端（P1） | Electron + React | — | WebContentsView 内嵌浏览器 |
-| 存储 | JSONL（会话事件）+ SQLite（索引/FTS，后期） | — | 事件日志为唯一事实源 |
-| IM 网关（P2） | Node 常驻进程 + QQ 官方 Bot API v2 | — | 用户已在 QQ 开放平台注册 |
+| 分类          | 技术                                        | 版本 | 说明                                              |
+| ------------- | ------------------------------------------- | ---- | ------------------------------------------------- |
+| 语言          | TypeScript（strict）                        | 5.x  | 全栈同语言                                        |
+| 运行时        | Node.js                                     | ≥22  | LTS                                               |
+| 包管理        | pnpm workspaces                             | 11.x | 备选 npm workspaces（Windows 符号链接异常时降级） |
+| 测试          | vitest                                      | 3.x  | 含快照回放测试                                    |
+| CLI 框架      | commander                                   | 14.x | 轻量命令解析                                      |
+| 桌面端（P1）  | Electron + React                            | —    | WebContentsView 内嵌浏览器                        |
+| 存储          | JSONL（会话事件）+ SQLite（索引/FTS，后期） | —    | 事件日志为唯一事实源                              |
+| IM 网关（P2） | Node 常驻进程 + QQ 官方 Bot API v2          | —    | 用户已在 QQ 开放平台注册                          |
 
 ## 目录结构（四包位形）
 
@@ -150,7 +150,7 @@ packages/
   恢复了哪些文件在 redo 输出中如实列出。
 - **undo/redo 内核**（`session/undo.ts`）：全部是 append-only 日志上的投影操作 + 快照恢复联动，无内存旁路。
   - `undoLastTurn`：最近一条**活动** user/message 的 seq U → 目标 U-1；追加 `rewind/marker{rewindToSeq:U-1, reason:'undo'}`
-    + `snapshots.restore(U-1)`；无活动 user 或目标越界（撤到 seq 0）→ 明确错误。
+    - `snapshots.restore(U-1)`；无活动 user 或目标越界（撤到 seq 0）→ 明确错误。
   - `redoLastUndo`：回放 undo 栈（undo 入栈；redo 按其 `rewindToSeq+1` 弹出它重做的 undo）→ 取栈顶 M，
     目标 = M.seq-1；追加 `rewind/marker{rewindToSeq:M.seq-1, reason:'redo'}` + `snapshots.restoreAfter(M.rewindToSeq)`。
   - `dryRun` 只预览（消息数/文件清单/冲突标记），不追加 marker、不写文件。
@@ -229,7 +229,7 @@ HTTP 控制面 + WS 事件面共用一个监听，服务 API 契约冻结 v1（�
 - **注入扫描**：新增/替换文本命中典型指令注入模式（ignore previous instructions /
   忽略之前指令 / system prompt 泄露等启发式清单）→ **标记警告仍写入**，结果随 tool 返回。
 - **memory 工具（`memory/tool.ts`，unsafe 串行）**：`{operation: add|replace|remove,
-  target: memory|user, text?, oldText?}` 或 `operations` 批量数组（**原子执行**：全成或全不成）；
+target: memory|user, text?, oldText?}` 或 `operations` 批量数组（**原子执行**：全成或全不成）；
   写入目的地缝 `MemorySink`——MemoryStore 直接落盘（auto），PendingMemorySink 暂存（ask）。
 - **冻结注入（`agent/loop.ts`）**：`runTurn` 提供 store 且为用户 turn 时——会话活动投影已有
   `memory/snapshot` → 复用其 content（**会话内冻结**，不重读文件，prefix cache 友好）；
@@ -291,8 +291,6 @@ Electron 主进程 spawn `harness2 serve --port 0`（`ELECTRON_RUN_AS_NODE=1` �
   `window.harness2` 就绪后 stdout 打一行 JSON `{ok,port,rendererLoaded,bridgeReady}`（exit 0/1）。
   打包产物（win-unpacked）同样可用 `--smoke` 验证全链。GUI 手感类验收项登记 OPEN.md 待真机。
 - **打包**：electron-builder 三平台（win nsis x64 / mac dmg arm64+x64 / linux AppImage x64，全部 unsigned；`publish: null` 无自动更新），产物落 `release/`；cli 以 esbuild 单文件 bundle 进 extraResources（`pnpm --filter harness2 bundle`；**playwright 标记 external**——打包产物内 browser_* 工具走「未安装指引」降级，npm 安装的 CLI 才可 `browser install`）。
-
-
 
 - ✅ P0/P1（阶段 4 交付）：`/undo` `/redo`（opencode 语义：投影截断 + 文件快照恢复，含冲突检测与 dry-run）；✅ 分叉（阶段 6 交付：dsh 语义 header 血缘 `parentSession`/`isSeeded` + atSeq 截取，见「会话分叉」小节）→ P1 增强：grok 三模式 rewind（对话/文件/全部独立撤回）。
 
@@ -367,6 +365,7 @@ Electron 主进程 spawn `harness2 serve --port 0`（`ELECTRON_RUN_AS_NODE=1` �
 ## CLI gateway 命令（阶段 9 交付）
 
 `harness2 gateway --root <dir> [--home <dir>]`：进程内起 serve（端口 0）→ 按 `config.gateways` 构建适配器（凭据缺失 = 一行错误 exit 1）→ 启动平台桥接。SIGINT/SIGTERM 优雅关停（gw.stop → serve.close）。数据流与会话隔离见「IM 网关」小节。
+
 ## 轨迹导出与回放（阶段 10 交付，`session/export.ts`）
 
 - **exportSession（只读打包）**：白名单收集——`session.v1.jsonl` 必含，`rewind_points.jsonl` / `snapshots/` 存在即含；`lock` 等进程状态与其他未知文件永不入包。子代理会话 = 在会话库 root（`<root>/<encoded-cwd>/<id>` 布局顶层；由会话目录上溯两级推导）扫描 `header.parentSession === 本会话 id` 的**直接子会话**，按 id 排序递归打包进 `subagents/<id>/`（孙会话不在冻结结构内；maxDepth>1 场景需对各层会话分别导出）。导出过程不修改会话目录任何文件（只读红线测试覆盖）。
@@ -383,14 +382,14 @@ Electron 主进程 spawn `harness2 serve --port 0`（`ELECTRON_RUN_AS_NODE=1` �
 - **复跑**：`pnpm build && pnpm bench`（`H2_BENCH_EVENTS`/`H2_BENCH_SEED` 可覆盖规模与种子）。
 - **基线数据（2026-09-07，Windows 10.0.22631 x64 / Node v22.23.0 / Intel i7-1260P，两次取差值 <10%）**：
 
-| 操作 | 10 万事件耗时 |
-|------|--------------|
-| loadSession | ≈200ms |
-| computeProjection（含 10 rewind 遮蔽） | ≈30ms |
-| manager.list（全库） | ≈245ms |
-| manager.search（全库） | ≈420ms |
-| exportSession（主会话 zip） | ≈1.4s |
-| importReplay（回放校验） | ≈320ms |
+| 操作                                   | 10 万事件耗时 |
+| -------------------------------------- | ------------- |
+| loadSession                            | ≈200ms        |
+| computeProjection（含 10 rewind 遮蔽） | ≈30ms         |
+| manager.list（全库）                   | ≈245ms        |
+| manager.search（全库）                 | ≈420ms        |
+| exportSession（主会话 zip）            | ≈1.4s         |
+| importReplay（回放校验）               | ≈320ms        |
 
 - **预算判定**：3s 预算线——**全部操作达标，无 >3s 痛点，本阶段不做性能优化**（测量先于优化：
   无数据不重构）。已有全量内存/全库遍历口径不变（P2-4 留档），基线表即后续回归对照锚点。

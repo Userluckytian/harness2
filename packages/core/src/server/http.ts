@@ -34,7 +34,13 @@ import { McpManager } from '../mcp/client.js';
 import type { SessionHubSubagent } from './sessions.js';
 import type { ChatProvider } from '../provider/types.js';
 import type { ApprovalDecision, ApprovalInput } from '../tools/types.js';
-import { SessionHub, HubError, type SessionHubHooks, type SessionHubMemory, type SessionHubProviderMeta } from './sessions.js';
+import {
+  SessionHub,
+  HubError,
+  type SessionHubHooks,
+  type SessionHubMemory,
+  type SessionHubProviderMeta,
+} from './sessions.js';
 import { attachWsServer, type WsPlane } from './ws.js';
 import { isTrustedHost, isTrustedOrigin, normalizeOriginHeader } from './trust.js';
 
@@ -267,9 +273,7 @@ export async function startServe(options: StartServeOptions = {}): Promise<Serve
       } catch {
         smallProvider = undefined; // 摘要回落主 provider（resolveCompactionOptions 不传 summarizer）
       }
-      compaction = resolveCompactionOptions(loaded.config, (role) =>
-        role === 'small' ? smallProvider : provider,
-      );
+      compaction = resolveCompactionOptions(loaded.config, (role) => (role === 'small' ? smallProvider : provider));
     }
     // 浏览器装配（阶段 7）：config.browser.enabled 时用进程级共享池（资源红线参数来自配置）
     if (browser === undefined && loaded.config.browser.enabled) {
@@ -410,7 +414,10 @@ async function handleRequest(hub: SessionHub, env: ServeEnv, req: IncomingMessag
       return;
     }
     const port = portOfServer(req);
-    if (port !== undefined && !isTrustedHost(typeof req.headers.host === 'string' ? req.headers.host : undefined, port)) {
+    if (
+      port !== undefined &&
+      !isTrustedHost(typeof req.headers.host === 'string' ? req.headers.host : undefined, port)
+    ) {
       sendJson(res, 403, { error: '拒绝访问：Host 校验失败（仅允许 127.0.0.1:<端口>）' });
       return;
     }
@@ -443,7 +450,13 @@ function hubErrorStatus(code: HubError['code']): number {
   }
 }
 
-async function route(hub: SessionHub, env: ServeEnv, req: IncomingMessage, res: ServerResponse, pathname: string): Promise<void> {
+async function route(
+  hub: SessionHub,
+  env: ServeEnv,
+  req: IncomingMessage,
+  res: ServerResponse,
+  pathname: string,
+): Promise<void> {
   // GET /api/sessions?cwd=
   if (pathname === '/api/sessions' && req.method === 'GET') {
     const cwd = urlQueryParam(req, 'cwd');
@@ -462,7 +475,10 @@ async function route(hub: SessionHub, env: ServeEnv, req: IncomingMessage, res: 
     return;
   }
   // /api/sessions/:id/*（sessions? 兼容单复数；S7 只读查询端点同挂在会话名下）
-  const sessionMatch = /^\/api\/sessions?\/([^/]+)(\/events|\/undo|\/redo|\/fork|\/run-config|\/plan-state|\/execution-view|\/change-review)?$/.exec(pathname);
+  const sessionMatch =
+    /^\/api\/sessions?\/([^/]+)(\/events|\/undo|\/redo|\/fork|\/run-config|\/plan-state|\/execution-view|\/change-review)?$/.exec(
+      pathname,
+    );
   if (sessionMatch) {
     // 复审 P2-4：畸形百分号编码（如 %E0%A4%A）decode 抛 URIError——按 400 输入错误处理，而非 500
     let id: string;

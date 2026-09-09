@@ -248,7 +248,8 @@ describe('hub / HTTP / WS 分叉入口', () => {
     const forkedEvents = handle.hub.events(r.id);
     expect(forkedEvents.header).toMatchObject({ parentSession: id, isSeeded: true });
     const origEvents = handle.hub.events(id);
-    const msgs = (p: typeof origEvents) => p.events.filter((e) => e.active && (e.type === 'user/message' || e.type === 'assistant/message'));
+    const msgs = (p: typeof origEvents) =>
+      p.events.filter((e) => e.active && (e.type === 'user/message' || e.type === 'assistant/message'));
     expect(msgs(forkedEvents).map((e) => (e.payload as { text: string }).text)).toEqual(
       msgs(origEvents).map((e) => (e.payload as { text: string }).text),
     );

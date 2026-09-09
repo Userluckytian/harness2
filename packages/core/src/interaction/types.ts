@@ -299,7 +299,9 @@ const TASK_TRANSITIONS: Record<TaskState, readonly TaskState[]> = {
   unknown: [],
 };
 
-export function isTerminalTaskState(s: unknown): s is Extract<TaskState, 'completed' | 'failed' | 'cancelled' | 'unknown'> {
+export function isTerminalTaskState(
+  s: unknown,
+): s is Extract<TaskState, 'completed' | 'failed' | 'cancelled' | 'unknown'> {
   return TASK_TERMINAL_STATES.has(s as TaskState);
 }
 
@@ -331,9 +333,14 @@ export interface SteerResult {
 export function isValidSteerRequest(v: unknown): v is SteerRequest {
   if (typeof v !== 'object' || v === null) return false;
   const s = v as Record<string, unknown>;
-  return typeof s['id'] === 'string' && s['id'].length > 0 &&
-    typeof s['expectedTurnId'] === 'string' && s['expectedTurnId'].length > 0 &&
-    typeof s['text'] === 'string' && s['text'].length > 0;
+  return (
+    typeof s['id'] === 'string' &&
+    s['id'].length > 0 &&
+    typeof s['expectedTurnId'] === 'string' &&
+    s['expectedTurnId'].length > 0 &&
+    typeof s['text'] === 'string' &&
+    s['text'].length > 0
+  );
 }
 
 // —— attempt / delivery：delta 带完整归属 + chunkOffset 水位；终态带 turnId/attemptId ——

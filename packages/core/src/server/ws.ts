@@ -36,7 +36,13 @@ import type {
   ResumeSnapshot,
   SubmitAck,
 } from '../interaction/types.js';
-import { isCancelTargetKind, isSubmitIntent, isTurnGeneration, isValidEpoch, isValidLastSeq } from '../interaction/types.js';
+import {
+  isCancelTargetKind,
+  isSubmitIntent,
+  isTurnGeneration,
+  isValidEpoch,
+  isValidLastSeq,
+} from '../interaction/types.js';
 import { HubError, SessionHub, type TurnDelta } from './sessions.js';
 import type { ResumeStateProvider } from '../interaction/resume-state.js';
 // S3c2 起 DeltaAttribution/WatermarkCursor/ResumeStateProvider 移驻 interaction/resume-state.ts
@@ -56,7 +62,13 @@ export type WsClientMessage =
   | { op: 'fork'; sessionId: string; atSeq?: number }
   // S3c1 新增帧（对齐 S0 共享契约；旧客户端不感知）
   | { op: 'resume-subscription'; sessionId: string; lastSeq: number; epoch: number }
-  | { op: 'cancel'; requestId: string; target: { kind: 'turn' | 'task'; id: string }; expectedId?: string; expectedTurnGeneration?: number }
+  | {
+      op: 'cancel';
+      requestId: string;
+      target: { kind: 'turn' | 'task'; id: string };
+      expectedId?: string;
+      expectedTurnGeneration?: number;
+    }
   | {
       op: 'submit';
       clientMessageId: string;
@@ -73,10 +85,25 @@ export type WsServerMessage =
   // S3c1/S0 带水位增量（展示投影）：chunkOffset 单调，续块 = 上一块 offset + 文本长度
   | { type: 'text-delta'; sessionId: string; turnId: string; attemptId: string; chunkOffset: number; text: string }
   | { type: 'reasoning-delta'; sessionId: string; turnId: string; attemptId: string; chunkOffset: number; text: string }
-  | { type: 'attempt-final'; sessionId: string; turnId: string; attemptId: string; state: AttemptFinalFrame['state']; finalText?: string; error?: string }
+  | {
+      type: 'attempt-final';
+      sessionId: string;
+      turnId: string;
+      attemptId: string;
+      state: AttemptFinalFrame['state'];
+      finalText?: string;
+      error?: string;
+    }
   | { type: 'resume-snapshot'; sessionId: string; epoch: number; snapshot: ResumeSnapshot }
   | { type: 'cancel-ack'; requestId: string; state: CancelAckState }
-  | { type: 'submit-ack'; clientMessageId: string; sessionId: string; state: SubmitAck['state']; reason?: string; queueSeq?: number }
+  | {
+      type: 'submit-ack';
+      clientMessageId: string;
+      sessionId: string;
+      state: SubmitAck['state'];
+      reason?: string;
+      queueSeq?: number;
+    }
   | { type: 'event'; sessionId: string; event: AnySessionEvent }
   | {
       type: 'turn-end';
@@ -175,10 +202,7 @@ export function attachWsServer(server: Server, hub: SessionHub, options: WsPlane
     const host = typeof req.headers.host === 'string' ? req.headers.host : undefined;
     const address = server.address();
     const port = address !== null && typeof address === 'object' ? address.port : undefined;
-    const trusted =
-      isTrustedOrigin(origin) &&
-      (port === undefined || isTrustedHost(host, port)) &&
-      pathname === path;
+    const trusted = isTrustedOrigin(origin) && (port === undefined || isTrustedHost(host, port)) && pathname === path;
     if (!trusted) {
       socket.write('HTTP/1.1 403 Forbidden\r\nconnection: close\r\n\r\n');
       socket.destroy();
@@ -317,7 +341,9 @@ export function attachWsServer(server: Server, hub: SessionHub, options: WsPlane
             const fromSeq = msg.lastSeq + 1;
             const toSeq = hub.events(msg.sessionId).lastSeq;
             const state =
-              resumeState !== undefined ? resumeState.resumeSnapshot({ sessionId: msg.sessionId, lastSeq: msg.lastSeq, epoch: msg.epoch }) : null;
+              resumeState !== undefined
+                ? resumeState.resumeSnapshot({ sessionId: msg.sessionId, lastSeq: msg.lastSeq, epoch: msg.epoch })
+                : null;
             if (state === null) {
               sendSafe(ws, { type: 'error', error: `resume 未支持或会话无恢复状态（S3c2 未接线）: ${msg.sessionId}` });
               break;
@@ -342,7 +368,9 @@ export function attachWsServer(server: Server, hub: SessionHub, options: WsPlane
               requestId: msg.requestId,
               target: msg.target,
               expectedId: msg.expectedId,
-              ...(msg.expectedTurnGeneration !== undefined ? { expectedTurnGeneration: msg.expectedTurnGeneration } : {}),
+              ...(msg.expectedTurnGeneration !== undefined
+                ? { expectedTurnGeneration: msg.expectedTurnGeneration }
+                : {}),
             });
             sendSafe(ws, { type: 'cancel-ack', requestId: ack.requestId, state: ack.state });
             break;
@@ -429,7 +457,17 @@ function sendSafe(ws: WebSocket, frame: WsServerMessage): void {
   }
 }
 
-const OPS = new Set(['subscribe', 'unsubscribe', 'abort', 'user-message', 'approval-response', 'fork', 'resume-subscription', 'cancel', 'submit']);
+const OPS = new Set([
+  'subscribe',
+  'unsubscribe',
+  'abort',
+  'user-message',
+  'approval-response',
+  'fork',
+  'resume-subscription',
+  'cancel',
+  'submit',
+]);
 
 export function parseClientMessage(data: unknown): WsClientMessage {
   let obj: unknown;

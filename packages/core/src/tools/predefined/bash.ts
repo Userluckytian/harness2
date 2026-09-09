@@ -26,7 +26,11 @@ function killTree(child: ChildProcess): void {
     try {
       spawn('taskkill', ['/pid', String(pid), '/T', '/F'], { windowsHide: true, stdio: 'ignore' }).unref();
     } catch {
-      try { child.kill(); } catch { /* 已死 */ }
+      try {
+        child.kill();
+      } catch {
+        /* 已死 */
+      }
     }
     return;
   }
@@ -34,7 +38,11 @@ function killTree(child: ChildProcess): void {
     process.kill(-pid, 'SIGKILL'); // 负 PID = 杀整个进程组（child detached 为组长）
   } catch (e) {
     if ((e as NodeJS.ErrnoException).code === 'ESRCH') return; // 进程组已不存在（正常竞态）
-    try { child.kill('SIGKILL'); } catch { /* 已死 */ } // 其他错误退回只杀直接子进程
+    try {
+      child.kill('SIGKILL');
+    } catch {
+      /* 已死 */
+    } // 其他错误退回只杀直接子进程
   }
 }
 
@@ -50,7 +58,10 @@ export const bashTool: ToolDefinition = {
     type: 'object',
     properties: {
       command: { type: 'string', description: 'The shell command to execute' },
-      timeoutMs: { type: 'number', description: 'Kill the command (whole process tree) after this many ms (default 30000)' },
+      timeoutMs: {
+        type: 'number',
+        description: 'Kill the command (whole process tree) after this many ms (default 30000)',
+      },
     },
     required: ['command'],
   },

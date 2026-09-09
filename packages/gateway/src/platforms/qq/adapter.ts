@@ -66,7 +66,10 @@ export class QqAdapter implements PlatformAdapter {
 
   /** 出站：群 / 私聊 v2 接口（频率限制队列；msg_id 被动回复 + msg_seq 按 msg_id 递增） */
   async send(chatId: string, text: string, replyToMessageId?: string, isGroup?: boolean): Promise<void> {
-    const path = isGroup === true ? `/v2/groups/${encodeURIComponent(chatId)}/messages` : `/v2/users/${encodeURIComponent(chatId)}/messages`;
+    const path =
+      isGroup === true
+        ? `/v2/groups/${encodeURIComponent(chatId)}/messages`
+        : `/v2/users/${encodeURIComponent(chatId)}/messages`;
     let msgSeq: number | undefined;
     if (replyToMessageId !== undefined) {
       const next = (this.msgSeqByMsgId.get(replyToMessageId) ?? 0) + 1;
@@ -104,7 +107,7 @@ export class QqAdapter implements PlatformAdapter {
     const text = rawText.replace(/^\s*(?:<@[^>]*>|@[\w-]+)\s*/, '').trim();
     if (text.length === 0) return;
 
-    const chatId = (isGroup ? p.group_openid : p.user_openid ?? p.openid) ?? '';
+    const chatId = (isGroup ? p.group_openid : (p.user_openid ?? p.openid)) ?? '';
     if (typeof chatId !== 'string' || chatId.length === 0) return;
 
     const policy = isGroup ? this.options.config.groupPolicy : this.options.config.dmPolicy;

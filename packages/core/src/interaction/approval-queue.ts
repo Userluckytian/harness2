@@ -8,11 +8,7 @@
 //       迟到响应按已落定记忆返回（response 落定→duplicate；超时/取消/过期→expired）；未知=unknown；
 //   - 「本会话总是」授权缓存（sessionId→工具集）：仅在该 session + 该工具上生效，
 //     allow 时写入，供策略决策缝预检（不泄漏到其他会话/工具）。
-import type {
-  ApprovalRequestContract,
-  ApprovalResponseAck,
-  ApprovalResponseDecision,
-} from './types.js';
+import type { ApprovalRequestContract, ApprovalResponseAck, ApprovalResponseDecision } from './types.js';
 import { isApprovalExpired, scopeConfinesToSession } from './types.js';
 
 /** 落定原因（含过期：S2 新增位；响应/超时/取消沿用既有口径） */

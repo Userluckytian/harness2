@@ -63,7 +63,15 @@ export function ConfirmDialog({ question, isActive, onChoice, onCancel }: Confir
   );
 
   return (
-    <Modal title="需要审批" hint="y/a/n 或 ↑↓+Enter，Esc=拒绝" onClose={() => { onChoice('deny'); onCancel(); }} isActive={isActive}>
+    <Modal
+      title="需要审批"
+      hint="y/a/n 或 ↑↓+Enter，Esc=拒绝"
+      onClose={() => {
+        onChoice('deny');
+        onCancel();
+      }}
+      isActive={isActive}
+    >
       <Box flexDirection="column">
         <Text>{question}</Text>
         <Box flexDirection="column" marginTop={1}>

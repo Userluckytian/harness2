@@ -41,9 +41,30 @@ function mulberry32(seed: number): () => number {
 
 /** 词表（合成文本素材；BENCH_SEARCH_WORD 取自其中保证搜索命中） */
 const WORDS = [
-  'quantum', 'ledger', 'harvest', 'signal', 'cascade', 'orchard', 'lantern', 'meridian',
-  'compass', 'beacon', 'willow', 'summit', 'harbor', 'driftwood', 'cobalt', 'ember',
-  'glacier', 'meadow', 'thunder', 'velvet', 'cipher', 'compass', 'aurora', 'basalt',
+  'quantum',
+  'ledger',
+  'harvest',
+  'signal',
+  'cascade',
+  'orchard',
+  'lantern',
+  'meridian',
+  'compass',
+  'beacon',
+  'willow',
+  'summit',
+  'harbor',
+  'driftwood',
+  'cobalt',
+  'ember',
+  'glacier',
+  'meadow',
+  'thunder',
+  'velvet',
+  'cipher',
+  'compass',
+  'aurora',
+  'basalt',
 ];
 
 /** 搜索基准用词（生成器文本必然包含） */
@@ -172,7 +193,11 @@ export function runSessionBench(
     const warm = loadSession(dir);
     computeProjection(warm);
 
-    const loaded = measure('loadSession', () => loadSession(dir), (s) => `${s.events.length} events`);
+    const loaded = measure(
+      'loadSession',
+      () => loadSession(dir),
+      (s) => `${s.events.length} events`,
+    );
     ops.push(loaded.record);
     const projected = measure(
       'computeProjection',
@@ -186,7 +211,11 @@ export function runSessionBench(
     ops.push(projected.record);
 
     const manager = new SessionManager(sessionsRoot);
-    const listed = measure('manager.list（全库）', () => manager.list(), (r) => `${r.length} sessions`);
+    const listed = measure(
+      'manager.list（全库）',
+      () => manager.list(),
+      (r) => `${r.length} sessions`,
+    );
     ops.push(listed.record);
     const searched = measure(
       'manager.search（全库）',

@@ -25,7 +25,9 @@ function useGitBranch(cwd: string): string | null {
       .catch(() => {
         // 非 git 仓库或 git 不可用，静默
       });
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+    };
   }, [cwd]);
   return branch;
 }
@@ -33,7 +35,10 @@ function useGitBranch(cwd: string): string | null {
 function useContextUsage(dir: string | null): number | undefined {
   const [usage, setUsage] = useState<number | undefined>(undefined);
   useEffect(() => {
-    if (dir === null) { setUsage(undefined); return; }
+    if (dir === null) {
+      setUsage(undefined);
+      return;
+    }
     setUsage(getContextUsage(dir));
   }, [dir]);
   return usage;
@@ -55,9 +60,14 @@ export function StatusBar({ runtime }: StatusBarProps): ReactElement {
   return (
     <Box borderStyle="single" paddingX={1} justifyContent="space-between">
       <Box gap={1}>
-        <Text color="cyan" bold>[{alias}]</Text>
+        <Text color="cyan" bold>
+          [{alias}]
+        </Text>
         <Text color="gray">|</Text>
-        <Text>{cwd}{branch ? ` (${branch})` : ''}</Text>
+        <Text>
+          {cwd}
+          {branch ? ` (${branch})` : ''}
+        </Text>
       </Box>
       <Box>
         <Text color="gray">ctx </Text>

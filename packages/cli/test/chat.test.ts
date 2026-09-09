@@ -318,7 +318,11 @@ describe('harness2 chat 审批交互（config approval ask → REPL 内联确认
       }),
       'utf8',
     );
-    writeFileSync(join(home, '.harness2', 'auth.json'), JSON.stringify({ channels: { stub: { apiKey: 'ask-test-key-secret' } } }), 'utf8');
+    writeFileSync(
+      join(home, '.harness2', 'auth.json'),
+      JSON.stringify({ channels: { stub: { apiKey: 'ask-test-key-secret' } } }),
+      'utf8',
+    );
     writeFileSync(join(work, 'approved.txt'), 'approved 内容', 'utf8');
 
     scripts.push(

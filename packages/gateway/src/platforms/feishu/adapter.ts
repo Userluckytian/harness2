@@ -59,7 +59,9 @@ export class FeishuAdapter implements PlatformAdapter {
   /** 启动本地 webhook 接收端点（P1-5：配置 verificationToken 时强制校验；未配置启动告警「仅限内网」） */
   async start(): Promise<void> {
     if (this.options.verificationToken === undefined) {
-      console.error('[gateway/feishu] 警告：未配置 verificationToken，webhook 无鉴权——仅限 127.0.0.1 内网/穿透环境使用');
+      console.error(
+        '[gateway/feishu] 警告：未配置 verificationToken，webhook 无鉴权——仅限 127.0.0.1 内网/穿透环境使用',
+      );
     }
     const port = this.options.webhookPort ?? 9800;
     const server = createServer((req, res) => {

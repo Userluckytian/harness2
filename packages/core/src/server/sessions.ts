@@ -45,9 +45,17 @@ import type {
 import { SessionSteerSink } from '../interaction/steer-sink.js';
 import { isApprovalDecision, TASK_STATES, matchTurnGeneration } from '../interaction/types.js';
 import { RUNTIME_JOURNAL_FILE, RuntimeJournal, readEntries } from '../interaction/runtime-journal.js';
-import { buildEffectiveRunConfig, type EffectiveRunConfig, type EffectiveRunConfigInput } from '../interaction/run-config.js';
+import {
+  buildEffectiveRunConfig,
+  type EffectiveRunConfig,
+  type EffectiveRunConfigInput,
+} from '../interaction/run-config.js';
 import { loadPlanState, type PlanState } from '../interaction/plan-state.js';
-import { buildToolExecutionView, type ToolExecutionTrace, type ToolExecutionView } from '../interaction/execution-view.js';
+import {
+  buildToolExecutionView,
+  type ToolExecutionTrace,
+  type ToolExecutionView,
+} from '../interaction/execution-view.js';
 import { reviewChangeSet, type ChangeSet } from '../interaction/change-review.js';
 import type { RetryBudgetState } from '../interaction/retry-policy.js';
 import type { ApprovalConfig } from '../config/schema.js';
@@ -96,9 +104,7 @@ export class HubError extends Error {
 
 /** 流式增量（唯一允许的未落盘推送；与随后落盘的最终事件一致） */
 export type TurnDelta =
-  | { kind: 'text'; text: string }
-  | { kind: 'reasoning'; text: string }
-  | { kind: 'tool'; call: ToolCallRequest };
+  { kind: 'text'; text: string } | { kind: 'reasoning'; text: string } | { kind: 'tool'; call: ToolCallRequest };
 
 /** S2 历史类型（API 面兼容保留）：审批上抛已升级为 ApprovalRequestContract（含 scope/expiresAt/cwd） */
 export interface PendingApproval {
@@ -334,7 +340,10 @@ export class SessionHub implements ResumeStateProvider {
   /** 已被派发进 turn 管线的 queue 下标（防 submit 幂等回执重复派发） */
   private readonly dispatched = new Map<string, number>();
   /** 运行中 turn 的展示投影身份（real turnId 来自 loop；attemptId 由 hub 按 turn 合成） */
-  private readonly turnDisplay = new Map<string, { turnId: string; attemptId: string; textLen: number; reasoningLen: number }>();
+  private readonly turnDisplay = new Map<
+    string,
+    { turnId: string; attemptId: string; textLen: number; reasoningLen: number }
+  >();
   /** turnId → sessionId（cancel 按 turnId 定位会话语境；turn 结束清理） */
   private readonly runningTurnId = new Map<string, string>();
   /** 本进程内已确认取消的 turnId（cancel-ack=cancelled 依据；一次性语义） */
@@ -371,7 +380,10 @@ export class SessionHub implements ResumeStateProvider {
     // 审查 P2-1 fail-fast：ask 模式缺 pending 装配时 buildTurnTools 每次 turn 抛错、
     // 被 pump 的 catch 吞掉（消息凭空消失）——装配残缺在构造期即拒绝，不给静默失败留窗口。
     if (options.memory?.mode === 'ask' && options.memory.pending === undefined) {
-      throw new HubError('invalid', 'memory.mode=ask 需要装配 pending 暂存区（SessionHubMemory.pending），拒绝静默吞消息的残缺装配');
+      throw new HubError(
+        'invalid',
+        'memory.mode=ask 需要装配 pending 暂存区（SessionHubMemory.pending），拒绝静默吞消息的残缺装配',
+      );
     }
     if (options.hooks !== undefined) this.addHooks(options.hooks);
     // 插件事件桥接（阶段 8）：hub 落盘事件镜像 → 插件事件总线（插件 on 订阅的来源）
@@ -525,7 +537,9 @@ export class SessionHub implements ResumeStateProvider {
       provider: this.options.providerMeta ?? this.fallbackProviderMeta(),
       ...(this.options.approvalConfig !== undefined ? { approval: this.options.approvalConfig } : {}),
       memoryMode: this.options.memory?.mode ?? 'off',
-      tools: this.toolsForSession(id).list().map((d) => d.name),
+      tools: this.toolsForSession(id)
+        .list()
+        .map((d) => d.name),
       ...(this.options.skills !== undefined
         ? { skills: this.options.skills.scan().skills.map((s) => ({ name: s.name, source: s.source })) }
         : {}),
@@ -871,9 +885,7 @@ export class SessionHub implements ResumeStateProvider {
     const entry = this.entryFor(id);
     const snapshots = new SnapshotStore(entry.dir);
     const dryRun = opts.dryRun === true;
-    return this.applyUndoRedo(n, () =>
-      undoLastTurn(entry.writer, { snapshots, ...(dryRun ? { dryRun: true } : {}) }),
-    );
+    return this.applyUndoRedo(n, () => undoLastTurn(entry.writer, { snapshots, ...(dryRun ? { dryRun: true } : {}) }));
   }
 
   redo(id: string): { results: UndoRedoResult[]; error?: string } {
@@ -1236,7 +1248,10 @@ export class SessionHub implements ResumeStateProvider {
   // —— S3c2 展示投影：流事件 → 带水位 delta 帧 / turn 落定帧 ——
 
   /** 取/建运行中 turn 的展示身份（real turnId 来自 loop 单点生成；attemptId 按 turn 合成） */
-  private turnDisplayFor(sessionId: string, turnId: string): { turnId: string; attemptId: string; textLen: number; reasoningLen: number } {
+  private turnDisplayFor(
+    sessionId: string,
+    turnId: string,
+  ): { turnId: string; attemptId: string; textLen: number; reasoningLen: number } {
     const existing = this.turnDisplay.get(sessionId);
     if (existing !== undefined && existing.turnId === turnId) return existing;
     const created = { turnId, attemptId: `att-${turnId.slice(0, 8)}`, textLen: 0, reasoningLen: 0 };
@@ -1265,7 +1280,8 @@ export class SessionHub implements ResumeStateProvider {
   private finalizeAttempt(sessionId: string, result: TurnResult): void {
     const disp = this.turnDisplay.get(sessionId);
     if (disp === undefined) return;
-    const state = result.stopReason === 'cancelled' ? 'cancelled' : result.stopReason === 'error' ? 'failed' : 'completed';
+    const state =
+      result.stopReason === 'cancelled' ? 'cancelled' : result.stopReason === 'error' ? 'failed' : 'completed';
     const frame: AttemptFinalFrame = {
       type: 'attempt-final',
       sessionId,
@@ -1465,10 +1481,7 @@ export class SessionHub implements ResumeStateProvider {
             approval,
             settle: (allowed, reason) => notify(allowed, reason),
           };
-          timer = setTimeout(
-            () => this.approvals.settle(approval.requestId, false, 'timeout'),
-            this.approvalTimeoutMs,
-          );
+          timer = setTimeout(() => this.approvals.settle(approval.requestId, false, 'timeout'), this.approvalTimeoutMs);
           if (!this.approvals.register(node)) {
             clearTimeout(timer);
             notify(false, 'cancelled');

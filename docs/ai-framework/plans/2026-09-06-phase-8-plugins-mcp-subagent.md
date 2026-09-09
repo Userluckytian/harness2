@@ -13,11 +13,11 @@
 
 ## 前置阅读（必须）
 
-| 优先级 | 文件 |
-|--------|------|
-| P0 | 本文件、`docs/ROADMAP.md`（D4、P2-20/24/25） |
-| P0 | `packages/core/src/tools/{types,registry,executor}.ts`（总线先例：注册返回 disposer）、`server/sessions.ts`（装配层）、`session/fork.ts`（血缘先例） |
-| P1 | MCP 官方文档（Model Context Protocol spec，SDK 用法以当期版本 README 为准）、`docs/issue-log/OPEN.md` |
+| 优先级 | 文件                                                                                                                                                 |
+| ------ | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
+| P0     | 本文件、`docs/ROADMAP.md`（D4、P2-20/24/25）                                                                                                         |
+| P0     | `packages/core/src/tools/{types,registry,executor}.ts`（总线先例：注册返回 disposer）、`server/sessions.ts`（装配层）、`session/fork.ts`（血缘先例） |
+| P1     | MCP 官方文档（Model Context Protocol spec，SDK 用法以当期版本 README 为准）、`docs/issue-log/OPEN.md`                                                |
 
 **仓库路径：** `D:\AI_projects\harness2`（默认分支 `master`）
 **基线分支：** 从 `master` 拉 `feat/phase-8-plugins-mcp-subagent`
@@ -53,16 +53,16 @@
 
 ## File Structure（预期变更）
 
-| 文件 | 动作 | 职责 |
-|------|------|------|
-| `packages/core/src/plugins/{types,loader,bus}.ts` | 新建 | definePlugin 契约、目录扫描 + manifest 校验 + 装载审批、总线（ctx：registerTool/on/config/logger，全部返回 disposer） |
-| `packages/core/src/mcp/client.ts` | 新建 | SDK 集成：连接（stdio/url）、工具枚举、namespaced 注册、断线退避重启、崩溃不拖垮 |
-| `packages/core/src/agent/subagent.ts` | 新建 | subagent_start/continue 工具（独立子会话 + runTurn + 深度/取消传播） |
-| `packages/core/src/server/sessions.ts` | 修改 | 装配层接入插件/MCP/subagent（模式开关透传） |
-| `packages/cli/src/index.ts` | 修改 | `harness2 plugin list/enable/disable`、`harness2 mcp list` |
-| `packages/desktop` | 修改 | 插件/MCP 工具行渲染（名称前缀区分）、subagent 工具行（子会话 id 可跳转 traj） |
-| `packages/core/test/{plugins,mcp,subagent}.test.ts` | 新建 | 见各 Task |
-| 文档（architecture/ROADMAP/HANDOFF/diary/OPEN） | 修改 | 整备 |
+| 文件                                                | 动作 | 职责                                                                                                                  |
+| --------------------------------------------------- | ---- | --------------------------------------------------------------------------------------------------------------------- |
+| `packages/core/src/plugins/{types,loader,bus}.ts`   | 新建 | definePlugin 契约、目录扫描 + manifest 校验 + 装载审批、总线（ctx：registerTool/on/config/logger，全部返回 disposer） |
+| `packages/core/src/mcp/client.ts`                   | 新建 | SDK 集成：连接（stdio/url）、工具枚举、namespaced 注册、断线退避重启、崩溃不拖垮                                      |
+| `packages/core/src/agent/subagent.ts`               | 新建 | subagent_start/continue 工具（独立子会话 + runTurn + 深度/取消传播）                                                  |
+| `packages/core/src/server/sessions.ts`              | 修改 | 装配层接入插件/MCP/subagent（模式开关透传）                                                                           |
+| `packages/cli/src/index.ts`                         | 修改 | `harness2 plugin list/enable/disable`、`harness2 mcp list`                                                            |
+| `packages/desktop`                                  | 修改 | 插件/MCP 工具行渲染（名称前缀区分）、subagent 工具行（子会话 id 可跳转 traj）                                         |
+| `packages/core/test/{plugins,mcp,subagent}.test.ts` | 新建 | 见各 Task                                                                                                             |
+| 文档（architecture/ROADMAP/HANDOFF/diary/OPEN）     | 修改 | 整备                                                                                                                  |
 
 ---
 
@@ -71,6 +71,7 @@
 **Files:** `plugins/*`、`test/plugins.test.ts`
 
 **行为:**
+
 - 插件形态：`~/.harness2/plugins/<name>/manifest.json`（`{name, version, permissions: {tools?: true|string[], events?: string[], cron?: true}}`）+ `index.js`（默认导出 `definePlugin({name, setup(ctx)})`）。
 - `PluginContext`：`registerTool(def)`（进 ToolRegistry，重名拒绝）、`on(event, handler)`（hub 事件总线）、`log()`（带插件前缀）、`config()`（只读）。**全部返回 disposer**；卸载插件 = 依序展开。
 - 装载审批：manifest 合法 + `config.plugins.allow` 含该名 → 装载；不在 allow → 跳过并告警（`plugin enable <name>` 走审批：CLI 打印权限清单要求确认后写入 allow）。
@@ -83,6 +84,7 @@
 **Files:** `mcp/client.ts`、`test/mcp.test.ts`
 
 **行为:**
+
 - 依赖 `@modelcontextprotocol/sdk`；config.mcpServers 每项连接（stdio：spawn 子进程；url：HTTP）→ `listTools` → 以 `mcp__<server>__<tool>` 注册（schema 透传、unsafe=true 默认走审批）。
 - 生命周期：连接失败/中途断开 → 退避重启（上限 3）→ 该 server 工具全部下线（disposer）+ 告警，**不拖垮主进程**；`harness2 mcp list` 显示各 server 状态与工具数。
 - 测试：用 SDK 起一个**本地内存 MCP server**（同一 SDK 的 server 端）覆盖：枚举注册/工具调用往返（echo 工具）/断线重启/名称冲突告警。
@@ -94,6 +96,7 @@
 **Files:** `agent/subagent.ts`、`test/subagent.test.ts`
 
 **行为:**
+
 - `subagent_start {prompt, cwd?}`：SessionManager.create 子会话（header：parentSession=父会话 id、isSeeded=true、subagent=true）→ runTurn（roles.subagent、工具集=父集**减去** subagent 工具——深度 1 的实现方式；maxTurns=config.subagent.maxTurns）→ result 带 `{childSessionId, finalText, stopReason}`（tool/result.output）。父取消 → 子 AbortController.abort（事件照常落盘）。
 - `subagent_continue {childSessionId, message}`：向子会话追加用户消息并 runTurn（复用 hub 排队语义或直调，取简）。
 - 深度控制实现：工具集构造时按 `depth < maxDepth` 条件注册 subagent 工具（hub/CLI 装配层传 depth）。
@@ -117,25 +120,25 @@ architecture（插件/MCP/subagent 小节）、ROADMAP（P2-20/24/25 → ✅）�
 
 ## 验收标准总表
 
-| # | 标准 | 通过条件 |
-|---|------|----------|
-| 1 | 插件总线 | 装载/权限/disposer/非法 manifest 测试通过 |
-| 2 | MCP | 本地 server 枚举/调用/断线重启/冲突告警测试通过 |
-| 3 | Subagent | 独立会话/血缘/取消/深度限制/continue 测试通过；零新增事件类型 |
-| 4 | 装配集成 | 四类工具来源共存、冲突优先级、开关生效测试通过 |
-| 5 | 红线 | 无新增事件类型；沙箱边界如实声明；密钥三不 |
-| 6 | 单测/构建 | `pnpm test && pnpm -r typecheck` exit 0 |
+| #   | 标准      | 通过条件                                                      |
+| --- | --------- | ------------------------------------------------------------- |
+| 1   | 插件总线  | 装载/权限/disposer/非法 manifest 测试通过                     |
+| 2   | MCP       | 本地 server 枚举/调用/断线重启/冲突告警测试通过               |
+| 3   | Subagent  | 独立会话/血缘/取消/深度限制/continue 测试通过；零新增事件类型 |
+| 4   | 装配集成  | 四类工具来源共存、冲突优先级、开关生效测试通过                |
+| 5   | 红线      | 无新增事件类型；沙箱边界如实声明；密钥三不                    |
+| 6   | 单测/构建 | `pnpm test && pnpm -r typecheck` exit 0                       |
 
 ---
 
 ## 风险与降级
 
-| 风险 | 缓解 |
-|------|------|
-| MCP SDK API 变动 | 锁定版本；适配层薄封装（只依赖 listTools/callTool 两面） |
-| 插件进程内无隔离 | manifest 权限 + 装载审批 + 如实声明；worker 隔离留档评估 |
-| subagent 递归失控 | 深度默认 1 + maxTurns + 独立会话成本可见（traj） |
-| 三类工具来源冲突 | 注册冲突策略：本地 > 插件 > MCP（冲突告警不中断） |
+| 风险              | 缓解                                                     |
+| ----------------- | -------------------------------------------------------- |
+| MCP SDK API 变动  | 锁定版本；适配层薄封装（只依赖 listTools/callTool 两面） |
+| 插件进程内无隔离  | manifest 权限 + 装载审批 + 如实声明；worker 隔离留档评估 |
+| subagent 递归失控 | 深度默认 1 + maxTurns + 独立会话成本可见（traj）         |
+| 三类工具来源冲突  | 注册冲突策略：本地 > 插件 > MCP（冲突告警不中断）        |
 
 ---
 
@@ -148,27 +151,32 @@ architecture（插件/MCP/subagent 小节）、ROADMAP（P2-20/24/25 → ✅）�
 你是 **harness2** 阶段 8 的实现代理。请**完整执行本阶段**，不要只写方案。
 
 ### 基线
+
 - 目录：`D:\AI_projects\harness2`（默认分支 `master`）；从 master 创建并切换 `feat/phase-8-plugins-mcp-subagent`
 - 已完成（勿重做）：阶段 1-7 均验收（内核/loop+工具/Provider+配置/CLI+undo/服务化+桌面/记忆+分叉/浏览器+压缩+cron）
 - 唯一实施计划：`docs/ai-framework/plans/2026-09-XX-phase-8-plugins-mcp-subagent.md`（以仓库内实际文件为准）
 - 必读：本计划、`tools/{types,registry}.ts`、`session/fork.ts`、`server/sessions.ts`、`AGENTS.md`
 
 ### 做
+
 1. 严格按 Task 1→5 顺序执行；每 Task 测试通过后规范 commit（gitmoji 中文，禁止 push）
 2. 遵守 Global Constraints：零新增事件类型；沙箱边界如实声明；MCP 崩溃不拖垮主进程；subagent 深度/取消红线
 3. Task 5 更新 architecture/ROADMAP（P2-20/24/25 → ✅）/HANDOFF/diary/OPEN
 
 ### 不做
+
 - 插件市场、插件 UI 扩展点、MCP resources/prompts、worker 隔离
 - 提交密钥；任何 `git push`
 
 ### 工作方式
+
 1. 先跑基线 `pnpm test` 确认全绿再动工
 2. MCP 测试用同一 SDK 起本地内存 server（零外部依赖）
 3. 证据优先：交卷前重跑 `pnpm test && pnpm -r typecheck`，粘贴真实输出
 4. 简体中文回复；代码标识符原样
 
 ### 交卷
+
 分支名、提交列表、验收表逐项自评（带命令与真实结果）、新增测试数、残留风险与未关闭项。
 
 现在开始：读完本阶段计划，从 Task 1 执行到 Task 5。

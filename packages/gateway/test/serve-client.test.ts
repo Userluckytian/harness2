@@ -47,12 +47,15 @@ describe('ServeClient（对真实 serve）', () => {
     client.subscribe(session.id);
     client.sendMessage(session.id, '你好');
 
-    const turnEnd = (await waitFor(
-      frames,
-      (f) => f.type === 'turn-end' && f.sessionId === session.id,
-    )) as { type: 'turn-end'; sessionId: string; stopReason: string };
+    const turnEnd = (await waitFor(frames, (f) => f.type === 'turn-end' && f.sessionId === session.id)) as {
+      type: 'turn-end';
+      sessionId: string;
+      stopReason: string;
+    };
     expect(turnEnd.stopReason).toBe('end_turn');
-    const kinds = frames.filter((f) => f.type === 'event' && f.sessionId === session.id).map((f) => (f as { event: { type: string } }).event.type);
+    const kinds = frames
+      .filter((f) => f.type === 'event' && f.sessionId === session.id)
+      .map((f) => (f as { event: { type: string } }).event.type);
     expect(kinds).toContain('user/message');
     expect(kinds).toContain('assistant/message');
   });
@@ -76,7 +79,11 @@ describe('ServeClient（对真实 serve）', () => {
   });
 });
 
-function waitFor<T extends ServeFrame>(frames: ServeFrame[], predicate: (f: ServeFrame) => boolean, timeoutMs = 5000): Promise<T> {
+function waitFor<T extends ServeFrame>(
+  frames: ServeFrame[],
+  predicate: (f: ServeFrame) => boolean,
+  timeoutMs = 5000,
+): Promise<T> {
   const found = frames.find(predicate);
   if (found !== undefined) return Promise.resolve(found as T);
   return new Promise((resolve, reject) => {

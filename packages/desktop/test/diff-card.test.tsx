@@ -118,7 +118,7 @@ describe('DiffCard 组件', () => {
 
   it('缺少 seq → 不调用 IPC，显示缺键降级', async () => {
     const api = {
-      getSnapshotForCall: vi.fn(async () => ({ ok: true } as SnapshotForCallShape)),
+      getSnapshotForCall: vi.fn(async () => ({ ok: true }) as SnapshotForCallShape),
     };
     (window as unknown as { harness2: { getSnapshotForCall: () => Promise<SnapshotForCallShape> } }).harness2 = api;
     render(<DiffCard sessionId="s1" file="c.txt" onUndo={() => {}} />);

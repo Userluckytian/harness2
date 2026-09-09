@@ -137,10 +137,7 @@ describe('matchTurnGeneration 纯函数（代次匹配逻辑单测）', () => {
 describe('hub.cancelAck turn 代次守卫（真实运行 turn）', () => {
   it('旧代次 cancel → unknown 且不中止运行中 turn；正确代次 → stopping → cancelled', { timeout: 20000 }, async () => {
     // 第一轮快速完成 → 代次计数器推进（turn A = gen 1）；第二轮慢速流式保持运行（turn B = gen 2）
-    const hub = makeHub([
-      { textChunks: ['A-fast'] },
-      { textChunks: ['B-1', 'B-2', 'B-3'], chunkDelayMs: 300 },
-    ]);
+    const hub = makeHub([{ textChunks: ['A-fast'] }, { textChunks: ['B-1', 'B-2', 'B-3'], chunkDelayMs: 300 }]);
     const id = hub.create(tmpDir('h2-cancel-gen-sess-')).id;
     try {
       hub.sendUserMessage(id, '第一轮（快）');
@@ -232,25 +229,31 @@ describe('hub.cancelAck turn 代次守卫（真实运行 turn）', () => {
       });
       const a = activeAttemptOf(hub, id)!;
       const gen = a.generation!;
-      expect(hub.cancelAck({
-        requestId: 'c1',
-        target: { kind: 'turn', id: a.turnId },
-        expectedId: a.turnId,
-        expectedTurnGeneration: gen,
-      }).state).toBe('stopping');
+      expect(
+        hub.cancelAck({
+          requestId: 'c1',
+          target: { kind: 'turn', id: a.turnId },
+          expectedId: a.turnId,
+          expectedTurnGeneration: gen,
+        }).state,
+      ).toBe('stopping');
       await waitFor(() => !hub.isBusy(id));
       // 正确代次确认 → cancelled
-      expect(hub.cancelAck({
-        requestId: 'c2',
-        target: { kind: 'turn', id: a.turnId },
-        expectedTurnGeneration: gen,
-      }).state).toBe('cancelled');
+      expect(
+        hub.cancelAck({
+          requestId: 'c2',
+          target: { kind: 'turn', id: a.turnId },
+          expectedTurnGeneration: gen,
+        }).state,
+      ).toBe('cancelled');
       // 异代次确认（旧代次帧）→ unknown（不误认已取消）
-      expect(hub.cancelAck({
-        requestId: 'c3',
-        target: { kind: 'turn', id: a.turnId },
-        expectedTurnGeneration: gen - 1,
-      }).state).toBe('unknown');
+      expect(
+        hub.cancelAck({
+          requestId: 'c3',
+          target: { kind: 'turn', id: a.turnId },
+          expectedTurnGeneration: gen - 1,
+        }).state,
+      ).toBe('unknown');
     } finally {
       await hub.close();
     }
@@ -258,81 +261,98 @@ describe('hub.cancelAck turn 代次守卫（真实运行 turn）', () => {
 });
 
 describe('WS 重连重放：旧 cancel 帧不撞运行中的新 turn', () => {
-  it('turn A 取消后开启 turn B；重放 turn A 旧帧（id+代次）→ 不打扰 turn B，turn B 正常 end_turn', { timeout: 20000 }, async () => {
-    const handle = await startServe({
-      port: 0,
-      home: tmpDir('h2-cancel-gen-home-'),
-      root: tmpDir('h2-cancel-gen-root-'),
-      provider: new MockProvider([
-        { textChunks: ['A-1', 'A-2', 'A-3'], chunkDelayMs: 300 },
-        { textChunks: ['B-1', 'B-2', 'B-3'], chunkDelayMs: 300 },
-      ]),
-    });
-    handles.push(handle);
-    const res = await fetch(`http://127.0.0.1:${handle.port}/api/sessions`, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ cwd: tmpDir('h2-cancel-gen-cwd-') }),
-    });
-    const id = ((await res.json()) as { id: string }).id;
+  it(
+    'turn A 取消后开启 turn B；重放 turn A 旧帧（id+代次）→ 不打扰 turn B，turn B 正常 end_turn',
+    { timeout: 20000 },
+    async () => {
+      const handle = await startServe({
+        port: 0,
+        home: tmpDir('h2-cancel-gen-home-'),
+        root: tmpDir('h2-cancel-gen-root-'),
+        provider: new MockProvider([
+          { textChunks: ['A-1', 'A-2', 'A-3'], chunkDelayMs: 300 },
+          { textChunks: ['B-1', 'B-2', 'B-3'], chunkDelayMs: 300 },
+        ]),
+      });
+      handles.push(handle);
+      const res = await fetch(`http://127.0.0.1:${handle.port}/api/sessions`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ cwd: tmpDir('h2-cancel-gen-cwd-') }),
+      });
+      const id = ((await res.json()) as { id: string }).id;
 
-    const client = new WsClient(`ws://127.0.0.1:${handle.port}/ws`);
-    await client.open;
-    client.send({ op: 'subscribe', sessionId: id });
+      const client = new WsClient(`ws://127.0.0.1:${handle.port}/ws`);
+      await client.open;
+      client.send({ op: 'subscribe', sessionId: id });
 
-    // —— turn A：启动 → 学代次 → 正确代次取消 ——
-    // 先恢复订阅（v2）→ 后续增量走带水位 text-delta 帧，且 resume-snapshot 供读运行 turn 代次
-    client.send({ op: 'resume-subscription', sessionId: id, lastSeq: 0, epoch: 1 });
-    await client.waitFor((f) => f.type === 'resume-snapshot', 'resume-snapshot init');
-    client.send({ op: 'user-message', sessionId: id, text: '第一轮' });
-    const evA = await client.waitFor((f) => f.type === 'event' && f.event.type === 'user/message', 'user/message A');
-    if (evA.type !== 'event') throw new Error('unreachable: evA');
-    const turnIdA = (evA.event as { payload?: { turnId?: string } }).payload?.turnId as string;
-    expect(typeof turnIdA).toBe('string');
-    // 学到 turn A 的代次（等首个 delta 绑定位后 resume-snapshot activeAttempt.generation）
-    await client.waitFor((f) => f.type === 'text-delta', 'text-delta A');
-    client.send({ op: 'resume-subscription', sessionId: id, lastSeq: 0, epoch: 1 });
-    const snap = await client.waitFor((f) => f.type === 'resume-snapshot', 'resume-snapshot A', client.frames.length);
-    const snapshot = snap.type === 'resume-snapshot' ? (snap.snapshot as ResumeSnapshot) : undefined;
-    const genA = snapshot?.activeAttempt?.generation;
-    expect(typeof genA).toBe('number');
-    client.send({
-      op: 'cancel',
-      requestId: 'cnl-a',
-      target: { kind: 'turn', id: turnIdA },
-      expectedId: turnIdA,
-      expectedTurnGeneration: genA,
-    });
-    const ackA = await client.waitFor((f) => f.type === 'cancel-ack' && f.requestId === 'cnl-a', 'cancel-ack A');
-    expect(ackA.type === 'cancel-ack' && ackA.state).toBe('stopping');
-    await client.waitFor((f) => f.type === 'turn-end' && f.stopReason === 'cancelled', 'turn A cancelled');
+      // —— turn A：启动 → 学代次 → 正确代次取消 ——
+      // 先恢复订阅（v2）→ 后续增量走带水位 text-delta 帧，且 resume-snapshot 供读运行 turn 代次
+      client.send({ op: 'resume-subscription', sessionId: id, lastSeq: 0, epoch: 1 });
+      await client.waitFor((f) => f.type === 'resume-snapshot', 'resume-snapshot init');
+      client.send({ op: 'user-message', sessionId: id, text: '第一轮' });
+      const evA = await client.waitFor((f) => f.type === 'event' && f.event.type === 'user/message', 'user/message A');
+      if (evA.type !== 'event') throw new Error('unreachable: evA');
+      const turnIdA = (evA.event as { payload?: { turnId?: string } }).payload?.turnId as string;
+      expect(typeof turnIdA).toBe('string');
+      // 学到 turn A 的代次（等首个 delta 绑定位后 resume-snapshot activeAttempt.generation）
+      await client.waitFor((f) => f.type === 'text-delta', 'text-delta A');
+      client.send({ op: 'resume-subscription', sessionId: id, lastSeq: 0, epoch: 1 });
+      const snap = await client.waitFor((f) => f.type === 'resume-snapshot', 'resume-snapshot A', client.frames.length);
+      const snapshot = snap.type === 'resume-snapshot' ? (snap.snapshot as ResumeSnapshot) : undefined;
+      const genA = snapshot?.activeAttempt?.generation;
+      expect(typeof genA).toBe('number');
+      client.send({
+        op: 'cancel',
+        requestId: 'cnl-a',
+        target: { kind: 'turn', id: turnIdA },
+        expectedId: turnIdA,
+        expectedTurnGeneration: genA,
+      });
+      const ackA = await client.waitFor((f) => f.type === 'cancel-ack' && f.requestId === 'cnl-a', 'cancel-ack A');
+      expect(ackA.type === 'cancel-ack' && ackA.state).toBe('stopping');
+      await client.waitFor((f) => f.type === 'turn-end' && f.stopReason === 'cancelled', 'turn A cancelled');
 
-    // —— turn B：运行中，重放 turn A 旧帧 ——
-    client.send({ op: 'user-message', sessionId: id, text: '第二轮' });
-    const evB = await client.waitFor((f) => f.type === 'event' && f.event.type === 'user/message', 'user/message B', client.frames.length);
-    if (evB.type !== 'event') throw new Error('unreachable: evB');
-    const turnIdB = (evB.event as { payload?: { turnId?: string } }).payload?.turnId as string;
-    expect(turnIdB).not.toBe(turnIdA);
-    // 等 turn B 真正流式开始（display 绑定）后再重放旧帧；按 turnId 匹配避免帧时序竞态
-    await client.waitFor((f) => f.type === 'text-delta' && f.turnId === turnIdB, 'text-delta B', client.frames.length);
-    client.send({
-      op: 'cancel',
-      requestId: 'cnl-replay',
-      target: { kind: 'turn', id: turnIdA }, // 旧连接重放 turn A 的帧
-      expectedId: turnIdA,
-      expectedTurnGeneration: genA,
-    });
-    const replayAck = await client.waitFor((f) => f.type === 'cancel-ack' && f.requestId === 'cnl-replay', 'replay ack');
-    // 旧帧要么确认 turn A 已取消（cancelled），要么 unknown——绝不 stopping/撞 turn B
-    expect(replayAck.type === 'cancel-ack' && (replayAck.state === 'cancelled' || replayAck.state === 'unknown')).toBe(true);
-    // 新 turn B 不被中止：正常 end_turn 完成（turn A 已 cancelled，唯一 end_turn 即 turn B）
-    const endB = await client.waitFor((f) => f.type === 'turn-end' && f.stopReason === 'end_turn', 'turn B end');
-    expect(endB.type === 'turn-end' && endB.stopReason).toBe('end_turn');
-    // 全程只有 turn A 被取消（turn B 无 cancelled）
-    const cancelledEnds = client.frames.filter((f) => f.type === 'turn-end' && f.stopReason === 'cancelled').length;
-    expect(cancelledEnds).toBe(1);
-    client.close();
-  });
+      // —— turn B：运行中，重放 turn A 旧帧 ——
+      client.send({ op: 'user-message', sessionId: id, text: '第二轮' });
+      const evB = await client.waitFor(
+        (f) => f.type === 'event' && f.event.type === 'user/message',
+        'user/message B',
+        client.frames.length,
+      );
+      if (evB.type !== 'event') throw new Error('unreachable: evB');
+      const turnIdB = (evB.event as { payload?: { turnId?: string } }).payload?.turnId as string;
+      expect(turnIdB).not.toBe(turnIdA);
+      // 等 turn B 真正流式开始（display 绑定）后再重放旧帧；按 turnId 匹配避免帧时序竞态
+      await client.waitFor(
+        (f) => f.type === 'text-delta' && f.turnId === turnIdB,
+        'text-delta B',
+        client.frames.length,
+      );
+      client.send({
+        op: 'cancel',
+        requestId: 'cnl-replay',
+        target: { kind: 'turn', id: turnIdA }, // 旧连接重放 turn A 的帧
+        expectedId: turnIdA,
+        expectedTurnGeneration: genA,
+      });
+      const replayAck = await client.waitFor(
+        (f) => f.type === 'cancel-ack' && f.requestId === 'cnl-replay',
+        'replay ack',
+      );
+      // 旧帧要么确认 turn A 已取消（cancelled），要么 unknown——绝不 stopping/撞 turn B
+      expect(
+        replayAck.type === 'cancel-ack' && (replayAck.state === 'cancelled' || replayAck.state === 'unknown'),
+      ).toBe(true);
+      // 新 turn B 不被中止：正常 end_turn 完成（turn A 已 cancelled，唯一 end_turn 即 turn B）
+      const endB = await client.waitFor((f) => f.type === 'turn-end' && f.stopReason === 'end_turn', 'turn B end');
+      expect(endB.type === 'turn-end' && endB.stopReason).toBe('end_turn');
+      // 全程只有 turn A 被取消（turn B 无 cancelled）
+      const cancelledEnds = client.frames.filter((f) => f.type === 'turn-end' && f.stopReason === 'cancelled').length;
+      expect(cancelledEnds).toBe(1);
+      client.close();
+    },
+  );
 
   it('旧客户端 cancel 帧（无 expectedTurnGeneration）在 WS 层不崩，转发原样', { timeout: 20000 }, async () => {
     const handle = await startServe({
@@ -360,7 +380,10 @@ describe('WS 重连重放：旧 cancel 帧不撞运行中的新 turn', () => {
     await client.waitFor((f) => f.type === 'delta' && f.kind === 'text', 'delta legacy');
     // 旧形状：只有 requestId + target + expectedId，无 expectedTurnGeneration
     client.send({ op: 'cancel', requestId: 'cnl-legacy', target: { kind: 'turn', id: turnId }, expectedId: turnId });
-    const ack = await client.waitFor((f) => f.type === 'cancel-ack' && f.requestId === 'cnl-legacy', 'legacy cancel-ack');
+    const ack = await client.waitFor(
+      (f) => f.type === 'cancel-ack' && f.requestId === 'cnl-legacy',
+      'legacy cancel-ack',
+    );
     expect(ack.type === 'cancel-ack' && ack.state).toBe('stopping');
     client.close();
   });

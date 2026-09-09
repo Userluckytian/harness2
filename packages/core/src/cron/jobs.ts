@@ -201,7 +201,11 @@ function randomId(): string {
 export function appendIncident(root: string, record: Record<string, unknown>): void {
   try {
     mkdirSync(root, { recursive: true });
-    appendFileSync(join(root, 'incidents.jsonl'), JSON.stringify({ ts: new Date().toISOString(), ...record }) + '\n', 'utf8');
+    appendFileSync(
+      join(root, 'incidents.jsonl'),
+      JSON.stringify({ ts: new Date().toISOString(), ...record }) + '\n',
+      'utf8',
+    );
   } catch {
     // incidents 只增不阻塞
   }

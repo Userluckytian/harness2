@@ -30,7 +30,9 @@ afterEach(() => {
   for (const d of dirs.splice(0)) rmSync(d, { recursive: true, force: true });
 });
 
-function req(over: Partial<SubmitRequest> & { clientMessageId: string; sessionId: string; rawText: string }): SubmitRequest {
+function req(
+  over: Partial<SubmitRequest> & { clientMessageId: string; sessionId: string; rawText: string },
+): SubmitRequest {
   return { intent: 'queue', ...over };
 }
 
@@ -63,7 +65,9 @@ describe('submitDelivery 幂等去重', () => {
 
     expect(a2.state).toBe('accepted');
     expect(a2.queueSeq).toBe(a1.queueSeq);
-    const accepted = RuntimeJournal.readEntries(dir).entries.filter((e) => e.kind === 'queue/accepted' && e.clientMessageId === 'cm1');
+    const accepted = RuntimeJournal.readEntries(dir).entries.filter(
+      (e) => e.kind === 'queue/accepted' && e.clientMessageId === 'cm1',
+    );
     expect(accepted).toHaveLength(1);
     journal.close();
   });
@@ -76,7 +80,9 @@ describe('submitDelivery 幂等去重', () => {
     const a2 = submitDelivery(s, req({ clientMessageId: 'cm1', sessionId: 's1', rawText: 'WORLD' }));
 
     expect(a2.state).toBe('rejected');
-    const accepted = RuntimeJournal.readEntries(dir).entries.filter((e) => e.kind === 'queue/accepted' && e.clientMessageId === 'cm1');
+    const accepted = RuntimeJournal.readEntries(dir).entries.filter(
+      (e) => e.kind === 'queue/accepted' && e.clientMessageId === 'cm1',
+    );
     expect(accepted).toHaveLength(1);
     journal.close();
   });
@@ -131,7 +137,9 @@ describe('queue edit / remove（revision+1）', () => {
     const r = removeQueueItem(s, 'cm1', 1);
     expect(r.ok).toBe(true);
     expect(s.queue.find((q) => q.id === 'cm1')).toBeUndefined();
-    const removed = RuntimeJournal.readEntries(dir).entries.filter((e) => e.kind === 'queue/removed' && e.clientMessageId === 'cm1');
+    const removed = RuntimeJournal.readEntries(dir).entries.filter(
+      (e) => e.kind === 'queue/removed' && e.clientMessageId === 'cm1',
+    );
     expect(removed).toHaveLength(1);
     journal.close();
   });
@@ -152,7 +160,11 @@ describe('queue 上限（QUEUE_MAX_DEFAULT=20）', () => {
     expect(over.state).toBe('rejected');
     expect(over.reason).toMatch(/draft/i);
     expect(s.queue).toHaveLength(QUEUE_MAX_DEFAULT);
-    expect(RuntimeJournal.readEntries(dir).entries.filter((e) => e.kind === 'queue/accepted' && e.clientMessageId === 'cm-over')).toHaveLength(0);
+    expect(
+      RuntimeJournal.readEntries(dir).entries.filter(
+        (e) => e.kind === 'queue/accepted' && e.clientMessageId === 'cm-over',
+      ),
+    ).toHaveLength(0);
     journal.close();
   });
 
@@ -188,7 +200,10 @@ describe('recoverQueue 恢复（默认 paused）', () => {
     submitDelivery(s, req({ clientMessageId: 'cm-good', sessionId: 's1', rawText: 'ok' }));
     journal.close();
     // 崩溃窗口：第二条 accepted 的 JSON 完整但缺换行（writeSync 半途中断）→ 未 durable
-    tornAppend(dir, '{"v":1,"seq":2,"ts":"2026-09-08T00:00:00.000Z","kind":"queue/accepted","clientMessageId":"cm-torn","sessionId":"s1","payload":{"intent":"queue"}}');
+    tornAppend(
+      dir,
+      '{"v":1,"seq":2,"ts":"2026-09-08T00:00:00.000Z","kind":"queue/accepted","clientMessageId":"cm-torn","sessionId":"s1","payload":{"intent":"queue"}}',
+    );
 
     const recovered = recoverQueue(dir, { sessionId: 's1' });
     expect(recovered.map((q) => q.id)).toEqual(['cm-good']);

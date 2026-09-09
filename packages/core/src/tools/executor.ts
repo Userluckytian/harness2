@@ -235,8 +235,10 @@ export class ToolExecutor {
             this.emitEnd(env, item, failed);
             return failed;
           }
-          const run = async (): Promise<ExecutedToolResult> =>
-            ({ ...(await this.execute(item, env)), callId: item.callId });
+          const run = async (): Promise<ExecutedToolResult> => ({
+            ...(await this.execute(item, env)),
+            callId: item.callId,
+          });
           if (key === undefined) return run();
           const prev = lockChains.get(key) ?? Promise.resolve();
           const next = prev.then(run);

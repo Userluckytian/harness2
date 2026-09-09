@@ -21,19 +21,8 @@
 // 进度帧是展示投影（onState 回调），不进模型上下文。queue/approval 第一套正文仍归
 // delivery/approval，本协调器不存第二套正文。
 import { randomUUID } from 'node:crypto';
-import {
-  canTaskTransition,
-  isTerminalTaskState,
-  TASK_STATES,
-} from '../interaction/types.js';
-import type {
-  CancelAck,
-  ClientMessageId,
-  SessionId,
-  TaskContract,
-  TaskId,
-  TaskState,
-} from '../interaction/types.js';
+import { canTaskTransition, isTerminalTaskState, TASK_STATES } from '../interaction/types.js';
+import type { CancelAck, ClientMessageId, SessionId, TaskContract, TaskId, TaskState } from '../interaction/types.js';
 
 /** 任务是否改动工作区/文件：write 走全局写锁（同一时刻至多一个），readonly 走 K=2 并行 */
 export type TaskWriteMode = 'readonly' | 'write';
@@ -328,7 +317,16 @@ export class TaskCoordinator {
 }
 
 /** 从 journal task/transition 重建 TaskContract 列表（重启后 status/resume 用；最后一条迁移 = 当前态） */
-export function reconstructTasks(transitions: Array<{ taskId: TaskId; parentTaskId?: TaskId; background?: boolean; from: TaskState; to: TaskState; ts?: string }>): TaskContract[] {
+export function reconstructTasks(
+  transitions: Array<{
+    taskId: TaskId;
+    parentTaskId?: TaskId;
+    background?: boolean;
+    from: TaskState;
+    to: TaskState;
+    ts?: string;
+  }>,
+): TaskContract[] {
   const byTask = new Map<TaskId, { parentTaskId?: TaskId; background?: boolean; state: TaskState; ts?: string }>();
   for (const t of transitions) {
     byTask.set(t.taskId, { parentTaskId: t.parentTaskId, background: t.background, state: t.to, ts: t.ts });

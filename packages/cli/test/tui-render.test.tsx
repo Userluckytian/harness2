@@ -8,12 +8,7 @@ import { ReasoningBlock } from '../src/tui/ReasoningBlock.js';
 describe('DiffCard（diff 行级红绿变更）', () => {
   it('edit 变更：删行带 -、增行带 +、未变行显灰色', () => {
     const out = renderToString(
-      <DiffCard
-        title="edit 变更"
-        before={'第一行\n旧内容\n第三行'}
-        after={'第一行\n新内容\n第三行'}
-        maxLines={20}
-      />,
+      <DiffCard title="edit 变更" before={'第一行\n旧内容\n第三行'} after={'第一行\n新内容\n第三行'} maxLines={20} />,
     );
     expect(out).toContain('edit 变更');
     expect(out).toContain('- 旧内容');
@@ -41,13 +36,13 @@ describe('ReasoningBlock（当前 turn 推理折叠块）', () => {
     const long = '推理内容 '.repeat(30);
     const out = renderToString(<ReasoningBlock text={long} expanded={false} />);
     expect(out).toContain('[reasoning · 按 r 展开]');
-    expect(out).not.toContain('推理内容 推理内容 推理内容 推理内容 推理内容 推理内容 推理内容 推理内容 推理内容 推理内容 推理内容 推理内容 推理内容 推理内容 推理内容'); // 完整长文本不出现在折叠行
+    expect(out).not.toContain(
+      '推理内容 推理内容 推理内容 推理内容 推理内容 推理内容 推理内容 推理内容 推理内容 推理内容 推理内容 推理内容 推理内容 推理内容 推理内容',
+    ); // 完整长文本不出现在折叠行
   });
 
   it('展开态：完整推理文本可见', () => {
-    const out = renderToString(
-      <ReasoningBlock text={'先想想\n再动手'} expanded />,
-    );
+    const out = renderToString(<ReasoningBlock text={'先想想\n再动手'} expanded />);
     expect(out).toContain('先想想');
     expect(out).toContain('再动手');
     expect(out).not.toContain('[reasoning · 按 r 展开]');

@@ -49,7 +49,9 @@ function getWithHost(url: string, host: string): Promise<{ status: number }> {
     httpRequest(url, { headers: { host, connection: 'close' } }, (res) => {
       res.resume();
       resolve({ status: res.statusCode ?? 0 });
-    }).on('error', reject).end(); // end() 不可省：不发完请求服务器不会应答
+    })
+      .on('error', reject)
+      .end(); // end() 不可省：不发完请求服务器不会应答
   });
 }
 

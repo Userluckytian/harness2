@@ -68,7 +68,11 @@ describe('@file/@dir 引用（legacy 发送链路集成验证）', () => {
       }),
       'utf8',
     );
-    writeFileSync(join(home, '.harness2', 'auth.json'), JSON.stringify({ channels: { stub: { apiKey: 'ref-test-key-secret' } } }), 'utf8');
+    writeFileSync(
+      join(home, '.harness2', 'auth.json'),
+      JSON.stringify({ channels: { stub: { apiKey: 'ref-test-key-secret' } } }),
+      'utf8',
+    );
 
     const proc = spawn('node', [cliEntry, 'chat', '--home', home, '--root', work], {
       stdio: ['pipe', 'pipe', 'pipe'],

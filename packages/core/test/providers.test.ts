@@ -97,7 +97,10 @@ describe('OpenAI-compatible：SSE 流式与 wire 请求', () => {
     });
     expect(body.messages[2]).toEqual({ role: 'tool', tool_call_id: 'call-1', content: 'hello' });
     expect(body.tools).toEqual([
-      { type: 'function', function: { name: 'read_file', description: '读文件', parameters: { type: 'object', properties: {} } } },
+      {
+        type: 'function',
+        function: { name: 'read_file', description: '读文件', parameters: { type: 'object', properties: {} } },
+      },
     ]);
   });
 
@@ -114,7 +117,9 @@ describe('OpenAI-compatible：SSE 流式与 wire 请求', () => {
     const provider = makeProvider(stub.url);
     const chunks = await collect(provider, { messages: [{ role: 'user', content: '写文件' }] });
 
-    const calls = chunks.filter((c) => c.type === 'tool-call').map((c) => (c as { call: { id: string; name: string; arguments: string } }).call);
+    const calls = chunks
+      .filter((c) => c.type === 'tool-call')
+      .map((c) => (c as { call: { id: string; name: string; arguments: string } }).call);
     expect(calls).toHaveLength(1);
     expect(calls[0]).toEqual({ id: 'call-a', name: 'write', arguments: '{"path":"a.txt","content":"hi"}' });
     expect(chunks.at(-1)).toEqual({ type: 'done', stopReason: 'tool_use' });
@@ -131,7 +136,9 @@ describe('OpenAI-compatible：SSE 流式与 wire 请求', () => {
     });
     const provider = makeProvider(stub.url);
     const chunks = await collect(provider, { messages: [{ role: 'user', content: 'x' }] });
-    const calls = chunks.filter((c) => c.type === 'tool-call').map((c) => (c as { call: { id: string; arguments: string } }).call);
+    const calls = chunks
+      .filter((c) => c.type === 'tool-call')
+      .map((c) => (c as { call: { id: string; arguments: string } }).call);
     expect(calls).toEqual([
       { id: 'call-a', name: 't1', arguments: 'not-json' },
       { id: 'call-b', name: 't2', arguments: '{"x":' },
@@ -180,7 +187,9 @@ describe('OpenAI-compatible：SSE 流式与 wire 请求', () => {
     const stub = await start();
     stub.enqueueAll([
       { sse: ['data: {"choices":[{"delta":{"content":"写到一半"},"finish_reason":"length"}]}', 'data: [DONE]'] },
-      { sse: ['data: {"choices":[{"delta":{"content":"违禁内容"},"finish_reason":"content_filter"}]}', 'data: [DONE]'] },
+      {
+        sse: ['data: {"choices":[{"delta":{"content":"违禁内容"},"finish_reason":"content_filter"}]}', 'data: [DONE]'],
+      },
     ]);
     const provider = makeProvider(stub.url);
     const first = await collect(provider, { messages: [{ role: 'user', content: 'x' }] });
@@ -276,9 +285,9 @@ describe('OpenAI-compatible：错误与异常路径', () => {
     });
     const provider = makeProvider(stub.url);
     const ac = new AbortController();
-    const iter = provider.streamChat({ messages: [{ role: 'user', content: 'x' }] }, { signal: ac.signal })[
-      Symbol.asyncIterator
-    ]();
+    const iter = provider
+      .streamChat({ messages: [{ role: 'user', content: 'x' }] }, { signal: ac.signal })
+      [Symbol.asyncIterator]();
     const first = await iter.next();
     expect((first.value as { type: string }).type).toBe('text-delta');
     ac.abort();
@@ -288,10 +297,7 @@ describe('OpenAI-compatible：错误与异常路径', () => {
   it('P1-1 回归：流中错误帧+[DONE] → 脱敏抛 ProviderError（不再吞成空成功回复）', async () => {
     const stub = await start();
     stub.enqueue({
-      sse: [
-        'data: {"error":{"message":"Insufficient Balance","type":"invalid_request_error"}}',
-        'data: [DONE]',
-      ],
+      sse: ['data: {"error":{"message":"Insufficient Balance","type":"invalid_request_error"}}', 'data: [DONE]'],
     });
     const provider = makeProvider(stub.url);
     await expect(collect(provider, { messages: [{ role: 'user', content: 'x' }] })).rejects.toMatchObject({
@@ -555,7 +561,9 @@ describe('Anthropic：错误与异常路径', () => {
   it('error 事件（overloaded_error）→ ProviderError 且脱敏', async () => {
     const stub = await start();
     stub.enqueue({
-      sse: ['data: {"type":"error","error":{"type":"overloaded_error","message":"Overloaded with token=secret-tok-1122"}}'],
+      sse: [
+        'data: {"type":"error","error":{"type":"overloaded_error","message":"Overloaded with token=secret-tok-1122"}}',
+      ],
     });
     const provider = makeAnthropic(stub.url);
     const err = await collect(provider, { messages: [{ role: 'user', content: 'x' }] }).then(
@@ -614,9 +622,9 @@ describe('Anthropic：错误与异常路径', () => {
     });
     const provider = makeAnthropic(stub.url);
     const ac = new AbortController();
-    const iter = provider.streamChat({ messages: [{ role: 'user', content: 'x' }] }, { signal: ac.signal })[
-      Symbol.asyncIterator
-    ]();
+    const iter = provider
+      .streamChat({ messages: [{ role: 'user', content: 'x' }] }, { signal: ac.signal })
+      [Symbol.asyncIterator]();
     const first = await iter.next();
     expect((first.value as { type: string }).type).toBe('text-delta');
     ac.abort();
@@ -727,12 +735,16 @@ describe('createProvider 工厂', () => {
     const viaEnv = createProvider(FACTORY_CONFIG, 'main', { auth: { channels: {} }, env });
     expect(viaEnv).toBeInstanceOf(OpenAICompatProvider); // env key 可用即构造成功
     // resolveApiKey 直测来源
-    expect(resolveApiKey('deepseek', FACTORY_CONFIG.providers['deepseek']!, auth, env)).toMatchObject({ kind: 'auth.json' });
+    expect(resolveApiKey('deepseek', FACTORY_CONFIG.providers['deepseek']!, auth, env)).toMatchObject({
+      kind: 'auth.json',
+    });
     expect(resolveApiKey('deepseek', FACTORY_CONFIG.providers['deepseek']!, { channels: {} }, env)).toMatchObject({
       kind: 'env',
       envKey: 'DEEPSEEK_API_KEY',
     });
-    expect(resolveApiKey('deepseek', FACTORY_CONFIG.providers['deepseek']!, { channels: {} }, {})).toMatchObject({ kind: 'missing' });
+    expect(resolveApiKey('deepseek', FACTORY_CONFIG.providers['deepseek']!, { channels: {} }, {})).toMatchObject({
+      kind: 'missing',
+    });
   });
 
   it('错误路径：role 缺失 / channel 不存在 / model 未声明 / key 缺失 → ConfigError 单行消息', () => {
@@ -786,7 +798,10 @@ describe('端到端：runTurn × 本地 stub server（openai 协议，含一轮�
       mcpServers: {},
       subagent: { maxDepth: 1, maxTurns: 25 },
     };
-    const provider = createProvider(config, 'main', { auth: { channels: { deepseek: { apiKey: 'test-key-e2e' } } }, env: {} });
+    const provider = createProvider(config, 'main', {
+      auth: { channels: { deepseek: { apiKey: 'test-key-e2e' } } },
+      env: {},
+    });
 
     const registry = new ToolRegistry();
     const writeTool: ToolDefinition = {
@@ -839,10 +854,7 @@ describe('端到端：runTurn × 本地 stub server（openai 协议，含一轮�
 });
 
 /** 按 step/start 切分，断言每次 stub 请求的消息列表与日志逐步重建一致 */
-function computeMessagesSnapshots(
-  session: ReturnType<typeof loadSession>,
-  stub: StubServer,
-): void {
+function computeMessagesSnapshots(session: ReturnType<typeof loadSession>, stub: StubServer): void {
   const { events } = session;
   const messages: ChatMessage[] = [];
   const expected: string[] = [];

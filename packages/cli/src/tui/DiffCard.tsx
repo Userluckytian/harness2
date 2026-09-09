@@ -38,12 +38,24 @@ export function DiffCard({ title, before, after, maxLines = DEFAULT_MAX_LINES }:
       <Text bold>{title}</Text>
       {visible.map((row, i) => {
         if (row.type === 'add') {
-          return <Text key={i} color="green">+ {row.text}</Text>;
+          return (
+            <Text key={i} color="green">
+              + {row.text}
+            </Text>
+          );
         }
         if (row.type === 'remove') {
-          return <Text key={i} color="red">- {row.text}</Text>;
+          return (
+            <Text key={i} color="red">
+              - {row.text}
+            </Text>
+          );
         }
-        return <Text key={i} color="gray">{row.text}</Text>;
+        return (
+          <Text key={i} color="gray">
+            {row.text}
+          </Text>
+        );
       })}
       {hasMore && <Text color="gray">… 还有 {total - maxLines} 行</Text>}
     </Box>

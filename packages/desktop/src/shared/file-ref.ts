@@ -87,9 +87,7 @@ export async function resolveFileRefs(
     finalText = blocks.join('\n') + '\n' + finalText;
   }
   if (notFound.length > 0) {
-    const suffix = notFound
-      .map((t) => FILE_REF_NOT_FOUND_SUFFIX.replace('@x', t))
-      .join('');
+    const suffix = notFound.map((t) => FILE_REF_NOT_FOUND_SUFFIX.replace('@x', t)).join('');
     finalText = finalText + suffix;
   }
   return { finalText, blocks, notFound };

@@ -52,7 +52,11 @@ function captureHooks(): { c: Captured; hooks: SessionHubHooks } {
     c,
     hooks: {
       onTurnEnd(id, result) {
-        c.turnEnds.push({ id, stopReason: result.stopReason, ...(result.error !== undefined ? { error: result.error } : {}) });
+        c.turnEnds.push({
+          id,
+          stopReason: result.stopReason,
+          ...(result.error !== undefined ? { error: result.error } : {}),
+        });
       },
       onDelta(id, delta) {
         c.deltas.push({ id, kind: delta.kind });
@@ -147,13 +151,19 @@ describe('serve 启动与 /api/config', () => {
     writeFileSync(
       join(cfgDir, 'config.json'),
       JSON.stringify({
-        providers: { ds: { protocol: 'openai', baseUrl: 'https://api.test/v1', envKey: 'DS_KEY', models: { 'm-1': {} } } },
+        providers: {
+          ds: { protocol: 'openai', baseUrl: 'https://api.test/v1', envKey: 'DS_KEY', models: { 'm-1': {} } },
+        },
         roles: { main: { channel: 'ds', model: 'm-1' } },
         approval: { mode: 'default', tools: { write: 'ask' } },
       }),
       'utf8',
     );
-    writeFileSync(join(cfgDir, 'auth.json'), JSON.stringify({ channels: { ds: { apiKey: 'sk-plain-secret-987654' } } }), 'utf8');
+    writeFileSync(
+      join(cfgDir, 'auth.json'),
+      JSON.stringify({ channels: { ds: { apiKey: 'sk-plain-secret-987654' } } }),
+      'utf8',
+    );
     const handle = await start({ home });
     const { status, json } = await api(handle, 'GET', '/api/config');
     expect(status).toBe(200);
@@ -237,7 +247,9 @@ describe('sessions API', () => {
 });
 
 describe('undo/redo 经 HTTP 接入 Ph4 内核', () => {
-  async function sessionWithTwoTurns(opts: StartOpts & { script: MockScript }): Promise<{ handle: ServeHandle; id: string; c: Captured }> {
+  async function sessionWithTwoTurns(
+    opts: StartOpts & { script: MockScript },
+  ): Promise<{ handle: ServeHandle; id: string; c: Captured }> {
     const { c, hooks } = captureHooks();
     const handle = await start({ ...opts, hooks });
     const root = tmpDir('h2-serve-cwd-');
@@ -250,10 +262,7 @@ describe('undo/redo 经 HTTP 接入 Ph4 内核', () => {
   }
 
   it('dryRun 只预览不落盘；undo 追加 rewind/marker；redo 复活', async () => {
-    const script: MockScript = [
-      { textChunks: ['一轮回复'] },
-      { textChunks: ['二轮回复'] },
-    ];
+    const script: MockScript = [{ textChunks: ['一轮回复'] }, { textChunks: ['二轮回复'] }];
     const { handle, id } = await sessionWithTwoTurns({ script });
 
     const before = await api(handle, 'GET', `/api/sessions/${id}/events`);
@@ -277,8 +286,9 @@ describe('undo/redo 经 HTTP 接入 Ph4 内核', () => {
     expect(marker.type).toBe('rewind/marker');
     expect(marker.payload.reason).toBe('undo');
     // 投影收缩：影子事件 active=false
-    expect(afterUndo.json.events.filter((e: { active: boolean }) => e.active).length)
-      .toBeLessThan(afterUndo.json.events.length);
+    expect(afterUndo.json.events.filter((e: { active: boolean }) => e.active).length).toBeLessThan(
+      afterUndo.json.events.length,
+    );
 
     const redo = await api(handle, 'POST', `/api/sessions/${id}/redo`, {});
     expect(redo.status).toBe(200);
@@ -286,15 +296,14 @@ describe('undo/redo 经 HTTP 接入 Ph4 内核', () => {
     expect(afterRedo.json.lastSeq).toBe(lastSeqBefore + 2);
     expect(afterRedo.json.events.at(-1).payload.reason).toBe('redo');
     // redo 复活后：全部非 marker 事件回到活动投影
-    expect(afterRedo.json.events.filter((e: { active: boolean; type: string }) => e.active && e.type !== 'rewind/marker').length)
-      .toBe(before.json.events.length);
+    expect(
+      afterRedo.json.events.filter((e: { active: boolean; type: string }) => e.active && e.type !== 'rewind/marker')
+        .length,
+    ).toBe(before.json.events.length);
   });
 
   it('undo n=2 连续撤两轮；撤空后再 undo → 400（UndoRedoError 单行）', async () => {
-    const script: MockScript = [
-      { textChunks: ['一轮回复'] },
-      { textChunks: ['二轮回复'] },
-    ];
+    const script: MockScript = [{ textChunks: ['一轮回复'] }, { textChunks: ['二轮回复'] }];
     const { handle, id } = await sessionWithTwoTurns({ script });
     const undo2 = await api(handle, 'POST', `/api/sessions/${id}/undo`, { n: 2 });
     expect(undo2.status).toBe(200);

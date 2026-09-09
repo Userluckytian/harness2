@@ -128,7 +128,11 @@ export function reviewChangeSet(store: SnapshotStore): ChangeSet {
   return deepFreeze(set);
 }
 
-function buildCompareReport(kind: UndoRedoKind, scopeSeq: number, entries: readonly SnapshotEntry[]): UndoRedoCompareReport {
+function buildCompareReport(
+  kind: UndoRedoKind,
+  scopeSeq: number,
+  entries: readonly SnapshotEntry[],
+): UndoRedoCompareReport {
   const items: UndoRedoCompareItem[] = groupByFile(entries).map((g) => {
     const first = g.entries[0]!;
     const last = g.entries[g.entries.length - 1]!;
@@ -158,7 +162,11 @@ function buildCompareReport(kind: UndoRedoKind, scopeSeq: number, entries: reado
  * 外部修改不静默覆盖——本报告供调用方决定放行；本函数不执行任何恢复。
  */
 export function compareBeforeUndo(store: SnapshotStore, toSeq: number): UndoRedoCompareReport {
-  return buildCompareReport('undo', toSeq, store.entries().filter((e) => e.seq > toSeq));
+  return buildCompareReport(
+    'undo',
+    toSeq,
+    store.entries().filter((e) => e.seq > toSeq),
+  );
 }
 
 /**
@@ -166,7 +174,11 @@ export function compareBeforeUndo(store: SnapshotStore, toSeq: number): UndoRedo
  * 同样只出报告不动盘。
  */
 export function compareBeforeRedo(store: SnapshotStore, fromSeq: number): UndoRedoCompareReport {
-  return buildCompareReport('redo', fromSeq, store.entries().filter((e) => e.seq > fromSeq));
+  return buildCompareReport(
+    'redo',
+    fromSeq,
+    store.entries().filter((e) => e.seq > fromSeq),
+  );
 }
 
 /**

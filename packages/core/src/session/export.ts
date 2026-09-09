@@ -263,9 +263,7 @@ function replayFromJsonl(text: string, source: string): ReplaySessionReport {
     if (event.type !== 'rewind/marker') continue;
     const n = event.payload.rewindToSeq;
     if (!Number.isInteger(n) || n < 1 || n > maxSeq) {
-      warnings.push(
-        `rewind/marker at seq ${event.seq}: rewindToSeq ${n} out of range (1..${maxSeq})`,
-      );
+      warnings.push(`rewind/marker at seq ${event.seq}: rewindToSeq ${n} out of range (1..${maxSeq})`);
     }
   }
   // id 优先取 header；无头时按包内路径推导（subagents/<id>/… → <id>），再退 'unknown'
@@ -314,11 +312,7 @@ export function importReplay(zipPath: string, opts: ImportReplayOptions = {}): R
     );
   }
   const logEntries = Object.keys(files)
-    .filter(
-      (k) =>
-        k === SESSION_LOG_FILE ||
-        (k.startsWith('subagents/') && k.endsWith(`/${SESSION_LOG_FILE}`)),
-    )
+    .filter((k) => k === SESSION_LOG_FILE || (k.startsWith('subagents/') && k.endsWith(`/${SESSION_LOG_FILE}`)))
     .sort((a, b) => (a === SESSION_LOG_FILE ? -1 : b === SESSION_LOG_FILE ? 1 : a.localeCompare(b)));
   if (logEntries.length === 0) {
     throw new Error(`zip 中没有会话日志（${SESSION_LOG_FILE}）——空包或非 harness2 导出: ${zipPath}`);

@@ -158,7 +158,11 @@ export class PluginBus {
         this.records.delete(source.name);
         this.unwind(record);
         this.removeSubscriptions(source.name);
-        skip(e instanceof PluginError ? e.message : `${(e as Error)?.name ?? 'Error'}: ${(e as Error)?.message ?? String(e)}`);
+        skip(
+          e instanceof PluginError
+            ? e.message
+            : `${(e as Error)?.name ?? 'Error'}: ${(e as Error)?.message ?? String(e)}`,
+        );
       }
     }
     return report;
@@ -261,8 +265,7 @@ export class PluginBus {
           bus.logSink(`[plugin:${pluginName}] 插件已卸载，忽略延迟的 registerTool("${def.name}") 调用（逃逸防护）`);
           return () => {};
         }
-        const allowed =
-          perms.tools === true || (Array.isArray(perms.tools) && perms.tools.includes(def.name));
+        const allowed = perms.tools === true || (Array.isArray(perms.tools) && perms.tools.includes(def.name));
         if (!allowed) {
           throw new PluginError(
             `无权限注册工具 "${def.name}"（manifest.permissions.tools 未授权${Array.isArray(perms.tools) ? `: [${perms.tools.join(', ')}]` : ''}）`,
@@ -274,7 +277,9 @@ export class PluginBus {
         } catch (e) {
           // P2-5①：单工具重名/非法名 → 降级为跳过该工具 + 告警，不弃整插件（对齐计划
           // 「冲突告警不中断」；本地工具先注册 = 本地优先语义保持）
-          bus.logSink(`[plugin:${pluginName}] 工具 "${def.name}" 跳过（与既有工具冲突或名称非法）: ${(e as Error).message}`);
+          bus.logSink(
+            `[plugin:${pluginName}] 工具 "${def.name}" 跳过（与既有工具冲突或名称非法）: ${(e as Error).message}`,
+          );
           return () => {};
         }
         record.disposers.push(disposer);
@@ -296,8 +301,7 @@ export class PluginBus {
         if (event !== '*' && !isSessionEventType(event)) {
           throw new PluginError(`未知事件类型 "${event}"（必须是已知会话事件类型或 '*'）`);
         }
-        const allowed =
-          Array.isArray(perms.events) && (perms.events.includes(event) || perms.events.includes('*'));
+        const allowed = Array.isArray(perms.events) && (perms.events.includes(event) || perms.events.includes('*'));
         if (!allowed) {
           throw new PluginError(
             `无权限订阅事件 "${event}"（manifest.permissions.events 未授权${Array.isArray(perms.events) ? `: [${perms.events.join(', ')}]` : ''}）`,

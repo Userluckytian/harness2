@@ -290,20 +290,32 @@ describe('协议 fixtures 自洽校验（S0 fixtures 供 S1-S7 复用）', () =>
     expect(isValidLastSeq(validFixtures.resumeSnapshot.replay.fromSeq)).toBe(true);
     expect(isApprovalDecision(validFixtures.approvalResponse.decision)).toBe(true);
     expect(isApprovalExpired(validFixtures.approvalRequest.expiresAt)).toBe(false);
-    expect(scopeConfinesToSession(validFixtures.approvalRequest.scope, validFixtures.approvalRequest.sessionId)).toBe(true);
+    expect(scopeConfinesToSession(validFixtures.approvalRequest.scope, validFixtures.approvalRequest.sessionId)).toBe(
+      true,
+    );
     expect(isCancelTargetKind(validFixtures.cancelTurn.target.kind)).toBe(true);
     expect(isCancelAckState(validFixtures.cancelAckStopping.state)).toBe(true);
     expect(isCancelAckState(validFixtures.cancelAckCancelled.state)).toBe(true);
     // FixB 代次：新帧带合法代次 → match；旧客户端帧无代次 → missing（回退 target.id）
     expect(isTurnGeneration(validFixtures.cancelTurn.expectedTurnGeneration!)).toBe(true);
-    expect(matchTurnGeneration(validFixtures.cancelTurn.expectedTurnGeneration, validFixtures.cancelTurn.expectedTurnGeneration)).toBe('match');
+    expect(
+      matchTurnGeneration(
+        validFixtures.cancelTurn.expectedTurnGeneration,
+        validFixtures.cancelTurn.expectedTurnGeneration,
+      ),
+    ).toBe('match');
     expect(matchTurnGeneration(undefined, 3)).toBe('missing'); // 旧客户端帧无代次字段
     expect(isTerminalTaskState('completed')).toBe(true);
     expect(canTaskTransition(validFixtures.taskContract.state, 'completed')).toBe(true);
     expect(isValidSteerRequest(validFixtures.steerRequest)).toBe(true);
     expect(validFixtures.steerStaleResult.state).toBe('stale');
     expect(validFixtures.steerStaleResult.draftKept).toBe(true);
-    expect(assertSequentialChunk({ chunkOffset: validFixtures.textDelta.chunkOffset, text: validFixtures.textDelta.text }, 6)).toBe(true);
+    expect(
+      assertSequentialChunk(
+        { chunkOffset: validFixtures.textDelta.chunkOffset, text: validFixtures.textDelta.text },
+        6,
+      ),
+    ).toBe(true);
     expect(isValidChunkOffset(validFixtures.reasoningDelta.chunkOffset)).toBe(true);
     expect(validFixtures.attemptFinal.state).toBe('completed');
   });
@@ -314,8 +326,12 @@ describe('协议 fixtures 自洽校验（S0 fixtures 供 S1-S7 复用）', () =>
     expect(isValidLastSeq(invalidFixtures.badLastSeq.lastSeq)).toBe(false);
     expect(isValidEpoch(invalidFixtures.badEpoch.epoch)).toBe(false);
     expect(isApprovalExpired(invalidFixtures.expiredApproval.expiresAt)).toBe(true);
-    expect(scopeConfinesToSession(invalidFixtures.crossSessionScope.scope, invalidFixtures.crossSessionScope.sessionId)).toBe(false);
-    expect(canTaskTransition(invalidFixtures.terminalRegression.from, invalidFixtures.terminalRegression.to)).toBe(false);
+    expect(
+      scopeConfinesToSession(invalidFixtures.crossSessionScope.scope, invalidFixtures.crossSessionScope.sessionId),
+    ).toBe(false);
+    expect(canTaskTransition(invalidFixtures.terminalRegression.from, invalidFixtures.terminalRegression.to)).toBe(
+      false,
+    );
     expect(isValidSteerRequest(invalidFixtures.unboundSteer)).toBe(false);
     // FixB 非法代次帧被拒（fail-closed）
     expect(isTurnGeneration(invalidFixtures.badTurnGeneration.expectedTurnGeneration)).toBe(false);

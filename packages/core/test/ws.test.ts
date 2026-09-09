@@ -81,7 +81,9 @@ class WsClient {
   }
 }
 
-async function start(opts: { script?: MockScript; approvalTimeoutMs?: number; decide?: (input: ApprovalInput) => ApprovalDecision } = {}): Promise<ServeHandle> {
+async function start(
+  opts: { script?: MockScript; approvalTimeoutMs?: number; decide?: (input: ApprovalInput) => ApprovalDecision } = {},
+): Promise<ServeHandle> {
   const handle = await startServe({
     port: 0,
     home: tmpDir('h2-ws-home-'),
@@ -106,9 +108,7 @@ async function createSession(handle: ServeHandle, cwd?: string): Promise<string>
 describe('WS 订阅与流式全链', () => {
   it('订阅 → user-message → delta(text/reasoning) + event 镜像 + turn-end；delta 与落盘事件一致', async () => {
     const handle = await start({
-      script: [
-        { reasoningChunks: ['思考 A', '思考 B'], textChunks: ['你', '好'] },
-      ],
+      script: [{ reasoningChunks: ['思考 A', '思考 B'], textChunks: ['你', '好'] }],
     });
     const id = await createSession(handle);
     const client = new WsClient(`ws://127.0.0.1:${handle.port}/ws`);
@@ -246,9 +246,7 @@ describe('WS abort 与审批往返', () => {
 
     const end = await client.waitFor((f) => f.type === 'turn-end', 'turn-end');
     expect(end.type === 'turn-end' && end.stopReason).toBe('cancelled');
-    const attempt = client
-      .ofSession(id)
-      .find((f) => f.type === 'event' && f.event.type === 'assistant/attempt');
+    const attempt = client.ofSession(id).find((f) => f.type === 'event' && f.event.type === 'assistant/attempt');
     expect(attempt).toBeTruthy(); // append-only：取消以 attempt 记录
     client.close();
   });
@@ -274,7 +272,11 @@ describe('WS abort 与审批往返', () => {
 
     const req = await client.waitFor((f) => f.type === 'approval-request', 'approval-request');
     expect(req.type === 'approval-request' && req.tool).toBe('glob');
-    client.send({ op: 'approval-response', requestId: req.type === 'approval-request' ? req.requestId : '', decision: 'allow' });
+    client.send({
+      op: 'approval-response',
+      requestId: req.type === 'approval-request' ? req.requestId : '',
+      decision: 'allow',
+    });
 
     const result = await client.waitFor(
       (f) => f.type === 'event' && f.event.type === 'tool/result',
@@ -386,7 +388,11 @@ describe('WS 协议边界', () => {
 
     // 合法格式但不存在的 id → not_found（非法格式走"无效的会话 id"，见下方）
     client.send({ op: 'user-message', sessionId: '20990101-000000-000000', text: 'hi' });
-    const err2 = await client.waitFor((f) => f.type === 'error' && f.error.includes('session not found'), 'error 帧 2', 1);
+    const err2 = await client.waitFor(
+      (f) => f.type === 'error' && f.error.includes('session not found'),
+      'error 帧 2',
+      1,
+    );
     expect(err2.type === 'error' && err2.error).toContain('session not found');
 
     client.send({ op: 'approval-response', requestId: 'gone', decision: 'allow' });

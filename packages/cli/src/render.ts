@@ -52,9 +52,7 @@ export class StreamRenderer {
   /** 推理过程增量（仅 /reasoning on 时由 REPL 转发）：灰色斜体；无色模式用 [reasoning] 标记 */
   reasoning(text: string): void {
     if (text.length === 0) return;
-    const styled = this.color
-      ? `\x1b[90m\x1b[3m${text}\x1b[0m`
-      : `[reasoning] ${oneLine(text)}`;
+    const styled = this.color ? `\x1b[90m\x1b[3m${text}\x1b[0m` : `[reasoning] ${oneLine(text)}`;
     this.out.write(styled);
     this.wroteText = true;
   }
@@ -67,7 +65,9 @@ export class StreamRenderer {
 
   /** 工具结果单行：< ok/FAILED [callId] */
   toolResult(callId: string, ok: boolean, error?: string): void {
-    this.out.write(`< ${ok ? 'ok' : 'FAILED'} [${callId}]${error !== undefined && error.length > 0 ? ` ${oneLine(error)}` : ''}\n`);
+    this.out.write(
+      `< ${ok ? 'ok' : 'FAILED'} [${callId}]${error !== undefined && error.length > 0 ? ` ${oneLine(error)}` : ''}\n`,
+    );
     this.wroteText = false;
   }
 

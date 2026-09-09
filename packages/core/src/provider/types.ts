@@ -64,13 +64,7 @@ export interface ProviderUsage {
  *   Anthropic pause_turn 映射为 paused（续跑未实现，登记 OPEN.md）。
  */
 export type ProviderStopReason =
-  | 'end_turn'
-  | 'tool_use'
-  | 'length'
-  | 'content_filter'
-  | 'max_tokens'
-  | 'refusal'
-  | 'paused';
+  'end_turn' | 'tool_use' | 'length' | 'content_filter' | 'max_tokens' | 'refusal' | 'paused';
 
 /**
  * 流式响应块：文本增量 / 工具调用 / 用量 / 结束标记。

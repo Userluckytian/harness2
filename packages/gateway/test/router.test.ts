@@ -18,10 +18,14 @@ describe('SessionRouter', () => {
   it('resolve 无映射时建新会话并持久化；再次 resolve 复用同一会话', async () => {
     const home = tmpDir();
     let created = 0;
-    const router = new SessionRouter(home, async () => {
-      created += 1;
-      return { id: `s${created}` };
-    }, '/repo');
+    const router = new SessionRouter(
+      home,
+      async () => {
+        created += 1;
+        return { id: `s${created}` };
+      },
+      '/repo',
+    );
 
     const first = await router.resolve('qq', 'chat-1');
     expect(first).toBe('s1');
@@ -30,11 +34,17 @@ describe('SessionRouter', () => {
     expect(created).toBe(1);
 
     // 持久化：新路由器实例读同一文件
-    const reloaded = new SessionRouter(home, async () => {
-      throw new Error('不应再建会话');
-    }, '/repo');
+    const reloaded = new SessionRouter(
+      home,
+      async () => {
+        throw new Error('不应再建会话');
+      },
+      '/repo',
+    );
     expect(await reloaded.resolve('qq', 'chat-1')).toBe('s1');
-    expect(JSON.parse(readFileSync(join(home, '.harness2', 'gateway', 'routes.json'), 'utf8')).map['qq:chat-1'].sessionId).toBe('s1');
+    expect(
+      JSON.parse(readFileSync(join(home, '.harness2', 'gateway', 'routes.json'), 'utf8')).map['qq:chat-1'].sessionId,
+    ).toBe('s1');
   });
 
   it('不同平台/chatId 路由独立', async () => {
@@ -52,7 +62,12 @@ describe('SessionRouter', () => {
     mkdirSync(join(home, '.harness2', 'gateway'), { recursive: true });
     writeFileSync(join(home, '.harness2', 'gateway', 'routes.json'), '{broken');
     const errors: string[] = [];
-    const router = new SessionRouter(home, async () => ({ id: 'fresh' }), '/repo', (m) => errors.push(m));
+    const router = new SessionRouter(
+      home,
+      async () => ({ id: 'fresh' }),
+      '/repo',
+      (m) => errors.push(m),
+    );
     expect(await router.resolve('qq', 'c1')).toBe('fresh');
     expect(errors[0]).toMatch(/损坏/);
   });

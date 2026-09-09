@@ -35,12 +35,7 @@ function readRaw(dir: string): string {
 }
 
 /** 构造一条手工 JSONL 行（用于模拟崩溃时的半行/损坏输入） */
-function rawLine(input: {
-  seq: number;
-  kind: string;
-  clientMessageId?: string;
-  sessionId?: string;
-}): string {
+function rawLine(input: { seq: number; kind: string; clientMessageId?: string; sessionId?: string }): string {
   return JSON.stringify({
     v: 1,
     seq: input.seq,
@@ -56,7 +51,13 @@ describe('单写者守卫与追加', () => {
   it('create+append：seq 单调、JSONL 行格式（v/kind/稳定id/ISO ts）、末尾换行、行行可解析', () => {
     const dir = tmpDir();
     const w = RuntimeJournal.create(dir, { fsync: false });
-    const e1 = w.append({ kind: 'queue/accepted', clientMessageId: 'cm1', sessionId: 's1', intent: 'queue', queueSeq: 0 });
+    const e1 = w.append({
+      kind: 'queue/accepted',
+      clientMessageId: 'cm1',
+      sessionId: 's1',
+      intent: 'queue',
+      queueSeq: 0,
+    });
     const e2 = w.append({ kind: 'call/started', callId: 'c1', taskId: 't1', clientMessageId: 'cm1', tool: 'bash' });
     w.append({ kind: 'call/outcome', callId: 'c1', taskId: 't1', ok: true });
     w.close();
@@ -192,7 +193,11 @@ describe('readWatermark 恢复水位', () => {
     w.append({ kind: 'queue/accepted', clientMessageId: 'a', sessionId: 's1', intent: 'queue' });
     w.close();
     appendFileSync(join(dir, RUNTIME_JOURNAL_FILE), 'THIS_IS_NOT_JSON\n', 'utf8');
-    appendFileSync(join(dir, RUNTIME_JOURNAL_FILE), rawLine({ seq: 3, kind: 'queue/accepted', clientMessageId: 'c', sessionId: 's1' }) + '\n', 'utf8');
+    appendFileSync(
+      join(dir, RUNTIME_JOURNAL_FILE),
+      rawLine({ seq: 3, kind: 'queue/accepted', clientMessageId: 'c', sessionId: 's1' }) + '\n',
+      'utf8',
+    );
 
     const wm = readWatermark(dir);
     expect(wm.reason).toBe('corrupt-line');
@@ -259,7 +264,11 @@ describe('judgeSubmission 对账', () => {
     w.append({ kind: 'queue/accepted', clientMessageId: 'other', sessionId: 's1', intent: 'queue' });
     w.close();
     // 崩溃模拟：accepted 的 JSON 完整但缺末尾换行（writeSync 半途中断）
-    appendFileSync(join(dir, RUNTIME_JOURNAL_FILE), rawLine({ seq: 2, kind: 'queue/accepted', clientMessageId: 'cm-torn', sessionId: 's1' }), 'utf8');
+    appendFileSync(
+      join(dir, RUNTIME_JOURNAL_FILE),
+      rawLine({ seq: 2, kind: 'queue/accepted', clientMessageId: 'cm-torn', sessionId: 's1' }),
+      'utf8',
+    );
 
     const j = judgeSubmission(dir, 'cm-torn');
     expect(j.status).toBe('not_started');
@@ -271,7 +280,11 @@ describe('judgeSubmission 对账', () => {
     const w = RuntimeJournal.create(dir, { fsync: false });
     w.append({ kind: 'queue/accepted', clientMessageId: 'cm1', sessionId: 's1', intent: 'queue' });
     w.close();
-    appendFileSync(join(dir, RUNTIME_JOURNAL_FILE), '{"v":1,"seq":2,"ts":"2026-09-08T00:00:00.000Z","kind":"call/', 'utf8');
+    appendFileSync(
+      join(dir, RUNTIME_JOURNAL_FILE),
+      '{"v":1,"seq":2,"ts":"2026-09-08T00:00:00.000Z","kind":"call/',
+      'utf8',
+    );
 
     const j = judgeSubmission(dir, 'cm1');
     expect(j.status).toBe('started');
@@ -302,12 +315,12 @@ describe('任务/调用原语与查询', () => {
   it('task/transition 非法迁移在写入口即拒（复用 canTaskTransition）', () => {
     const dir = tmpDir();
     const w = RuntimeJournal.create(dir, { fsync: false });
-    expect(() =>
-      w.append({ kind: 'task/transition', taskId: 't1', from: 'running', to: 'running' }),
-    ).toThrow(InvalidJournalAppendError);
-    expect(() =>
-      w.append({ kind: 'task/transition', taskId: 't1', from: 'completed', to: 'registered' }),
-    ).toThrow(InvalidJournalAppendError);
+    expect(() => w.append({ kind: 'task/transition', taskId: 't1', from: 'running', to: 'running' })).toThrow(
+      InvalidJournalAppendError,
+    );
+    expect(() => w.append({ kind: 'task/transition', taskId: 't1', from: 'completed', to: 'registered' })).toThrow(
+      InvalidJournalAppendError,
+    );
     w.close();
   });
 

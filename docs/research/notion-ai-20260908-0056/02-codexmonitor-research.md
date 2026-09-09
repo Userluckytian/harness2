@@ -21,20 +21,20 @@ C/`LICENSE:1-21` 为 MIT，Copyright (c) 2026 Thomas Ricouard。复制软件的�
 
 ## 3. 原始比较与替换矩阵（仅供参考）
 
-| 能力 | 上游源码事实 | 我们的差距 | 决断 |
-|---|---|---|---|
-| IME/Enter | C/src/utils/keys.ts:16-32 `isComposingEvent`；composer/hooks/useComposerKeyDown.ts:33-174 先IME后候选再提交 | H/App.tsx:483-494 未检查 composition | 复用小型判断函数与优先级规则，P0 |
-| 多行编辑 | useComposerInputLayout.ts:45-59 自动高度；Composer.tsx:446-479 光标恢复/粘贴 | 基础textarea，缺完整编辑反馈 | 仿实现自动高度/展开；围栏与列表续行可关闭 |
-| 草稿 | app/hooks/useComposerController.ts:72-139 按thread保存 | H/App.tsx:403-407 pane组件局部state | 改为session草稿；持久化是我们新增，不假称上游已有 |
-| Queue | useQueuedSend.ts + ComposerQueue.tsx 提供队列/编辑/删除 | H核心有pendingTexts，但App.tsx:430-433忙时不提交 | 保留服务端队列，补可见性/确认/幂等 |
-| Steer | C/src-tauri/src/shared/codex_core.rs:528-550 `turn/steer`+expectedTurnId | 无对应控制通道 | 先queue；安全step边界steer后开能力，不伪装原生实时插话 |
-| 文件引用 | useComposerAutocomplete.ts:40-170 排名/范围；AutocompleteState.ts:159-232 多种触发 | 正则+展开字符串，没有结构化附件 | 复刻路径候选/chip；主进程读取边界保留且加固 |
-| 滚动 | useMessagesViewState.ts:52-111 近底才跟随；阈值120px | H/App.tsx:410-413每次items变化强拉到底 | 优先替换，增加每会话锚点与回到最新 |
-| 卡片 | MessageRows.tsx:363-469,686-895 Markdown/输出/折叠/状态 | H/App.tsx:320-392纯文本、普通工具输出不可读 | 复刻层级与控件，真实diff仍来自我们快照 |
-| 渲染 | useThreadItemEvents.ts:129-154逐delta dispatch；行memo | 我们逐帧notify、每次全量projectChatItems | 借鉴分层，不照搬状态管理；补批量更新/局部订阅 |
-| 子代理 | threadItems.collab.ts:305-368 + useThreadLinking.ts:146-189建关系/角色/状态 | childId到tool/result才可见 | 仿实现早期发现、任务树、跳转、进度 |
-| 审批 | useThreadApprovals.ts:38-51成功后移除 | H/app-controller.ts finally无条件移除 | 服务端ack后收口；失败保留可重试，P0 |
-| 布局 | 工作区/线程树，可调整侧栏和面板 | 已有1/2/3分屏和持久化，不能丢掉 | 复刻默认桌面布局；我们的多分屏作为可选模式保留 |
+| 能力      | 上游源码事实                                                                                                | 我们的差距                                       | 决断                                                   |
+| --------- | ----------------------------------------------------------------------------------------------------------- | ------------------------------------------------ | ------------------------------------------------------ |
+| IME/Enter | C/src/utils/keys.ts:16-32 `isComposingEvent`；composer/hooks/useComposerKeyDown.ts:33-174 先IME后候选再提交 | H/App.tsx:483-494 未检查 composition             | 复用小型判断函数与优先级规则，P0                       |
+| 多行编辑  | useComposerInputLayout.ts:45-59 自动高度；Composer.tsx:446-479 光标恢复/粘贴                                | 基础textarea，缺完整编辑反馈                     | 仿实现自动高度/展开；围栏与列表续行可关闭              |
+| 草稿      | app/hooks/useComposerController.ts:72-139 按thread保存                                                      | H/App.tsx:403-407 pane组件局部state              | 改为session草稿；持久化是我们新增，不假称上游已有      |
+| Queue     | useQueuedSend.ts + ComposerQueue.tsx 提供队列/编辑/删除                                                     | H核心有pendingTexts，但App.tsx:430-433忙时不提交 | 保留服务端队列，补可见性/确认/幂等                     |
+| Steer     | C/src-tauri/src/shared/codex_core.rs:528-550 `turn/steer`+expectedTurnId                                    | 无对应控制通道                                   | 先queue；安全step边界steer后开能力，不伪装原生实时插话 |
+| 文件引用  | useComposerAutocomplete.ts:40-170 排名/范围；AutocompleteState.ts:159-232 多种触发                          | 正则+展开字符串，没有结构化附件                  | 复刻路径候选/chip；主进程读取边界保留且加固            |
+| 滚动      | useMessagesViewState.ts:52-111 近底才跟随；阈值120px                                                        | H/App.tsx:410-413每次items变化强拉到底           | 优先替换，增加每会话锚点与回到最新                     |
+| 卡片      | MessageRows.tsx:363-469,686-895 Markdown/输出/折叠/状态                                                     | H/App.tsx:320-392纯文本、普通工具输出不可读      | 复刻层级与控件，真实diff仍来自我们快照                 |
+| 渲染      | useThreadItemEvents.ts:129-154逐delta dispatch；行memo                                                      | 我们逐帧notify、每次全量projectChatItems         | 借鉴分层，不照搬状态管理；补批量更新/局部订阅          |
+| 子代理    | threadItems.collab.ts:305-368 + useThreadLinking.ts:146-189建关系/角色/状态                                 | childId到tool/result才可见                       | 仿实现早期发现、任务树、跳转、进度                     |
+| 审批      | useThreadApprovals.ts:38-51成功后移除                                                                       | H/app-controller.ts finally无条件移除            | 服务端ack后收口；失败保留可重试，P0                    |
+| 布局      | 工作区/线程树，可调整侧栏和面板                                                                             | 已有1/2/3分屏和持久化，不能丢掉                  | 复刻默认桌面布局；我们的多分屏作为可选模式保留         |
 
 表中未带全路径的 C 前端文件位于 `src/features/composer/`、`app/`、`messages/` 或 `threads/` 对应 hooks/components 目录；实施时以文件名搜索确认具体子目录，不凭表格拼路径。
 

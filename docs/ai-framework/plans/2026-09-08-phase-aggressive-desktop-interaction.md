@@ -18,14 +18,14 @@
 
 ## 前置阅读（必须）
 
-| 优先级 | 文件 |
-|--------|------|
-| P0 | `docs/ai-framework/phased-plan-driven.md`、`AGENTS.md`、`CODE_REVIEW.md` |
-| P0 | `docs/research/notion-ai-20260908-0056/04-implementation-plan.md`（I1 R2 §5.2/§5.3/§7）|
-| P0 | `docs/research/notion-ai-20260908-0056/03-harness2-core-audit.md`（sessions 队列底座、subagent 观察缝、H 缺口）|
-| P1 | `docs/research/notion-ai-20260908-0056/02-codexmonitor-research.md`（**仅历史参考**，不作产品规格）|
-| P1 | `packages/desktop/src/renderer/store.ts`、`app-controller.ts`、`components/**`；`src/preload/**`、`src/main/bridge.ts` |
-| P1 | 共享底座契约（S0–S7：`interaction/types.ts`、`runtime-journal.ts`、`run-config.ts`、`plan-state.ts`、`execution-view.ts`、`change-review.ts`、`task-coordinator.ts`，S 冻结后）|
+| 优先级 | 文件                                                                                                                                                                            |
+| ------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| P0     | `docs/ai-framework/phased-plan-driven.md`、`AGENTS.md`、`CODE_REVIEW.md`                                                                                                        |
+| P0     | `docs/research/notion-ai-20260908-0056/04-implementation-plan.md`（I1 R2 §5.2/§5.3/§7）                                                                                         |
+| P0     | `docs/research/notion-ai-20260908-0056/03-harness2-core-audit.md`（sessions 队列底座、subagent 观察缝、H 缺口）                                                                 |
+| P1     | `docs/research/notion-ai-20260908-0056/02-codexmonitor-research.md`（**仅历史参考**，不作产品规格）                                                                             |
+| P1     | `packages/desktop/src/renderer/store.ts`、`app-controller.ts`、`components/**`；`src/preload/**`、`src/main/bridge.ts`                                                          |
+| P1     | 共享底座契约（S0–S7：`interaction/types.ts`、`runtime-journal.ts`、`run-config.ts`、`plan-state.ts`、`execution-view.ts`、`change-review.ts`、`task-coordinator.ts`，S 冻结后） |
 
 **仓库路径：** `D:/AI_Projects/harness2`
 **基线分支 / worktree：** **从共享底座合入集成分支之后**建 `feat/notion-i1-desktop`。**别在主工作树切分支**；不删他人 worktree；git 不 reset/clean；**默认不 push**。
@@ -52,68 +52,75 @@
 
 > 上阶段（阶段 12/桌面 + 设置面板）已并入 main。审计确认的桌面侧缺口须在本阶段闭环。
 
-| 上阶段遗留项 | 来源 | 未通过原因 | 状态 |
-|-------------|------|-----------|------|
-| 桌面启动竞态：serve 未就绪 / `fetch failed` | 阶段 13 计划遗留 | 渲染端在 serve 端口就绪前调用了需 baseUrl 的命令 | ⬜ D1 前后真机确认；复现则优雅返回/重试 |
-| 任务完成系统通知真机验收（B7 移交缺陷） | 阶段 12 计划 | 需 Windows 实机 | ⬜ 留「残留手工验收清单」 |
-| 每会话执行 cwd 取了 hub 全局 cwd（A/B 项目串） | 03-harness2-core-audit | `sessions.ts:384-394,456-465` | ⬜ 共享 S1 封闭；D5 验证 workspace 不串 |
+| 上阶段遗留项                                   | 来源                   | 未通过原因                                       | 状态                                    |
+| ---------------------------------------------- | ---------------------- | ------------------------------------------------ | --------------------------------------- |
+| 桌面启动竞态：serve 未就绪 / `fetch failed`    | 阶段 13 计划遗留       | 渲染端在 serve 端口就绪前调用了需 baseUrl 的命令 | ⬜ D1 前后真机确认；复现则优雅返回/重试 |
+| 任务完成系统通知真机验收（B7 移交缺陷）        | 阶段 12 计划           | 需 Windows 实机                                  | ⬜ 留「残留手工验收清单」               |
+| 每会话执行 cwd 取了 hub 全局 cwd（A/B 项目串） | 03-harness2-core-audit | `sessions.ts:384-394,456-465`                    | ⬜ 共享 S1 封闭；D5 验证 workspace 不串 |
 
 ---
 
 ## 跳过项（因档位未做，**非缺陷**）
 
-| 跳过项 | 原因 | 待补做 |
-|--------|------|--------|
-| 界面美化（主题/动画/像素复刻/面板拖调） | R2 明确不列为桌面交付、不阻塞 | ⬜ 独立后续版本 |
-| 完整 Git/PTY 工作台 / codemap | 本阶段明确不做 | ⬜ 另行立项 |
-| Windows 真机（分屏拖拽/DPI/中文路径/通知定位/断线重启/关窗口） | 需用户实机 | ⬜ 留「残留手工验收清单」 |
-| steer（S6）对桌面的增强 | 仅 S6 交付后启用可靠排队；不阻塞基础 harness 验收 | ⬜ S6 到位后接入 |
+| 跳过项                                                         | 原因                                              | 待补做                    |
+| -------------------------------------------------------------- | ------------------------------------------------- | ------------------------- |
+| 界面美化（主题/动画/像素复刻/面板拖调）                        | R2 明确不列为桌面交付、不阻塞                     | ⬜ 独立后续版本           |
+| 完整 Git/PTY 工作台 / codemap                                  | 本阶段明确不做                                    | ⬜ 另行立项               |
+| Windows 真机（分屏拖拽/DPI/中文路径/通知定位/断线重启/关窗口） | 需用户实机                                        | ⬜ 留「残留手工验收清单」 |
+| steer（S6）对桌面的增强                                        | 仅 S6 交付后启用可靠排队；不阻塞基础 harness 验收 | ⬜ S6 到位后接入          |
 
 ---
 
 ## File Structure（预期变更）
 
-| 文件 | 动作 | 职责 |
-|------|------|------|
-| `packages/desktop/src/shared/protocol.ts` | 新建 | D0：adapter 映射新契约（调用 getInput）|
-| `packages/desktop/src/preload/**`、`main/bridge.ts` | 修改 | D0：盘点真实后端能力、维护订阅集合、按 epoch 补状态、ack 后更新 UI、无配置/连接失败可处理；**不暴露通用 shell/任意 fs** |
-| `packages/desktop/src/renderer/controller.ts`、`store.ts` | 修改 | D0/D1/D2：store 局部 selector、session-draft |
-| `packages/desktop/src/renderer/features/composer/*` | 新增 | D1：自动高度/IME/@file 引用/可见队列 |
-| `packages/desktop/src/renderer/features/timeline/*`、`features/execution/*` | 新增 | D2：chat-model 增量投影、真实 tool/命令日志、大输出/退出码、DiffCard |
-| `packages/desktop/src/renderer/features/workspace/*`、`features/changes/*` | 新增 | D5：工作区选择/文件浏览/按任务聚合变更 |
-| `packages/desktop/src/renderer/components/PlanPanel.tsx`、`TaskPanel.tsx`、`ApprovalCenter.tsx` | 新增 | D3：计划/任务/审批（有证据，非状态卡）|
-| `packages/desktop/src/renderer/components/SettingsDialog.tsx`、`CommandPalette.tsx` | 修改 | D6：有效配置/上下文面板 |
-| 测试新增：desktop-composer、desktop-queue、desktop-draft、desktop-scroll、desktop-stream、desktop-reconnect、desktop-child-approval、desktop-run-config、desktop-plan-boundary、desktop-command-exit、desktop-change-review、desktop-undo-external、desktop-workspace-switch、harness-workflow-F1-F8 | 新增 | 全覆盖 |
+| 文件                                                                                                                                                                                                                                                                                                 | 动作 | 职责                                                                                                                    |
+| ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---- | ----------------------------------------------------------------------------------------------------------------------- |
+| `packages/desktop/src/shared/protocol.ts`                                                                                                                                                                                                                                                            | 新建 | D0：adapter 映射新契约（调用 getInput）                                                                                 |
+| `packages/desktop/src/preload/**`、`main/bridge.ts`                                                                                                                                                                                                                                                  | 修改 | D0：盘点真实后端能力、维护订阅集合、按 epoch 补状态、ack 后更新 UI、无配置/连接失败可处理；**不暴露通用 shell/任意 fs** |
+| `packages/desktop/src/renderer/controller.ts`、`store.ts`                                                                                                                                                                                                                                            | 修改 | D0/D1/D2：store 局部 selector、session-draft                                                                            |
+| `packages/desktop/src/renderer/features/composer/*`                                                                                                                                                                                                                                                  | 新增 | D1：自动高度/IME/@file 引用/可见队列                                                                                    |
+| `packages/desktop/src/renderer/features/timeline/*`、`features/execution/*`                                                                                                                                                                                                                          | 新增 | D2：chat-model 增量投影、真实 tool/命令日志、大输出/退出码、DiffCard                                                    |
+| `packages/desktop/src/renderer/features/workspace/*`、`features/changes/*`                                                                                                                                                                                                                           | 新增 | D5：工作区选择/文件浏览/按任务聚合变更                                                                                  |
+| `packages/desktop/src/renderer/components/PlanPanel.tsx`、`TaskPanel.tsx`、`ApprovalCenter.tsx`                                                                                                                                                                                                      | 新增 | D3：计划/任务/审批（有证据，非状态卡）                                                                                  |
+| `packages/desktop/src/renderer/components/SettingsDialog.tsx`、`CommandPalette.tsx`                                                                                                                                                                                                                  | 修改 | D6：有效配置/上下文面板                                                                                                 |
+| 测试新增：desktop-composer、desktop-queue、desktop-draft、desktop-scroll、desktop-stream、desktop-reconnect、desktop-child-approval、desktop-run-config、desktop-plan-boundary、desktop-command-exit、desktop-change-review、desktop-undo-external、desktop-workspace-switch、harness-workflow-F1-F8 | 新增 | 全覆盖                                                                                                                  |
 
 ---
 
 ## 任务
 
 ### D0 — 协议适配 + 订阅/恢复 + 能力盘点（依赖 S0/S3；S7 接线可分步）
+
 - 盘点真实后端能力并绑定受限 adapter；恢复订阅/ack；暴露**有效配置、工具、执行结果、变更查询**；无配置/连接失败可处理（可行动提示）。renderer 仍零 Node、不暴露 fs/shell。
 - 测：`desktop-stream`、`desktop-reconnect`、`desktop-run-config`。Commit：`✨feat(desktop): 新契约适配与订阅/恢复/能力盘点（D0）`
 
 ### D1 — Composer 与草稿/引用（依赖 D0）
+
 - 自动高度、IME 不误发、session 草稿/附件持久、可见 queue、原始输入与模型上下文分离、项目指令/文件引用来源可见；路径边界/字节预算/二进制测试。修复启动竞态（serve 未就绪优雅返回）。
 - 测：`desktop-composer`、`desktop-queue`、`desktop-draft`。Commit：`✨feat(desktop): Composer 增强与草稿/引用/可见队列（D1）`
 
 ### D2 — 时间线与命令/变更日志（依赖 D0/S7）
+
 - chat-model 增量投影、store 局部 selector；**真实 tool/命令日志**：参数/shell/cwd/输出/exit code/取消状态；大输出范围读取、复制、错误详情；稳定滚动与局部更新达性能预算；DiffCard 用真实快照 before/after。复用渲染原语，不为样式全面重做。
 - 测：`desktop-stream`、`desktop-scroll`、`desktop-command-exit`。Commit：`✨feat(desktop): 时间线渲染与真实命令/变更日志（D2）`
 
 ### D3 — PlanPanel / TaskPanel / ApprovalCenter（依赖 D1/D2 + S2/S5/S7）
+
 - 计划/执行状态**有证据**（planId/步骤/证据 ID）；模式切换明确且**不自动提权**；主子审批、早期任务发现、等待/继续/停止可用；只读并发（K=2）与写互斥真实生效；不是只有状态卡。
 - 测：`desktop-plan-boundary`、`desktop-child-approval`、`desktop-task`。Commit：`✨feat(desktop): 计划/任务/审批中心（有证据，非状态卡，D3）`
 
 ### D4 — 错误/重试/恢复/通知 + 能力门控（依赖 D3/S4）
+
 - F4/F6/F7 闭环；不永久 loading、不假报停止；断线补任务/审批/队列；**关窗口行为明确**（提示运行中任务，选择保持后台或请求停止，不能关 UI 就宣称已停）；steer 仅 S6 交付后启用，可靠排队可独立验收。
 - 测：desktop 错误/重试/通知/关窗口单测。Commit：`✨feat(desktop): 错误/重试/恢复/通知与能力门控（D4）`
 
 ### D5 — 工作区 / 变更审查与撤销（依赖 D0/S1/S7；可与 D1–D4 并行）
+
 - **F1/F5**：选择项目/新建恢复分叉、文件浏览搜索引用、按任务聚合变更、实际 diff、可支持粒度 undo/redo；保留用户脏改动、外部改动冲突阻止覆盖；A/B 项目不串 cwd/草稿；**不做完整 Git/PTY 工作台**。
 - 测：`desktop-workspace-switch`、`desktop-change-review`、`desktop-undo-external`。Commit：`✨feat(desktop): 工作区与变更审查/安全撤销（D5）`
 
 ### D6 — 有效配置 / 上下文面板 + F1–F8 端到端证据（依赖 D1–D5/S7）
+
 - 复用 SettingsDialog/CommandPalette；补有效配置/上下文面板；**F1–F8 e2e fixtures 与执行证据**：桌面选模型配置真正生效，plan→执行→修改→失败测试→修复重跑→变更审查→恢复可完整操作；工具/MCP/skills/预算诊断可见，禁止只接 mock。全 F 流程通过才交桌面。
 - 测：`harness-workflow-F1-F8`。Commit：`✅feat(desktop): 有效配置/上下文面板 + F1-F8 端到端证据（D6）`
 
@@ -128,31 +135,31 @@
 
 ## 验收标准总表（桌面用 F1–F8 功能流程，不评视觉相似度）
 
-| # | 标准 | 通过条件 | 验证责任人 |
-|---|------|----------|-----------|
-| F1 | 项目与会话 | 打开 A 引用 README 问结构，切 B 再恢复 A、分叉；root/cwd/模型/指令来源可见；文件读取确在各自目录；草稿/历史不串；分叉不改原会话 | 自动化 + 临时项目 |
-| F2 | 只读计划 | plan 模式要求改文件+危险写命令，先出计划再用户切执行模式；plan 阶段无写副作用；切权限是显式动作；UI 显示本轮回实际生效配置 | 自动化 |
-| F3 | 修改并测试 | agent 改临时函数、跑测试、制造失败、修复重跑；有 tool 参数/命令/shell/cwd/output/退出码；失败真实显示；修复后以新测试结果判定；最终摘要链接真实 diff 和测试记录 | 自动化 + 临时仓库 |
-| F4 | 审批与拒绝 | 写/命令及子任务同时 ask，拒绝一项；中途断线、重复点击响应；全部待批可见、拒绝项未执行、ack 前不消失；作用域授权不泄漏到 B 会话 | 自动化 |
-| F5 | 变更与撤销 | 起始有用户未提交改动；agent 改另一处；用户 agent 后再改文件，然后 undo/redo；展示任务变更与既有改动区别；无冲突路径可复原；外部修改冲突被提示并阻止静默覆盖 | 自动化 + 临时仓库 |
-| F6 | 子任务控制 | 派 2 个只读任务，看子进度/审批；停止一个继续另一个；重叠、父子归属清楚；停止不误伤兄弟；结果状态可恢复；失败不冒充完成 | 自动化 |
-| F7 | 断流与队列 | 发送后丢 ack、途中断 WS、provider 中途 EOF、取消退避、重启 UI/serve；不重复提交/工具副作用；重订阅恢复；预算耗尽有明确停因；服务死亡任务标中断/unknown；未启动队列恢复 paused | 故障注入 |
-| F8 | 配置与上下文 | 选可用模型、注入文件/指令/skill、触发压缩；模拟 provider/MCP 不可用；请求实际用选定配置、运行中配置不突变；输入可追溯；压缩状态与失败可见、密钥脱敏；无配置/连接失败有可行动提示 | 自动化 |
-| 9 | 全量回归 | `pnpm -r test` 全绿（真实命中，非 `--passWithNoTests`） | 自动化 |
-| 2b | 代码审查 | ✅ / ⚠️；❌ 下放 | 独立角色 |
-| 10 | 红线/密钥 | 无禁止项、不暴露任意 fs、`git ls-files` 无敏感文件 | 自动化 |
+| #   | 标准         | 通过条件                                                                                                                                                                         | 验证责任人        |
+| --- | ------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------- |
+| F1  | 项目与会话   | 打开 A 引用 README 问结构，切 B 再恢复 A、分叉；root/cwd/模型/指令来源可见；文件读取确在各自目录；草稿/历史不串；分叉不改原会话                                                  | 自动化 + 临时项目 |
+| F2  | 只读计划     | plan 模式要求改文件+危险写命令，先出计划再用户切执行模式；plan 阶段无写副作用；切权限是显式动作；UI 显示本轮回实际生效配置                                                       | 自动化            |
+| F3  | 修改并测试   | agent 改临时函数、跑测试、制造失败、修复重跑；有 tool 参数/命令/shell/cwd/output/退出码；失败真实显示；修复后以新测试结果判定；最终摘要链接真实 diff 和测试记录                  | 自动化 + 临时仓库 |
+| F4  | 审批与拒绝   | 写/命令及子任务同时 ask，拒绝一项；中途断线、重复点击响应；全部待批可见、拒绝项未执行、ack 前不消失；作用域授权不泄漏到 B 会话                                                   | 自动化            |
+| F5  | 变更与撤销   | 起始有用户未提交改动；agent 改另一处；用户 agent 后再改文件，然后 undo/redo；展示任务变更与既有改动区别；无冲突路径可复原；外部修改冲突被提示并阻止静默覆盖                      | 自动化 + 临时仓库 |
+| F6  | 子任务控制   | 派 2 个只读任务，看子进度/审批；停止一个继续另一个；重叠、父子归属清楚；停止不误伤兄弟；结果状态可恢复；失败不冒充完成                                                           | 自动化            |
+| F7  | 断流与队列   | 发送后丢 ack、途中断 WS、provider 中途 EOF、取消退避、重启 UI/serve；不重复提交/工具副作用；重订阅恢复；预算耗尽有明确停因；服务死亡任务标中断/unknown；未启动队列恢复 paused    | 故障注入          |
+| F8  | 配置与上下文 | 选可用模型、注入文件/指令/skill、触发压缩；模拟 provider/MCP 不可用；请求实际用选定配置、运行中配置不突变；输入可追溯；压缩状态与失败可见、密钥脱敏；无配置/连接失败有可行动提示 | 自动化            |
+| 9   | 全量回归     | `pnpm -r test` 全绿（真实命中，非 `--passWithNoTests`）                                                                                                                          | 自动化            |
+| 2b  | 代码审查     | ✅ / ⚠️；❌ 下放                                                                                                                                                                 | 独立角色          |
+| 10  | 红线/密钥    | 无禁止项、不暴露任意 fs、`git ls-files` 无敏感文件                                                                                                                               | 自动化            |
 
 ---
 
 ## 风险与降级
 
-| 风险 | 缓解 |
-|------|------|
-| 依赖共享底座/S7 | 未冻结用 mock adapter 隔离开发 D1/D2/D5；真实执行/变更/恢复/任务/审批必须联调 |
-| 渲染隔离 | 保持 contextIsolation + preload 白名单；不暴露节点能力 |
+| 风险                   | 缓解                                                                          |
+| ---------------------- | ----------------------------------------------------------------------------- |
+| 依赖共享底座/S7        | 未冻结用 mock adapter 隔离开发 D1/D2/D5；真实执行/变更/恢复/任务/审批必须联调 |
+| 渲染隔离               | 保持 contextIsolation + preload 白名单；不暴露节点能力                        |
 | 「看似有功能实为空壳」 | 禁止只画状态卡/假入口；无后端能力如实 disabled 并解释；F 流程必须真实执行证据 |
-| 长历史/多 pane 性能 | store 局部 selector + 虚拟列表；1000 消息/多 pane 压力 trace |
-| 桌面被用户实测冲突 | 独立 worktree；合并前与主会话/用户协调 |
+| 长历史/多 pane 性能    | store 局部 selector + 虚拟列表；1000 消息/多 pane 压力 trace                  |
+| 桌面被用户实测冲突     | 独立 worktree；合并前与主会话/用户协调                                        |
 
 ---
 

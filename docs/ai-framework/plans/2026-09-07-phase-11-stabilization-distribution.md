@@ -12,11 +12,11 @@
 
 ## 前置阅读（必须）
 
-| 优先级 | 文件 |
-|--------|------|
-| P0 | 本文件、`docs/issue-log/OPEN.md`（本阶段消化多行留档）、`packages/core/src/session/reader.ts`（computeProjection——性能测量对象）、`packages/core/src/session/export.ts`（importReplay 上限落点） |
-| P0 | `packages/core/src/agent/subagent.ts`（口径统一落点）、`packages/cli/src/chat.ts` 与 `packages/core/src/server/sessions.ts`（两端装配对照） |
-| P1 | `architecture.md`（P2-4 性能口径、子会话语义声明）、`packages/desktop/electron-builder.yml`、`.github/workflows/{ci,release}.yml`、`AGENTS.md` |
+| 优先级 | 文件                                                                                                                                                                                             |
+| ------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| P0     | 本文件、`docs/issue-log/OPEN.md`（本阶段消化多行留档）、`packages/core/src/session/reader.ts`（computeProjection——性能测量对象）、`packages/core/src/session/export.ts`（importReplay 上限落点） |
+| P0     | `packages/core/src/agent/subagent.ts`（口径统一落点）、`packages/cli/src/chat.ts` 与 `packages/core/src/server/sessions.ts`（两端装配对照）                                                      |
+| P1     | `architecture.md`（P2-4 性能口径、子会话语义声明）、`packages/desktop/electron-builder.yml`、`.github/workflows/{ci,release}.yml`、`AGENTS.md`                                                   |
 
 **仓库路径：** `D:\AI_projects\harness2`（默认分支 `master`）
 **基线分支：** 从 master（≥324c8c9）拉 `feat/phase-11-stabilization`
@@ -36,15 +36,15 @@
 
 ## File Structure（预期变更）
 
-| 文件 | 动作 | 职责 |
-|------|------|------|
-| `packages/core/src/session/bench.ts` 或 `scripts/bench-session.mjs` | 新建 | 性能基线：合成 N=10 万事件日志（user/assistant/tool 混合 + 若干 rewind），测 loadSession/computeProjection/list/search/export/replay 耗时，输出表 |
-| `packages/core/src/session/export.ts` | 修改 | importReplay 解压总体积上限（默认 256MiB，可参覆盖）+ 超限友好报错 |
-| `packages/core/src/agent/subagent.ts` + `cli/chat.ts` + `server/sessions.ts` | 修改 | 子会话口径统一（见 Task 2） |
-| `packages/core/src/doctor/index.ts` | 新建 | `harness2 doctor`：node 版本 / config+auth 校验（脱敏）/ 目录可写 / mcp 探测（`--probe` 可选）/ 会话库完整性扫描（坏行统计）/ skills 扫描报告 |
-| `packages/cli/src/index.ts` | 修改 | `doctor` 命令接线；chat/serve 顶层 uncaughtException → `~/.harness2/crash/<ts>.log`（redact 后）+ 控制台打印路径 |
-| `.github/workflows/ci.yml`、`release.yml`、`packages/desktop/electron-builder.yml` | 修改 | 桌面构建矩阵 win/nsis + mac/dmg + linux/AppImage，artifact 上传；release 附加产物 |
-| `packages/core/test/{bench,doctor}.test.ts`、`packages/cli/test/doctor.test.ts` | 新建 | 见各 Task |
+| 文件                                                                               | 动作 | 职责                                                                                                                                              |
+| ---------------------------------------------------------------------------------- | ---- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `packages/core/src/session/bench.ts` 或 `scripts/bench-session.mjs`                | 新建 | 性能基线：合成 N=10 万事件日志（user/assistant/tool 混合 + 若干 rewind），测 loadSession/computeProjection/list/search/export/replay 耗时，输出表 |
+| `packages/core/src/session/export.ts`                                              | 修改 | importReplay 解压总体积上限（默认 256MiB，可参覆盖）+ 超限友好报错                                                                                |
+| `packages/core/src/agent/subagent.ts` + `cli/chat.ts` + `server/sessions.ts`       | 修改 | 子会话口径统一（见 Task 2）                                                                                                                       |
+| `packages/core/src/doctor/index.ts`                                                | 新建 | `harness2 doctor`：node 版本 / config+auth 校验（脱敏）/ 目录可写 / mcp 探测（`--probe` 可选）/ 会话库完整性扫描（坏行统计）/ skills 扫描报告     |
+| `packages/cli/src/index.ts`                                                        | 修改 | `doctor` 命令接线；chat/serve 顶层 uncaughtException → `~/.harness2/crash/<ts>.log`（redact 后）+ 控制台打印路径                                  |
+| `.github/workflows/ci.yml`、`release.yml`、`packages/desktop/electron-builder.yml` | 修改 | 桌面构建矩阵 win/nsis + mac/dmg + linux/AppImage，artifact 上传；release 附加产物                                                                 |
+| `packages/core/test/{bench,doctor}.test.ts`、`packages/cli/test/doctor.test.ts`    | 新建 | 见各 Task                                                                                                                                         |
 
 ---
 
@@ -90,28 +90,28 @@
 
 ## 验收标准总表
 
-| # | 标准 | 通过条件 |
-|---|------|----------|
-| 1 | 性能基线 | 架构文档含可复跑脚本产出的基线表；痛点项要么有前后数据优化、要么如实记录达标 |
-| 2 | 回放上限 | 超限包友好报错测试通过 |
-| 3 | 口径统一 | 两端子会话工具集相等断言 + 无 memory/browser 防回归 + skills 注入测试通过 |
-| 4 | 分发 | 三平台 builder 配置 + CI matrix 就绪；Windows 本地构建通过；YAML 校验过 |
-| 5 | 演练+doctor | crash-drill 测试通过；doctor 命令实测输出 OK/FAIL 正确；崩溃报告落盘且脱敏 |
-| 6 | 抖动 | 连续 3 次全量 `pnpm test` 全绿 |
-| 7 | 红线 | 零新增事件类型；密钥三不；无遥测发送 |
-| 8 | 单测/构建 | `pnpm test && pnpm -r typecheck` exit 0 |
+| #   | 标准        | 通过条件                                                                     |
+| --- | ----------- | ---------------------------------------------------------------------------- |
+| 1   | 性能基线    | 架构文档含可复跑脚本产出的基线表；痛点项要么有前后数据优化、要么如实记录达标 |
+| 2   | 回放上限    | 超限包友好报错测试通过                                                       |
+| 3   | 口径统一    | 两端子会话工具集相等断言 + 无 memory/browser 防回归 + skills 注入测试通过    |
+| 4   | 分发        | 三平台 builder 配置 + CI matrix 就绪；Windows 本地构建通过；YAML 校验过      |
+| 5   | 演练+doctor | crash-drill 测试通过；doctor 命令实测输出 OK/FAIL 正确；崩溃报告落盘且脱敏   |
+| 6   | 抖动        | 连续 3 次全量 `pnpm test` 全绿                                               |
+| 7   | 红线        | 零新增事件类型；密钥三不；无遥测发送                                         |
+| 8   | 单测/构建   | `pnpm test && pnpm -r typecheck` exit 0                                      |
 
 ---
 
 ## 风险与降级
 
-| 风险 | 缓解 |
-|------|------|
-| 10 万事件合成日志测试过慢 | 生成器放 fixture 脚本（非每测运行），测试用小样本 + 采样校验 |
-| mac/linux 构建本地无法验证 | YAML 语法 + 本地 win 构建 + CI 标注待远程；失败留 OPEN |
-| 口径统一破坏既有 CLI 用户习惯 | 行为变化在 CHANGELOG 显著声明；防回归测试钉死新口径 |
-| 抖动无法根治 | 3 次全绿过关线达不到则如实降级为"缓解维持 + 继续留档"，不虚报 |
-| doctor 误报 | 各检查项独立 try/catch，单项失败不拖垮整份报告 |
+| 风险                          | 缓解                                                          |
+| ----------------------------- | ------------------------------------------------------------- |
+| 10 万事件合成日志测试过慢     | 生成器放 fixture 脚本（非每测运行），测试用小样本 + 采样校验  |
+| mac/linux 构建本地无法验证    | YAML 语法 + 本地 win 构建 + CI 标注待远程；失败留 OPEN        |
+| 口径统一破坏既有 CLI 用户习惯 | 行为变化在 CHANGELOG 显著声明；防回归测试钉死新口径           |
+| 抖动无法根治                  | 3 次全绿过关线达不到则如实降级为"缓解维持 + 继续留档"，不虚报 |
+| doctor 误报                   | 各检查项独立 try/catch，单项失败不拖垮整份报告                |
 
 ---
 
@@ -124,6 +124,7 @@
 你是 **harness2** 阶段 11 的实现代理。请**完整执行本阶段**，不要只写方案。
 
 ### 基线
+
 - 目录：`D:\AI_projects\harness2`（Windows，Git Bash，pnpm monorepo，Node ≥22）；从 master 创建并切换 `feat/phase-11-stabilization`
 - 已完成勿重做：阶段 1-10 全部验收闭环（ROADMAP 26/26 ✅），基线测试 **579 passed + 1 skipped**（1 skipped 为 H2_GEN_LOOP_DEMO 门控 fixture 生成器，非失败）
 - 唯一实施计划：`docs/ai-framework/plans/2026-09-07-phase-11-stabilization-distribution.md`
@@ -131,19 +132,23 @@
 - 已知偶发抖动：全量测试单例失败先重跑甄别（Task 5 会根治它，甄别流程照旧）
 
 ### 做
+
 1. 严格按 Task 1→5 顺序执行；每 Task 测试通过后规范 commit（gitmoji 中文，禁止 push）
 2. 遵守 Global Constraints：**测量先于优化**（无数据不重构）；口径统一单向（统一到 architecture 既有 serve 语义 + skills 加性）；零新增事件类型；崩溃报告只落盘零遥测
 3. Task 5 更新 architecture/HANDOFF/diary/OPEN，并把消化掉的 OPEN 行关闭
 
 ### 不做
+
 - 大规模性能重构（除非基线数据支持）；遥测/自动上报；macOS 签名；任何 `git push`
 
 ### 工作方式
+
 1. 先跑基线 `pnpm test` 确认全绿再动工
 2. 证据优先：交卷前重跑 `pnpm test && pnpm -r typecheck`，粘贴真实输出
 3. 简体中文回复；代码标识符原样
 
 ### 交卷
+
 分支名、提交列表、验收总表逐项自评（带命令与真实结果）、新增测试数、性能基线表（若产出）、残留风险与未关闭项。
 
 现在开始：读完本阶段计划与 OPEN.md，从 Task 1 执行到 Task 5。

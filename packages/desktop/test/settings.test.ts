@@ -4,12 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { normalizePreferences, defaultPreferences } from '../src/shared/preferences.js';
-import {
-  readAuthMasked,
-  readSettingsConfig,
-  updateAuth,
-  updateSettingsConfig,
-} from '../src/main/config-file.js';
+import { readAuthMasked, readSettingsConfig, updateAuth, updateSettingsConfig } from '../src/main/config-file.js';
 
 const homes = new Set<string>();
 afterEach(() => {
@@ -33,7 +28,9 @@ describe('shared/preferences 规范化', () => {
   });
 
   it('合法值原样保留', () => {
-    expect(normalizePreferences({ theme: 'dark', defaultPaneCount: 3, showWelcome: false, notifyDetails: 'full' })).toEqual({
+    expect(
+      normalizePreferences({ theme: 'dark', defaultPaneCount: 3, showWelcome: false, notifyDetails: 'full' }),
+    ).toEqual({
       theme: 'dark',
       defaultPaneCount: 3,
       showWelcome: false,
@@ -42,8 +39,9 @@ describe('shared/preferences 规范化', () => {
   });
 
   it('非法/越界字段逐个回落默认', () => {
-    expect(normalizePreferences({ theme: 'neon', defaultPaneCount: 9, showWelcome: 'yes', notifyDetails: 42 }))
-      .toEqual(defaultPreferences());
+    expect(normalizePreferences({ theme: 'neon', defaultPaneCount: 9, showWelcome: 'yes', notifyDetails: 42 })).toEqual(
+      defaultPreferences(),
+    );
     expect(normalizePreferences(null)).toEqual(defaultPreferences());
     expect(normalizePreferences('oops')).toEqual(defaultPreferences());
     // 部分越界：只坏 defaultPaneCount

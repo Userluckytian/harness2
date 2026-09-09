@@ -48,12 +48,21 @@ describe('AppStore 会话流', () => {
     store.applyFrame({ type: 'delta', sessionId: 's1', kind: 'text', text: '你' });
     store.applyFrame({ type: 'delta', sessionId: 's1', kind: 'text', text: '好' });
     store.applyFrame({ type: 'delta', sessionId: 's1', kind: 'reasoning', text: '想' });
-    store.applyFrame({ type: 'delta', sessionId: 's1', kind: 'tool', call: { id: 'cx', name: 'bash', arguments: '{}' } });
+    store.applyFrame({
+      type: 'delta',
+      sessionId: 's1',
+      kind: 'tool',
+      call: { id: 'cx', name: 'bash', arguments: '{}' },
+    });
     let items = store.chatItems('s1');
     expect(items.filter((i) => i.kind === 'streaming')).toHaveLength(2);
 
     // assistant/message 落盘：live 文本/reasoning 清空
-    store.applyFrame({ type: 'event', sessionId: 's1', event: ev('assistant/message', { text: '你好', reasoning: '想', turnId: 't1' }) });
+    store.applyFrame({
+      type: 'event',
+      sessionId: 's1',
+      event: ev('assistant/message', { text: '你好', reasoning: '想', turnId: 't1' }),
+    });
     items = store.chatItems('s1');
     const streaming = items.filter((i) => i.kind === 'streaming');
     expect(streaming).toHaveLength(1); // 仅剩 pending tool；text/reasoning 已被落盘事件清空
@@ -61,7 +70,11 @@ describe('AppStore 会话流', () => {
     expect(items.find((i) => i.kind === 'assistant')?.text).toBe('你好'); // 以落盘为准
 
     // tool/call 落盘：pending tool delta 清空
-    store.applyFrame({ type: 'event', sessionId: 's1', event: ev('tool/call', { callId: 'cx', tool: 'bash', args: {}, turnId: 't1' }) });
+    store.applyFrame({
+      type: 'event',
+      sessionId: 's1',
+      event: ev('tool/call', { callId: 'cx', tool: 'bash', args: {}, turnId: 't1' }),
+    });
     expect(store.chatItems('s1').some((i) => i.kind === 'streaming')).toBe(false);
   });
 
@@ -83,7 +96,11 @@ describe('AppStore 会话流', () => {
     const store = new AppStore();
     store.applyReplay(replayPayload('bg', [ev('session/header', { sessionId: 'bg' })]));
     store.select('main');
-    store.applyFrame({ type: 'event', sessionId: 'bg', event: ev('assistant/message', { text: '后台产出', turnId: 'k1' }) });
+    store.applyFrame({
+      type: 'event',
+      sessionId: 'bg',
+      event: ev('assistant/message', { text: '后台产出', turnId: 'k1' }),
+    });
     store.applyFrame({ type: 'turn-end', sessionId: 'bg', stopReason: 'end_turn' });
     store.applyFrame({ type: 'delta', sessionId: 'bg', kind: 'text', text: '碎片不计' });
     expect(store.peekStream('bg')!.unread).toBe(2);

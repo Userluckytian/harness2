@@ -49,7 +49,12 @@ export const grepTool: ToolDefinition = {
 };
 
 /** rg 路径；返回 null 表示 rg 不可用（回退 JS 扫描） */
-function grepWithRipgrep(pattern: string, cwd: string, searchPath: string, signal: AbortSignal): Promise<ToolOutput | null> {
+function grepWithRipgrep(
+  pattern: string,
+  cwd: string,
+  searchPath: string,
+  signal: AbortSignal,
+): Promise<ToolOutput | null> {
   return new Promise((resolve) => {
     const relTarget = relative(cwd, searchPath) || '.';
     let stdout = '';
@@ -94,7 +99,8 @@ function grepWithRipgrep(pattern: string, cwd: string, searchPath: string, signa
       stderr += chunk.toString('utf8');
     });
     child.on('error', (e: NodeJS.ErrnoException) => {
-      if (e.code === 'ENOENT') done(null); // rg 未安装 → 回退
+      if (e.code === 'ENOENT')
+        done(null); // rg 未安装 → 回退
       else if (signal.aborted) done({ error: 'cancelled' });
       else done({ error: `rg failed: ${e.message}` });
     });

@@ -239,49 +239,59 @@ program
   .option('--root <dir>', '工作目录：工具执行 cwd + 会话分组（默认当前目录）')
   .option('--home <dir>', '覆盖用户数据根（配置 + 会话存储；测试/多环境用）')
   .option('--no-tui', '强制走 legacy readline 路径（关闭自动 TUI；也可用 HARNESS2_NO_TUI=1）')
-  .action(async (opts: { session?: string; fork?: string; at?: string; provider: string; mockScript?: string; mockChildScript?: string; root?: string; home?: string }) => {
-    let at: number | undefined;
-    if (opts.at !== undefined) {
-      at = Number(opts.at);
-      if (!Number.isInteger(at) || at < 1) {
-        console.error('error: --at 必须是 >= 1 的整数');
-        process.exit(1);
+  .action(
+    async (opts: {
+      session?: string;
+      fork?: string;
+      at?: string;
+      provider: string;
+      mockScript?: string;
+      mockChildScript?: string;
+      root?: string;
+      home?: string;
+    }) => {
+      let at: number | undefined;
+      if (opts.at !== undefined) {
+        at = Number(opts.at);
+        if (!Number.isInteger(at) || at < 1) {
+          console.error('error: --at 必须是 >= 1 的整数');
+          process.exit(1);
+        }
       }
-    }
-    const readScript = (file: string | undefined, label: string): MockScript | undefined => {
-      if (file === undefined) return undefined;
+      const readScript = (file: string | undefined, label: string): MockScript | undefined => {
+        if (file === undefined) return undefined;
+        try {
+          const parsed: unknown = JSON.parse(readFileSync(file, 'utf8'));
+          if (!Array.isArray(parsed)) throw new Error('必须是数组');
+          return parsed as MockScript;
+        } catch (e) {
+          console.error(`error: --${label} 读取失败: ${(e as Error).message}`);
+          process.exit(1);
+        }
+      };
+      const mockScript = readScript(opts.mockScript, 'mock-script');
+      const mockChildScript = readScript(opts.mockChildScript, 'mock-child-script');
       try {
-        const parsed: unknown = JSON.parse(readFileSync(file, 'utf8'));
-        if (!Array.isArray(parsed)) throw new Error('必须是数组');
-        return parsed as MockScript;
+        await runChat({
+          ...(opts.session !== undefined ? { session: opts.session } : {}),
+          ...(opts.fork !== undefined ? { fork: opts.fork } : {}),
+          ...(at !== undefined ? { at } : {}),
+          ...(opts.provider !== 'config' ? { provider: opts.provider } : {}),
+          ...(mockScript !== undefined ? { mockScript } : {}),
+          ...(mockChildScript !== undefined ? { mockChildScript } : {}),
+          ...(opts.root !== undefined ? { root: opts.root } : {}),
+          ...(opts.home !== undefined ? { home: opts.home } : {}),
+        });
       } catch (e) {
-        console.error(`error: --${label} 读取失败: ${(e as Error).message}`);
-        process.exit(1);
+        console.error(`error: ${(e as Error).message}`);
+        process.exitCode = 1;
       }
-    };
-    const mockScript = readScript(opts.mockScript, 'mock-script');
-    const mockChildScript = readScript(opts.mockChildScript, 'mock-child-script');
-    try {
-      await runChat({
-        ...(opts.session !== undefined ? { session: opts.session } : {}),
-        ...(opts.fork !== undefined ? { fork: opts.fork } : {}),
-        ...(at !== undefined ? { at } : {}),
-        ...(opts.provider !== 'config' ? { provider: opts.provider } : {}),
-        ...(mockScript !== undefined ? { mockScript } : {}),
-        ...(mockChildScript !== undefined ? { mockChildScript } : {}),
-        ...(opts.root !== undefined ? { root: opts.root } : {}),
-        ...(opts.home !== undefined ? { home: opts.home } : {}),
-      });
-    } catch (e) {
-      console.error(`error: ${(e as Error).message}`);
-      process.exitCode = 1;
-    }
-  });
+    },
+  );
 
 /** memory 命令（阶段 6）：MEMORY.md/USER.md 查看/清空 + ask 模式待审批暂存管理。
  *  只延迟不丢弃：approve 重放 ops 到 store（失败保留暂存），reject 显式丢弃。 */
-const memoryCmd = new Command('memory')
-  .description('长期记忆管理（MEMORY.md/USER.md + 待审批暂存）');
+const memoryCmd = new Command('memory').description('长期记忆管理（MEMORY.md/USER.md + 待审批暂存）');
 
 interface MemoryHomeOptions {
   home?: string;
@@ -312,8 +322,7 @@ memoryCmd
   .option('--target <t>', 'memory | user | all', 'all')
   .option('--home <dir>', '覆盖用户数据根（测试/多环境用）')
   .action(async (opts: MemoryHomeOptions & { target: string }) => {
-    const targets: MemoryTarget[] =
-      opts.target === 'all' ? ['memory', 'user'] : [opts.target as MemoryTarget];
+    const targets: MemoryTarget[] = opts.target === 'all' ? ['memory', 'user'] : [opts.target as MemoryTarget];
     if (opts.target !== 'all' && !['memory', 'user'].includes(opts.target)) {
       console.error(`error: --target 必须是 memory | user | all，实际为 ${opts.target}`);
       process.exit(1);
@@ -361,9 +370,7 @@ memoryCmd
       console.log(`${p.id}  ${p.createdAt}  会话 ${p.sessionId}`);
       for (const [i, op] of p.ops.entries()) {
         const text = op.operation === 'remove' ? (op.oldText ?? '') : (op.text ?? '');
-        console.log(
-          `  [${i + 1}] ${op.operation} ${op.target}: ${text.replace(/\s+/g, ' ').slice(0, 60)}`,
-        );
+        console.log(`  [${i + 1}] ${op.operation} ${op.target}: ${text.replace(/\s+/g, ' ').slice(0, 60)}`);
       }
     }
   });
@@ -588,7 +595,9 @@ cronCmd
       console.error(`error: 未找到任务 ${id}`);
       process.exit(1);
     }
-    console.log(outcome.ok ? `执行完成：${outcome.dir}` : `执行失败：${outcome.error ?? outcome.stopReason}（${outcome.dir}）`);
+    console.log(
+      outcome.ok ? `执行完成：${outcome.dir}` : `执行失败：${outcome.error ?? outcome.stopReason}（${outcome.dir}）`,
+    );
     process.exitCode = outcome.ok ? 0 : 1;
   });
 
@@ -647,7 +656,9 @@ pluginCmd
         continue;
       }
       const approved = allow.has(s.manifest.name);
-      console.log(`${s.manifest.name}  v${s.manifest.version}  ${approved ? '已批准（重启会话/serve 后装载）' : '未批准（plugin enable 启用）'}`);
+      console.log(
+        `${s.manifest.name}  v${s.manifest.version}  ${approved ? '已批准（重启会话/serve 后装载）' : '未批准（plugin enable 启用）'}`,
+      );
       console.log(`  权限: ${describePermissions(s.manifest)}`);
     }
   });
@@ -704,7 +715,11 @@ pluginCmd
           removed = true;
         }
       });
-      console.log(removed ? `已撤销：plugins.allow -= ${name}（重启 chat/serve 后生效）` : `plugins.allow 中没有 ${name}（本就未批准）`);
+      console.log(
+        removed
+          ? `已撤销：plugins.allow -= ${name}（重启 chat/serve 后生效）`
+          : `plugins.allow 中没有 ${name}（本就未批准）`,
+      );
     } catch (e) {
       console.error(`error: ${(e as Error).message}`);
       process.exit(1);
@@ -736,7 +751,9 @@ function mutatePluginsAllow(home: string | undefined, mutate: (allow: string[]) 
     }
   }
   const plugins = (raw['plugins'] ?? {}) as Record<string, unknown>;
-  const allow = Array.isArray(plugins['allow']) ? [...(plugins['allow'] as unknown[]).filter((x): x is string => typeof x === 'string')] : [];
+  const allow = Array.isArray(plugins['allow'])
+    ? [...(plugins['allow'] as unknown[]).filter((x): x is string => typeof x === 'string')]
+    : [];
   mutate(allow);
   raw['plugins'] = { ...plugins, allow };
   // P2-5③：temp + rename 原子写（对齐 write/edit 工具与 MemoryStore 口径）——写入中途崩溃
@@ -756,7 +773,10 @@ mcpCmd
   .option('--root <dir>', '项目根目录（默认当前目录）')
   .option('--no-probe', '不连接，只展示配置', true)
   .action(async (opts: { home?: string; root?: string; probe: boolean }) => {
-    const loaded = loadConfig({ ...(opts.root !== undefined ? { root: opts.root } : {}), ...(opts.home !== undefined ? { home: opts.home } : {}) });
+    const loaded = loadConfig({
+      ...(opts.root !== undefined ? { root: opts.root } : {}),
+      ...(opts.home !== undefined ? { home: opts.home } : {}),
+    });
     if (loaded.config === null) {
       console.error(`error: ${loaded.errors[0] ?? 'config 未加载成功'}`);
       process.exit(1);
@@ -833,7 +853,9 @@ program
       const fromAuth = gwAuth[name];
       if (fromAuth !== undefined) return fromAuth;
       const secret = envKey !== undefined ? process.env[envKey] : undefined;
-      return typeof secret === 'string' && secret.length > 0 ? { appId: gwConfig[name as keyof typeof gwConfig]!.appId, appSecret: secret } : null;
+      return typeof secret === 'string' && secret.length > 0
+        ? { appId: gwConfig[name as keyof typeof gwConfig]!.appId, appSecret: secret }
+        : null;
     };
 
     if (wanted.includes('qq')) {
@@ -843,7 +865,9 @@ program
       } else {
         const cred = gwAuth.qq ?? credFor('qq', qq.appSecretEnvKey);
         if (cred === null) {
-          console.error(`error: QQ 网关凭据缺失——请在 auth.json.gateways.qq 配置 appId/appSecret（或设 ${qq.appSecretEnvKey ?? '对应环境变量'}）`);
+          console.error(
+            `error: QQ 网关凭据缺失——请在 auth.json.gateways.qq 配置 appId/appSecret（或设 ${qq.appSecretEnvKey ?? '对应环境变量'}）`,
+          );
           process.exitCode = 1;
           return;
         }
@@ -857,11 +881,15 @@ program
       } else {
         const cred = gwAuth.feishu ?? credFor('feishu', fs.appSecretEnvKey);
         if (cred === null) {
-          console.error(`error: 飞书网关凭据缺失——请在 auth.json.gateways.feishu 配置 appId/appSecret（或设 ${fs.appSecretEnvKey ?? '对应环境变量'}）`);
+          console.error(
+            `error: 飞书网关凭据缺失——请在 auth.json.gateways.feishu 配置 appId/appSecret（或设 ${fs.appSecretEnvKey ?? '对应环境变量'}）`,
+          );
           process.exitCode = 1;
           return;
         }
-        adapters.push(new FeishuAdapter({ config: fs, auth: cred, verificationToken: process.env['FEISHU_VERIFICATION_TOKEN'] }));
+        adapters.push(
+          new FeishuAdapter({ config: fs, auth: cred, verificationToken: process.env['FEISHU_VERIFICATION_TOKEN'] }),
+        );
       }
     }
     if (adapters.length === 0) {

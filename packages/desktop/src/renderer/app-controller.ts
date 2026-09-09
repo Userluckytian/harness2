@@ -99,12 +99,15 @@ export function createController(store: AppStore, api: Harness2Api): Controller 
       });
       // 主动查询一次当前状态：onConnectionStatus 只订阅，可能错过启动前已发出的 connected
       // （2026-09-07 修复：新建会话按钮 disabled={status!=='connected'}，状态竞态会导致永远灰着）
-      void api.getStatus().then((s) => {
-        store.applyStatus(s.status, s.detail);
-        if (s.status === 'connected') void refreshSessions();
-      }).catch(() => {
-        // 通道尚未就绪：等 onConnectionStatus 事件补齐
-      });
+      void api
+        .getStatus()
+        .then((s) => {
+          store.applyStatus(s.status, s.detail);
+          if (s.status === 'connected') void refreshSessions();
+        })
+        .catch(() => {
+          // 通道尚未就绪：等 onConnectionStatus 事件补齐
+        });
       void refreshSessions();
       return () => {
         statusUnsub();

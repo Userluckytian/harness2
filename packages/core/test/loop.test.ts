@@ -27,7 +27,11 @@ afterEach(() => {
   for (const d of dirs.splice(0)) rmSync(d, { recursive: true, force: true });
 });
 
-function makeTool(name: string, execute: ToolDefinition['execute'], extra: Partial<ToolDefinition> = {}): ToolDefinition {
+function makeTool(
+  name: string,
+  execute: ToolDefinition['execute'],
+  extra: Partial<ToolDefinition> = {},
+): ToolDefinition {
   return {
     name,
     description: `${name} test tool`,
@@ -56,13 +60,7 @@ describe('runTurn 基础语义', () => {
     expect(result.finalText).toBe('你好！');
 
     const types = loadEvents(dir).map((e) => e.type);
-    expect(types).toEqual([
-      'session/header',
-      'user/message',
-      'step/start',
-      'assistant/message',
-      'step/end',
-    ]);
+    expect(types).toEqual(['session/header', 'user/message', 'step/start', 'assistant/message', 'step/end']);
     const session = loadSession(dir);
     const assistant = session.events.find((x) => x.event.type === 'assistant/message')?.event;
     expect(assistant && assistant.type === 'assistant/message' ? assistant.payload : null).toMatchObject({
@@ -116,48 +114,52 @@ describe('runTurn 基础语义', () => {
   //   - 串行退化 → 第二个只能在第一个完成后启动 → maxInFlight === 1。
   // 不依赖机器绝对速度与计时器精度；`durationMs >= 190` 只做「真实执行过」的宽松证据
   // （sleep(200) 计时器不可能提前触发，只可能更慢）。
-  it('并行 safe 工具波次：同波 safe 调用并行执行（功能性并发判据，无 wall-clock 断言）', { timeout: 8000 }, async () => {
-    const dir = tmpDir();
-    const provider = new MockProvider([
-      {
-        text: '并行探测',
-        toolCalls: [
-          { id: 'p1', name: 'slow_probe', arguments: '{"ms":200}' },
-          { id: 'p2', name: 'slow_probe', arguments: '{"ms":200}' },
-        ],
-      },
-      { text: '完成' },
-    ]);
-    const registry = new ToolRegistry();
-    let inFlight = 0;
-    let maxInFlight = 0;
-    registry.register(
-      makeTool(
-        'slow_probe',
-        async (args) => {
-          inFlight += 1;
-          maxInFlight = Math.max(maxInFlight, inFlight);
-          await sleep((args as { ms: number }).ms);
-          inFlight -= 1;
-          return { output: 'ok' };
+  it(
+    '并行 safe 工具波次：同波 safe 调用并行执行（功能性并发判据，无 wall-clock 断言）',
+    { timeout: 8000 },
+    async () => {
+      const dir = tmpDir();
+      const provider = new MockProvider([
+        {
+          text: '并行探测',
+          toolCalls: [
+            { id: 'p1', name: 'slow_probe', arguments: '{"ms":200}' },
+            { id: 'p2', name: 'slow_probe', arguments: '{"ms":200}' },
+          ],
         },
-        { concurrencySafe: true },
-      ),
-    );
-    const result = await runTurn(dir, { provider, tools: registry, cwd: dir, userText: '探测' });
+        { text: '完成' },
+      ]);
+      const registry = new ToolRegistry();
+      let inFlight = 0;
+      let maxInFlight = 0;
+      registry.register(
+        makeTool(
+          'slow_probe',
+          async (args) => {
+            inFlight += 1;
+            maxInFlight = Math.max(maxInFlight, inFlight);
+            await sleep((args as { ms: number }).ms);
+            inFlight -= 1;
+            return { output: 'ok' };
+          },
+          { concurrencySafe: true },
+        ),
+      );
+      const result = await runTurn(dir, { provider, tools: registry, cwd: dir, userText: '探测' });
 
-    expect(result.stopReason).toBe('end_turn');
-    expect(result.toolCalls).toBe(2);
-    // tool/result 顺序与调用顺序一致
-    const results = loadEvents(dir).filter((e) => e.type === 'tool/result');
-    expect(results.map((e) => (e.payload as { callId: string }).callId)).toEqual(['p1', 'p2']);
-    // 并行判据（功能性，无 wall-clock）：同波两个调用真实同时执行中（串行退化 → 1）
-    expect(maxInFlight).toBe(2);
-    // 两个工具都真实执行（sleep(200) 计时器不会提前触发），排除「瞬间空跑假并行」
-    for (const r of results) {
-      expect((r.payload as { durationMs?: number }).durationMs).toBeGreaterThanOrEqual(190);
-    }
-  });
+      expect(result.stopReason).toBe('end_turn');
+      expect(result.toolCalls).toBe(2);
+      // tool/result 顺序与调用顺序一致
+      const results = loadEvents(dir).filter((e) => e.type === 'tool/result');
+      expect(results.map((e) => (e.payload as { callId: string }).callId)).toEqual(['p1', 'p2']);
+      // 并行判据（功能性，无 wall-clock）：同波两个调用真实同时执行中（串行退化 → 1）
+      expect(maxInFlight).toBe(2);
+      // 两个工具都真实执行（sleep(200) 计时器不会提前触发），排除「瞬间空跑假并行」
+      for (const r of results) {
+        expect((r.payload as { durationMs?: number }).durationMs).toBeGreaterThanOrEqual(190);
+      }
+    },
+  );
 
   it('max_steps 守卫：达到上限停止并返回 max_steps', async () => {
     const dir = tmpDir();
@@ -227,7 +229,12 @@ describe('runTurn 基础语义', () => {
     ]);
     const registry = new ToolRegistry();
     let executed = 0;
-    registry.register(makeTool('danger', () => { executed += 1; return { output: 'done' }; }));
+    registry.register(
+      makeTool('danger', () => {
+        executed += 1;
+        return { output: 'done' };
+      }),
+    );
     const approval: ApprovalHandler = { decide: () => 'deny' };
     const result = await runTurn(dir, { provider, tools: registry, approval, cwd: dir, userText: '执行危险操作' });
 
@@ -321,10 +328,25 @@ describe('runTurn 取消语义', () => {
     ]);
     const registry = new ToolRegistry();
     registry.register(
-      makeTool('cancel_trigger', async () => { await sleep(10); ac.abort(); return { output: 'triggered' }; }, { cancelGuaranteed: true }),
+      makeTool(
+        'cancel_trigger',
+        async () => {
+          await sleep(10);
+          ac.abort();
+          return { output: 'triggered' };
+        },
+        { cancelGuaranteed: true },
+      ),
     );
     registry.register(
-      makeTool('sleep_probe', async () => { await sleep(200); return { output: 'done' }; }, { concurrencySafe: true }),
+      makeTool(
+        'sleep_probe',
+        async () => {
+          await sleep(200);
+          return { output: 'done' };
+        },
+        { concurrencySafe: true },
+      ),
     );
     const result = await runTurn(dir, { provider, tools: registry, cwd: dir, userText: 'go', signal: ac.signal });
 
@@ -373,8 +395,17 @@ describe('runTurn 取消语义', () => {
     ]);
     const registry = new ToolRegistry();
     let executed = 0;
-    registry.register(makeTool('guarded', () => { executed += 1; return { output: 'done' }; }));
-    const approval: ApprovalHandler = { decide: () => { throw new Error('approval storage down'); } };
+    registry.register(
+      makeTool('guarded', () => {
+        executed += 1;
+        return { output: 'done' };
+      }),
+    );
+    const approval: ApprovalHandler = {
+      decide: () => {
+        throw new Error('approval storage down');
+      },
+    };
     const result = await runTurn(dir, { provider, tools: registry, approval, cwd: dir, userText: 'go' });
 
     expect(executed).toBe(0);
@@ -384,7 +415,10 @@ describe('runTurn 取消语义', () => {
     expect(types.filter((t) => t === 'step/start')).toHaveLength(2);
     expect(types.filter((t) => t === 'step/end')).toHaveLength(2); // step/start+end 成对必落盘
     const logged = events.find((e) => e.type === 'tool/result');
-    expect(logged && logged.type === 'tool/result' ? logged.payload : null).toMatchObject({ callId: 'call-e', ok: false });
+    expect(logged && logged.type === 'tool/result' ? logged.payload : null).toMatchObject({
+      callId: 'call-e',
+      ok: false,
+    });
     expect(logged && logged.type === 'tool/result' ? logged.payload.error : '').toContain('approval callback threw');
     // 模型在下一请求看到该失败结果（而不是整个 turn 抛出）
     const toolMsg = provider.requests[1]?.messages.find((m) => m.role === 'tool');
@@ -448,7 +482,9 @@ describe('Model-visible ⟺ logged 不变量', () => {
 
     // 正向补强：请求中的 tool 消息都能对应日志中的 tool/result 事件
     const loggedResultIds = new Set(
-      loadEvents(dir).filter((e) => e.type === 'tool/result').map((e) => (e.payload as { callId: string }).callId),
+      loadEvents(dir)
+        .filter((e) => e.type === 'tool/result')
+        .map((e) => (e.payload as { callId: string }).callId),
     );
     for (const req of provider.requests) {
       for (const m of req.messages as ChatMessage[]) {
@@ -466,7 +502,12 @@ describe('快照钩子（TurnOptions.snapshots）', () => {
     writeFileSync(file, 'original', 'utf8');
 
     const provider = new MockProvider([
-      { text: '写入文件', toolCalls: [{ id: 'w1', name: 'write', arguments: JSON.stringify({ file_path: 'hello.txt', content: 'updated' }) }] },
+      {
+        text: '写入文件',
+        toolCalls: [
+          { id: 'w1', name: 'write', arguments: JSON.stringify({ file_path: 'hello.txt', content: 'updated' }) },
+        ],
+      },
       { text: '完成' },
     ]);
     const registry = new ToolRegistry();
@@ -515,7 +556,16 @@ describe('快照钩子（TurnOptions.snapshots）', () => {
   it('工具失败（ok:false）不记 after；取消路径同样不落盘', async () => {
     const dir = tmpDir();
     const provider = new MockProvider([
-      { text: '会失败的编辑', toolCalls: [{ id: 'e1', name: 'edit', arguments: JSON.stringify({ file_path: 'nope.txt', old_text: 'a', new_text: 'b' }) }] },
+      {
+        text: '会失败的编辑',
+        toolCalls: [
+          {
+            id: 'e1',
+            name: 'edit',
+            arguments: JSON.stringify({ file_path: 'nope.txt', old_text: 'a', new_text: 'b' }),
+          },
+        ],
+      },
       { text: '收到失败' },
     ]);
     const registry = new ToolRegistry();
@@ -534,12 +584,20 @@ describe('快照钩子（TurnOptions.snapshots）', () => {
     const work = tmpDir();
     const ac = new AbortController();
     const provider = new MockProvider([
-      { text: '慢慢写', toolCalls: [{ id: 'w1', name: 'write', arguments: JSON.stringify({ file_path: 'slow.txt', content: 'x' }) }] },
+      {
+        text: '慢慢写',
+        toolCalls: [{ id: 'w1', name: 'write', arguments: JSON.stringify({ file_path: 'slow.txt', content: 'x' }) }],
+      },
       { text: 'never' },
     ]);
     const registry = new ToolRegistry();
     // 名为 write 的慢工具：模拟执行中取消（快照钩子按工具名判定，与实现无关）
-    registry.register(makeTool('write', async () => { await sleep(150); return { output: 'written' }; }));
+    registry.register(
+      makeTool('write', async () => {
+        await sleep(150);
+        return { output: 'written' };
+      }),
+    );
     const snapshots = new SnapshotStore(dir);
     const pending = runTurn(dir, { provider, tools: registry, cwd: work, userText: 'x', snapshots, signal: ac.signal });
     setTimeout(() => ac.abort(), 30);
@@ -582,22 +640,43 @@ describe('快照钩子（TurnOptions.snapshots）', () => {
 describe('loop demo session 生成（供手工验证 traj 渲染；设 H2_GEN_LOOP_DEMO=1 时执行）', () => {
   const demoDir = join(dirname(fileURLToPath(import.meta.url)), '..', 'fixtures', 'loop-demo');
 
-  it.skipIf(!process.env.H2_GEN_LOOP_DEMO)('生成 loop-demo fixture', async () => {
-    rmSync(demoDir, { recursive: true, force: true });
-    const provider = new MockProvider([
-      { text: '我来创建演示文件。', toolCalls: [{ id: 'call-1', name: 'write', arguments: JSON.stringify({ file_path: 'hello.txt', content: '由 agent loop 生成的演示内容\n第二行：你好 harness2\n' }) }] },
-      { text: '读取确认一下。', toolCalls: [{ id: 'call-2', name: 'read', arguments: '{"file_path":"hello.txt"}' }] },
-      { text: '已写入并读取 hello.txt，内容确认无误。' },
-    ]);
-    const registry = new ToolRegistry();
-    registry.register(makeTool('write', () => ({ output: 'written' })));
-    registry.register(makeTool('read', () => ({ output: '由 agent loop 生成的演示内容' })));
-    const writer = SessionWriter.create(demoDir, { sessionId: 'loop-demo', cwd: demoDir }, { fsync: false });
-    const result = await runTurn(writer, { provider, tools: registry, cwd: demoDir, userText: '创建 hello.txt 并读取验证' });
-    writer.close();
-    expect(result.stopReason).toBe('end_turn');
-    expect(existsSync(join(demoDir, SESSION_LOG_FILE))).toBe(true);
-  }, 10000);
+  it.skipIf(!process.env.H2_GEN_LOOP_DEMO)(
+    '生成 loop-demo fixture',
+    async () => {
+      rmSync(demoDir, { recursive: true, force: true });
+      const provider = new MockProvider([
+        {
+          text: '我来创建演示文件。',
+          toolCalls: [
+            {
+              id: 'call-1',
+              name: 'write',
+              arguments: JSON.stringify({
+                file_path: 'hello.txt',
+                content: '由 agent loop 生成的演示内容\n第二行：你好 harness2\n',
+              }),
+            },
+          ],
+        },
+        { text: '读取确认一下。', toolCalls: [{ id: 'call-2', name: 'read', arguments: '{"file_path":"hello.txt"}' }] },
+        { text: '已写入并读取 hello.txt，内容确认无误。' },
+      ]);
+      const registry = new ToolRegistry();
+      registry.register(makeTool('write', () => ({ output: 'written' })));
+      registry.register(makeTool('read', () => ({ output: '由 agent loop 生成的演示内容' })));
+      const writer = SessionWriter.create(demoDir, { sessionId: 'loop-demo', cwd: demoDir }, { fsync: false });
+      const result = await runTurn(writer, {
+        provider,
+        tools: registry,
+        cwd: demoDir,
+        userText: '创建 hello.txt 并读取验证',
+      });
+      writer.close();
+      expect(result.stopReason).toBe('end_turn');
+      expect(existsSync(join(demoDir, SESSION_LOG_FILE))).toBe(true);
+    },
+    10000,
+  );
 });
 
 // ---------- 记忆开关与冻结注入（阶段 6 Task 3） ----------
@@ -636,7 +715,9 @@ describe('记忆开关与冻结注入（阶段 6）', () => {
     expect(types.indexOf('memory/snapshot')).toBeGreaterThan(-1);
     expect(types.indexOf('memory/snapshot')).toBeLessThan(types.indexOf('user/message'));
     const snap = loadEvents(dir).find((e) => e.type === 'memory/snapshot')!;
-    expect(snap.payload).toMatchObject({ content: assembleMemorySnapshot('项目使用 pnpm monorepo', '用户偏好简体中文回复') });
+    expect(snap.payload).toMatchObject({
+      content: assembleMemorySnapshot('项目使用 pnpm monorepo', '用户偏好简体中文回复'),
+    });
     // Model-visible ⟺ logged 扩展到 system：请求 system === 日志快照 content
     expect(provider.requests[0]?.system).toBe((snap.payload as { content: string }).content);
     expect(provider.requests[0]?.messages.map((m) => m.role)).toEqual(['user']);
@@ -703,7 +784,13 @@ describe('记忆开关与冻结注入（阶段 6）', () => {
     const providerOn = new MockProvider([{ text: '三轮' }, { text: '四轮' }]);
     await runTurn(dir, { provider: providerOn, tools: new ToolRegistry(), cwd: dir, userText: 'on-1', memory: store });
     const writer2 = SessionWriter.open(dir, { fsync: false });
-    await runTurn(writer2, { provider: providerOn, tools: new ToolRegistry(), cwd: dir, userText: 'on-2', memory: store });
+    await runTurn(writer2, {
+      provider: providerOn,
+      tools: new ToolRegistry(),
+      cwd: dir,
+      userText: 'on-2',
+      memory: store,
+    });
     writer2.close();
 
     const snaps = loadEvents(dir).filter((e) => e.type === 'memory/snapshot');

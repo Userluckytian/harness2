@@ -4,13 +4,7 @@
 // 打包冲突（此前 bundle 把一个含 ink 的完整 CLI 打成 cjs 会失败）。桌面端只 spawn serve，
 // 不需要交互 chat，故此处是干净、可 CJS 打包的最小入口。
 import { Command } from 'commander';
-import {
-  DEFAULT_SERVE_PORT,
-  MockProvider,
-  installCrashReporter,
-  startServe,
-  type MockScript,
-} from '@harness2/core';
+import { DEFAULT_SERVE_PORT, MockProvider, installCrashReporter, startServe, type MockScript } from '@harness2/core';
 
 // 与完整 CLI 入口一致：顶层崩溃报告（无遥测、零网络）。
 installCrashReporter();

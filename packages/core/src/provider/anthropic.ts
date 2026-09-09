@@ -155,15 +155,20 @@ export class AnthropicProvider implements ChatProvider {
     if (!res.ok) {
       const text = await res.text().catch(() => '');
       const httpCode = String(res.status);
-      const normalizedCode = res.status === 429 ? '429'
-        : res.status === 503 ? '503'
-        : res.status >= 400 && res.status < 500 ? httpCode
-        : res.status >= 500 ? 'server_5xx'
-        : httpCode;
+      const normalizedCode =
+        res.status === 429
+          ? '429'
+          : res.status === 503
+            ? '503'
+            : res.status >= 400 && res.status < 500
+              ? httpCode
+              : res.status >= 500
+                ? 'server_5xx'
+                : httpCode;
       const retryAfterRaw = res.headers.get('retry-after');
       const retryAfter = retryAfterRaw !== null ? Number(retryAfterRaw) : undefined;
-      const retryAfterSeconds = typeof retryAfter === 'number' && Number.isFinite(retryAfter) && retryAfter > 0
-        ? retryAfter : undefined;
+      const retryAfterSeconds =
+        typeof retryAfter === 'number' && Number.isFinite(retryAfter) && retryAfter > 0 ? retryAfter : undefined;
       throw new ProviderError(
         redactedSummary(`HTTP ${res.status} ${res.statusText || ''}: ${text}`),
         normalizedCode,
@@ -201,13 +206,20 @@ export class AnthropicProvider implements ChatProvider {
             // API 错误事件（overloaded_error 等）：立即脱敏抛出
             // overloaded_error → 429（可恢复重试）；其余（rate_limit_error/auth_error 等）走 HTTP 语义码
             const errType = event.error?.type ?? 'unknown';
-            const code = errType === 'overloaded_error' ? '429'
-              : errType === 'rate_limit_error' ? '429'
-              : errType === 'authentication_error' ? '401'
-              : errType === 'permission_error' ? '403'
-              : errType === 'invalid_request_error' ? 'invalid_request'
-              : errType === 'api_error' ? 'server_5xx'
-              : 'server_5xx';
+            const code =
+              errType === 'overloaded_error'
+                ? '429'
+                : errType === 'rate_limit_error'
+                  ? '429'
+                  : errType === 'authentication_error'
+                    ? '401'
+                    : errType === 'permission_error'
+                      ? '403'
+                      : errType === 'invalid_request_error'
+                        ? 'invalid_request'
+                        : errType === 'api_error'
+                          ? 'server_5xx'
+                          : 'server_5xx';
             throw new ProviderError(
               redactedSummary(`Anthropic error (${errType}): ${event.error?.message ?? ''}`),
               code,
@@ -217,7 +229,13 @@ export class AnthropicProvider implements ChatProvider {
             sawStop = true;
             break;
           }
-          for (const chunk of handleWireEvent(event, toolBlocks, inputTokens, outputTokens, (sr) => (stopReason = sr))) {
+          for (const chunk of handleWireEvent(
+            event,
+            toolBlocks,
+            inputTokens,
+            outputTokens,
+            (sr) => (stopReason = sr),
+          )) {
             if (chunk.type === 'tool-call') toolCallCount += 1;
             yield chunk;
           }

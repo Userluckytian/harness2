@@ -9,41 +9,44 @@
 ## 1. 现有功能清单（真实能力盘点）
 
 ### 1.1 CLI / 内核（packages/core + cli）
-| 能力 | 说明 |
-|------|------|
-| 事件溯源会话内核 | JSONL append-only、单写者、崩溃一致；不变量 Model-visible ⟺ logged |
-| Agent loop | turn/step 状态机、流式、取消、失败尝试单独记录（`assistant/attempt`） |
-| 工具系统 | 注册返 disposer、pre/execute/post 管线、并发安全声明、同文件编辑锁键串行 |
-| 基础工具 | `bash / read / write / edit / grep / glob`（截图/浏览器另计） |
-| Provider 抽象 | OpenAI-compatible 起步 + DeepSeek/Anthropic；`{channelId, model}` 按角色配置；key 分离存储 |
-| 配置体系 | 全局 + 项目两级；`$VAR` 展开；key 永不入 config |
-| 审批与权限 | 三 mode（default/acceptEdits/bypass）+ per-tool 规则（allow/ask/deny） |
-| 会话管理 | 多会话、`/resume`、`/fork`（血缘入 header）、会话搜索 |
-| undo / redo | 对话投影截断 + 文件快照联动恢复、冲突检测、dry-run 预览 |
-| 轨迹 `traj` | 全事件落盘，读日志渲染时间线（turn/step/tool 调用树、耗时、token） |
-| `doctor` / `config check` | 环境自检、配置核对（key 只显来源标签） |
+
+| 能力                      | 说明                                                                                       |
+| ------------------------- | ------------------------------------------------------------------------------------------ |
+| 事件溯源会话内核          | JSONL append-only、单写者、崩溃一致；不变量 Model-visible ⟺ logged                         |
+| Agent loop                | turn/step 状态机、流式、取消、失败尝试单独记录（`assistant/attempt`）                      |
+| 工具系统                  | 注册返 disposer、pre/execute/post 管线、并发安全声明、同文件编辑锁键串行                   |
+| 基础工具                  | `bash / read / write / edit / grep / glob`（截图/浏览器另计）                              |
+| Provider 抽象             | OpenAI-compatible 起步 + DeepSeek/Anthropic；`{channelId, model}` 按角色配置；key 分离存储 |
+| 配置体系                  | 全局 + 项目两级；`$VAR` 展开；key 永不入 config                                            |
+| 审批与权限                | 三 mode（default/acceptEdits/bypass）+ per-tool 规则（allow/ask/deny）                     |
+| 会话管理                  | 多会话、`/resume`、`/fork`（血缘入 header）、会话搜索                                      |
+| undo / redo               | 对话投影截断 + 文件快照联动恢复、冲突检测、dry-run 预览                                    |
+| 轨迹 `traj`               | 全事件落盘，读日志渲染时间线（turn/step/tool 调用树、耗时、token）                         |
+| `doctor` / `config check` | 环境自检、配置核对（key 只显来源标签）                                                     |
 
 ### 1.2 进阶能力（阶段 6-10）
-| 能力 | 说明 |
-|------|------|
-| 记忆系统 | 三态 off/ask/auto；MEMORY.md/USER.md 硬预算 + 漂移检测 + nudge 后台复盘 |
-| 内嵌浏览器 | `browser_navigate/click/type/snapshot/screenshot/close`，aria 快照引用，资源红线 |
-| 上下文压缩 | 75% 阈值、roles.small 摘要、近 6 条原文保留、失败跳过不中断 |
-| 定时任务 cron | 60s tick、跨进程锁、at-most-once、连败熔断、history |
-| 插件 | manifest 声明式权限、装载审批、事件总线 |
-| MCP | stdio / Streamable HTTP、`mcp__<server>__<tool>`、断线退避重启 |
-| 子代理 subagent | `subagent_start/continue`、独立子会话完整 runTurn、父取消传播 |
-| IM 网关 | QQ（官方 v2）+ 飞书，审批回复式、三态私聊/群策略 |
-| 导出 / 回放 | `export`（ZIP 含子代理、幂等）→ `replay`（轨迹即测试夹具，CI 零 key） |
-| Skills | 两级目录、frontmatter 简表、每 turn 注入名称列表、`skill` 工具按需取全文 |
+
+| 能力            | 说明                                                                             |
+| --------------- | -------------------------------------------------------------------------------- |
+| 记忆系统        | 三态 off/ask/auto；MEMORY.md/USER.md 硬预算 + 漂移检测 + nudge 后台复盘          |
+| 内嵌浏览器      | `browser_navigate/click/type/snapshot/screenshot/close`，aria 快照引用，资源红线 |
+| 上下文压缩      | 75% 阈值、roles.small 摘要、近 6 条原文保留、失败跳过不中断                      |
+| 定时任务 cron   | 60s tick、跨进程锁、at-most-once、连败熔断、history                              |
+| 插件            | manifest 声明式权限、装载审批、事件总线                                          |
+| MCP             | stdio / Streamable HTTP、`mcp__<server>__<tool>`、断线退避重启                   |
+| 子代理 subagent | `subagent_start/continue`、独立子会话完整 runTurn、父取消传播                    |
+| IM 网关         | QQ（官方 v2）+ 飞书，审批回复式、三态私聊/群策略                                 |
+| 导出 / 回放     | `export`（ZIP 含子代理、幂等）→ `replay`（轨迹即测试夹具，CI 零 key）            |
+| Skills          | 两级目录、frontmatter 简表、每 turn 注入名称列表、`skill` 工具按需取全文         |
 
 ### 1.3 桌面端（packages/desktop）
-| 能力 | 说明 |
-|------|------|
+
+| 能力        | 说明                                                                     |
+| ----------- | ------------------------------------------------------------------------ |
 | Electron 壳 | spawn serve（HTTP+WS）、preload 桥（渲染进程零 Node）、断线重连+自动重启 |
-| 多会话并行 | 切换不断流；后台会话只记事件不渲染；切换后全量重放 |
-| 分屏与拖拽 | 1/2/3 分栏、HTML5 DnD、布局持久化 |
-| 会话流渲染 | 流式光标、工具行、审批条、turn 摘要、reasoning 折叠 |
+| 多会话并行  | 切换不断流；后台会话只记事件不渲染；切换后全量重放                       |
+| 分屏与拖拽  | 1/2/3 分栏、HTML5 DnD、布局持久化                                        |
+| 会话流渲染  | 流式光标、工具行、审批条、turn 摘要、reasoning 折叠                      |
 
 ---
 
@@ -58,31 +61,34 @@
 > 标注：`[P0]` 直接影响可用性 / `[P1]` 显著提升生产力 / `[P2]` 生态与差异化。
 
 ### 3.1 工作台级（P0，最影响"像不像一个 agent 工作台"）
-| # | 缺失/增强 | 主流做法参考 | 建议落点 |
-|---|-----------|--------------|---------|
-| G1 | **文件树 / 项目浏览器** | Cursor / OpenCode 左侧文件树，@-引用 | 桌面端加可折叠文件树面板；`@file` 把文件内容带进上下文 |
-| G2 | **Diff 审查视图** | 所有主流都"先看 diff 再应用" | write/edit 后显示 unified diff 卡片 + 接受/拒绝/导入快照 |
-| G3 | **集成终端面板** | Cursor / Codex 底部终端 | 桌面端加终端 pane（复用 bash 工具），看进程日志 |
-| G4 | **上下文/Token 预算指示** | Claude Code 顶部实时 context 余量 | 顶部 context 水条（当前/预算），+角色小模型标记 |
-| G5 | **命令面板 Ctrl+K** | 几乎人手一个 | 全局命令面板：新建会话 / 切换模型 / 跳转会话 / 跑工具 |
+
+| #   | 缺失/增强                 | 主流做法参考                         | 建议落点                                                 |
+| --- | ------------------------- | ------------------------------------ | -------------------------------------------------------- |
+| G1  | **文件树 / 项目浏览器**   | Cursor / OpenCode 左侧文件树，@-引用 | 桌面端加可折叠文件树面板；`@file` 把文件内容带进上下文   |
+| G2  | **Diff 审查视图**         | 所有主流都"先看 diff 再应用"         | write/edit 后显示 unified diff 卡片 + 接受/拒绝/导入快照 |
+| G3  | **集成终端面板**          | Cursor / Codex 底部终端              | 桌面端加终端 pane（复用 bash 工具），看进程日志          |
+| G4  | **上下文/Token 预算指示** | Claude Code 顶部实时 context 余量    | 顶部 context 水条（当前/预算），+角色小模型标记          |
+| G5  | **命令面板 Ctrl+K**       | 几乎人手一个                         | 全局命令面板：新建会话 / 切换模型 / 跳转会话 / 跑工具    |
 
 ### 3.2 编排与可视化（P1）
-| # | 缺失/增强 | 说明 |
-|---|-----------|------|
-| G6 | **子代理树可视化** | 子会话独立运行，桌面端加"子代理树"拓扑 + 深链跳转（现只有工具行 ↗） |
-| G7 | **工具调用时间线 / 轨迹视图** | `traj` 已有 CLI，桌面端做可视化 timeline（见 `agent-trace.html`） |
-| G8 | **模型切换器（运行时）** | 现在 config 驱动，桌面端加会话级模型下拉，不用重启 |
-| G9 | **Slash 命令内联补全** | `/` 弹出命令 + 参数提示（/new /resume /fork /undo ...） |
-| G10 | **@-mention 上下文引用** | `@file` / `@session` / `@skill` 把对象带进当前 turn |
+
+| #   | 缺失/增强                     | 说明                                                                |
+| --- | ----------------------------- | ------------------------------------------------------------------- |
+| G6  | **子代理树可视化**            | 子会话独立运行，桌面端加"子代理树"拓扑 + 深链跳转（现只有工具行 ↗） |
+| G7  | **工具调用时间线 / 轨迹视图** | `traj` 已有 CLI，桌面端做可视化 timeline（见 `agent-trace.html`）   |
+| G8  | **模型切换器（运行时）**      | 现在 config 驱动，桌面端加会话级模型下拉，不用重启                  |
+| G9  | **Slash 命令内联补全**        | `/` 弹出命令 + 参数提示（/new /resume /fork /undo ...）             |
+| G10 | **@-mention 上下文引用**      | `@file` / `@session` / `@skill` 把对象带进当前 turn                 |
 
 ### 3.3 生态与治理（P2）
-| # | 缺失/增强 | 说明 |
-|---|-----------|------|
-| G11 | **用量/成本估算** | 遥评估算（ROADMAP C3）：token/成本统计卡片，**不回传遥测** |
-| G12 | **Web UI** | ROADMAP C2：serve 多消费者已就绪，Web 端复用（信任域扩展是前提） |
-| G13 | **MCP/插件市场/浏览** | 现在靠 CLI `list`/`enable`，桌面端可视化安装/启用 |
-| G14 | **会话全文搜索** | 现在关键字搜索，加全文索引 + 命中高亮 |
-| G15 | **崩溃报告可视化** | doctor/crash 已落地，桌面端查看崩溃报告列表 |
+
+| #   | 缺失/增强             | 说明                                                             |
+| --- | --------------------- | ---------------------------------------------------------------- |
+| G11 | **用量/成本估算**     | 遥评估算（ROADMAP C3）：token/成本统计卡片，**不回传遥测**       |
+| G12 | **Web UI**            | ROADMAP C2：serve 多消费者已就绪，Web 端复用（信任域扩展是前提） |
+| G13 | **MCP/插件市场/浏览** | 现在靠 CLI `list`/`enable`，桌面端可视化安装/启用                |
+| G14 | **会话全文搜索**      | 现在关键字搜索，加全文索引 + 命中高亮                            |
+| G15 | **崩溃报告可视化**    | doctor/crash 已落地，桌面端查看崩溃报告列表                      |
 
 ---
 
@@ -90,23 +96,24 @@
 
 **产出：OLED 暗色（Developer Tool / AI 工作台）**——与"终端 + 绿色 success"气质匹配，深读不发亮、适合长时间编码。
 
-| Token | 值 | 用途 |
-|-------|----|------|
-| `--bg` | `#020617` | 页面背景（最底层） |
-| `--surface` | `#0F172A` / `#1E293B` | 面板 / 卡片 |
-| `--muted` | `#1A1E2F` | 分隔 / 强调弱化区 |
-| `--border` | `#334155` | 分隔线 |
-| `--fg` | `#F8FAFC` | 主文字 |
-| `--fg-muted` | `#94A3B8` | 次级文字 |
-| `--accent` | `#22C55E` | 主强调（success/连接/accept） |
-| `--info` | `#3B82F6` | 信息/链接 |
-| `--warn` | `#F59E0B` | 警告/运行中 |
-| `--danger` | `#EF4444` | 错误/拒绝 |
-| `--ring` | `#0F172A` | 焦点环 |
+| Token        | 值                    | 用途                          |
+| ------------ | --------------------- | ----------------------------- |
+| `--bg`       | `#020617`             | 页面背景（最底层）            |
+| `--surface`  | `#0F172A` / `#1E293B` | 面板 / 卡片                   |
+| `--muted`    | `#1A1E2F`             | 分隔 / 强调弱化区             |
+| `--border`   | `#334155`             | 分隔线                        |
+| `--fg`       | `#F8FAFC`             | 主文字                        |
+| `--fg-muted` | `#94A3B8`             | 次级文字                      |
+| `--accent`   | `#22C55E`             | 主强调（success/连接/accept） |
+| `--info`     | `#3B82F6`             | 信息/链接                     |
+| `--warn`     | `#F59E0B`             | 警告/运行中                   |
+| `--danger`   | `#EF4444`             | 错误/拒绝                     |
+| `--ring`     | `#0F172A`             | 焦点环                        |
 
 **字体**：Inter（300–700）；等宽 `JetBrains Mono`（工具/tool call/路径）。
 
 **关键设计原则（来自 skill 预交付检查）**
+
 - 不使用 emoji 当结构图标 → 用 SVG / Phosphor 线性图标（下同）。
 - 所有可点元素 `cursor:pointer`，hover/active 150–300ms 过渡，焦点态可见。
 - 暗色对比：正文 ≥4.5:1，次级 ≥3:1；分隔线两种模式都可见。
@@ -116,13 +123,13 @@
 
 ## 5. 设计稿说明
 
-| 文件 | 内容 | 亮点 |
-|------|------|------|
-| **`prototype-v5.html`** ✅✅✅✅ | **V5 暖纸交互原型（当前最佳）**：**暖纸皮色调**（奶油纸底 + 琥珀 accent + 暖石 ink）· chat-first · **先计划再执行 plan 模式**（确认→逐个划掉）· 设置居中弹窗 · Codex 式工作区 · 无遮挡注释 | 见 §11 |
-| `prototype-v4.html` | V4 交互原型（保留） | 清空感 chat-first（冷色） |
-| `prototype-v3.html` | V3 交互原型（保留） | 对话优先 + 计划划掉 + 设置弹窗 |
-| `prototype.html` | V2 交互原型 | 4-Tab 分区版（保留） |
-| `workspace.html` / `agent-trace.html` | V1 静态设计稿 | 保留作对比 |
+| 文件                                  | 内容                                                                                                                                                                                       | 亮点                           |
+| ------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------ |
+| **`prototype-v5.html`** ✅✅✅✅      | **V5 暖纸交互原型（当前最佳）**：**暖纸皮色调**（奶油纸底 + 琥珀 accent + 暖石 ink）· chat-first · **先计划再执行 plan 模式**（确认→逐个划掉）· 设置居中弹窗 · Codex 式工作区 · 无遮挡注释 | 见 §11                         |
+| `prototype-v4.html`                   | V4 交互原型（保留）                                                                                                                                                                        | 清空感 chat-first（冷色）      |
+| `prototype-v3.html`                   | V3 交互原型（保留）                                                                                                                                                                        | 对话优先 + 计划划掉 + 设置弹窗 |
+| `prototype.html`                      | V2 交互原型                                                                                                                                                                                | 4-Tab 分区版（保留）           |
+| `workspace.html` / `agent-trace.html` | V1 静态设计稿                                                                                                                                                                              | 保留作对比                     |
 
 打开方式：浏览器直接打开对应 `.html`；`prototype.html` 建议浏览器打开体验交互（切 Tab、点「登录」按钮看 codemap、拖流图、勾 todo、点桌宠）。
 
@@ -131,31 +138,39 @@
 ## 6. V2 原型 · 用户 8 点反馈的设计结论
 
 ### 整合为单页交互（点 1）
+
 V1 拆两页显乱 → V2 合并成单页，用 **4 个 Tab** 分区，交互保留（切换、codemap 点选联动、拖拽、todo、桌宠）。
 
 ### 会话与对话头（点 2）
+
 - **归档 vs 删除**：建议**归档（软删除/隐藏，可恢复）+ 删除（物理清除）**两级。产品现状：只有删除，无归档。
 - **会话编辑**：建议支持**重命名标题**与**编辑会话元信息**。现状：无。
 - **对话头元素太少**：已加 **当前目录 / 当前分支 / 当前模型 / 上下文水条 / Todo 入口 / 定时入口**。
 - **todo 功能**：harness2 **当前没有** todo/计划清单（主流 harness 如 Claude Code 的 plan、Cursor 的 tasklist 都有）→ 设计稿加了「Todo/计划」面板，可加优先级。**属于缺口，建议补。**
 
 ### 代码查看/编辑（点 3）
+
 桌面端缺独立代码查看器/编辑器（V1 只有 diff 卡片）→ 设计稿加入**文件代码卡**（可读、可编辑）。
 
 ### codemap「上图下码」（点 4，核心）
+
 选中页面元素（如「登录」按钮）→ 提问「梳理调用逻辑」→
+
 - **上图**：调用链流图（登录按钮 → onClick → useLogin 校验 → authApi.login → 后端接口），每步一张卡片 + 一句解释；**可拖动、可点击**；点击某卡片 → 下方代码**跳到对应代码块并高亮**。
 - **下码**：展示该调用链相关代码（非调用链**变暗/灰**），**仍可直接编辑整文件**。
-参考：Devin codemap、Cursor 代码引用、Claude Code 追溯。
+  参考：Devin codemap、Cursor 代码引用、Claude Code 追溯。
 
 ### 定时任务（点 5 / 7）
+
 - harness2 **已有 cron**（CLI `harness2 cron add`），但**桌面端没暴露** → 设计稿加「定时任务」面板（列任务、开关、新增）。
 - **桌宠提醒**（点 7）：预留右下角**桌面宠物**气泡（如「该喝水啦💧」），为后续功能占位。
 
 ### 主题（点 6）
+
 V1 纯黑 OLED 太压抑 → **默认改浅色**（`#F1F5F9` 底 / 白卡 / 蓝 accent），暗色为可选切换；规避压抑感。
 
 ### QQ / 飞书配置（点 8）
+
 现状：仅**配置文件 + CLI**（`config.json` 的 `gateways` 段 + `auth.json` 的 `gateways` 凭据，`harness2 gateway` 启动），**无 GUI**。设计稿在「设置」里给出**可视化的网关配置入口**（QQ 已配置 / 飞书未启用 + 字段所在路径），方便定位。
 
 ---
@@ -184,6 +199,7 @@ V1 纯黑 OLED 太压抑 → **默认改浅色**（`#F1F5F9` 底 / 白卡 / 蓝 
 **dsh 机制**：①插件=npm 包（`apply(ctx)` 注册工具/服务/事件，`defineTool` 有 schema 校验/exec.token/signal）；②`cordis.yml` 清单（id/name/config）+ profile/bundle/patch 组合；③**客户端动态装载 + 框架级审批面板**（模型 `cordis_run` → 全局 overlay → 允许/拒绝；插件分 host 半 + browser 半）；④`gen-*-catalog` 生成**插件/工具/配置目录**（市场注册表）。
 
 **我们接入评估**：
+
 - ❌ 重写为 Cordis 内核 —— 不现实（~60 包 monorepo，与现有事件溯源内核冲突）。
 - ✅ **建在自有插件系统上，借鉴 dsh 市场理念**：harness2 已有插件（manifest 权限+审批+事件总线），增补 —— ①标准插件包 manifest；②**插件市场面板**（列举/搜/装/启/审批）；③**运行时装载 + 框架级审批**（仿 cordis_run overlay）；④**能力 seam 化**（工具/命令/Chat 节点/设置卡/MCP/Skills/子代理，对应 dsh ctx.tools/commands/ConversationNodeDefinition/settings）。
 - ⚠️ 直接跑 dsh 生态插件 —— 依赖其 Cordis 上下文，无法直跑；需适配层（大工程），务实做自己的市场。
@@ -204,12 +220,12 @@ V1 纯黑 OLED 太压抑 → **默认改浅色**（`#F1F5F9` 底 / 白卡 / 蓝 
 
 **本地 harness 权限模式（`~/` 下找到 .claude / .cursor / .config/opencode / .gemini / .windsurf；它们的配置多为默认值；opencode 已装包中二进制含权限模式字符串）**：
 
-| 工具 | 权限模式 | 说明 |
-|------|---------|------|
-| **opencode** | `ask / accept / bypass / plan` | `permission.mode` + per-tool；`plan` = 先出计划再确认执行 |
-| **Claude Code** | `default / acceptEdits / bypassPermissions / plan` | `permissions`(allow/deny/ask 列表) + 权限模式；`/plan` 计划模式 |
-| **Cursor** | allow/deny/ask + acceptEdits + Agent 计划模式 | settings 配置 |
-| **Gemini / Windsurf** | 类似 ask/accept/bypass | — |
+| 工具                  | 权限模式                                           | 说明                                                            |
+| --------------------- | -------------------------------------------------- | --------------------------------------------------------------- |
+| **opencode**          | `ask / accept / bypass / plan`                     | `permission.mode` + per-tool；`plan` = 先出计划再确认执行       |
+| **Claude Code**       | `default / acceptEdits / bypassPermissions / plan` | `permissions`(allow/deny/ask 列表) + 权限模式；`/plan` 计划模式 |
+| **Cursor**            | allow/deny/ask + acceptEdits + Agent 计划模式      | settings 配置                                                   |
+| **Gemini / Windsurf** | 类似 ask/accept/bypass                             | —                                                               |
 
 **结论 / 缺口**：harness2 的 `default/acceptEdits/bypass` 已覆盖「每次执行前询问」与「完全控制」；**缺一个独立的「计划模式（plan）」**——让 agent 先输出执行计划、等用户确认后再逐项执行（OpenCode/Claude Code 都有）。我们 V4 已做「计划划掉卡」，但**没有把执行门禁绑到计划确认上**。建议后续：新增 approval mode `plan`（agent 先给计划 → 用户确认/修改 → 再执行，执行中同步划掉计划卡）。
 
@@ -222,6 +238,7 @@ V1 纯黑 OLED 太压抑 → **默认改浅色**（`#F1F5F9` 底 / 白卡 / 蓝 
 ---
 
 ## 7. 桌面端可落地优先级（对应用户反馈）
+
 1. **rich 对话头**（cwd/分支/模型/上下文/todo）—— 纯 UI，最快。
 2. **会话归档 / 重命名 / 删除** —— 会话层增强。
 3. **Todo 面板** —— 补产品缺口。

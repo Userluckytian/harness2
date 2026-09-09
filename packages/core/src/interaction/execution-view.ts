@@ -109,7 +109,10 @@ function resolveStatus(trace: ToolExecutionTrace): ToolExecutionStatus {
   return trace.ok === true ? 'success' : 'failed';
 }
 
-function resolveExitCode(trace: ToolExecutionTrace): { exitCode?: number; exitCodeSource: ToolExecutionExitCodeSource } {
+function resolveExitCode(trace: ToolExecutionTrace): {
+  exitCode?: number;
+  exitCodeSource: ToolExecutionExitCodeSource;
+} {
   if (trace.tool !== 'bash') return { exitCodeSource: 'none' };
   // 未启动/未结束：绝不虚构退出码
   if (trace.startedAt === undefined || trace.endedAt === undefined) return { exitCodeSource: 'none' };

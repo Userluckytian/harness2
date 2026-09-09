@@ -45,27 +45,44 @@ export function ConversationHeader({ sessionId, cwd }: ConversationHeaderProps):
 
     // git 分支（cwd 为 undefined 或空时不请求）
     if (cwd && cwd.length > 0) {
-      window.harness2.gitBranch(cwd).then((b) => {
-        if (!cancelled) setBranch(b);
-      }).catch(() => { if (!cancelled) setBranch(null); });
+      window.harness2
+        .gitBranch(cwd)
+        .then((b) => {
+          if (!cancelled) setBranch(b);
+        })
+        .catch(() => {
+          if (!cancelled) setBranch(null);
+        });
     } else {
       setBranch(null);
     }
 
     // 模型（全局配置，只需拉一次；但随会话切换也不影响）
-    window.harness2.settingsGetConfig().then((cfg) => {
-      if (!cancelled) {
-        const m = cfg.roles?.main?.model;
-        setModel(typeof m === 'string' ? m : 'default');
-      }
-    }).catch(() => { if (!cancelled) setModel('default'); });
+    window.harness2
+      .settingsGetConfig()
+      .then((cfg) => {
+        if (!cancelled) {
+          const m = cfg.roles?.main?.model;
+          setModel(typeof m === 'string' ? m : 'default');
+        }
+      })
+      .catch(() => {
+        if (!cancelled) setModel('default');
+      });
 
     // 上下文占用
-    window.harness2.getContextUsage(sessionId).then((u) => {
-      if (!cancelled) setUsage(u);
-    }).catch(() => { if (!cancelled) setUsage({ usage: null, label: '—' }); });
+    window.harness2
+      .getContextUsage(sessionId)
+      .then((u) => {
+        if (!cancelled) setUsage(u);
+      })
+      .catch(() => {
+        if (!cancelled) setUsage({ usage: null, label: '—' });
+      });
 
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+    };
   }, [sessionId, cwd]);
 
   const pct = usageBarPercent(usage.usage);
@@ -73,13 +90,20 @@ export function ConversationHeader({ sessionId, cwd }: ConversationHeaderProps):
 
   return (
     <div className="pane-header">
-      <span className="pane-header-cwd mono" title={cwd ?? ''}>{cwd ?? '(无 cwd)'}</span>
+      <span className="pane-header-cwd mono" title={cwd ?? ''}>
+        {cwd ?? '(无 cwd)'}
+      </span>
       {branch !== null && (
         <span className="pane-header-branch mono" title={branch}>
-          <span className="pane-header-branch-icon" aria-hidden>⎇ </span>{shortBranch(branch)}
+          <span className="pane-header-branch-icon" aria-hidden>
+            ⎇{' '}
+          </span>
+          {shortBranch(branch)}
         </span>
       )}
-      <span className="pane-header-model mono" title={model}>{shortModel(model)}</span>
+      <span className="pane-header-model mono" title={model}>
+        {shortModel(model)}
+      </span>
       <span className="pane-header-usage" title={`上下文占用 ${usage.label}`}>
         <span className="ctx-bar">
           <span className={barClass} style={{ width: `${pct}%` }} />

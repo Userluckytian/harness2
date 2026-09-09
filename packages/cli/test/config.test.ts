@@ -12,7 +12,14 @@ const cliEntry = join(dirname(fileURLToPath(import.meta.url)), '..', 'dist', 'in
 function makeEnv(): { home: string; root: string; cleanup: () => void } {
   const home = mkdtempSync(join(tmpdir(), 'h2-cfg-home-'));
   const root = mkdtempSync(join(tmpdir(), 'h2-cfg-root-'));
-  return { home, root, cleanup: () => { rmSync(home, { recursive: true, force: true }); rmSync(root, { recursive: true, force: true }); } };
+  return {
+    home,
+    root,
+    cleanup: () => {
+      rmSync(home, { recursive: true, force: true });
+      rmSync(root, { recursive: true, force: true });
+    },
+  };
 }
 
 function writeGlobal(home: string, content: string): void {

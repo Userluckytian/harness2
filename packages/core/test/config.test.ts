@@ -269,7 +269,10 @@ describe('schema 校验', () => {
   });
 
   it('subagent：maxDepth 1..10、maxTurns 1..200 分开校验（P1-2：契约示例 {maxDepth:1, maxTurns:25} 可解析）', () => {
-    const base = { providers: { a: { protocol: 'openai', baseUrl: 'https://x' } }, roles: { main: { channel: 'a', model: 'm' } } };
+    const base = {
+      providers: { a: { protocol: 'openai', baseUrl: 'https://x' } },
+      roles: { main: { channel: 'a', model: 'm' } },
+    };
     // 计划契约示例即 25——旧上限 10 会令照抄契约的合法配置报错
     const contract = parseConfig({ ...base, subagent: { maxDepth: 1, maxTurns: 25 } });
     expect(contract.errors).toEqual([]);

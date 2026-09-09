@@ -17,13 +17,13 @@
 
 ## 前置阅读（必须）
 
-| 优先级 | 文件 |
-|--------|------|
-| P0 | `docs/ai-framework/phased-plan-driven.md`、`AGENTS.md`、`CODE_REVIEW.md` |
-| P0 | `docs/research/notion-ai-20260908-0056/04-implementation-plan.md`（I1 全文，本阶段唯一契约来源）|
-| P0 | `docs/research/notion-ai-20260908-0056/03-harness2-core-audit.md`（已确认的机制 + 差距 H1/H2/H3）|
-| P1 | `packages/core/src/agent/loop.ts`、`provider/openai.ts`、`tools/executor.ts`、`agent/subagent.ts`、`server/sessions.ts`、`server/ws.ts` |
-| P2 | `docs/research/notion-ai-20260908-0056/01-grok-build-research.md`、`02-codexmonitor-research.md` |
+| 优先级 | 文件                                                                                                                                    |
+| ------ | --------------------------------------------------------------------------------------------------------------------------------------- |
+| P0     | `docs/ai-framework/phased-plan-driven.md`、`AGENTS.md`、`CODE_REVIEW.md`                                                                |
+| P0     | `docs/research/notion-ai-20260908-0056/04-implementation-plan.md`（I1 全文，本阶段唯一契约来源）                                        |
+| P0     | `docs/research/notion-ai-20260908-0056/03-harness2-core-audit.md`（已确认的机制 + 差距 H1/H2/H3）                                       |
+| P1     | `packages/core/src/agent/loop.ts`、`provider/openai.ts`、`tools/executor.ts`、`agent/subagent.ts`、`server/sessions.ts`、`server/ws.ts` |
+| P2     | `docs/research/notion-ai-20260908-0056/01-grok-build-research.md`、`02-codexmonitor-research.md`                                        |
 
 **仓库路径：** `D:/AI_Projects/harness2`
 **基线分支 / worktree：** 从当前已核对的 `main`（业务研究基线 `b1c2d815`，packages 无 diff）建 **独立 worktree**：`feat/notion-i1-runtime`。**别在主工作树切分支打断他人**；不删他人 worktree；git 不 reset/clean；**默认不 push**。
@@ -49,19 +49,19 @@
 
 > 上阶段（阶段 12/终端/桌面）已并入 main；本阶段为新地基，无功能性上阶段遗留。但**审计已确认的源码缺陷必须在本阶段闭环**（H1 取消接线 / H3 无有界重试 —— H2 属终端界面层，归激进-终端）。
 
-| 上阶段遗留项 | 来源 | 未通过原因 | 状态 |
-|-------------|------|-----------|------|
-| H1：TUI 忙时输入/取消未接线（`Composer` `if(busy)return`、`submit` 未调 `abortTurn`） | 03-harness2-core-audit | 内核有 `abortTurn`，缺 UI 接线 | ⬜ 由激进-终端 T0 承接（本底座提供契约） |
-| H3：provider 失败立即结束，无有界重试 | 03-harness2-core-audit | `openai.ts` 单次 fetch、`loop.ts` 出错即 return | ⬜ 本底座 S4 闭环 |
+| 上阶段遗留项                                                                          | 来源                   | 未通过原因                                      | 状态                                     |
+| ------------------------------------------------------------------------------------- | ---------------------- | ----------------------------------------------- | ---------------------------------------- |
+| H1：TUI 忙时输入/取消未接线（`Composer` `if(busy)return`、`submit` 未调 `abortTurn`） | 03-harness2-core-audit | 内核有 `abortTurn`，缺 UI 接线                  | ⬜ 由激进-终端 T0 承接（本底座提供契约） |
+| H3：provider 失败立即结束，无有界重试                                                 | 03-harness2-core-audit | `openai.ts` 单次 fetch、`loop.ts` 出错即 return | ⬜ 本底座 S4 闭环                        |
 
 ---
 
 ## 跳过项（因档位未做，**非缺陷**）
 
-| 跳过项 | 原因 | 待补做 |
-|--------|------|--------|
+| 跳过项                                                | 原因                   | 待补做                    |
+| ----------------------------------------------------- | ---------------------- | ------------------------- |
 | 端到端真机（Windows IME/滚动/中断手感、录屏 12 场景） | 需用户真机，底座不替代 | ⬜ 留「残留手工验收清单」 |
-| Grok 完整熔断器 / CodexMonitor 活动线程出队等「不足」 | I1 明确不照搬 | ⬜ — |
+| Grok 完整熔断器 / CodexMonitor 活动线程出队等「不足」 | I1 明确不照搬          | ⬜ —                      |
 
 ---
 
@@ -80,54 +80,62 @@
 
 ## File Structure（预期变更）
 
-| 文件 | 动作 | 职责 |
-|------|------|------|
-| `packages/core/src/interaction/types.ts` | 新建 | S0：契约类型（冻结）|
-| `packages/core/src/interaction/runtime-journal.ts` | 新建 | S3：`runtime.v1.jsonl` 单写，accepted queue/去重/task lifecycle/call 状态与恢复水位 |
-| `packages/core/src/interaction/delivery.ts` | 新建 | S3：submit 幂等、去重、跨进程对账 |
-| `packages/core/src/interaction/retry-policy.ts` | 新建 | S4：有界重试预算与错误码分类 |
-| `packages/core/src/tools/executor.ts` | 修改 | S1：取消后不执行、执行生命周期观察、每 session 真实 cwd |
-| `packages/core/src/agent/subagent.ts` | 修改 | S2/S5：审批上抛、task-coordinator 接线 |
-| `packages/core/src/agent/task-coordinator.ts` | 新建 | S5：任务生命周期、只读 K=2 并行、共享写全局串行、status/wait/continue/cancel |
-| `packages/core/src/server/ws.ts`、`http.ts`、`sessions.ts` | 修改 | S2/S3/S6：新契约端点、协议 v2 协商、resumeSubscription/审批/steer |
-| `packages/core/src/provider/*`、`agent/loop.ts` | 修改 | S4/S6：retry 分类、step 边界 steer、控制输入 |
-| `packages/core/src/interaction/run-config.ts`、`plan-state.ts`、`execution-view.ts`、`change-review.ts` | 新建 | S7：桌面功能闭环契约（有效配置/计划/命令执行/变更审查），最终路径由 S0 确认 |
-| `packages/core/test/**`（新增：executor-cancel、approval-queue、delivery-idempotency、runtime-journal-crash、subscription-resume、attempt-retry、task-coordinator、steer-boundary、effective-run-config、plan-execution-boundary、command-output-exit-code、change-review-user-dirty、undo-external-conflict） | 新增 | 全覆盖（见验收）|
+| 文件                                                                                                                                                                                                                                                                                                           | 动作 | 职责                                                                                |
+| -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---- | ----------------------------------------------------------------------------------- |
+| `packages/core/src/interaction/types.ts`                                                                                                                                                                                                                                                                       | 新建 | S0：契约类型（冻结）                                                                |
+| `packages/core/src/interaction/runtime-journal.ts`                                                                                                                                                                                                                                                             | 新建 | S3：`runtime.v1.jsonl` 单写，accepted queue/去重/task lifecycle/call 状态与恢复水位 |
+| `packages/core/src/interaction/delivery.ts`                                                                                                                                                                                                                                                                    | 新建 | S3：submit 幂等、去重、跨进程对账                                                   |
+| `packages/core/src/interaction/retry-policy.ts`                                                                                                                                                                                                                                                                | 新建 | S4：有界重试预算与错误码分类                                                        |
+| `packages/core/src/tools/executor.ts`                                                                                                                                                                                                                                                                          | 修改 | S1：取消后不执行、执行生命周期观察、每 session 真实 cwd                             |
+| `packages/core/src/agent/subagent.ts`                                                                                                                                                                                                                                                                          | 修改 | S2/S5：审批上抛、task-coordinator 接线                                              |
+| `packages/core/src/agent/task-coordinator.ts`                                                                                                                                                                                                                                                                  | 新建 | S5：任务生命周期、只读 K=2 并行、共享写全局串行、status/wait/continue/cancel        |
+| `packages/core/src/server/ws.ts`、`http.ts`、`sessions.ts`                                                                                                                                                                                                                                                     | 修改 | S2/S3/S6：新契约端点、协议 v2 协商、resumeSubscription/审批/steer                   |
+| `packages/core/src/provider/*`、`agent/loop.ts`                                                                                                                                                                                                                                                                | 修改 | S4/S6：retry 分类、step 边界 steer、控制输入                                        |
+| `packages/core/src/interaction/run-config.ts`、`plan-state.ts`、`execution-view.ts`、`change-review.ts`                                                                                                                                                                                                        | 新建 | S7：桌面功能闭环契约（有效配置/计划/命令执行/变更审查），最终路径由 S0 确认         |
+| `packages/core/test/**`（新增：executor-cancel、approval-queue、delivery-idempotency、runtime-journal-crash、subscription-resume、attempt-retry、task-coordinator、steer-boundary、effective-run-config、plan-execution-boundary、command-output-exit-code、change-review-user-dirty、undo-external-conflict） | 新增 | 全覆盖（见验收）                                                                    |
 
 ---
 
 ## 任务
 
 ### S0 — 冻结契约 + 证据基线（前置）
+
 - 新建 `interaction/types.ts` + 协议 fixtures；核对现有 types/protocol；建本方案专属 evidence 目录。
 - 记录 12 场景对照清单 + 基线命令真实结果；显式列旧失败，**不归咎环境后跳过**。
 - 测：`pnpm install --frozen-lockfile && pnpm -r build && pnpm -r typecheck` 全绿。Commit：`🔧feat(core): 交互契约类型与协议 fixtures 冻结（S0）`
 
 ### S1 — 取消不执行 + 每 session 真实 cwd（`tools/executor.ts`、内置副作用工具、`server/sessions.ts`、执行生命周期观察接口）
+
 - 已取消的 execute 计数 0；审批后竞态不启动第二个 write；不合作工具返回 unknown；每 session 从 header 得真实 cwd，A/B 目录不串。
 - 测：`executor-cancel-before-start`、`session-cwd`。Commit：`⚡feat(core): 取消后不执行 + 每会话真实 cwd（S1）`
 
 ### S2 — 结构化审批队列（`server/ws`/`sessions`、`agent/subagent.ts`）
+
 - 两并发审批不覆盖；父用户在 child 结束前见审批；response ack/scope/过期/重连恢复；**无授权自动 allow** 必须拒绝。
 - 测：`approval-queue`。Commit：`✨feat(core): 结构化审批队列与重连恢复（S2）`
 
 ### S3 — 运行时账本 + 幂等交付（`interaction/runtime-journal.ts`、`delivery.ts`、`server/ws/http/sessions`、session 可选元数据）
+
 - 重复 submit 只接受一次；ack 丢失/跨文件崩溃可对账；snapshot+replay+delta 无缺口；queue 可恢复且**重启后不自动执行**。
 - 测：`delivery-idempotency`、`runtime-journal-crash`、`subscription-resume`。Commit：`🔧feat(core): runtime 账本与幂等交付（S3）`
 
 ### S4 — 有界 attempt 重试（`provider/*`、`agent/loop`、`interaction/retry-policy.ts`）
+
 - 429/503/EOF/401 分开；预算/Retry-After/退避可取消；工具调用半截不执行；已完成工具不重跑；finalText 为空仍有可行动结果。
 - 测：`attempt-retry`。Commit：`⚡feat(core): 有界 attempt 重试与错误码分类（S4）`
 
 ### S5 — 任务协调器 + 子代理并发（`agent/subagent.ts`、`agent/task-coordinator.ts`、工具注册/资源锁、CLI/server 仅接线）
+
 - 注册 ack 后立即 handle；只读过滤后 K=2 真实重叠；共享写全局串行；status/wait/continue/cancel 与父子隔离、终态单调。
 - 测：`task-coordinator`、`subagent-coordinator`。Commit：`✨feat(core): 任务协调器（子代理后台并发，S5）`
 
 ### S6 — step 边界 steer + 投影兼容（`loop` 控制输入 + `interaction/types` + 投影兼容测试）
+
 - 安全 step 边界 steer；stale 拒绝且保 draft；重复 id 不双注入；无法取消工具时不强行新 step。
 - 测：`steer-boundary`。Commit：`✨feat(core): 安全 step 边界 steer 与投影兼容（S6）`
 
 ### S7 — 桌面功能闭环契约（先于桌面联调；复**用既有接口，禁止做第二套工具执行器或配置存储**）
+
 - 核查并补齐 `config/schema/load`、`agent/types/loop`、`tools/types/executor`、`session/snapshots`、`server/http/sessions`；拟新增 `interaction/run-config.ts`、`plan-state.ts`、`execution-view.ts`、`change-review.ts`（最终路径由 S0 确认）。
 - 契约：`effectiveRunConfig`（会话 root/cwd、provider/model 与角色、模式/策略、可用工具、连接状态、指令/skill 来源、上下文窗口与预算，只返回脱敏信息；新 turn 记录配置 revision、生效时点明确）；`planState`（planId/目标/步骤/状态/证据 ID，须可重建，确认计划不放宽权限）；`toolExecutionView`（callId/taskId/turnId、tool、参数、cwd、实际 shell、开始/结束、输出引用/截断、exitCode、状态）；`changeReview`（用现有 SnapshotStore 聚合 changeSet，区分拟议与真实 diff，undo/redo 前比对当前版本、外部修改不静默覆盖，不自动 git reset/clean/stash/commit）。
 - 测：`effective-run-config`、`plan-execution-boundary`、`command-output-exit-code`、`change-review-user-dirty`、`undo-external-conflict`。Commit：`✨feat(core): 桌面功能闭环契约（有效配置/计划/命令执行/变更审查，S7）`
@@ -143,30 +151,30 @@
 
 ## 验收标准总表
 
-| # | 标准 | 通过条件 | 验证责任人 |
-|---|------|----------|-----------|
-| 1 | 取消后不执行 | `executor-cancel-before-start` | 自动化 |
-| 2 | 审批并发不覆盖 | `approval-queue` | 自动化 |
-| 3 | 交付幂等/崩溃对账 | `delivery-idempotency` + `runtime-journal-crash` | 自动化 |
-| 4 | 订阅恢复无缺口 | `subscription-resume` | 自动化 |
-| 5 | 有界重试分类 | `attempt-retry` | 自动化 |
-| 6 | 任务协调器并发/串行 | `task-coordinator` | 自动化 |
-| 7 | step 边界 steer | `steer-boundary` | 自动化 |
-| 7b | 桌面功能契约（有效配置/计划/命令/变更） | `effective-run-config`、`plan-execution-boundary`、`command-output-exit-code`、`change-review-user-dirty`、`undo-external-conflict` | 自动化 |
-| 8 | 投影/replay/undo 一致 | 全量回归 + 旧 v1 会话可读 | 自动化 |
-| 9 | 全量回归 | `pnpm -r test` 全绿（真实命中，非 `--passWithNoTests`） | 自动化 |
-| 2b | 代码审查 | ✅ / ⚠️；❌ 下放 | 独立角色 |
-| 10 | 红线 | 无禁止项、密钥未入库、`git ls-files` 无敏感文件 | 自动化 |
+| #   | 标准                                    | 通过条件                                                                                                                            | 验证责任人 |
+| --- | --------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- | ---------- |
+| 1   | 取消后不执行                            | `executor-cancel-before-start`                                                                                                      | 自动化     |
+| 2   | 审批并发不覆盖                          | `approval-queue`                                                                                                                    | 自动化     |
+| 3   | 交付幂等/崩溃对账                       | `delivery-idempotency` + `runtime-journal-crash`                                                                                    | 自动化     |
+| 4   | 订阅恢复无缺口                          | `subscription-resume`                                                                                                               | 自动化     |
+| 5   | 有界重试分类                            | `attempt-retry`                                                                                                                     | 自动化     |
+| 6   | 任务协调器并发/串行                     | `task-coordinator`                                                                                                                  | 自动化     |
+| 7   | step 边界 steer                         | `steer-boundary`                                                                                                                    | 自动化     |
+| 7b  | 桌面功能契约（有效配置/计划/命令/变更） | `effective-run-config`、`plan-execution-boundary`、`command-output-exit-code`、`change-review-user-dirty`、`undo-external-conflict` | 自动化     |
+| 8   | 投影/replay/undo 一致                   | 全量回归 + 旧 v1 会话可读                                                                                                           | 自动化     |
+| 9   | 全量回归                                | `pnpm -r test` 全绿（真实命中，非 `--passWithNoTests`）                                                                             | 自动化     |
+| 2b  | 代码审查                                | ✅ / ⚠️；❌ 下放                                                                                                                    | 独立角色   |
+| 10  | 红线                                    | 无禁止项、密钥未入库、`git ls-files` 无敏感文件                                                                                     | 自动化     |
 
 ---
 
 ## 风险与降级
 
-| 风险 | 缓解 |
-|------|------|
-| 动 core 面大 | 严格按 S 顺序；每步独立 commit + 防回归测试；不外包 `runTurn` 无限 retry |
-| 公共事件类型变更 | 同步 parser/projector/export/replay/fixture + 迁移策略 |
-| 契约过大 | 按 I1 §6 冻结，YAGNI；新测试名必须真实命中 >0 |
+| 风险             | 缓解                                                                     |
+| ---------------- | ------------------------------------------------------------------------ |
+| 动 core 面大     | 严格按 S 顺序；每步独立 commit + 防回归测试；不外包 `runTurn` 无限 retry |
+| 公共事件类型变更 | 同步 parser/projector/export/replay/fixture + 迁移策略                   |
+| 契约过大         | 按 I1 §6 冻结，YAGNI；新测试名必须真实命中 >0                            |
 
 ---
 

@@ -15,7 +15,10 @@ async function listen(server: Server): Promise<number> {
 }
 
 /** 飞书 API stub：token + 出站消息捕获 */
-async function startFeishuApiStub(): Promise<{ port: number; sent: Array<{ path: string; body: Record<string, unknown> }> }> {
+async function startFeishuApiStub(): Promise<{
+  port: number;
+  sent: Array<{ path: string; body: Record<string, unknown> }>;
+}> {
   const sent: Array<{ path: string; body: Record<string, unknown> }> = [];
   const server = createServer((req, res) => {
     if (req.url?.includes('tenant_access_token')) {

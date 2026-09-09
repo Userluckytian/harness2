@@ -5,8 +5,7 @@
 //     与「网站探针」直接以域名访问本地端口；
 //   - HTTP 与 WS upgrade 同一规则（均经本模块判定）。
 // loopback token 认证评估后留档不实现（桌面 --port 0 随机端口已缓解，见 OPEN.md）。
-export const TRUSTED_ORIGIN_PATTERN =
-  /^(?:file:\/\/|http:\/\/localhost(?::\d+)?|http:\/\/127\.0\.0\.1(?::\d+)?)$/i;
+export const TRUSTED_ORIGIN_PATTERN = /^(?:file:\/\/|http:\/\/localhost(?::\d+)?|http:\/\/127\.0\.0\.1(?::\d+)?)$/i;
 
 /** Origin 是否在信任域（undefined = 客户端未携带，放行） */
 export function isTrustedOrigin(origin: string | undefined): boolean {

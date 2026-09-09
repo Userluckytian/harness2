@@ -3,7 +3,19 @@
 // 熔断（连续 3 失败 disable + incident）/history 落盘/WS 通知帧。
 // 测试直接调用 scheduler.tick(now) 驱动（不依赖真实定时器），执行用 stub provider。
 import { afterEach, describe, expect, it } from 'vitest';
-import { closeSync, existsSync, mkdirSync, mkdtempSync, openSync, readFileSync, readdirSync, rmSync, writeFileSync, unlinkSync, writeSync } from 'node:fs';
+import {
+  closeSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  openSync,
+  readFileSync,
+  readdirSync,
+  rmSync,
+  writeFileSync,
+  unlinkSync,
+  writeSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {

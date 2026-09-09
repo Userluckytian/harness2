@@ -94,7 +94,9 @@ describe('metadata-file 读写契约（~/.harness2/desktop-metadata.json）', ()
     expect(readMetadata(home)).toEqual({});
     const after = writeMetadataPatch(home, 's1', { title: '标题甲', archived: true });
     expect(after.s1).toEqual({ title: '标题甲', archived: true });
-    const raw = JSON.parse(readFileSync(join(home, '.harness2', 'desktop-metadata.json'), 'utf8')) as SessionMetadataMap;
+    const raw = JSON.parse(
+      readFileSync(join(home, '.harness2', 'desktop-metadata.json'), 'utf8'),
+    ) as SessionMetadataMap;
     expect(raw.s1).toEqual({ title: '标题甲', archived: true });
     expect(readMetadata(home)).toEqual(after);
   });

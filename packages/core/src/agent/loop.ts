@@ -144,7 +144,10 @@ export function buildChatMessages(session: LoadedSession): ChatMessage[] {
  *      必须可从日志重建）。
  * 漂移（手工编辑破坏 § 结构）按空记忆处理——读侧内容不注入，写侧由 store 拒绝并备份。
  */
-async function resolveMemorySystem(writer: SessionWriter | SessionAppender, store: MemoryStore): Promise<string | undefined> {
+async function resolveMemorySystem(
+  writer: SessionWriter | SessionAppender,
+  store: MemoryStore,
+): Promise<string | undefined> {
   const session = loadSession(writer.dir);
   computeProjection(session);
   for (const { event, active } of session.events) {
@@ -167,7 +170,10 @@ async function resolveMemorySystem(writer: SessionWriter | SessionAppender, stor
  *   - 目录 + 日志已存在 → open 续写并在结束后 close；
  *   - writer → 直接使用（由调用方负责 close）。
  */
-export async function runTurn(session: string | SessionWriter | SessionAppender, options: TurnOptions): Promise<TurnResult> {
+export async function runTurn(
+  session: string | SessionWriter | SessionAppender,
+  options: TurnOptions,
+): Promise<TurnResult> {
   if (typeof session !== 'string') return runTurnWithWriter(session, options);
   const writer = existsSync(join(session, SESSION_LOG_FILE))
     ? SessionWriter.open(session)
@@ -354,9 +360,9 @@ async function runTurnWithWriter(writer: SessionWriter | SessionAppender, option
     // 不写入 session.log（不进投影、不伪造 user/message 正文）；单步有效，next 重置。
     for (const ctrl of pendingControls) messages.push({ role: 'user', content: ctrl });
     pendingControls = [];
-    const toolSpecs = options.tools.list().map(
-      (def): ToolSpec => ({ name: def.name, description: def.description, parameters: def.parameters }),
-    );
+    const toolSpecs = options.tools
+      .list()
+      .map((def): ToolSpec => ({ name: def.name, description: def.description, parameters: def.parameters }));
     const request: ChatRequest = {
       ...(systemText !== undefined ? { system: systemText } : {}),
       messages,
@@ -574,7 +580,13 @@ async function runTurnWithWriter(writer: SessionWriter | SessionAppender, option
       }
       const r = byCallId.get(p.callId);
       if (!r) {
-        writer.append('tool/result', { callId: p.callId, tool: p.tool, ok: false, error: 'executor lost result', turnId });
+        writer.append('tool/result', {
+          callId: p.callId,
+          tool: p.tool,
+          ok: false,
+          error: 'executor lost result',
+          turnId,
+        });
         options.onStream?.({ type: 'tool-result', callId: p.callId, ok: false, error: 'executor lost result', turnId });
         continue;
       }

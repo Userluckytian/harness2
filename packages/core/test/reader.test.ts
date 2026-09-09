@@ -51,9 +51,14 @@ describe('loadSession', () => {
 
   it('P1-3 回归：payload 形状非法 → loadSession 告警并跳过，renderTrajectory 不抛 TypeError', () => {
     // 审查实测输入：payload 缺 text 字段（{"typoField":1}）
-    const badLine = JSON.stringify({
-      v: 1, seq: 10, ts: '2026-09-06T00:00:00.000Z', type: 'user/message', payload: { typoField: 1 },
-    }) + '\n';
+    const badLine =
+      JSON.stringify({
+        v: 1,
+        seq: 10,
+        ts: '2026-09-06T00:00:00.000Z',
+        type: 'user/message',
+        payload: { typoField: 1 },
+      }) + '\n';
     expect(parseEventLine(badLine)).toBeNull();
 
     const dir = tmpDir();
@@ -74,9 +79,14 @@ describe('loadSession', () => {
     const w = writeDemoSession(dir); // seq 1..9
     w.close();
     // 绕过 writer 直接追加越界 marker（模拟旧版本/外部写入的日志）
-    const bogus = JSON.stringify({
-      v: 1, seq: 10, ts: '2026-09-06T00:00:00.000Z', type: 'rewind/marker', payload: { rewindToSeq: 0 },
-    }) + '\n';
+    const bogus =
+      JSON.stringify({
+        v: 1,
+        seq: 10,
+        ts: '2026-09-06T00:00:00.000Z',
+        type: 'rewind/marker',
+        payload: { rewindToSeq: 0 },
+      }) + '\n';
     appendFileSync(join(dir, SESSION_LOG_FILE), bogus, 'utf8');
 
     const s = loadSession(dir);
@@ -93,8 +103,7 @@ describe('loadSession', () => {
 
 describe('parseEventLine payload 校验（P1-3）', () => {
   const base = { v: 1, ts: '2026-09-06T00:00:00.000Z' };
-  const line = (type: SessionEventType, payload: unknown): string =>
-    JSON.stringify({ ...base, seq: 1, type, payload });
+  const line = (type: SessionEventType, payload: unknown): string => JSON.stringify({ ...base, seq: 1, type, payload });
 
   // 每种事件类型的最低 payload 要求：合法最小 payload 通过，缺字段/类型不符返回 null
   const cases: Array<{ type: SessionEventType; good: Record<string, unknown>; bad: Record<string, unknown> }> = [
@@ -146,7 +155,11 @@ describe('memory/snapshot 事件（阶段 6）', () => {
 
   it('空 content：解析层拒绝（非法行）；writer 写入口同步拦截，日志不出现读不回的行', () => {
     const badLine = JSON.stringify({
-      v: 1, seq: 2, ts: '2026-09-06T00:00:00.000Z', type: 'memory/snapshot', payload: { content: '' },
+      v: 1,
+      seq: 2,
+      ts: '2026-09-06T00:00:00.000Z',
+      type: 'memory/snapshot',
+      payload: { content: '' },
     });
     expect(parseEventLine(badLine)).toBeNull();
 

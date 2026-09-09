@@ -1,155 +1,482 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="zh-CN">
-<head>
-<meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>harness2 · 轨迹时间线（traj 可视化）</title>
-<link rel="preconnect" href="https://fonts.googleapis.com" />
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
-<style>
-  :root{
-    --bg:#020617; --surface:#0F172A; --surface2:#1E293B; --muted:#1A1E2F;
-    --border:#334155; --fg:#F8FAFC; --fg-muted:#94A3B8;
-    --accent:#22C55E; --info:#3B82F6; --warn:#F59E0B; --danger:#EF4444; --ring:#0F172A;
-    --shadow:0 8px 30px rgba(0,0,0,.45);
-  }
-  *{box-sizing:border-box}
-  html,body{height:100%;margin:0}
-  body{background:var(--bg);color:var(--fg);font:14px 'Inter',system-ui,sans-serif}
-  svg{display:block}
-  .i{width:15px;height:15px;stroke:currentColor;stroke-width:1.6;fill:none;stroke-linecap:round;stroke-linejoin:round}
-  .wrap{max-width:980px;margin:0 auto;padding:28px 20px 60px}
-  h1{font-size:20px;font-weight:700;margin:0 0 4px}
-  .sub{color:var(--fg-muted);font-size:13px}
-  .head{display:flex;flex-wrap:wrap;gap:14px;align-items:center;padding:14px 16px;background:var(--surface);border:1px solid var(--border);border-radius:14px;margin:18px 0}
-  .hcell{display:flex;flex-direction:column;gap:2px;font-size:12px}
-  .hcell .k{color:var(--fg-muted)}
-  .hcell .v{font-family:'JetBrains Mono',monospace;font-size:13px}
-  .hcell .v.g{color:var(--accent)}
-  .ctxbar{display:inline-flex;align-items:center;gap:6px}
-  .ctxbar .bar{width:90px;height:6px;border-radius:999px;background:var(--muted);overflow:hidden;border:1px solid var(--border)}
-  .ctxbar .fill{height:100%;width:63%;background:var(--warn)}
-  .timeline{margin-top:6px}
-  .tl-head{display:flex;align-items:center;gap:10px;margin:16px 0 8px;color:var(--fg-muted);font-size:12px;letter-spacing:.3px;text-transform:uppercase}
-  .tl-head .line{flex:1;height:1px;background:var(--border)}
-  .step{display:flex;gap:14px;margin-bottom:4px}
-  .rail{display:flex;flex-direction:column;align-items:center;width:30px;flex-shrink:0}
-  .rail .node{width:22px;height:22px;border-radius:50%;display:grid;place-items:center;background:var(--surface2);border:1px solid var(--border);font-size:11px;font-weight:600}
-  .rail .node.ok{color:var(--accent);border-color:var(--accent)}
-  .rail .node.fail{color:var(--danger);border-color:var(--danger)}
-  .rail .node.user{color:var(--info);border-color:var(--info)}
-  .rail .node.end{color:var(--warn);border-color:var(--warn)}
-  .rail .stem{width:2px;flex:1;background:var(--border)}
-  .card{flex:1;background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:10px 14px;margin-bottom:8px}
-  .card-head{display:flex;align-items:center;gap:8px;font-family:'JetBrains Mono',monospace;font-size:12.5px}
-  .card-head .t{font-weight:600}
-  .card-head .args{color:var(--fg-muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1}
-  .st{font-size:11px;display:inline-flex;align-items:center;gap:4px;padding:1px 7px;border-radius:999px}
-  .st.ok{color:var(--accent);background:rgba(34,197,94,.12)}
-  .st.run{color:var(--warn);background:rgba(245,158,11,.12)}
-  .st.fail{color:var(--danger);background:rgba(239,68,68,.12)}
-  .dur{display:inline-flex;align-items:center;gap:6px;margin:6px 0 2px;font-size:11px;color:var(--fg-muted)}
-  .dur .dbar{width:120px;height:4px;background:var(--muted);border-radius:999px;overflow:hidden}
-  .dur .dbar span{display:block;height:100%;background:var(--info)}
-  .card .out{font-family:'JetBrains Mono',monospace;font-size:11.5px;color:var(--fg-muted);background:var(--muted);border-radius:8px;padding:7px 9px;margin-top:6px;white-space:pre-wrap;max-height:120px;overflow:auto}
-  .card .out.err{color:var(--danger);background:rgba(239,68,68,.06)}
-  .card .out.warn{color:var(--warn)}
-  .reason{font-size:12px;color:var(--fg-muted);border-left:2px solid var(--border);padding-left:8px;margin-top:6px}
-  .reason summary{cursor:pointer}
-  .callout{display:flex;gap:10px;align-items:flex-start;background:rgba(245,158,11,.07);border:1px solid var(--warn);border-radius:12px;padding:12px 14px;margin-top:6px;font-size:13px}
-  .callout .ic{color:var(--warn)}
-  .callout b{color:var(--warn)}
-  .callout code{font-family:'JetBrains Mono',monospace;font-size:12px;background:var(--muted);padding:1px 5px;border-radius:5px}
-  .legend{margin-top:18px;color:var(--fg-muted);font-size:12px;display:flex;flex-wrap:wrap;gap:12px}
-  .legend .g{color:var(--accent)} .legend .w{color:var(--warn)} .legend .d{color:var(--danger)} .legend .i{color:var(--info)}
-</style>
-</head>
-<body>
-<div class="wrap">
-  <h1>会话轨迹 · traj 时间线（可视化）</h1>
-  <p class="sub">把 CLI <code>harness2 traj</code> 落地的全事件记录，在桌面端可视化呈现 —— 复盘每个 turn/step 的工具调用、耗时、token。</p>
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>harness2 · 轨迹时间线（traj 可视化）</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap"
+      rel="stylesheet"
+    />
+    <style>
+      :root {
+        --bg: #020617;
+        --surface: #0f172a;
+        --surface2: #1e293b;
+        --muted: #1a1e2f;
+        --border: #334155;
+        --fg: #f8fafc;
+        --fg-muted: #94a3b8;
+        --accent: #22c55e;
+        --info: #3b82f6;
+        --warn: #f59e0b;
+        --danger: #ef4444;
+        --ring: #0f172a;
+        --shadow: 0 8px 30px rgba(0, 0, 0, 0.45);
+      }
+      * {
+        box-sizing: border-box;
+      }
+      html,
+      body {
+        height: 100%;
+        margin: 0;
+      }
+      body {
+        background: var(--bg);
+        color: var(--fg);
+        font:
+          14px 'Inter',
+          system-ui,
+          sans-serif;
+      }
+      svg {
+        display: block;
+      }
+      .i {
+        width: 15px;
+        height: 15px;
+        stroke: currentColor;
+        stroke-width: 1.6;
+        fill: none;
+        stroke-linecap: round;
+        stroke-linejoin: round;
+      }
+      .wrap {
+        max-width: 980px;
+        margin: 0 auto;
+        padding: 28px 20px 60px;
+      }
+      h1 {
+        font-size: 20px;
+        font-weight: 700;
+        margin: 0 0 4px;
+      }
+      .sub {
+        color: var(--fg-muted);
+        font-size: 13px;
+      }
+      .head {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 14px;
+        align-items: center;
+        padding: 14px 16px;
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: 14px;
+        margin: 18px 0;
+      }
+      .hcell {
+        display: flex;
+        flex-direction: column;
+        gap: 2px;
+        font-size: 12px;
+      }
+      .hcell .k {
+        color: var(--fg-muted);
+      }
+      .hcell .v {
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 13px;
+      }
+      .hcell .v.g {
+        color: var(--accent);
+      }
+      .ctxbar {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+      }
+      .ctxbar .bar {
+        width: 90px;
+        height: 6px;
+        border-radius: 999px;
+        background: var(--muted);
+        overflow: hidden;
+        border: 1px solid var(--border);
+      }
+      .ctxbar .fill {
+        height: 100%;
+        width: 63%;
+        background: var(--warn);
+      }
+      .timeline {
+        margin-top: 6px;
+      }
+      .tl-head {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        margin: 16px 0 8px;
+        color: var(--fg-muted);
+        font-size: 12px;
+        letter-spacing: 0.3px;
+        text-transform: uppercase;
+      }
+      .tl-head .line {
+        flex: 1;
+        height: 1px;
+        background: var(--border);
+      }
+      .step {
+        display: flex;
+        gap: 14px;
+        margin-bottom: 4px;
+      }
+      .rail {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        width: 30px;
+        flex-shrink: 0;
+      }
+      .rail .node {
+        width: 22px;
+        height: 22px;
+        border-radius: 50%;
+        display: grid;
+        place-items: center;
+        background: var(--surface2);
+        border: 1px solid var(--border);
+        font-size: 11px;
+        font-weight: 600;
+      }
+      .rail .node.ok {
+        color: var(--accent);
+        border-color: var(--accent);
+      }
+      .rail .node.fail {
+        color: var(--danger);
+        border-color: var(--danger);
+      }
+      .rail .node.user {
+        color: var(--info);
+        border-color: var(--info);
+      }
+      .rail .node.end {
+        color: var(--warn);
+        border-color: var(--warn);
+      }
+      .rail .stem {
+        width: 2px;
+        flex: 1;
+        background: var(--border);
+      }
+      .card {
+        flex: 1;
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        padding: 10px 14px;
+        margin-bottom: 8px;
+      }
+      .card-head {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 12.5px;
+      }
+      .card-head .t {
+        font-weight: 600;
+      }
+      .card-head .args {
+        color: var(--fg-muted);
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        flex: 1;
+      }
+      .st {
+        font-size: 11px;
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        padding: 1px 7px;
+        border-radius: 999px;
+      }
+      .st.ok {
+        color: var(--accent);
+        background: rgba(34, 197, 94, 0.12);
+      }
+      .st.run {
+        color: var(--warn);
+        background: rgba(245, 158, 11, 0.12);
+      }
+      .st.fail {
+        color: var(--danger);
+        background: rgba(239, 68, 68, 0.12);
+      }
+      .dur {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        margin: 6px 0 2px;
+        font-size: 11px;
+        color: var(--fg-muted);
+      }
+      .dur .dbar {
+        width: 120px;
+        height: 4px;
+        background: var(--muted);
+        border-radius: 999px;
+        overflow: hidden;
+      }
+      .dur .dbar span {
+        display: block;
+        height: 100%;
+        background: var(--info);
+      }
+      .card .out {
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 11.5px;
+        color: var(--fg-muted);
+        background: var(--muted);
+        border-radius: 8px;
+        padding: 7px 9px;
+        margin-top: 6px;
+        white-space: pre-wrap;
+        max-height: 120px;
+        overflow: auto;
+      }
+      .card .out.err {
+        color: var(--danger);
+        background: rgba(239, 68, 68, 0.06);
+      }
+      .card .out.warn {
+        color: var(--warn);
+      }
+      .reason {
+        font-size: 12px;
+        color: var(--fg-muted);
+        border-left: 2px solid var(--border);
+        padding-left: 8px;
+        margin-top: 6px;
+      }
+      .reason summary {
+        cursor: pointer;
+      }
+      .callout {
+        display: flex;
+        gap: 10px;
+        align-items: flex-start;
+        background: rgba(245, 158, 11, 0.07);
+        border: 1px solid var(--warn);
+        border-radius: 12px;
+        padding: 12px 14px;
+        margin-top: 6px;
+        font-size: 13px;
+      }
+      .callout .ic {
+        color: var(--warn);
+      }
+      .callout b {
+        color: var(--warn);
+      }
+      .callout code {
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 12px;
+        background: var(--muted);
+        padding: 1px 5px;
+        border-radius: 5px;
+      }
+      .legend {
+        margin-top: 18px;
+        color: var(--fg-muted);
+        font-size: 12px;
+        display: flex;
+        flex-wrap: wrap;
+        gap: 12px;
+      }
+      .legend .g {
+        color: var(--accent);
+      }
+      .legend .w {
+        color: var(--warn);
+      }
+      .legend .d {
+        color: var(--danger);
+      }
+      .legend .i {
+        color: var(--info);
+      }
+    </style>
+  </head>
+  <body>
+    <div class="wrap">
+      <h1>会话轨迹 · traj 时间线（可视化）</h1>
+      <p class="sub">
+        把 CLI <code>harness2 traj</code> 落地的全事件记录，在桌面端可视化呈现 —— 复盘每个 turn/step
+        的工具调用、耗时、token。
+      </p>
 
-  <div class="head">
-    <div class="hcell"><span class="k">会话</span><span class="v">20260907-032949-546d13</span></div>
-    <div class="hcell"><span class="k">模型</span><span class="v">local/big-pickle</span></div>
-    <div class="hcell"><span class="k">用户消息</span><span class="v">帮我检索今日3件时政要闻</span></div>
-    <div class="hcell"><span class="k">步数</span><span class="v g">25 / 25（上限）</span></div>
-    <div class="hcell"><span class="k">耗时</span><span class="v">4m 32s</span></div>
-    <div class="hcell"><span class="k">token 输入（估算）</span><span class="v">14.7K</span></div>
-    <div class="hcell"><span class="k">上下文</span><span class="ctxbar"><span class="bar"><span class="fill"></span></span></span></div>
-  </div>
+      <div class="head">
+        <div class="hcell"><span class="k">会话</span><span class="v">20260907-032949-546d13</span></div>
+        <div class="hcell"><span class="k">模型</span><span class="v">local/big-pickle</span></div>
+        <div class="hcell"><span class="k">用户消息</span><span class="v">帮我检索今日3件时政要闻</span></div>
+        <div class="hcell"><span class="k">步数</span><span class="v g">25 / 25（上限）</span></div>
+        <div class="hcell"><span class="k">耗时</span><span class="v">4m 32s</span></div>
+        <div class="hcell"><span class="k">token 输入（估算）</span><span class="v">14.7K</span></div>
+        <div class="hcell">
+          <span class="k">上下文</span
+          ><span class="ctxbar"
+            ><span class="bar"><span class="fill"></span></span
+          ></span>
+        </div>
+      </div>
 
-  <div class="timeline">
-    <div class="tl-head"><span>用户</span><span class="line"></span></div>
-    <div class="step">
-      <div class="rail"><div class="node user">1</div><div class="stem"></div></div>
-      <div class="card"><div class="card-head"><span class="t">user/message</span><span class="args">帮我检索今日3件时政要闻</span><span class="st ok">seq 2</span></div></div>
-    </div>
+      <div class="timeline">
+        <div class="tl-head"><span>用户</span><span class="line"></span></div>
+        <div class="step">
+          <div class="rail">
+            <div class="node user">1</div>
+            <div class="stem"></div>
+          </div>
+          <div class="card">
+            <div class="card-head">
+              <span class="t">user/message</span><span class="args">帮我检索今日3件时政要闻</span
+              ><span class="st ok">seq 2</span>
+            </div>
+          </div>
+        </div>
 
-    <div class="tl-head"><span>step 1 · 模型开启</span><span class="line"></span></div>
-    <div class="step">
-      <div class="rail"><div class="node">1</div><div class="stem"></div></div>
-      <div class="card">
-        <div class="card-head"><span class="t">assistant/message</span><span class="st ok">2.1s</span></div>
-        <details class="reason"><summary>思考</summary>用户要今日 3 件时政要闻，需要联网。我先用浏览器打开新华网。</details>
-        <div class="card-head" style="margin-top:6px"><span class="t">browser_navigate</span><span class="args">https://www.news.cn/politics/</span><span class="st fail">fail · 1.3s</span></div>
-        <div class="out err">browser_navigate: 浏览器未安装：请先运行 harness2 browser install（或 npx playwright install chromium）</div>
+        <div class="tl-head"><span>step 1 · 模型开启</span><span class="line"></span></div>
+        <div class="step">
+          <div class="rail">
+            <div class="node">1</div>
+            <div class="stem"></div>
+          </div>
+          <div class="card">
+            <div class="card-head"><span class="t">assistant/message</span><span class="st ok">2.1s</span></div>
+            <details class="reason">
+              <summary>思考</summary>
+              用户要今日 3 件时政要闻，需要联网。我先用浏览器打开新华网。
+            </details>
+            <div class="card-head" style="margin-top: 6px">
+              <span class="t">browser_navigate</span><span class="args">https://www.news.cn/politics/</span
+              ><span class="st fail">fail · 1.3s</span>
+            </div>
+            <div class="out err">
+              browser_navigate: 浏览器未安装：请先运行 harness2 browser install（或 npx playwright install chromium）
+            </div>
+          </div>
+        </div>
+
+        <div class="tl-head"><span>step 2 · 尝试命令式抓取</span><span class="line"></span></div>
+        <div class="step">
+          <div class="rail">
+            <div class="node fail">2</div>
+            <div class="stem"></div>
+          </div>
+          <div class="card">
+            <div class="card-head">
+              <span class="t">bash</span
+              ><span class="args">curl -sL news.cn/politics -o /tmp/politics.html; ls -la</span
+              ><span class="st fail">exit 1</span>
+            </div>
+            <div class="out err">'ls' 不是内部或外部命令，也不是可运行的程序……</div>
+          </div>
+        </div>
+        <div class="step" style="margin-top: -8px">
+          <div class="rail">
+            <div class="node"></div>
+            <div class="stem"></div>
+          </div>
+          <div class="card">
+            <div class="card-head">
+              <span class="t">bash</span><span class="args">npx playwright install chromium 2>&1 | tail</span
+              ><span class="st fail">exit 255</span>
+            </div>
+            <div class="out err">'tail' 不是内部或外部命令……</div>
+            <div class="callout" style="margin-top: 6px">
+              <span class="ic"
+                ><svg class="i">
+                  <circle cx="12" cy="12" r="9" />
+                  <path d="M12 8v4M12 16h.01" /></svg></span
+              ><span
+                ><b>环境诊断</b>：bash 工具在 Windows 走了 <code>cmd.exe</code>，Unix
+                命令（ls/tail/head/pwd）缺失；逐条报错，消耗步数。—— 已记录为待处理 Bug（OPEN.md）</span
+              >
+            </div>
+          </div>
+        </div>
+
+        <div class="tl-head"><span>step 7 · 成功抓取</span><span class="line"></span></div>
+        <div class="step">
+          <div class="rail">
+            <div class="node ok">7</div>
+            <div class="stem"></div>
+          </div>
+          <div class="card">
+            <div class="card-head">
+              <span class="t">bash</span><span class="args">python parse_news.py gov.html</span
+              ><span class="st ok">ok · 1.6s</span>
+            </div>
+            <div class="out">
+              习近平主席出席2026年上海合作组织峰会……<br />李强签署国务院令 公布修订后的《…条例》<br />丁薛祥会见俄罗斯总统普京……
+            </div>
+          </div>
+        </div>
+
+        <div class="tl-head"><span>step 25 · 逼近上限</span><span class="line"></span></div>
+        <div class="step">
+          <div class="rail">
+            <div class="node fail">25</div>
+            <div class="stem"></div>
+          </div>
+          <div class="card">
+            <div class="card-head">
+              <span class="t">write</span><span class="args">(仅 content，缺 file_path)</span
+              ><span class="st fail">fail · 1.8s</span>
+            </div>
+            <div class="out err">write: missing required string argument "file_path"</div>
+          </div>
+        </div>
+
+        <div class="tl-head"><span>终态</span><span class="line"></span></div>
+        <div class="step">
+          <div class="rail">
+            <div class="node end">!</div>
+            <div class="stem" style="background: transparent"></div>
+          </div>
+          <div class="card" style="border-color: var(--warn)">
+            <div class="card-head">
+              <span class="t">turn 结束</span><span class="st run">stopReason = max_steps</span>
+            </div>
+            <div class="out warn">
+              步骤达到上限 <b>25</b>，模型始终保持工具调用、未产出最终文本答案 → 用户未见回复。
+            </div>
+            <div class="callout">
+              <span class="ic"
+                ><svg class="i"><path d="M12 20h9M16.5 3.5a2.1 2.1 0 013 3L7 19l-4 1 1-4z" /></svg></span
+              ><span
+                ><b>建议</b>：① <code>maxSteps</code> 调高或改“无进展计数”；② Windows 下 bash 走 Git Bash；③ 装
+                chromium；④ 工具缺参时给格式示范。详见 <code>design/README.md</code> §3。</span
+              >
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="legend">
+        <span><span class="g">●</span> 成功</span>
+        <span><span class="d">●</span> 失败/错误</span>
+        <span><span class="w">●</span> 运行中/终止</span>
+        <span><span class="i">●</span> 用户事件</span>
       </div>
     </div>
-
-    <div class="tl-head"><span>step 2 · 尝试命令式抓取</span><span class="line"></span></div>
-    <div class="step">
-      <div class="rail"><div class="node fail">2</div><div class="stem"></div></div>
-      <div class="card">
-        <div class="card-head"><span class="t">bash</span><span class="args">curl -sL news.cn/politics -o /tmp/politics.html; ls -la</span><span class="st fail">exit 1</span></div>
-        <div class="out err">'ls' 不是内部或外部命令，也不是可运行的程序……</div>
-      </div>
-    </div>
-    <div class="step" style="margin-top:-8px">
-      <div class="rail"><div class="node"></div><div class="stem"></div></div>
-      <div class="card">
-        <div class="card-head"><span class="t">bash</span><span class="args">npx playwright install chromium 2>&1 | tail</span><span class="st fail">exit 255</span></div>
-        <div class="out err">'tail' 不是内部或外部命令……</div>
-        <div class="callout" style="margin-top:6px"><span class="ic"><svg class="i"><circle cx="12" cy="12" r="9"/><path d="M12 8v4M12 16h.01"/></svg></span><span><b>环境诊断</b>：bash 工具在 Windows 走了 <code>cmd.exe</code>，Unix 命令（ls/tail/head/pwd）缺失；逐条报错，消耗步数。—— 已记录为待处理 Bug（OPEN.md）</span></div>
-      </div>
-    </div>
-
-    <div class="tl-head"><span>step 7 · 成功抓取</span><span class="line"></span></div>
-    <div class="step">
-      <div class="rail"><div class="node ok">7</div><div class="stem"></div></div>
-      <div class="card">
-        <div class="card-head"><span class="t">bash</span><span class="args">python parse_news.py gov.html</span><span class="st ok">ok · 1.6s</span></div>
-        <div class="out">习近平主席出席2026年上海合作组织峰会……<br>李强签署国务院令 公布修订后的《…条例》<br>丁薛祥会见俄罗斯总统普京……</div>
-      </div>
-    </div>
-
-    <div class="tl-head"><span>step 25 · 逼近上限</span><span class="line"></span></div>
-    <div class="step">
-      <div class="rail"><div class="node fail">25</div><div class="stem"></div></div>
-      <div class="card">
-        <div class="card-head"><span class="t">write</span><span class="args">(仅 content，缺 file_path)</span><span class="st fail">fail · 1.8s</span></div>
-        <div class="out err">write: missing required string argument "file_path"</div>
-      </div>
-    </div>
-
-    <div class="tl-head"><span>终态</span><span class="line"></span></div>
-    <div class="step">
-      <div class="rail"><div class="node end">!</div><div class="stem" style="background:transparent"></div></div>
-      <div class="card" style="border-color:var(--warn)">
-        <div class="card-head"><span class="t">turn 结束</span><span class="st run">stopReason = max_steps</span></div>
-        <div class="out warn">步骤达到上限 <b>25</b>，模型始终保持工具调用、未产出最终文本答案 → 用户未见回复。</div>
-        <div class="callout"><span class="ic"><svg class="i"><path d="M12 20h9M16.5 3.5a2.1 2.1 0 013 3L7 19l-4 1 1-4z"/></svg></span><span><b>建议</b>：① <code>maxSteps</code> 调高或改“无进展计数”；② Windows 下 bash 走 Git Bash；③ 装 chromium；④ 工具缺参时给格式示范。详见 <code>design/README.md</code> §3。</span></div>
-      </div>
-    </div>
-  </div>
-
-  <div class="legend">
-    <span><span class="g">●</span> 成功</span>
-    <span><span class="d">●</span> 失败/错误</span>
-    <span><span class="w">●</span> 运行中/终止</span>
-    <span><span class="i">●</span> 用户事件</span>
-  </div>
-</div>
-</body>
+  </body>
 </html>

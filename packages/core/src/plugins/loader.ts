@@ -72,7 +72,10 @@ export function validatePluginManifest(raw: unknown, dirName: string): ManifestV
           (e) => typeof e === 'string' && (e === '*' || (KNOWN_EVENT_TYPES as readonly string[]).includes(e)),
         );
       if (!valid) {
-        return { ok: false, error: `manifest.permissions.events 必须是事件类型数组（${KNOWN_EVENT_TYPES.join('/')} 或 '*'）` };
+        return {
+          ok: false,
+          error: `manifest.permissions.events 必须是事件类型数组（${KNOWN_EVENT_TYPES.join('/')} 或 '*'）`,
+        };
       }
       perms.events = [...(events as string[])];
     }

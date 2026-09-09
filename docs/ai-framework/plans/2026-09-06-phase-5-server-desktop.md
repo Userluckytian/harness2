@@ -13,12 +13,12 @@
 
 ## 前置阅读（必须）
 
-| 优先级 | 文件 |
-|--------|------|
-| P0 | 本文件、`docs/MASTER-PLAN.md`（Ph5/Ph7 边界） |
-| P0 | `packages/core/src/session/manager.ts`、`agent/loop.ts`（runTurn 依赖注入形态）、`provider/factory.ts` |
-| P0 | `packages/cli/src/chat.ts`（REPL 是服务层的第一个参照消费者） |
-| P1 | `docs/ROADMAP.md`（D5）、`docs/issue-log/OPEN.md` |
+| 优先级 | 文件                                                                                                   |
+| ------ | ------------------------------------------------------------------------------------------------------ |
+| P0     | 本文件、`docs/MASTER-PLAN.md`（Ph5/Ph7 边界）                                                          |
+| P0     | `packages/core/src/session/manager.ts`、`agent/loop.ts`（runTurn 依赖注入形态）、`provider/factory.ts` |
+| P0     | `packages/cli/src/chat.ts`（REPL 是服务层的第一个参照消费者）                                          |
+| P1     | `docs/ROADMAP.md`（D5）、`docs/issue-log/OPEN.md`                                                      |
 
 **仓库路径：** `D:\AI_projects\harness2`（默认分支 `master`）
 **基线分支：** 从 `master` 拉 `feat/phase-5-server-desktop`（阶段 4 验收后）
@@ -37,13 +37,13 @@
 
 ## File Structure（预期变更）
 
-| 文件 | 动作 | 职责 |
-|------|------|------|
-| `packages/core/src/server/{http,ws,sessions}.ts` | 新建 | 控制面（HTTP JSON API）+ 事件面（WS 订阅/推送）+ 服务内会话注册表（含运行中 turn 管理、取消） |
-| `packages/cli/src/index.ts` | 修改 | `harness2 serve [--port 0] [--root <dir>]`：启动服务并打印实际端口（stdout 一行 JSON），`--port 0` 随机端口 |
-| `packages/desktop/*` | 新建 | Electron 主进程（spawn serve / 连接管理 / 窗口）、preload 桥、React 渲染端（Vite 构建） |
-| `packages/desktop/electron-builder.yml` | 新建 | win 先行打包配置（nsis，unsigned） |
-| `packages/core/test/server.test.ts`、`packages/desktop/test/*.test.ts` | 新建 | 见各 Task |
+| 文件                                                                   | 动作 | 职责                                                                                                        |
+| ---------------------------------------------------------------------- | ---- | ----------------------------------------------------------------------------------------------------------- |
+| `packages/core/src/server/{http,ws,sessions}.ts`                       | 新建 | 控制面（HTTP JSON API）+ 事件面（WS 订阅/推送）+ 服务内会话注册表（含运行中 turn 管理、取消）               |
+| `packages/cli/src/index.ts`                                            | 修改 | `harness2 serve [--port 0] [--root <dir>]`：启动服务并打印实际端口（stdout 一行 JSON），`--port 0` 随机端口 |
+| `packages/desktop/*`                                                   | 新建 | Electron 主进程（spawn serve / 连接管理 / 窗口）、preload 桥、React 渲染端（Vite 构建）                     |
+| `packages/desktop/electron-builder.yml`                                | 新建 | win 先行打包配置（nsis，unsigned）                                                                          |
+| `packages/core/test/server.test.ts`、`packages/desktop/test/*.test.ts` | 新建 | 见各 Task                                                                                                   |
 
 ### 服务 API 契约（冻结 v1）
 
@@ -119,27 +119,27 @@ WS（事件面，单连接多会话订阅）
 
 ## 验收标准总表
 
-| # | 标准 | 通过条件 |
-|---|------|----------|
-| 1 | 服务控制面 | API/端口锁/undo 接入/审批上抛测试通过 |
-| 2 | WS 事件面 | 订阅/双会话并行/abort/审批往返测试通过；delta 与落盘事件一致性断言 |
-| 3 | 桌面壳 | spawn/端口解析/断线重启单测通过；`electron .` 本地冒烟记录 |
-| 4 | 对话 UI | 事件折叠/重放/active 过滤单测通过 |
-| 5 | 分屏 | 布局引擎/DnD/后台徽标单测通过 |
-| 6 | 打包 | electron-builder 产物生成（win nsis） |
-| 7 | 红线 | 渲染进程无 Node 权限；服务仅 127.0.0.1；key 不出服务进程/不进 WS |
-| 8 | 单测/构建 | `pnpm test && pnpm -r typecheck` exit 0 |
+| #   | 标准       | 通过条件                                                           |
+| --- | ---------- | ------------------------------------------------------------------ |
+| 1   | 服务控制面 | API/端口锁/undo 接入/审批上抛测试通过                              |
+| 2   | WS 事件面  | 订阅/双会话并行/abort/审批往返测试通过；delta 与落盘事件一致性断言 |
+| 3   | 桌面壳     | spawn/端口解析/断线重启单测通过；`electron .` 本地冒烟记录         |
+| 4   | 对话 UI    | 事件折叠/重放/active 过滤单测通过                                  |
+| 5   | 分屏       | 布局引擎/DnD/后台徽标单测通过                                      |
+| 6   | 打包       | electron-builder 产物生成（win nsis）                              |
+| 7   | 红线       | 渲染进程无 Node 权限；服务仅 127.0.0.1；key 不出服务进程/不进 WS   |
+| 8   | 单测/构建  | `pnpm test && pnpm -r typecheck` exit 0                            |
 
 ---
 
 ## 风险与降级
 
-| 风险 | 缓解 |
-|------|------|
-| Electron 版本/API 变动快 | 锁定当期稳定版；主进程逻辑拆纯函数降低耦合 |
-| GUI 无法自动化验收 | GUI 项全部登记 OPEN 待真机；可自动化部分（store/布局/服务）测试锁死 |
-| spawn 打包后找不到 cli | 打包把 cli dist 一并入包（asar unpacked 或 extraResources），冒烟验证 |
-| WS 与 REPL 双消费者语义漂移 | 服务层复用 loop/审批缝原语；REPL 行为回归测试保留 |
+| 风险                        | 缓解                                                                  |
+| --------------------------- | --------------------------------------------------------------------- |
+| Electron 版本/API 变动快    | 锁定当期稳定版；主进程逻辑拆纯函数降低耦合                            |
+| GUI 无法自动化验收          | GUI 项全部登记 OPEN 待真机；可自动化部分（store/布局/服务）测试锁死   |
+| spawn 打包后找不到 cli      | 打包把 cli dist 一并入包（asar unpacked 或 extraResources），冒烟验证 |
+| WS 与 REPL 双消费者语义漂移 | 服务层复用 loop/审批缝原语；REPL 行为回归测试保留                     |
 
 ---
 
@@ -152,26 +152,31 @@ WS（事件面，单连接多会话订阅）
 你是 **harness2** 阶段 5 的实现代理。请**完整执行本阶段**，不要只写方案。
 
 ### 基线
+
 - 目录：`D:\AI_projects\harness2`（默认分支 `master`）；从 master 创建并切换 `feat/phase-5-server-desktop`
 - 已完成（勿重做）：阶段 1-4 均验收（内核/loop+工具/Provider+配置/CLI chat+undo-redo+快照+发布物料）
 - 唯一实施计划：`docs/ai-framework/plans/2026-09-XX-phase-5-server-desktop.md`（以仓库内实际文件为准）
 - 必读：本计划（含服务 API 契约）、`session/manager.ts`、`agent/loop.ts`、`cli/chat.ts`、`AGENTS.md`
 
 ### 做
+
 1. 严格按 Task 1→6 顺序执行；每 Task 测试通过后规范 commit（gitmoji 中文，禁止 push）
 2. 遵守 Global Constraints：单一事实源（服务只经内核原语操作）；服务仅 127.0.0.1+端口锁；渲染进程零 Node；key 不出服务进程
 3. GUI 无法自动化的项登记 OPEN.md 待真机验证；本地 `electron .` 冒烟记录进 diary
 
 ### 不做
+
 - 记忆/分叉/内嵌浏览器/压缩/定时任务/IM/自动更新
 - 提交密钥；任何 `git push`
 
 ### 工作方式
+
 1. 先跑基线 `pnpm test` 确认全绿再动工
 2. 证据优先：交卷前重跑 `pnpm test && pnpm -r typecheck`，粘贴真实输出；记录 electron 冒烟与打包产物信息
 3. 简体中文回复；代码标识符原样
 
 ### 交卷
+
 分支名、提交列表、验收表逐项自评（带命令与真实结果）、新增测试数、electron 冒烟与打包产物记录、残留风险与未关闭项。
 
 现在开始：读完本阶段计划，从 Task 1 执行到 Task 6。

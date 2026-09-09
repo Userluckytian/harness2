@@ -86,18 +86,12 @@ export function continueQueue(s: DeliverySession): Array<{ id: ClientMessageId; 
 function durableQueueSeq(journal: RuntimeJournal, clientMessageId: ClientMessageId): number | undefined {
   const found = journal
     .readEntries()
-    .entries.find(
-      (e): e is QueueAcceptedEntry => e.kind === 'queue/accepted' && e.clientMessageId === clientMessageId,
-    );
+    .entries.find((e): e is QueueAcceptedEntry => e.kind === 'queue/accepted' && e.clientMessageId === clientMessageId);
   return found?.payload.queueSeq;
 }
 
 /** 既有在队列项 → 同内容返回 receipt，不同内容拒绝（不重复登记，不新建 accepted） */
-function handleExisting(
-  s: DeliverySession,
-  existing: QueueEntry,
-  key: string,
-): SubmitAck {
+function handleExisting(s: DeliverySession, existing: QueueEntry, key: string): SubmitAck {
   if (s.contentKeys.get(existing.id) === key) {
     const idx = s.queue.findIndex((q) => q.id === existing.id);
     return {
@@ -210,7 +204,10 @@ export function editQueueItem(
   item.rawText = newText;
   item.revision += 1;
   // 内容变更 → 更新指纹（同 id 后续去重将基于新内容比较）
-  s.contentKeys.set(clientMessageId, JSON.stringify({ rawText: newText, intent: item.intent, references: item.references ?? undefined }));
+  s.contentKeys.set(
+    clientMessageId,
+    JSON.stringify({ rawText: newText, intent: item.intent, references: item.references ?? undefined }),
+  );
   return { ok: true, revision: item.revision };
 }
 

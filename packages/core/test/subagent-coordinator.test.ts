@@ -228,7 +228,8 @@ describe('审批上抛一路到父（task 内工具审批带 taskId/parentTaskId
     const pid = hub.create(cwd).id;
     const approvals: Array<{ taskId?: string; parentTaskId?: string; requestId: string }> = [];
     hub.addHooks({
-      onApprovalRequest: (a) => approvals.push({ taskId: a.taskId, parentTaskId: a.parentTaskId, requestId: a.requestId }),
+      onApprovalRequest: (a) =>
+        approvals.push({ taskId: a.taskId, parentTaskId: a.parentTaskId, requestId: a.requestId }),
     });
     hub.registerTask({
       taskId: 't-ap',
@@ -332,7 +333,11 @@ describe('S5 生产路径：后台子代理任务（buildTurnTools → createSub
     expect(hub.tasks.status(meta.taskId)?.state).toBe('running');
     expect(parentStop).toBe('');
     // cancel 子任务：不应误伤父 turn
-    const ack = hub.cancelAck({ requestId: 'cnl-prod', target: { kind: 'task', id: meta.taskId }, expectedId: 'running' });
+    const ack = hub.cancelAck({
+      requestId: 'cnl-prod',
+      target: { kind: 'task', id: meta.taskId },
+      expectedId: 'running',
+    });
     expect(ack.state).toBe('stopping');
     await waitFor(() => parentStop !== '');
     expect(parentStop).toBe('end_turn'); // 父 turn 正常收尾，未被 abort
@@ -378,10 +383,10 @@ describe('S5 生产路径：后台子代理任务（buildTurnTools → createSub
       background: true,
     });
     const cont = defs.find((d) => d.name === 'subagent_continue')!;
-    const r = await cont.execute(
-      { taskId: meta.taskId, childSessionId: '', message: '' },
-      { cwd: root, signal: new AbortController().signal } as never,
-    );
+    const r = await cont.execute({ taskId: meta.taskId, childSessionId: '', message: '' }, {
+      cwd: root,
+      signal: new AbortController().signal,
+    } as never);
     const parsed = JSON.parse(r.output!) as { childSessionId: string; stopReason: string; finalText?: string };
     expect(parsed.stopReason).toBe('end_turn');
     expect(parsed.finalText).toBeDefined();

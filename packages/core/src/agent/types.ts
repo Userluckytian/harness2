@@ -39,15 +39,7 @@ export interface AppliedSteerRecord {
  * paused = provider 请求暂停（Anthropic pause_turn），续跑未实现（登记 OPEN.md）。
  */
 export type TurnStopReason =
-  | 'end_turn'
-  | 'error'
-  | 'cancelled'
-  | 'max_steps'
-  | 'length'
-  | 'content_filter'
-  | 'max_tokens'
-  | 'refusal'
-  | 'paused';
+  'end_turn' | 'error' | 'cancelled' | 'max_steps' | 'length' | 'content_filter' | 'max_tokens' | 'refusal' | 'paused';
 
 /**
  * 上下文压缩选项（阶段 7，Task 1）。提供时 runTurn 在每个 turn 开始检查触发：
@@ -64,7 +56,8 @@ export interface CompactionOptions {
 }
 
 export interface TurnOptions {
-  provider: ChatProvider;  tools: ToolRegistry;
+  provider: ChatProvider;
+  tools: ToolRegistry;
   /** 审批策略缝；缺省 allow-all（工具直接执行） */
   approval?: ApprovalHandler;
   /** 单 turn 最大 step 数（模型调用次数），默认 25 */

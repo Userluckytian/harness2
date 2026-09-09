@@ -46,11 +46,15 @@ function cwdProbe(log: Array<{ callId: string; cwd: string }>): ToolDefinition {
   };
 }
 
-function toolResultOutputs(dir: string): Array<{ callId: string; tool?: string; ok: boolean; output?: string; error?: string }> {
+function toolResultOutputs(
+  dir: string,
+): Array<{ callId: string; tool?: string; ok: boolean; output?: string; error?: string }> {
   const session = loadSession(dir);
   return session.events
     .filter(({ event }) => event.type === 'tool/result')
-    .map(({ event }) => event.payload as { callId: string; tool?: string; ok: boolean; output?: string; error?: string });
+    .map(
+      ({ event }) => event.payload as { callId: string; tool?: string; ok: boolean; output?: string; error?: string },
+    );
 }
 
 describe('SessionHub 每会话真实 cwd（A/B 不串）', () => {
@@ -72,7 +76,13 @@ describe('SessionHub 每会话真实 cwd（A/B 不串）', () => {
       { toolCalls: [{ id: 'b2', name: 'read', arguments: JSON.stringify({ file_path: 'note.txt' }) }] },
       { text: 'B read' },
     ];
-    const hub = new SessionHub({ manager, provider: new MockProvider(script), tools, cwd: root, decide: () => 'allow' });
+    const hub = new SessionHub({
+      manager,
+      provider: new MockProvider(script),
+      tools,
+      cwd: root,
+      decide: () => 'allow',
+    });
     const turnEnds: Array<{ id: string; stopReason: string }> = [];
     hub.addHooks({
       onTurnEnd: (id, result) => turnEnds.push({ id, stopReason: result.stopReason }),
@@ -109,14 +119,31 @@ describe('SessionHub 每会话真实 cwd（A/B 不串）', () => {
     const probeLog: Array<{ callId: string; cwd: string }> = [];
     tools.register(cwdProbe(probeLog));
     const scripts: MockScript[] = [
-      [{ toolCalls: [{ id: 'c1', name: 'write', arguments: JSON.stringify({ file_path: 'seed.txt', content: 'seed' }) }] }, { text: 'seed ok' }],
+      [
+        {
+          toolCalls: [
+            { id: 'c1', name: 'write', arguments: JSON.stringify({ file_path: 'seed.txt', content: 'seed' }) },
+          ],
+        },
+        { text: 'seed ok' },
+      ],
       [{ toolCalls: [{ id: 'c2', name: 'cwd_probe', arguments: '{}' }] }, { text: 'probe ok' }],
     ];
 
     // hub1：创建会话，跑一轮（落 header cwd 与 seed.txt）
-    const hub1 = new SessionHub({ manager, provider: new MockProvider(scripts[0]!), tools, cwd: root, decide: () => 'allow' });
+    const hub1 = new SessionHub({
+      manager,
+      provider: new MockProvider(scripts[0]!),
+      tools,
+      cwd: root,
+      decide: () => 'allow',
+    });
     const done1 = new Promise<void>((resolve) => {
-      hub1.addHooks({ onTurnEnd: (id) => { if (id === created.id) resolve(); } } satisfies SessionHubHooks);
+      hub1.addHooks({
+        onTurnEnd: (id) => {
+          if (id === created.id) resolve();
+        },
+      } satisfies SessionHubHooks);
     });
     const created = hub1.create(projectA);
     hub1.sendUserMessage(created.id, 'seed');
@@ -125,9 +152,19 @@ describe('SessionHub 每会话真实 cwd（A/B 不串）', () => {
     expect(readFileSync(join(projectA, 'seed.txt'), 'utf8')).toBe('seed');
 
     // hub2：同 manager 恢复会话（entryFor 走 resume → header.cwd），再跑一轮
-    const hub2 = new SessionHub({ manager, provider: new MockProvider(scripts[1]!), tools, cwd: root, decide: () => 'allow' });
+    const hub2 = new SessionHub({
+      manager,
+      provider: new MockProvider(scripts[1]!),
+      tools,
+      cwd: root,
+      decide: () => 'allow',
+    });
     const done2 = new Promise<void>((resolve) => {
-      hub2.addHooks({ onTurnEnd: (id) => { if (id === created.id) resolve(); } } satisfies SessionHubHooks);
+      hub2.addHooks({
+        onTurnEnd: (id) => {
+          if (id === created.id) resolve();
+        },
+      } satisfies SessionHubHooks);
     });
     hub2.ensureOpen(created.id);
     hub2.sendUserMessage(created.id, 'probe');

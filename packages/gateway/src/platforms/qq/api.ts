@@ -72,7 +72,8 @@ export class QqApi {
     }
     // P2-1（审查）：官方实测 expires_in 返回字符串 "7200"——两种形态都兼容
     const rawExpires = body.expires_in;
-    const expiresNum = typeof rawExpires === 'number' ? rawExpires : typeof rawExpires === 'string' ? Number(rawExpires) : NaN;
+    const expiresNum =
+      typeof rawExpires === 'number' ? rawExpires : typeof rawExpires === 'string' ? Number(rawExpires) : NaN;
     const expiresIn = Number.isFinite(expiresNum) && expiresNum > 60 ? expiresNum : 3600;
     this.tokenState = { token: body.access_token, expiresAt: Date.now() + expiresIn * 1000 };
     return this.tokenState.token;

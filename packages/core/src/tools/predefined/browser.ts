@@ -230,7 +230,10 @@ export class BrowserPool {
     entry.idleTimer = setTimeout(() => {
       if (this.entries.get(key) === entry && !entry.inUse) {
         this.destroyEntry(key, `空闲超过 ${Math.round(this.idleDestroyMs / 1000)}s`);
-        this.pushNote(key, `浏览器上下文已因空闲 ${Math.round(this.idleDestroyMs / 1000)}s 自动销毁；下次调用将重新启动`);
+        this.pushNote(
+          key,
+          `浏览器上下文已因空闲 ${Math.round(this.idleDestroyMs / 1000)}s 自动销毁；下次调用将重新启动`,
+        );
       }
     }, this.idleDestroyMs);
     entry.idleTimer.unref?.(); // 不阻塞进程退出

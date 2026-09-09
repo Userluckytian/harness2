@@ -90,7 +90,13 @@ describe('undoLastTurn 投影截断', () => {
     const dir = tmpDir();
     // 手工构造绕过 writer.create 的 header（writer 校验侧不可能产生该日志）
     const lines = [
-      JSON.stringify({ v: 1, seq: 1, ts: '2026-09-06T00:00:00.000Z', type: 'user/message', payload: { text: '只有一条' } }),
+      JSON.stringify({
+        v: 1,
+        seq: 1,
+        ts: '2026-09-06T00:00:00.000Z',
+        type: 'user/message',
+        payload: { text: '只有一条' },
+      }),
     ];
     writeFileSync(join(dir, SESSION_LOG_FILE), lines.join('\n') + '\n', 'utf8');
     const w = SessionWriter.open(dir, { fsync: false });
@@ -253,7 +259,13 @@ describe('undo/redo 与快照联动', () => {
 
     const preview = undoLastTurn(w, { snapshots, dryRun: true });
     expect(preview.files).toHaveLength(1);
-    expect(preview.files[0]).toMatchObject({ file, target: 'v1', current: 'v2', externallyModified: false, restored: false });
+    expect(preview.files[0]).toMatchObject({
+      file,
+      target: 'v1',
+      current: 'v2',
+      externallyModified: false,
+      restored: false,
+    });
     expect(readFileSync(file, 'utf8')).toBe('v2'); // dryRun 未动
 
     const r = undoLastTurn(w, { snapshots });

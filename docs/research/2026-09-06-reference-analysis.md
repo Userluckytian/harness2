@@ -8,14 +8,14 @@
 
 ## 一、参考对象总览
 
-| 对象 | 位置 | 技术栈 | 许可证/开源 | 分析深度 |
-|------|------|--------|-------------|----------|
-| grok-build | `D:\AI_projects\refs\grok-build` | Rust（79 crates，ratatui TUI） | Apache-2.0（xAI/SpaceXAI 官方快照） | 深 |
-| hermes-agent | `D:\AI_projects\refs\hermes-agent` | Python（agent core + Electron 桌面 + 20+ IM 网关） | MIT（NousResearch/hermes-agent） | 深 |
-| deepseek-harness | `D:\AI_projects\refs\deepseek-harness` | TypeScript pnpm monorepo（Cordis 插件框架） | MIT（DeepSeek 官方，developer preview） | 深 |
-| opencode | 本机安装 `@opencode-aidesktop` + GitHub anomalyco/opencode | TypeScript client/server + Electron | 开源 | 本地数据结构 + 官方文档 |
-| Tokeny | 本机 `D:\Programs\Tokeny` | Electron（asar 未加密） | **闭源**（GitHub, Inc. 签名，v1.5.7） | 数据库 schema 级 |
-| ZCode | 本机 `D:\Programs\ZCode` | Electron（闭源，智谱系） | 闭源 | 配置/数据结构级 |
+| 对象             | 位置                                                       | 技术栈                                             | 许可证/开源                             | 分析深度                |
+| ---------------- | ---------------------------------------------------------- | -------------------------------------------------- | --------------------------------------- | ----------------------- |
+| grok-build       | `D:\AI_projects\refs\grok-build`                           | Rust（79 crates，ratatui TUI）                     | Apache-2.0（xAI/SpaceXAI 官方快照）     | 深                      |
+| hermes-agent     | `D:\AI_projects\refs\hermes-agent`                         | Python（agent core + Electron 桌面 + 20+ IM 网关） | MIT（NousResearch/hermes-agent）        | 深                      |
+| deepseek-harness | `D:\AI_projects\refs\deepseek-harness`                     | TypeScript pnpm monorepo（Cordis 插件框架）        | MIT（DeepSeek 官方，developer preview） | 深                      |
+| opencode         | 本机安装 `@opencode-aidesktop` + GitHub anomalyco/opencode | TypeScript client/server + Electron                | 开源                                    | 本地数据结构 + 官方文档 |
+| Tokeny           | 本机 `D:\Programs\Tokeny`                                  | Electron（asar 未加密）                            | **闭源**（GitHub, Inc. 签名，v1.5.7）   | 数据库 schema 级        |
+| ZCode            | 本机 `D:\Programs\ZCode`                                   | Electron（闭源，智谱系）                           | 闭源                                    | 配置/数据结构级         |
 
 ---
 
@@ -35,6 +35,7 @@
 ### 2.2 记忆系统（用户关注点 2，要求做成开关）
 
 **hermes（MIT，最佳参考）双轨制**：
+
 - 存储：`~/.hermes/memories/MEMORY.md`（agent 笔记）+ `USER.md`（用户画像），条目以 `\n§\n` 分隔；**字符硬预算**（memory 2200 / user 1375 字符，模型无关）；文件锁 + 原子写 + 外部漂移检测（防手工编辑被静默覆盖）+ 写入前 prompt 注入扫描（`tools/memory_tool_store.py`）。
 - **询问记忆（用户确认）**：`tools/write_approval.py` 统一 gate，三态 `allow / stage / blocked`——前台交互场景 inline 提示 "Save to memory?"（once/session/deny），后台/无 IM 场景 stage 成 pending，事后 `/memory approve <id>` 重放；**只延迟、绝不静默丢弃**。
 - **主动记忆**：nudge 计数器（默认每 10 个用户 turn，`agent/agent_init.py:1229`）→ turn 结束在辅助模型上 fork 后台 review agent 回放对话自主写记忆（`agent/background_review.py`），主对话零打断；模型实际调过 memory 工具即重置计数。
@@ -56,6 +57,7 @@
 ### 2.4 插件化与轨迹（用户关注点 4，轨迹优先级最高）
 
 **deepseek-harness 是两者的事实标准**：
+
 - **一切皆插件**：Cordis 框架（vendor 进仓库）——插件即 Service，Context 是服务仓库，依赖用 `inject` 声明；五种事件分发（emit/waterfall/parallel/serial/bail）；所有贡献通过 `ctx.effect()`/`ctx.on()` 安装并返回 disposer（**注册即可逆**）；产品形态（web/headless/sdk/acp）只是同一插件树的不同 Profile/Bundle 叠加（`docs/architecture.md:15-38`）。
 - **轨迹**：每 session 一份 append-only JSONL 事件日志，50+ 事件类型（`packages/core/session/src/known-event-types.ts`）：`request/header`（含生效 prompt 快照）、`step/start|end`、`user|assistant/message`、**失败的尝试单独记 `assistant/attempt`**、`tool/call|result`、`compaction/*`、`approval/*`、`llm/retry`。核心不变量 **"Model-visible ⟺ logged"**（发到模型的内容必须可从日志重建，运行时断言）。代际文件不可变（`session.vN.jsonl[.zstd]`），格式演进靠相邻迁移链。轨迹 UI 是纯消费者插件（turn 感知时间轴 + inspector）；支持导出 ZIP（含子代理日志）、**快照回放测试（无需 API key，轨迹即测试夹具）**。
 - 短板（照抄要小心的）：概念密度过高（Cordis 全套术语）、文档税重、无桌面端/TUI、pre-stable API 变更频繁。
@@ -67,6 +69,7 @@
 ### 2.5 按场景模型配置（用户关注点 5：Tokeny）
 
 **已确认 Tokeny 闭源**（exe 元数据 GitHub, Inc. v1.5.7，内部无自有 repo 引用；但 asar 未加密可读，schema 已提取）：
+
 - 渠道（provider）定义在 settings `channels`：`{id, name, baseUrl, apiProtocol, models:[{name, contextWindow, maxTokens}]}`；**API key 分离存储**在 `secret:ai_channel:<id>`。
 - **按用途分模型**：`activeModel / completionModel / subagentModel / memoryModel / goalModel / dictationModel / readFileVisionModel` 等，每个统一 `{channelId, model}` 二元组；会话级覆盖走 `sessions.model_ref`。
 - **ZCode 补充**（模型目录最正式）：静态 catalog JSON `{schemaVersion, providers:[{id, models:[{id, modalities, contextWindow, maxOutputTokens, reasoning}]}]}` + provider 级 `systemDisabledReason` 状态机（`model-providers/models_catalog_china_llm_zcode_2026-06-03.json`）。
@@ -76,6 +79,7 @@
 ### 2.6 QQ Bot / IM 集成（用户关注点 6，主用 QQ）
 
 **hermes（MIT，可直接参考实现）**：
+
 - 内置 9 平台（**qqbot**、weixin、signal、whatsapp_cloud、bluebubbles、msgraph_webhook、webhook、api_server、yuanbao）+ 插件 15+（telegram、discord、slack、**feishu**、dingtalk、matrix、email…），共 20+。
 - **QQ 官方 Bot API v2**：入站 WebSocket gateway（app_id+client_secret 换 token，单飞刷新、断线重连），出站 REST（api.sgroup.qq.com）；DM/群策略（open/allowlist/disabled）、语音转写、**工具审批做成 QQ InlineKeyboard 按钮**（`gateway/platforms/qqbot/keyboards.py`）。不做个人号逆向协议。
 - 桥接：`BasePlatformAdapter` 统一抽象 → 按"平台+chat id"路由到会话，每 chat 串行、持久化去重；复用同一 agent core。
@@ -101,12 +105,12 @@
 
 ## 三、技术栈决策输入
 
-| 维度 | 事实 |
-|------|------|
-| dsh 证明 | TS pnpm monorepo 可承载 web/headless/sdk/acp 多形态 + 19 个 GH Actions workflows 完整 CI/CD |
-| hermes 证明 | Electron 桌面 + 常驻 gateway + 20+ IM 平台在 Python core 上可行，但桌面打包链路复杂 |
-| grok 证明 | Rust TUI 性能极佳但 79 crates 体量失控、Windows best-effort |
-| 本机四应用 | Tokeny/ZCode/Hermes-desktop 全是 Electron；opencode 桌面也是 Electron——该路线在 Windows 上验证最充分 |
+| 维度        | 事实                                                                                                 |
+| ----------- | ---------------------------------------------------------------------------------------------------- |
+| dsh 证明    | TS pnpm monorepo 可承载 web/headless/sdk/acp 多形态 + 19 个 GH Actions workflows 完整 CI/CD          |
+| hermes 证明 | Electron 桌面 + 常驻 gateway + 20+ IM 平台在 Python core 上可行，但桌面打包链路复杂                  |
+| grok 证明   | Rust TUI 性能极佳但 79 crates 体量失控、Windows best-effort                                          |
+| 本机四应用  | Tokeny/ZCode/Hermes-desktop 全是 Electron；opencode 桌面也是 Electron——该路线在 Windows 上验证最充分 |
 
 **推荐（详见 ROADMAP）：TypeScript/Node monorepo + Electron 桌面 + SQLite/JSONL 存储 + QQ 官方 API 网关**。备选 Tauri 2（更轻，但 webview 跨平台不一致 + Rust 层维护成本）。待用户确认后写入 `architecture.md`。
 

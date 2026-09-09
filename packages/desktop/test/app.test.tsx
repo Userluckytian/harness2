@@ -65,7 +65,7 @@ function makeFakeApi() {
     settingsUpdateConfig: vi.fn(async () => ({ ok: true })),
     settingsGetAuthMasked: vi.fn(async () => ({ channels: [], gateways: [] })),
     settingsUpdateAuth: vi.fn(async () => ({ ok: true })),
-    settingsGetPreferences: vi.fn(async () => ({ theme: 'warmPaper' } as SettingsPreferencesShape)),
+    settingsGetPreferences: vi.fn(async () => ({ theme: 'warmPaper' }) as SettingsPreferencesShape),
     settingsSetPreferences: vi.fn(async (p: unknown) => p as SettingsPreferencesShape),
     settingsGetDoctorReport: vi.fn(async () => ({ checks: [], exitCode: 0 as const })),
     settingsGetCrashReports: vi.fn(async () => []),
@@ -183,7 +183,13 @@ describe('对话 UI（jsdom）', () => {
     fireEvent.click(await screen.findByRole('button', { name: /第一句/ }));
     expect(await screen.findByText('第一句回复')).toBeTruthy();
 
-    api.emit({ type: 'approval-request', sessionId: 's1', tool: 'write', args: { file_path: 'a.txt' }, requestId: 'r1' });
+    api.emit({
+      type: 'approval-request',
+      sessionId: 's1',
+      tool: 'write',
+      args: { file_path: 'a.txt' },
+      requestId: 'r1',
+    });
     expect(await screen.findByText(/允许执行/)).toBeTruthy();
     fireEvent.click(screen.getByRole('button', { name: '允许' }));
     expect(api.respondApproval).toHaveBeenCalledWith('r1', 'allow');
@@ -191,7 +197,10 @@ describe('对话 UI（jsdom）', () => {
 
   it('后台帧缓冲：选中 s1 时 s2 的 assistant/message 计未读并显示徽标', async () => {
     const api = makeFakeApi();
-    const App = (await bootApp(api)) as { App: () => React.ReactNode; store: { peekStream(id: string): { unread: number } } };
+    const App = (await bootApp(api)) as {
+      App: () => React.ReactNode;
+      store: { peekStream(id: string): { unread: number } };
+    };
     render(<App.App />);
     fireEvent.click(await screen.findByRole('button', { name: /第一句/ }));
     await screen.findByText('第一句回复');

@@ -81,7 +81,8 @@ function checkConfig(opts: DoctorOptions): {
       ? {
           id: 'config',
           status: 'warn',
-          summary: '未找到配置文件（全新环境——真实 provider 前先配置 config.json + auth.json，可用 harness2 config check 核对）',
+          summary:
+            '未找到配置文件（全新环境——真实 provider 前先配置 config.json + auth.json，可用 harness2 config check 核对）',
           details,
         }
       : { id: 'config', status: 'fail', summary: 'config 加载失败', details };
@@ -155,7 +156,13 @@ async function checkMcp(config: HarnessConfig | null, unavailable: boolean, opts
   for (const name of names) {
     const cfg = servers[name]!;
     const tools = new ToolRegistry();
-    const manager = new McpManager({ tools, maxRestarts: 0, timeoutMs, connectTimeoutMs: timeoutMs, logSink: () => {} });
+    const manager = new McpManager({
+      tools,
+      maxRestarts: 0,
+      timeoutMs,
+      connectTimeoutMs: timeoutMs,
+      logSink: () => {},
+    });
     try {
       const report = await manager.connectAll({ [name]: cfg });
       const status = manager.status().find((s) => s.server === name);

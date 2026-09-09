@@ -8,7 +8,9 @@ import { createRequire } from 'node:module';
 
 const requireCore = createRequire(__filename);
 
-const core = requireCore('@harness2/core') as typeof import('@harness2/core', { with: { 'resolution-mode': 'import' } });
+const core = requireCore('@harness2/core') as typeof import('@harness2/core', {
+  with: { 'resolution-mode': 'import' },
+});
 
 export const {
   defaultConfigPaths,

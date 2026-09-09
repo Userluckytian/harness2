@@ -220,7 +220,11 @@ export class SessionWriter {
       }
       // 陈旧锁（持锁进程已死）：接管
     }
-    writeFileSync(lockPath, JSON.stringify({ pid: process.pid, ts: new Date().toISOString() } satisfies LockContent), 'utf8');
+    writeFileSync(
+      lockPath,
+      JSON.stringify({ pid: process.pid, ts: new Date().toISOString() } satisfies LockContent),
+      'utf8',
+    );
   }
 
   /**

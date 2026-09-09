@@ -9,17 +9,20 @@
 ---8<--- 复制从此行之后开始（本行不要复制）---
 
 ---
+
 description: 〔一句话职责 + 触发词。主代理靠这段决定何时调你，把「图片」「依赖」「测试」这类触发词写进去，参考 vision-analyst 的 description 写法〕
 mode: subagent
+
 # model: 〔仅当需要固定到特定模型时保留本行并填值（如 oc-local/mimo-v2.5），否则整行删除〕
+
 permission:
-  edit: deny      # 〔只读审查类保持 deny；规划/测试等需落盘产出才改 allow〕
-  bash: allow
-  read: allow
-  grep: allow
-  glob: allow
-  webfetch: deny  # 〔需要联网查资料才改 allow〕
-  task: deny
+edit: deny # 〔只读审查类保持 deny；规划/测试等需落盘产出才改 allow〕
+bash: allow
+read: allow
+grep: allow
+glob: allow
+webfetch: deny # 〔需要联网查资料才改 allow〕
+task: deny
 ---
 
 ## 职责

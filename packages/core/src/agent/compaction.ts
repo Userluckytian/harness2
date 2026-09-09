@@ -65,8 +65,7 @@ export function estimateContextTokens(messages: readonly ChatMessage[]): number 
 export function computeCoveredUpToSeq(session: LoadedSession): number | null {
   computeProjection(session);
   const msgs = session.events.filter(
-    ({ event, active }) =>
-      active && (event.type === 'user/message' || event.type === 'assistant/message'),
+    ({ event, active }) => active && (event.type === 'user/message' || event.type === 'assistant/message'),
   );
   if (msgs.length <= COMPACTION_TAIL_KEEP) return null;
   const boundary = msgs[msgs.length - COMPACTION_TAIL_KEEP - 1];

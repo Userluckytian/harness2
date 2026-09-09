@@ -61,7 +61,13 @@ interface CommandPaletteProps {
   onSelectSession: (id: string) => void;
 }
 
-export function CommandPalette({ open, onClose, commands, sessions, onSelectSession }: CommandPaletteProps): React.ReactNode {
+export function CommandPalette({
+  open,
+  onClose,
+  commands,
+  sessions,
+  onSelectSession,
+}: CommandPaletteProps): React.ReactNode {
   const [mode, setMode] = useState<'commands' | 'sessions'>('commands');
   const [query, setQuery] = useState('');
   const [selected, setSelected] = useState(0);
@@ -136,16 +142,14 @@ export function CommandPalette({ open, onClose, commands, sessions, onSelectSess
   };
 
   return (
-    <div className="command-palette-overlay" onMouseDown={(e) => {
-      // 遮罩点击关闭（面板自身 onMouseDown stopPropagation 防误关）
-      if (e.target === e.currentTarget) onClose();
-    }}>
-      <div
-        className="command-palette"
-        role="dialog"
-        aria-label="命令面板"
-        onMouseDown={(e) => e.stopPropagation()}
-      >
+    <div
+      className="command-palette-overlay"
+      onMouseDown={(e) => {
+        // 遮罩点击关闭（面板自身 onMouseDown stopPropagation 防误关）
+        if (e.target === e.currentTarget) onClose();
+      }}
+    >
+      <div className="command-palette" role="dialog" aria-label="命令面板" onMouseDown={(e) => e.stopPropagation()}>
         <div className="command-palette-input-wrap">
           <span className="command-palette-prompt">›</span>
           <input

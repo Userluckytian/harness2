@@ -2,7 +2,12 @@
 // 布局纯逻辑见 shared/layout.ts；持久化经主进程落 ~/.harness2/desktop-layout.json。
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { displayToolName, type ChatItem } from './chat-model.js';
-import type { ConnectionStatus, SettingsNotifyDetails, SettingsPreferencesShape, SettingsTheme } from '../shared/protocol.js';
+import type {
+  ConnectionStatus,
+  SettingsNotifyDetails,
+  SettingsPreferencesShape,
+  SettingsTheme,
+} from '../shared/protocol.js';
 import { MAX_PANES } from '../shared/layout.js';
 import { applyTheme, themeLabel } from './theme.js';
 import { SettingsDialog } from './components/SettingsDialog.js';
@@ -13,7 +18,12 @@ import { createController } from './app-controller.js';
 import { filterSessionList } from '../shared/metadata.js';
 import { composeNotifyContent, shouldNotifyOnTurnEnd } from '../shared/notify.js';
 import { resolveFileRefs } from '../shared/file-ref.js';
-import { CommandPalette, JUMP_TO_SESSION_ID, type PaletteCommand, type PaletteSession } from './components/CommandPalette.js';
+import {
+  CommandPalette,
+  JUMP_TO_SESSION_ID,
+  type PaletteCommand,
+  type PaletteSession,
+} from './components/CommandPalette.js';
 
 /** 主题循环顺序（命令面板「切换主题」按序推进） */
 const THEME_CYCLE: readonly SettingsTheme[] = ['warmPaper', 'dark', 'system'];
@@ -57,7 +67,12 @@ function sessionTitle(state: AppState, s: { id: string; firstUserText: string })
   return t.length > 0 ? t : '(空会话)';
 }
 
-function SessionMenu({ onRename, onArchive, onRestore, onDelete }: {
+function SessionMenu({
+  onRename,
+  onArchive,
+  onRestore,
+  onDelete,
+}: {
   onRename: () => void;
   onArchive: () => void;
   onRestore: () => void;
@@ -65,16 +80,42 @@ function SessionMenu({ onRename, onArchive, onRestore, onDelete }: {
 }): React.ReactNode {
   return (
     <div className="session-menu" role="menu">
-      <button type="button" className="session-menu-item" role="menuitem" onClick={onRename}>重命名</button>
-      <button type="button" className="session-menu-item" role="menuitem" onClick={onArchive}>归档</button>
-      <button type="button" className="session-menu-item" role="menuitem" onClick={onRestore}>恢复</button>
-      <button type="button" className="session-menu-item danger" role="menuitem" onClick={onDelete}>删除…</button>
+      <button type="button" className="session-menu-item" role="menuitem" onClick={onRename}>
+        重命名
+      </button>
+      <button type="button" className="session-menu-item" role="menuitem" onClick={onArchive}>
+        归档
+      </button>
+      <button type="button" className="session-menu-item" role="menuitem" onClick={onRestore}>
+        恢复
+      </button>
+      <button type="button" className="session-menu-item danger" role="menuitem" onClick={onDelete}>
+        删除…
+      </button>
     </div>
   );
 }
 
 /** 单个会话行：主按钮（点击进分栏/拖拽源）+ ⋯菜单 + 重命名内联编辑 / 删除二次确认 */
-function SessionRow({ state, s, menuOpen, editing, editDraft, confirmDelete, archived, onOpenMenu, onCloseMenu, onStartRename, onCommitRename, onCancelRename, onArchive, onRestore, onRequestDelete, onCancelDelete, onConfirmDelete }: {
+function SessionRow({
+  state,
+  s,
+  menuOpen,
+  editing,
+  editDraft,
+  confirmDelete,
+  archived,
+  onOpenMenu,
+  onCloseMenu,
+  onStartRename,
+  onCommitRename,
+  onCancelRename,
+  onArchive,
+  onRestore,
+  onRequestDelete,
+  onCancelDelete,
+  onConfirmDelete,
+}: {
   state: AppState;
   s: SessionMeta;
   menuOpen: boolean;
@@ -172,14 +213,20 @@ function SessionRow({ state, s, menuOpen, editing, editDraft, confirmDelete, arc
             }}
             onBlur={() => onCommitRename(editDraft)}
           />
-          <button type="button" className="session-rename-save" onClick={() => onCommitRename(editDraft)}>✓</button>
+          <button type="button" className="session-rename-save" onClick={() => onCommitRename(editDraft)}>
+            ✓
+          </button>
         </div>
       )}
       {confirmDelete && (
         <div className="session-delete-confirm" onClick={(e) => e.stopPropagation()}>
           <span>删除后仅从侧栏隐藏，数据保留。</span>
-          <button type="button" className="btn-confirm-delete" onClick={onConfirmDelete}>删除</button>
-          <button type="button" className="btn-cancel-delete" onClick={onCancelDelete}>取消</button>
+          <button type="button" className="btn-confirm-delete" onClick={onConfirmDelete}>
+            删除
+          </button>
+          <button type="button" className="btn-cancel-delete" onClick={onCancelDelete}>
+            取消
+          </button>
         </div>
       )}
     </li>
@@ -258,19 +305,11 @@ export function SessionList(): React.ReactNode {
       </ul>
       {archived.length > 0 && (
         <div className="archived-section">
-          <button
-            type="button"
-            className="archived-toggle"
-            onClick={() => setArchivedOpen((v) => !v)}
-          >
+          <button type="button" className="archived-toggle" onClick={() => setArchivedOpen((v) => !v)}>
             <span className={`archived-caret${archivedOpen ? ' open' : ''}`}>▸</span>
             已归档（{archived.length}）
           </button>
-          {archivedOpen && (
-            <ul className="session-list archived-list">
-              {archived.map((s) => renderRow(s, true))}
-            </ul>
-          )}
+          {archivedOpen && <ul className="session-list archived-list">{archived.map((s) => renderRow(s, true))}</ul>}
         </div>
       )}
     </aside>
@@ -562,9 +601,7 @@ export function PaneArea(): React.ReactNode {
                   </button>
                 )}
               </div>
-              {sid !== null && session !== undefined && (
-                <ConversationHeader sessionId={sid} cwd={session.cwd} />
-              )}
+              {sid !== null && session !== undefined && <ConversationHeader sessionId={sid} cwd={session.cwd} />}
               <ChatView streamId={sid} />
             </section>
           );
@@ -609,11 +646,14 @@ export function App(): React.ReactNode {
   }, []);
   // 主题/通知偏好：启动时读取并应用；设置页保存后 onPreferenceChange 即时同步（保存回调里更新各状态）
   useEffect(() => {
-    void window.harness2.settingsGetPreferences().then((p: SettingsPreferencesShape) => {
-      setTheme(p.theme);
-      setNotifyDetails(p.notifyDetails);
-      applyTheme(p.theme);
-    }).catch(() => {});
+    void window.harness2
+      .settingsGetPreferences()
+      .then((p: SettingsPreferencesShape) => {
+        setTheme(p.theme);
+        setNotifyDetails(p.notifyDetails);
+        applyTheme(p.theme);
+      })
+      .catch(() => {});
   }, []);
   useEffect(() => applyTheme(theme), [theme]);
   // B7 任务完成系统通知：turn-end 且「窗口非聚焦 + 该会话不可见」→ 弹系统通知。
@@ -698,8 +738,20 @@ export function App(): React.ReactNode {
     const archiveId = state.selectedId;
     return [
       { id: 'newSession', label: '新建会话', hint: 'Ctrl+N', run: () => void controller.newSession() },
-      { id: 'nextSession', label: '切到下一个会话', run: () => { if (nextId !== null) void controller.selectSession(nextId); } },
-      { id: 'prevSession', label: '上一个会话', run: () => { if (prevId !== null) void controller.selectSession(prevId); } },
+      {
+        id: 'nextSession',
+        label: '切到下一个会话',
+        run: () => {
+          if (nextId !== null) void controller.selectSession(nextId);
+        },
+      },
+      {
+        id: 'prevSession',
+        label: '上一个会话',
+        run: () => {
+          if (prevId !== null) void controller.selectSession(prevId);
+        },
+      },
       { id: 'openSettings', label: '打开设置', hint: 'Ctrl+,', run: () => setSettingsOpen(true) },
       { id: 'cycleTheme', label: `切换主题（当前：${themeLabel(theme)}）`, run: cycleThemeAction },
       { id: 'helpShortcuts', label: '帮助 / 快捷键说明', run: () => setSettingsOpen(true) },
@@ -709,7 +761,9 @@ export function App(): React.ReactNode {
       {
         id: 'archiveCurrent',
         label: '归档当前会话',
-        run: () => { if (archiveId !== null) void controller.archiveSession(archiveId, true); },
+        run: () => {
+          if (archiveId !== null) void controller.archiveSession(archiveId, true);
+        },
       },
       { id: 'search', label: '搜索会话…', hint: '聚焦侧栏搜索', run: focusSearch },
       // 特殊命令：进入「跳转会话」选择态（组件识别 JUMP_TO_SESSION_ID 后切换为会话过滤）

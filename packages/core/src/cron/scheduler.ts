@@ -7,7 +7,16 @@
 //     产出写 ~/.harness2/cron/history/<id>/<ts>/（session.v1.jsonl + result.md）；
 //   - 失败 failCount+1（成功归零），连续 ≥3 → enabled=false + incidents.jsonl 标记；
 //   - 执行串行（进程内单队列，不与用户 turn 抢并发）；ask 审批无人工通道 → 按拒绝处理。
-import { closeSync, existsSync, mkdirSync, openSync, readFileSync, unlinkSync, writeFileSync, writeSync } from 'node:fs';
+import {
+  closeSync,
+  existsSync,
+  mkdirSync,
+  openSync,
+  readFileSync,
+  unlinkSync,
+  writeFileSync,
+  writeSync,
+} from 'node:fs';
 import { join } from 'node:path';
 import { runTurn } from '../agent/loop.js';
 import type { TurnResult } from '../agent/types.js';
@@ -114,9 +123,7 @@ export class CronScheduler {
         return; // 他进程正在 tick：本次跳过（跨进程单 tick）；ticking 标志必须复位
       }
       try {
-        const due = this.store
-          .list()
-          .filter((j) => j.enabled && isDue(j.nextRun, now));
+        const due = this.store.list().filter((j) => j.enabled && isDue(j.nextRun, now));
         for (const job of due) {
           // —— at-most-once 关键序：先推进 next_run 并落盘，再排队执行 ——
           const advanced = computeNextRun(job.schedule, now);
@@ -272,9 +279,7 @@ export class CronScheduler {
     return () => {
       try {
         // 只删除自己持有的锁（期间被接管则不误删）
-        const current = existsSync(path)
-          ? (JSON.parse(readFileSync(path, 'utf8')) as { pid?: number }).pid
-          : undefined;
+        const current = existsSync(path) ? (JSON.parse(readFileSync(path, 'utf8')) as { pid?: number }).pid : undefined;
         if (current === process.pid) unlinkSync(path);
       } catch {
         // 锁文件已消失/损坏：无需清理

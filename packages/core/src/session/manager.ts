@@ -41,8 +41,10 @@ export function encodeCwd(cwd: string): string {
   let name = '';
   for (const ch of cwd) {
     if (/[A-Za-z0-9._-]/.test(ch)) name += ch;
-    else if (ch === ':') name += ''; // 盘符冒号丢弃
-    else if (ch === '\\' || ch === '/') name += '--'; // 路径分隔符 → 双横线
+    else if (ch === ':')
+      name += ''; // 盘符冒号丢弃
+    else if (ch === '\\' || ch === '/')
+      name += '--'; // 路径分隔符 → 双横线
     else name += '-'; // 其余不安全字符
   }
   if (name.length > 120) {
