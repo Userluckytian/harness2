@@ -31,6 +31,8 @@ import type {
   DeliveryDeltaFrame,
   ResumeSnapshot,
   ResumeSubscriptionRequest,
+  SteerRequest,
+  SteerResult,
   SubmitAck,
   SubmitRequest,
   TaskContract,
@@ -40,6 +42,7 @@ import type {
   ClientMessageId,
   SessionId,
 } from '../interaction/types.js';
+import { SessionSteerSink } from '../interaction/steer-sink.js';
 import { isApprovalDecision, TASK_STATES, matchTurnGeneration } from '../interaction/types.js';
 import { RUNTIME_JOURNAL_FILE, RuntimeJournal, readEntries } from '../interaction/runtime-journal.js';
 import type { TaskTransitionEntry } from '../interaction/runtime-journal.js';
@@ -175,6 +178,8 @@ export interface SessionHubHooks {
   /** 工具执行生命周期（S1，S3 delivery / S7 toolExecutionView 消费；纯观察，不落第二套日志） */
   onExecuteStart?(sessionId: string, req: ToolExecutionRequest): void;
   onExecuteEnd?(sessionId: string, req: ToolExecutionRequest, result: ToolResult): void;
+  /** S6 会话级 steer 回帧（loop 在安全 step 边界消费后 resolve；accepted/stale/rejected） */
+  onSteerResult?(sessionId: string, result: SteerResult): void;
 }
 
 export interface SessionHubOptions {
@@ -353,6 +358,8 @@ export class SessionHub implements ResumeStateProvider {
   private readonly configRevisions = new Map<string, number>();
   /** FixC D1：每会话最近 turn 的重试预算快照（run-config retry.budget 来源；不持久化，随进程） */
   private readonly lastRetryBudgets = new Map<string, RetryBudgetState>();
+  /** S6 会话级 steer sink（接收/去重/排队跨 turn 持续；loop 只在安全 step 边界消费） */
+  private readonly steerSinks = new Map<SessionId, SessionSteerSink>();
 
   readonly approvalTimeoutMs: number;
   /** 观察者集合（WS 事件面 / 测试；addHooks 注册，返回退订函数） */
@@ -381,6 +388,28 @@ export class SessionHub implements ResumeStateProvider {
     return () => {
       this.listeners.delete(hooks);
     };
+  }
+
+  /** S6 会话级 steer sink：按会话惰性创建，跨 turn 持久（去重/排队/回帧观察都在 sink） */
+  private steerSinkFor(id: string): SessionSteerSink {
+    const existing = this.steerSinks.get(id);
+    if (existing !== undefined) return existing;
+    const sink = new SessionSteerSink((result) => this.emitSteerResult(id, result));
+    this.steerSinks.set(id, sink);
+    return sink;
+  }
+
+  /** S6 会话级 steer 回帧历史（诊断/测试；与 hooks.onSteerResult 同源） */
+  steerHistory(id: string): SteerResult[] {
+    this.assertValidSessionId(id);
+    return this.steerSinks.get(id)?.history() ?? [];
+  }
+
+  /** S6：外部提交一条 steer 进会话级 sink（跨 turn 去重/排队）；true = 新 id 已入队 */
+  submitSteer(sessionId: string, req: SteerRequest): boolean {
+    this.assertValidSessionId(sessionId);
+    this.ensureOpen(sessionId);
+    return this.steerSinkFor(sessionId).push(req);
   }
 
   get manager(): SessionManager {
@@ -637,6 +666,8 @@ export class SessionHub implements ResumeStateProvider {
           onExecuteEnd: (req, result) => this.emitExecuteEnd(id, req, result),
         },
         onStream: (event: TurnStreamEvent) => this.forwardStream(id, event),
+        // S6 会话级 steer sink：跨 turn 持久，loop 在每个安全 step 边界取「本 turn 未消费」的 steer
+        steer: this.steerSinkFor(id),
         // 审查 P1-1：serve/desktop 路径同样注入记忆 store（缺此前主会话零快照、system 恒空）
         ...(this.options.memory !== undefined ? { memory: this.options.memory.store } : {}),
         // 阶段 10：Skills 列表注入（每 turn 重扫磁盘；全文走 skill 工具）
@@ -1037,19 +1068,44 @@ export class SessionHub implements ResumeStateProvider {
     return cleared.length;
   }
 
-  /** submit 走 delivery：S3b 幂等原语（durable-then-ack）；accepted 后按顺序派发进既有 turn 管线。 */
+  /** submit 走 delivery：S3b 幂等原语（durable-then-ack）；accepted 后按顺序派发进既有 turn 管线。
+   *   S6：intent=steer 不走 delivery journal——steer 是**控制输入**（不落 session.log、不伪造
+   *   用户正文），接收/去重/排队在会话级 sink（跨 turn 持续），loop 在安全 step 边界消费。 */
   submitAck(req: SubmitRequest): SubmitAck {
     this.assertValidSessionId(req.sessionId);
-    const hd = this.deliveryFor(req.sessionId);
-    // S0 契约：intent=steer 必须带 expectedTurnId（steer 全语义归 S6，本阶段不在缺省时静默入队）
-    if (req.intent === 'steer' && req.expectedTurnId === undefined) {
-      return {
-        clientMessageId: req.clientMessageId,
-        sessionId: req.sessionId,
-        state: 'rejected',
-        reason: 'intent=steer 需要 expectedTurnId（steer 接线归后续阶段）',
-      };
+    this.ensureOpen(req.sessionId);
+    if (req.intent === 'steer') {
+      if (req.expectedTurnId === undefined || req.expectedTurnId.length === 0) {
+        return {
+          clientMessageId: req.clientMessageId,
+          sessionId: req.sessionId,
+          state: 'rejected',
+          reason: 'intent=steer 需要 expectedTurnId（仅在该 turn 仍存在时接受）',
+        };
+      }
+      if (typeof req.rawText !== 'string' || req.rawText.trim().length === 0) {
+        return {
+          clientMessageId: req.clientMessageId,
+          sessionId: req.sessionId,
+          state: 'rejected',
+          reason: 'intent=steer 的 rawText 必须是非空字符串',
+        };
+      }
+      const registered = this.steerSinkFor(req.sessionId).push({
+        id: req.clientMessageId,
+        expectedTurnId: req.expectedTurnId,
+        text: req.rawText,
+      });
+      return registered
+        ? { clientMessageId: req.clientMessageId, sessionId: req.sessionId, state: 'accepted' }
+        : {
+            clientMessageId: req.clientMessageId,
+            sessionId: req.sessionId,
+            state: 'rejected',
+            reason: '重复 steer id（同 id 会话内只生效一次）',
+          };
     }
+    const hd = this.deliveryFor(req.sessionId);
     const ack = submitDelivery(hd.session, req);
     if (ack.state === 'accepted') this.dispatchQueued(req.sessionId);
     return ack;
@@ -1297,6 +1353,17 @@ export class SessionHub implements ResumeStateProvider {
     }
   }
 
+  /** S6 会话级 steer 回帧分发（loop resolve 后经 sink notify 回调本方法） */
+  private emitSteerResult(sessionId: string, result: SteerResult): void {
+    for (const l of this.listeners) {
+      try {
+        l.onSteerResult?.(sessionId, result);
+      } catch {
+        // 观察者异常不回写内核
+      }
+    }
+  }
+
   private emitNudgeStarted(sessionId: string): void {
     for (const l of this.listeners) {
       try {
@@ -1458,6 +1525,7 @@ export class SessionHub implements ResumeStateProvider {
     // S3c2：关闭各会话 delivery journal（释放 pid 锁；与 session.log writer 顺次收口）
     for (const hd of this.deliveries.values()) hd.journal.close();
     this.deliveries.clear();
+    this.steerSinks.clear();
     this.pendingTexts.clear();
   }
 

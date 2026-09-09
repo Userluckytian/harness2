@@ -246,6 +246,9 @@ async function runTurnWithWriter(writer: SessionWriter | SessionAppender, option
   const elapsed = () => Math.round(performance.now() - startedAt);
 
   // —— S6 控制输入（steer）——只在安全 step 边界消费；不进日志投影 ——
+  // 会话级 sink（hub 持有，跨 turn 持续）做接收/去重/排队：同 id 全局只生效一次。
+  // 本 turn 的 seenSteerIds 是本地兜底（任意 sink 实现都成立：重复 id 单次、不双注入）；
+  // 边界未消费的 steer 留在 sink 队列里（must-complete 排队 / turn 结束 drain 兜底回帧）。
   const steers = options.steer;
   // must-complete = 无法保证取消（cancelGuaranteed!==true）的工具名单：上一步执行了它时不强制另开 step
   const mustCompleteTools = new Set<string>();
@@ -269,7 +272,7 @@ async function runTurnWithWriter(writer: SessionWriter | SessionAppender, option
     steers?.resolve({ id: s.id, expectedTurnId: s.expectedTurnId, state: 'accepted' });
     return s.text;
   };
-  /** 边界消费：把一个待应用 steer 取走并判定；返回是否已消费 */
+  /** 边界消费：把本边界可应用的 steer 全部取走并判定（id 去重），接受的叠加进待应用控制文本 */
   const drainBoundary = (): void => {
     if (steers === undefined) return;
     let s: SteerRequest | undefined;
@@ -597,13 +600,12 @@ async function runTurnWithWriter(writer: SessionWriter | SessionAppender, option
 
     writer.append('step/end', { stepId, turnId, durationMs: Math.round(performance.now() - stepStartedAt) });
     // S6 安全 step 边界：本 step 完整往返完成（模型流 + 工具波浪均已落地）后才消费 steer。
-    // 上一步执行过 must-complete（无法保证取消）工具 → 不强制另开 step，steer 排队等干净边界；
-    // 否则消费一条 steer（id 去重）叠加到下一 step 请求（控制输入，不进投影）。
+    // 上一步执行过 must-complete（无法保证取消）工具 → 不强制另开 step：steer **留在会话级
+    // sink 队列中排队**（真实可达的排队语义；会话级 sink 跨 turn 持续，本 turn 干净边界再取），
+    // 不丢弃；否则 drain 本边界可应用的 steer（id 去重）叠加到下一 step 请求（控制输入，不进投影）。
     lastStepMustComplete = calls.some((c) => mustCompleteTools.has(c.name));
     if (!lastStepMustComplete) {
       drainBoundary();
-    } else {
-      pendingControls = [];
     }
     // 继续下一 step：工具结果已落盘，下一请求由日志投影重建（含 tool role 消息）
   }

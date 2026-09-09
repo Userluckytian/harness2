@@ -108,12 +108,15 @@ describe('runTurn 基础语义', () => {
     expect(provider.requests[0]?.tools?.map((t) => t.name)).toEqual(['read_file']);
   });
 
-  // 阶段 11 抖动根治：并行性判据从「绝对墙钟上限」改为「同批结果落盘间隔」——
-  // safe 并行时两个工具几乎同时完成、tool/result 同批连续落盘（gap≈0ms）；若退化为
-  // 串行，第二个结果须等第一个执行完才产生（gap≈200ms）。判据只依赖事件间相对时序，
-  // 不依赖机器绝对速度；历史 elapsed<220ms 绝对上限在全量并行负载下被投影/写盘开销
-  // 抖动击穿（OPEN.md 抖动并案根因），retry:2 保留为兜底（真回归连败仍红）。
-  it('并行 safe 工具波次：同波 safe 调用并行，结果同批落盘', { retry: 2, timeout: 8000 }, async () => {
+  // 阶段 11 抖动根治（FixD F1）：并行性判据改为**功能性并发探针**，彻底移除 wall-clock
+  // 时序断言。此前用「同批 tool/result 落盘间隔 < 120ms」判定并行，在多 worker 并行/CI
+  // 满载下计时器被抢占，出现 `expected 227 to be less than 120` 式 flake（OPEN.md 抖动并案
+  // 根因）。现在工具自身用 in-flight 计数器证明「两个 safe 调用真实同时执行中」：
+  //   - 并行 → maxInFlight === 2（两调用都在对方完成前启动）；
+  //   - 串行退化 → 第二个只能在第一个完成后启动 → maxInFlight === 1。
+  // 不依赖机器绝对速度与计时器精度；`durationMs >= 190` 只做「真实执行过」的宽松证据
+  // （sleep(200) 计时器不可能提前触发，只可能更慢）。
+  it('并行 safe 工具波次：同波 safe 调用并行执行（功能性并发判据，无 wall-clock 断言）', { timeout: 8000 }, async () => {
     const dir = tmpDir();
     const provider = new MockProvider([
       {
@@ -126,11 +129,16 @@ describe('runTurn 基础语义', () => {
       { text: '完成' },
     ]);
     const registry = new ToolRegistry();
+    let inFlight = 0;
+    let maxInFlight = 0;
     registry.register(
       makeTool(
         'slow_probe',
         async (args) => {
+          inFlight += 1;
+          maxInFlight = Math.max(maxInFlight, inFlight);
           await sleep((args as { ms: number }).ms);
+          inFlight -= 1;
           return { output: 'ok' };
         },
         { concurrencySafe: true },
@@ -143,14 +151,12 @@ describe('runTurn 基础语义', () => {
     // tool/result 顺序与调用顺序一致
     const results = loadEvents(dir).filter((e) => e.type === 'tool/result');
     expect(results.map((e) => (e.payload as { callId: string }).callId)).toEqual(['p1', 'p2']);
-    // 两个工具都真实执行（各 ≈200ms），排除「瞬间空跑假并行」
+    // 并行判据（功能性，无 wall-clock）：同波两个调用真实同时执行中（串行退化 → 1）
+    expect(maxInFlight).toBe(2);
+    // 两个工具都真实执行（sleep(200) 计时器不会提前触发），排除「瞬间空跑假并行」
     for (const r of results) {
-      expect((r.payload as { durationMs?: number }).durationMs).toBeGreaterThan(150);
+      expect((r.payload as { durationMs?: number }).durationMs).toBeGreaterThanOrEqual(190);
     }
-    // 并行判据：同批落盘间隔远小于单工具执行时长（串行退化时 gap≈200ms）
-    const gap = Date.parse(results[1]!.ts) - Date.parse(results[0]!.ts);
-    expect(gap).toBeGreaterThanOrEqual(0);
-    expect(gap).toBeLessThan(120);
   });
 
   it('max_steps 守卫：达到上限停止并返回 max_steps', async () => {

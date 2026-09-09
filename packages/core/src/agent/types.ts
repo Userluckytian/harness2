@@ -13,6 +13,9 @@ import type { RetryBudgetState } from '../interaction/retry-policy.js';
  * S6 控制输入（steer）通道。外部实现把绑定到某 turn 的 steer 塞进队列；loop 在每个
  * 安全 step 边界消费一个 `take()`，并把结果经 `resolve()` 回帧（ack）——调用方不得丢。
  * 语义由 loop：只有 `expectedTurnId === 当前 turnId` 才接受；同 id 只生效一次。
+ * 会话级接线（FixD F2）：hub 持 `SessionSteerSink`（跨 turn 持续）做接收/去重/排队，
+ * loop 只消费「本 turn 未消费」的 steer；本 turn 边界未消费的留在 sink 队列、后续 turn
+ * 边界继续取（expectedTurnId 不符仍 stale 拒且保 draft）。
  * steer 是控制输入：只在下一 step 的请求上叠加一条 control user 消息，**不写入
  * session.log**（不进投影、不污染 user/message 正文）。模型可见输入 = 日志投影 + 单次
  * 控制叠加（文档化取舍，见 task-S6-report）。
@@ -121,8 +124,9 @@ export interface TurnOptions {
    * 可选：S6 控制输入（steer）通道。提供时 loop 在每个安全 step 边界消费一个 steer：
    *   - 只接受 expectedTurnId === 本 turnId 的 steer（其余 stale 拒绝 + draftKept）；
    *   - 同 steer id 只生效一次（重复 → rejected，不双注入）；
-   *   - 上一步执行了 must-complete（cancelGuaranteed:false）工具时，steer 排队等干净边界
-   *     （不强行另开 step、不打断 provider 当前流）；
+   *   - 上一步执行了 must-complete（cancelGuaranteed:false）工具时，steer 留在 sink 队列
+   *     排队等干净边界（不强行另开 step、不打断 provider 当前流）；会话级 sink 跨 turn
+   *     持续（FixD F2），边界未消费的由后续 turn/边界继续取；
    *   - 接受的 steer 作为**控制输入**叠加在下一 step 请求末尾（一条 user 控制消息），
    *     不写入 session.log（不进投影，不伪造 user/message 正文）。
    * 不提供 = 零 steer 行为（既有 loop 路径完全不变）。

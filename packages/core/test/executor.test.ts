@@ -73,7 +73,9 @@ describe('ToolExecutor.execute', () => {
     const r = await new ToolExecutor(reg).execute(req('c1', 'slow'), env);
     expect(r.ok).toBe(false);
     expect(r.error).toMatch(/tool timeout after 60ms/);
-    expect(r.durationMs).toBeLessThan(1000);
+    // FixD F1：功能性证据（error 已证明超时触发）已足够；时长断言只保留「早于工具自然完成」
+    // 的宽松上界（工具自身 sleep 2000ms，计时器不会提前触发，只可能更慢）
+    expect(r.durationMs).toBeLessThan(2000);
   }, 5000);
 
   it('外部 signal 取消：执行中触发取消 → error=cancelled', async () => {
@@ -139,16 +141,28 @@ describe('ToolExecutor.execute', () => {
 });
 
 describe('ToolExecutor.runWave（并发波次）', () => {
-  it('safe 并行总时长显著小于串行；结果顺序与请求一致', async () => {
+  it('safe 并行：同批调用真实同时执行（功能性并发判据，无 wall-clock 断言）；结果顺序与请求一致', async () => {
+    // FixD F1：把「总时长显著小于串行」的墙钟断言换成 in-flight 并发探针——
+    // 并行 → maxInFlight === 3（三个调用都在对方完成前启动）；串行退化 → 1。
+    let inFlight = 0;
+    let maxInFlight = 0;
     const reg = new ToolRegistry();
-    reg.register(makeTool({ name: 'safe_slow', concurrencySafe: true, execute: async () => { await sleep(120); return { output: 'x' }; } }));
+    reg.register(makeTool({
+      name: 'safe_slow',
+      concurrencySafe: true,
+      execute: async () => {
+        inFlight += 1;
+        maxInFlight = Math.max(maxInFlight, inFlight);
+        await sleep(120);
+        inFlight -= 1;
+        return { output: 'x' };
+      },
+    }));
     const executor = new ToolExecutor(reg);
-    const started = performance.now();
     const results = await executor.runWave([req('a', 'safe_slow'), req('b', 'safe_slow'), req('c', 'safe_slow')], env);
-    const elapsed = performance.now() - started;
     expect(results.map((r) => r.callId)).toEqual(['a', 'b', 'c']);
     expect(results.every((r) => r.ok)).toBe(true);
-    expect(elapsed).toBeLessThan(300); // 串行需 ~360ms
+    expect(maxInFlight).toBe(3);
   }, 5000);
 
   it('unsafe 串行：两个 unsafe 调用总时长 >= 单个时长之和', async () => {
@@ -161,26 +175,32 @@ describe('ToolExecutor.runWave（并发波次）', () => {
   }, 5000);
 
   it('lockKey：safe 调用同键串行、异键并行', async () => {
+    // FixD F1：墙钟区间断言（150~240ms）换 in-flight 并发探针——同键 a 两次串行、异键 b
+    // 与其中一个 a 并行 → 任意时刻至多 2 个执行中（全并行 → 3；全串行 → 1）。
+    let inFlight = 0;
+    let maxInFlight = 0;
     const reg = new ToolRegistry();
     reg.register(
       makeTool({
         name: 'keyed',
         concurrencySafe: true,
         lockKey: (args) => (args as { file: string }).file,
-        execute: async () => { await sleep(80); return { output: 'x' }; },
+        execute: async () => {
+          inFlight += 1;
+          maxInFlight = Math.max(maxInFlight, inFlight);
+          await sleep(80);
+          inFlight -= 1;
+          return { output: 'x' };
+        },
       }),
     );
     const executor = new ToolExecutor(reg);
-    const started = performance.now();
     const results = await executor.runWave(
       [req('1', 'keyed', { file: 'a' }), req('2', 'keyed', { file: 'a' }), req('3', 'keyed', { file: 'b' })],
       env,
     );
-    const elapsed = performance.now() - started;
     expect(results.map((r) => r.callId)).toEqual(['1', '2', '3']);
-    // 同键 a 两次串行（160ms），异键 b 并行（80ms 内完成）→ 总时长 ~160ms 而非 240ms
-    expect(elapsed).toBeLessThan(240);
-    expect(elapsed).toBeGreaterThanOrEqual(150);
+    expect(maxInFlight).toBe(2);
   }, 5000);
 
   it('混合波次：unsafe 独占打断 safe 并行批，顺序保持', async () => {
