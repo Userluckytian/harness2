@@ -1,13 +1,15 @@
 // A1-3 验收测试：连续工具失败熔断（stopReason='tool_failures' + 非空 finalText，禁止空回复）。
 // 全 mock，零 API key、零网络。
-import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { mkdtempSync, readdirSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { runTurn } from '../src/agent/loop.js';
 import { MockProvider } from '../src/provider/mock.js';
 import { SESSION_LOG_FILE, type AnySessionEvent } from '../src/session/types.js';
+import { ToolExecutor, type ToolExecutionRequest } from '../src/tools/executor.js';
 import { ToolRegistry } from '../src/tools/registry.js';
+import { writeTool } from '../src/tools/predefined/write.js';
 import type { ToolDefinition } from '../src/tools/types.js';
 
 const dirs: string[] = [];
@@ -41,6 +43,9 @@ function calls(
     toolCalls: [{ id: `c-${i}`, name, arguments: '{}' }],
   }));
 }
+
+const env = { signal: new AbortController().signal, cwd: process.cwd() };
+const req = (tool: string, args: unknown, callId = 'c1'): ToolExecutionRequest => ({ callId, tool, args });
 
 describe('A1-3 连续工具失败熔断', () => {
   it('连续 5 次工具失败 → stopReason=tool_failures + 非空 finalText（且落盘为 assistant/message）', async () => {
@@ -129,5 +134,59 @@ describe('A1-3 连续工具失败熔断', () => {
     });
     expect(result.stopReason).toBe('max_steps');
     expect(result.steps).toBe(3);
+  });
+});
+
+describe('A1-4 缺必填参数：schema 片段 + 最小正确调用示例', () => {
+  it('write 漏 file_path → error 含该参数 schema 与最小示例，且不执行写入', async () => {
+    const dir = tmpDir();
+    const registry = new ToolRegistry();
+    registry.register(writeTool);
+    const executor = new ToolExecutor(registry);
+
+    const r = await executor.execute(req('write', { content: '你好' }), { ...env, cwd: dir });
+    expect(r.ok).toBe(false);
+    expect(r.error).toContain('缺少必填参数');
+    expect(r.error).toContain('"file_path"');
+    expect(r.error).toContain('参数 schema 片段');
+    expect(r.error).toContain('"file_path":{"type":"string"');
+    expect(r.error).toContain('最小正确调用示例');
+    expect(r.error).toContain('"file_path":"<string>"');
+    expect(r.error).toContain('"content":"<string>"');
+    expect(readdirSync(dir)).toEqual([]); // 参数非法 → 未执行写入
+  });
+
+  it('write 漏 content → 同样给出 content 的 schema 与示例', async () => {
+    const registry = new ToolRegistry();
+    registry.register(writeTool);
+    const r = await new ToolExecutor(registry).execute(req('write', { file_path: 'a.txt' }), {
+      ...env,
+      cwd: tmpDir(),
+    });
+    expect(r.ok).toBe(false);
+    expect(r.error).toContain('"content"');
+    expect(r.error).toContain('最小正确调用示例');
+  });
+
+  it('参数完整时校验放行，write 真实执行', async () => {
+    const dir = tmpDir();
+    const registry = new ToolRegistry();
+    registry.register(writeTool);
+    const r = await new ToolExecutor(registry).execute(req('write', { file_path: 'ok.txt', content: 'hi' }), {
+      ...env,
+      cwd: dir,
+    });
+    expect(r.ok).toBe(true);
+    expect(readFileSync(join(dir, 'ok.txt'), 'utf8')).toBe('hi');
+  });
+
+  it('参数不是对象（null/数组）→ 错误里带必填清单与示例', async () => {
+    const registry = new ToolRegistry();
+    registry.register(writeTool);
+    const r = await new ToolExecutor(registry).execute(req('write', null), { ...env, cwd: tmpDir() });
+    expect(r.ok).toBe(false);
+    expect(r.error).toContain('arguments must be an object');
+    expect(r.error).toContain('file_path');
+    expect(r.error).toContain('最小正确调用示例');
   });
 });
