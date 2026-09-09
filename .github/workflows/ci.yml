@@ -48,6 +48,11 @@ jobs:
       - name: Typecheck
         run: pnpm -r typecheck
 
+      # B2：lint 为必过项（ESLint flat + prettier --check）。放在 build 之后：
+      # projectService 需要解析各包 tsconfig，且 core 的 api-surface.test.ts 引用 dist/。
+      - name: Lint (ESLint + Prettier check)
+        run: pnpm lint
+
       - name: Test
         run: pnpm test
 
