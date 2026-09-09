@@ -23,7 +23,7 @@
 // 事件溯源不破坏：text/reasoning/reasoning-* delta 是**展示投影**，非模型上下文；模型可见输入仍
 // 由 session.log 投影。旧客户端继续既有帧（未强制 protocolVersion=2 不突然切形状）。
 import { WebSocketServer, type WebSocket } from 'ws';
-import type { Server } from 'node:http';
+import type { IncomingMessage, Server } from 'node:http';
 import type { TurnStopReason } from '../agent/types.js';
 import type { ToolCallRequest } from '../provider/types.js';
 import type { AnySessionEvent } from '../session/types.js';
@@ -50,7 +50,13 @@ import type { ResumeStateProvider } from '../interaction/resume-state.js';
 export { WatermarkCursor } from '../interaction/resume-state.js';
 export type { DeltaAttribution, ResumeStateProvider } from '../interaction/resume-state.js';
 import { isTrustedHost, isTrustedOrigin, normalizeOriginHeader, WS_MAX_PAYLOAD } from './trust.js';
-import { extractServeToken, isServeTokenValid, warnServeNoTokenOnce, type ServeSecurityStats } from './security.js';
+import {
+  extractServeToken,
+  isServeTokenValid,
+  isWsPayloadExceededError,
+  warnServeNoTokenOnce,
+  type ServeSecurityStats,
+} from './security.js';
 
 export const WS_PATH = '/ws';
 
@@ -158,6 +164,8 @@ export interface WsPlaneOptions {
    * 与 HTTP 同口径：带 token 必须匹配，不带 token 则严格模式拒 / 兼容模式放行并计数。
    */
   auth?: { token: string; requireToken: boolean; stats?: ServeSecurityStats };
+  /** A3-2：WS 帧超限断连记账回调（除计数/日志外的可观测出口；测试注入） */
+  onFrameOversize?: (info: { remote: string; limitBytes: number }) => void;
 }
 
 export interface WsPlane {
@@ -193,7 +201,7 @@ function approvalFrame(a: ApprovalRequestContract): WsServerMessage {
 
 /** 把 WS 事件面挂到 HTTP server 上（hub 观察者 → 订阅连接分发）。
  *  升级握手经信任域校验（Origin/Host 与 HTTP 同规则，Task 4）+ A3-1 token 鉴权；
- *  帧上限 1MiB 对齐 HTTP。 */
+ *  A3-2 帧上限 1MiB 对齐 HTTP，超限断连并计数/日志。 */
 export function attachWsServer(server: Server, hub: SessionHub, options: WsPlaneOptions = {}): WsPlane {
   const path = options.path ?? WS_PATH;
   const auth = options.auth;
@@ -310,7 +318,7 @@ export function attachWsServer(server: Server, hub: SessionHub, options: WsPlane
       }),
   });
 
-  wss.on('connection', (ws: WebSocket) => {
+  wss.on('connection', (ws: WebSocket, req: IncomingMessage) => {
     const conn: Conn = { ws, subs: new Set<string>(), epoch: 0, v2: false };
     conns.add(conn);
     ws.on('message', (data: unknown) => {
@@ -446,7 +454,14 @@ export function attachWsServer(server: Server, hub: SessionHub, options: WsPlane
     ws.on('close', () => {
       conns.delete(conn);
     });
-    ws.on('error', () => {
+    ws.on('error', (err: Error) => {
+      // A3-2：帧超限不是静默断连——计数 + 日志（不含帧内容/token）+ 可注入回调记账
+      if (isWsPayloadExceededError(err)) {
+        const remote = `${req.socket.remoteAddress ?? '?'}:${req.socket.remotePort ?? 0}`;
+        if (stats !== undefined) stats.wsOversizeClosed += 1;
+        console.error(`serve: WS 帧超限（>${WS_MAX_PAYLOAD} 字节），已断连 ${remote}`);
+        options.onFrameOversize?.({ remote, limitBytes: WS_MAX_PAYLOAD });
+      }
       conns.delete(conn);
     });
   });

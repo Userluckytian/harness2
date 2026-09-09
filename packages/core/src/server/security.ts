@@ -1,4 +1,4 @@
-// serve 安全内部件（A3-1）：一次性 token 与安全计数。
+// serve 安全内部件（A3-1/A3-2）：一次性 token 与 WS 帧超限记账。
 // **不**经 src/index.ts 再导出（内部件；避免为纯加固改动膨胀公开导出面）——
 // http.ts / ws.ts 直接引用本模块；测试走深路径 `../src/server/security.js`。
 // 红线：本模块任何路径都不得把 token 写入日志、错误消息或事件流。
@@ -21,6 +21,8 @@ export interface ServeSecurityStats {
   invalidTokenRejected: number;
   /** Origin/Host 白名单拒绝数 */
   trustRejected: number;
+  /** A3-2：WS 帧超限断连次数 */
+  wsOversizeClosed: number;
 }
 
 export function createServeSecurityStats(): ServeSecurityStats {
@@ -29,6 +31,7 @@ export function createServeSecurityStats(): ServeSecurityStats {
     noTokenRejected: 0,
     invalidTokenRejected: 0,
     trustRejected: 0,
+    wsOversizeClosed: 0,
   };
 }
 
@@ -87,4 +90,12 @@ export function warnServeNoTokenOnce(): void {
   if (warnedNoToken) return;
   warnedNoToken = true;
   console.error(`warning: serve 收到无 token 请求（兼容回退放行；设 ${SERVE_REQUIRE_TOKEN_ENV}=1 可强制 token 鉴权）`);
+}
+
+/** A3-2：ws 库 maxPayload 超限错误的识别（RangeError + WS_ERR_UNSUPPORTED_MESSAGE_LENGTH） */
+export function isWsPayloadExceededError(e: unknown): boolean {
+  if (typeof e !== 'object' || e === null) return false;
+  const err = e as { code?: unknown; message?: unknown };
+  if (err.code === 'WS_ERR_UNSUPPORTED_MESSAGE_LENGTH') return true;
+  return typeof err.message === 'string' && /max payload size exceeded/i.test(err.message);
 }
