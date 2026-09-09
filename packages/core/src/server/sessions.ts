@@ -14,253 +14,86 @@
 //
 // turn 串行语义：同会话用户消息排队（同 REPL busy 队列），跨会话并行互不阻塞；
 // undo/redo 与 turn 互斥（busy 会话上拒绝，避免 rewind marker 与 turn 事件交错落盘）。
-import { randomUUID } from 'node:crypto';
-import { resolve, join } from 'node:path';
-import { existsSync } from 'node:fs';
 import { runTurn } from '../agent/loop.js';
+import { SUBAGENT_TOOL_NAMES, createSubagentTools } from '../agent/subagent.js';
+import { type TaskSpec, type TaskTransitionRecorder, reconstructTasks } from '../agent/task-coordinator.js';
 import type { TurnResult, TurnStreamEvent } from '../agent/types.js';
-import type { ApprovalDecision, ApprovalInput, ApprovalHandler, ToolResult } from '../tools/types.js';
-import type {
-  ApprovalRequestContract,
-  ApprovalResponseAck,
-  ApprovalResponseDecision,
-  AttemptFinalFrame,
-  AttemptSnapshot,
-  CancelAck,
-  CancelRequest,
-  DeliveryDeltaFrame,
-  ResumeSnapshot,
-  ResumeSubscriptionRequest,
-  SteerRequest,
-  SteerResult,
-  SubmitAck,
-  SubmitRequest,
-  TaskContract,
-  TaskId,
-  TaskState,
-  TurnId,
-  ClientMessageId,
-  SessionId,
-} from '../interaction/types.js';
-import { SessionSteerSink } from '../interaction/steer-sink.js';
-import { isApprovalDecision, TASK_STATES, matchTurnGeneration } from '../interaction/types.js';
-import { RUNTIME_JOURNAL_FILE, RuntimeJournal, readEntries } from '../interaction/runtime-journal.js';
+import { redactSecrets } from '../config/redact.js';
+import type { ApprovalQueueCard } from '../interaction/approval-queue.js';
+import { type ChangeSet, reviewChangeSet } from '../interaction/change-review.js';
+import { continueQueue, createDeliverySession, recoverQueue, submitDelivery } from '../interaction/delivery.js';
 import {
-  buildEffectiveRunConfig,
-  type EffectiveRunConfig,
-  type EffectiveRunConfigInput,
-} from '../interaction/run-config.js';
-import { loadPlanState, type PlanState } from '../interaction/plan-state.js';
-import {
-  buildToolExecutionView,
   type ToolExecutionTrace,
   type ToolExecutionView,
+  buildToolExecutionView,
 } from '../interaction/execution-view.js';
-import { reviewChangeSet, type ChangeSet } from '../interaction/change-review.js';
-import type { RetryBudgetState } from '../interaction/retry-policy.js';
-import { createDeliverySession, recoverQueue, submitDelivery, continueQueue } from '../interaction/delivery.js';
-import type { DeliverySession } from '../interaction/delivery.js';
-import { TaskCoordinator, reconstructTasks } from '../agent/task-coordinator.js';
-import type { TaskSpec, TaskTransitionRecorder } from '../agent/task-coordinator.js';
-import { WatermarkCursor } from '../interaction/resume-state.js';
+import { type PlanState, loadPlanState } from '../interaction/plan-state.js';
 import type { ResumeStateProvider } from '../interaction/resume-state.js';
-import { ApprovalQueue, type ApprovalQueueCard } from '../interaction/approval-queue.js';
-import type { ToolExecutionRequest } from '../tools/executor.js';
-import { ToolRegistry } from '../tools/registry.js';
-import { createMemoryToolForMode, runNudgeReview, type NudgeResult } from '../memory/nudge.js';
-import { redactSecrets } from '../config/redact.js';
-import { createBrowserTools } from '../tools/predefined/browser.js';
+import {
+  type EffectiveRunConfig,
+  type EffectiveRunConfigInput,
+  buildEffectiveRunConfig,
+} from '../interaction/run-config.js';
+import { RUNTIME_JOURNAL_FILE, RuntimeJournal, readEntries } from '../interaction/runtime-journal.js';
+import { SessionSteerSink } from '../interaction/steer-sink.js';
+import {
+  type ApprovalRequestContract,
+  type ApprovalResponseAck,
+  type ApprovalResponseDecision,
+  type AttemptFinalFrame,
+  type AttemptSnapshot,
+  type CancelAck,
+  type CancelRequest,
+  type ClientMessageId,
+  type ResumeSnapshot,
+  type ResumeSubscriptionRequest,
+  type SessionId,
+  type SteerRequest,
+  type SteerResult,
+  type SubmitAck,
+  type SubmitRequest,
+  type TaskContract,
+  type TaskId,
+  isApprovalDecision,
+  matchTurnGeneration,
+} from '../interaction/types.js';
+import { createMemoryToolForMode, runNudgeReview } from '../memory/nudge.js';
+import { ForkError, type ForkResult, forkSession } from '../session/fork.js';
+import { SessionManager } from '../session/manager.js';
 import { computeProjection, loadSession } from '../session/reader.js';
 import { SnapshotStore } from '../session/snapshots.js';
-import { SessionManager, SESSION_ID_PATTERN } from '../session/manager.js';
-import { forkSession, ForkError, type ForkResult } from '../session/fork.js';
-import { redoLastUndo, undoLastTurn, type UndoRedoResult } from '../session/undo.js';
-import { createSubagentTools, SUBAGENT_TOOL_NAMES } from '../agent/subagent.js';
-import type { AnySessionEvent, SessionEvent, SessionEventMap, SessionEventType } from '../session/types.js';
-import type { SessionWriter } from '../session/writer.js';
-import { HubError } from './sessions-types.js';
-import type {
-  TurnDelta,
-  ApprovalSettleReason,
-  SessionHubProviderMeta,
-  SessionHubHooks,
-  SessionHubOptions,
-  SessionEventsPayload,
+import type { AnySessionEvent } from '../session/types.js';
+import { type UndoRedoResult, redoLastUndo, undoLastTurn } from '../session/undo.js';
+import { createBrowserTools } from '../tools/predefined/browser.js';
+import { ToolRegistry } from '../tools/registry.js';
+import type { ApprovalDecision, ApprovalHandler, ApprovalInput } from '../tools/types.js';
+import {
+  EventMirrorWriter,
+  type ExecTraceRecord,
+  type HubDelivery,
+  type HubEntry,
+  SessionHubCore,
+  UNDO_MAX_N,
+  detectShell,
+  headerCwdOr,
+  isTaskState,
+} from './sessions-core.js';
+import {
+  type ApprovalSettleReason,
+  HubError,
+  type SessionEventsPayload,
+  type SessionHubProviderMeta,
 } from './sessions-types.js';
-// 公开导出面保持不变：原 sessions.ts 导出的契约类型经此原样再导出。
+import { randomUUID } from 'node:crypto';
+import { existsSync } from 'node:fs';
+import { join, resolve } from 'node:path';
+
+// 公开导出面保持不变：契约类型经此原样再导出。
 export * from './sessions-types.js';
 
-/** undo n>1 提示的层数上限（与 chat /undo 参数口径一致） */
-const UNDO_MAX_N = 100;
-
-function isTaskState(v: unknown): v is TaskState {
-  return typeof v === 'string' && (TASK_STATES as readonly string[]).includes(v);
-}
-
-/** header.cwd 有效时原样返回（旧日志可缺省），否则回退全局 cwd */
-function headerCwdOr(headerCwd: string | undefined | null, fallback: string): string {
-  return typeof headerCwd === 'string' && headerCwd.trim().length > 0 ? headerCwd : fallback;
-}
-
-/** 实际 shell（S7 execution-view 记录来源；Windows = %ComSpec%，POSIX = /bin/sh；缺省不臆造） */
-function detectShell(): string {
-  if (process.platform === 'win32') return process.env.ComSpec ?? 'cmd.exe';
-  return '/bin/sh';
-}
-
-/** S7 执行视图生命周期记录（hub 内存纯观察，不落盘） */
-interface ExecTraceRecord {
-  startedAt?: string;
-  executedArgs?: unknown;
-  endedAt?: string;
-  ok?: boolean;
-  output?: string;
-  error?: string;
-  durationMs?: number;
-}
-
-// sessionId 合法格式（SESSION_ID_PATTERN，自 session/manager.ts 导入）：路径穿越防御——
-// id 会拼进会话目录路径，`../x` 之类的穿越原语必须在 hub 出口处拒绝；
-// 任何不匹配格式一律 HubError('invalid')，不触达文件系统。
-
-/**
- * EventMirrorWriter：真实 writer 的观察包裹——append 先落盘、后镜像回调。
- * 结构化匹配 SessionWriter 的公开形态（runTurn/undo 只消费这些成员），
- * 不绕过任何写入路径（单一写者不变量保持）。
- */
-class EventMirrorWriter {
-  readonly dir: string;
-  private closed = false;
-  constructor(
-    private readonly inner: SessionWriter,
-    private readonly onEvent: (event: AnySessionEvent) => void,
-  ) {
-    this.dir = inner.dir;
-  }
-  get lastSeq(): number {
-    return this.inner.lastSeq;
-  }
-  get recoveredBytes(): number {
-    return this.inner.recoveredBytes;
-  }
-  get isClosed(): boolean {
-    return this.closed;
-  }
-  append<T extends SessionEventType>(type: T, payload: SessionEventMap[T]): SessionEvent<T> {
-    const event = this.inner.append(type, payload);
-    // event 由本方法按 T 构造，必属 AnySessionEvent 联合成员（此处收窄需显式断言）
-    this.onEvent(event as AnySessionEvent);
-    return event;
-  }
-  close(): void {
-    if (this.closed) return;
-    this.closed = true;
-    this.inner.close();
-  }
-}
-
-interface HubEntry {
-  id: string;
-  dir: string;
-  /** 每会话真实 cwd（header 真值；S1 起工具执行基于它，A/B 会话互不串） */
-  cwd: string;
-  writer: EventMirrorWriter;
-}
-
-/** S3c2：会话级 delivery（journal 单写 + queue）。journal 落在会话目录 runtime.v1.jsonl */
-interface HubDelivery {
-  session: DeliverySession;
-  journal: RuntimeJournal;
-}
-
-export class SessionHub implements ResumeStateProvider {
-  private readonly entries = new Map<string, HubEntry>();
-  /** 每会话待处理用户消息队列（busy 时入队，turn 结束后 pump——同 REPL 语义） */
-  private readonly pendingTexts = new Map<string, string[]>();
-  /** 每会话运行中的 turn 取消源 */
-  private readonly running = new Map<string, AbortController>();
-  /** 多并发结构化审批队列（requestId 级独立卡片；含授权缓存与已落定记忆） */
-  private readonly approvals = new ApprovalQueue();
-  /** subagent 血缘：childId → parentId（hub 层记录；交付链 / 后代待审批展开用） */
-  private readonly subagentChildren = new Map<string, string>();
-  /** 运行中 turn 的 promise 集（close 时等待收尾） */
-  private readonly inflight = new Set<Promise<void>>();
-  /** 每会话 nudge 计数（用户 turn 完成时 +1；turn 内调过 memory 工具 → 归零） */
-  private readonly nudgeCounts = new Map<string, number>();
-  /** 运行中 turn 是否调过 memory 工具（EventMirrorWriter 事件侧记） */
-  private readonly memoryToolUseInTurn = new Set<string>();
-  /** 运行中复盘 turn 的取消源（close 时全部取消；同会话连续复盘各自独立） */
-  private readonly reviewRunning = new Set<AbortController>();
-  /** 已告警过的 subagent 重名工具（P1-3：每名只告警一次，不随每 turn 刷屏） */
-  private readonly subagentNameConflictsWarned = new Set<string>();
-  /** S3c2：每会话 delivery（journal 单写 + queue；journal 在会话目录 runtime.v1.jsonl） */
-  private readonly deliveries = new Map<string, HubDelivery>();
-  /** 已被派发进 turn 管线的 queue 下标（防 submit 幂等回执重复派发） */
-  private readonly dispatched = new Map<string, number>();
-  /** 运行中 turn 的展示投影身份（real turnId 来自 loop；attemptId 由 hub 按 turn 合成） */
-  private readonly turnDisplay = new Map<
-    string,
-    { turnId: string; attemptId: string; textLen: number; reasoningLen: number }
-  >();
-  /** turnId → sessionId（cancel 按 turnId 定位会话语境；turn 结束清理） */
-  private readonly runningTurnId = new Map<string, string>();
-  /** 本进程内已确认取消的 turnId（cancel-ack=cancelled 依据；一次性语义） */
-  private readonly cancelledTurns = new Set<string>();
-  /** FixB：每会话运行中 turn 的代次（runOne 启动时递增；只区分本进程内 turn 发起序） */
-  private readonly turnGenerations = new Map<SessionId, number>();
-  /** FixB：turnId → 该 turn 的代次（首次见到 turnId 时绑定；turn 结束清理） */
-  private readonly turnGenerationByTurnId = new Map<TurnId, number>();
-  /** FixB：已确认取消 turn 的代次（cancel-ack=cancelled 依据；turnId 复用时不串代次） */
-  private readonly cancelledTurnGeneration = new Map<TurnId, number>();
-  /** 带水位的 delta 展示投影映射（跨会话共享；每 (session, attempt, kind) 独立） */
-  private readonly watermark = new WatermarkCursor();
-  /** S5 后台任务协调器（跨会话共享；同进程单例 → 共享写锁全局串行） */
-  readonly tasks: TaskCoordinator;
-  /** 任务归属会话（taskId → 会话 id；task/transition 落该会话 journal） */
-  private readonly taskSessions = new Map<TaskId, SessionId>();
-  /** S7 执行视图源：sessionId → callId → 生命周期观察记录（内存纯观察，不落盘、不写第二套日志） */
-  private readonly execTraces = new Map<string, Map<string, ExecTraceRecord>>();
-  /** S7：每会话已生效配置 revision（turn 启动时 +1；run-config 只读投影的 snapshot 来源） */
-  private readonly configRevisions = new Map<string, number>();
-  /** FixC D1：每会话最近 turn 的重试预算快照（run-config retry.budget 来源；不持久化，随进程） */
-  private readonly lastRetryBudgets = new Map<string, RetryBudgetState>();
-  /** S6 会话级 steer sink（接收/去重/排队跨 turn 持续；loop 只在安全 step 边界消费） */
-  private readonly steerSinks = new Map<SessionId, SessionSteerSink>();
-
-  readonly approvalTimeoutMs: number;
-  /** 观察者集合（WS 事件面 / 测试；addHooks 注册，返回退订函数） */
-  private readonly listeners = new Set<SessionHubHooks>();
-
-  constructor(private readonly options: SessionHubOptions) {
-    this.approvalTimeoutMs = options.approvalTimeoutMs ?? 120_000;
-    // S5：协调器缺省由 hub 自建（recorder 落到任务归属会话的 runtime journal；S3a 账本单写）
-    this.tasks = options.taskCoordinator ?? new TaskCoordinator({ recorder: this.makeTaskRecorder() });
-    // 审查 P2-1 fail-fast：ask 模式缺 pending 装配时 buildTurnTools 每次 turn 抛错、
-    // 被 pump 的 catch 吞掉（消息凭空消失）——装配残缺在构造期即拒绝，不给静默失败留窗口。
-    if (options.memory?.mode === 'ask' && options.memory.pending === undefined) {
-      throw new HubError(
-        'invalid',
-        'memory.mode=ask 需要装配 pending 暂存区（SessionHubMemory.pending），拒绝静默吞消息的残缺装配',
-      );
-    }
-    if (options.hooks !== undefined) this.addHooks(options.hooks);
-    // 插件事件桥接（阶段 8）：hub 落盘事件镜像 → 插件事件总线（插件 on 订阅的来源）
-    if (options.plugins !== undefined) {
-      const bus = options.plugins.bus;
-      this.addHooks({ onEvent: (sessionId, event) => bus.emitSessionEvent(sessionId, event) });
-    }
-  }
-
-  /** 注册观察者（幂等性由调用方保证）；返回退订函数 */
-  addHooks(hooks: SessionHubHooks): () => void {
-    this.listeners.add(hooks);
-    return () => {
-      this.listeners.delete(hooks);
-    };
-  }
-
+export class SessionHub extends SessionHubCore implements ResumeStateProvider {
   /** S6 会话级 steer sink：按会话惰性创建，跨 turn 持久（去重/排队/回帧观察都在 sink） */
-  private steerSinkFor(id: string): SessionSteerSink {
+  protected steerSinkFor(id: string): SessionSteerSink {
     const existing = this.steerSinks.get(id);
     if (existing !== undefined) return existing;
     const sink = new SessionSteerSink((result) => this.emitSteerResult(id, result));
@@ -279,10 +112,6 @@ export class SessionHub implements ResumeStateProvider {
     this.assertValidSessionId(sessionId);
     this.ensureOpen(sessionId);
     return this.steerSinkFor(sessionId).push(req);
-  }
-
-  get manager(): SessionManager {
-    return this.options.manager;
   }
 
   /** 全量工具注册表（按会话绑定 memory/browser 变体）——cron 调度执行复用同一装配 */
@@ -333,7 +162,7 @@ export class SessionHub implements ResumeStateProvider {
   }
 
   /** 注册表条目（内部）：不存在则从磁盘恢复；锁冲突 → HubError('locked')，未知 id → HubError('not_found') */
-  private entryFor(id: string): HubEntry {
+  protected entryFor(id: string): HubEntry {
     const existing = this.entries.get(id);
     if (existing) return existing;
     let resumed: ReturnType<SessionManager['resume']>;
@@ -360,7 +189,7 @@ export class SessionHub implements ResumeStateProvider {
   }
 
   /** S1：会话执行 cwd（entries 内存值；未注册回退 hub 全局 cwd） */
-  private sessionCwd(id: string): string {
+  protected sessionCwd(id: string): string {
     return this.entries.get(id)?.cwd ?? this.options.cwd;
   }
 
@@ -463,7 +292,7 @@ export class SessionHub implements ResumeStateProvider {
   }
 
   /** 注入 provider 而无装配元数据时的诚实回退：从 ChatProvider.name 推导（channel/model）；protocol 缺省按 openai（桌面配置路径恒走真实元数据） */
-  private fallbackProviderMeta(): SessionHubProviderMeta {
+  protected fallbackProviderMeta(): SessionHubProviderMeta {
     const name = this.options.provider.name;
     const [channel, model] = name.split('/');
     return {
@@ -502,7 +331,7 @@ export class SessionHub implements ResumeStateProvider {
     return this.running.has(id) || (this.pendingTexts.get(id)?.length ?? 0) > 0;
   }
 
-  private pump(id: string): void {
+  protected pump(id: string): void {
     if (this.running.has(id)) return;
     const entry = this.entries.get(id);
     const queue = this.pendingTexts.get(id);
@@ -513,7 +342,7 @@ export class SessionHub implements ResumeStateProvider {
     void run.finally(() => this.inflight.delete(run));
   }
 
-  private async runOne(id: string, entry: HubEntry, text: string): Promise<void> {
+  protected async runOne(id: string, entry: HubEntry, text: string): Promise<void> {
     const ac = new AbortController();
     this.running.set(id, ac);
     // FixB：turn 启动 = 新代次（per-session 单调递增；与 turnId 分配解耦，只在运行中有效）
@@ -576,7 +405,7 @@ export class SessionHub implements ResumeStateProvider {
    * memory 工具按模式绑定 store/pending，browser_* 工具按会话 id 绑定池键，
    * subagent 工具按会话 id 绑定血缘（父子审批/取消传播随之按会话上抛）。
    */
-  private buildTurnTools(sessionId: string): ToolRegistry {
+  protected buildTurnTools(sessionId: string): ToolRegistry {
     const memory = this.options.memory;
     const browser = this.options.browser;
     const subagent = this.options.subagent;
@@ -643,7 +472,7 @@ export class SessionHub implements ResumeStateProvider {
   /** EventMirrorWriter 事件侧记：运行中 turn 调过 memory 工具（nudge 计数归零依据）；
    *  以及 user/message 即本 turn 的日志投影起点 → 绑定运行身份（turnId→会话+代次），
    *  cancel 在首个流事件之前即可定位（FixB：代次绑定与 turnId 分配自洽）。 */
-  private noteTurnEvent(sessionId: string, event: AnySessionEvent): void {
+  protected noteTurnEvent(sessionId: string, event: AnySessionEvent): void {
     if (event.type === 'tool/call' && event.payload.tool === 'memory') {
       this.memoryToolUseInTurn.add(sessionId);
     }
@@ -654,7 +483,7 @@ export class SessionHub implements ResumeStateProvider {
 
   /** 绑定运行中 turn 身份：turnId → 会话 + 代次。幂等（同 turnId 已绑定则跳过）；
    *  首个可见点（user/message 事件 / 首个流事件）调用，二者同源同一 turn。 */
-  private bindRunningTurn(sessionId: string, turnId: string): void {
+  protected bindRunningTurn(sessionId: string, turnId: string): void {
     if (this.runningTurnId.has(turnId)) return;
     this.runningTurnId.set(turnId, sessionId);
     const gen = this.turnGenerations.get(sessionId);
@@ -662,7 +491,7 @@ export class SessionHub implements ResumeStateProvider {
   }
 
   /** nudge 计数：turn 完成 +1（调过 memory 工具 → 归零）；到 nudgeInterval 触发后台复盘并归零 */
-  private bumpNudge(id: string): void {
+  protected bumpNudge(id: string): void {
     const memory = this.options.memory;
     if (memory === undefined) return;
     if (this.memoryToolUseInTurn.has(id)) {
@@ -680,7 +509,7 @@ export class SessionHub implements ResumeStateProvider {
   }
 
   /** 后台复盘：fire-and-forget（inflight 跟踪，close 时取消并等待）；异常在 runNudgeReview 内收口 */
-  private startNudgeReview(id: string): void {
+  protected startNudgeReview(id: string): void {
     const memory = this.options.memory;
     const entry = this.entries.get(id);
     if (memory === undefined || entry === undefined) return;
@@ -712,7 +541,7 @@ export class SessionHub implements ResumeStateProvider {
     return this.nudgeCounts.get(id) ?? 0;
   }
 
-  private forwardStream(id: string, event: TurnStreamEvent): void {
+  protected forwardStream(id: string, event: TurnStreamEvent): void {
     // S3c2：任一流事件都登记 running turn 展示身份（real turnId 来自 loop；activeAttempt/水位依据）
     const disp = this.turnDisplayFor(id, event.turnId);
     if (event.type === 'text-delta') {
@@ -759,7 +588,7 @@ export class SessionHub implements ResumeStateProvider {
    * 连续执行 n 层（同 chat /undo n 口径）：UndoRedoError 停止——
    * 第 1 层即失败 = 抛 HubError（HTTP 错误路径）；后续层失败 = 带部分结果与 error 返回。
    */
-  private applyUndoRedo(n: number, once: () => UndoRedoResult): { results: UndoRedoResult[]; error?: string } {
+  protected applyUndoRedo(n: number, once: () => UndoRedoResult): { results: UndoRedoResult[]; error?: string } {
     const results: UndoRedoResult[] = [];
     for (let i = 0; i < n; i++) {
       try {
@@ -785,67 +614,12 @@ export class SessionHub implements ResumeStateProvider {
     }
   }
 
-  // —— 审批上抛 ——
-
-  /** 全部待处理审批快照（含 scope/expiresAt 全量契约；诊断/订阅重放用） */
-  listPendingApprovals(): ApprovalRequestContract[] {
-    return this.approvals.listPending();
-  }
-
-  /** 指定会话可见的待处理审批：自身 + 后代（subagent 血缘 BFS 展开）——重连恢复/父侧下钻用 */
-  pendingApprovalsFor(sessionId: string): ApprovalRequestContract[] {
-    this.assertValidSessionId(sessionId);
-    const childrenOf = new Map<string, string[]>(); // parentId → childIds
-    for (const [child, parent] of this.subagentChildren) {
-      const list = childrenOf.get(parent) ?? [];
-      list.push(child);
-      childrenOf.set(parent, list);
-    }
-    const scope = new Set<string>([sessionId]);
-    const queue = [sessionId];
-    while (queue.length > 0) {
-      const current = queue.shift()!;
-      for (const child of childrenOf.get(current) ?? []) {
-        if (!scope.has(child)) {
-          scope.add(child);
-          queue.push(child);
-        }
-      }
-    }
-    return this.approvals.listPending().filter((a) => scope.has(a.sessionId));
-  }
-
-  /** 审批响应：明确 ack（applied/duplicate/expired/unknown）；非法/未知 requestId 不抛错 */
-  respondApproval(requestId: string, decision: ApprovalResponseDecision): ApprovalResponseAck {
-    if (!isApprovalDecision(decision)) {
-      return { requestId, state: 'unknown' };
-    }
-    return this.approvals.respond(requestId, decision);
-  }
-
-  /** S5 任务用审批缝：task 运行（子会话 runTurn）内工具审批借此上抛，并把 taskId/parentTaskId
-   *   带入 ApprovalRequestContract（父侧据此归属子任务审批；仍然 fail-closed——无授权不自allow）。 */
-  taskApprovalHandler(
-    childSessionId: string,
-    signal: AbortSignal,
-    task?: { taskId?: TaskId; parentTaskId?: TaskId },
-  ): ApprovalHandler {
-    return this.makeApprovalHandler(childSessionId, signal, task);
-  }
-
-  /** S5 任务/子代理血缘登记：把 child 会话挂到 parent 下（交付链/后代 BFS/审批上抛据此归属）。 */
-  linkChildSession(parentId: string, childId: string): void {
-    this.assertValidSessionId(parentId);
-    this.assertValidSessionId(childId);
-    this.subagentChildren.set(childId, parentId);
-  }
-
   // —— S3c2 submit / cancel / resumeSnapshot（实现 ResumeStateProvider 缝；ws.ts 传输层经此转发） ——
 
   /** 会话级 delivery：打开/新建 runtime journal 并恢复 queue（重启默认 paused，不自动执行）。
    *   journal 单写 = 本 hub（进程内 RuntimeJournal 守卫 + pid 锁文件）；与 session.log 写者协调同一
    *   hub 出口，不引入双写冲突。会话锁被占 → HubError('locked')；未知会话 → HubError('not_found')。 */
-  private deliveryFor(id: string): HubDelivery {
+  protected deliveryFor(id: string): HubDelivery {
     const entry = this.entryFor(id);
     const existing = this.deliveries.get(id);
     if (existing !== undefined) return existing;
@@ -870,8 +644,135 @@ export class SessionHub implements ResumeStateProvider {
     return hd;
   }
 
+  /** resume-snapshot 在途/队列状态组装（replay 范围由 ws.ts 层以磁盘投影计算）。
+   *   activeAttempt 由运行中 turn 的展示投影给出；tasks 由 journal task/transition 重建；
+   *   pendingApprovals 由 hub 审批队列提供；queue = 活队列（重启恢复 = paused）。 */
+  resumeSnapshot(req: ResumeSubscriptionRequest): Omit<ResumeSnapshot, 'epoch' | 'replay'> | null {
+    this.assertValidSessionId(req.sessionId);
+    let hd: HubDelivery;
+    try {
+      hd = this.deliveryFor(req.sessionId);
+    } catch (e) {
+      if (e instanceof HubError && e.code === 'not_found') return null;
+      throw e;
+    }
+    const active = this.activeAttemptFor(req.sessionId);
+    return {
+      ...(active !== undefined ? { activeAttempt: active } : {}),
+      tasks: this.tasksFor(req.sessionId),
+      pendingApprovals: this.pendingApprovalsFor(req.sessionId),
+      queue: hd.session.queue,
+    };
+  }
+
+  /** 运行中 turn 的 attempt 展示快照（S0 AttemptSnapshot）；未运行/无流事件 → undefined */
+  protected activeAttemptFor(sessionId: string): AttemptSnapshot | undefined {
+    if (!this.running.has(sessionId)) return undefined;
+    const disp = this.turnDisplay.get(sessionId);
+    if (disp === undefined) return undefined;
+    const generation = this.turnGenerationByTurnId.get(disp.turnId);
+    return {
+      attemptId: disp.attemptId,
+      turnId: disp.turnId,
+      textChunkOffset: disp.textLen,
+      reasoningChunkOffset: disp.reasoningLen,
+      status: this.pendingApprovalsFor(sessionId).length > 0 ? 'waiting-approval' : 'running',
+      // FixB 加性：当前 turn 代次（重连快照据其发正确代次的 cancel）
+      ...(generation !== undefined ? { generation } : {}),
+    };
+  }
+
+  /** tasks：由 journal task/transition 重建（最后一条迁移 = 当前状态）；无任务记录 = [] */
+  protected tasksFor(id: string): TaskContract[] {
+    const hd = this.deliveries.get(id);
+    if (hd === undefined) return [];
+    const transitions = hd.journal
+      .readEntries()
+      .entries.filter((e) => e.kind === 'task/transition')
+      .map((e) => ({
+        taskId: e.taskId,
+        ...(e.parentTaskId !== undefined ? { parentTaskId: e.parentTaskId } : {}),
+        background: e.payload.background,
+        from: e.payload.from,
+        to: e.payload.to,
+        ...(e.ts !== undefined ? { ts: e.ts } : {}),
+      }));
+    return reconstructTasks(transitions);
+  }
+
+  // —— S3c2 展示投影：流事件 → 带水位 delta 帧 / turn 落定帧 ——
+
+  /** 取/建运行中 turn 的展示身份（real turnId 来自 loop 单点生成；attemptId 按 turn 合成） */
+  protected turnDisplayFor(
+    sessionId: string,
+    turnId: string,
+  ): { turnId: string; attemptId: string; textLen: number; reasoningLen: number } {
+    const existing = this.turnDisplay.get(sessionId);
+    if (existing !== undefined && existing.turnId === turnId) return existing;
+    const created = { turnId, attemptId: `att-${turnId.slice(0, 8)}`, textLen: 0, reasoningLen: 0 };
+    this.turnDisplay.set(sessionId, created);
+    this.bindRunningTurn(sessionId, turnId);
+    return created;
+  }
+
+  /** WatermarkCursor 接流事件：接受连续块 → onDeliveryDelta；同 attempt 内重启（provider 重试从 0 重流）
+   *   先重置水位再接受（展示投影连续，不丢重试内容）。 */
+  protected acceptWatermark(
+    sessionId: string,
+    delta: { kind: 'text' | 'reasoning'; text: string },
+    disp: { turnId: string; attemptId: string },
+    offset: number,
+  ): void {
+    let frame = this.watermark.accept(sessionId, delta, disp, offset);
+    if (frame === null && offset === 0) {
+      this.watermark.reset(sessionId, disp.attemptId);
+      frame = this.watermark.accept(sessionId, delta, disp, offset);
+    }
+    if (frame !== null) this.emitDeliveryDelta(sessionId, frame);
+  }
+
+  /** turn 落定：display 终态帧（attempt-final）+ cancel 确认记忆 + 运行身份清理 */
+  protected finalizeAttempt(sessionId: string, result: TurnResult): void {
+    const disp = this.turnDisplay.get(sessionId);
+    if (disp === undefined) return;
+    const state =
+      result.stopReason === 'cancelled' ? 'cancelled' : result.stopReason === 'error' ? 'failed' : 'completed';
+    const frame: AttemptFinalFrame = {
+      type: 'attempt-final',
+      sessionId,
+      turnId: disp.turnId,
+      attemptId: disp.attemptId,
+      state,
+      ...(result.finalText !== undefined ? { finalText: result.finalText } : {}),
+      ...(result.error !== undefined ? { error: result.error } : {}),
+    };
+    this.emitAttemptFinal(sessionId, frame);
+    if (result.stopReason === 'cancelled') {
+      this.cancelledTurns.add(disp.turnId);
+      // FixB：确认记忆带代次（旧代次确认帧 → unknown；turnId 复用不串）
+      const gen = this.turnGenerationByTurnId.get(disp.turnId);
+      if (gen !== undefined) this.cancelledTurnGeneration.set(disp.turnId, gen);
+    }
+    this.runningTurnId.delete(disp.turnId);
+    this.turnGenerationByTurnId.delete(disp.turnId);
+    this.turnDisplay.delete(sessionId);
+  }
+
+  /** 送达链：自身会话 + 祖先（subagent 血缘；父审批请求投递给落地父 + 全程祖先，child 结束前父可见） */
+  protected deliveryChain(sessionId: string): string[] {
+    const chain = [sessionId];
+    let current = sessionId;
+    for (let i = 0; i < 64; i++) {
+      const parent = this.subagentChildren.get(current);
+      if (parent === undefined) break;
+      chain.push(parent);
+      current = parent;
+    }
+    return chain;
+  }
+
   /** task/transition 落到任务归属会话的 runtime journal（recorder 适配；S3a 账本单写） */
-  private makeTaskRecorder(): TaskTransitionRecorder {
+  protected makeTaskRecorder(): TaskTransitionRecorder {
     return {
       appendTaskTransition: (i) => {
         const sessionId = this.taskSessions.get(i.taskId);
@@ -896,7 +797,7 @@ export class SessionHub implements ResumeStateProvider {
   }
 
   /** FixC E1：该会话 session.log 的当前 lastSeq（只读；缺日志/损坏 → undefined，plan-state 回退 ts 锚定） */
-  private sessionLogLastSeq(sessionId: SessionId): number | undefined {
+  protected sessionLogLastSeq(sessionId: SessionId): number | undefined {
     try {
       const dir = this.locate(sessionId);
       const { events } = loadSession(dir);
@@ -983,7 +884,7 @@ export class SessionHub implements ResumeStateProvider {
   /** queue 启动：把 durable accepted 项按顺序送进既有 turn 启动路径（sendUserMessage → runTurn）。
    *   已 paused（重启恢复）/ 已派发（dispatched 水位）项跳过；不写第二套正文，turn 启动仍由
    *   session.log 投影驱动（事件溯源不破坏）。 */
-  private dispatchQueued(sessionId: string): void {
+  protected dispatchQueued(sessionId: string): void {
     const hd = this.deliveries.get(sessionId);
     if (hd === undefined) return;
     const start = this.dispatched.get(sessionId) ?? 0;
@@ -1047,256 +948,62 @@ export class SessionHub implements ResumeStateProvider {
     return { requestId: req.requestId, state: ack.state };
   }
 
-  /** resume-snapshot 在途/队列状态组装（replay 范围由 ws.ts 层以磁盘投影计算）。
-   *   activeAttempt 由运行中 turn 的展示投影给出；tasks 由 journal task/transition 重建；
-   *   pendingApprovals 由 hub 审批队列提供；queue = 活队列（重启恢复 = paused）。 */
-  resumeSnapshot(req: ResumeSubscriptionRequest): Omit<ResumeSnapshot, 'epoch' | 'replay'> | null {
-    this.assertValidSessionId(req.sessionId);
-    let hd: HubDelivery;
-    try {
-      hd = this.deliveryFor(req.sessionId);
-    } catch (e) {
-      if (e instanceof HubError && e.code === 'not_found') return null;
-      throw e;
+  /** S5 任务用审批缝：task 运行（子会话 runTurn）内工具审批借此上抛，并把 taskId/parentTaskId
+   *   带入 ApprovalRequestContract（父侧据此归属子任务审批；仍然 fail-closed——无授权不自allow）。 */
+  taskApprovalHandler(
+    childSessionId: string,
+    signal: AbortSignal,
+    task?: { taskId?: TaskId; parentTaskId?: TaskId },
+  ): ApprovalHandler {
+    return this.makeApprovalHandler(childSessionId, signal, task);
+  }
+
+  /** S5 任务/子代理血缘登记：把 child 会话挂到 parent 下（交付链/后代 BFS/审批上抛据此归属）。 */
+  linkChildSession(parentId: string, childId: string): void {
+    this.assertValidSessionId(parentId);
+    this.assertValidSessionId(childId);
+    this.subagentChildren.set(childId, parentId);
+  }
+
+  // —— 审批上抛 ——
+
+  /** 全部待处理审批快照（含 scope/expiresAt 全量契约；诊断/订阅重放用） */
+  listPendingApprovals(): ApprovalRequestContract[] {
+    return this.approvals.listPending();
+  }
+
+  /** 指定会话可见的待处理审批：自身 + 后代（subagent 血缘 BFS 展开）——重连恢复/父侧下钻用 */
+  pendingApprovalsFor(sessionId: string): ApprovalRequestContract[] {
+    this.assertValidSessionId(sessionId);
+    const childrenOf = new Map<string, string[]>(); // parentId → childIds
+    for (const [child, parent] of this.subagentChildren) {
+      const list = childrenOf.get(parent) ?? [];
+      list.push(child);
+      childrenOf.set(parent, list);
     }
-    const active = this.activeAttemptFor(req.sessionId);
-    return {
-      ...(active !== undefined ? { activeAttempt: active } : {}),
-      tasks: this.tasksFor(req.sessionId),
-      pendingApprovals: this.pendingApprovalsFor(req.sessionId),
-      queue: hd.session.queue,
-    };
-  }
-
-  /** 运行中 turn 的 attempt 展示快照（S0 AttemptSnapshot）；未运行/无流事件 → undefined */
-  private activeAttemptFor(sessionId: string): AttemptSnapshot | undefined {
-    if (!this.running.has(sessionId)) return undefined;
-    const disp = this.turnDisplay.get(sessionId);
-    if (disp === undefined) return undefined;
-    const generation = this.turnGenerationByTurnId.get(disp.turnId);
-    return {
-      attemptId: disp.attemptId,
-      turnId: disp.turnId,
-      textChunkOffset: disp.textLen,
-      reasoningChunkOffset: disp.reasoningLen,
-      status: this.pendingApprovalsFor(sessionId).length > 0 ? 'waiting-approval' : 'running',
-      // FixB 加性：当前 turn 代次（重连快照据其发正确代次的 cancel）
-      ...(generation !== undefined ? { generation } : {}),
-    };
-  }
-
-  /** tasks：由 journal task/transition 重建（最后一条迁移 = 当前状态）；无任务记录 = [] */
-  private tasksFor(id: string): TaskContract[] {
-    const hd = this.deliveries.get(id);
-    if (hd === undefined) return [];
-    const transitions = hd.journal
-      .readEntries()
-      .entries.filter((e) => e.kind === 'task/transition')
-      .map((e) => ({
-        taskId: e.taskId,
-        ...(e.parentTaskId !== undefined ? { parentTaskId: e.parentTaskId } : {}),
-        background: e.payload.background,
-        from: e.payload.from,
-        to: e.payload.to,
-        ...(e.ts !== undefined ? { ts: e.ts } : {}),
-      }));
-    return reconstructTasks(transitions);
-  }
-
-  // —— S3c2 展示投影：流事件 → 带水位 delta 帧 / turn 落定帧 ——
-
-  /** 取/建运行中 turn 的展示身份（real turnId 来自 loop 单点生成；attemptId 按 turn 合成） */
-  private turnDisplayFor(
-    sessionId: string,
-    turnId: string,
-  ): { turnId: string; attemptId: string; textLen: number; reasoningLen: number } {
-    const existing = this.turnDisplay.get(sessionId);
-    if (existing !== undefined && existing.turnId === turnId) return existing;
-    const created = { turnId, attemptId: `att-${turnId.slice(0, 8)}`, textLen: 0, reasoningLen: 0 };
-    this.turnDisplay.set(sessionId, created);
-    this.bindRunningTurn(sessionId, turnId);
-    return created;
-  }
-
-  /** WatermarkCursor 接流事件：接受连续块 → onDeliveryDelta；同 attempt 内重启（provider 重试从 0 重流）
-   *   先重置水位再接受（展示投影连续，不丢重试内容）。 */
-  private acceptWatermark(
-    sessionId: string,
-    delta: { kind: 'text' | 'reasoning'; text: string },
-    disp: { turnId: string; attemptId: string },
-    offset: number,
-  ): void {
-    let frame = this.watermark.accept(sessionId, delta, disp, offset);
-    if (frame === null && offset === 0) {
-      this.watermark.reset(sessionId, disp.attemptId);
-      frame = this.watermark.accept(sessionId, delta, disp, offset);
-    }
-    if (frame !== null) this.emitDeliveryDelta(sessionId, frame);
-  }
-
-  /** turn 落定：display 终态帧（attempt-final）+ cancel 确认记忆 + 运行身份清理 */
-  private finalizeAttempt(sessionId: string, result: TurnResult): void {
-    const disp = this.turnDisplay.get(sessionId);
-    if (disp === undefined) return;
-    const state =
-      result.stopReason === 'cancelled' ? 'cancelled' : result.stopReason === 'error' ? 'failed' : 'completed';
-    const frame: AttemptFinalFrame = {
-      type: 'attempt-final',
-      sessionId,
-      turnId: disp.turnId,
-      attemptId: disp.attemptId,
-      state,
-      ...(result.finalText !== undefined ? { finalText: result.finalText } : {}),
-      ...(result.error !== undefined ? { error: result.error } : {}),
-    };
-    this.emitAttemptFinal(sessionId, frame);
-    if (result.stopReason === 'cancelled') {
-      this.cancelledTurns.add(disp.turnId);
-      // FixB：确认记忆带代次（旧代次确认帧 → unknown；turnId 复用不串）
-      const gen = this.turnGenerationByTurnId.get(disp.turnId);
-      if (gen !== undefined) this.cancelledTurnGeneration.set(disp.turnId, gen);
-    }
-    this.runningTurnId.delete(disp.turnId);
-    this.turnGenerationByTurnId.delete(disp.turnId);
-    this.turnDisplay.delete(sessionId);
-  }
-
-  /** 送达链：自身会话 + 祖先（subagent 血缘；父审批请求投递给落地父 + 全程祖先，child 结束前父可见） */
-  private deliveryChain(sessionId: string): string[] {
-    const chain = [sessionId];
-    let current = sessionId;
-    for (let i = 0; i < 64; i++) {
-      const parent = this.subagentChildren.get(current);
-      if (parent === undefined) break;
-      chain.push(parent);
-      current = parent;
-    }
-    return chain;
-  }
-
-  // —— 观察者分发（异常互不影响：单观察者抛错不阻断其他分发与内核） ——
-
-  private emitEvent(sessionId: string, event: AnySessionEvent): void {
-    for (const l of this.listeners) {
-      try {
-        l.onEvent?.(sessionId, event);
-      } catch {
-        // 观察者异常不回写内核
+    const scope = new Set<string>([sessionId]);
+    const queue = [sessionId];
+    while (queue.length > 0) {
+      const current = queue.shift()!;
+      for (const child of childrenOf.get(current) ?? []) {
+        if (!scope.has(child)) {
+          scope.add(child);
+          queue.push(child);
+        }
       }
     }
+    return this.approvals.listPending().filter((a) => scope.has(a.sessionId));
   }
 
-  private emitDelta(sessionId: string, delta: TurnDelta): void {
-    for (const l of this.listeners) {
-      try {
-        l.onDelta?.(sessionId, delta);
-      } catch {
-        // 观察者异常不回写内核
-      }
+  /** 审批响应：明确 ack（applied/duplicate/expired/unknown）；非法/未知 requestId 不抛错 */
+  respondApproval(requestId: string, decision: ApprovalResponseDecision): ApprovalResponseAck {
+    if (!isApprovalDecision(decision)) {
+      return { requestId, state: 'unknown' };
     }
+    return this.approvals.respond(requestId, decision);
   }
 
-  private emitDeliveryDelta(sessionId: string, frame: DeliveryDeltaFrame): void {
-    for (const l of this.listeners) {
-      try {
-        l.onDeliveryDelta?.(sessionId, frame);
-      } catch {
-        // 观察者异常不回写内核
-      }
-    }
-  }
-
-  private emitAttemptFinal(sessionId: string, frame: AttemptFinalFrame): void {
-    for (const l of this.listeners) {
-      try {
-        l.onAttemptFinal?.(sessionId, frame);
-      } catch {
-        // 观察者异常不回写内核
-      }
-    }
-  }
-
-  private emitTurnEnd(sessionId: string, result: TurnResult): void {
-    for (const l of this.listeners) {
-      try {
-        l.onTurnEnd?.(sessionId, result);
-      } catch {
-        // 观察者异常不回写内核
-      }
-    }
-  }
-
-  /** S6 会话级 steer 回帧分发（loop resolve 后经 sink notify 回调本方法） */
-  private emitSteerResult(sessionId: string, result: SteerResult): void {
-    for (const l of this.listeners) {
-      try {
-        l.onSteerResult?.(sessionId, result);
-      } catch {
-        // 观察者异常不回写内核
-      }
-    }
-  }
-
-  private emitNudgeStarted(sessionId: string): void {
-    for (const l of this.listeners) {
-      try {
-        l.onNudgeStarted?.(sessionId);
-      } catch {
-        // 观察者异常不回写内核
-      }
-    }
-  }
-
-  private emitNudgeFinished(sessionId: string, result: NudgeResult): void {
-    for (const l of this.listeners) {
-      try {
-        l.onNudgeFinished?.(sessionId, result);
-      } catch {
-        // 观察者异常不回写内核
-      }
-    }
-  }
-
-  private emitExecuteStart(sessionId: string, req: ToolExecutionRequest): void {
-    // S7 记录（内存观察）：工具真正启动时点 + 真实执行参数（onExecuteStart 的 req 即真实参数）
-    const perSession = this.execTraces.get(sessionId) ?? new Map<string, ExecTraceRecord>();
-    perSession.set(req.callId, {
-      ...(perSession.get(req.callId) ?? {}),
-      startedAt: new Date().toISOString(),
-      executedArgs: req.args,
-    });
-    this.execTraces.set(sessionId, perSession);
-    for (const l of this.listeners) {
-      try {
-        l.onExecuteStart?.(sessionId, req);
-      } catch {
-        // 观察者异常不回写内核
-      }
-    }
-  }
-
-  private emitExecuteEnd(sessionId: string, req: ToolExecutionRequest, result: ToolResult): void {
-    // S7 记录（内存观察）：终态一次（含未启动的拒绝/取消/未知工具）
-    const perSession = this.execTraces.get(sessionId) ?? new Map<string, ExecTraceRecord>();
-    perSession.set(req.callId, {
-      ...(perSession.get(req.callId) ?? {}),
-      endedAt: new Date().toISOString(),
-      ok: result.ok,
-      ...(result.output !== undefined ? { output: result.output } : {}),
-      ...(result.error !== undefined ? { error: result.error } : {}),
-      ...(result.durationMs !== undefined ? { durationMs: result.durationMs } : {}),
-    });
-    this.execTraces.set(sessionId, perSession);
-    for (const l of this.listeners) {
-      try {
-        l.onExecuteEnd?.(sessionId, req, result);
-      } catch {
-        // 观察者异常不回写内核
-      }
-    }
-  }
-
-  private makeApprovalHandler(
+  protected makeApprovalHandler(
     sessionId: string,
     signal: AbortSignal,
     taskMeta?: { taskId?: TaskId; parentTaskId?: TaskId },
@@ -1365,7 +1072,7 @@ export class SessionHub implements ResumeStateProvider {
     };
   }
 
-  private emitApprovalSettled(requestId: string, allowed: boolean, reason: ApprovalSettleReason): void {
+  protected emitApprovalSettled(requestId: string, allowed: boolean, reason: ApprovalSettleReason): void {
     for (const l of this.listeners) {
       try {
         l.onApprovalSettled?.(requestId, allowed, reason);
@@ -1397,18 +1104,5 @@ export class SessionHub implements ResumeStateProvider {
     this.deliveries.clear();
     this.steerSinks.clear();
     this.pendingTexts.clear();
-  }
-
-  private assertNonEmpty(value: string, name: string): void {
-    if (typeof value !== 'string' || value.trim().length === 0) {
-      throw new HubError('invalid', `${name} 必须是非空字符串`);
-    }
-  }
-
-  /** sessionId 出口校验（复审 P2-1，路径穿越原语）：非法格式 → HubError('invalid')，不触达文件系统 */
-  private assertValidSessionId(id: string): void {
-    if (typeof id !== 'string' || !SESSION_ID_PATTERN.test(id)) {
-      throw new HubError('invalid', '无效的会话 id（应为 YYYYMMDD-HHMMSS-xxxxxx 格式）');
-    }
   }
 }
