@@ -1,5 +1,8 @@
-// A1-3 验收测试：连续工具失败熔断（stopReason='tool_failures' + 非空 finalText，禁止空回复）。
-// 全 mock，零 API key、零网络。
+// A1-3 / A1-4 / A1-5 验收测试：
+//   A1-3 连续工具失败熔断（stopReason='tool_failures' + 非空 finalText，禁止空回复）
+//   A1-4 缺必填参数 → error 带 schema 片段 + 最小正确调用示例
+//   A1-5 browser_* 未安装 chromium/playwright → 明确指向 harness2 browser install
+// 全部 mock/stub，零 API key、零网络。
 import { mkdtempSync, readdirSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -9,6 +12,7 @@ import { MockProvider } from '../src/provider/mock.js';
 import { SESSION_LOG_FILE, type AnySessionEvent } from '../src/session/types.js';
 import { ToolExecutor, type ToolExecutionRequest } from '../src/tools/executor.js';
 import { ToolRegistry } from '../src/tools/registry.js';
+import { BrowserPool, BrowserNotInstalledError, createBrowserTools } from '../src/tools/predefined/browser.js';
 import { writeTool } from '../src/tools/predefined/write.js';
 import type { ToolDefinition } from '../src/tools/types.js';
 
@@ -188,5 +192,34 @@ describe('A1-4 缺必填参数：schema 片段 + 最小正确调用示例', () =
     expect(r.error).toContain('arguments must be an object');
     expect(r.error).toContain('file_path');
     expect(r.error).toContain('最小正确调用示例');
+  });
+});
+
+describe('A1-5 browser_* 未安装提示指向 harness2 browser install', () => {
+  const moduleMissing = (): Promise<never> => Promise.reject(new Error("Cannot find package 'playwright'"));
+
+  it('playwright 模块缺失：所有需要浏览器的工具都返回含 harness2 browser install 的指引', async () => {
+    const pool = new BrowserPool({ loader: moduleMissing });
+    const defs = createBrowserTools('s-hint', pool);
+    const cases: Array<[string, unknown]> = [
+      ['browser_navigate', { url: 'https://example.com/' }],
+      ['browser_click', { ref: 's1e1' }],
+      ['browser_type', { ref: 's1e1', text: 'x' }],
+      ['browser_snapshot', {}],
+      ['browser_screenshot', {}],
+    ];
+    for (const [name, args] of cases) {
+      const def = defs.find((d) => d.name === name)!;
+      const out = await def.execute(args, { signal: env.signal, cwd: env.cwd });
+      expect(out.error, name).toBeDefined();
+      expect(out.error, name).toContain('harness2 browser install');
+      expect(out.error, name).toContain('playwright');
+    }
+  });
+
+  it("chromium 二进制缺失（Executable doesn't exist）→ 指向 harness2 browser install", () => {
+    const e = new BrowserNotInstalledError("Executable doesn't exist at .../chrome.exe");
+    expect(e.message).toContain('harness2 browser install');
+    expect(e.message).toContain("Executable doesn't exist");
   });
 });
