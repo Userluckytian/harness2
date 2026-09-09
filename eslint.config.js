@@ -45,6 +45,8 @@ module.exports = tseslint.config(
       '**/dist-electron/**',
       '**/release/**',
       '**/coverage/**',
+      // 本机临时目录（.gitignore 的 .tmp-*/；A0 起用于各类一次性脚本，不入库）
+      '**/.tmp-*/**',
       // 基线快照与 fixture：格式化/自动修复会污染 api-surface.test.ts 的比对基准（B2 红线 1）
       'packages/core/test/fixtures/**',
       'packages/core/fixtures/**',
