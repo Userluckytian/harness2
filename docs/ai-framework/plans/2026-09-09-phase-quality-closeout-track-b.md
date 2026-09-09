@@ -70,7 +70,7 @@
 **现状：** `coding-standards.md` 写着「格式化交给工具」，但仓库里**没有任何 lint/format 配置**，全靠人肃自觉。
 
 1. 引入 ESLint（flat config）+ Prettier，新增 `pnpm lint`，接进 CI。
-2. 首轮**放宽 warning**，只把明显错误（未使用变量、`any` 泄漏、floating promise 等）设为 error，不要一上来红一片。
+2. 首轮**放宽 warning**，只把明显错误（未使用变量、`any` 泄漏、floating promise 等）设为 error，**存量正常代码不得因新规则误标红**；新规则先 `warn` 后视情况收紧，避免引入即全量爆红。
 3. 根 `package.json` 加 script **单独一次提交**（甲在 A0 改版本号，两次错开）。
 4. **全量格式化必须独占一个 `🎨style` 提交，不掺任何逻辑改动。**
 

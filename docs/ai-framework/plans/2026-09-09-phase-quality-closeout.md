@@ -14,7 +14,7 @@
 **Tech Stack：** TS · vitest · pnpm workspace · ESLint(flat) + Prettier（本阶段新引入）
 **实施档位：** 全能（开发 + 测试 + 代码审查）。其中 A2 三端真机、A6 发布属**豪华档端到端**，由人类执行，**永远不交子代理**。
 **子代理：** 启用（代码审查 + 验收）。另加硬性要求：**两条轨道互为人工审查方**。
-**基线：** `main` tip `b5a702d`（工作树干净，本地领先 `origin/main` 25 commit）。仓库路径 `D:/AI_Projects/harness2`。
+**基线：** `main` tip `d38fc4a`（工作树干净，本地领先 `origin/main` 26 commit）。仓库路径 `D:/AI_Projects/harness2`。
 
 ---
 
@@ -177,7 +177,7 @@
 - docs/ai-framework/plans/2026-09-09-phase-quality-closeout-acceptance.md（验收登记表，你要往里填证据）
 - AGENTS.md、CODE_REVIEW.md、docs/HANDOFF.md、docs/issue-log/OPEN.md
 
-基线：main tip b5a702d，工作树干净。从当前 main 建自己的独立 worktree，别在主工作树切分支，
+基线：main tip d38fc4a（含本阶段文档），工作树干净。从当前 main 建自己的独立 worktree，别在主工作树切分支，
 不动对方 worktree，不读取/覆盖对方轨道的文件（目录归属见总纲）。
 
 铁律：

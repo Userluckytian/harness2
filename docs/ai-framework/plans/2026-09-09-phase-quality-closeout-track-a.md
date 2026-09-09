@@ -78,6 +78,7 @@
 
 #### A1-3 熔断语义改造
 - 在 `maxSteps` 之外增加「连续工具失败次数上限」（建议 5）；触发时 turn 以 `stopReason=tool_failures` 结束，并**必须**产出面向用户的 finalText，**禁止空回复**。同时评估默认 `maxSteps=25` 是否上调。
+- **边界（勿与底座 S4 混淆）：** 本项是「连续失败熔断」（防烧步/防空回复），与底座 `interaction/retry-policy` 的「有界重试」（单次可重试错误自动重试）是两套独立机制。落点在 agent 控制流（`loop.ts`/turn 组装层），**不改 interaction/ 下的公共契约**。
 - **Commit：** `✨feat(core): 连续工具失败熔断与非空终态回复（A1-3）`
 
 #### A1-4 工具参数校验反馈
