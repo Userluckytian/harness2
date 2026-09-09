@@ -6,10 +6,10 @@
 > **对侧轨道：** 轨道 A（运行时与后端）`…-track-a.md`——**不要动** `packages/core/src/{tools,agent,provider,server,doctor}`、`packages/gateway`
 > **元规范：** `docs/ai-framework/phased-plan-driven.md`
 
-**Goal：** 把仓库从「靠人肃清」拉到「靠工具与文档兵役」：lint/CI 基建落地、R2 两轨即将重度改动的 cli/desktop 大文件提前拆开、两份规范文档从空白模板变成真约束、文档与形式验收欠账清零。
+**Goal：** 把仓库从「靠人肉自觉」拉到「靠工具与文档约束」：lint/CI 基建落地、R2 两轨即将重度改动的 cli/desktop 大文件提前拆开、两份规范文档从空白模板变成真约束、文档与形式验收欠账清零。
 **实施档位：** 全能（开发 + 测试 + 代码审查）；B6 发布为豪华档端到端，由人类执行。
-**子代理：** 启用（代码审查 + 验收）；另由轨道 A 执行者做人工交叉审查。
-**worktree / 分支：** 从当前 `main`（tip `b5a702d`）建 `chore/engineering-health`。
+**子代理：** 启用（代码审查 + 验收）；人工审查由**专职审查者（丙）**承担，见 `…-review-brief.md`，你不需要审甲的代码。
+**worktree / 分支：** 从最新 `main`（代码基线 tip `d38fc4a`，其后只有计划文档提交）建 `chore/engineering-health`。
 
 ---
 
@@ -67,7 +67,7 @@
 
 ### B2 — lint/format 基建 + CI（Day 1–2）
 
-**现状：** `coding-standards.md` 写着「格式化交给工具」，但仓库里**没有任何 lint/format 配置**，全靠人肃自觉。
+**现状：** `coding-standards.md` 写着「格式化交给工具」，但仓库里**没有任何 lint/format 配置**，全靠人肉自觉。
 
 1. 引入 ESLint（flat config）+ Prettier，新增 `pnpm lint`，接进 CI。
 2. 首轮**放宽 warning**，只把明显错误（未使用变量、`any` 泄漏、floating promise 等）设为 error，**存量正常代码不得因新规则误标红**；新规则先 `warn` 后视情况收紧，避免引入即全量爆红。
@@ -99,7 +99,7 @@
 
 - **要求：纯搬运不改行为**；一次只拆一个；每次跑全量 `pnpm test` + `pnpm -r typecheck`。
 - 如果动到 `@harness2/core` 的导出面：**同一提交**更新 api-surface fixture，并**提前在群里跟甲打招呼**。
-- **审查：** 甲 + 只读子代理，重点验证「零行为变更」（拆分前后同一组测试结果对比）。
+- **审查：** 丙 + 只读子代理，重点验证「零行为变更」（要求你提供拆分前后同一组测试的结果对比）。
 - **验收：** 三个文件都降到 20KB 以内；桌面 smoke 通过；CLI 主要子命令手工走一遍。
 - **Commit：** `♻️refactor(cli): 拆分 index.ts 为命令注册与子命令模块（B3-1）` / `♻️refactor(desktop): 拆分 App.tsx 为分栏与会话组件（B3-2）`
 
@@ -150,7 +150,7 @@ v1 插件是**同进程非隔离**，manifest 权限只是 API 层约束。在 R
 
 ## 代码审查（阶段级，验收前）
 
-**审查方：** 轨道 A 执行者（人工）+ 独立只读子代理。
+**审查方：** 专职审查者 丙（人工，任务书 `…-review-brief.md`）+ 独立只读子代理。
 **审查面：** 拆分零行为变更 / lint 规则合理性（不该把合法写法判死）/ 格式化提交无逻辑变更 / 文档与实际实现一致（特别是插件边界声明不得夸大安全性）/ 信息不丢失（OPEN.md 迁移）。
 **结论：** ✅ / ⚠️（问题进验收表）/ ❌（阻塞，下放）
 
@@ -163,11 +163,11 @@ v1 插件是**同进程非隔离**，manifest 权限只是 API 层约束。在 R
 | B-1 | OPEN.md 只剩待办 | 逐条为待办；DECISIONS.md 保留全部历史信息 | 人工审阅 diff |
 | B-2 | lint 可跑 | `pnpm lint` 本地干净 | 自动化 |
 | B-3 | lint 入 CI | CI 中 lint 为必过项且绿 | 自动化 |
-| B-4 | 格式化提交干净 | `🎨style` 提交无逻辑变更（审查抽查） | 甲 |
+| B-4 | 格式化提交干净 | `🎨style` 提交无逻辑变更（审查抽查） | 丙 |
 | B-5 | 同步点遵守 | core 格式化晚于 A1 合入；全量格式化在 S2 窗口 | 双方确认 |
 | B-6 | cli 拆分 | `cli/src/index.ts` < 20KB，子命令手工走通 | 自动化 + 手工 |
 | B-7 | desktop 拆分 | `App.tsx` < 20KB，桌面 smoke 通过 | 自动化 + 手工 |
-| B-8 | 拆分零行为变更 | 拆分前后同组测试结果一致 | 甲复核 |
+| B-8 | 拆分零行为变更 | 拆分前后同组测试结果一致 | 丙复核 |
 | B-9 | coding-standards 无占位 | 项目专属约定全部填实且与实际命令一致 | 人工 |
 | B-10 | CODE_REVIEW 红线 | 六项专属红线落地 | 人工 |
 | B-11 | 插件边界声明 | README / 文档站 / `plugin list` 三处可见 | 人工 |
@@ -175,7 +175,7 @@ v1 插件是**同进程非隔离**，manifest 权限只是 API 层约束。在 R
 | B-13 | README 三图 | 图可见且占位注释已删 | 人类 |
 | B-14 | HANDOFF 更新 | 零上下文可接手 | 人工 |
 | B-15 | 全量回归 | `pnpm test` 真实命中全绿 | 自动化 |
-| B-16 | 代码审查 | 两份报告，P0/P1 清零 | 甲 + 子代理 |
+| B-16 | 代码审查 | 两份报告，P0/P1 清零 | 丙 + 子代理 |
 
 ---
 
@@ -187,7 +187,7 @@ v1 插件是**同进程非隔离**，manifest 权限只是 API 层约束。在 R
 | lint 规则太严导致 CI 长期红 | 首轮只把明显错误设 error，其余 warning；阅一段时间后再收紧 |
 | 拆分引入行为变更 | 纯搬运；一次一个；拆前拆后跑同一组测试对比；甲复核 |
 | OPEN.md 迁移丢信息 | 只搬不删；保留原文与日期；diff 逐段人工核 |
-| 插件边界声明润色过头 | 实事求是，不得暗示有沙箱；甲审查把关 |
+| 插件边界声明润色过头 | 实事求是，不得暗示有沙箱；丙审查把关 |
 | 发布误操作 | tag / publish / secret 全部等人类逐项授权 |
 
 ---
@@ -225,9 +225,9 @@ B5：补阶段 5/6/8 的 /accept-phase 形式验收（当时属「未执行」�
 B6（逐项等人类授权，不自行执行）：只读检查 npm 包名占用；列出 NPM_TOKEN 配置步骤交人类；
 tag v1.0.0 等授权；对照 docs/RELEASE-CHECKLIST.md ③ 逐项打勾。
 
-每阶段收尾：pnpm -r typecheck + pnpm test + pnpm lint 贴真实输出 → 轨道 A 人工审查 + 只读子代理审查 →
+每阶段收尾：pnpm -r typecheck + pnpm test + pnpm lint 贴真实输出 → 专职审查者（丙）人工审查 + 只读子代理审查 →
 在 2026-09-09-phase-quality-closeout-acceptance.md 的轨道 B 表格填状态/证据/日期 →
-在 docs/issue-log/<日期>.md 的「## 轨道B」小节追加四要素记录，并同步轨道 A 提出的 OPEN.md 变更。
+在 docs/issue-log/<日期>.md 的「## 轨道B」小节追加四要素记录（该文件不入库、仅本机留痕，所以凡是别人要看的结论必须填进 acceptance.md），并同步轨道 A 提出的 OPEN.md 变更。
 ```
 
 ---

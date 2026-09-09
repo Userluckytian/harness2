@@ -8,8 +8,8 @@
 
 **Goal：** 让 harness2 在 Windows 上真正可用、让三端 provider 第一次经过真机验证、让 serve 达到可发布的安全基线，并把 R2 两轨都要动的 `server/sessions.ts` 提前拆开。
 **实施档位：** 全能（开发 + 测试 + 代码审查）；A2 为豪华档端到端，由人类签收。
-**子代理：** 启用（代码审查 + 验收）；另由轨道 B 执行者做人工交叉审查。
-**worktree / 分支：** 从当前 `main`（tip `b5a702d`）建 `feat/runtime-hardening`。
+**子代理：** 启用（代码审查 + 验收）；人工审查由**专职审查者（丙）**承担，见 `…-review-brief.md`，你不需要审乙的代码。
+**worktree / 分支：** 从最新 `main`（代码基线 tip `d38fc4a`，其后只有计划文档提交）建 `feat/runtime-hardening`。
 
 ---
 
@@ -53,7 +53,7 @@
 
 - **Files：** `.gitignore`、根 `package.json`、删除 `.tmp-head-check/`
 - **行为：**
-  1. `git push origin main`，把 25 个只存在于本机的 commit 落到远程（备份 push 已授权）。
+  1. `git push origin main`，把只存在于本机的 commit（写计划时 28 个，含本阶段五份文档）落到远程（备份 push 已授权）。
   2. 删除根目录 `.tmp-head-check/`（内含断链 node_modules，任何递归扫描都会刷 DirectoryNotFound），加进 `.gitignore`。
   3. 根 `package.json` 版本 `0.1.0` → `1.0.0`，与四个包对齐。
   4. 核对 `.gitignore` 是否覆盖 `dist-bundle/`、`release/`、临时目录。
@@ -95,7 +95,7 @@
   - `tool-failure-circuit.test.ts`：连续 5 次工具失败 → `stopReason=tool_failures` 且 finalText 非空
   - 参数示范用例：`write` 漏 `file_path` → error 含示例
   - **回归**：`tools.test.ts` / `loop.test.ts` 全绿，**重点确认超时与取消时的进程树击杀（Windows `taskkill /T /F`）仍生效**
-- **审查：** 乙 + 只读子代理。重点：跨平台分支覆盖、进程树击杀、有无新增平台写死判断。
+- **审查：** 丙 + 只读子代理（Day 3 窗口，**阻塞合入**）。重点：跨平台分支覆盖、进程树击杀、有无新增平台写死判断。
 - **验收：** Windows 真机重跑一个同类联网检索任务，要么在步数内给出答案、要么给出明确失败说明；贴 `harness2 traj <会话目录>` 摘要为证。
 - **关联：** 与 R2 终端轨 T2「Windows 四场景能力闸门」重叠，**合并做，不要改两遍**；结论同步给 T 轨 owner。
 - **⚠️ 完成并合入 main 后立刻通知乙（同步点 S1）**，他要等这个才能格式化 core。
@@ -140,7 +140,7 @@
 - **Commit：** `⚡chore(core): playwright 改为可选依赖并保留降级路径（A3-3）`
 
 - **测试：** `serve-security.test.ts`（跨 Origin 被拒 / 无 token 被拒 / 超大 WS 帧断连）；无 playwright 环境下 `import @harness2/core` 不报错且 `browser_*` 返回指引；导出面变更同步 api-surface fixture。
-- **审查：** 安全类**必须两份审查**，重点确认没有把桌面端和 CLI 自己挡在门外。
+- **审查：** 丙 + 只读子代理，安全类**必须两份审查**，重点确认没有把桌面端和 CLI 自己挡在门外（桌面 smoke 仍由乙配合跑）。
 - **验收：** `pnpm test` 全绿 + **由乙跑桌面 smoke** + `serve --port 0 --provider mock` 冒烟 + 手工 curl 越权被拒的真实输出。
 
 ---
@@ -149,7 +149,7 @@
 
 - `packages/core/src/server/sessions.ts` 73KB，是 R2 终端轨与桌面轨都要动的汇合点，**先拆它**：按 hub 装配 / 订阅恢复 / 任务协调 三块切开。顺带评估 `agent/loop.ts` 30KB、`interaction/runtime-journal.ts` 29KB 是否一并处理。
 - **要求：纯搬运不改行为**；一次只拆一个文件；每次跑全量 `pnpm test` + `pnpm -r typecheck`；导出面变化同一提交同步 api-surface fixture。
-- **审查：** 乙重点验证「零行为变更」——对拆分前后跑同一组测试并对比结果。
+- **审查：** 丙重点验证「零行为变更」——要求你提供拆分前后同一组测试的结果对比。
 - **验收：** `sessions.ts` 单文件降到 25KB 以内，CI 全绿。
 - **Commit：** `♻️refactor(core): 拆分 server/sessions.ts 为 hub/订阅恢复/任务协调（A4）`
 
@@ -166,7 +166,7 @@
 
 ## 代码审查（阶段级，验收前）
 
-**审查方：** 轨道 B 执行者（人工）+ 独立只读子代理。
+**审查方：** 专职审查者 丙（人工，任务书 `…-review-brief.md`）+ 独立只读子代理。
 **审查面：** 跨平台分支 / 进程树击杀 / 事件溯源不变量 / 密钥脱敏 / 审批不得弱化 / 快照范围 / 导出面快照同步 / 安全边界。
 **结论：** ✅ / ⚠️（问题进验收表）/ ❌（阻塞，下放）
 
@@ -185,10 +185,10 @@
 | A-7 | 三端真机六项清单 | 逐项 pass 或登记缺陷；key 不落盘 | 人类签收 |
 | A-8 | serve 鉴权 | `serve-security.test.ts` 全绿 + curl 越权被拒输出 | 自动化 + 手工 |
 | A-9 | playwright 可选 | 无 playwright 环境 import 不报错、`browser_*` 返回指引 | 自动化 |
-| A-10 | sessions.ts 拆分 | < 25KB 且拆分前后同组测试结果一致 | 自动化 + 乙复核 |
+| A-10 | sessions.ts 拆分 | < 25KB 且拆分前后同组测试结果一致 | 自动化 + 丙复核 |
 | A-11 | 阶段 9 复审 | 四段结论 + 网关测试真实输出 | 独立角色 |
 | A-12 | 全量回归 | `pnpm test` 真实命中全绿 | 自动化 |
-| A-13 | 代码审查 | 两份报告，P0/P1 清零 | 乙 + 子代理 |
+| A-13 | 代码审查 | 两份报告，P0/P1 清零 | 丙 + 子代理 |
 
 ---
 
@@ -238,9 +238,9 @@ A4（A3 合入后）：纯搬运拆分 packages/core/src/server/sessions.ts（73
 A5：独立复审阶段 9 IM 网关（曾判 fail 未复审），重点 startGateway 生命周期、断线重连重订阅、msg_seq 递增，
 按 /accept-phase 四段格式出结论，文件交轨道 B 归位。
 
-每阶段收尾：pnpm -r typecheck + pnpm test 贴真实输出 → 轨道 B 人工审查 + 只读子代理审查 →
+每阶段收尾：pnpm -r typecheck + pnpm test 贴真实输出 → 专职审查者（丙）人工审查 + 只读子代理审查 →
 在 2026-09-09-phase-quality-closeout-acceptance.md 的轨道 A 表格填状态/证据/日期 →
-在 docs/issue-log/<日期>.md 的「## 轨道A」小节追加四要素记录。OPEN.md 由轨道 B 统一维护，你的条目写在 issue-log 里请他同步。
+在 docs/issue-log/<日期>.md 的「## 轨道A」小节追加四要素记录（该文件不入库、仅本机留痕，所以凡是别人要看的结论必须填进 acceptance.md）。OPEN.md 由轨道 B 统一维护，你的条目写在 issue-log 里并直接告知他同步。
 ```
 
 ---
