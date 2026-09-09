@@ -117,6 +117,8 @@ export interface AttemptSnapshot {
   textChunkOffset: number;
   reasoningChunkOffset: number;
   status: 'running' | 'waiting-approval' | 'unknown';
+  /** FixB 加性：本 turn 的代次（重连快照据此发正确代次的 cancel；旧客户端忽略） */
+  generation?: number;
 }
 
 export interface ResumeSnapshot {
@@ -209,6 +211,12 @@ export interface CancelRequest {
   target: { kind: CancelTargetKind; id: string };
   /** 并发防护：目标已变（如 turn 已完成）时拒绝，不误伤新目标 */
   expectedId?: string;
+  /**
+   * FixB 加性：turn 目标的代次（>=1 单调递增，等价 turn 发起时点序）。cancel 只命中
+   * 该代次的 turn；重连重放旧代次帧 → ack=unknown（不误杀复用同 turnId 的新 turn）。
+   * 旧客户端不带本字段 → 回退 expectedId/target.id 匹配（文档化取舍，见 FixB 报告）。
+   */
+  expectedTurnGeneration?: number;
 }
 
 /** stopping=已受理（UI 立即展示）；cancelled=确认已取消；unknown=连接不明/工具不配合 */
@@ -225,6 +233,26 @@ export function isCancelTargetKind(v: unknown): v is CancelTargetKind {
 
 export function isCancelAckState(v: unknown): v is CancelAckState {
   return v === 'stopping' || v === 'cancelled' || v === 'unknown';
+}
+
+/** turn 代次（>=1 整数；0/非法 = 帧无效代次，fail-closed 拒绝） */
+export function isTurnGeneration(v: unknown): v is number {
+  return typeof v === 'number' && Number.isInteger(v) && v >= 1;
+}
+
+/**
+ * FixB：turn cancel 帧代次命中判定（与既有 turnId 生成自洽：代次只区分本进程内
+ * turn 发起序，不改变 turnId 身份）。三态：
+ * - 'match'：帧带合法代次且与目标当前代次严格相等 → 命中；
+ * - 'stale'：帧带代次但与目标代次不等 / 目标无代次 / 帧代次非法 → 拒（不误伤新 turn）；
+ * - 'missing'：帧无代次（旧客户端）→ 调用方回退 target.id 匹配语义。
+ */
+export type TurnGenerationMatch = 'match' | 'stale' | 'missing';
+
+export function matchTurnGeneration(expected: number | undefined, current: number | undefined): TurnGenerationMatch {
+  if (expected === undefined) return 'missing';
+  if (!isTurnGeneration(expected) || current === undefined) return 'stale';
+  return expected === current ? 'match' : 'stale';
 }
 
 // —— task：registered→queued→starting→running/waiting-approval→stopping→completed/failed/cancelled/unknown ——

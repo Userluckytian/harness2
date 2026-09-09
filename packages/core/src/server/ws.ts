@@ -4,7 +4,7 @@
 //   → {op:'user-message', sessionId, text}          # 触发 runTurn（同会话串行排队）
 //   → {op:'approval-response', requestId, decision} # 审批往返（allow/deny）
 //   → {op:'resume-subscription', sessionId, lastSeq, epoch}  # S3c1 带水位重连握手 → resume-snapshot
-//   → {op:'cancel', requestId, target:{kind,id}, expectedId?} # S3c1 取消 ack（三态）
+//   → {op:'cancel', requestId, target:{kind,id}, expectedId?, expectedTurnGeneration?} # S3c1 取消 ack（三态；FixB turn 代次加性）
 //   → {op:'submit', clientMessageId, sessionId, rawText, intent, references?, expectedTurnId?} # S3c1 帧+校验
 //   ← {type:'delta', sessionId, kind:'text'|'reasoning', text} / {kind:'tool', call}   # 旧帧形状不变
 //   ← {type:'text-delta'|'reasoning-delta', sessionId, turnId, attemptId, chunkOffset, text} # S0 带水位
@@ -41,7 +41,7 @@ import type {
   SubmitAck,
   SubmitRequest,
 } from '../interaction/types.js';
-import { isCancelTargetKind, isSubmitIntent, isValidEpoch, isValidLastSeq } from '../interaction/types.js';
+import { isCancelTargetKind, isSubmitIntent, isTurnGeneration, isValidEpoch, isValidLastSeq } from '../interaction/types.js';
 import { HubError, SessionHub, type TurnDelta } from './sessions.js';
 import type { ResumeStateProvider } from '../interaction/resume-state.js';
 // S3c2 起 DeltaAttribution/WatermarkCursor/ResumeStateProvider 移驻 interaction/resume-state.ts
@@ -61,7 +61,7 @@ export type WsClientMessage =
   | { op: 'fork'; sessionId: string; atSeq?: number }
   // S3c1 新增帧（对齐 S0 共享契约；旧客户端不感知）
   | { op: 'resume-subscription'; sessionId: string; lastSeq: number; epoch: number }
-  | { op: 'cancel'; requestId: string; target: { kind: 'turn' | 'task'; id: string }; expectedId?: string }
+  | { op: 'cancel'; requestId: string; target: { kind: 'turn' | 'task'; id: string }; expectedId?: string; expectedTurnGeneration?: number }
   | {
       op: 'submit';
       clientMessageId: string;
@@ -343,7 +343,12 @@ export function attachWsServer(server: Server, hub: SessionHub, options: WsPlane
               sendSafe(ws, { type: 'cancel-ack', requestId: msg.requestId, state: 'unknown' });
               break;
             }
-            const ack = resumeState.cancelAck({ requestId: msg.requestId, target: msg.target, expectedId: msg.expectedId });
+            const ack = resumeState.cancelAck({
+              requestId: msg.requestId,
+              target: msg.target,
+              expectedId: msg.expectedId,
+              ...(msg.expectedTurnGeneration !== undefined ? { expectedTurnGeneration: msg.expectedTurnGeneration } : {}),
+            });
             sendSafe(ws, { type: 'cancel-ack', requestId: ack.requestId, state: ack.state });
             break;
           }
@@ -483,10 +488,20 @@ export function parseClientMessage(data: unknown): WsClientMessage {
       if (expectedId !== undefined && (typeof expectedId !== 'string' || expectedId.length === 0)) {
         throw new Error('expectedId 必须是非空字符串');
       }
+      // FixB 加性：turn 代次（>=1 整数；旧客户端不带 → 回退 target.id 匹配）
+      const expectedTurnGeneration = m['expectedTurnGeneration'];
+      if (expectedTurnGeneration !== undefined && !isTurnGeneration(expectedTurnGeneration)) {
+        throw new Error('expectedTurnGeneration 必须是 >= 1 的整数');
+      }
       const requestId = requireString(m['requestId'], 'requestId');
+      const base = { op, requestId, target: { kind: t['kind'] as 'turn' | 'task', id } as const };
       return expectedId === undefined
-        ? { op, requestId, target: { kind: t['kind'] as 'turn' | 'task', id } }
-        : { op, requestId, target: { kind: t['kind'] as 'turn' | 'task', id }, expectedId };
+        ? expectedTurnGeneration === undefined
+          ? base
+          : { ...base, expectedTurnGeneration }
+        : expectedTurnGeneration === undefined
+          ? { ...base, expectedId }
+          : { ...base, expectedId, expectedTurnGeneration };
     }
     case 'submit': {
       const intent = m['intent'];

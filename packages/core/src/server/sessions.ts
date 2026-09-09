@@ -36,10 +36,11 @@ import type {
   TaskContract,
   TaskId,
   TaskState,
+  TurnId,
   ClientMessageId,
   SessionId,
 } from '../interaction/types.js';
-import { isApprovalDecision, TASK_STATES } from '../interaction/types.js';
+import { isApprovalDecision, TASK_STATES, matchTurnGeneration } from '../interaction/types.js';
 import { RUNTIME_JOURNAL_FILE, RuntimeJournal, readEntries } from '../interaction/runtime-journal.js';
 import type { TaskTransitionEntry } from '../interaction/runtime-journal.js';
 import { buildEffectiveRunConfig, type EffectiveRunConfig, type EffectiveRunConfigInput } from '../interaction/run-config.js';
@@ -333,6 +334,12 @@ export class SessionHub implements ResumeStateProvider {
   private readonly runningTurnId = new Map<string, string>();
   /** 本进程内已确认取消的 turnId（cancel-ack=cancelled 依据；一次性语义） */
   private readonly cancelledTurns = new Set<string>();
+  /** FixB：每会话运行中 turn 的代次（runOne 启动时递增；只区分本进程内 turn 发起序） */
+  private readonly turnGenerations = new Map<SessionId, number>();
+  /** FixB：turnId → 该 turn 的代次（首次见到 turnId 时绑定；turn 结束清理） */
+  private readonly turnGenerationByTurnId = new Map<TurnId, number>();
+  /** FixB：已确认取消 turn 的代次（cancel-ack=cancelled 依据；turnId 复用时不串代次） */
+  private readonly cancelledTurnGeneration = new Map<TurnId, number>();
   /** 带水位的 delta 展示投影映射（跨会话共享；每 (session, attempt, kind) 独立） */
   private readonly watermark = new WatermarkCursor();
   /** S5 后台任务协调器（跨会话共享；同进程单例 → 共享写锁全局串行） */
@@ -605,6 +612,8 @@ export class SessionHub implements ResumeStateProvider {
   private async runOne(id: string, entry: HubEntry, text: string): Promise<void> {
     const ac = new AbortController();
     this.running.set(id, ac);
+    // FixB：turn 启动 = 新代次（per-session 单调递增；与 turnId 分配解耦，只在运行中有效）
+    this.turnGenerations.set(id, (this.turnGenerations.get(id) ?? 0) + 1);
     // S7：turn 启动 = 新配置 revision（run-config 只读投影的 snapshot 依据）
     this.configRevisions.set(id, (this.configRevisions.get(id) ?? 0) + 1);
     const snapshots = new SnapshotStore(entry.dir);
@@ -724,11 +733,25 @@ export class SessionHub implements ResumeStateProvider {
     return registry;
   }
 
-  /** EventMirrorWriter 事件侧记：运行中 turn 调过 memory 工具（nudge 计数归零依据） */
+  /** EventMirrorWriter 事件侧记：运行中 turn 调过 memory 工具（nudge 计数归零依据）；
+   *  以及 user/message 即本 turn 的日志投影起点 → 绑定运行身份（turnId→会话+代次），
+   *  cancel 在首个流事件之前即可定位（FixB：代次绑定与 turnId 分配自洽）。 */
   private noteTurnEvent(sessionId: string, event: AnySessionEvent): void {
     if (event.type === 'tool/call' && event.payload.tool === 'memory') {
       this.memoryToolUseInTurn.add(sessionId);
     }
+    if (event.type === 'user/message' && event.payload.turnId !== undefined && this.running.has(sessionId)) {
+      this.bindRunningTurn(sessionId, event.payload.turnId);
+    }
+  }
+
+  /** 绑定运行中 turn 身份：turnId → 会话 + 代次。幂等（同 turnId 已绑定则跳过）；
+   *  首个可见点（user/message 事件 / 首个流事件）调用，二者同源同一 turn。 */
+  private bindRunningTurn(sessionId: string, turnId: string): void {
+    if (this.runningTurnId.has(turnId)) return;
+    this.runningTurnId.set(turnId, sessionId);
+    const gen = this.turnGenerations.get(sessionId);
+    if (gen !== undefined) this.turnGenerationByTurnId.set(turnId, gen);
   }
 
   /** nudge 计数：turn 完成 +1（调过 memory 工具 → 归零）；到 nudgeInterval 触发后台复盘并归零 */
@@ -1034,7 +1057,9 @@ export class SessionHub implements ResumeStateProvider {
 
   /**
    * cancel 接线。expectedId 语义按 target 分：
-   *   - target.turn：期望目标身份（= target.id 时通过）——期望与目标不一致（陈旧/错配请求）→ unknown 被拒；
+   *   - target.turn：期望目标身份（= target.id 时通过）+ FixB 代次（expectedTurnGeneration
+   *     与目标当前代次严格相等才命中）——代次不匹配（重连重放旧代次帧）→ unknown，不误杀
+   *     复用同 turnId 的新 turn；旧客户端无代次字段 → 回退 target.id 匹配（文档化取舍）；
    *   - target.task：期望任务当前状态（S5 协调器 expectedId 校验）——陈旧期望被拒。
    * turn：运行中 turnId → abort（stopping）；已确认取消 → cancelled；其余 → unknown。
    * task：协调器任务注册表 → stopping/cancelled/unknown。
@@ -1047,10 +1072,20 @@ export class SessionHub implements ResumeStateProvider {
       }
       const sessionId = this.runningTurnId.get(req.target.id);
       if (sessionId !== undefined) {
+        // FixB：代次不匹配（旧代次帧）→ unknown，不 abort 运行中的新 turn
+        const gen = this.turnGenerationByTurnId.get(req.target.id);
+        if (matchTurnGeneration(req.expectedTurnGeneration, gen) === 'stale') {
+          return { requestId: req.requestId, state: 'unknown' };
+        }
         this.abort(sessionId); // 取消当前 turn；已完成工具变更不撤销（executor 不因 abort 回滚文件）
         return { requestId: req.requestId, state: 'stopping' };
       }
       if (this.cancelledTurns.has(req.target.id)) {
+        // FixB：确认记忆带代次（turnId 复用时不串）；旧代次确认帧 → unknown
+        const gen = this.cancelledTurnGeneration.get(req.target.id);
+        if (matchTurnGeneration(req.expectedTurnGeneration, gen) === 'stale') {
+          return { requestId: req.requestId, state: 'unknown' };
+        }
         return { requestId: req.requestId, state: 'cancelled' };
       }
       return { requestId: req.requestId, state: 'unknown' };
@@ -1093,12 +1128,15 @@ export class SessionHub implements ResumeStateProvider {
     if (!this.running.has(sessionId)) return undefined;
     const disp = this.turnDisplay.get(sessionId);
     if (disp === undefined) return undefined;
+    const generation = this.turnGenerationByTurnId.get(disp.turnId);
     return {
       attemptId: disp.attemptId,
       turnId: disp.turnId,
       textChunkOffset: disp.textLen,
       reasoningChunkOffset: disp.reasoningLen,
       status: this.pendingApprovalsFor(sessionId).length > 0 ? 'waiting-approval' : 'running',
+      // FixB 加性：当前 turn 代次（重连快照据其发正确代次的 cancel）
+      ...(generation !== undefined ? { generation } : {}),
     };
   }
 
@@ -1128,7 +1166,7 @@ export class SessionHub implements ResumeStateProvider {
     if (existing !== undefined && existing.turnId === turnId) return existing;
     const created = { turnId, attemptId: `att-${turnId.slice(0, 8)}`, textLen: 0, reasoningLen: 0 };
     this.turnDisplay.set(sessionId, created);
-    this.runningTurnId.set(turnId, sessionId);
+    this.bindRunningTurn(sessionId, turnId);
     return created;
   }
 
@@ -1163,8 +1201,14 @@ export class SessionHub implements ResumeStateProvider {
       ...(result.error !== undefined ? { error: result.error } : {}),
     };
     this.emitAttemptFinal(sessionId, frame);
-    if (result.stopReason === 'cancelled') this.cancelledTurns.add(disp.turnId);
+    if (result.stopReason === 'cancelled') {
+      this.cancelledTurns.add(disp.turnId);
+      // FixB：确认记忆带代次（旧代次确认帧 → unknown；turnId 复用不串）
+      const gen = this.turnGenerationByTurnId.get(disp.turnId);
+      if (gen !== undefined) this.cancelledTurnGeneration.set(disp.turnId, gen);
+    }
     this.runningTurnId.delete(disp.turnId);
+    this.turnGenerationByTurnId.delete(disp.turnId);
     this.turnDisplay.delete(sessionId);
   }
 

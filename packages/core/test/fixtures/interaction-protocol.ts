@@ -107,9 +107,16 @@ export const validFixtures = {
   approvalResponse: { requestId: 'apr-11', decision: 'allow' } satisfies ApprovalResponse,
   /** respond 的 decision ack：明确三态之外还有 unknown */
   approvalResponseAck: { requestId: 'apr-11', state: 'applied' } satisfies ApprovalResponseAck,
-  /** cancel：停父 turn（带 expectedId 并发防护） */
+  /** cancel：停父 turn（带 expectedId 并发防护 + FixB 代次） */
   cancelTurn: {
     requestId: 'cnl-1',
+    target: { kind: 'turn', id: 'turn-7' },
+    expectedId: 'turn-7',
+    expectedTurnGeneration: 3,
+  } satisfies CancelRequest,
+  /** cancel：旧客户端形状（无 expectedTurnGeneration，回退 target.id 匹配） */
+  cancelTurnLegacy: {
+    requestId: 'cnl-1-legacy',
     target: { kind: 'turn', id: 'turn-7' },
     expectedId: 'turn-7',
   } satisfies CancelRequest,
@@ -202,4 +209,7 @@ export const invalidFixtures = {
   terminalRegression: { from: 'completed', to: 'running' },
   /** 缺 expectedTurnId 的 steer */
   unboundSteer: { id: 'st-x', expectedTurnId: '', text: 'x' },
+  /** cancel 帧带非法代次（0/小数）→ 校验拒绝（fail-closed） */
+  badTurnGeneration: { requestId: 'cnl-x', target: { kind: 'turn', id: 'turn-7' }, expectedTurnGeneration: 0 },
+  badTurnGenerationFloat: { requestId: 'cnl-x', target: { kind: 'turn', id: 'turn-7' }, expectedTurnGeneration: 1.5 },
 } as const;

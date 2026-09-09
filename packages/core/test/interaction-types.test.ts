@@ -17,12 +17,14 @@ import {
   isCancelAckState,
   isCancelTargetKind,
   isNonNegativeInteger,
+  isTurnGeneration,
   isValidChunkOffset,
   isValidEpoch,
   isValidLastSeq,
   isValidSteerRequest,
   isSubmitIntent,
   isTerminalTaskState,
+  matchTurnGeneration,
   queueHasSlot,
   scopeConfinesToSession,
   PROTOCOL_VERSION,
@@ -164,6 +166,21 @@ describe('cancel 契约（target + ack 三态）', () => {
   });
 });
 
+describe('turn 代次匹配（FixB：cancel 不误杀复用 turnId 的新 turn）', () => {
+  it('代次 = >=1 整数（0/非法 → fail-closed）', () => {
+    expect(isTurnGeneration(1)).toBe(true);
+    expect(isTurnGeneration(0)).toBe(false);
+    expect(isTurnGeneration(1.5)).toBe(false);
+    expect(isTurnGeneration(undefined)).toBe(false);
+  });
+
+  it('同代次命中 match；异代次 stale 拒；旧帧无代次 missing（回退 target.id）', () => {
+    expect(matchTurnGeneration(3, 3)).toBe('match');
+    expect(matchTurnGeneration(1, 3)).toBe('stale');
+    expect(matchTurnGeneration(undefined, 3)).toBe('missing');
+  });
+});
+
 describe('task 生命周期（终态单调）', () => {
   it('状态枚举含 §6 全链 registered→…→completed/failed/cancelled/unknown', () => {
     expect(TASK_STATES).toEqual([
@@ -277,6 +294,10 @@ describe('协议 fixtures 自洽校验（S0 fixtures 供 S1-S7 复用）', () =>
     expect(isCancelTargetKind(validFixtures.cancelTurn.target.kind)).toBe(true);
     expect(isCancelAckState(validFixtures.cancelAckStopping.state)).toBe(true);
     expect(isCancelAckState(validFixtures.cancelAckCancelled.state)).toBe(true);
+    // FixB 代次：新帧带合法代次 → match；旧客户端帧无代次 → missing（回退 target.id）
+    expect(isTurnGeneration(validFixtures.cancelTurn.expectedTurnGeneration!)).toBe(true);
+    expect(matchTurnGeneration(validFixtures.cancelTurn.expectedTurnGeneration, validFixtures.cancelTurn.expectedTurnGeneration)).toBe('match');
+    expect(matchTurnGeneration(undefined, 3)).toBe('missing'); // 旧客户端帧无代次字段
     expect(isTerminalTaskState('completed')).toBe(true);
     expect(canTaskTransition(validFixtures.taskContract.state, 'completed')).toBe(true);
     expect(isValidSteerRequest(validFixtures.steerRequest)).toBe(true);
@@ -296,5 +317,9 @@ describe('协议 fixtures 自洽校验（S0 fixtures 供 S1-S7 复用）', () =>
     expect(scopeConfinesToSession(invalidFixtures.crossSessionScope.scope, invalidFixtures.crossSessionScope.sessionId)).toBe(false);
     expect(canTaskTransition(invalidFixtures.terminalRegression.from, invalidFixtures.terminalRegression.to)).toBe(false);
     expect(isValidSteerRequest(invalidFixtures.unboundSteer)).toBe(false);
+    // FixB 非法代次帧被拒（fail-closed）
+    expect(isTurnGeneration(invalidFixtures.badTurnGeneration.expectedTurnGeneration)).toBe(false);
+    expect(matchTurnGeneration(invalidFixtures.badTurnGeneration.expectedTurnGeneration, 3)).toBe('stale');
+    expect(matchTurnGeneration(invalidFixtures.badTurnGenerationFloat.expectedTurnGeneration, 3)).toBe('stale');
   });
 });
