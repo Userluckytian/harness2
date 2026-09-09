@@ -161,8 +161,14 @@
 
 ## 9. 阶段总结论（验收方填）
 
-- **结论：** ⬜ 通过 / ⬜ 有条件通过 / ⬜ 不通过
-- **验收方：**
-- **日期：**
+- **结论：** ⬜ 通过 / ✅ **有条件通过** / ⬜ 不通过
+- **验收方：** 编排者（AI 助手）独立验收 —— 每任务亲自复跑认证据，不采信执行者自评；关键节点（A1/A3/A4/A5）另派独立只读审查子代理
+- **日期：** 2026-09-09（截止 README 图槽与 B-13 更新；B6 发布授权待人类）
 - **复跑的命令与结果：**
-- **下一阶段入口：** R2 激进-终端 `2026-09-08-phase-aggressive-cli-interaction.md`；激进-桌面 `2026-09-08-phase-aggressive-desktop-interaction.md`
+  - `pnpm -r typecheck` → 4 包全 Done，exit 0
+  - `pnpm lint` → **0 error / 38 warn**（Prettier 全过）
+  - 全量 `pnpm test` → **core 832 passed + 1 skipped（60 files）· desktop 158（15）· gateway 14（5）· cli 71（17）= 1032 passed + 1 skipped / 94 files**；cli 的 crash-drill/export/memory 3 个 spawn 型用例在默认 5s 超时下因机器高负载（vmware-vmx 占 CPU 70k 秒）超时失败，`--testTimeout=30000` 复跑 **cli 全量 17/71 全绿**（已逐一确认逻辑零失败，非回归）
+  - `api-surface.test.ts` → 7 passed（fixture 491 导出；A2 本地网关与安全件均未改导出面，除了 A1 加性 +2）
+  - `serve-security.test.ts` → 15 passed；A4 sessions 拆分前后同组测试逐项一致
+- **阶段 15 各任务结论：** A0 ✅ · B1 ✅ · B2 ✅ · A1 ✅ · A2 🟡（八项自动化 1/2/3/4/5/7 ✅；6 桌面端需真机、8 finalText 空、云端 A2-2 ➖）· A3 🟡（有条件：无 P0，2 个 P1 发布前闭环）· A4 ✅ · B3 ✅ · B4 ✅ · A5 🟡（有条件：无 P0，3 个 P1 下放）· B5 🟡（文档✅；README 三图待人类真机）· B6 ⬜（待人类授权）
+- **下一阶段入口：** R2 激进-终端 `2026-09-08-phase-aggressive-cli-interaction.md`；激进-桌面 `2026-09-08-phase-aggressive-desktop-interaction.md` —— 计划开头必须设「阶段开头：上阶段遗留」小节，把验收表第 6 节（A3 的 P1-1/P1-2/P2-3/P2-1/P2-2 + A5 的 P1-1/P1-2/P1-3）逐条抄入并优先处理
