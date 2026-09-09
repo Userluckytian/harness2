@@ -17,6 +17,7 @@ import { loadSession } from '../session/reader.js';
 import { SESSION_LOG_FILE } from '../session/types.js';
 import { defaultSkillsRoot, projectSkillsRoot, SkillStore } from '../skills/store.js';
 import { ToolRegistry } from '../tools/registry.js';
+import { resolveBashShell } from '../tools/shell.js';
 import { CORE_VERSION } from '../version.js';
 
 /** 单项检查结果 */
@@ -129,6 +130,26 @@ function checkHomeWritable(opts: DoctorOptions): DoctorCheck {
       summary: `用户数据根不可写：${root}（${(e as Error)?.message ?? String(e)}）`,
     };
   }
+}
+
+/** bash 工具实际使用的 shell（A1-1）：报告探测结果而非配置里写的值。
+ *  Windows 上回退到 cmd.exe = WARN：ls/head/tail/pwd 等命令不可用，正是 P0 案发根因之一。 */
+function checkBash(config: HarnessConfig | null): DoctorCheck {
+  const configured = config?.bash?.shell;
+  const shell = resolveBashShell(configured !== undefined ? { configured } : {});
+  const details = [
+    `config.bash.shell: ${configured ?? '（未配置，自动探测）'}`,
+    `实际使用: ${shell.kind} → ${shell.executable}${shell.useNodeShell ? '（Node shell:true）' : ` ${shell.argsPrefix.join(' ')} <command>`}`,
+  ];
+  if (shell.kind === 'cmd') {
+    return {
+      id: 'bash',
+      status: 'warn',
+      summary: `bash 工具回退到 cmd.exe——Windows 上 ls/head/tail/pwd 等命令不可用（安装 Git for Windows 或设置 config.bash.shell）`,
+      details,
+    };
+  }
+  return { id: 'bash', status: 'ok', summary: `bash 工具实际使用 ${shell.display}`, details };
 }
 
 function describeMcpServer(cfg: McpServerConfig): string {
@@ -308,6 +329,7 @@ export async function runDoctor(opts: DoctorOptions = {}): Promise<DoctorReport>
     checks.push(crashedCheck('config', e));
   }
   run('home', () => checkHomeWritable(opts));
+  run('bash', () => checkBash(config));
   await runAsync('mcp', () => checkMcp(config, configUnavailable, opts));
   run('sessions', () => checkSessions(opts));
   run('skills', () => checkSkills(opts));

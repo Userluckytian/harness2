@@ -10,6 +10,11 @@ export interface ToolContext {
   signal: AbortSignal;
   /** 工作目录：相对路径一律相对它解析 */
   cwd: string;
+  /**
+   * 可选：config.bash.shell 的注入缝（A1-1）。执行器缺省不传，bash 工具会从
+   * 会话 cwd 逐级向上发现 .harness2/config.json 读取；测试/未来装配可直接注入。
+   */
+  bashShell?: string;
 }
 
 /** 工具实现返回值：error 存在即失败；意外异常由执行器兜底捕获 */

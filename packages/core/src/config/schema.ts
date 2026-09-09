@@ -67,6 +67,17 @@ export interface BrowserConfig {
 export const DEFAULT_BROWSER_CONFIG: BrowserConfig = { enabled: true, idleDestroyMs: 300_000, maxConcurrent: 2 };
 
 /**
+ * bash 工具配置（A1-1）：shell = 显式指定的 shell 可执行文件（最高优先级，覆盖自动探测）。
+ * 缺省不指定（undefined）= 自动探测：Windows 优先 Git Bash（GIT_BASH / 常见路径），
+ * 找不到回退 cmd.exe；POSIX 走 /bin/sh。值以 cmd/cmd.exe 结尾时按 cmd 口径解释。
+ */
+export interface BashConfig {
+  shell?: string;
+}
+
+export const DEFAULT_BASH_CONFIG: BashConfig = {};
+
+/**
  * 插件配置（阶段 8）：enabled = 总开关；allow = 已批准装载的插件名（装载审批结果记录处）。
  * 缺省 allow = []：不审批任何插件不装载（最小授权）；enabled 缺省 true，实际装载仍被
  * allow 门控，故默认安全。
@@ -147,6 +158,8 @@ export interface HarnessConfig {
   approval: ApprovalConfig;
   memory: MemoryConfig;
   browser: BrowserConfig;
+  /** bash 工具配置（A1-1；缺省/未配置 = 自动探测，兼容旧 HarnessConfig 字面量） */
+  bash?: BashConfig;
   plugins: PluginsConfig;
   mcpServers: McpServersConfig;
   subagent: SubagentConfig;
@@ -201,6 +214,7 @@ const KNOWN_TOP_KEYS = new Set([
   'approval',
   'memory',
   'browser',
+  'bash',
   'plugins',
   'mcpServers',
   'subagent',
@@ -219,6 +233,7 @@ const ROLE_KNOWN_KEYS = new Set(['channel', 'model']);
 const APPROVAL_KNOWN_KEYS = new Set(['mode', 'tools']);
 const MEMORY_KNOWN_KEYS = new Set(['mode', 'nudgeInterval']);
 const BROWSER_KNOWN_KEYS = new Set(['enabled', 'idleDestroyMs', 'maxConcurrent']);
+const BASH_KNOWN_KEYS = new Set(['shell']);
 const PLUGINS_KNOWN_KEYS = new Set(['enabled', 'allow']);
 const MCP_SERVER_KNOWN_KEYS = new Set(['command', 'args', 'env', 'cwd', 'url', 'headers']);
 const SUBAGENT_KNOWN_KEYS = new Set(['maxDepth', 'maxTurns']);
@@ -453,6 +468,25 @@ export function parseConfig(raw: unknown): ConfigParseResult {
     }
   }
 
+  // —— bash（A1-1；缺省 = 自动探测，见 tools/shell.ts）——
+  const bash: BashConfig = { ...DEFAULT_BASH_CONFIG };
+  const rawBash = raw['bash'];
+  if (rawBash !== undefined) {
+    if (!isPlainObject(rawBash)) {
+      errors.push('config.bash 必须是对象');
+    } else {
+      collectUnknownKeys(rawBash, BASH_KNOWN_KEYS, 'bash', warnings);
+      const shell = rawBash['shell'];
+      if (shell !== undefined) {
+        if (typeof shell !== 'string' || shell.trim().length === 0) {
+          errors.push('bash.shell 必须是非空字符串（shell 可执行文件路径）');
+        } else {
+          bash.shell = shell;
+        }
+      }
+    }
+  }
+
   // —— plugins（阶段 8；缺省 = enabled + 空 allow：不审批任何插件即不装载）——
   const plugins: PluginsConfig = { ...DEFAULT_PLUGINS_CONFIG };
   const rawPlugins = raw['plugins'];
@@ -680,7 +714,7 @@ export function parseConfig(raw: unknown): ConfigParseResult {
   const safeWarnings = warnings.map(redactSecrets);
   if (safeErrors.length > 0) return { config: null, errors: safeErrors, warnings: safeWarnings };
   return {
-    config: { providers, roles, approval, memory, browser, plugins, mcpServers, subagent, gateways },
+    config: { providers, roles, approval, memory, browser, bash, plugins, mcpServers, subagent, gateways },
     errors: safeErrors,
     warnings: safeWarnings,
   };

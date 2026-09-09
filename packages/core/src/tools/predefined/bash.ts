@@ -1,13 +1,19 @@
 // bash 工具：shell 执行命令（unsafe：可能产生任意副作用，独占执行）。
+//
+// shell 选择（A1-1）：Windows 不再硬走 cmd.exe——探测顺序 config.bash.shell >
+// Git Bash（GIT_BASH / 常见路径 / PATH 里的 Git）> cmd 回退（见 ../shell.ts；
+// doctor 报告实际使用的 shell）。
+//
 // 超时/取消时杀死整个进程树（P1-3）：
-//   - Windows：taskkill /pid <pid> /T /F（按父子关系树杀，覆盖 cmd.exe 壳与工作子进程；
-//     纯 child.kill 只能杀 cmd.exe 壳，工作进程会存活并继续产生副作用）；
+//   - Windows：taskkill /pid <pid> /T /F（按父子关系树杀，覆盖 shell 与工作子进程；
+//     纯 child.kill 只能杀直接子进程，工作进程会存活并继续产生副作用）；
 //   - POSIX：spawn detached 使 shell 成为进程组长，process.kill(-pid) 杀整组。
 // 已知限制（如实声明）：命令内部守护进程化（自行 setsid 脱离进程组/换父）的进程
 // 平台原语均无法触达，本工具不承诺杀死此类脱离进程。
 import { spawn, type ChildProcess } from 'node:child_process';
 import type { ToolDefinition, ToolOutput } from '../types.js';
 import { expectObject, expectString, optionalNumber, truncateText } from './common.js';
+import { loadConfiguredBashShell, resolveBashShell } from '../shell.js';
 
 export const MAX_BASH_OUTPUT_CHARS = 32 * 1024;
 export const DEFAULT_BASH_TIMEOUT_MS = 30_000;
@@ -22,7 +28,7 @@ function killTree(child: ChildProcess): void {
   const pid = child.pid;
   if (pid === undefined) return;
   if (IS_WINDOWS) {
-    // /T = 树杀（cmd.exe 及全部子孙） /F = 强制。用 spawn 发起避免阻塞事件循环。
+    // /T = 树杀（shell 及全部子孙） /F = 强制。用 spawn 发起避免阻塞事件循环。
     try {
       spawn('taskkill', ['/pid', String(pid), '/T', '/F'], { windowsHide: true, stdio: 'ignore' }).unref();
     } catch {
@@ -51,6 +57,7 @@ export const bashTool: ToolDefinition = {
   description:
     'Run a shell command in the session working directory. ' +
     'Returns combined stdout+stderr (truncated to 32KB). ' +
+    'On Windows the shell is Git Bash when available (config.bash.shell > GIT_BASH/common paths > cmd.exe fallback). ' +
     'Non-zero exit codes are reported as errors with the captured output preserved for diagnosis. ' +
     'On timeout/cancellation the whole process tree is killed (Windows: taskkill /T /F; POSIX: process-group kill), ' +
     'except processes that daemonize themselves out of the process group — killing those cannot be guaranteed.',
@@ -86,23 +93,35 @@ export const bashTool: ToolDefinition = {
         return;
       }
 
+      // A1-1：config.bash.shell（调用方注入）优先，否则从会话 cwd 逐级发现项目/全局配置
+      const configured = ctx.bashShell ?? loadConfiguredBashShell(ctx.cwd);
+      const shell = resolveBashShell({ configured });
+
       let stdout = '';
       let stderr = '';
       let timedOut = false;
       let spawnFailure: Error | undefined;
       let settled = false;
 
-      // shell:true 与旧 exec 行为一致（命令经 shell 解释）。
+      // 直接 spawn（Git Bash / 配置的 bash 兼容 shell）：`<shell> -c <command>`。
+      // Node 的 shell:true（POSIX /bin/sh、Windows cmd.exe）保留旧行为：
       // detached 仅 POSIX 启用（使 shell 成为进程组长，可整组击杀）；Windows 禁用——
       // detached 让 cmd 脱离控制台后不再向管道写输出（实测 stdout/stderr 全空），
       // 而 Windows 的树杀用 taskkill /T 按父子关系即可，无需进程组。
-      const child = spawn(command, {
-        cwd: ctx.cwd,
-        shell: true,
-        detached: !IS_WINDOWS,
-        windowsHide: true,
-        stdio: ['ignore', 'pipe', 'pipe'],
-      });
+      const child = shell.useNodeShell
+        ? spawn(command, {
+            cwd: ctx.cwd,
+            shell: shell.executable,
+            detached: !IS_WINDOWS,
+            windowsHide: true,
+            stdio: ['ignore', 'pipe', 'pipe'],
+          })
+        : spawn(shell.executable, [...shell.argsPrefix, command], {
+            cwd: ctx.cwd,
+            detached: !IS_WINDOWS,
+            windowsHide: true,
+            stdio: ['ignore', 'pipe', 'pipe'],
+          });
 
       let timer: NodeJS.Timeout | undefined;
       if (timeoutMs > 0) {
@@ -127,7 +146,10 @@ export const bashTool: ToolDefinition = {
             output: truncateText(combined, MAX_BASH_OUTPUT_CHARS), // 杀掉后仍回收残余输出供诊断
           });
         }
-        if (spawnFailure !== undefined) return resolve({ error: spawnFailure.message }); // spawn 失败（如 shell 不存在）
+        if (spawnFailure !== undefined) {
+          // spawn 失败（如配置的 shell 路径不存在）：报出实际使用的 shell，便于自纠
+          return resolve({ error: `${spawnFailure.message}（shell: ${shell.display}）` });
+        }
         const code = child.exitCode;
         if (code !== 0 || child.signalCode !== null) {
           if (child.signalCode !== null && code === null) {

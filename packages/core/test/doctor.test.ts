@@ -60,6 +60,9 @@ describe('runDoctor 分节检查', () => {
     expect(byId.get('config')!.status).toBe('warn'); // 未配置 = 全新环境提示
     expect(byId.get('config')!.summary).toContain('未找到配置文件');
     expect(byId.get('home')!.status).toBe('ok');
+    // A1-1：doctor 报告 bash 工具实际使用的 shell（探测结果，不是配置里写的值）
+    expect(byId.get('bash')!.status).toBe('ok');
+    expect(byId.get('bash')!.summary).toContain('实际使用');
     expect(byId.get('mcp')!.status).toBe('ok');
     expect(byId.get('sessions')!.status).toBe('ok');
     expect(byId.get('skills')!.status).toBe('ok');
