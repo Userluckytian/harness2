@@ -35,6 +35,13 @@ export interface PlanGoalEvidence {
   /** 会话日志事件 seq（Disk projection 可指回） */
   seq: number;
   ts: string;
+  /**
+   * FixC E1：目标锚定依据（明确非时间戳优先）：
+   * - session-log-seq：journal task/transition 携带的 session.log lastSeq 水位，目标 = seq <= 水位的最后 user/message
+   *   （同一时间线内单调、不依赖跨文件时钟；两会话并发不歧义）；
+   * - journal-ts：旧账本无水位时的兼容回退（Date.parse ts <= 首个 transition.ts）。
+   */
+  anchor: { kind: 'session-log-seq'; seq: number } | { kind: 'journal-ts'; ts: string };
 }
 
 export interface PlanState {
@@ -138,8 +145,11 @@ export interface LoadPlanStateOptions {
 
 /**
  * 从磁盘重建计划状态：runtime.v1.jsonl（task/transition 账本）+ 会话日志（目标来源）。
- * 目标 = 本计划首个 transition 之前（含同刻）的最新活动 user/message 事件文本，
- * goalEvidence 指回该事件 seq；会话日志缺失/损坏 → 目标为空串且不提供证据（不猜测）。
+ * 目标锚定（FixC E1）：
+ *   - 首选 seq/水位：首个 task/transition 若携带 sessionLogSeq（写入时 session.log lastSeq），
+ *     目标 = 该会话日志内 seq <= 水位的最后活动 user/message 事件（同一时间线单调，不依赖时钟）；
+ *   - 缺省回退：旧账本无水位 → 保持 ts 锚定（Date.parse <= 首个 transition.ts），兼容不改行为。
+ * goalEvidence 指回该事件 seq + ts + anchor 依据；会话日志缺失/损坏 → 目标为空串且不提供证据（不猜测）。
  * 只读：均走只读 API（readEntries / loadSession），不取锁、不写盘。
  */
 export function loadPlanState(sessionDir: string, opts: LoadPlanStateOptions = {}): PlanState | null {
@@ -148,23 +158,33 @@ export function loadPlanState(sessionDir: string, opts: LoadPlanStateOptions = {
   if (transitions.length === 0) return null;
 
   const firstTransition = transitions.reduce((a, b) => (a.seq < b.seq ? a : b));
+  const anchorSeq = firstTransition.sessionLogSeq;
   let goal = opts.goal ?? '';
   let goalEvidence: PlanGoalEvidence | undefined;
   if (goal === '') {
     try {
       const session = loadSession(sessionDir);
       computeProjection(session);
-      const anchor = Date.parse(firstTransition.ts);
       const users = session.events.filter(({ event, active }) => {
         if (!active || event.type !== 'user/message') return false;
+        // seq/水位锚定优先（同一时间线单调，不依赖时钟）；旧账本回退 ts 锚定
+        if (anchorSeq !== undefined) return event.seq <= anchorSeq;
         const ts = Date.parse(event.ts);
         if (Number.isNaN(ts)) return false;
-        return ts <= anchor;
+        return ts <= Date.parse(firstTransition.ts);
       });
       const latest = users.at(-1);
       if (latest !== undefined && latest.event.type === 'user/message') {
         goal = latest.event.payload.text;
-        goalEvidence = { source: 'user-message', seq: latest.event.seq, ts: latest.event.ts };
+        goalEvidence = {
+          source: 'user-message',
+          seq: latest.event.seq,
+          ts: latest.event.ts,
+          anchor:
+            anchorSeq !== undefined
+              ? { kind: 'session-log-seq', seq: anchorSeq }
+              : { kind: 'journal-ts', ts: firstTransition.ts },
+        };
       }
     } catch {
       // 会话日志缺失/损坏：目标保持空串，不提供证据（不猜测）

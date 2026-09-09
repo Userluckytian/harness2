@@ -47,6 +47,7 @@ import { buildEffectiveRunConfig, type EffectiveRunConfig, type EffectiveRunConf
 import { loadPlanState, type PlanState } from '../interaction/plan-state.js';
 import { buildToolExecutionView, type ToolExecutionTrace, type ToolExecutionView } from '../interaction/execution-view.js';
 import { reviewChangeSet, type ChangeSet } from '../interaction/change-review.js';
+import type { RetryBudgetState } from '../interaction/retry-policy.js';
 import type { ApprovalConfig, MemoryMode } from '../config/schema.js';
 import { createDeliverySession, recoverQueue, submitDelivery, continueQueue } from '../interaction/delivery.js';
 import type { DeliverySession } from '../interaction/delivery.js';
@@ -350,6 +351,8 @@ export class SessionHub implements ResumeStateProvider {
   private readonly execTraces = new Map<string, Map<string, ExecTraceRecord>>();
   /** S7：每会话已生效配置 revision（turn 启动时 +1；run-config 只读投影的 snapshot 来源） */
   private readonly configRevisions = new Map<string, number>();
+  /** FixC D1：每会话最近 turn 的重试预算快照（run-config retry.budget 来源；不持久化，随进程） */
+  private readonly lastRetryBudgets = new Map<string, RetryBudgetState>();
 
   readonly approvalTimeoutMs: number;
   /** 观察者集合（WS 事件面 / 测试；addHooks 注册，返回退订函数） */
@@ -501,6 +504,7 @@ export class SessionHub implements ResumeStateProvider {
       ...(this.options.contextWindow !== undefined ? { contextWindow: this.options.contextWindow } : {}),
       ...(this.options.maxOutputTokens !== undefined ? { maxOutputTokens: this.options.maxOutputTokens } : {}),
       snapshot: { revision: this.configRevisions.get(id) ?? 0, capturedAt: now, effectiveAt: now },
+      ...(this.lastRetryBudgets.get(id) !== undefined ? { retryBudget: this.lastRetryBudgets.get(id) } : {}),
     };
     return buildEffectiveRunConfig(input);
   }
@@ -640,6 +644,7 @@ export class SessionHub implements ResumeStateProvider {
         // 阶段 7：上下文压缩装配（启动器按 config 派生；缺省不压缩）
         ...(this.options.compaction !== undefined ? { compaction: this.options.compaction } : {}),
       });
+      if (result.retryBudget !== undefined) this.lastRetryBudgets.set(id, result.retryBudget);
       this.emitTurnEnd(id, result);
       this.finalizeAttempt(id, result);
       this.bumpNudge(id); // turn-end 回调之后计数/触发复盘（异步，不阻塞主对话）
@@ -981,9 +986,24 @@ export class SessionHub implements ResumeStateProvider {
           background: i.background,
           from: i.from,
           to: i.to,
+          // FixC E1：记录写入时 session.log lastSeq 水位（plan-state 目标 seq 锚定；缺日志回退 ts）
+          ...(this.sessionLogLastSeq(sessionId) !== undefined
+            ? { sessionLogSeq: this.sessionLogLastSeq(sessionId) }
+            : {}),
         });
       },
     };
+  }
+
+  /** FixC E1：该会话 session.log 的当前 lastSeq（只读；缺日志/损坏 → undefined，plan-state 回退 ts 锚定） */
+  private sessionLogLastSeq(sessionId: SessionId): number | undefined {
+    try {
+      const dir = this.locate(sessionId);
+      const { events } = loadSession(dir);
+      return events.at(-1)?.event.seq ?? 0;
+    } catch {
+      return undefined;
+    }
   }
 
   /**

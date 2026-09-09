@@ -42,6 +42,7 @@ import {
   waitWithAbort,
   RetryAbortError,
   type EffectiveDelay,
+  type RetryBudgetState,
 } from '../interaction/retry-policy.js';
 import { RETRY_MAX_EXTRA_PER_TURN, RETRY_MAX_TOTAL_WAIT_SECONDS } from '../interaction/types.js';
 
@@ -312,6 +313,13 @@ async function runTurnWithWriter(writer: SessionWriter | SessionAppender, option
   let error: string | undefined;
   // S4b：重试预算为整 turn 共享（per-turn 额外 ≤6 + 累计等待 ≤120s），跨 step 累计
   const retryBudget = createRetryBudget();
+  /** FixC D1：turn 结束时随结果暴露预算快照（桌面读 used/remaining/stopReason） */
+  const retryBudgetView = (): RetryBudgetState | undefined => {
+    // 预算一次都没用 → 不输出（不臆造「已停」）；否则给出终态快照
+    return retryBudget.usedAttempts === 0 && retryBudget.stopReason() === 'none'
+      ? undefined
+      : retryBudget.budgetState();
+  };
   const earlyWarnings = [compactionWarning, skillsWarning].filter((w): w is string => w !== undefined);
   let warning: string | undefined = earlyWarnings.length > 0 ? earlyWarnings.join('；') : undefined;
   // S6：上一步是否执行过 must-complete（无法保证取消）工具——是则本边界不强制另开 step（steer 排队）
@@ -430,6 +438,8 @@ async function runTurnWithWriter(writer: SessionWriter | SessionAppender, option
             ? effectiveDelay(classification.retryAfterSeconds, retryBudget)
             : effectiveDelay(backoffSeconds(chainAttempt, Math.random), retryBudget);
         if (eff.stop) {
+          // FixC D1：Retry-After 超剩余预算 → 显式标记停因（桌面可读），不静默
+          retryBudget.markStop('retry-after');
           stepError = eff.reason;
           break;
         }
@@ -462,6 +472,7 @@ async function runTurnWithWriter(writer: SessionWriter | SessionAppender, option
         durationMs: elapsed(),
         error: stepError,
         turnId,
+        ...(retryBudgetView() !== undefined ? { retryBudget: retryBudgetView() } : {}),
       };
     }
 
@@ -622,5 +633,6 @@ async function runTurnWithWriter(writer: SessionWriter | SessionAppender, option
     ...(finalText !== undefined ? { finalText } : {}),
     ...(error !== undefined ? { error } : {}),
     ...(warning !== undefined ? { warning } : {}),
+    ...(retryBudgetView() !== undefined ? { retryBudget: retryBudgetView() } : {}),
   };
 }

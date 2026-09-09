@@ -94,6 +94,33 @@ export function backoffSeconds(attempt: number, rand: () => number = Math.random
   return baseSeconds * factor;
 }
 
+/**
+ * 预算停因（桌面可读枚举；FixC D1 方案二——预算不持久化，per-attempt 会话独立计数是设计语义）：
+ * - none：未停（可继续重试）；
+ * - budget-exhausted：次数预算超限（per-turn 额外次数用尽）；
+ * - timeout：累计等待预算超限（120s 等待用尽）；
+ * - retry-after：Retry-After 超出剩余等待预算 → 停（不提前违规重试），调用方显式标记。
+ */
+export type BudgetStopReason = 'none' | 'budget-exhausted' | 'timeout' | 'retry-after';
+
+/** 桌面可读的预算快照：已耗 / 剩余 / 停因（FixC D1 的 run-config retry.budget 契约） */
+export interface RetryBudgetState {
+  /** 整 turn 已用额外次数 */
+  usedAttempts: number;
+  /** 剩余可重试次数（maxExtraAttempts - usedAttempts，恒 ≥0） */
+  remainingAttempts: number;
+  /** 整 turn 已累计等待 ms */
+  waitMs: number;
+  /** 剩余可等 ms（恒 ≥0） */
+  remainingWaitMs: number;
+  /** 次数预算上限（S0 冻结值） */
+  maxExtraAttempts: number;
+  /** 等待预算上限 ms（S0 冻结值） */
+  maxWaitMs: number;
+  /** 停因（明确、可读；预算超限不得静默停） */
+  stopReason: BudgetStopReason;
+}
+
 /** 整 turn 重试预算状态机：per-turn 额外次数 ≤6 + 累计等待 ≤120s */
 export interface RetryBudget {
   /** 整 turn 已用额外次数（含等待均已记录） */
@@ -102,15 +129,32 @@ export interface RetryBudget {
   readonly waitMs: number;
   /** 剩余可等 ms（预算 - 已用，恒 ≥0） */
   remainingWaitMs(): number;
+  /** 剩余可重试次数（恒 ≥0） */
+  remainingAttempts(): number;
   /** next 是否可重试且未超预算（次数与累计等待任一超限即 false） */
   canRetry(): boolean;
+  /**
+   * 当前停因：显式标记优先（retry-after）；否则按状态动态推导
+   * （次数用尽 → budget-exhausted；等待用尽 → timeout；否则 none）。
+   */
+  stopReason(): BudgetStopReason;
+  /** 显式标记停因（如 Retry-After 超剩余预算 → 'retry-after'）；一旦标记即终态（turn 内预算不复用） */
+  markStop(reason: BudgetStopReason): void;
   /** 登记一次额外重试与本轮等待 ms */
   record(delayMs: number): void;
+  /** 一次性可读快照（桌面视图字段来源） */
+  budgetState(): RetryBudgetState;
 }
 
 export function createRetryBudget(): RetryBudget {
   let usedAttempts = 0;
   let waitMs = 0;
+  let markedStop: BudgetStopReason = 'none';
+  const dynamicStopReason = (): BudgetStopReason => {
+    if (usedAttempts >= RETRY_MAX_EXTRA_PER_TURN) return 'budget-exhausted';
+    if (waitMs >= MAX_WAIT_MS) return 'timeout';
+    return 'none';
+  };
   return {
     get usedAttempts() {
       return usedAttempts;
@@ -121,12 +165,32 @@ export function createRetryBudget(): RetryBudget {
     remainingWaitMs() {
       return Math.max(0, MAX_WAIT_MS - waitMs);
     },
+    remainingAttempts() {
+      return Math.max(0, RETRY_MAX_EXTRA_PER_TURN - usedAttempts);
+    },
     canRetry() {
-      return usedAttempts < RETRY_MAX_EXTRA_PER_TURN && waitMs < MAX_WAIT_MS;
+      return dynamicStopReason() === 'none';
+    },
+    stopReason() {
+      return markedStop !== 'none' ? markedStop : dynamicStopReason();
+    },
+    markStop(reason: BudgetStopReason) {
+      if (reason !== 'none') markedStop = reason;
     },
     record(delayMs: number) {
       usedAttempts += 1;
       if (Number.isFinite(delayMs) && delayMs > 0) waitMs += delayMs;
+    },
+    budgetState() {
+      return {
+        usedAttempts,
+        remainingAttempts: Math.max(0, RETRY_MAX_EXTRA_PER_TURN - usedAttempts),
+        waitMs,
+        remainingWaitMs: Math.max(0, MAX_WAIT_MS - waitMs),
+        maxExtraAttempts: RETRY_MAX_EXTRA_PER_TURN,
+        maxWaitMs: MAX_WAIT_MS,
+        stopReason: markedStop !== 'none' ? markedStop : dynamicStopReason(),
+      };
     },
   };
 }

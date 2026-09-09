@@ -6,8 +6,9 @@
 // 事件溯源约束：模型可见输入仍由 session.log 投影；本层只做操作状态，不写第二套对话正文。
 import { QUEUE_MAX_DEFAULT } from './types.js';
 import type { ClientMessageId, QueueEntry, SubmitAck, SubmitRequest, SessionId } from './types.js';
-import { RuntimeJournal, judgeSubmission } from './runtime-journal.js';
+import { RuntimeJournal, judgeSubmission, readEntries } from './runtime-journal.js';
 import type { QueueAcceptedEntry, SubmissionStatus, SubmissionJudgement } from './runtime-journal.js';
+import { computeProjection, loadSession } from '../session/reader.js';
 
 // —— 内容指纹（同 id 判「同内容」用；references 排序敏感，故按提交原样序列化） ——
 
@@ -329,4 +330,120 @@ function durableQueueSeqFromEntries(dir: string, clientMessageId: ClientMessageI
     (e): e is QueueAcceptedEntry => e.kind === 'queue/accepted' && e.clientMessageId === clientMessageId,
   );
   return found?.payload.queueSeq;
+}
+
+// —— FixC C1 崩溃对账：journal accepted + session.log 缺 turn 的 orphaned 口径 ——
+
+/**
+ * started 阶段的细分 phase：
+ * - completed：存在已 durable 的终态 outcome（task/transition 带 clientMessageId 溯源）；
+ * - in-flight：已 durable accepted、已有执行证据/可归因 turn，但无终态（保守：不得重跑）；
+ * - orphaned：已 durable accepted 但**从未启动**（无执行证据 && session.log 无活动 user turn）。
+ */
+export type ReconciliationPhase = 'in-flight' | 'completed' | 'orphaned';
+
+export interface SubmissionReconciliation {
+  /** not_started / started / unknown（复用 judgeSubmission 三态；绝无 rejected） */
+  status: SubmissionStatus;
+  /** status=started 时的细分（含 orphaned） */
+  phase?: ReconciliationPhase;
+  /** durable accepted 行的 journal seq */
+  acceptedSeq?: number;
+  /** FixC C1：orphaned = durable accepted 但从未启动执行（session.log 缺对应 turn） */
+  orphaned: boolean;
+  /** 本次扫描是否丢弃过尾部（半行/损坏区） */
+  truncated: boolean;
+  /** journal 是否有该 clientMessageId 的执行证据（task/transition 溯源） */
+  executedInJournal: boolean;
+  /** session.log 是否存在活动 user/message turn（跨文件一致性协查；缺失/损坏=false） */
+  sessionLogHasTurn: boolean;
+  /** 底层 judgeSubmission 判定（对账依据） */
+  judgement: SubmissionJudgement;
+}
+
+/** journal 内该提交是否已有执行证据：accepted 之后出现带 clientMessageId 溯源的 task/transition */
+function hasExecutionEvidence(dir: string, clientMessageId: ClientMessageId, acceptedSeq: number | undefined): boolean {
+  return readEntries(dir)
+    .entries.filter(
+      (e) =>
+        e.kind === 'task/transition' &&
+        e.clientMessageId === clientMessageId &&
+        (acceptedSeq === undefined || e.seq > acceptedSeq),
+    )
+    .some((e) => e.kind === 'task/transition');
+}
+
+/** session.log 是否存在活动 user/message turn（只读；缺失/损坏 → false） */
+function sessionLogHasActiveUserTurn(dir: string): boolean {
+  try {
+    const session = loadSession(dir);
+    computeProjection(session);
+    return session.events.some(({ event, active }) => active && event.type === 'user/message');
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * FixC C1：崩溃后完整对账（core 内完成，只读 journal + session.log，不依赖桌面/重放兜底）。
+ * 口径：
+ * - not_started：journal 无 durable accepted → 可安全重提；
+ * - unknown：journal 中部损坏、无法确认 → 绝不当作 rejected/not_started；
+ * - started：
+ *   - 有执行证据（task/transition 溯源）→ completed（终态）/ in-flight（未终态），orphaned=false；
+ *   - 无执行证据且 session.log 无活动 user turn → **orphaned**（accepted 但从未启动执行），
+ *     orphaned=true、phase='orphaned'，**不当作 rejected**（调用方可选择复用既有 receipt 或显式重驱动）；
+ *   - 无执行证据但 session.log 已有活动 user turn（无法归因）→ 保守 started/in-flight，orphaned=false
+ *     （不得断言未启动、不得重跑）。
+ */
+export function reconcileSubmission(dir: string, clientMessageId: ClientMessageId): SubmissionReconciliation {
+  const judgement = judgeSubmission(dir, clientMessageId);
+  const sessionLogHasTurn = sessionLogHasActiveUserTurn(dir);
+
+  if (judgement.status === 'not_started') {
+    return {
+      status: 'not_started',
+      orphaned: false,
+      truncated: judgement.truncated,
+      executedInJournal: false,
+      sessionLogHasTurn,
+      judgement,
+    };
+  }
+  if (judgement.status === 'unknown') {
+    return {
+      status: 'unknown',
+      orphaned: false,
+      truncated: true,
+      executedInJournal: false,
+      sessionLogHasTurn,
+      judgement,
+    };
+  }
+
+  const executedInJournal = hasExecutionEvidence(dir, clientMessageId, judgement.acceptedSeq);
+  if (executedInJournal) {
+    return {
+      status: 'started',
+      phase: judgement.phase === 'completed' ? 'completed' : 'in-flight',
+      acceptedSeq: judgement.acceptedSeq,
+      orphaned: false,
+      truncated: judgement.truncated,
+      executedInJournal: true,
+      sessionLogHasTurn,
+      judgement,
+    };
+  }
+  // 无执行证据：orphaned 仅当 session.log 也无活动 turn（accepted 后从未启动）；有 turn 无法归因 → 保守 started
+  const orphaned = !sessionLogHasTurn;
+  return {
+    status: 'started',
+    phase: orphaned ? 'orphaned' : 'in-flight',
+    acceptedSeq: judgement.acceptedSeq,
+    orphaned,
+    truncated: judgement.truncated,
+    executedInJournal: false,
+    sessionLogHasTurn,
+    judgement,
+  };
 }

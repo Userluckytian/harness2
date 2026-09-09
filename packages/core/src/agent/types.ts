@@ -7,6 +7,7 @@ import type { ToolRegistry } from '../tools/registry.js';
 import type { ApprovalHandler } from '../tools/types.js';
 import type { ExecutionLifecycleObserver } from '../tools/executor.js';
 import type { SteerRequest, SteerResult } from '../interaction/types.js';
+import type { RetryBudgetState } from '../interaction/retry-policy.js';
 
 /**
  * S6 控制输入（steer）通道。外部实现把绑定到某 turn 的 steer 塞进队列；loop 在每个
@@ -153,4 +154,9 @@ export interface TurnResult {
   error?: string;
   /** 非致命告警（如 provider 请求暂停续跑 paused）：turn 正常返回，调用方应向用户展示 */
   warning?: string;
+  /**
+   * FixC D1：本 turn 结束时的重试预算快照（used/remaining/stopReason）。预算不持久化，
+   * 随 turn 生命周期；桌面/hub 据此展示「为什么停」（budget-exhausted/timeout/retry-after）。
+   */
+  retryBudget?: RetryBudgetState;
 }

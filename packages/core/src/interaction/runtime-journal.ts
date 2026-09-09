@@ -77,6 +77,12 @@ export interface TaskTransitionEntry extends RuntimeJournalEntryBase {
   parentTaskId?: TaskId;
   /** 溯源到提交（可选；judge 判 outcome 依赖该字段） */
   clientMessageId?: ClientMessageId;
+  /**
+   * FixC E1：本账本行写入时该会话 session.log 的 lastSeq 水位（加性；旧账本可缺省）。
+   * 供 plan-state 目标锚定：目标 = session.log 内 seq <= 水位的最后活动 user/message
+   * （同一时间线单调、不依赖跨文件时钟）。
+   */
+  sessionLogSeq?: number;
   payload: { from: TaskState; to: TaskState; background?: boolean };
 }
 
@@ -115,6 +121,7 @@ export type JournalAppendInput =
       taskId: TaskId;
       parentTaskId?: TaskId;
       clientMessageId?: ClientMessageId;
+      sessionLogSeq?: number;
       from: TaskState;
       to: TaskState;
       background?: boolean;
@@ -281,6 +288,7 @@ export function parseEntry(line: string): RuntimeJournalEntry | null {
       if (!isNonEmptyString(raw['taskId'])) return null;
       if (raw['parentTaskId'] !== undefined && !isNonEmptyString(raw['parentTaskId'])) return null;
       if (raw['clientMessageId'] !== undefined && !isNonEmptyString(raw['clientMessageId'])) return null;
+      if (raw['sessionLogSeq'] !== undefined && !isNonNegativeInteger(raw['sessionLogSeq'])) return null;
       const p = payload as Record<string, unknown> | undefined;
       if (!p || !isTaskState(p['from']) || !isTaskState(p['to'])) return null;
       const entry: TaskTransitionEntry = {
@@ -289,6 +297,7 @@ export function parseEntry(line: string): RuntimeJournalEntry | null {
         taskId: raw['taskId'],
         parentTaskId: isNonEmptyString(raw['parentTaskId']) ? raw['parentTaskId'] : undefined,
         clientMessageId: isNonEmptyString(raw['clientMessageId']) ? raw['clientMessageId'] : undefined,
+        sessionLogSeq: isNonNegativeInteger(raw['sessionLogSeq']) ? raw['sessionLogSeq'] : undefined,
         payload: {
           from: p['from'],
           to: p['to'],
@@ -708,12 +717,16 @@ function buildAppendEntry(input: JournalAppendInput, seq: number): RuntimeJourna
       if (!canTaskTransition(input.from, input.to)) {
         throw new InvalidJournalAppendError(`task/transition: illegal transition ${input.from} → ${input.to}`);
       }
+      if (input.sessionLogSeq !== undefined && !isNonNegativeInteger(input.sessionLogSeq)) {
+        throw new InvalidJournalAppendError(`task/transition: sessionLogSeq must be a non-negative integer, got ${String(input.sessionLogSeq)}`);
+      }
       const entry: TaskTransitionEntry = {
         ...base,
         kind: 'task/transition',
         taskId: input.taskId,
         parentTaskId: input.parentTaskId === undefined ? undefined : input.parentTaskId,
         clientMessageId: input.clientMessageId === undefined ? undefined : input.clientMessageId,
+        sessionLogSeq: input.sessionLogSeq === undefined ? undefined : input.sessionLogSeq,
         payload: {
           from: input.from,
           to: input.to,

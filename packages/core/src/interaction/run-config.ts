@@ -14,6 +14,7 @@ import {
   RETRY_MAX_EXTRA_PER_TURN,
   RETRY_MAX_TOTAL_WAIT_SECONDS,
 } from './types.js';
+import type { RetryBudgetState } from './retry-policy.js';
 
 /** 连接状态：只反映装配/探活给出的真值；缺省 unknown（不猜测 connected） */
 export type EffectiveConnectionStatus = 'connected' | 'disconnected' | 'unknown';
@@ -87,6 +88,12 @@ export interface EffectiveRunConfig {
       backoffSeconds: readonly number[];
       maxExtraPerTurn: number;
       maxTotalWaitSeconds: number;
+      /**
+       * FixC D1（方案二）：最近 turn 的重试预算可读状态（used/remaining/stopReason）。
+       * 预算不持久化（per-attempt 会话独立计数是设计语义，重启清零），仅暴露当前可见的
+       * 已耗/剩余/停因，桌面据此展示「为什么停」。调用方装配（hub 从 TurnResult 记录）。
+       */
+      budget?: RetryBudgetState;
     };
   };
   readonly snapshot: EffectiveRunConfigSnapshot;
@@ -115,6 +122,8 @@ export interface EffectiveRunConfigInput {
   contextWindow?: number;
   maxOutputTokens?: number;
   snapshot: EffectiveRunConfigSnapshot;
+  /** FixC D1：最近 turn 的重试预算可读状态（缺省 = 未发生/未记录，不臆造） */
+  retryBudget?: RetryBudgetState;
 }
 
 /**
@@ -190,6 +199,7 @@ export function buildEffectiveRunConfig(input: EffectiveRunConfigInput): Effecti
         backoffSeconds: [...RETRY_BACKOFF_SECONDS],
         maxExtraPerTurn: RETRY_MAX_EXTRA_PER_TURN,
         maxTotalWaitSeconds: RETRY_MAX_TOTAL_WAIT_SECONDS,
+        ...(input.retryBudget !== undefined ? { budget: input.retryBudget } : {}),
       },
     },
     snapshot: { ...input.snapshot },
