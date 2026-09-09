@@ -2,7 +2,7 @@
 // 布局纯逻辑见 shared/layout.ts；持久化经主进程落 ~/.harness2/desktop-layout.json。
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { displayToolName, type ChatItem } from './chat-model.js';
-import type { ConnectionStatus, SettingsNotifyDetails, SettingsPreferencesShape, SettingsTheme, WsFrame } from '../shared/protocol.js';
+import type { ConnectionStatus, SettingsNotifyDetails, SettingsPreferencesShape, SettingsTheme } from '../shared/protocol.js';
 import { MAX_PANES } from '../shared/layout.js';
 import { applyTheme, themeLabel } from './theme.js';
 import { SettingsDialog } from './components/SettingsDialog.js';
@@ -11,7 +11,7 @@ import { DiffCard } from './components/DiffCard.js';
 import { AppStore, type AppState, type SessionMeta } from './store.js';
 import { createController } from './app-controller.js';
 import { filterSessionList } from '../shared/metadata.js';
-import { NOTIFY_WINDOW_TITLE, composeNotifyContent, shouldNotifyOnTurnEnd } from '../shared/notify.js';
+import { composeNotifyContent, shouldNotifyOnTurnEnd } from '../shared/notify.js';
 import { resolveFileRefs } from '../shared/file-ref.js';
 import { CommandPalette, JUMP_TO_SESSION_ID, type PaletteCommand, type PaletteSession } from './components/CommandPalette.js';
 
@@ -598,7 +598,6 @@ export function moveSession(state: AppState, delta: -1 | 1): string | null {
 
 export function App(): React.ReactNode {
   const state = useAppState();
-  const statusInfo = STATUS_LABEL[state.status];
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [theme, setTheme] = useState<SettingsTheme>('warmPaper');

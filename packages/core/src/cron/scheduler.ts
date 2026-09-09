@@ -11,7 +11,7 @@ import { closeSync, existsSync, mkdirSync, openSync, readFileSync, unlinkSync, w
 import { join } from 'node:path';
 import { runTurn } from '../agent/loop.js';
 import type { TurnResult } from '../agent/types.js';
-import type { ApprovalDecision, ApprovalInput, ApprovalHandler } from '../tools/types.js';
+import type { ApprovalHandler } from '../tools/types.js';
 import type { ToolRegistry } from '../tools/registry.js';
 import type { ChatProvider } from '../provider/types.js';
 import { SessionWriter } from '../session/writer.js';

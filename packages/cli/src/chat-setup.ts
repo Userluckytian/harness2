@@ -51,7 +51,7 @@ import {
   type ApprovalMode,
 } from '@harness2/core';
 import type { ChatOptions } from './legacy-chat.js';
-import { PLAN_MODE_SYSTEM_PREFIX, CORE_MODE_TO_ALIAS, type ModeAlias } from './mode-alias.js';
+import { PLAN_MODE_SYSTEM_PREFIX } from './mode-alias.js';
 
 /** --provider mock 的内置演示脚本：两轮工具调用（write 文件 + read 验证） */
 export const MOCK_DEMO_SCRIPT: MockScript = [

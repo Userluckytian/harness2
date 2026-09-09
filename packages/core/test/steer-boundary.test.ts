@@ -251,7 +251,7 @@ describe('S6 安全 step 边界 steer', () => {
     let pushedAsync = false;
     const streamProvider: ChatProvider = {
       name: 'stream',
-      async *streamChat(req) {
+      async *streamChat(_req) {
         yield { type: 'text-delta', text: '块0' };
         for (const t of ['块1', '块2', '块3', '块4']) {
           await new Promise((r) => setTimeout(r, 10));

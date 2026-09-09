@@ -3,7 +3,7 @@
 // 审批上抛一路到父（task 内工具审批带 taskId/parentTaskId，父 pendingApprovalsFor 可见）；
 // queue continue 清场（paused 队列 continue 后能接受新 submit）；task/transition 落 runtime journal。
 import { afterEach, describe, expect, it } from 'vitest';
-import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { existsSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
@@ -18,10 +18,10 @@ import {
 } from '../src/index.js';
 import { writeTool } from '../src/tools/predefined/index.js';
 import { createSubagentTools } from '../src/agent/subagent.js';
-import { RUNTIME_JOURNAL_FILE, RuntimeJournal } from '../src/interaction/runtime-journal.js';
+import { RuntimeJournal } from '../src/interaction/runtime-journal.js';
 import type { RuntimeJournalEntry } from '../src/interaction/runtime-journal.js';
-import type { TaskRunResult, TaskSpec } from '../src/agent/task-coordinator.js';
-import type { CancelRequest, ResumeSubscriptionRequest } from '../src/interaction/types.js';
+import type { TaskRunResult } from '../src/agent/task-coordinator.js';
+import type { CancelRequest } from '../src/interaction/types.js';
 
 const dirs: string[] = [];
 function tmpDir(prefix = 'h2-subcoord-'): string {

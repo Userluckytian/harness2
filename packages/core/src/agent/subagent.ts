@@ -15,7 +15,6 @@
 //   v1 口径其余不变：子会话不注入记忆/压缩（短生命周期子任务，与 cron 执行同口径）；
 //   非沙箱——子会话与父同进程运行，隔离边界与插件小节一致（architecture.md 如实声明）。
 import { resolve, isAbsolute } from 'node:path';
-import { randomUUID } from 'node:crypto';
 import { loadSession } from '../session/reader.js';
 import { SESSION_ID_PATTERN } from '../session/manager.js';
 import { SnapshotStore } from '../session/snapshots.js';

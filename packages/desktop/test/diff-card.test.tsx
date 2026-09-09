@@ -4,7 +4,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, render, screen, waitFor } from '@testing-library/react';
 import React from 'react';
-import { buildDiffRows, DEFAULT_VISIBLE_LINES, DiffCard, type DiffRow } from '../src/renderer/components/DiffCard.js';
+import { buildDiffRows, DEFAULT_VISIBLE_LINES, DiffCard } from '../src/renderer/components/DiffCard.js';
 import type { SnapshotForCallShape } from '../src/shared/protocol.js';
 
 /* —— buildDiffRows 纯函数 —— */

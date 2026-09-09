@@ -6,7 +6,6 @@ import {
   MEMORY_BUDGET_CHARS,
   USER_BUDGET_CHARS,
   memoryFileName,
-  MemoryStore,
   type MemoryApplyResult,
   type MemoryOp,
 } from './store.js';

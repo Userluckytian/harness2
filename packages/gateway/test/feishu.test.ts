@@ -41,22 +41,6 @@ async function startFeishuApiStub(): Promise<{ port: number; sent: Array<{ path:
   return { port, sent };
 }
 
-function post(url: string, body: unknown): Promise<{ status: number; text: string }> {
-  return new Promise((resolve, reject) => {
-    const req = import('node:http').then(({ request }) =>
-      request(url, { method: 'POST', headers: { 'content-type': 'application/json' } }, (res) => {
-        const chunks: Buffer[] = [];
-        res.on('data', (c: Buffer) => chunks.push(c));
-        res.on('end', () => resolve({ status: res.statusCode ?? 0, text: Buffer.concat(chunks).toString('utf8') }));
-      }),
-    );
-    void req.then((r) => {
-      r.on('error', reject);
-      r.end(JSON.stringify(body));
-    });
-  });
-}
-
 describe('FeishuAdapter（离线 stub）', () => {
   it('url_verification 挑战应答', async () => {
     const adapter = new FeishuAdapter({

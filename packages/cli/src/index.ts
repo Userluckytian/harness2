@@ -17,7 +17,6 @@ import {
   defaultPendingRoot,
   defaultPluginsRoot,
   defaultSkillsRoot,
-  defaultSessionsRoot,
   describePermissions,
   exportSession,
   installBrowserRuntime,
@@ -28,7 +27,6 @@ import {
   McpManager,
   MemoryStore,
   MockProvider,
-  noteCrashSessionId,
   PendingMemoryStore,
   projectSkillsRoot,
   readAuthFile,
@@ -49,7 +47,7 @@ import {
   type MemoryTarget,
   type MockScript,
 } from '@harness2/core';
-import { runChat, MOCK_DEMO_SCRIPT } from './chat.js';
+import { runChat } from './chat.js';
 // gateway 仅 gateway 命令使用：动态加载，避免拖慢 chat/serve 等所有命令的启动
 import type { PlatformAdapter } from '@harness2/gateway';
 
@@ -893,4 +891,4 @@ program
     process.on('SIGTERM', () => void shutdown());
   });
 
-program.parseAsync(process.argv);
+void program.parseAsync(process.argv);

@@ -16,7 +16,6 @@ import {
   type PluginEventFrame,
   type PluginEventHandler,
   type PluginManifest,
-  type PluginModule,
 } from './types.js';
 
 export interface PluginBusOptions {

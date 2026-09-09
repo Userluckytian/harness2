@@ -23,8 +23,6 @@ import { computeProjection, loadSession, type LoadedSession } from './reader.js'
 import { REWIND_POINTS_FILE } from './snapshots.js';
 import { SESSION_LOG_FILE, parseEventLine, type SessionHeaderPayload } from './types.js';
 
-/** 会话目录锁文件名（进程状态，永不入包；与 types.ts SESSION_LOCK_FILE 同名） */
-const LOCK_FILE = 'lock';
 /** 快照辅助目录名（当前内核不创建；存在即随导出，冻结结构预留） */
 const SNAPSHOTS_DIR = 'snapshots';
 

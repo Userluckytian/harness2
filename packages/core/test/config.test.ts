@@ -1,6 +1,6 @@
 // 配置体系测试：两级加载/深合并/${VAR} 展开/schema 校验/脱敏/auth 读写与损坏容错。
 import { afterEach, describe, expect, it } from 'vitest';
-import { chmodSync, existsSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdtempSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { loadConfig } from '../src/config/load.js';

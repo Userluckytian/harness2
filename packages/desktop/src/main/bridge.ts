@@ -5,7 +5,6 @@ import { BrowserWindow, Notification, dialog, ipcMain, type IpcMainInvokeEvent }
 import { composeNotifyContent } from '../shared/notify.js';
 import type {
   ConnectionStatus,
-  InvokeCommand,
   SessionSummaryShape,
   StatusDetail,
   WsFrame,
@@ -200,7 +199,7 @@ export function createBridge(deps: BridgeDeps): Bridge {
     try {
       if (Notification.isSupported()) n.show();
       else {
-        dialog.showMessageBox({
+        void dialog.showMessageBox({
           type: 'info',
           title,
           message: title,

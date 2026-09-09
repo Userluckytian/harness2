@@ -213,7 +213,7 @@ describe('resolveDelivery 崩溃对账', () => {
   it('从未提交 → not_started（可安全重提），ack 不是 rejected', () => {
     const dir = tmpDir();
     const journal = RuntimeJournal.create(dir, { fsync: false });
-    const s = createDeliverySession(journal, 's1');
+    createDeliverySession(journal, 's1');
     const r = resolveDelivery(dir, 'ghost', { sessionLogState: 'none' });
     expect(r.status).toBe('not_started');
     expect(r.ack.state).not.toBe('rejected');

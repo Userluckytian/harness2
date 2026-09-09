@@ -192,10 +192,6 @@ function isNonEmptyString(v: unknown): v is string {
   return typeof v === 'string' && v.length > 0;
 }
 
-function optionalString(v: unknown): string | undefined {
-  return typeof v === 'string' ? v : undefined;
-}
-
 function isRecord(v: unknown): v is Record<string, unknown> {
   return typeof v === 'object' && v !== null && !Array.isArray(v);
 }

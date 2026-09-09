@@ -10,7 +10,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { SessionHub, type SessionHubHooks } from '../src/server/sessions.js';
+import { SessionHub } from '../src/server/sessions.js';
 import { SessionManager } from '../src/session/manager.js';
 import { ToolRegistry } from '../src/tools/registry.js';
 import type { ToolDefinition } from '../src/tools/types.js';

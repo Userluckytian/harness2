@@ -6,7 +6,6 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { randomUUID } from 'node:crypto';
 import { RuntimeJournal } from '../src/interaction/runtime-journal.js';
 import { TASK_STATES, TASK_TERMINAL_STATES } from '../src/interaction/types.js';
 import type { TaskState } from '../src/interaction/types.js';

@@ -5,7 +5,6 @@ import { Box, Text } from 'ink';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { getContextUsage } from '@harness2/core';
-import type { ApprovalMode } from '@harness2/core';
 import { CORE_MODE_TO_ALIAS } from '../mode-alias.js';
 import type { ChatRuntime } from '../chat-setup.js';
 

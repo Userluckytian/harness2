@@ -129,7 +129,7 @@ function AppearanceSection({ prefs, onSave }: { prefs: SettingsPreferencesShape;
   );
 }
 
-function ProvidersSection({ cfg, onSave }: { cfg: SettingsConfigShape; onSave: () => Promise<void> }) {
+function ProvidersSection({ cfg }: { cfg: SettingsConfigShape; onSave: () => Promise<void> }) {
   return (
     <Section title="模型与角色" desc="channel 列表与 roles 映射（config.json 同一份，与 CLI 共用）">
       <div className="settings-table">

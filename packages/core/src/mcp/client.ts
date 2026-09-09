@@ -384,7 +384,7 @@ export class McpManager {
           ? (inputSchema as Record<string, unknown>)
           : { type: 'object', properties: {} },
       // 不声明 concurrencySafe → unsafe：串行执行 + 审批默认 ask（安全缺省）
-      async execute(args: unknown, ctx: ToolContext): Promise<ToolOutput> {
+      async execute(args: unknown, _ctx: ToolContext): Promise<ToolOutput> {
         if (entry.client === null) {
           return { error: `MCP 服务器 "${entry.name}" 未连接（state=${entry.state}）` };
         }

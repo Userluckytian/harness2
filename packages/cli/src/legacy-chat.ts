@@ -15,8 +15,6 @@ import { expandContextRefs, hasContextRefs } from './context-ref.js';
 import {
   ASK_CANCELLED,
   ChatSetupAbort,
-  MOCK_CHILD_DEMO_SCRIPT,
-  MOCK_DEMO_SCRIPT,
   setupChatSession,
   type ChatRuntime,
 } from './chat-setup.js';

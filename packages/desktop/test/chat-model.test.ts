@@ -17,8 +17,6 @@ function ev(type: string, payload: Record<string, unknown>, active = true): Acti
   return { v: 1, seq: seqCounter, ts: '2026-09-06T00:00:00Z', type, payload, active };
 }
 
-const TURN1 = { turnId: 't1' };
-
 function fullTurnEvents(): ActiveEvent[] {
   seqCounter = 0; // 每次从 1 开始（影子测试按相对 seq 遮蔽）
   return [

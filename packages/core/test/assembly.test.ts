@@ -13,7 +13,6 @@ import { loadSession } from '../src/session/reader.js';
 import { SUBAGENT_TOOL_NAMES } from '../src/agent/subagent.js';
 import { PluginBus } from '../src/plugins/bus.js';
 import { defaultPluginsRoot } from '../src/plugins/loader.js';
-import { McpManager } from '../src/mcp/client.js';
 import { startServe } from '../src/server/http.js';
 import { KNOWN_EVENT_TYPES } from '../src/session/types.js';
 

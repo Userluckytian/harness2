@@ -1,7 +1,7 @@
 // @file/@dir 引用集成测试（spawn 真实 CLI + OpenAI SSE stub）：
 // legacy 路径发送前把引用块拼进 user message，stub 收到请求体并断言 header 进入模型输入。
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
-import { spawn, type ChildProcess } from 'node:child_process';
+import { spawn } from 'node:child_process';
 import { createServer, type Server } from 'node:http';
 import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';

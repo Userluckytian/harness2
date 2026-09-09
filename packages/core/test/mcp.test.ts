@@ -3,7 +3,7 @@
 // config.mcpServers schema 校验。
 // 本地 MCP server 全部用同一 SDK 的 server 端构造（InMemory 配对 / stdio 子进程 / Streamable HTTP），
 // 零外部依赖、零真实网络。
-import { afterEach, describe, expect, it } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import { createServer as createHttpServer, type Server as HttpServer } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { join } from 'node:path';
@@ -327,11 +327,9 @@ describe('McpManager 断线退避重启', () => {
   it('P2-2：down 状态恢复路径——connectAll 二次调用对 down entry 重连成功（补测：含工具恢复）', async () => {
     const tools = new ToolRegistry();
     const lines: string[] = [];
-    let attempts = 0;
     let healthy = false;
     const manager = new McpManager(
       testManagerOptions(tools, lines, async () => {
-        attempts += 1;
         if (!healthy) throw new Error('connection refused');
         return (await makeLinkedServer({})).transport;
       }),

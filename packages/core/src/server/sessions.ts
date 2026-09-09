@@ -45,17 +45,16 @@ import type {
 import { SessionSteerSink } from '../interaction/steer-sink.js';
 import { isApprovalDecision, TASK_STATES, matchTurnGeneration } from '../interaction/types.js';
 import { RUNTIME_JOURNAL_FILE, RuntimeJournal, readEntries } from '../interaction/runtime-journal.js';
-import type { TaskTransitionEntry } from '../interaction/runtime-journal.js';
 import { buildEffectiveRunConfig, type EffectiveRunConfig, type EffectiveRunConfigInput } from '../interaction/run-config.js';
 import { loadPlanState, type PlanState } from '../interaction/plan-state.js';
 import { buildToolExecutionView, type ToolExecutionTrace, type ToolExecutionView } from '../interaction/execution-view.js';
 import { reviewChangeSet, type ChangeSet } from '../interaction/change-review.js';
 import type { RetryBudgetState } from '../interaction/retry-policy.js';
-import type { ApprovalConfig, MemoryMode } from '../config/schema.js';
+import type { ApprovalConfig } from '../config/schema.js';
 import { createDeliverySession, recoverQueue, submitDelivery, continueQueue } from '../interaction/delivery.js';
 import type { DeliverySession } from '../interaction/delivery.js';
 import { TaskCoordinator, reconstructTasks } from '../agent/task-coordinator.js';
-import type { TaskRunResult, TaskSpec, TaskTransitionRecorder, TaskWriteMode } from '../agent/task-coordinator.js';
+import type { TaskSpec, TaskTransitionRecorder, TaskWriteMode } from '../agent/task-coordinator.js';
 import { WatermarkCursor } from '../interaction/resume-state.js';
 import type { ResumeStateProvider } from '../interaction/resume-state.js';
 import { ApprovalQueue, type ApprovalQueueCard } from '../interaction/approval-queue.js';
@@ -72,7 +71,7 @@ import { computeProjection, loadSession, type LoadedEvent } from '../session/rea
 import { SnapshotStore } from '../session/snapshots.js';
 import { SessionManager, SESSION_ID_PATTERN } from '../session/manager.js';
 import { forkSession, ForkError, type ForkResult } from '../session/fork.js';
-import { redoLastUndo, undoLastTurn, UndoRedoError, type UndoRedoResult } from '../session/undo.js';
+import { redoLastUndo, undoLastTurn, type UndoRedoResult } from '../session/undo.js';
 import { createSubagentTools, SUBAGENT_TOOL_NAMES } from '../agent/subagent.js';
 import type { PluginBus } from '../plugins/bus.js';
 import type {

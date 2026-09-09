@@ -4,7 +4,6 @@
 // 解析 + im/v1/messages 出站），端点由装配方暴露。
 // 红线：文本收发；tenant_access_token 单飞刷新（internal app：app_id+app_secret）；零新写入路径。
 import { createServer, type Server, type ServerResponse } from 'node:http';
-import { createHmac } from 'node:crypto';
 import { policyAllows, type GatewayChannelName, type InboundMessage, type PlatformAdapter } from '../../types.js';
 import type { GatewayChannelConfig } from '@harness2/core';
 

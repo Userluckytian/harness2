@@ -31,15 +31,10 @@ import type {
   ApprovalRequestContract,
   ApprovalScope,
   AttemptFinalFrame,
-  CancelAck,
   CancelAckState,
-  CancelRequest,
-  DeliveryDeltaFrame,
   MessageReference,
   ResumeSnapshot,
-  ResumeSubscriptionRequest,
   SubmitAck,
-  SubmitRequest,
 } from '../interaction/types.js';
 import { isCancelTargetKind, isSubmitIntent, isTurnGeneration, isValidEpoch, isValidLastSeq } from '../interaction/types.js';
 import { HubError, SessionHub, type TurnDelta } from './sessions.js';

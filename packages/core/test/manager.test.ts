@@ -1,6 +1,6 @@
 // 会话管理器测试：cwd 编码规则 / 全局布局 / list 排序与摘要 / search 命中 / resume 续写。
 import { afterEach, describe, expect, it } from 'vitest';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, utimesSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, rmSync, utimesSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { defaultSessionsRoot, encodeCwd, SessionManager } from '../src/session/manager.js';

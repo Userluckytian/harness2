@@ -16,7 +16,6 @@ import { useTurnStream, type TurnSnapshot } from './useTurnStream.js';
 import { parseCommand, HELP_TEXT } from '../commands.js';
 import { expandContextRefs, hasContextRefs } from '../context-ref.js';
 import { CORE_MODE_TO_ALIAS, MODE_ALIAS_ORDER, MODE_ALIAS_LABEL, MODE_ALIAS_TO_CORE, type ModeAlias } from '../mode-alias.js';
-import type { ApprovalMode } from '@harness2/core';
 import { getContextUsage } from '@harness2/core';
 
 /** 现代终端检测：Windows Terminal（WT_SESSION）或 VS Code 终端（TERM_PROGRAM=vscode） */
@@ -119,7 +118,6 @@ function InkShell({
   runtime,
   bootLines,
   dialog,
-  onExit,
 }: {
   runtime: ChatRuntime;
   bootLines: string[];

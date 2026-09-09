@@ -23,11 +23,7 @@ import {
 } from '../src/index.js';
 import type {
   CancelRequest,
-  CancelAck,
-  ResumeSubscriptionRequest,
-  ResumeSnapshot,
   SubmitRequest,
-  SubmitAck,
 } from '../src/interaction/types.js';
 import {
   WatermarkCursor,

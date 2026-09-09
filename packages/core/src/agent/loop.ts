@@ -16,9 +16,9 @@ import {
   requestCompactionSummary,
 } from './compaction.js';
 import { assembleMemorySnapshot, type MemoryStore } from '../memory/store.js';
-import { assembleSkillsSystemBlock, type SkillStore } from '../skills/store.js';
+import { assembleSkillsSystemBlock } from '../skills/store.js';
 import { computeProjection, loadSession, type LoadedSession } from '../session/reader.js';
-import { readTextOrNull, snapshotTargetFile, type SnapshotStore } from '../session/snapshots.js';
+import { readTextOrNull, snapshotTargetFile } from '../session/snapshots.js';
 import { SessionWriter, type SessionAppender } from '../session/writer.js';
 import { SESSION_LOG_FILE } from '../session/types.js';
 import type { CompactionAppliedPayload } from '../session/types.js';
@@ -31,8 +31,7 @@ import type {
   ToolSpec,
 } from '../provider/types.js';
 import { ToolExecutor, type ExecutedToolResult, type ToolExecutionRequest } from '../tools/executor.js';
-import type { ToolRegistry } from '../tools/registry.js';
-import type { SteerSink, TurnOptions, TurnResult, TurnStopReason } from './types.js';
+import type { TurnOptions, TurnResult, TurnStopReason } from './types.js';
 import type { SteerRequest } from '../interaction/types.js';
 import {
   classifyAttemptError,

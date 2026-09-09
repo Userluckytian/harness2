@@ -270,9 +270,6 @@ describe('压缩触发（runTurn + compaction 选项）', () => {
 });
 
 describe('buildChatMessages 消费 compaction/applied（单元）', () => {
-  interface Draft {
-    append(type: string, payload: Record<string, unknown>): void;
-  }
   function draftSession(build: (w: SessionWriter) => void): string {
     const dir = tmpDir();
     const writer = SessionWriter.create(dir, { sessionId: 'unit' }, { fsync: false });

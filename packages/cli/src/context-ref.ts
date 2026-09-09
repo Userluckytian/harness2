@@ -6,7 +6,7 @@
 //   - 文件 UTF-8 读取（单文件 64KB 截断保护 + 截断提示）；目录列出直接子项（不递归）；
 //   - 失败/不存在跳过并在引用块末尾追加 `[@x 未找到，已忽略]`。
 import { existsSync, openSync, readSync, readFileSync, readdirSync, statSync, closeSync } from 'node:fs';
-import { join, resolve } from 'node:path';
+import { resolve } from 'node:path';
 
 const DEFAULT_MAX_FILE_BYTES = 64 * 1024;
 
