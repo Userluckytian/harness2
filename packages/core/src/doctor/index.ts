@@ -145,7 +145,9 @@ function checkBash(config: HarnessConfig | null): DoctorCheck {
     return {
       id: 'bash',
       status: 'warn',
-      summary: `bash 工具回退到 cmd.exe——Windows 上 ls/head/tail/pwd 等命令不可用（安装 Git for Windows 或设置 config.bash.shell）`,
+      // R2：warn 分支也报告实际使用的 shell（回退 cmd.exe 也是「实际使用」），与 ok 分支共用「实际使用」契约词，
+      // 保证 doctor.test.ts 的 toContain('实际使用') 断言不依赖本机是否装了 Git Bash。
+      summary: `bash 工具回退到 cmd.exe——实际使用 ${shell.display}（Windows 上 ls/head/tail/pwd 等命令不可用；安装 Git for Windows 或设置 config.bash.shell）`,
       details,
     };
   }
