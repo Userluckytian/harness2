@@ -3,12 +3,7 @@
 // 注意：sandbox 模式的 preload 不允许 require 相对模块——IPC 通道名在此内联，
 // 与 shared/protocol.ts 保持一致（test/protocol.test.ts 有静态一致性校验）。
 import { contextBridge, ipcRenderer } from 'electron';
-import type {
-  ConnectionStatus,
-  Harness2Api,
-  StatusDetail,
-  WsFrame,
-} from '../shared/protocol.js';
+import type { ConnectionStatus, Harness2Api, StatusDetail, WsFrame } from '../shared/protocol.js';
 
 const IPC_INVOKE = 'harness2:invoke';
 const IPC_EVENT = 'harness2:event';
@@ -23,7 +18,8 @@ const api: Harness2Api = {
   redo: (sessionId: string) => ipcRenderer.invoke(IPC_INVOKE, { cmd: 'redo', sessionId }),
   subscribe: (sessionId: string) => ipcRenderer.invoke(IPC_INVOKE, { cmd: 'subscribe', sessionId }),
   unsubscribe: (sessionId: string) => ipcRenderer.invoke(IPC_INVOKE, { cmd: 'unsubscribe', sessionId }),
-  sendMessage: (sessionId: string, text: string) => ipcRenderer.invoke(IPC_INVOKE, { cmd: 'sendMessage', sessionId, text }),
+  sendMessage: (sessionId: string, text: string) =>
+    ipcRenderer.invoke(IPC_INVOKE, { cmd: 'sendMessage', sessionId, text }),
   abort: (sessionId: string) => ipcRenderer.invoke(IPC_INVOKE, { cmd: 'abort', sessionId }),
   respondApproval: (requestId: string, decision: 'allow' | 'deny') =>
     ipcRenderer.invoke(IPC_INVOKE, { cmd: 'respondApproval', requestId, decision }),
@@ -31,18 +27,23 @@ const api: Harness2Api = {
   saveLayout: (layout: unknown) => ipcRenderer.invoke(IPC_INVOKE, { cmd: 'saveLayout', layout }),
   getStatus: () => ipcRenderer.invoke(IPC_INVOKE, { cmd: 'getStatus' }),
   settingsGetConfig: () => ipcRenderer.invoke(IPC_INVOKE, { cmd: 'settings:getConfig' }),
-  settingsUpdateConfig: (patch: Record<string, unknown>) => ipcRenderer.invoke(IPC_INVOKE, { cmd: 'settings:updateConfig', patch }),
+  settingsUpdateConfig: (patch: Record<string, unknown>) =>
+    ipcRenderer.invoke(IPC_INVOKE, { cmd: 'settings:updateConfig', patch }),
   settingsGetAuthMasked: () => ipcRenderer.invoke(IPC_INVOKE, { cmd: 'settings:getAuthMasked' }),
-  settingsUpdateAuth: (patch: Record<string, unknown>) => ipcRenderer.invoke(IPC_INVOKE, { cmd: 'settings:updateAuth', patch }),
+  settingsUpdateAuth: (patch: Record<string, unknown>) =>
+    ipcRenderer.invoke(IPC_INVOKE, { cmd: 'settings:updateAuth', patch }),
   settingsGetPreferences: () => ipcRenderer.invoke(IPC_INVOKE, { cmd: 'settings:getPreferences' }),
-  settingsSetPreferences: (preferences: unknown) => ipcRenderer.invoke(IPC_INVOKE, { cmd: 'settings:setPreferences', preferences }),
+  settingsSetPreferences: (preferences: unknown) =>
+    ipcRenderer.invoke(IPC_INVOKE, { cmd: 'settings:setPreferences', preferences }),
   settingsGetDoctorReport: () => ipcRenderer.invoke(IPC_INVOKE, { cmd: 'settings:getDoctorReport' }),
   settingsGetCrashReports: () => ipcRenderer.invoke(IPC_INVOKE, { cmd: 'settings:getCrashReports' }),
   gitBranch: (dir: string) => ipcRenderer.invoke(IPC_INVOKE, { cmd: 'gitBranch', dir }),
   getContextUsage: (sessionId: string) => ipcRenderer.invoke(IPC_INVOKE, { cmd: 'getContextUsage', sessionId }),
-  getSnapshotForCall: (sessionId: string, seq: number) => ipcRenderer.invoke(IPC_INVOKE, { cmd: 'getSnapshotForCall', sessionId, seq }),
+  getSnapshotForCall: (sessionId: string, seq: number) =>
+    ipcRenderer.invoke(IPC_INVOKE, { cmd: 'getSnapshotForCall', sessionId, seq }),
   readFileForRef: (path: string, cwd: string) => ipcRenderer.invoke(IPC_INVOKE, { cmd: 'readFileForRef', path, cwd }),
-  notify: (title: string, body: string, sessionId?: string) => ipcRenderer.invoke(IPC_INVOKE, { cmd: 'notify', title, body, sessionId }),
+  notify: (title: string, body: string, sessionId?: string) =>
+    ipcRenderer.invoke(IPC_INVOKE, { cmd: 'notify', title, body, sessionId }),
   metadataGet: () => ipcRenderer.invoke(IPC_INVOKE, { cmd: 'metadata:get' }),
   metadataSet: (id: string, patch: { title?: string; archived?: boolean; deleted?: boolean }) =>
     ipcRenderer.invoke(IPC_INVOKE, { cmd: 'metadata:set', id, patch }),

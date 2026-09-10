@@ -143,12 +143,18 @@ describe('runTurn 接线：预算停因随 TurnResult.retryBudget 暴露', () =>
     vi.useFakeTimers();
     vi.spyOn(Math, 'random').mockReturnValue(0.5);
     const dir = tmpDir();
-    const script = Array.from({ length: RETRY_MAX_EXTRA_PER_TURN + 1 }, () => ({ error: '429', retryAfterSeconds: 0.01 }));
+    const script = Array.from({ length: RETRY_MAX_EXTRA_PER_TURN + 1 }, () => ({
+      error: '429',
+      retryAfterSeconds: 0.01,
+    }));
     const provider = new MockProvider(script as never[]);
     const pending = runTurn(dir, { provider, tools: new ToolRegistry(), cwd: dir, userText: 'hi' });
     const flush = async (): Promise<void> => {
       let settled = false;
-      pending.then(() => (settled = true), () => (settled = true));
+      pending.then(
+        () => (settled = true),
+        () => (settled = true),
+      );
       let waited = 0;
       while (!settled && waited < 400_000) {
         await vi.advanceTimersByTimeAsync(500);
@@ -177,7 +183,10 @@ describe('runTurn 接线：预算停因随 TurnResult.retryBudget 暴露', () =>
     const pending = runTurn(dir, { provider, tools: new ToolRegistry(), cwd: dir, userText: 'hi' });
     const flush = async (): Promise<void> => {
       let settled = false;
-      pending.then(() => (settled = true), () => (settled = true));
+      pending.then(
+        () => (settled = true),
+        () => (settled = true),
+      );
       let waited = 0;
       while (!settled && waited < 200_000) {
         await vi.advanceTimersByTimeAsync(1000);

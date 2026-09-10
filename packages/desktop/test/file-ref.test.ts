@@ -5,7 +5,6 @@ import { describe, expect, it, vi } from 'vitest';
 import {
   FILE_REF_MAX_LEN,
   FILE_REF_NOT_FOUND_SUFFIX,
-  FILE_REF_TOKEN_RE,
   FILE_REF_TRUNCATED_SUFFIX,
   extractFileRefs,
   resolveFileRefs,

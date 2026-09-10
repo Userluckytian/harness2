@@ -67,6 +67,17 @@ export interface BrowserConfig {
 export const DEFAULT_BROWSER_CONFIG: BrowserConfig = { enabled: true, idleDestroyMs: 300_000, maxConcurrent: 2 };
 
 /**
+ * bash 工具配置（A1-1）：shell = 显式指定的 shell 可执行文件（最高优先级，覆盖自动探测）。
+ * 缺省不指定（undefined）= 自动探测：Windows 优先 Git Bash（GIT_BASH / 常见路径），
+ * 找不到回退 cmd.exe；POSIX 走 /bin/sh。值以 cmd/cmd.exe 结尾时按 cmd 口径解释。
+ */
+export interface BashConfig {
+  shell?: string;
+}
+
+export const DEFAULT_BASH_CONFIG: BashConfig = {};
+
+/**
  * 插件配置（阶段 8）：enabled = 总开关；allow = 已批准装载的插件名（装载审批结果记录处）。
  * 缺省 allow = []：不审批任何插件不装载（最小授权）；enabled 缺省 true，实际装载仍被
  * allow 门控，故默认安全。
@@ -95,9 +106,7 @@ export interface McpUrlServerConfig {
   headers?: Record<string, string>;
 }
 
-export type McpServerConfig =
-  | (McpStdioServerConfig & { command: string })
-  | (McpUrlServerConfig & { url: string });
+export type McpServerConfig = (McpStdioServerConfig & { command: string }) | (McpUrlServerConfig & { url: string });
 
 /** 缺省 = 无 MCP 服务器（零 MCP 行为） */
 export type McpServersConfig = Record<string, McpServerConfig>;
@@ -149,6 +158,8 @@ export interface HarnessConfig {
   approval: ApprovalConfig;
   memory: MemoryConfig;
   browser: BrowserConfig;
+  /** bash 工具配置（A1-1；缺省/未配置 = 自动探测，兼容旧 HarnessConfig 字面量） */
+  bash?: BashConfig;
   plugins: PluginsConfig;
   mcpServers: McpServersConfig;
   subagent: SubagentConfig;
@@ -193,13 +204,22 @@ function isPlainObject(v: unknown): v is Dict {
 }
 
 function isStringRecord(v: unknown): v is Record<string, string> {
-  return (
-    isPlainObject(v) && Object.values(v).every((x) => typeof x === 'string')
-  );
+  return isPlainObject(v) && Object.values(v).every((x) => typeof x === 'string');
 }
 
 /** schema 内已知的顶层字段（其余忽略并告警） */
-const KNOWN_TOP_KEYS = new Set(['providers', 'roles', 'approval', 'memory', 'browser', 'plugins', 'mcpServers', 'subagent', 'gateways']);
+const KNOWN_TOP_KEYS = new Set([
+  'providers',
+  'roles',
+  'approval',
+  'memory',
+  'browser',
+  'bash',
+  'plugins',
+  'mcpServers',
+  'subagent',
+  'gateways',
+]);
 
 function collectUnknownKeys(obj: Dict, known: ReadonlySet<string>, where: string, warnings: string[]): void {
   for (const k of Object.keys(obj)) {
@@ -213,6 +233,7 @@ const ROLE_KNOWN_KEYS = new Set(['channel', 'model']);
 const APPROVAL_KNOWN_KEYS = new Set(['mode', 'tools']);
 const MEMORY_KNOWN_KEYS = new Set(['mode', 'nudgeInterval']);
 const BROWSER_KNOWN_KEYS = new Set(['enabled', 'idleDestroyMs', 'maxConcurrent']);
+const BASH_KNOWN_KEYS = new Set(['shell']);
 const PLUGINS_KNOWN_KEYS = new Set(['enabled', 'allow']);
 const MCP_SERVER_KNOWN_KEYS = new Set(['command', 'args', 'env', 'cwd', 'url', 'headers']);
 const SUBAGENT_KNOWN_KEYS = new Set(['maxDepth', 'maxTurns']);
@@ -247,7 +268,9 @@ export function parseConfig(raw: unknown): ConfigParseResult {
       collectUnknownKeys(v, PROVIDER_KNOWN_KEYS, `providers.${channel}`, warnings);
       const protocol = v['protocol'];
       if (typeof protocol !== 'string' || !PROTOCOLS.includes(protocol as ProviderConfig['protocol'])) {
-        errors.push(`providers.${channel}.protocol 必须是 ${PROTOCOLS.join(' | ')}，实际为 ${JSON.stringify(protocol)}`);
+        errors.push(
+          `providers.${channel}.protocol 必须是 ${PROTOCOLS.join(' | ')}，实际为 ${JSON.stringify(protocol)}`,
+        );
         continue;
       }
       const baseUrl = v['baseUrl'];
@@ -292,9 +315,19 @@ export function parseConfig(raw: unknown): ConfigParseResult {
           }
           if (modelsOk) models[model] = entry;
         }
-        if (modelsOk) providers[channel] = { protocol: protocol as ProviderConfig['protocol'], baseUrl, ...(envKey !== undefined ? { envKey } : {}), models };
+        if (modelsOk)
+          providers[channel] = {
+            protocol: protocol as ProviderConfig['protocol'],
+            baseUrl,
+            ...(envKey !== undefined ? { envKey } : {}),
+            models,
+          };
       } else {
-        providers[channel] = { protocol: protocol as ProviderConfig['protocol'], baseUrl, ...(envKey !== undefined ? { envKey } : {}) };
+        providers[channel] = {
+          protocol: protocol as ProviderConfig['protocol'],
+          baseUrl,
+          ...(envKey !== undefined ? { envKey } : {}),
+        };
       }
     }
   }
@@ -351,7 +384,9 @@ export function parseConfig(raw: unknown): ConfigParseResult {
           approval.tools = {};
           for (const [tool, rule] of Object.entries(tools)) {
             if (typeof rule !== 'string' || !APPROVAL_TOOL_RULES.includes(rule as ApprovalToolRule)) {
-              errors.push(`approval.tools.${tool} 必须是 ${APPROVAL_TOOL_RULES.join(' | ')}，实际为 ${JSON.stringify(rule)}`);
+              errors.push(
+                `approval.tools.${tool} 必须是 ${APPROVAL_TOOL_RULES.join(' | ')}，实际为 ${JSON.stringify(rule)}`,
+              );
               continue;
             }
             approval.tools[tool] = rule as ApprovalToolRule;
@@ -419,10 +454,34 @@ export function parseConfig(raw: unknown): ConfigParseResult {
       }
       const maxConcurrent = rawBrowser['maxConcurrent'];
       if (maxConcurrent !== undefined) {
-        if (typeof maxConcurrent !== 'number' || !Number.isInteger(maxConcurrent) || maxConcurrent < 1 || maxConcurrent > 8) {
+        if (
+          typeof maxConcurrent !== 'number' ||
+          !Number.isInteger(maxConcurrent) ||
+          maxConcurrent < 1 ||
+          maxConcurrent > 8
+        ) {
           errors.push('browser.maxConcurrent 必须是 1..8 的整数');
         } else {
           browser.maxConcurrent = maxConcurrent;
+        }
+      }
+    }
+  }
+
+  // —— bash（A1-1；缺省 = 自动探测，见 tools/shell.ts）——
+  const bash: BashConfig = { ...DEFAULT_BASH_CONFIG };
+  const rawBash = raw['bash'];
+  if (rawBash !== undefined) {
+    if (!isPlainObject(rawBash)) {
+      errors.push('config.bash 必须是对象');
+    } else {
+      collectUnknownKeys(rawBash, BASH_KNOWN_KEYS, 'bash', warnings);
+      const shell = rawBash['shell'];
+      if (shell !== undefined) {
+        if (typeof shell !== 'string' || shell.trim().length === 0) {
+          errors.push('bash.shell 必须是非空字符串（shell 可执行文件路径）');
+        } else {
+          bash.shell = shell;
         }
       }
     }
@@ -612,7 +671,9 @@ export function parseConfig(raw: unknown): ConfigParseResult {
           const policy = v[field];
           if (policy === undefined) continue;
           if (typeof policy !== 'string' || !GATEWAY_POLICIES.includes(policy as GatewayPolicy)) {
-            errors.push(`gateways.${name}.${field} 必须是 ${GATEWAY_POLICIES.join(' | ')}，实际为 ${JSON.stringify(policy)}`);
+            errors.push(
+              `gateways.${name}.${field} 必须是 ${GATEWAY_POLICIES.join(' | ')}，实际为 ${JSON.stringify(policy)}`,
+            );
             channelOk = false;
             continue;
           }
@@ -652,5 +713,9 @@ export function parseConfig(raw: unknown): ConfigParseResult {
   const safeErrors = errors.map(redactSecrets);
   const safeWarnings = warnings.map(redactSecrets);
   if (safeErrors.length > 0) return { config: null, errors: safeErrors, warnings: safeWarnings };
-  return { config: { providers, roles, approval, memory, browser, plugins, mcpServers, subagent, gateways }, errors: safeErrors, warnings: safeWarnings };
+  return {
+    config: { providers, roles, approval, memory, browser, bash, plugins, mcpServers, subagent, gateways },
+    errors: safeErrors,
+    warnings: safeWarnings,
+  };
 }

@@ -99,8 +99,6 @@ describe('演练③：截断恢复后的轨迹资产往返（export → importRe
     expect(s.badLines).toBe(0);
     expect(s.warnings).toEqual([]);
     expect(s.events).toBe(before + 1); // 撕裂区丢弃不计 + 恢复后追加 1 条
-    expect(s.messageCount).toBe(
-      computeProjection(loadSession(dir)).messages.length,
-    );
+    expect(s.messageCount).toBe(computeProjection(loadSession(dir)).messages.length);
   });
 });

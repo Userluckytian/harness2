@@ -42,10 +42,12 @@ export function formatCrashReport(err: unknown, opts: { now?: Date } = {}): stri
     `session: ${crashState.sessionId ?? '-'}`,
     `error: ${redactSecrets(e?.message ?? String(err))}`,
     `stack:`,
-    e?.stack === undefined ? '  (no stack)' : redactSecrets(e.stack)
-      .split('\n')
-      .map((l) => `  ${l}`)
-      .join('\n'),
+    e?.stack === undefined
+      ? '  (no stack)'
+      : redactSecrets(e.stack)
+          .split('\n')
+          .map((l) => `  ${l}`)
+          .join('\n'),
   ];
   return lines.join('\n') + '\n';
 }

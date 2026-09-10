@@ -253,7 +253,10 @@ describe('importReplay', () => {
     const oobZip = join(tmpDir(), 'oob.zip');
     writeFileSync(
       oobZip,
-      zipSync({ 'session.v1.jsonl': new TextEncoder().encode(`${lines.join('\n')}\n`) }, { mtime: new Date(Date.UTC(2000, 0, 1)) }),
+      zipSync(
+        { 'session.v1.jsonl': new TextEncoder().encode(`${lines.join('\n')}\n`) },
+        { mtime: new Date(Date.UTC(2000, 0, 1)) },
+      ),
     );
     const report = importReplay(oobZip);
     const root = report.sessions[0]!;

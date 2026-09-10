@@ -37,7 +37,11 @@ function loadEvents(dir: string): AnySessionEvent[] {
     .map((l) => JSON.parse(l) as AnySessionEvent);
 }
 
-function makeTool(name: string, execute: ToolDefinition['execute'], extra: Partial<ToolDefinition> = {}): ToolDefinition {
+function makeTool(
+  name: string,
+  execute: ToolDefinition['execute'],
+  extra: Partial<ToolDefinition> = {},
+): ToolDefinition {
   return {
     name,
     description: `${name} test tool`,
@@ -212,8 +216,26 @@ describe('S6 安全 step 边界 steer', () => {
       { text: '按新方向 B' },
     ]);
     const registry = new ToolRegistry();
-    registry.register(makeTool('must_complete', () => { mustExec += 1; return { output: 'committed' }; }, { cancelGuaranteed: false }));
-    registry.register(makeTool('safe_back', () => { safeExec += 1; return { output: 'ok' }; }, { cancelGuaranteed: true }));
+    registry.register(
+      makeTool(
+        'must_complete',
+        () => {
+          mustExec += 1;
+          return { output: 'committed' };
+        },
+        { cancelGuaranteed: false },
+      ),
+    );
+    registry.register(
+      makeTool(
+        'safe_back',
+        () => {
+          safeExec += 1;
+          return { output: 'ok' };
+        },
+        { cancelGuaranteed: true },
+      ),
+    );
 
     let pushed = false;
     const result = await runTurn(dir, {
@@ -251,7 +273,7 @@ describe('S6 安全 step 边界 steer', () => {
     let pushedAsync = false;
     const streamProvider: ChatProvider = {
       name: 'stream',
-      async *streamChat(req) {
+      async *streamChat(_req) {
         yield { type: 'text-delta', text: '块0' };
         for (const t of ['块1', '块2', '块3', '块4']) {
           await new Promise((r) => setTimeout(r, 10));
@@ -301,8 +323,6 @@ describe('S6 安全 step 边界 steer', () => {
     const provider = new MockProvider([{ text: '收工' }]);
     await runTurn(dir, { provider, tools: new ToolRegistry(), cwd: dir, userText: '开始', steer: sink });
 
-    expect(sink.results).toEqual([
-      { id: 'late-1', expectedTurnId: 'other-turn', state: 'stale', draftKept: true },
-    ]);
+    expect(sink.results).toEqual([{ id: 'late-1', expectedTurnId: 'other-turn', state: 'stale', draftKept: true }]);
   });
 });

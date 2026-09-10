@@ -10,7 +10,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { SessionHub, type SessionHubHooks } from '../src/server/sessions.js';
+import { SessionHub } from '../src/server/sessions.js';
 import { SessionManager } from '../src/session/manager.js';
 import { ToolRegistry } from '../src/tools/registry.js';
 import type { ToolDefinition } from '../src/tools/types.js';
@@ -39,7 +39,11 @@ async function waitFor(check: () => boolean, timeoutMs = 5000): Promise<void> {
   }
 }
 
-function makeTool(name: string, execute: ToolDefinition['execute'], extra: Partial<ToolDefinition> = {}): ToolDefinition {
+function makeTool(
+  name: string,
+  execute: ToolDefinition['execute'],
+  extra: Partial<ToolDefinition> = {},
+): ToolDefinition {
   return {
     name,
     description: `${name} test tool`,
@@ -69,7 +73,16 @@ describe('S6 会话级 steer sink（hub 接线）', () => {
       { textChunks: ['完成'] },
     ]);
     const tools = new ToolRegistry();
-    tools.register(makeTool('gated', async () => { await gate; return { output: 'ok' }; }, { cancelGuaranteed: true }));
+    tools.register(
+      makeTool(
+        'gated',
+        async () => {
+          await gate;
+          return { output: 'ok' };
+        },
+        { cancelGuaranteed: true },
+      ),
+    );
     const hub = new SessionHub({ manager, provider, tools, cwd: root, decide: () => 'allow' });
     const steerResults: SteerResult[] = [];
     const turnIds: string[] = [];
@@ -122,7 +135,16 @@ describe('S6 会话级 steer sink（hub 接线）', () => {
       { textChunks: ['turn2 完成'] },
     ]);
     const tools = new ToolRegistry();
-    tools.register(makeTool('gated', async () => { await gate; return { output: 'ok' }; }, { cancelGuaranteed: true }));
+    tools.register(
+      makeTool(
+        'gated',
+        async () => {
+          await gate;
+          return { output: 'ok' };
+        },
+        { cancelGuaranteed: true },
+      ),
+    );
     tools.register(makeTool('probe', () => ({ output: 'ok' }), { cancelGuaranteed: true }));
     const hub = new SessionHub({ manager, provider, tools, cwd: root, decide: () => 'allow' });
     const steerResults: SteerResult[] = [];
@@ -184,7 +206,16 @@ describe('S6 会话级 steer sink（hub 接线）', () => {
       { textChunks: ['完成'] },
     ]);
     const tools = new ToolRegistry();
-    tools.register(makeTool('gated', async () => { await gate; return { output: 'ok' }; }, { cancelGuaranteed: true }));
+    tools.register(
+      makeTool(
+        'gated',
+        async () => {
+          await gate;
+          return { output: 'ok' };
+        },
+        { cancelGuaranteed: true },
+      ),
+    );
     const hub = new SessionHub({ manager, provider, tools, cwd: root, decide: () => 'allow' });
     const steerResults: SteerResult[] = [];
     const turnIds: string[] = [];
@@ -209,7 +240,12 @@ describe('S6 会话级 steer sink（hub 接线）', () => {
     expect(ack.state).toBe('accepted');
     openGate();
     await waitFor(() => steerResults.length === 1);
-    expect(steerResults[0]).toEqual({ id: 'st-stale', expectedTurnId: 'some-other-turn', state: 'stale', draftKept: true });
+    expect(steerResults[0]).toEqual({
+      id: 'st-stale',
+      expectedTurnId: 'some-other-turn',
+      state: 'stale',
+      draftKept: true,
+    });
 
     // 未注入：两个请求都没有 stale 文本（边界被拒，不叠加控制消息）
     await waitFor(() => provider.requests.length === 2);

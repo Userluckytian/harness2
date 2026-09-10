@@ -48,14 +48,22 @@ export class WatermarkCursor {
     const key = this.key(sessionId, att.attemptId);
     const prev = map.get(key);
     // 首块：chunkOffset 必须为 0；续块：必须严格接续（assertSequentialChunk）
-    const ok = prev === undefined
-      ? chunkOffset === 0 && isValidOffset(chunkOffset)
-      : assertSequentialChunk({ chunkOffset: prev.offset, text: prev.text }, chunkOffset);
+    const ok =
+      prev === undefined
+        ? chunkOffset === 0 && isValidOffset(chunkOffset)
+        : assertSequentialChunk({ chunkOffset: prev.offset, text: prev.text }, chunkOffset);
     if (!ok) return null;
     const frame: DeliveryDeltaFrame =
       delta.kind === 'text'
         ? { type: 'text-delta', sessionId, turnId: att.turnId, attemptId: att.attemptId, chunkOffset, text: delta.text }
-        : { type: 'reasoning-delta', sessionId, turnId: att.turnId, attemptId: att.attemptId, chunkOffset, text: delta.text };
+        : {
+            type: 'reasoning-delta',
+            sessionId,
+            turnId: att.turnId,
+            attemptId: att.attemptId,
+            chunkOffset,
+            text: delta.text,
+          };
     map.set(key, { offset: chunkOffset, text: delta.text });
     return frame;
   }

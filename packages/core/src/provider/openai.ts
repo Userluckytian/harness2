@@ -2,13 +2,7 @@
 // reasoning_content → reasoning chunk、usage、abort → ProviderError('cancelled')。
 // 协议手写 fetch（无 SDK）；请求/响应字段白名单处理，未知字段忽略。
 // 红线：错误消息出口一律过 redactSecrets（HTTP body 可能回显请求头里的 key）。
-import type {
-  ChatMessage,
-  ChatProvider,
-  ChatRequest,
-  ProviderUsage,
-  StreamChunk,
-} from './types.js';
+import type { ChatMessage, ChatProvider, ChatRequest, ProviderUsage, StreamChunk } from './types.js';
 import { ProviderError } from './types.js';
 import { redactObject, redactedSummary } from '../config/redact.js';
 
@@ -128,9 +122,7 @@ export class OpenAICompatProvider implements ChatProvider {
       model: this.model,
       // ChatRequest.system → 首条 system 消息（阶段 6 加性缝；缺省时消息列表不变）
       messages: [
-        ...(req.system !== undefined && req.system.length > 0
-          ? [{ role: 'system', content: req.system }]
-          : []),
+        ...(req.system !== undefined && req.system.length > 0 ? [{ role: 'system', content: req.system }] : []),
         ...toOpenAIWireMessages(req.messages),
       ],
       stream: true,
@@ -165,15 +157,20 @@ export class OpenAICompatProvider implements ChatProvider {
     if (!res.ok) {
       const text = await res.text().catch(() => '');
       const httpCode = String(res.status);
-      const normalizedCode = res.status === 429 ? '429'
-        : res.status === 503 ? '503'
-        : res.status >= 400 && res.status < 500 ? httpCode
-        : res.status >= 500 ? 'server_5xx'
-        : httpCode;
+      const normalizedCode =
+        res.status === 429
+          ? '429'
+          : res.status === 503
+            ? '503'
+            : res.status >= 400 && res.status < 500
+              ? httpCode
+              : res.status >= 500
+                ? 'server_5xx'
+                : httpCode;
       const retryAfterRaw = res.headers.get('retry-after');
       const retryAfter = retryAfterRaw !== null ? Number(retryAfterRaw) : undefined;
-      const retryAfterSeconds = typeof retryAfter === 'number' && Number.isFinite(retryAfter) && retryAfter > 0
-        ? retryAfter : undefined;
+      const retryAfterSeconds =
+        typeof retryAfter === 'number' && Number.isFinite(retryAfter) && retryAfter > 0 ? retryAfter : undefined;
       throw new ProviderError(
         redactedSummary(`HTTP ${res.status} ${res.statusText || ''}: ${text}`),
         normalizedCode,
@@ -263,8 +260,7 @@ function* handleWireChunk(
     // P1-1：JSON 可解析的错误帧（无 choices）不得静默吞掉——结构化脱敏后抛出，保留厂商 message
     const safe = redactObject(chunk.error) as { message?: string; type?: string; code?: string };
     const type = typeof safe.type === 'string' && safe.type.length > 0 ? safe.type : 'unknown';
-    const message =
-      typeof safe.message === 'string' && safe.message.length > 0 ? safe.message : JSON.stringify(safe);
+    const message = typeof safe.message === 'string' && safe.message.length > 0 ? safe.message : JSON.stringify(safe);
     throw new ProviderError(
       redactedSummary(`上游流中错误帧 (${type}): ${message}`),
       ERROR_TYPE_TO_CODE[type] ?? 'api_error',

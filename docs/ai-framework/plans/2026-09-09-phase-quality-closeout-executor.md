@@ -31,20 +31,20 @@
 
 ## 四、执行顺序（不要自己重排，尤其第 3 步）
 
-| # | 任务 | 内容 | 时间 |
-|---|------|------|------|
-| 1 | **A0** | 仓库卫生与基线（删临时目录、根版本号 `0.1.0→1.0.0`、跑通 typecheck+test 记基线） | Day1 上午 |
-| 2 | **B1** | OPEN.md 拆分（只留待办，决策与已关闭项迁入 `DECISIONS.md`，只搬不删） | Day1 上午 |
-| 3 | **B2** | ESLint(flat) + Prettier + `pnpm lint` 接入 CI，并做全量格式化 | Day1 下午–Day2 |
-| 4 | **A1** | Windows 可用性 P0（shell 探测、UTF-8 解码、工具连续失败熔断、参数报错、browser 提示） | Day2–4 |
-| 5 | **A2** | 真机验证（本地网关双协议八项 + 云端可选） | Day5 |
-| 6 | **A3** | serve 安全加固（Origin/Host 白名单+一次性 token、WS 帧上限 1MiB、playwright 改 optional） | Day6–7 |
-| 7 | **A4** | 拆分 `packages/core/src/server/sessions.ts`（73KB → 每个文件 <25KB） | Day7–8 |
-| 8 | **B3** | 拆分 `cli/src/index.ts`（39KB）与 `desktop/src/renderer/App.tsx`（31KB），各 <20KB | Day8–9 |
-| 9 | **B4** | 规范文档补齐（coding-standards 项目专属约定、CODE_REVIEW 六条红线、插件非隔离声明） | Day10 |
-| 10 | **A5** | 阶段 9 IM 网关独立复审（生命周期、断线重订阅、msg_seq 递增） | Day10 半天 |
-| 11 | **B5** | 文档与验收欠账（补阶段 5/6/8 形式验收、README 三图、HANDOFF 快照） | Day11 |
-| 12 | **B6** | v1.0.0 发布准备（npm 只读检查、tag、RELEASE-CHECKLIST 打勾） | Day12 |
+| #   | 任务   | 内容                                                                                      | 时间           |
+| --- | ------ | ----------------------------------------------------------------------------------------- | -------------- |
+| 1   | **A0** | 仓库卫生与基线（删临时目录、根版本号 `0.1.0→1.0.0`、跑通 typecheck+test 记基线）          | Day1 上午      |
+| 2   | **B1** | OPEN.md 拆分（只留待办，决策与已关闭项迁入 `DECISIONS.md`，只搬不删）                     | Day1 上午      |
+| 3   | **B2** | ESLint(flat) + Prettier + `pnpm lint` 接入 CI，并做全量格式化                             | Day1 下午–Day2 |
+| 4   | **A1** | Windows 可用性 P0（shell 探测、UTF-8 解码、工具连续失败熔断、参数报错、browser 提示）     | Day2–4         |
+| 5   | **A2** | 真机验证（本地网关双协议八项 + 云端可选）                                                 | Day5           |
+| 6   | **A3** | serve 安全加固（Origin/Host 白名单+一次性 token、WS 帧上限 1MiB、playwright 改 optional） | Day6–7         |
+| 7   | **A4** | 拆分 `packages/core/src/server/sessions.ts`（73KB → 每个文件 <25KB）                      | Day7–8         |
+| 8   | **B3** | 拆分 `cli/src/index.ts`（39KB）与 `desktop/src/renderer/App.tsx`（31KB），各 <20KB        | Day8–9         |
+| 9   | **B4** | 规范文档补齐（coding-standards 项目专属约定、CODE_REVIEW 六条红线、插件非隔离声明）       | Day10          |
+| 10  | **A5** | 阶段 9 IM 网关独立复审（生命周期、断线重订阅、msg_seq 递增）                              | Day10 半天     |
+| 11  | **B5** | 文档与验收欠账（补阶段 5/6/8 形式验收、README 三图、HANDOFF 快照）                        | Day11          |
+| 12  | **B6** | v1.0.0 发布准备（npm 只读检查、tag、RELEASE-CHECKLIST 打勾）                              | Day12          |
 
 ## 五、五条硬规则
 
@@ -61,6 +61,7 @@
 - **模型：** `big-pickle`（上下文 200K，纯文本模型，不支持图片/附件）
 
 两个坑（计划有详细说明，务必先看）：
+
 - `protocol=openai` 时，`baseUrl` 写 `http://127.0.0.1:40080/v1`（带 `/v1`）
 - `protocol=anthropic` 时，`baseUrl` 写 `http://127.0.0.1:40080`（不带 `/v1`，代码自己拼 `/v1/messages`）
 

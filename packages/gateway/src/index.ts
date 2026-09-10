@@ -38,9 +38,7 @@ interface ChatMeta {
 
 export async function startGateway(options: StartGatewayOptions): Promise<GatewayHandle> {
   const home = options.home ?? homedir();
-  const adapters = new Map<GatewayChannelName, PlatformAdapter>(
-    options.adapters.map((a) => [a.channel, a]),
-  );
+  const adapters = new Map<GatewayChannelName, PlatformAdapter>(options.adapters.map((a) => [a.channel, a]));
   const sessionToMeta = new Map<string, ChatMeta & { sessionKey: string }>();
   const sessionText = new Map<string, string>();
   const toolLines = new Map<string, string[]>();
@@ -102,9 +100,7 @@ export async function startGateway(options: StartGatewayOptions): Promise<Gatewa
         if (rendered.length === 0) return;
         const hadPending = pendingApproval.delete(chatKey);
         void hadPending;
-        void adapter
-          .send(meta.chatId, rendered, meta.replyToMessageId, meta.isGroup)
-          .catch(() => {}); // 出站失败不阻塞网关
+        void adapter.send(meta.chatId, rendered, meta.replyToMessageId, meta.isGroup).catch(() => {}); // 出站失败不阻塞网关
       }
     },
   });
@@ -116,16 +112,16 @@ export async function startGateway(options: StartGatewayOptions): Promise<Gatewa
     const adapter = adapters.get(message.channel);
     if (adapter === undefined) return;
     const chatKey = `${message.channel}:${message.chatId}`;
-      const requestId = pendingApproval.get(chatKey);
-      if (requestId !== undefined) {
-        const decision = parseApprovalReply(message.text);
-        if (decision !== undefined) {
-          pendingApproval.delete(chatKey);
-          client.respondApproval(requestId, decision);
-          return; // 审批回复不进会话
-        }
-        // 非决策文本：带 pending 时的普通消息照常入会话（审批保留待决或已超时）
+    const requestId = pendingApproval.get(chatKey);
+    if (requestId !== undefined) {
+      const decision = parseApprovalReply(message.text);
+      if (decision !== undefined) {
+        pendingApproval.delete(chatKey);
+        client.respondApproval(requestId, decision);
+        return; // 审批回复不进会话
       }
+      // 非决策文本：带 pending 时的普通消息照常入会话（审批保留待决或已超时）
+    }
     void router
       .resolve(message.channel, message.chatId)
       .then(async (sessionId) => {

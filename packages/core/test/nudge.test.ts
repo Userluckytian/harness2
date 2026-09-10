@@ -235,7 +235,11 @@ describe('SessionHub nudge 计数与触发', () => {
       review: [
         {
           toolCalls: [
-            { id: 'r1', name: 'memory', arguments: JSON.stringify({ operation: 'add', target: 'user', text: '复盘发现的偏好' }) },
+            {
+              id: 'r1',
+              name: 'memory',
+              arguments: JSON.stringify({ operation: 'add', target: 'user', text: '复盘发现的偏好' }),
+            },
           ],
         },
         { text: '无需记忆' },
@@ -269,7 +273,11 @@ describe('SessionHub nudge 计数与触发', () => {
       main: [
         {
           toolCalls: [
-            { id: 'm1', name: 'memory', arguments: JSON.stringify({ operation: 'add', target: 'user', text: '主对话直接记忆' }) },
+            {
+              id: 'm1',
+              name: 'memory',
+              arguments: JSON.stringify({ operation: 'add', target: 'user', text: '主对话直接记忆' }),
+            },
           ],
         },
         { text: '记好了' },
@@ -297,7 +305,11 @@ describe('SessionHub nudge 计数与触发', () => {
       review: [
         {
           toolCalls: [
-            { id: 'r1', name: 'memory', arguments: JSON.stringify({ operation: 'add', target: 'user', text: 'ask 暂存偏好' }) },
+            {
+              id: 'r1',
+              name: 'memory',
+              arguments: JSON.stringify({ operation: 'add', target: 'user', text: 'ask 暂存偏好' }),
+            },
           ],
         },
         { text: '无需记忆' },
@@ -340,7 +352,11 @@ describe('SessionHub nudge 计数与触发', () => {
       review: [
         {
           toolCalls: [
-            { id: 'r1', name: 'memory', arguments: JSON.stringify({ operation: 'add', target: 'user', text: '本次复盘新增的暂存' }) },
+            {
+              id: 'r1',
+              name: 'memory',
+              arguments: JSON.stringify({ operation: 'add', target: 'user', text: '本次复盘新增的暂存' }),
+            },
           ],
         },
         { text: '无需记忆' },
@@ -432,13 +448,13 @@ describe('SessionHub 装配校验（审查 P2-1）', () => {
       new SessionHub({
         manager,
         provider: new MockProvider([{ text: 'x' }]),
-tools: new ToolRegistry(),
+        tools: new ToolRegistry(),
         cwd: root,
         memory: memory as never,
       });
     // 残缺装配：此前每次 turn 抛错被 pump 吞掉（消息凭空消失）——现在构造期即拒绝
-    expect(() =>
-      build({ store, mode: 'ask', nudgeInterval: 2 }), // pending 缺失
+    expect(
+      () => build({ store, mode: 'ask', nudgeInterval: 2 }), // pending 缺失
     ).toThrow(/pending/);
     // 齐全装配：正常构造
     const hub = build({

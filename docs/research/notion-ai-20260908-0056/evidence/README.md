@@ -8,12 +8,12 @@
 
 ## 文件命名约定
 
-| 前缀 | 内容 | 示例 |
-|------|------|------|
-| `S<uint>-<cmd>.txt` | 单 Task 基准确认命令输出 | `S0-baseline.txt` |
-| `S<uint>-<feature>.txt` | 单 Task 指定测试族输出 | `S1-executor-cancel.txt`（S1 起） |
-| `*checklist*.md` | 功能/场景对照清单（仅清单，视觉验收归真机轨） | `12-scenarios-checklist.md` |
-| `S<uint>-<case>.md` | 故障注入/验收专项记录（含前置假设与复现步骤） | —— |
+| 前缀                    | 内容                                          | 示例                              |
+| ----------------------- | --------------------------------------------- | --------------------------------- |
+| `S<uint>-<cmd>.txt`     | 单 Task 基准确认命令输出                      | `S0-baseline.txt`                 |
+| `S<uint>-<feature>.txt` | 单 Task 指定测试族输出                        | `S1-executor-cancel.txt`（S1 起） |
+| `*checklist*.md`        | 功能/场景对照清单（仅清单，视觉验收归真机轨） | `12-scenarios-checklist.md`       |
+| `S<uint>-<case>.md`     | 故障注入/验收专项记录（含前置假设与复现步骤） | ——                                |
 
 每条命令记录块固定格式：命令 → 输出尾部 → `LASTEXITCODE=<n>` → 失败则附根因与是否属于本 Task 范围。
 

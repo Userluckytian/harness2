@@ -23,8 +23,6 @@
 // externallyModified（恢复本身是最新 after 的幂等写，无数据风险）。
 import { existsSync, mkdirSync, readFileSync, renameSync, unlinkSync, writeFileSync } from 'node:fs';
 import { dirname, isAbsolute, join, resolve } from 'node:path';
-import { createHash } from 'node:crypto';
-
 /** 快照条目文件名（位于会话目录内，与 session.v1.jsonl 同级） */
 export const REWIND_POINTS_FILE = 'rewind_points.jsonl';
 

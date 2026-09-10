@@ -235,7 +235,9 @@ export interface Harness2Api {
   /** 读 config.json 脱敏视图（与 CLI 共用同一份，渲染端零 Node） */
   settingsGetConfig(): Promise<SettingsConfigShape>;
   /** 改 config.json（白名单字段合并；密钥类字段被拒；返回新视图或错误） */
-  settingsUpdateConfig(patch: Record<string, unknown>): Promise<{ ok: boolean; config?: SettingsConfigShape; warnings?: string[]; error?: string }>;
+  settingsUpdateConfig(
+    patch: Record<string, unknown>,
+  ): Promise<{ ok: boolean; config?: SettingsConfigShape; warnings?: string[]; error?: string }>;
   /** 读 auth.json 掩码视图（channel/gateway 只回显掩码状态） */
   settingsGetAuthMasked(): Promise<SettingsAuthMaskedShape>;
   /** 写 auth.json gateway 凭据（仅 auth.json；渲染端不回显明文） */
@@ -255,13 +257,19 @@ export interface Harness2Api {
   /** 读指定 tool/call 事件 seq 对应的文件快照（rewind_points.jsonl 单条；只读） */
   getSnapshotForCall(sessionId: string, seq: number): Promise<SnapshotForCallShape>;
   /** 读 @file 引用内容（主进程 fs，64KB 截断；失败返回 null） */
-  readFileForRef(path: string, cwd: string): Promise<{ ok: boolean; content?: string; truncated?: boolean; error?: string }>;
+  readFileForRef(
+    path: string,
+    cwd: string,
+  ): Promise<{ ok: boolean; content?: string; truncated?: boolean; error?: string }>;
   /** 任务完成系统通知（主进程 Electron Notification） */
   notify(title: string, body: string, sessionId?: string): Promise<void>;
   /** 读会话展示态覆层整体（~/.harness2/desktop-metadata.json；损坏回退空映射） */
   metadataGet(): Promise<SessionMetadataMapShape>;
   /** 合并写回单个会话的展示态 patch（title/archived/deleted；返回更新后整体） */
-  metadataSet(id: string, patch: { title?: string; archived?: boolean; deleted?: boolean }): Promise<SessionMetadataMapShape>;
+  metadataSet(
+    id: string,
+    patch: { title?: string; archived?: boolean; deleted?: boolean },
+  ): Promise<SessionMetadataMapShape>;
   /** 订阅服务事件帧（delta/event/turn-end/approval-request/error）；返回退订函数 */
   onEvent(listener: (frame: WsFrame) => void): () => void;
   /** 订阅连接状态变化；返回退订函数 */

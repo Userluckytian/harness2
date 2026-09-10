@@ -51,15 +51,22 @@ function makeFakeApi(notifyDetails: 'minimal' | 'full' = 'minimal') {
     saveLayout: vi.fn(async () => undefined),
     getStatus: vi.fn(async () => ({ status: 'connected' as const })),
     settingsGetConfig: vi.fn(async () => ({
-      providers: {}, roles: {}, approval: { mode: 'default' }, memory: { mode: 'off', nudgeInterval: 10 },
-      browser: { enabled: true, idleDestroyMs: 300_000, maxConcurrent: 2 }, plugins: { enabled: true, allow: [] },
-      mcpServers: {}, subagent: { maxDepth: 1, maxTurns: 25 }, sources: { global: true, project: false },
-      warnings: [], errors: [],
+      providers: {},
+      roles: {},
+      approval: { mode: 'default' },
+      memory: { mode: 'off', nudgeInterval: 10 },
+      browser: { enabled: true, idleDestroyMs: 300_000, maxConcurrent: 2 },
+      plugins: { enabled: true, allow: [] },
+      mcpServers: {},
+      subagent: { maxDepth: 1, maxTurns: 25 },
+      sources: { global: true, project: false },
+      warnings: [],
+      errors: [],
     })),
     settingsUpdateConfig: vi.fn(async () => ({ ok: true })),
     settingsGetAuthMasked: vi.fn(async () => ({ channels: [], gateways: [] })),
     settingsUpdateAuth: vi.fn(async () => ({ ok: true })),
-    settingsGetPreferences: vi.fn(async () => ({ theme: 'warmPaper', notifyDetails } as never)),
+    settingsGetPreferences: vi.fn(async () => ({ theme: 'warmPaper', notifyDetails }) as never),
     settingsSetPreferences: vi.fn(async (p: unknown) => p as never),
     settingsGetDoctorReport: vi.fn(async () => ({ checks: [], exitCode: 0 as const })),
     settingsGetCrashReports: vi.fn(async () => []),
@@ -74,10 +81,12 @@ function makeFakeApi(notifyDetails: 'minimal' | 'full' = 'minimal') {
       eventListeners.push(cb);
       return () => {};
     }),
-    onConnectionStatus: vi.fn((cb: (s: 'connected' | 'connecting' | 'reconnecting' | 'offline', d?: unknown) => void) => {
-      queueMicrotask(() => cb('connected'));
-      return () => {};
-    }),
+    onConnectionStatus: vi.fn(
+      (cb: (s: 'connected' | 'connecting' | 'reconnecting' | 'offline', d?: unknown) => void) => {
+        queueMicrotask(() => cb('connected'));
+        return () => {};
+      },
+    ),
     emit: (f: WsFrame): void => {
       for (const cb of eventListeners) cb(f);
     },
@@ -107,7 +116,11 @@ describe('B7 渲染端系统通知', () => {
     render(<App.App />);
     // 选中 s1；对后台 s2 发 turn-end
     api.emit({ type: 'event', sessionId: 's2', event: ev('user/message', { text: 'hi', turnId: 't' }) });
-    api.emit({ type: 'event', sessionId: 's2', event: ev('assistant/message', { text: '后台助手回复' + '长'.repeat(200), turnId: 't' }) });
+    api.emit({
+      type: 'event',
+      sessionId: 's2',
+      event: ev('assistant/message', { text: '后台助手回复' + '长'.repeat(200), turnId: 't' }),
+    });
     api.emit({ type: 'turn-end', sessionId: 's2', stopReason: 'end_turn' });
     await waitFor(() => expect(api.notify).toHaveBeenCalledTimes(1));
     const [title, body, sid] = vi.mocked(api.notify).mock.calls[0]!;

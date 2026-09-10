@@ -74,7 +74,11 @@ export function parseSubagentChildId(output: string | undefined): string | undef
   if (output === undefined) return undefined;
   try {
     const parsed: unknown = JSON.parse(output);
-    if (typeof parsed === 'object' && parsed !== null && typeof (parsed as Record<string, unknown>)['childSessionId'] === 'string') {
+    if (
+      typeof parsed === 'object' &&
+      parsed !== null &&
+      typeof (parsed as Record<string, unknown>)['childSessionId'] === 'string'
+    ) {
       return (parsed as { childSessionId: string }).childSessionId;
     }
   } catch {
@@ -83,7 +87,11 @@ export function parseSubagentChildId(output: string | undefined): string | undef
   return undefined;
 }
 
-export function projectChatItems(events: readonly ActiveEvent[], live: LiveDelta, turnEnds: Readonly<Record<string, TurnEndInfo>>): ChatItem[] {
+export function projectChatItems(
+  events: readonly ActiveEvent[],
+  live: LiveDelta,
+  turnEnds: Readonly<Record<string, TurnEndInfo>>,
+): ChatItem[] {
   const items: ChatItem[] = [];
   let currentTurnId: string | undefined;
   let currentDurationMs = 0;
@@ -154,7 +162,14 @@ export function projectChatItems(events: readonly ActiveEvent[], live: LiveDelta
         }
         // 找不到宿主（异常日志）也不丢结果：单独成行
         else {
-          const orphan: ChatItem = { kind: 'tool', callId: str(p['callId']), seq: e.seq, turnId: str(p['turnId']), tool: str(p['tool']), result };
+          const orphan: ChatItem = {
+            kind: 'tool',
+            callId: str(p['callId']),
+            seq: e.seq,
+            turnId: str(p['turnId']),
+            tool: str(p['tool']),
+            result,
+          };
           if (orphan.tool !== undefined && orphan.tool.startsWith('subagent_')) {
             orphan.childSessionId = parseSubagentChildId(output);
           }
@@ -180,7 +195,11 @@ export function projectChatItems(events: readonly ActiveEvent[], live: LiveDelta
       turnId: lastTurnId,
       durationMs: currentDurationMs,
       ...(end !== undefined
-        ? { stopReason: end.stopReason, ...(end.error !== undefined ? { error: end.error } : {}), ...(end.warning !== undefined ? { warning: end.warning } : {}) }
+        ? {
+            stopReason: end.stopReason,
+            ...(end.error !== undefined ? { error: end.error } : {}),
+            ...(end.warning !== undefined ? { warning: end.warning } : {}),
+          }
         : {}),
     });
   }

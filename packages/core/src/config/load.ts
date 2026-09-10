@@ -116,8 +116,14 @@ export function expandEnvVars(
 export function deepMerge(global: unknown, project: unknown): unknown {
   if (global === undefined) return project;
   if (project === undefined) return global;
-  if (typeof global === 'object' && global !== null && !Array.isArray(global) &&
-      typeof project === 'object' && project !== null && !Array.isArray(project)) {
+  if (
+    typeof global === 'object' &&
+    global !== null &&
+    !Array.isArray(global) &&
+    typeof project === 'object' &&
+    project !== null &&
+    !Array.isArray(project)
+  ) {
     const out: Record<string, unknown> = { ...(global as Record<string, unknown>) };
     for (const [k, v] of Object.entries(project as Record<string, unknown>)) {
       const base = (global as Record<string, unknown>)[k];

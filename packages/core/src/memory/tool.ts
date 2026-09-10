@@ -6,7 +6,6 @@ import {
   MEMORY_BUDGET_CHARS,
   USER_BUDGET_CHARS,
   memoryFileName,
-  MemoryStore,
   type MemoryApplyResult,
   type MemoryOp,
 } from './store.js';
@@ -22,9 +21,20 @@ export interface MemorySink {
 const OPERATION_SCHEMA = {
   type: 'object',
   properties: {
-    operation: { type: 'string', enum: ['add', 'replace', 'remove'], description: 'add = append new entry; replace = oldText -> text; remove = delete oldText' },
-    target: { type: 'string', enum: ['memory', 'user'], description: "memory = your own working notes (MEMORY.md); user = durable facts about the user (USER.md)" },
-    text: { type: 'string', description: 'add/replace: the new entry text (must not contain a line that is exactly "§")' },
+    operation: {
+      type: 'string',
+      enum: ['add', 'replace', 'remove'],
+      description: 'add = append new entry; replace = oldText -> text; remove = delete oldText',
+    },
+    target: {
+      type: 'string',
+      enum: ['memory', 'user'],
+      description: 'memory = your own working notes (MEMORY.md); user = durable facts about the user (USER.md)',
+    },
+    text: {
+      type: 'string',
+      description: 'add/replace: the new entry text (must not contain a line that is exactly "§")',
+    },
     oldText: { type: 'string', description: 'replace/remove: the full text of the existing entry to match' },
   },
   required: ['operation', 'target'],
@@ -52,7 +62,8 @@ export function createMemoryTool(sink: MemorySink): ToolDefinition {
         oldText: OPERATION_SCHEMA.properties.oldText,
         operations: {
           type: 'array',
-          description: 'Atomic batch of operations (alternative to the single-operation fields); all succeed or none apply',
+          description:
+            'Atomic batch of operations (alternative to the single-operation fields); all succeed or none apply',
           items: { ...OPERATION_SCHEMA, required: OPERATION_SCHEMA.required },
         },
       },

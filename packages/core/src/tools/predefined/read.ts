@@ -44,8 +44,7 @@ export const readTool: ToolDefinition = {
     }
     const body = slice.map((line, i) => `${String(offset + i).padStart(6)}\t${line}`).join('\n');
     const shownEnd = offset + slice.length - 1;
-    const note =
-      shownEnd < lines.length ? `\n... [showing lines ${offset}-${shownEnd} of ${lines.length}]` : '';
+    const note = shownEnd < lines.length ? `\n... [showing lines ${offset}-${shownEnd} of ${lines.length}]` : '';
     return { output: body + note };
   },
 };

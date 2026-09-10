@@ -14,7 +14,9 @@ export function ReasoningBlock({ text, expanded }: ReasoningBlockProps): ReactEl
   return (
     <Box>
       {expanded ? (
-        <Text color="gray" dimColor>{trimmed}</Text>
+        <Text color="gray" dimColor>
+          {trimmed}
+        </Text>
       ) : (
         <Text color="gray">[reasoning · 按 r 展开] {trimmed.replace(/\s+/g, ' ').slice(0, 72)}…</Text>
       )}

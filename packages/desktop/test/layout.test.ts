@@ -32,9 +32,9 @@ describe('布局纯函数', () => {
     expect(normalizeLayout(undefined)).toEqual(defaultLayout());
     expect(normalizeLayout({})).toEqual(defaultLayout());
     expect(normalizeLayout({ panes: [] })).toEqual(defaultLayout());
-    expect(normalizeLayout({ panes: [{ sessionId: 'a' }, { sessionId: 'b' }, { sessionId: 'c' }, { sessionId: 'd' }] })).toEqual(
-      defaultLayout(),
-    );
+    expect(
+      normalizeLayout({ panes: [{ sessionId: 'a' }, { sessionId: 'b' }, { sessionId: 'c' }, { sessionId: 'd' }] }),
+    ).toEqual(defaultLayout());
     expect(normalizeLayout({ panes: [{ sessionId: 42 }] })).toEqual(defaultLayout());
     expect(normalizeLayout({ panes: [{}] })).toEqual(defaultLayout());
   });

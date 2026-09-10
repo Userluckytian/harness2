@@ -68,11 +68,9 @@ describe('harness2 export', () => {
     expect(out).toContain('20260906-030301-pppppp');
     expect(existsSync(join(outDir, '20260906-030301-pppppp.zip'))).toBe(true);
     expect(readdirSync(lib.parentDir).sort()).toEqual(before); // 只读红线
-    const replay = execFileSync(
-      'node',
-      [cliEntry, 'replay', join(outDir, '20260906-030301-pppppp.zip')],
-      { encoding: 'utf8' },
-    );
+    const replay = execFileSync('node', [cliEntry, 'replay', join(outDir, '20260906-030301-pppppp.zip')], {
+      encoding: 'utf8',
+    });
     expect(replay).toContain('主会话 20260906-030301-pppppp  events=3  messages=2  lastSeq=3  badLines=0');
     expect(replay).toContain(`子会话 ${lib.childId}  events=2  messages=1  lastSeq=2  badLines=0`);
   });

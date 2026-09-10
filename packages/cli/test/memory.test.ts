@@ -136,7 +136,7 @@ describe('harness2 memory pending / approve / reject', () => {
       expect(r2.status).toBe(0);
       expect(readFileSync(join(env.memoriesDir, 'USER.md'), 'utf8')).toBe('审批后写入的偏好');
       expect(existsSync(join(env.pendingDir, '1788660000000-ab01.json'))).toBe(false);
-      expect((runMemory(env.home, ['pending']).stdout as string)).toContain('（无待审批项）');
+      expect(runMemory(env.home, ['pending']).stdout as string).toContain('（无待审批项）');
     } finally {
       env.cleanup();
     }

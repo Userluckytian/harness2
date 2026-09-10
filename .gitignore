@@ -13,8 +13,12 @@ auth.json
 docs/issue-log/*
 !docs/issue-log/README.md
 !docs/issue-log/OPEN.md
+!docs/issue-log/DECISIONS.md
 dist-electron/
 release/
 
 # cli esbuild bundle
 dist-bundle/
+
+# 临时目录（如 .tmp-head-check：断链 node_modules 的 head 检查工作区）
+.tmp-*/

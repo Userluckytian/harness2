@@ -6,7 +6,7 @@
 //   - 文件 UTF-8 读取（单文件 64KB 截断保护 + 截断提示）；目录列出直接子项（不递归）；
 //   - 失败/不存在跳过并在引用块末尾追加 `[@x 未找到，已忽略]`。
 import { existsSync, openSync, readSync, readFileSync, readdirSync, statSync, closeSync } from 'node:fs';
-import { join, resolve } from 'node:path';
+import { resolve } from 'node:path';
 
 const DEFAULT_MAX_FILE_BYTES = 64 * 1024;
 
@@ -43,19 +43,14 @@ function listedContents(dirPath: string): string {
   try {
     const entries = readdirSync(dirPath, { withFileTypes: true });
     if (entries.length === 0) return '(空目录)';
-    return entries
-      .map((e) => `${e.isDirectory() ? e.name + '/' : e.name}`)
-      .join('\n');
+    return entries.map((e) => `${e.isDirectory() ? e.name + '/' : e.name}`).join('\n');
   } catch {
     return '(无法读取目录)';
   }
 }
 
 /** 发送前展开 `@路径` 引用。返回引用 header（空串=无引用）与是否含引用 token。 */
-export function expandContextRefs(
-  input: string,
-  opts: ContextRefOptions,
-): ContextRefResult {
+export function expandContextRefs(input: string, opts: ContextRefOptions): ContextRefResult {
   const maxFileBytes = opts.maxFileBytes ?? DEFAULT_MAX_FILE_BYTES;
   const seen = new Set<string>();
   const missing: string[] = [];

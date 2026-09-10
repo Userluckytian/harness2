@@ -13,19 +13,19 @@
 
 ## 2. 最重要的差距与替换建议
 
-| 主题 | Grok源码证据 | harness2现状 | 确定做法 |
-|---|---|---|---|
-| Unicode编辑 | E/editor.rs:932-981按grapheme边界；P/views/prompt_widget/mod.rs:1544-1830 TextArea编辑 | Composer按UTF-16下标增减，未按cursor绘制位置，上下键总是历史 | 重做输入reducer，grapheme+显示列宽+软折行；复刻词移动/选区/撤销/多行编辑 |
-| Enter边界 | prompt_widget/mod.rs:2081-2110 `route_enter`区分候选/续行/Submit | 高亮候选不等于Enter会接受，反斜杠看整段末尾 | 候选优先消费；续行看光标前；提示不混进真实prompt |
-| 长粘贴 | prompt_widget/mod.rs:2205-2268原子chip，:2763展开 | 无应用级Paste事务、原子内容或体积管理 | bracketed paste归一化、CRLF处理、折叠/展开/删除/发送原文 |
-| 历史草稿 | S/session/prompt_history.rs:10-96；P/app/agent_view/prompt.rs:747-775先stash | 只有组件内历史，向下越界清空草稿 | 当前会话历史无损往返，CWD历史后补，优先由已有日志派生 |
-| 焦点 | P/app/agent_view/key_owner.rs:10-214明确KeyOwner和Esc层级 | 多useInput约定互斥；busy关闭输入 | 一个焦点仲裁器，全局取消独立；busy可编辑草稿/排队 |
-| 全屏视口 | P/app/mod.rs:1417-1421 alternate screen；views/agent.rs:234-304区域预算 | 纵向Box+Static，无固定viewport/follow/会话视图隔离 | 固定头/历史/队列/输入/footer，真实viewport与手动锚点 |
-| 长历史 | P/scrollback/state/layout.rs:1675-1733二分paint window，:570-657锚点/测量窗口 | settled为string[]，无法操作历史卡片 | typed transcript+稳定ID+可见窗口测量缓存 |
-| 流式调度 | P/app/event_loop.rs:553-614 Presenter；:2524-2581输入优先让出ACP | 已有50ms合并，但整段text重绘、工具双重表达 | 保留合并思想；结构事件即时、token有界合并，稳定前缀/变化尾段 |
-| 卡片 | P/scrollback/blocks/tool/mod.rs:152-235类型化工具块 | reasoning/tools仅busy期可见；展开共用一个开关 | 持久独立卡片/独立展开态，真实output和快照diff |
-| 重试 | M/actor/request_task.rs:343-525分级决策/可取消退避；S/session/acp_session_impl/sampler_turn.rs:15-114预算 | provider异常直接turn error | 复刻attempt级重试/倒计时，不重跑整个turn |
-| 子代理 | task coordinator+admission+注册确认+父子任务投影 | start等待最终JSON，默认unsafe串行 | 保留start/continue兼容，显式background模式+status/wait/cancel |
+| 主题        | Grok源码证据                                                                                              | harness2现状                                                 | 确定做法                                                                 |
+| ----------- | --------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------ | ------------------------------------------------------------------------ |
+| Unicode编辑 | E/editor.rs:932-981按grapheme边界；P/views/prompt_widget/mod.rs:1544-1830 TextArea编辑                    | Composer按UTF-16下标增减，未按cursor绘制位置，上下键总是历史 | 重做输入reducer，grapheme+显示列宽+软折行；复刻词移动/选区/撤销/多行编辑 |
+| Enter边界   | prompt_widget/mod.rs:2081-2110 `route_enter`区分候选/续行/Submit                                          | 高亮候选不等于Enter会接受，反斜杠看整段末尾                  | 候选优先消费；续行看光标前；提示不混进真实prompt                         |
+| 长粘贴      | prompt_widget/mod.rs:2205-2268原子chip，:2763展开                                                         | 无应用级Paste事务、原子内容或体积管理                        | bracketed paste归一化、CRLF处理、折叠/展开/删除/发送原文                 |
+| 历史草稿    | S/session/prompt_history.rs:10-96；P/app/agent_view/prompt.rs:747-775先stash                              | 只有组件内历史，向下越界清空草稿                             | 当前会话历史无损往返，CWD历史后补，优先由已有日志派生                    |
+| 焦点        | P/app/agent_view/key_owner.rs:10-214明确KeyOwner和Esc层级                                                 | 多useInput约定互斥；busy关闭输入                             | 一个焦点仲裁器，全局取消独立；busy可编辑草稿/排队                        |
+| 全屏视口    | P/app/mod.rs:1417-1421 alternate screen；views/agent.rs:234-304区域预算                                   | 纵向Box+Static，无固定viewport/follow/会话视图隔离           | 固定头/历史/队列/输入/footer，真实viewport与手动锚点                     |
+| 长历史      | P/scrollback/state/layout.rs:1675-1733二分paint window，:570-657锚点/测量窗口                             | settled为string[]，无法操作历史卡片                          | typed transcript+稳定ID+可见窗口测量缓存                                 |
+| 流式调度    | P/app/event_loop.rs:553-614 Presenter；:2524-2581输入优先让出ACP                                          | 已有50ms合并，但整段text重绘、工具双重表达                   | 保留合并思想；结构事件即时、token有界合并，稳定前缀/变化尾段             |
+| 卡片        | P/scrollback/blocks/tool/mod.rs:152-235类型化工具块                                                       | reasoning/tools仅busy期可见；展开共用一个开关                | 持久独立卡片/独立展开态，真实output和快照diff                            |
+| 重试        | M/actor/request_task.rs:343-525分级决策/可取消退避；S/session/acp_session_impl/sampler_turn.rs:15-114预算 | provider异常直接turn error                                   | 复刻attempt级重试/倒计时，不重跑整个turn                                 |
+| 子代理      | task coordinator+admission+注册确认+父子任务投影                                                          | start等待最终JSON，默认unsafe串行                            | 保留start/continue兼容，显式background模式+status/wait/cancel            |
 
 ## 3. 当前默认TUI的P0，不应等美化后才修
 

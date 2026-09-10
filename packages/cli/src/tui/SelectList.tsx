@@ -73,9 +73,7 @@ export function SelectList<T extends string = string>({
               {highlighted ? '› ' : '  '}
               {opt.label}
             </Text>
-            {opt.description && (
-              <Text color="gray">{`  ${opt.description}`}</Text>
-            )}
+            {opt.description && <Text color="gray">{`  ${opt.description}`}</Text>}
           </Box>
         );
       })}

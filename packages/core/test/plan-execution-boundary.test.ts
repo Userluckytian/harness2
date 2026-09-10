@@ -37,9 +37,11 @@ function makeSessionDir(root: string, cwd: string, userText: string): { dir: str
 }
 
 /** 「计划稿」：root 已完成的父任务 + child 停在 waiting-approval（审批需求未放行） */
-function writePlanJournal(
-  dir: string,
-): { journal: RuntimeJournal; transitions: Array<{ taskId: string; from: TaskState; to: TaskState }>; seqs: number[] } {
+function writePlanJournal(dir: string): {
+  journal: RuntimeJournal;
+  transitions: Array<{ taskId: string; from: TaskState; to: TaskState }>;
+  seqs: number[];
+} {
   const journal = RuntimeJournal.create(dir, { fsync: false });
   const transitions: Array<{ taskId: string; from: TaskState; to: TaskState }> = [];
   const seqs: number[] = [];
@@ -140,9 +142,7 @@ describe('步骤与状态符合执行推进', () => {
         expect(step.state).toBe(last.to);
       }
       // 与 reconstructTasks 直接结果一致（同源状态，不另造）
-      const tasks = reconstructTasks(
-        transitions.map((t) => ({ taskId: t.taskId, from: t.from, to: t.to })),
-      );
+      const tasks = reconstructTasks(transitions.map((t) => ({ taskId: t.taskId, from: t.from, to: t.to })));
       for (const [i, task] of tasks.entries()) {
         expect(plan.steps[i]!.state).toBe(task.state);
       }

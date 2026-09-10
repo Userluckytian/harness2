@@ -95,7 +95,9 @@ export function DiffCard({ sessionId, seq, file, onUndo }: DiffCardProps): React
   return (
     <div className="diff-card">
       <div className="diff-head">
-        <span className="diff-title" title={entry.file}>{entry.file}</span>
+        <span className="diff-title" title={entry.file}>
+          {entry.file}
+        </span>
         <button type="button" className="diff-undo" onClick={onUndo}>
           撤销此次修改
         </button>

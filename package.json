@@ -1,7 +1,7 @@
 {
   "name": "harness2-monorepo",
   "private": true,
-  "version": "0.1.0",
+  "version": "1.0.0",
   "packageManager": "pnpm@11.13.0",
   "engines": {
     "node": ">=22"
@@ -10,6 +10,19 @@
     "build": "pnpm -r build",
     "test": "pnpm -r build && pnpm -r test",
     "typecheck": "pnpm -r typecheck",
+    "lint": "eslint . && prettier --check .",
+    "lint:fix": "eslint . --fix && prettier --write .",
+    "format": "prettier --write .",
     "bench": "node scripts/bench-session.mjs"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "eslint": "^10.10.0",
+    "eslint-config-prettier": "^10.1.8",
+    "eslint-plugin-react-hooks": "^7.1.1",
+    "globals": "^17.12.0",
+    "prettier": "^3.9.6",
+    "typescript": "~5.9.3",
+    "typescript-eslint": "^8.70.0"
   }
 }

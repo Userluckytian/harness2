@@ -1,6 +1,6 @@
 // 配置体系测试：两级加载/深合并/${VAR} 展开/schema 校验/脱敏/auth 读写与损坏容错。
 import { afterEach, describe, expect, it } from 'vitest';
-import { chmodSync, existsSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdtempSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { loadConfig } from '../src/config/load.js';
@@ -269,7 +269,10 @@ describe('schema 校验', () => {
   });
 
   it('subagent：maxDepth 1..10、maxTurns 1..200 分开校验（P1-2：契约示例 {maxDepth:1, maxTurns:25} 可解析）', () => {
-    const base = { providers: { a: { protocol: 'openai', baseUrl: 'https://x' } }, roles: { main: { channel: 'a', model: 'm' } } };
+    const base = {
+      providers: { a: { protocol: 'openai', baseUrl: 'https://x' } },
+      roles: { main: { channel: 'a', model: 'm' } },
+    };
     // 计划契约示例即 25——旧上限 10 会令照抄契约的合法配置报错
     const contract = parseConfig({ ...base, subagent: { maxDepth: 1, maxTurns: 25 } });
     expect(contract.errors).toEqual([]);

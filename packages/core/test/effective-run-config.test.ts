@@ -17,7 +17,6 @@ import {
   type EffectiveRunConfigInput,
 } from '../src/interaction/run-config.js';
 
-
 const dirs: string[] = [];
 function tmpDir(prefix = 'h2-rcfg-'): string {
   const d = mkdtempSync(join(tmpdir(), prefix));
@@ -120,14 +119,20 @@ describe('连接状态反映 provider 状态', () => {
 });
 
 describe('脱敏（不暴露 key/token/sk- 密钥）', () => {
-  const SENSITIVE_NAMES = new Set(['apikey', 'api_key', 'api-key', 'key', 'token', 'secret', 'password', 'authorization']);
+  const SENSITIVE_NAMES = new Set([
+    'apikey',
+    'api_key',
+    'api-key',
+    'key',
+    'token',
+    'secret',
+    'password',
+    'authorization',
+  ]);
   function assertNoSensitiveKeys(value: unknown, path = 'view'): void {
     if (value === null || typeof value !== 'object') return;
     for (const [k, v] of Object.entries(value)) {
-      expect(
-        SENSITIVE_NAMES.has(k.toLowerCase()),
-        `${path}.${k} 是敏感字段名，不应出现在脱敏视图`,
-      ).toBe(false);
+      expect(SENSITIVE_NAMES.has(k.toLowerCase()), `${path}.${k} 是敏感字段名，不应出现在脱敏视图`).toBe(false);
       assertNoSensitiveKeys(v, `${path}.${k}`);
     }
   }
@@ -152,9 +157,15 @@ describe('脱敏（不暴露 key/token/sk- 密钥）', () => {
 
 describe('新 turn 配置 revision + 生效时点明确', () => {
   it('sealRunConfigSnapshot：首 turn revision=1，下一 turn +1，生效时点显式', () => {
-    const s1 = sealRunConfigSnapshot(undefined, { capturedAt: '2026-09-08T00:00:01.000Z', effectiveAt: '2026-09-08T00:00:01.000Z' });
+    const s1 = sealRunConfigSnapshot(undefined, {
+      capturedAt: '2026-09-08T00:00:01.000Z',
+      effectiveAt: '2026-09-08T00:00:01.000Z',
+    });
     expect(s1.revision).toBe(1);
-    const s2 = sealRunConfigSnapshot(s1, { capturedAt: '2026-09-08T00:00:02.000Z', effectiveAt: '2026-09-08T00:00:02.000Z' });
+    const s2 = sealRunConfigSnapshot(s1, {
+      capturedAt: '2026-09-08T00:00:02.000Z',
+      effectiveAt: '2026-09-08T00:00:02.000Z',
+    });
     expect(s2.revision).toBe(2);
     expect(s2.capturedAt).toBe('2026-09-08T00:00:02.000Z');
     expect(s2.effectiveAt).toBe('2026-09-08T00:00:02.000Z');
@@ -164,7 +175,10 @@ describe('新 turn 配置 revision + 生效时点明确', () => {
 
   it('视图携带 snapshot 封存：revision + capturedAt + effectiveAt 与 seal 一致', () => {
     const input = baseInput();
-    input.snapshot = sealRunConfigSnapshot(undefined, { capturedAt: '2026-09-08T01:00:00.000Z', effectiveAt: '2026-09-08T01:00:00.000Z' });
+    input.snapshot = sealRunConfigSnapshot(undefined, {
+      capturedAt: '2026-09-08T01:00:00.000Z',
+      effectiveAt: '2026-09-08T01:00:00.000Z',
+    });
     const view = buildEffectiveRunConfig(input);
     expect(view.snapshot.revision).toBe(1);
     expect(view.snapshot.capturedAt).toBe('2026-09-08T01:00:00.000Z');

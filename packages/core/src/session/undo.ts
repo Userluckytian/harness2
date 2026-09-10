@@ -141,7 +141,10 @@ function applyMarker(
   // 消息数变化：undo = 将被遮蔽的活动消息；redo = 将恢复活动的影子消息
   const beforeMsgs = messageSeqs(activeMessages(loadSession(writer.dir)));
   const afterMsgs = messageSeqs(projectionWithMarker(writer.dir, markerSeq, target, kind));
-  const messages = kind === 'undo' ? beforeMsgs.size - countIntersection(beforeMsgs, afterMsgs) : afterMsgs.size - countIntersection(beforeMsgs, afterMsgs);
+  const messages =
+    kind === 'undo'
+      ? beforeMsgs.size - countIntersection(beforeMsgs, afterMsgs)
+      : afterMsgs.size - countIntersection(beforeMsgs, afterMsgs);
 
   // 文件恢复计划（dryRun 由 SnapshotStore 保证无副作用）：
   //   undo 恢复 seq > 目标 的条目；redo 恢复 seq > 被重做 undo 的 rewindToSeq 的条目

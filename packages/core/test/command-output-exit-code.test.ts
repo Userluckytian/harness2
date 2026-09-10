@@ -38,10 +38,7 @@ function detectShell(): string {
 /** 生命周期观察记录器：复制 executor 观察缝（S1）——onExecuteStart=真正启动，onExecuteEnd=终态一次 */
 class TraceRecorder implements ExecutionLifecycleObserver {
   readonly started = new Map<string, { at: string; args: unknown }>();
-  readonly ended = new Map<
-    string,
-    { at: string; ok: boolean; output?: string; error?: string; durationMs?: number }
-  >();
+  readonly ended = new Map<string, { at: string; ok: boolean; output?: string; error?: string; durationMs?: number }>();
 
   onExecuteStart(req: ToolExecutionRequest): void {
     this.started.set(req.callId, { at: new Date().toISOString(), args: req.args });
@@ -60,7 +57,15 @@ class TraceRecorder implements ExecutionLifecycleObserver {
 
 function traceFor(
   rec: TraceRecorder,
-  opts: { callId: string; taskId?: string; turnId?: string; tool: string; plannedArgs: unknown; cwd: string; shell?: string },
+  opts: {
+    callId: string;
+    taskId?: string;
+    turnId?: string;
+    tool: string;
+    plannedArgs: unknown;
+    cwd: string;
+    shell?: string;
+  },
 ): ToolExecutionTrace {
   const s = rec.started.get(opts.callId);
   const e = rec.ended.get(opts.callId);

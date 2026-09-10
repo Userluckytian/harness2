@@ -16,9 +16,9 @@ import {
   requestCompactionSummary,
 } from './compaction.js';
 import { assembleMemorySnapshot, type MemoryStore } from '../memory/store.js';
-import { assembleSkillsSystemBlock, type SkillStore } from '../skills/store.js';
+import { assembleSkillsSystemBlock } from '../skills/store.js';
 import { computeProjection, loadSession, type LoadedSession } from '../session/reader.js';
-import { readTextOrNull, snapshotTargetFile, type SnapshotStore } from '../session/snapshots.js';
+import { readTextOrNull, snapshotTargetFile } from '../session/snapshots.js';
 import { SessionWriter, type SessionAppender } from '../session/writer.js';
 import { SESSION_LOG_FILE } from '../session/types.js';
 import type { CompactionAppliedPayload } from '../session/types.js';
@@ -31,8 +31,7 @@ import type {
   ToolSpec,
 } from '../provider/types.js';
 import { ToolExecutor, type ExecutedToolResult, type ToolExecutionRequest } from '../tools/executor.js';
-import type { ToolRegistry } from '../tools/registry.js';
-import type { SteerSink, TurnOptions, TurnResult, TurnStopReason } from './types.js';
+import type { TurnOptions, TurnResult, TurnStopReason } from './types.js';
 import type { SteerRequest } from '../interaction/types.js';
 import {
   classifyAttemptError,
@@ -47,6 +46,17 @@ import {
 import { RETRY_MAX_EXTRA_PER_TURN, RETRY_MAX_TOTAL_WAIT_SECONDS } from '../interaction/types.js';
 
 export const DEFAULT_MAX_STEPS = 25;
+/** A1-3：连续工具失败熔断阈值（默认 5）。与 maxSteps 独立：任一工具成功即重置计数。 */
+const DEFAULT_MAX_CONSECUTIVE_TOOL_FAILURES = 5;
+/** P2-3 修复：熔断文案里的失败详情字符上限。工具失败 error 可达 MB 级（如 grep 捕获 8MB 输出），
+ *  直接拼进 assistant/message 会灌爆会话日志与下一轮模型上下文，故截断后附「已截断」注明。 */
+const CIRCUIT_ERROR_MAX_CHARS = 500;
+
+/** 截断熔断文案中的失败详情（超长只保留前 CIRCUIT_ERROR_MAX_CHARS 字符 + 原文长度） */
+function truncateCircuitError(text: string): string {
+  if (text.length <= CIRCUIT_ERROR_MAX_CHARS) return text;
+  return `${text.slice(0, CIRCUIT_ERROR_MAX_CHARS)}…（已截断，原文 ${text.length} 字符）`;
+}
 
 /**
  * 从会话日志重建模型请求消息列表（provider/types.ts 中映射规则的唯一实现）：
@@ -145,7 +155,10 @@ export function buildChatMessages(session: LoadedSession): ChatMessage[] {
  *      必须可从日志重建）。
  * 漂移（手工编辑破坏 § 结构）按空记忆处理——读侧内容不注入，写侧由 store 拒绝并备份。
  */
-async function resolveMemorySystem(writer: SessionWriter | SessionAppender, store: MemoryStore): Promise<string | undefined> {
+async function resolveMemorySystem(
+  writer: SessionWriter | SessionAppender,
+  store: MemoryStore,
+): Promise<string | undefined> {
   const session = loadSession(writer.dir);
   computeProjection(session);
   for (const { event, active } of session.events) {
@@ -168,7 +181,10 @@ async function resolveMemorySystem(writer: SessionWriter | SessionAppender, stor
  *   - 目录 + 日志已存在 → open 续写并在结束后 close；
  *   - writer → 直接使用（由调用方负责 close）。
  */
-export async function runTurn(session: string | SessionWriter | SessionAppender, options: TurnOptions): Promise<TurnResult> {
+export async function runTurn(
+  session: string | SessionWriter | SessionAppender,
+  options: TurnOptions,
+): Promise<TurnResult> {
   if (typeof session !== 'string') return runTurnWithWriter(session, options);
   const writer = existsSync(join(session, SESSION_LOG_FILE))
     ? SessionWriter.open(session)
@@ -238,6 +254,7 @@ function abortReasonMessage(signal: AbortSignal): string {
 async function runTurnWithWriter(writer: SessionWriter | SessionAppender, options: TurnOptions): Promise<TurnResult> {
   const turnId = randomUUID();
   const maxSteps = Math.max(1, options.maxSteps ?? DEFAULT_MAX_STEPS);
+  const maxConsecutiveToolFailures = options.maxConsecutiveToolFailures ?? DEFAULT_MAX_CONSECUTIVE_TOOL_FAILURES;
   const executor = new ToolExecutor(options.tools, options.approval);
   const provider = options.provider;
   const signal = options.signal;
@@ -314,6 +331,18 @@ async function runTurnWithWriter(writer: SessionWriter | SessionAppender, option
   let finalText: string | undefined;
   let stopReason: TurnStopReason = 'end_turn';
   let error: string | undefined;
+  // A1-3：连续工具失败计数（成功即归零）；触发阈值时以 tool_failures 收尾并给非空 finalText
+  let consecutiveToolFailures = 0;
+  let lastToolFailure: { tool: string; error: string } | undefined;
+  const recordToolResult = (tool: string, ok: boolean, failure?: string): void => {
+    if (ok) {
+      consecutiveToolFailures = 0;
+      lastToolFailure = undefined;
+      return;
+    }
+    consecutiveToolFailures += 1;
+    lastToolFailure = { tool, error: failure ?? 'unknown error' };
+  };
   // S4b：重试预算为整 turn 共享（per-turn 额外 ≤6 + 累计等待 ≤120s），跨 step 累计
   const retryBudget = createRetryBudget();
   /** FixC D1：turn 结束时随结果暴露预算快照（桌面读 used/remaining/stopReason） */
@@ -355,9 +384,9 @@ async function runTurnWithWriter(writer: SessionWriter | SessionAppender, option
     // 不写入 session.log（不进投影、不伪造 user/message 正文）；单步有效，next 重置。
     for (const ctrl of pendingControls) messages.push({ role: 'user', content: ctrl });
     pendingControls = [];
-    const toolSpecs = options.tools.list().map(
-      (def): ToolSpec => ({ name: def.name, description: def.description, parameters: def.parameters }),
-    );
+    const toolSpecs = options.tools
+      .list()
+      .map((def): ToolSpec => ({ name: def.name, description: def.description, parameters: def.parameters }));
     const request: ChatRequest = {
       ...(systemText !== undefined ? { system: systemText } : {}),
       messages,
@@ -571,12 +600,20 @@ async function runTurnWithWriter(writer: SessionWriter | SessionAppender, option
       if (p.parseError !== undefined) {
         writer.append('tool/result', { callId: p.callId, tool: p.tool, ok: false, error: p.parseError, turnId });
         options.onStream?.({ type: 'tool-result', callId: p.callId, ok: false, error: p.parseError, turnId });
+        recordToolResult(p.tool, false, p.parseError);
         continue;
       }
       const r = byCallId.get(p.callId);
       if (!r) {
-        writer.append('tool/result', { callId: p.callId, tool: p.tool, ok: false, error: 'executor lost result', turnId });
+        writer.append('tool/result', {
+          callId: p.callId,
+          tool: p.tool,
+          ok: false,
+          error: 'executor lost result',
+          turnId,
+        });
         options.onStream?.({ type: 'tool-result', callId: p.callId, ok: false, error: 'executor lost result', turnId });
+        recordToolResult(p.tool, false, 'executor lost result');
         continue;
       }
       writer.append('tool/result', {
@@ -595,8 +632,30 @@ async function runTurnWithWriter(writer: SessionWriter | SessionAppender, option
         turnId,
         ...(r.error !== undefined ? { error: r.error } : {}),
       });
+      recordToolResult(p.tool, r.ok, r.error);
     }
     toolCallsTotal += calls.length;
+
+    // A1-3 熔断：连续失败达阈值 → 停止并给面向用户的非空回复（禁止空回复）。
+    // 文本同时落 assistant/message 与 onStream，保证 desktop（事件投影）与 CLI（流式）
+    // 两个客户端都看得到；stopReason 如实为 tool_failures。
+    if (
+      maxConsecutiveToolFailures > 0 &&
+      consecutiveToolFailures >= maxConsecutiveToolFailures &&
+      signal?.aborted !== true // 取消优先：用户中断不应被熔断文案冒充
+    ) {
+      const failure = lastToolFailure ?? { tool: 'unknown', error: 'unknown error' };
+      const circuitText =
+        `连续 ${consecutiveToolFailures} 次工具调用失败，已自动停止以避免继续空转（阈值 ${maxConsecutiveToolFailures}）。` +
+        `最近一次失败：${failure.tool} — ${truncateCircuitError(failure.error)}。` +
+        `请检查工具参数或运行环境（shell/网络/依赖）后重试；也可以直接告诉我换一种做法。`;
+      writer.append('assistant/message', { text: circuitText, model: provider.name, turnId });
+      options.onStream?.({ type: 'text-delta', text: circuitText, turnId });
+      finalText = circuitText;
+      stopReason = 'tool_failures';
+      writer.append('step/end', { stepId, turnId, durationMs: Math.round(performance.now() - stepStartedAt) });
+      break;
+    }
 
     writer.append('step/end', { stepId, turnId, durationMs: Math.round(performance.now() - stepStartedAt) });
     // S6 安全 step 边界：本 step 完整往返完成（模型流 + 工具波浪均已落地）后才消费 steer。

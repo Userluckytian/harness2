@@ -31,7 +31,15 @@ describe('ToolExecutor.execute', () => {
   it('deny：不执行工具，结果 error=denied by approval policy', async () => {
     let executed = 0;
     const reg = new ToolRegistry();
-    reg.register(makeTool({ name: 'guarded', execute: async () => { executed += 1; return { output: 'x' }; } }));
+    reg.register(
+      makeTool({
+        name: 'guarded',
+        execute: async () => {
+          executed += 1;
+          return { output: 'x' };
+        },
+      }),
+    );
     const approval: ApprovalHandler = { decide: () => 'deny' };
     const r = await new ToolExecutor(reg, approval).execute(req('c1', 'guarded'), env);
     expect(executed).toBe(0);
@@ -42,7 +50,15 @@ describe('ToolExecutor.execute', () => {
   it('ask：onAsk 返回 true 放行 / false 拒绝；未提供 onAsk 时按拒绝处理', async () => {
     let executed = 0;
     const reg = new ToolRegistry();
-    reg.register(makeTool({ name: 'asked', execute: async () => { executed += 1; return { output: 'x' }; } }));
+    reg.register(
+      makeTool({
+        name: 'asked',
+        execute: async () => {
+          executed += 1;
+          return { output: 'x' };
+        },
+      }),
+    );
 
     const yes: ApprovalHandler = { decide: () => 'ask', onAsk: () => true };
     expect((await new ToolExecutor(reg, yes).execute(req('c1', 'asked'), env)).ok).toBe(true);
@@ -102,7 +118,14 @@ describe('ToolExecutor.execute', () => {
 
   it('工具抛异常：兜底捕获为 ok:false（进程不崩）', async () => {
     const reg = new ToolRegistry();
-    reg.register(makeTool({ name: 'throwing', execute: () => { throw new Error('boom inside'); } }));
+    reg.register(
+      makeTool({
+        name: 'throwing',
+        execute: () => {
+          throw new Error('boom inside');
+        },
+      }),
+    );
     const r = await new ToolExecutor(reg).execute(req('c1', 'throwing'), env);
     expect(r.ok).toBe(false);
     expect(r.error).toBe('boom inside');
@@ -111,8 +134,20 @@ describe('ToolExecutor.execute', () => {
   it('P2-2 回归：decide 抛异常 → 该调用 ok:false，不执行工具、不击穿调用方', async () => {
     let executed = 0;
     const reg = new ToolRegistry();
-    reg.register(makeTool({ name: 'guarded', execute: async () => { executed += 1; return { output: 'x' }; } }));
-    const approval: ApprovalHandler = { decide: () => { throw new Error('approval storage down'); } };
+    reg.register(
+      makeTool({
+        name: 'guarded',
+        execute: async () => {
+          executed += 1;
+          return { output: 'x' };
+        },
+      }),
+    );
+    const approval: ApprovalHandler = {
+      decide: () => {
+        throw new Error('approval storage down');
+      },
+    };
     const r = await new ToolExecutor(reg, approval).execute(req('c1', 'guarded'), env);
     expect(executed).toBe(0);
     expect(r.ok).toBe(false);
@@ -122,8 +157,21 @@ describe('ToolExecutor.execute', () => {
   it('P2-2 回归：onAsk 抛异常 → 该调用 ok:false，不执行工具', async () => {
     let executed = 0;
     const reg = new ToolRegistry();
-    reg.register(makeTool({ name: 'asked', execute: async () => { executed += 1; return { output: 'x' }; } }));
-    const approval: ApprovalHandler = { decide: () => 'ask', onAsk: () => { throw new Error('ui gone'); } };
+    reg.register(
+      makeTool({
+        name: 'asked',
+        execute: async () => {
+          executed += 1;
+          return { output: 'x' };
+        },
+      }),
+    );
+    const approval: ApprovalHandler = {
+      decide: () => 'ask',
+      onAsk: () => {
+        throw new Error('ui gone');
+      },
+    };
     const r = await new ToolExecutor(reg, approval).execute(req('c1', 'asked'), env);
     expect(executed).toBe(0);
     expect(r.ok).toBe(false);
@@ -132,7 +180,9 @@ describe('ToolExecutor.execute', () => {
 
   it('error 与 output 并存：ok=false 但输出保留（供回传模型诊断）', async () => {
     const reg = new ToolRegistry();
-    reg.register(makeTool({ name: 'partial', execute: async () => ({ output: 'partial logs', error: 'exit code 1' }) }));
+    reg.register(
+      makeTool({ name: 'partial', execute: async () => ({ output: 'partial logs', error: 'exit code 1' }) }),
+    );
     const r = await new ToolExecutor(reg).execute(req('c1', 'partial'), env);
     expect(r.ok).toBe(false);
     expect(r.output).toBe('partial logs');
@@ -147,17 +197,19 @@ describe('ToolExecutor.runWave（并发波次）', () => {
     let inFlight = 0;
     let maxInFlight = 0;
     const reg = new ToolRegistry();
-    reg.register(makeTool({
-      name: 'safe_slow',
-      concurrencySafe: true,
-      execute: async () => {
-        inFlight += 1;
-        maxInFlight = Math.max(maxInFlight, inFlight);
-        await sleep(120);
-        inFlight -= 1;
-        return { output: 'x' };
-      },
-    }));
+    reg.register(
+      makeTool({
+        name: 'safe_slow',
+        concurrencySafe: true,
+        execute: async () => {
+          inFlight += 1;
+          maxInFlight = Math.max(maxInFlight, inFlight);
+          await sleep(120);
+          inFlight -= 1;
+          return { output: 'x' };
+        },
+      }),
+    );
     const executor = new ToolExecutor(reg);
     const results = await executor.runWave([req('a', 'safe_slow'), req('b', 'safe_slow'), req('c', 'safe_slow')], env);
     expect(results.map((r) => r.callId)).toEqual(['a', 'b', 'c']);
@@ -167,7 +219,15 @@ describe('ToolExecutor.runWave（并发波次）', () => {
 
   it('unsafe 串行：两个 unsafe 调用总时长 >= 单个时长之和', async () => {
     const reg = new ToolRegistry();
-    reg.register(makeTool({ name: 'unsafe_slow', execute: async () => { await sleep(100); return { output: 'x' }; } }));
+    reg.register(
+      makeTool({
+        name: 'unsafe_slow',
+        execute: async () => {
+          await sleep(100);
+          return { output: 'x' };
+        },
+      }),
+    );
     const executor = new ToolExecutor(reg);
     const started = performance.now();
     await executor.runWave([req('a', 'unsafe_slow'), req('b', 'unsafe_slow')], env);
@@ -210,17 +270,28 @@ describe('ToolExecutor.runWave（并发波次）', () => {
       makeTool({
         name: 'safe_fast',
         concurrencySafe: true,
-        execute: async () => { await sleep(60); order.push('safe'); return { output: 's' }; },
+        execute: async () => {
+          await sleep(60);
+          order.push('safe');
+          return { output: 's' };
+        },
       }),
     );
     reg.register(
       makeTool({
         name: 'unsafe_fast',
-        execute: async () => { await sleep(20); order.push('unsafe'); return { output: 'u' }; },
+        execute: async () => {
+          await sleep(20);
+          order.push('unsafe');
+          return { output: 'u' };
+        },
       }),
     );
     const executor = new ToolExecutor(reg);
-    const results = await executor.runWave([req('1', 'safe_fast'), req('2', 'unsafe_fast'), req('3', 'safe_fast')], env);
+    const results = await executor.runWave(
+      [req('1', 'safe_fast'), req('2', 'unsafe_fast'), req('3', 'safe_fast')],
+      env,
+    );
     expect(results.map((r) => r.ok)).toEqual([true, true, true]);
     // unsafe 独占：第一个 safe 批完成后才执行，再进入第二个 safe 批
     expect(order).toEqual(['safe', 'unsafe', 'safe']);
@@ -240,8 +311,13 @@ describe('ToolExecutor.runWave（并发波次）', () => {
       makeTool({
         name: 'keyed',
         concurrencySafe: true,
-        lockKey: () => { throw new Error('bad key'); },
-        execute: async () => { executed += 1; return { output: 'x' }; },
+        lockKey: () => {
+          throw new Error('bad key');
+        },
+        execute: async () => {
+          executed += 1;
+          return { output: 'x' };
+        },
       }),
     );
     const results = await new ToolExecutor(reg).runWave([req('a', 'keyed'), req('b', 'keyed')], env);

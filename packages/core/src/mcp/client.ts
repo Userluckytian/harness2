@@ -218,9 +218,7 @@ export class McpManager {
   // —— 连接与注册 ——
 
   private async openConnection(entry: ServerEntry): Promise<void> {
-    const transportFactory =
-      this.options.transportFactory ??
-      ((_, cfg): Transport => createStdioOrUrlTransport(cfg));
+    const transportFactory = this.options.transportFactory ?? ((_, cfg): Transport => createStdioOrUrlTransport(cfg));
     const transport = await transportFactory(entry.name, entry.cfg);
     const client = new Client({ name: MCP_CLIENT_NAME, version: CORE_VERSION });
     client.onerror = (e: Error) => {
@@ -341,7 +339,9 @@ export class McpManager {
       entry.state = 'down';
       this.offlineTools(entry);
       void this.closeConnection(entry); // down 时不残留半死连接（若有）
-      this.logSink(`[mcp:${entry.name}] 重启 ${this.maxRestarts} 次仍失败，放弃：该服务器工具全部下线（主进程不受影响）`);
+      this.logSink(
+        `[mcp:${entry.name}] 重启 ${this.maxRestarts} 次仍失败，放弃：该服务器工具全部下线（主进程不受影响）`,
+      );
       return;
     }
     const delay = this.backoff[Math.min(entry.restarts, this.backoff.length - 1)] ?? 1_000;
@@ -384,7 +384,7 @@ export class McpManager {
           ? (inputSchema as Record<string, unknown>)
           : { type: 'object', properties: {} },
       // 不声明 concurrencySafe → unsafe：串行执行 + 审批默认 ask（安全缺省）
-      async execute(args: unknown, ctx: ToolContext): Promise<ToolOutput> {
+      async execute(args: unknown, _ctx: ToolContext): Promise<ToolOutput> {
         if (entry.client === null) {
           return { error: `MCP 服务器 "${entry.name}" 未连接（state=${entry.state}）` };
         }

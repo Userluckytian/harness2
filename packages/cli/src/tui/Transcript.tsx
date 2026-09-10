@@ -53,11 +53,7 @@ function ToolCallCard({ call, expanded }: { call: ToolCallState; expanded: boole
       )}
       {expanded && call.tool === 'write' && (
         <Box marginLeft={2}>
-          <DiffCard
-            title="write 内容"
-            before=""
-            after={typeof args.content === 'string' ? args.content : ''}
-          />
+          <DiffCard title="write 内容" before="" after={typeof args.content === 'string' ? args.content : ''} />
         </Box>
       )}
     </Box>
@@ -76,13 +72,9 @@ export function Transcript({
   const tail = busy && liveText.length > 0 ? liveText : '';
   return (
     <Box flexGrow={1} flexDirection="column">
-      <Static items={settled}>
-        {(line) => <Text key={line}>{line}</Text>}
-      </Static>
+      <Static items={settled}>{(line) => <Text key={line}>{line}</Text>}</Static>
       {/* 当前 turn 的推理折叠块（仅 live 期且非空时显示） */}
-      {busy && reasoningText.trim().length > 0 && (
-        <ReasoningBlock text={reasoningText} expanded={reasoningExpanded} />
-      )}
+      {busy && reasoningText.trim().length > 0 && <ReasoningBlock text={reasoningText} expanded={reasoningExpanded} />}
       {busy && liveTools.map((c) => <ToolCallCard key={c.callId} call={c} expanded={reasoningExpanded} />)}
       {tail.length > 0 && <Text color="gray">{tail}</Text>}
     </Box>

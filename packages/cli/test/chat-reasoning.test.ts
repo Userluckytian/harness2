@@ -1,7 +1,7 @@
 // /reasoning 展示开关（两路径共享 reasoning 状态，默认关）进程内集成测试：
 // setupChatSession + mock 脚本带 reasoningChunks，验证状态机与推理增量转发口径。
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';

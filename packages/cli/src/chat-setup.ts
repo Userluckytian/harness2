@@ -51,7 +51,7 @@ import {
   type ApprovalMode,
 } from '@harness2/core';
 import type { ChatOptions } from './legacy-chat.js';
-import { PLAN_MODE_SYSTEM_PREFIX, CORE_MODE_TO_ALIAS, type ModeAlias } from './mode-alias.js';
+import { PLAN_MODE_SYSTEM_PREFIX } from './mode-alias.js';
 
 /** --provider mock 的内置演示脚本：两轮工具调用（write 文件 + read 验证） */
 export const MOCK_DEMO_SCRIPT: MockScript = [
@@ -142,10 +142,7 @@ export interface ChatRuntime {
 const SESSION_HELP_BANNER = (id: string, kind: 'recovered' | 'new'): string =>
   `会话: ${id}（${kind === 'recovered' ? '已恢复' : '新建'}）`;
 
-export async function setupChatSession(
-  options: ChatOptions,
-  hooks: ChatSetupHooks,
-): Promise<ChatRuntime> {
+export async function setupChatSession(options: ChatOptions, hooks: ChatSetupHooks): Promise<ChatRuntime> {
   const { line } = hooks;
   const root = options.root !== undefined ? options.root : process.cwd();
 
@@ -206,9 +203,7 @@ export async function setupChatSession(
       } catch {
         smallProvider = undefined;
       }
-      compaction = resolveCompactionOptions(loaded.config, (role) =>
-        role === 'small' ? smallProvider : provider,
-      );
+      compaction = resolveCompactionOptions(loaded.config, (role) => (role === 'small' ? smallProvider : provider));
       let subProvider: ChatProvider | undefined;
       try {
         subProvider = createProvider(loaded.config, 'subagent', { authPath: paths.globalAuth });
@@ -268,10 +263,7 @@ export async function setupChatSession(
         return policy?.decide(input) ?? 'ask';
       },
       async onAsk(input: ApprovalInput) {
-        const answer = await hooks.askApproval(
-          toolPrompt(input.tool),
-          currentAbort?.signal,
-        );
+        const answer = await hooks.askApproval(toolPrompt(input.tool), currentAbort?.signal);
         if (answer === ASK_CANCELLED) {
           line('审批等待被取消（该工具调用按拒绝处理）');
           return false;
@@ -432,10 +424,7 @@ export async function setupChatSession(
     }
   };
 
-  const switchSession = (
-    id: string | null,
-    opts?: { print?: (t: string) => void },
-  ): void => {
+  const switchSession = (id: string | null, opts?: { print?: (t: string) => void }): void => {
     const print = opts?.print ?? line;
     closeCurrent();
     try {

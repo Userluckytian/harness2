@@ -64,7 +64,12 @@ import { createBridge } from '../src/main/bridge.js';
 function makeDeps(overrides: Partial<BridgeDeps> = {}): BridgeDeps & { sent: unknown[] } {
   const sent: unknown[] = [];
   const deps: BridgeDeps = {
-    serve: { baseUrl: 'http://127.0.0.1:1', wsUrl: 'ws://127.0.0.1:1', status: 'online', getStatus: () => ({ status: 'connected' }) } as never,
+    serve: {
+      baseUrl: 'http://127.0.0.1:1',
+      wsUrl: 'ws://127.0.0.1:1',
+      status: 'online',
+      getStatus: () => ({ status: 'connected' }),
+    } as never,
     root: 'C:\\work',
     home: 'C:\\Users\\test\\.harness2',
     sendEvent: (f) => sent.push(f),

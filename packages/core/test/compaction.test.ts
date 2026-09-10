@@ -92,7 +92,10 @@ describe('estimateContextTokens / computeCoveredUpToSeq（纯函数）', () => {
   it('6 条消息：无可折叠区返回 null；7 条：上界 = 倒数第 7 条（尾部保留 6 条原文）', () => {
     const dir = tmpDir();
     const writer = SessionWriter.create(dir, { sessionId: 'boundary' }, { fsync: false });
-    seedMessages(writer, Array.from({ length: 3 }, (_, i) => `m${i}`)); // 6 条
+    seedMessages(
+      writer,
+      Array.from({ length: 3 }, (_, i) => `m${i}`),
+    ); // 6 条
     expect(computeCoveredUpToSeq(loadSession(dir))).toBeNull();
     writer.append('user/message', { text: 'm3' }); // 第 7 条
     const boundary = computeCoveredUpToSeq(loadSession(dir));
@@ -163,7 +166,16 @@ describe('压缩触发（runTurn + compaction 选项）', () => {
     const dir = tmpDir();
     const writer = SessionWriter.create(dir, { sessionId: 'trigger' }, { fsync: false });
     // 8 条 seed（覆盖区 2 条 + 尾部 6 条）；长文本使估算越过 128×0.75=96 token
-    seedMessages(writer, [long(200, 'A'), long(200, 'B'), long(5, 'c'), long(5, 'd'), long(5, 'e'), long(5, 'f'), long(5, 'g'), long(5, 'h')]);
+    seedMessages(writer, [
+      long(200, 'A'),
+      long(200, 'B'),
+      long(5, 'c'),
+      long(5, 'd'),
+      long(5, 'e'),
+      long(5, 'f'),
+      long(5, 'g'),
+      long(5, 'h'),
+    ]);
     const summarizer = summarizerStub('覆盖区摘要内容');
     const provider = new MockProvider([{ text: 'turn 回复' }, { text: 'turn3 回复' }]);
 
@@ -248,7 +260,16 @@ describe('压缩触发（runTurn + compaction 选项）', () => {
   it('摘要失败：不落事件、turn 正常完成（warning 告知、下轮可重试）', async () => {
     const dir = tmpDir();
     const writer = SessionWriter.create(dir, { sessionId: 'fail' }, { fsync: false });
-    seedMessages(writer, [long(200, 'A'), long(200, 'B'), long(5, 'c'), long(5, 'd'), long(5, 'e'), long(5, 'f'), long(5, 'g'), long(5, 'h')]);
+    seedMessages(writer, [
+      long(200, 'A'),
+      long(200, 'B'),
+      long(5, 'c'),
+      long(5, 'd'),
+      long(5, 'e'),
+      long(5, 'f'),
+      long(5, 'g'),
+      long(5, 'h'),
+    ]);
     const provider = new MockProvider([{ text: 'turn 回复' }]);
     const result = await runTurn(writer, {
       provider,
@@ -270,9 +291,6 @@ describe('压缩触发（runTurn + compaction 选项）', () => {
 });
 
 describe('buildChatMessages 消费 compaction/applied（单元）', () => {
-  interface Draft {
-    append(type: string, payload: Record<string, unknown>): void;
-  }
   function draftSession(build: (w: SessionWriter) => void): string {
     const dir = tmpDir();
     const writer = SessionWriter.create(dir, { sessionId: 'unit' }, { fsync: false });
@@ -402,7 +420,16 @@ describe('Model-visible ⟺ logged 不变量扩展（含压缩）', () => {
   it('每个 step/start 的请求（含摘要替换）可从日志独立重建', async () => {
     const dir = tmpDir();
     const writer = SessionWriter.create(dir, { sessionId: 'invariant' }, { fsync: false });
-    seedMessages(writer, [long(200, 'A'), long(200, 'B'), long(5, 'c'), long(5, 'd'), long(5, 'e'), long(5, 'f'), long(5, 'g'), long(5, 'h')]);
+    seedMessages(writer, [
+      long(200, 'A'),
+      long(200, 'B'),
+      long(5, 'c'),
+      long(5, 'd'),
+      long(5, 'e'),
+      long(5, 'f'),
+      long(5, 'g'),
+      long(5, 'h'),
+    ]);
     const summarizer = summarizerStub('回放摘要');
     const provider = new MockProvider([{ text: 't1' }, { text: 't2' }]);
     await runTurn(writer, {
@@ -470,9 +497,7 @@ describe('compaction/applied 校验（写入口 + 解析层）', () => {
     expect(() => writer.append('compaction/applied', { summary: '', coveredUpToSeq: 2 })).toThrow(
       /summary must be a non-empty string/,
     );
-    expect(() => writer.append('compaction/applied', { summary: 'S', coveredUpToSeq: 99 })).toThrow(
-      /out of range/,
-    );
+    expect(() => writer.append('compaction/applied', { summary: 'S', coveredUpToSeq: 99 })).toThrow(/out of range/);
     writer.append('compaction/applied', { summary: 'S', coveredUpToSeq: 2 }); // 合法：不抛
     writer.close();
     const events = loadEvents(dir);
@@ -484,16 +509,48 @@ describe('compaction/applied 校验（写入口 + 解析层）', () => {
     const base = JSON.stringify({ v: 1, seq: 3, ts: 't', type: 'compaction/applied' });
     expect(parseEventLine(`${base} summary: "" , coveredUpToSeq: 1 }`)).toBeNull(); // 非法 JSON
     expect(
-      parseEventLine(JSON.stringify({ v: 1, seq: 3, ts: 't', type: 'compaction/applied', payload: { summary: '', coveredUpToSeq: 1 } })),
+      parseEventLine(
+        JSON.stringify({
+          v: 1,
+          seq: 3,
+          ts: 't',
+          type: 'compaction/applied',
+          payload: { summary: '', coveredUpToSeq: 1 },
+        }),
+      ),
     ).toBeNull();
     expect(
-      parseEventLine(JSON.stringify({ v: 1, seq: 3, ts: 't', type: 'compaction/applied', payload: { summary: 'S', coveredUpToSeq: 0 } })),
+      parseEventLine(
+        JSON.stringify({
+          v: 1,
+          seq: 3,
+          ts: 't',
+          type: 'compaction/applied',
+          payload: { summary: 'S', coveredUpToSeq: 0 },
+        }),
+      ),
     ).toBeNull();
     expect(
-      parseEventLine(JSON.stringify({ v: 1, seq: 3, ts: 't', type: 'compaction/applied', payload: { summary: 'S', coveredUpToSeq: 1.5 } })),
+      parseEventLine(
+        JSON.stringify({
+          v: 1,
+          seq: 3,
+          ts: 't',
+          type: 'compaction/applied',
+          payload: { summary: 'S', coveredUpToSeq: 1.5 },
+        }),
+      ),
     ).toBeNull();
     expect(
-      parseEventLine(JSON.stringify({ v: 1, seq: 3, ts: 't', type: 'compaction/applied', payload: { summary: 'S', coveredUpToSeq: 3 } })),
+      parseEventLine(
+        JSON.stringify({
+          v: 1,
+          seq: 3,
+          ts: 't',
+          type: 'compaction/applied',
+          payload: { summary: 'S', coveredUpToSeq: 3 },
+        }),
+      ),
     ).not.toBeNull();
   });
 });

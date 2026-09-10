@@ -196,9 +196,7 @@ export function createRetryBudget(): RetryBudget {
 }
 
 /** effectiveDelay 的结果：允许等待（delayMs）或停止（stop+reason） */
-export type EffectiveDelay =
-  | { stop: false; delayMs: number }
-  | { stop: true; reason: string };
+export type EffectiveDelay = { stop: false; delayMs: number } | { stop: true; reason: string };
 
 /**
  * Retry-After 处理：秒→ms 全额放行（≤ 剩余预算）；超剩余预算 → stop 并告知。
@@ -242,10 +240,13 @@ export function waitWithAbort(delayMs: number, signal?: AbortSignal): Promise<vo
       clearTimeout(timer);
       reject(new RetryAbortError());
     };
-    timer = setTimeout(() => {
-      signal?.removeEventListener('abort', onAbort);
-      resolve();
-    }, Math.max(0, delayMs));
+    timer = setTimeout(
+      () => {
+        signal?.removeEventListener('abort', onAbort);
+        resolve();
+      },
+      Math.max(0, delayMs),
+    );
     signal?.addEventListener('abort', onAbort, { once: true });
   });
 }

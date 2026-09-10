@@ -59,9 +59,7 @@ function parseNamesClause(clause: string): Array<{ orig: string; exported: strin
       const asMatch = item.match(/^(.+?)\s+as\s+(.+)$/);
       const orig = asMatch?.[1]?.trim();
       const exported = asMatch?.[2]?.trim();
-      return orig && exported
-        ? { orig, exported }
-        : { orig: item, exported: item };
+      return orig && exported ? { orig, exported } : { orig: item, exported: item };
     });
 }
 
@@ -177,10 +175,7 @@ export interface SurfaceDiff {
   kindChanged: Array<{ name: string; from: Kind; to: Kind }>;
 }
 
-export function compareSurface(
-  current: Record<string, Kind>,
-  baseline: Record<string, Kind>,
-): SurfaceDiff {
+export function compareSurface(current: Record<string, Kind>, baseline: Record<string, Kind>): SurfaceDiff {
   const added = Object.keys(current).filter((n) => !(n in baseline));
   const removed = Object.keys(baseline).filter((n) => !(n in current));
   const kindChanged = Object.keys(current)
@@ -244,10 +239,7 @@ describe('公开导出面快照（@harness2/core 主入口）', () => {
 
     if (process.env.H2_UPDATE_API_SNAPSHOT === '1') {
       mkdirSync(dirname(BASELINE_FIXTURE), { recursive: true });
-      writeFileSync(
-        BASELINE_FIXTURE,
-        `${JSON.stringify({ exports: sortKeysDeep(current) }, null, 2)}\n`,
-      );
+      writeFileSync(BASELINE_FIXTURE, `${JSON.stringify({ exports: sortKeysDeep(current) }, null, 2)}\n`);
       return;
     }
     const baseline = readBaseline();
@@ -275,10 +267,7 @@ describe('公开导出面快照（@harness2/core 主入口）', () => {
   it('比对器：删除/改名导出 → breaking，失败消息含 major/快照指引', () => {
     const removedDiff = compareSurface({ a: 'function' }, { a: 'function', gone: 'class' });
     expect(removedDiff.removed).toEqual(['gone']);
-    const renamedDiff = compareSurface(
-      { renamed: 'function' },
-      { oldName: 'function' },
-    );
+    const renamedDiff = compareSurface({ renamed: 'function' }, { oldName: 'function' });
     expect(renamedDiff.removed).toEqual(['oldName']);
     expect(renamedDiff.added).toEqual(['renamed']);
     const message = describeBreaking(renamedDiff)!;
@@ -322,10 +311,7 @@ describe('公开导出面快照（@harness2/core 主入口）', () => {
       writeFileSync(join(dir, 'b.d.ts'), 'export declare function renameMe(): void;\n');
       writeFileSync(join(dir, 'version.d.ts'), 'export declare const CORE_VERSION = "1.0.0";\n');
       // import 后裸 export {}（tsc 对 re-export 导入名的常规产物）
-      writeFileSync(
-        join(dir, 'c.d.ts'),
-        ["import type { Impl } from './impl.js';", 'export { Impl };', ''].join('\n'),
-      );
+      writeFileSync(join(dir, 'c.d.ts'), ["import type { Impl } from './impl.js';", 'export { Impl };', ''].join('\n'));
       writeFileSync(join(dir, 'impl.d.ts'), 'export interface Impl { run(): void }\n');
 
       const surface = extractApiSurface(dir);
@@ -350,11 +336,7 @@ describe('公开导出面快照（@harness2/core 主入口）', () => {
     try {
       writeFileSync(
         join(dir, 'index.d.ts'),
-        [
-          "export type { Foo } from './foo.js';",
-          "export * as ns from './impl.js';",
-          '',
-        ].join('\n'),
+        ["export type { Foo } from './foo.js';", "export * as ns from './impl.js';", ''].join('\n'),
       );
       writeFileSync(join(dir, 'foo.d.ts'), 'export interface Foo { x: number }\n');
       writeFileSync(join(dir, 'impl.d.ts'), 'export declare function impl(): void;\n');

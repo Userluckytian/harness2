@@ -38,7 +38,8 @@ describe('shortBranch', () => {
 });
 
 describe('shortModel', () => {
-  it('anthropic/claude-sonnet → claude-sonnet', () => expect(shortModel('anthropic/claude-sonnet')).toBe('claude-sonnet'));
+  it('anthropic/claude-sonnet → claude-sonnet', () =>
+    expect(shortModel('anthropic/claude-sonnet')).toBe('claude-sonnet'));
   it('gpt-4o → gpt-4o（无 / 不截断）', () => expect(shortModel('gpt-4o')).toBe('gpt-4o'));
   it('provider/sub/model → model', () => expect(shortModel('provider/sub/model')).toBe('model'));
 });
@@ -76,7 +77,7 @@ function makeFakeApi(): Harness2Api {
     settingsUpdateConfig: vi.fn(async () => ({ ok: true })),
     settingsGetAuthMasked: vi.fn(async () => ({ channels: [], gateways: [] })),
     settingsUpdateAuth: vi.fn(async () => ({ ok: true })),
-    settingsGetPreferences: vi.fn(async () => ({ theme: 'warmPaper' } as SettingsPreferencesShape)),
+    settingsGetPreferences: vi.fn(async () => ({ theme: 'warmPaper' }) as SettingsPreferencesShape),
     settingsSetPreferences: vi.fn(async (p: unknown) => p as SettingsPreferencesShape),
     settingsGetDoctorReport: vi.fn(async () => ({ checks: [], exitCode: 0 as const })),
     settingsGetCrashReports: vi.fn(async () => []),
@@ -142,9 +143,7 @@ describe('ConversationHeader 组件', () => {
     (window as unknown as { harness2: Harness2Api }).harness2 = api;
     render(<ConversationHeader sessionId="s1" cwd="/tmp" />);
 
-    const fill = await screen.findByText('80%').then(() =>
-      document.querySelector('.ctx-bar-fill'),
-    );
+    const fill = await screen.findByText('80%').then(() => document.querySelector('.ctx-bar-fill'));
     expect(fill).toBeTruthy();
     expect((fill as HTMLElement).style.width).toBe('80%');
     // usage >= 0.7 → warn class

@@ -9,6 +9,7 @@ import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { join, relative, resolve, sep } from 'node:path';
 import type { ToolDefinition, ToolOutput } from '../types.js';
 import { expectObject, expectString, optionalString } from './common.js';
+import { OutputCollector } from '../process-output.js';
 
 export const MAX_GREP_RESULTS = 500;
 const SKIP_DIRS = new Set(['node_modules', '.git']);
@@ -49,11 +50,17 @@ export const grepTool: ToolDefinition = {
 };
 
 /** rg 路径；返回 null 表示 rg 不可用（回退 JS 扫描） */
-function grepWithRipgrep(pattern: string, cwd: string, searchPath: string, signal: AbortSignal): Promise<ToolOutput | null> {
+function grepWithRipgrep(
+  pattern: string,
+  cwd: string,
+  searchPath: string,
+  signal: AbortSignal,
+): Promise<ToolOutput | null> {
   return new Promise((resolve) => {
     const relTarget = relative(cwd, searchPath) || '.';
-    let stdout = '';
-    let stderr = '';
+    // A1-2：按字节累积后统一解码（UTF-8 → Windows GBK 回退），多字节不跨 chunk 断裂
+    const stdout = new OutputCollector(MAX_RG_STDOUT_BYTES);
+    const stderr = new OutputCollector(MAX_RG_STDOUT_BYTES);
     let settled = false;
     const done = (value: ToolOutput | null): void => {
       if (!settled) {
@@ -87,22 +94,22 @@ function grepWithRipgrep(pattern: string, cwd: string, searchPath: string, signa
       done(null); // 平台不支持 spawn 时直接回退
       return;
     }
-    child.stdout?.on('data', (chunk: Buffer) => {
-      if (stdout.length < MAX_RG_STDOUT_BYTES) stdout += chunk.toString('utf8');
-    });
-    child.stderr?.on('data', (chunk: Buffer) => {
-      stderr += chunk.toString('utf8');
-    });
+    child.stdout?.on('data', (chunk: Buffer) => stdout.push(chunk));
+    child.stderr?.on('data', (chunk: Buffer) => stderr.push(chunk));
     child.on('error', (e: NodeJS.ErrnoException) => {
-      if (e.code === 'ENOENT') done(null); // rg 未安装 → 回退
+      if (e.code === 'ENOENT')
+        done(null); // rg 未安装 → 回退
       else if (signal.aborted) done({ error: 'cancelled' });
       else done({ error: `rg failed: ${e.message}` });
     });
     child.on('close', (code) => {
       if (signal.aborted) return done({ error: 'cancelled' });
       // 0=有匹配；1=无匹配（rg 约定，不算错误）
-      if (code === 0 || code === 1) done(formatMatches(stdout));
-      else done({ error: `rg exited with code ${code}${stderr.trim() ? `: ${stderr.trim()}` : ''}` });
+      if (code === 0 || code === 1) done(formatMatches(stdout.decode()));
+      else {
+        const errText = stderr.decode().trim();
+        done({ error: `rg exited with code ${code}${errText ? `: ${errText}` : ''}` });
+      }
     });
   });
 }

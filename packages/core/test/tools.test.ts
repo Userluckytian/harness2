@@ -5,8 +5,8 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { ToolRegistry } from '../src/tools/registry.js';
-import { DENIED_MESSAGE, ToolExecutor, type ToolExecutionRequest } from '../src/tools/executor.js';
-import type { ApprovalHandler, ToolContext, ToolDefinition } from '../src/tools/types.js';
+import { ToolExecutor } from '../src/tools/executor.js';
+import type { ToolContext, ToolDefinition } from '../src/tools/types.js';
 import { bashTool } from '../src/tools/predefined/bash.js';
 import { readTool } from '../src/tools/predefined/read.js';
 import { writeTool } from '../src/tools/predefined/write.js';
@@ -90,7 +90,11 @@ const realTree = realpathSync(fixtureTree); // Windows tmpdir 大小写/8.3 路�
 function ctxFor(cwd: string, signal = new AbortController().signal): ToolContext {
   return { signal, cwd };
 }
-async function run(def: ToolDefinition, args: unknown, cwd: string): Promise<{ ok: boolean; output?: string; error?: string }> {
+async function run(
+  def: ToolDefinition,
+  args: unknown,
+  cwd: string,
+): Promise<{ ok: boolean; output?: string; error?: string }> {
   const reg = new ToolRegistry();
   reg.register(def);
   return new ToolExecutor(reg).execute({ callId: 't', tool: def.name, args }, ctxFor(cwd));
@@ -270,7 +274,7 @@ describe('edit 工具', () => {
     expect(readFileSync(join(dir, 'f.txt'), 'utf8')).toBe('a b a b a'); // 未被改动
   });
 
-  it('P1-2 回归：new_text 含替换模式符号（$& $$ $` $\'）时按字面写入不解释', async () => {
+  it("P1-2 回归：new_text 含替换模式符号（$& $$ $` $'）时按字面写入不解释", async () => {
     const dir = tmpDir();
     writeFileSync(join(dir, 'f.txt'), 'alpha beta gamma', 'utf8');
     // 字符串形式的 String.replace 会解释这些符号（$&=匹配串、$$=字面 $、$'=匹配后缀等）

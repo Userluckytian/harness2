@@ -94,10 +94,7 @@ describe('provider 错误码归一 + Retry-After 透传（S4b 接线）', () => 
     vi.useFakeTimers();
     const dir = tmpDir();
     // 0.1s Retry-After → 快速重试成功
-    const provider = new MockProvider([
-      { error: 429, retryAfterSeconds: 0.1 },
-      { text: '重试成功' },
-    ]);
+    const provider = new MockProvider([{ error: 429, retryAfterSeconds: 0.1 }, { text: '重试成功' }]);
     const pending = runTurn(dir, { provider, tools: new ToolRegistry(), cwd: dir, userText: 'hi' });
     await flushUntilPending(pending);
     const result = await pending;
@@ -130,7 +127,9 @@ describe('EOF / stream_truncated 重试', () => {
     // 成功 attempt 才落 assistant/message
     const msgs = loadEvents(dir).filter((e) => e.type === 'assistant/message');
     expect(msgs).toHaveLength(1);
-    expect(msgs[0] && msgs[0].type === 'assistant/message' ? (msgs[0].payload as { text: string }).text : null).toBe('新半句');
+    expect(msgs[0] && msgs[0].type === 'assistant/message' ? (msgs[0].payload as { text: string }).text : null).toBe(
+      '新半句',
+    );
   });
 
   it('stream_truncated 超预算：一直断流，per-turn cap 6 次额外后停止并告知（不重试第 7 次）', async () => {
@@ -181,7 +180,12 @@ describe('半截工具调用不执行 / 已完成工具不重跑', () => {
     const dir = tmpDir();
     let executed = 0;
     const registry = new ToolRegistry();
-    registry.register(makeTool('t', () => { executed += 1; return { output: 'done' }; }));
+    registry.register(
+      makeTool('t', () => {
+        executed += 1;
+        return { output: 'done' };
+      }),
+    );
     // attempt1：产出一个 tool-call 候选后断流（半截，未完成 → 不允许执行）
     // attempt2：纯文本收尾（不再调工具）
     const provider = new MockProvider([
@@ -210,7 +214,12 @@ describe('半截工具调用不执行 / 已完成工具不重跑', () => {
     const dir = tmpDir();
     let executed = 0;
     const registry = new ToolRegistry();
-    registry.register(makeTool('t', () => { executed += 1; return { output: 'done' }; }));
+    registry.register(
+      makeTool('t', () => {
+        executed += 1;
+        return { output: 'done' };
+      }),
+    );
     const provider = new MockProvider([
       { text: '第一步', toolCalls: [{ id: 'c1', name: 't', arguments: '{}' }] },
       { text: '半截', truncateAfter: true, retryAfterSeconds: 0.01 },
@@ -243,10 +252,7 @@ describe('abort 中断重试等待 / finalText 空有结构化结果', () => {
     vi.useFakeTimers();
     const dir = tmpDir();
     const ac = new AbortController();
-    const provider = new MockProvider([
-      { error: 429, retryAfterSeconds: 30 },
-      { text: '不该发生' },
-    ]);
+    const provider = new MockProvider([{ error: 429, retryAfterSeconds: 30 }, { text: '不该发生' }]);
     const pending = runTurn(dir, {
       provider,
       tools: new ToolRegistry(),
@@ -268,7 +274,9 @@ describe('abort 中断重试等待 / finalText 空有结构化结果', () => {
     const attempts = attemptsOf(dir);
     expect(attempts).toHaveLength(2);
     expect(attempts[0] && attempts[0].type === 'assistant/attempt' ? attempts[0].payload.error : '').toBe('429');
-    expect(attempts[1] && attempts[1].type === 'assistant/attempt' ? attempts[1].payload.error : '').toContain('cancelled');
+    expect(attempts[1] && attempts[1].type === 'assistant/attempt' ? attempts[1].payload.error : '').toContain(
+      'cancelled',
+    );
     expect(loadEvents(dir).at(-1)?.type).toBe('step/end');
   });
 

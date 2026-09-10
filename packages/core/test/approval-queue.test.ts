@@ -17,7 +17,7 @@ import { SessionHub, type SessionHubHooks } from '../src/server/sessions.js';
 import { SessionManager } from '../src/session/manager.js';
 import { ToolRegistry } from '../src/tools/registry.js';
 import type { ToolDefinition } from '../src/tools/types.js';
-import { MockProvider, type MockScript } from '../src/provider/mock.js';
+import { MockProvider } from '../src/provider/mock.js';
 import { startServe, type ServeHandle } from '../src/server/http.js';
 import type { WsServerMessage } from '../src/server/ws.js';
 

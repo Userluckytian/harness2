@@ -13,12 +13,12 @@
 
 ## 前置阅读（必须）
 
-| 优先级 | 文件 |
-|--------|------|
-| P0 | 本文件、`docs/MASTER-PLAN.md`（M2 定义） |
-| P0 | `docs/research/2026-09-06-reference-analysis.md` §2.3（浏览器资源管控）§2.7（调度实证） |
-| P0 | `packages/core/src/agent/loop.ts`（buildChatMessages/注入缝）、`session/types.ts`（事件扩展先例）、`server/http.ts`（信任域） |
-| P1 | `docs/issue-log/OPEN.md`（M2 发布前加固项）、`CODE_REVIEW.md` |
+| 优先级 | 文件                                                                                                                          |
+| ------ | ----------------------------------------------------------------------------------------------------------------------------- |
+| P0     | 本文件、`docs/MASTER-PLAN.md`（M2 定义）                                                                                      |
+| P0     | `docs/research/2026-09-06-reference-analysis.md` §2.3（浏览器资源管控）§2.7（调度实证）                                       |
+| P0     | `packages/core/src/agent/loop.ts`（buildChatMessages/注入缝）、`session/types.ts`（事件扩展先例）、`server/http.ts`（信任域） |
+| P1     | `docs/issue-log/OPEN.md`（M2 发布前加固项）、`CODE_REVIEW.md`                                                                 |
 
 **仓库路径：** `D:\AI_projects\harness2`（默认分支 `master`）
 **基线分支：** 从 `master` 拉 `feat/phase-7-browser-compaction-cron`
@@ -38,18 +38,18 @@
 
 ## File Structure（预期变更）
 
-| 文件 | 动作 | 职责 |
-|------|------|------|
-| `packages/core/src/session/types.ts` | 修改 | `compaction/applied` 事件 + 校验 |
-| `packages/core/src/agent/compaction.ts` | 新建 | 触发估算（字符/4 vs config contextWindow×0.75）、aux 摘要调用、尾部保护（近 6 条消息原文） |
-| `packages/core/src/agent/loop.ts` | 修改 | buildChatMessages 消费 compaction/applied（最新一条生效：覆盖区替换为摘要消息）；每 turn 前检查触发 |
-| `packages/core/src/tools/predefined/browser.ts` | 新建 | browser_navigate/click/type/snapshot/screenshot/close（Playwright 惰性加载、会话级上下文、空闲销毁、并发上限、dispose 事件） |
-| `packages/cli/src/index.ts` | 修改 | `harness2 browser install`（playwright install chromium）、`harness2 cron list/add/remove/run/history` |
-| `packages/core/src/cron/{scheduler,jobs}.ts` | 新建 | jobs.json 持久化（~/.harness2/cron/jobs.json）、60s tick + 文件锁、at-most-once、失败 incidents（连续 3 次标记） |
-| `packages/core/src/server/{http,sessions}.ts` | 修改 | serve 集成调度器；WS 通知帧 `{type:'cron', ...}` |
-| `.github/workflows/ci.yml` | 修改 | chromium 安装步骤（browser 测试用） |
-| `CHANGELOG.md`、`README.md`、版本号 | 修改 | v0.3.0 物料 |
-| `packages/core/test/{compaction,browser,cron}.test.ts` | 新建 | 见各 Task |
+| 文件                                                   | 动作 | 职责                                                                                                                         |
+| ------------------------------------------------------ | ---- | ---------------------------------------------------------------------------------------------------------------------------- |
+| `packages/core/src/session/types.ts`                   | 修改 | `compaction/applied` 事件 + 校验                                                                                             |
+| `packages/core/src/agent/compaction.ts`                | 新建 | 触发估算（字符/4 vs config contextWindow×0.75）、aux 摘要调用、尾部保护（近 6 条消息原文）                                   |
+| `packages/core/src/agent/loop.ts`                      | 修改 | buildChatMessages 消费 compaction/applied（最新一条生效：覆盖区替换为摘要消息）；每 turn 前检查触发                          |
+| `packages/core/src/tools/predefined/browser.ts`        | 新建 | browser_navigate/click/type/snapshot/screenshot/close（Playwright 惰性加载、会话级上下文、空闲销毁、并发上限、dispose 事件） |
+| `packages/cli/src/index.ts`                            | 修改 | `harness2 browser install`（playwright install chromium）、`harness2 cron list/add/remove/run/history`                       |
+| `packages/core/src/cron/{scheduler,jobs}.ts`           | 新建 | jobs.json 持久化（~/.harness2/cron/jobs.json）、60s tick + 文件锁、at-most-once、失败 incidents（连续 3 次标记）             |
+| `packages/core/src/server/{http,sessions}.ts`          | 修改 | serve 集成调度器；WS 通知帧 `{type:'cron', ...}`                                                                             |
+| `.github/workflows/ci.yml`                             | 修改 | chromium 安装步骤（browser 测试用）                                                                                          |
+| `CHANGELOG.md`、`README.md`、版本号                    | 修改 | v0.3.0 物料                                                                                                                  |
+| `packages/core/test/{compaction,browser,cron}.test.ts` | 新建 | 见各 Task                                                                                                                    |
 
 ---
 
@@ -66,6 +66,7 @@
 **Files:** `tools/predefined/browser.ts`、`test/browser.test.ts`、ci.yml
 
 **行为:**
+
 - 6 工具：`browser_navigate {url}`（http/https only）、`browser_click {ref}`、`browser_type {ref, text}`、`browser_snapshot`（aria 快照文本）、`browser_screenshot {path?}`（png，默认临时目录）、`browser_close`。ref = snapshot 输出的元素引用（aria ref），不暴露裸 selector。
 - 资源管控（Global Constraints #2 落地）：`BrowserPool` 单例——每会话 1 上下文（ctx key = 会话 id）、全局并发 2（超限排队）、空闲 5min 销毁（定时器）、crash/销毁 → `tool/result` 附 dispose 说明（经既有工具事件链自动进轨迹）。
 - 惰性：`import('playwright')` 动态加载；未安装 → 工具返回错误"请先运行 harness2 browser install"；工具注册不依赖 playwright 可解析（try import 包装）。
@@ -80,6 +81,7 @@
 **Files:** `cron/{scheduler,jobs}.ts`、cli、server 集成、`test/cron.test.ts`
 
 **行为:**
+
 - jobs.json：`{id, instruction, interval|"daily HH:MM", nextRun, enabled, failCount, createdAt}`；上限 50。
 - scheduler：serve 内 60s tick（setTimeout 链）+ `~/.harness2/cron/.tick.lock` 跨进程锁（复用会话锁思路）；到点任务**先推进 next_run 落盘再执行**（at-most-once）；执行 = 独立临时会话跑 runTurn（roles.main + 全量工具 + cwd=serve root），产出写 `~/.harness2/cron/history/<id>/<ts>.md` + WS 通知帧 `{type:'cron', op:'finished', id, ok}`；失败 failCount+1，连续 ≥3 → enabled=false + incident 标记。
 - CLI：`cron list/add "instruction" --every 5m|--at "daily 09:00"` / `remove <id>` / `run <id>`（立即执行一次）/ `history <id>`。
@@ -109,26 +111,26 @@ architecture（压缩/浏览器/调度小节）、ROADMAP（P1-16/17/18 → ✅�
 
 ## 验收标准总表
 
-| # | 标准 | 通过条件 |
-|---|------|----------|
-| 1 | 压缩 | 触发/替换/失败跳过/不变量（含 system 与摘要）测试通过 |
-| 2 | 浏览器 | 本地 stub 页面全链（navigate→click→type→snapshot）+ 资源管控（并发/空闲销毁/close）测试通过；未安装分支可测 |
-| 3 | 定时任务 | at-most-once/文件锁/熔断/解析/history 测试通过 |
-| 4 | 信任域 | Origin/Host/maxPayload 测试通过 |
-| 5 | 发布物料 | v0.3.0 CHANGELOG/README/版本号就绪；发布未执行 |
-| 6 | 红线 | 契约扩展仅 compaction/applied；浏览器/截图/任务数据不入 git；密钥三不 |
-| 7 | 单测/构建 | `pnpm test && pnpm -r typecheck` exit 0 |
+| #   | 标准      | 通过条件                                                                                                    |
+| --- | --------- | ----------------------------------------------------------------------------------------------------------- |
+| 1   | 压缩      | 触发/替换/失败跳过/不变量（含 system 与摘要）测试通过                                                       |
+| 2   | 浏览器    | 本地 stub 页面全链（navigate→click→type→snapshot）+ 资源管控（并发/空闲销毁/close）测试通过；未安装分支可测 |
+| 3   | 定时任务  | at-most-once/文件锁/熔断/解析/history 测试通过                                                              |
+| 4   | 信任域    | Origin/Host/maxPayload 测试通过                                                                             |
+| 5   | 发布物料  | v0.3.0 CHANGELOG/README/版本号就绪；发布未执行                                                              |
+| 6   | 红线      | 契约扩展仅 compaction/applied；浏览器/截图/任务数据不入 git；密钥三不                                       |
+| 7   | 单测/构建 | `pnpm test && pnpm -r typecheck` exit 0                                                                     |
 
 ---
 
 ## 风险与降级
 
-| 风险 | 缓解 |
-|------|------|
-| Playwright 安装体积大（~130MB chromium） | 惰性依赖 + `browser install` 显式安装；CI 单独步骤缓存 |
-| headless 测试在 Windows 本机抖动 | stub 页面纯本地 + 重试容忍；CI 与本地分离报告 |
-| 摘要质量差导致上下文丢失 | 尾部 6 条原文保护 + 失败跳过；摘要 prompt 可迭代 |
-| cron 执行占用主服务资源 | 临时会话串行 + 全局并发 1（调度执行不与用户 turn 抢浏览器池） |
+| 风险                                     | 缓解                                                          |
+| ---------------------------------------- | ------------------------------------------------------------- |
+| Playwright 安装体积大（~130MB chromium） | 惰性依赖 + `browser install` 显式安装；CI 单独步骤缓存        |
+| headless 测试在 Windows 本机抖动         | stub 页面纯本地 + 重试容忍；CI 与本地分离报告                 |
+| 摘要质量差导致上下文丢失                 | 尾部 6 条原文保护 + 失败跳过；摘要 prompt 可迭代              |
+| cron 执行占用主服务资源                  | 临时会话串行 + 全局并发 1（调度执行不与用户 turn 抢浏览器池） |
 
 ---
 
@@ -141,28 +143,33 @@ architecture（压缩/浏览器/调度小节）、ROADMAP（P1-16/17/18 → ✅�
 你是 **harness2** 阶段 7 的实现代理。请**完整执行本阶段**，不要只写方案。
 
 ### 基线
+
 - 目录：`D:\AI_projects\harness2`（默认分支 `master`）；从 master 创建并切换 `feat/phase-7-browser-compaction-cron`
 - 已完成（勿重做）：阶段 1-6 均验收（内核/loop+工具/Provider+配置/CLI chat+undo-redo/服务化+桌面/记忆+分叉），当前 397 passed + 1 skipped
 - 唯一实施计划：`docs/ai-framework/plans/2026-09-06-phase-7-browser-compaction-cron.md`
 - 必读：本计划、`agent/loop.ts`、`session/types.ts`（事件扩展先例）、`docs/research/…§2.3/§2.7`、`AGENTS.md`
 
 ### 做
+
 1. 严格按 Task 1→6 顺序执行：压缩 → 浏览器工具 → 定时任务 → 信任域加固 → M2 物料 → 整备
 2. 每 Task 测试通过后规范 commit（gitmoji 中文，禁止 push）
 3. 遵守 Global Constraints：契约扩展仅 compaction/applied；浏览器资源红线（1 上下文/会话、并发 2、空闲销毁、dispose 进轨迹）；调度 at-most-once；发布不执行只备料
 4. Task 6 更新 architecture/ROADMAP（P1-16/17/18 → ✅、M2 标注）/HANDOFF/diary/OPEN
 
 ### 不做
+
 - 桌面内嵌浏览器视图、语义记忆检索、IM 投递（Ph9）、自动更新
 - 提交密钥；任何 `git push`
 
 ### 工作方式
+
 1. 先跑基线 `pnpm test` 确认全绿再动工
 2. 浏览器测试先 `harness2 browser install`（或 npx playwright install chromium），全部用本地 stub 页面
 3. 证据优先：交卷前重跑 `pnpm test && pnpm -r typecheck`，粘贴真实输出
 4. 简体中文回复；代码标识符原样
 
 ### 交卷
+
 分支名、提交列表、验收表逐项自评（带命令与真实结果）、新增测试数、残留风险与未关闭项。
 
 现在开始：读完本阶段计划，从 Task 1 执行到 Task 6。

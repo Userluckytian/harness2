@@ -77,7 +77,9 @@ export class QqGatewayWs {
       case 10: {
         // Hello：按服务端间隔起心跳并发 Identify
         const interval =
-          typeof frame.d === 'object' && frame.d !== null && typeof (frame.d as { heartbeat_interval?: unknown }).heartbeat_interval === 'number'
+          typeof frame.d === 'object' &&
+          frame.d !== null &&
+          typeof (frame.d as { heartbeat_interval?: unknown }).heartbeat_interval === 'number'
             ? (frame.d as { heartbeat_interval: number }).heartbeat_interval
             : 30_000;
         this.heartbeatTimer = setInterval(() => this.rawSend({ op: 1, d: this.lastSeq }), interval);

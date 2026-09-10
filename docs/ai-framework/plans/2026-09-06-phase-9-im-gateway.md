@@ -1,9 +1,39 @@
 # 阶段 9：QQ / 飞书 IM 网关
 
-> **状态：** ✅ 已完成——2026-09-06 编排者验收通过。过程：实现代理两次并发中断（接手代理收尾）→ 独立审查 **verdict: fail**（P0 网关聋哑 + 7 P1，审查引用 QQ 官方文档纠正 msg_seq/token 契约）→ 修复代理两次中断后编排者代修（`fb837bb`：生命周期/重连重订阅/msg_seq 递增/飞书策略与鉴权/CLI 飞书分支）→ 全量复验 540 passed + 1 skipped。**复审待基础设施恢复后补做**（fail 阶段闭环条件）；真实联调待用户 QQ/飞书凭据，见 OPEN.md
+> **状态：** ✅ 已完成——2026-09-06 编排者验收通过。过程：实现代理两次并发中断（接手代理收尾）→ 独立审查 **verdict: fail**（P0 网关聋哑 + 7 P1，审查引用 QQ 官方文档纠正 msg_seq/token 契约）→ 修复代理两次中断后编排者代修（`fb837bb`：生命周期/重连重订阅/msg_seq 递增/飞书策略与鉴权/CLI 飞书分支）→ 全量复验 540 passed + 1 skipped。**复审已补：有条件通过**（阶段 15 A5，2026-09-09，四段结论见下方「复审结论（A5，2026-09-09）」）；真实联调待用户 QQ/飞书凭据，见 OPEN.md
 > **For agentic workers:** 按 Task 顺序执行；每 Task 测完再进下一 Task。
 > **交接提示词**见文末「给接手 AI 的完整提示词」。
 > **元规范:** `docs/ai-framework/phased-plan-driven.md`
+
+---
+
+## 复审结论（A5，2026-09-09 · 阶段 15 独立复审）
+
+> 阶段 15 A5 对本阶段（曾判 fail、修复后从未复审）做了独立复审，完整证据登记在验收表 A-11，3 个 P1 已下放到第 6 节。**本阶段既有状态不变**——fail 阶段闭环条件由此满足（复审已补），本次为复审结论归位记录。
+
+**① 结论：有条件通过**（非全绿）
+
+`startGateway` 生命周期 / 断线重连重订阅 / `msg_seq` 严格递增 三关注点核心行为全部正确（源码走查 + 7 个临时观察用例运行时实证），复跑测试全绿且与基线一致；但 3 个 P1（含原 fail「测试缺口」未闭环）须显式下放，故「有条件」，**不得写「已验证 ✅ 通过」**。
+
+**② 依据**
+
+- 复跑 `pnpm --filter @harness2/gateway test` → **5 files / 14 passed**（router 4 / feishu 2 / qq 4 / gateway-approval 2 / serve-client 2，3.8s；stderr 仅两条设计内告警）——与基线逐项一致，非 flaky。
+- 三关注点运行时实证：startGateway 重复启动幂等（serve-client.ts:92 readyPromise 单飞，服务端仅 1 连接）、异常退出释放（serve-client.ts:177-189 closed+clearTimeout+ws.close，gateway-ws.ts:37-43 stop 清定时器）、断线重连重订阅（serve-client.ts:105-125 close 后 1s 重连，open 后按 Set 重发全量 subscribed、serve 侧按连接存储 ws.ts:336、bridge 重建审批卡 ws.ts:338-341）、msg_seq 按 msg_id 递增（adapter.ts:73-82 同步赋值 + enqueue 保序，同 msg_id 4 条 seq=[1,2,3,4]）。
+- 红线核查：零新写入路径（仅经 serve API）、密钥脱敏、无造假绿（测试名真实命中）。
+
+**③ 遗留与边界（3 个 P1 清单，已下放）**
+
+- **P1-1** feishu 端口冲突挂死（adapter.ts:86-90 listen error 不落定）→ 下阶段上阶段遗留：`listen` 错误路径 reject 而非挂起，端口冲突如实报错退出
+- **P1-2** 并发建双会话（router.ts:60-68 无在途去重）→ 下阶段：per-key 在途 promise 去重（in-flight map）或对 chatKey 串行化
+- **P1-3** 原「测试缺口」未闭环（`fb837bb` 零新增测试；QQ 心跳/重连/msg_seq 等无自动化回归）→ 下阶段：补断线重连+重订阅、msg_seq 递增、startGateway 断言、飞书策略/token 校验、QQ WS 心跳/op7/op9/退避 5 类回归测试
+- P2 6 条记录不阻塞；msg_seq 与 QQ 契约的真机行为需真机凭据（OPEN.md 已登记）
+
+**④ 附带说明**
+
+- 完整证据与下放登记：验收表 A-11（四段结论）与第 6 节（3 个 P1 下放，状态 ⬜）；**可往下走**，但 P1 必须写进下阶段「上阶段遗留」。
+- 本次归位仅更新状态行并新增本小节，不改动本阶段实现与既有验收结论。
+
+---
 
 **Goal:** 让用户在 QQ 里直接用 harness2（主场景），飞书同架构跟进。网关是 serve 的另一个"观察者"（D5 一致：经 HTTP/WS 桥接，零新写入路径）；QQ 走**官方 Bot API v2**（不做个人号逆向）。
 **Architecture:** `packages/gateway` 独立常驻进程：连接本地 serve（复用桌面端同款 HTTP/WS 桥）+ 平台适配器（收消息 → 会话路由 → WS user-message；事件帧 → 平台出站渲染）。平台适配器统一接口（对照 hermes `BasePlatformAdapter`），新增平台 = 新增一个适配器文件。
@@ -13,11 +43,11 @@
 
 ## 前置阅读（必须）
 
-| 优先级 | 文件 |
-|--------|------|
-| P0 | 本文件、`docs/research/2026-09-06-reference-analysis.md` §2.6（QQ 官方 API v2 实证：WS 网关/token 刷新/审批 InlineKeyboard） |
-| P0 | `packages/core/src/server/{http,ws,sessions}.ts`（服务 API 契约 v1）、`packages/desktop/src/main/{serve-manager,bridge}.ts`（serve 客户端先例） |
-| P1 | QQ 官方 Bot 文档（bot.q.qq.com/wiki，当期版本）、hermes `gateway/platforms/qqbot/`（MIT 参考）、`docs/issue-log/OPEN.md` |
+| 优先级 | 文件                                                                                                                                            |
+| ------ | ----------------------------------------------------------------------------------------------------------------------------------------------- |
+| P0     | 本文件、`docs/research/2026-09-06-reference-analysis.md` §2.6（QQ 官方 API v2 实证：WS 网关/token 刷新/审批 InlineKeyboard）                    |
+| P0     | `packages/core/src/server/{http,ws,sessions}.ts`（服务 API 契约 v1）、`packages/desktop/src/main/{serve-manager,bridge}.ts`（serve 客户端先例） |
+| P1     | QQ 官方 Bot 文档（bot.q.qq.com/wiki，当期版本）、hermes `gateway/platforms/qqbot/`（MIT 参考）、`docs/issue-log/OPEN.md`                        |
 
 **仓库路径：** `D:\AI_projects\harness2`（默认分支 `master`）
 **基线分支：** 从 `master` 拉 `feat/phase-9-im-gateway`
@@ -37,17 +67,17 @@
 
 ## File Structure（预期变更）
 
-| 文件 | 动作 | 职责 |
-|------|------|------|
-| `packages/gateway/src/{types,serve-client,router}.ts` | 新建 | 平台适配器接口、serve HTTP/WS 客户端（桌面同款）、路由表 |
-| `packages/gateway/src/platforms/qq/{adapter,gateway-ws,api}.ts` | 新建 | QQ 官方 Bot API v2：鉴权/token 单飞、WS 网关（心跳/分片确认）、REST 出站（频率限制队列） |
-| `packages/gateway/src/platforms/feishu/adapter.ts` | 新建 | 飞书基础适配器（长连接/webhook 二选一，按官方当期推荐） |
-| `packages/gateway/src/render.ts` | 新建 | 事件帧 → 平台消息渲染（精简：助手文本、工具行一行、turn 摘要、审批请求） |
-| `packages/gateway/src/index.ts` | 新建 | 入口：读配置 → 起 serve 客户端 → 启用各平台适配器 |
-| `packages/cli/src/index.ts` | 修改 | `harness2 gateway [--platform qq,feishu]`（网关常驻入口； serve 未起时自动 spawn，桌面同款逻辑复用） |
-| `packages/core/src/config/schema.ts` | 修改 | `gateways` 段（qq/feishu：凭据 envKey、策略） |
-| `packages/gateway/test/*.test.ts` | 新建 | 见各 Task |
-| 文档（architecture/ROADMAP/HANDOFF/diary/OPEN） | 修改 | 整备 |
+| 文件                                                            | 动作 | 职责                                                                                                 |
+| --------------------------------------------------------------- | ---- | ---------------------------------------------------------------------------------------------------- |
+| `packages/gateway/src/{types,serve-client,router}.ts`           | 新建 | 平台适配器接口、serve HTTP/WS 客户端（桌面同款）、路由表                                             |
+| `packages/gateway/src/platforms/qq/{adapter,gateway-ws,api}.ts` | 新建 | QQ 官方 Bot API v2：鉴权/token 单飞、WS 网关（心跳/分片确认）、REST 出站（频率限制队列）             |
+| `packages/gateway/src/platforms/feishu/adapter.ts`              | 新建 | 飞书基础适配器（长连接/webhook 二选一，按官方当期推荐）                                              |
+| `packages/gateway/src/render.ts`                                | 新建 | 事件帧 → 平台消息渲染（精简：助手文本、工具行一行、turn 摘要、审批请求）                             |
+| `packages/gateway/src/index.ts`                                 | 新建 | 入口：读配置 → 起 serve 客户端 → 启用各平台适配器                                                    |
+| `packages/cli/src/index.ts`                                     | 修改 | `harness2 gateway [--platform qq,feishu]`（网关常驻入口； serve 未起时自动 spawn，桌面同款逻辑复用） |
+| `packages/core/src/config/schema.ts`                            | 修改 | `gateways` 段（qq/feishu：凭据 envKey、策略）                                                        |
+| `packages/gateway/test/*.test.ts`                               | 新建 | 见各 Task                                                                                            |
+| 文档（architecture/ROADMAP/HANDOFF/diary/OPEN）                 | 修改 | 整备                                                                                                 |
 
 ---
 
@@ -64,6 +94,7 @@
 **Files:** `platforms/qq/*`、`test/qq.test.ts`
 
 **行为（对照 hermes qqbot 实证 + 官方文档）:**
+
 - 鉴权：appid+secret → access_token（提前 60s 单飞刷新，并发共享）。
 - 入站：官方 WS 网关（wss url 由 REST 获取）——连接→Identify（intents：群聊@/私聊 C2C）→心跳（按服务端 hello 间隔）→断线指数退避重连（resume 失败重新 Identify）；payload op 分发（0 事件/10 hello/11 ack）。
 - 出站：REST `api.sgroup.qq.com`（消息发送 v2 接口）；**频率限制队列**（令牌桶/最小间隔，429 退避）；msg_id 被动回复关联（官方要求）。
@@ -96,25 +127,25 @@ cron 投递登记为后续项（WS 通知帧已具备，接平台渲染即可）
 
 ## 验收标准总表
 
-| # | 标准 | 通过条件 |
-|---|------|----------|
-| 1 | 骨架 | 路由持久化/ServeClient 全链（stub serve）测试通过 |
-| 2 | QQ 适配器 | 鉴权单飞/心跳/重连/出站队列/去重/策略测试通过（全离线 stub） |
-| 3 | 渲染审批 | 帧渲染/审批往返/截断测试通过 |
-| 4 | 飞书 | stub 收发/策略/去重测试通过 |
-| 5 | 红线 | 零新写入路径（仅经 serve API）；appSecret 不入 git/不出现在日志；官方 API only |
-| 6 | 单测/构建 | `pnpm test && pnpm -r typecheck` exit 0 |
+| #   | 标准      | 通过条件                                                                       |
+| --- | --------- | ------------------------------------------------------------------------------ |
+| 1   | 骨架      | 路由持久化/ServeClient 全链（stub serve）测试通过                              |
+| 2   | QQ 适配器 | 鉴权单飞/心跳/重连/出站队列/去重/策略测试通过（全离线 stub）                   |
+| 3   | 渲染审批  | 帧渲染/审批往返/截断测试通过                                                   |
+| 4   | 飞书      | stub 收发/策略/去重测试通过                                                    |
+| 5   | 红线      | 零新写入路径（仅经 serve API）；appSecret 不入 git/不出现在日志；官方 API only |
+| 6   | 单测/构建 | `pnpm test && pnpm -r typecheck` exit 0                                        |
 
 ---
 
 ## 风险与降级
 
-| 风险 | 缓解 |
-|------|------|
+| 风险                      | 缓解                                                                        |
+| ------------------------- | --------------------------------------------------------------------------- |
 | QQ 官方 API 变动/文档滞后 | 适配器薄封装 + stub 测试锚定行为；真机联调清单在 OPEN（用户提供凭据后执行） |
-| 平台消息上限/频率限制 | 出站队列 + 截断 + 合并策略（Task 3） |
-| WS 网关心跳时序平台差异 | 参数化心跳间隔 + 断线重连测试 |
-| 飞书长连接模式不确定 | 实现者查证当期官方推荐并注明依据；webhook 回退方案在 Task 4 内取舍 |
+| 平台消息上限/频率限制     | 出站队列 + 截断 + 合并策略（Task 3）                                        |
+| WS 网关心跳时序平台差异   | 参数化心跳间隔 + 断线重连测试                                               |
+| 飞书长连接模式不确定      | 实现者查证当期官方推荐并注明依据；webhook 回退方案在 Task 4 内取舍          |
 
 ---
 
@@ -127,27 +158,32 @@ cron 投递登记为后续项（WS 通知帧已具备，接平台渲染即可）
 你是 **harness2** 阶段 9 的实现代理。请**完整执行本阶段**，不要只写方案。
 
 ### 基线
+
 - 目录：`D:\AI_projects\harness2`（默认分支 `master`）；从 master 创建并切换 `feat/phase-9-im-gateway`
 - 已完成（勿重做）：阶段 1-8 均验收（……服务化+桌面、记忆+分叉、浏览器+压缩+cron、插件+MCP+subagent），当前 526 passed + 1 skipped
 - 唯一实施计划：`docs/ai-framework/plans/2026-09-06-phase-9-im-gateway.md`
 - 必读：本计划、`packages/desktop/src/main/{serve-manager,bridge}.ts`（serve 客户端先例）、`server/ws.ts`（帧契约）、`docs/research/…§2.6`、`AGENTS.md`
 
 ### 做
+
 1. 严格按 Task 1→5 顺序执行；每 Task 测试通过后规范 commit（gitmoji 中文，禁止 push）
 2. 遵守 Global Constraints：零新写入路径（仅经 serve API）；QQ 官方 API only + 频率限制 + token 单飞；平台消息不入 git；appSecret 走 auth.json/脱敏
 3. QQ/飞书全部测试离线可跑（本地 stub），真实联调清单登记 OPEN（用户提供开放平台凭据后执行）
 4. Task 5 更新 architecture/ROADMAP（P2-21/22 → ✅）/HANDOFF/diary/OPEN
 
 ### 不做
+
 - 个人号逆向协议、语音图片收发、多账号、飞书卡片全量
 - 提交密钥；任何 `git push`
 
 ### 工作方式
+
 1. 先跑基线 `pnpm test` 确认全绿再动工
 2. 证据优先：交卷前重跑 `pnpm test && pnpm -r typecheck`，粘贴真实输出
 3. 简体中文回复；代码标识符原样
 
 ### 交卷
+
 分支名、提交列表、验收表逐项自评（带命令与真实结果）、新增测试数、残留风险与未关闭项。
 
 现在开始：读完本阶段计划，从 Task 1 执行到 Task 5。

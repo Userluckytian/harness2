@@ -15,7 +15,10 @@ async function listen(server: Server): Promise<number> {
 }
 
 /** 飞书 API stub：token + 出站消息捕获 */
-async function startFeishuApiStub(): Promise<{ port: number; sent: Array<{ path: string; body: Record<string, unknown> }> }> {
+async function startFeishuApiStub(): Promise<{
+  port: number;
+  sent: Array<{ path: string; body: Record<string, unknown> }>;
+}> {
   const sent: Array<{ path: string; body: Record<string, unknown> }> = [];
   const server = createServer((req, res) => {
     if (req.url?.includes('tenant_access_token')) {
@@ -39,22 +42,6 @@ async function startFeishuApiStub(): Promise<{ port: number; sent: Array<{ path:
   const port = await listen(server);
   cleanups.push(async () => new Promise<void>((r) => server.close(() => r())));
   return { port, sent };
-}
-
-function post(url: string, body: unknown): Promise<{ status: number; text: string }> {
-  return new Promise((resolve, reject) => {
-    const req = import('node:http').then(({ request }) =>
-      request(url, { method: 'POST', headers: { 'content-type': 'application/json' } }, (res) => {
-        const chunks: Buffer[] = [];
-        res.on('data', (c: Buffer) => chunks.push(c));
-        res.on('end', () => resolve({ status: res.statusCode ?? 0, text: Buffer.concat(chunks).toString('utf8') }));
-      }),
-    );
-    void req.then((r) => {
-      r.on('error', reject);
-      r.end(JSON.stringify(body));
-    });
-  });
 }
 
 describe('FeishuAdapter（离线 stub）', () => {

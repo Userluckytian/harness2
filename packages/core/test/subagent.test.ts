@@ -202,7 +202,9 @@ describe('subagent_start 独立子会话', () => {
     const root = tmpDir();
     const h = makeHarness(
       [
-        { toolCalls: [{ id: 'c1', name: 'subagent_start', arguments: JSON.stringify({ prompt: 'p', cwd: 'sub/dir' }) }] },
+        {
+          toolCalls: [{ id: 'c1', name: 'subagent_start', arguments: JSON.stringify({ prompt: 'p', cwd: 'sub/dir' }) }],
+        },
         { text: 'ok' },
         { text: 'done' },
       ],
@@ -296,8 +298,11 @@ describe('深度限制', () => {
     expect(grandDirs).toHaveLength(1);
     expect(loadSession(grandDirs[0]!).header!.subagent).toBe(true);
     const out = parseOut(
-      (loadSession(childDir).events.filter((e) => e.event.type === 'tool/result')[0]!.event.payload as { output?: string })
-        .output,
+      (
+        loadSession(childDir).events.filter((e) => e.event.type === 'tool/result')[0]!.event.payload as {
+          output?: string;
+        }
+      ).output,
     );
     expect(out.finalText).toBe('grandchild done');
     expect(out.childSessionId).toBe(loadSession(grandDirs[0]!).header!.sessionId!);
@@ -311,10 +316,7 @@ describe('subagent_continue', () => {
     const startOut = await startDef.execute({ prompt: 'first part' }, CALL_CTX);
     const { childSessionId } = parseOut(startOut.output);
     const continueDef = h.registry.get('subagent_continue')!;
-    const contOut = await continueDef.execute(
-      { childSessionId, message: 'go on' },
-      CALL_CTX,
-    );
+    const contOut = await continueDef.execute({ childSessionId, message: 'go on' }, CALL_CTX);
     const parsed = parseOut(contOut.output);
     expect(parsed.childSessionId).toBe(childSessionId);
     expect(parsed.finalText).toBe('second result');
@@ -340,30 +342,18 @@ describe('subagent_continue', () => {
     ]);
     const continueDef = h.registry.get('subagent_continue')!;
     // 未知 id（格式合法但不存在的目录）
-    const miss = await continueDef.execute(
-      { childSessionId: '20260906-000000-fffff1', message: 'm' },
-      CALL_CTX,
-    );
+    const miss = await continueDef.execute({ childSessionId: '20260906-000000-fffff1', message: 'm' }, CALL_CTX);
     expect(miss.error).toContain('子会话不存在');
     // P2-3：遍历形 / 任意串 id → SESSION_ID_PATTERN 格式拒绝（不触达文件系统）
-    const traversal = await continueDef.execute(
-      { childSessionId: '../../evil', message: 'm' },
-      CALL_CTX,
-    );
+    const traversal = await continueDef.execute({ childSessionId: '../../evil', message: 'm' }, CALL_CTX);
     expect(traversal.error).toContain('格式非法');
-    const garbage = await continueDef.execute(
-      { childSessionId: 'zzz', message: 'm' },
-      CALL_CTX,
-    );
+    const garbage = await continueDef.execute({ childSessionId: 'zzz', message: 'm' }, CALL_CTX);
     expect(garbage.error).toContain('格式非法');
     // 存在但不是子会话：造一个独立会话
     const root = tmpDir();
     const stranger = h.manager.create(root, { fsync: false });
     stranger.writer.close();
-    const foreign = await continueDef.execute(
-      { childSessionId: stranger.id, message: 'm' },
-      CALL_CTX,
-    );
+    const foreign = await continueDef.execute({ childSessionId: stranger.id, message: 'm' }, CALL_CTX);
     expect(foreign.error).toContain('不是本会话的子会话');
   });
 
@@ -378,10 +368,7 @@ describe('subagent_continue', () => {
     });
     forked.writer.close();
     const continueDef = h.registry.get('subagent_continue')!;
-    const r = await continueDef.execute(
-      { childSessionId: forked.id, message: 'm' },
-      CALL_CTX,
-    );
+    const r = await continueDef.execute({ childSessionId: forked.id, message: 'm' }, CALL_CTX);
     expect(r.error).toContain('不是 subagent 子会话');
   });
 
@@ -393,9 +380,12 @@ describe('subagent_continue', () => {
     expect((await startDef.execute({ prompt: '   ' }, CALL_CTX)).error).toContain('prompt');
     expect((await continueDef.execute({ message: 'm' }, CALL_CTX)).error).toContain('childSessionId');
     // 合法格式 id 缺 message → message 错误（id 校验先于 locate，但格式合法时不拦截）
-    expect(
-      (await continueDef.execute({ childSessionId: '20260906-000000-000001' }, CALL_CTX)).error,
-    ).toContain('message');
+    expect((await continueDef.execute({ childSessionId: '20260906-000000-000001' }, CALL_CTX)).error).toContain(
+      'message',
+    );
+    // P1-1：缺参错误必须指出 taskId 只读查询这条合法替代路径（不误导）
+    expect((await continueDef.execute({}, CALL_CTX)).error).toContain('taskId');
+    expect((await continueDef.execute({ message: 'm' }, CALL_CTX)).error).toContain('taskId');
   });
 });
 
@@ -457,7 +447,11 @@ describe('P1-4 子会话独立快照', () => {
     const h = makeHarness(
       [
         { toolCalls: [{ id: 'c1', name: 'subagent_start', arguments: '{"prompt":"write file"}' }] },
-        { toolCalls: [{ id: 'w1', name: 'write', arguments: JSON.stringify({ file_path: target, content: 'child was here\n' }) }] },
+        {
+          toolCalls: [
+            { id: 'w1', name: 'write', arguments: JSON.stringify({ file_path: target, content: 'child was here\n' }) },
+          ],
+        },
         { text: 'child wrote file' },
         { text: 'parent wrapped' },
       ],
@@ -489,10 +483,7 @@ describe('P1-4 子会话独立快照', () => {
 
 describe('补测：subagent_start 取消传播', () => {
   it('父 ctx.signal abort → 子 turn cancelled 收尾且事件照常落盘', async () => {
-    const h = makeHarness([
-      { textChunks: ['a', 'b', 'c', 'd', 'e'], chunkDelayMs: 120 },
-      { text: 'unreachable' },
-    ]);
+    const h = makeHarness([{ textChunks: ['a', 'b', 'c', 'd', 'e'], chunkDelayMs: 120 }, { text: 'unreachable' }]);
     const startDef = h.registry.get('subagent_start')!;
     const ac = new AbortController();
     setTimeout(() => ac.abort(), 200);
@@ -613,8 +604,14 @@ describe('口径统一：per-session 绑定类工具不继承（阶段 11 Task 2
       },
       'child-x',
     );
-    const cliNames = cliChild.list().map((d) => d.name).sort();
-    const serveNames = serveChild.list().map((d) => d.name).sort();
+    const cliNames = cliChild
+      .list()
+      .map((d) => d.name)
+      .sort();
+    const serveNames = serveChild
+      .list()
+      .map((d) => d.name)
+      .sort();
     expect(cliNames).toEqual(serveNames);
     expect(cliNames).not.toContain('memory');
     for (const n of BROWSER_TOOL_NAMES) expect(cliNames).not.toContain(n);
@@ -623,7 +620,9 @@ describe('口径统一：per-session 绑定类工具不继承（阶段 11 Task 2
   it('BROWSER_TOOL_NAMES 常量契约：与 createBrowserTools 注册名单一一对应（剔除依据不漂移）', () => {
     const pool = new BrowserPool({ idleDestroyMs: 60_000 });
     pools.push(pool);
-    const registered = createBrowserTools('probe', pool).map((d) => d.name).sort();
+    const registered = createBrowserTools('probe', pool)
+      .map((d) => d.name)
+      .sort();
     expect(registered).toEqual([...BROWSER_TOOL_NAMES].sort());
   });
 
@@ -648,7 +647,10 @@ describe('口径统一：per-session 绑定类工具不继承（阶段 11 Task 2
     const parent = manager.create(root, { fsync: false });
     try {
       // 父 turn 工具集（per-session 换装）：含 memory/browser_*/subagent 工具
-      const parentTools = hub.toolsForSession(parent.id).list().map((d) => d.name);
+      const parentTools = hub
+        .toolsForSession(parent.id)
+        .list()
+        .map((d) => d.name);
       expect(parentTools).toContain('memory');
       for (const n of BROWSER_TOOL_NAMES) expect(parentTools).toContain(n);
       expect(parentTools).toContain('subagent_start');

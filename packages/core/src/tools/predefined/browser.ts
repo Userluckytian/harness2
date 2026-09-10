@@ -50,12 +50,17 @@ export interface BrowserPoolOptions {
   loader?: PlaywrightLoader;
 }
 
-/** chromium 未安装（Playwright 在但浏览器二进制缺失） */
+/** chromium 未安装（Playwright 在但浏览器二进制缺失）或 playwright 模块缺失（A1-5） */
 export class BrowserNotInstalledError extends Error {
   constructor(detail?: string) {
-    super(
-      `浏览器未安装：请先运行 harness2 browser install（或 npx playwright install chromium）${detail ? `；原始错误: ${detail}` : ''}`,
-    );
+    // A1-5：区分两种「未安装」——模块缺失时只跑 harness2 browser install 无法自愈，
+    // 必须先把 playwright 装上；chromium 二进制缺失才是 harness2 browser install 的直接场景。
+    const moduleMissing =
+      detail !== undefined && /Cannot find (?:module|package)\s+['"]?playwright|ERR_MODULE_NOT_FOUND/i.test(detail);
+    const hint = moduleMissing
+      ? '浏览器运行时未安装：缺少 playwright 模块——请先重新安装 harness2（如 npm i -g harness2），再运行 harness2 browser install 安装 chromium'
+      : '浏览器未安装：请先运行 harness2 browser install（或 npx playwright install chromium）';
+    super(`${hint}${detail ? `；原始错误: ${detail}` : ''}`);
     this.name = 'BrowserNotInstalledError';
   }
 }
@@ -230,7 +235,10 @@ export class BrowserPool {
     entry.idleTimer = setTimeout(() => {
       if (this.entries.get(key) === entry && !entry.inUse) {
         this.destroyEntry(key, `空闲超过 ${Math.round(this.idleDestroyMs / 1000)}s`);
-        this.pushNote(key, `浏览器上下文已因空闲 ${Math.round(this.idleDestroyMs / 1000)}s 自动销毁；下次调用将重新启动`);
+        this.pushNote(
+          key,
+          `浏览器上下文已因空闲 ${Math.round(this.idleDestroyMs / 1000)}s 自动销毁；下次调用将重新启动`,
+        );
       }
     }, this.idleDestroyMs);
     entry.idleTimer.unref?.(); // 不阻塞进程退出

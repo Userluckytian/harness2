@@ -149,7 +149,11 @@ describe('SessionWriter', () => {
     const logPath = join(dir, SESSION_LOG_FILE);
     // 模拟崩溃：事件字节已落盘但换行（提交标记）未落盘
     const uncommitted = JSON.stringify({
-      v: 1, seq: 3, ts: '2026-09-06T00:00:00.000Z', type: 'user/message', payload: { text: 'orphan' },
+      v: 1,
+      seq: 3,
+      ts: '2026-09-06T00:00:00.000Z',
+      type: 'user/message',
+      payload: { text: 'orphan' },
     });
     appendFileSync(logPath, uncommitted, 'utf8');
 
@@ -177,7 +181,11 @@ describe('SessionWriter', () => {
     // 追加一行格式合法但 seq 与行数不一致的事件（恢复扫描不会截掉它，
     // 从而让 open() 在取锁之后的 scanLog 校验中抛错）
     const bogus = JSON.stringify({
-      v: 1, seq: 9, ts: '2026-09-06T00:00:00.000Z', type: 'user/message', payload: { text: 'x' },
+      v: 1,
+      seq: 9,
+      ts: '2026-09-06T00:00:00.000Z',
+      type: 'user/message',
+      payload: { text: 'x' },
     });
     appendFileSync(join(dir, SESSION_LOG_FILE), bogus + '\n', 'utf8');
 
@@ -196,9 +204,14 @@ describe('SessionWriter', () => {
 
     const logPath = join(dir, SESSION_LOG_FILE);
     const committedBytes = readFileSync(logPath); // 以 \n 结尾的已提交前缀
-    const full = JSON.stringify({
-      v: 1, seq: 3, ts: '2026-09-06T00:00:00.000Z', type: 'user/message', payload: { text: '崩溃前的中文' },
-    }) + '\n';
+    const full =
+      JSON.stringify({
+        v: 1,
+        seq: 3,
+        ts: '2026-09-06T00:00:00.000Z',
+        type: 'user/message',
+        payload: { text: '崩溃前的中文' },
+      }) + '\n';
     const fullBytes = Buffer.from(full, 'utf8');
     // 行尾 7 字节 =「文」(E6 96 87) + '"' + '}' + '}' + '\n'；去掉 5 字节会切进「文」中间
     expect([...fullBytes.subarray(-7)]).toEqual([0xe6, 0x96, 0x87, 0x22, 0x7d, 0x7d, 0x0a]);

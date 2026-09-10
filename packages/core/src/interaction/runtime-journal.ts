@@ -19,22 +19,8 @@ import {
   writeSync,
 } from 'node:fs';
 import { join, resolve } from 'node:path';
-import {
-  TASK_STATES,
-  TASK_TERMINAL_STATES,
-  canTaskTransition,
-  isNonNegativeInteger,
-  isSubmitIntent,
-} from './types.js';
-import type {
-  CallId,
-  ClientMessageId,
-  RequestId,
-  SessionId,
-  SubmitIntent,
-  TaskId,
-  TaskState,
-} from './types.js';
+import { TASK_STATES, TASK_TERMINAL_STATES, canTaskTransition, isNonNegativeInteger, isSubmitIntent } from './types.js';
+import type { CallId, ClientMessageId, RequestId, SessionId, SubmitIntent, TaskId, TaskState } from './types.js';
 
 export const RUNTIME_JOURNAL_FILE = 'runtime.v1.jsonl';
 export const RUNTIME_JOURNAL_LOCK_FILE = 'runtime.v1.lock';
@@ -113,7 +99,13 @@ export type RuntimeJournalKind = RuntimeJournalEntry['kind'];
 
 /** append 入参：v/seq/ts 由写入器补，调用方只给 kind + 内容 */
 export type JournalAppendInput =
-  | { kind: 'queue/accepted'; clientMessageId: ClientMessageId; sessionId: SessionId; intent: SubmitIntent; queueSeq?: number }
+  | {
+      kind: 'queue/accepted';
+      clientMessageId: ClientMessageId;
+      sessionId: SessionId;
+      intent: SubmitIntent;
+      queueSeq?: number;
+    }
   | { kind: 'queue/duplicate'; clientMessageId: ClientMessageId; originalSeq: number }
   | { kind: 'queue/removed'; clientMessageId: ClientMessageId; reason?: string }
   | {
@@ -126,7 +118,14 @@ export type JournalAppendInput =
       to: TaskState;
       background?: boolean;
     }
-  | { kind: 'call/started'; callId: CallId; taskId?: TaskId; clientMessageId?: ClientMessageId; tool?: string; requestId?: RequestId }
+  | {
+      kind: 'call/started';
+      callId: CallId;
+      taskId?: TaskId;
+      clientMessageId?: ClientMessageId;
+      tool?: string;
+      requestId?: RequestId;
+    }
   | { kind: 'call/outcome'; callId: CallId; taskId?: TaskId; ok: boolean; error?: string };
 
 // —— 恢复水位 ——
@@ -190,10 +189,6 @@ function journalPath(dir: string): string {
 
 function isNonEmptyString(v: unknown): v is string {
   return typeof v === 'string' && v.length > 0;
-}
-
-function optionalString(v: unknown): string | undefined {
-  return typeof v === 'string' ? v : undefined;
 }
 
 function isRecord(v: unknown): v is Record<string, unknown> {
@@ -263,7 +258,8 @@ export function parseEntry(line: string): RuntimeJournalEntry | null {
     case 'queue/duplicate': {
       if (!isNonEmptyString(raw['clientMessageId'])) return null;
       const p = payload as Record<string, unknown> | undefined;
-      if (!p || typeof p['originalSeq'] !== 'number' || !Number.isInteger(p['originalSeq']) || p['originalSeq'] < 1) return null;
+      if (!p || typeof p['originalSeq'] !== 'number' || !Number.isInteger(p['originalSeq']) || p['originalSeq'] < 1)
+        return null;
       const entry: QueueDuplicateEntry = {
         ...base,
         kind: 'queue/duplicate',
@@ -472,7 +468,8 @@ function hasTerminalOutcome(entries: RuntimeJournalEntry[], acceptedSeq: number,
  * - unknown 关键约束：调用方不得把 unknown 当 rejected/not_started 处理。
  */
 export function judgeSubmission(dir: string, clientMessageId: ClientMessageId): SubmissionJudgement {
-  if (!isNonEmptyString(clientMessageId)) throw new InvalidJournalAppendError('judgeSubmission: clientMessageId must be a non-empty string');
+  if (!isNonEmptyString(clientMessageId))
+    throw new InvalidJournalAppendError('judgeSubmission: clientMessageId must be a non-empty string');
   const { entries, watermark } = scanJournal(journalPath(dir));
   const accepted = entries.filter((e) => e.kind === 'queue/accepted' && e.clientMessageId === clientMessageId);
 
@@ -624,11 +621,7 @@ export class RuntimeJournal {
       }
       // 陈旧锁（持锁进程已死）：接管
     }
-    writeFileSync(
-      this.lockPath,
-      JSON.stringify({ pid: process.pid, ts: new Date().toISOString() }),
-      'utf8',
-    );
+    writeFileSync(this.lockPath, JSON.stringify({ pid: process.pid, ts: new Date().toISOString() }), 'utf8');
     activeWriters.add(this.dir);
   }
 
@@ -671,11 +664,16 @@ function buildAppendEntry(input: JournalAppendInput, seq: number): RuntimeJourna
   const base = { v: 1 as const, seq, ts };
   switch (input.kind) {
     case 'queue/accepted': {
-      if (!isNonEmptyString(input.clientMessageId)) throw new InvalidJournalAppendError('queue/accepted: clientMessageId must be a non-empty string');
-      if (!isNonEmptyString(input.sessionId)) throw new InvalidJournalAppendError('queue/accepted: sessionId must be a non-empty string');
-      if (!isSubmitIntent(input.intent)) throw new InvalidJournalAppendError(`queue/accepted: invalid intent ${String(input.intent)}`);
+      if (!isNonEmptyString(input.clientMessageId))
+        throw new InvalidJournalAppendError('queue/accepted: clientMessageId must be a non-empty string');
+      if (!isNonEmptyString(input.sessionId))
+        throw new InvalidJournalAppendError('queue/accepted: sessionId must be a non-empty string');
+      if (!isSubmitIntent(input.intent))
+        throw new InvalidJournalAppendError(`queue/accepted: invalid intent ${String(input.intent)}`);
       if (input.queueSeq !== undefined && !isNonNegativeInteger(input.queueSeq)) {
-        throw new InvalidJournalAppendError(`queue/accepted: queueSeq must be a non-negative integer, got ${String(input.queueSeq)}`);
+        throw new InvalidJournalAppendError(
+          `queue/accepted: queueSeq must be a non-negative integer, got ${String(input.queueSeq)}`,
+        );
       }
       const entry: QueueAcceptedEntry = {
         ...base,
@@ -683,16 +681,17 @@ function buildAppendEntry(input: JournalAppendInput, seq: number): RuntimeJourna
         clientMessageId: input.clientMessageId,
         sessionId: input.sessionId,
         payload:
-          input.queueSeq === undefined
-            ? { intent: input.intent }
-            : { intent: input.intent, queueSeq: input.queueSeq },
+          input.queueSeq === undefined ? { intent: input.intent } : { intent: input.intent, queueSeq: input.queueSeq },
       };
       return entry;
     }
     case 'queue/duplicate': {
-      if (!isNonEmptyString(input.clientMessageId)) throw new InvalidJournalAppendError('queue/duplicate: clientMessageId must be a non-empty string');
+      if (!isNonEmptyString(input.clientMessageId))
+        throw new InvalidJournalAppendError('queue/duplicate: clientMessageId must be a non-empty string');
       if (!Number.isInteger(input.originalSeq) || input.originalSeq < 1) {
-        throw new InvalidJournalAppendError(`queue/duplicate: originalSeq must be a positive integer, got ${String(input.originalSeq)}`);
+        throw new InvalidJournalAppendError(
+          `queue/duplicate: originalSeq must be a positive integer, got ${String(input.originalSeq)}`,
+        );
       }
       const entry: QueueDuplicateEntry = {
         ...base,
@@ -703,7 +702,8 @@ function buildAppendEntry(input: JournalAppendInput, seq: number): RuntimeJourna
       return entry;
     }
     case 'queue/removed': {
-      if (!isNonEmptyString(input.clientMessageId)) throw new InvalidJournalAppendError('queue/removed: clientMessageId must be a non-empty string');
+      if (!isNonEmptyString(input.clientMessageId))
+        throw new InvalidJournalAppendError('queue/removed: clientMessageId must be a non-empty string');
       const entry: QueueRemovedEntry = {
         ...base,
         kind: 'queue/removed',
@@ -713,12 +713,15 @@ function buildAppendEntry(input: JournalAppendInput, seq: number): RuntimeJourna
       return entry;
     }
     case 'task/transition': {
-      if (!isNonEmptyString(input.taskId)) throw new InvalidJournalAppendError('task/transition: taskId must be a non-empty string');
+      if (!isNonEmptyString(input.taskId))
+        throw new InvalidJournalAppendError('task/transition: taskId must be a non-empty string');
       if (!canTaskTransition(input.from, input.to)) {
         throw new InvalidJournalAppendError(`task/transition: illegal transition ${input.from} → ${input.to}`);
       }
       if (input.sessionLogSeq !== undefined && !isNonNegativeInteger(input.sessionLogSeq)) {
-        throw new InvalidJournalAppendError(`task/transition: sessionLogSeq must be a non-negative integer, got ${String(input.sessionLogSeq)}`);
+        throw new InvalidJournalAppendError(
+          `task/transition: sessionLogSeq must be a non-negative integer, got ${String(input.sessionLogSeq)}`,
+        );
       }
       const entry: TaskTransitionEntry = {
         ...base,
@@ -736,7 +739,8 @@ function buildAppendEntry(input: JournalAppendInput, seq: number): RuntimeJourna
       return entry;
     }
     case 'call/started': {
-      if (!isNonEmptyString(input.callId)) throw new InvalidJournalAppendError('call/started: callId must be a non-empty string');
+      if (!isNonEmptyString(input.callId))
+        throw new InvalidJournalAppendError('call/started: callId must be a non-empty string');
       const entry: CallStartedEntry = {
         ...base,
         kind: 'call/started',
@@ -751,7 +755,8 @@ function buildAppendEntry(input: JournalAppendInput, seq: number): RuntimeJourna
       return entry;
     }
     case 'call/outcome': {
-      if (!isNonEmptyString(input.callId)) throw new InvalidJournalAppendError('call/outcome: callId must be a non-empty string');
+      if (!isNonEmptyString(input.callId))
+        throw new InvalidJournalAppendError('call/outcome: callId must be a non-empty string');
       if (typeof input.ok !== 'boolean') throw new InvalidJournalAppendError('call/outcome: ok must be a boolean');
       const entry: CallOutcomeEntry = {
         ...base,

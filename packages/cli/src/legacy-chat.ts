@@ -12,20 +12,10 @@ import { handleCommand, parseCommand, type CommandContext } from './commands.js'
 import { MODE_ALIAS_LABEL, MODE_ALIAS_ORDER, MODE_ALIAS_TO_CORE, describeMode, parseModeAlias } from './mode-alias.js';
 import { matchCommands } from './command-registry.js';
 import { expandContextRefs, hasContextRefs } from './context-ref.js';
-import {
-  ASK_CANCELLED,
-  ChatSetupAbort,
-  MOCK_CHILD_DEMO_SCRIPT,
-  MOCK_DEMO_SCRIPT,
-  setupChatSession,
-  type ChatRuntime,
-} from './chat-setup.js';
+import { ASK_CANCELLED, ChatSetupAbort, setupChatSession, type ChatRuntime } from './chat-setup.js';
 import type { MockScript } from '@harness2/core';
 
-export {
-  MOCK_CHILD_DEMO_SCRIPT,
-  MOCK_DEMO_SCRIPT,
-} from './chat-setup.js';
+export { MOCK_CHILD_DEMO_SCRIPT, MOCK_DEMO_SCRIPT } from './chat-setup.js';
 
 export interface ChatOptions {
   /** 恢复指定会话 id；缺省 = 恢复 cwd 最新会话或新建 */
@@ -220,9 +210,7 @@ export async function runLegacyReadlineChat(options: ChatOptions = {}): Promise<
         } else if (parsed.name === '/context') {
           const current = runtime.getCurrent();
           const usage = current !== null ? getContextUsage(current.dir) : undefined;
-          renderer.line(
-            `上下文占用: ${usage === undefined ? '—（无活动会话）' : `${Math.round(usage * 100)}%`}`,
-          );
+          renderer.line(`上下文占用: ${usage === undefined ? '—（无活动会话）' : `${Math.round(usage * 100)}%`}`);
         } else if (parsed.name === '/compact') {
           renderer.line('压缩将在下一次 turn 开始时自动检查并执行；若已超阈值会自动触发。');
         } else if (parsed.name === '/reasoning') {
@@ -291,7 +279,9 @@ export async function runLegacyReadlineChat(options: ChatOptions = {}): Promise<
     if (!busy) void finish();
   });
 
-  renderer.line(`harness2 chat — provider: ${runtime.provider.name}${options.provider === 'mock' ? '（mock 演示：不加载配置）' : ''}`);
+  renderer.line(
+    `harness2 chat — provider: ${runtime.provider.name}${options.provider === 'mock' ? '（mock 演示：不加载配置）' : ''}`,
+  );
   renderer.line('输入 /help 查看命令；write/edit 的文件改动可 /undo（bash 改动不进快照）');
   rl.prompt();
 

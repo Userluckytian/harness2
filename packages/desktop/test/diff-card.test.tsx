@@ -4,7 +4,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, render, screen, waitFor } from '@testing-library/react';
 import React from 'react';
-import { buildDiffRows, DEFAULT_VISIBLE_LINES, DiffCard, type DiffRow } from '../src/renderer/components/DiffCard.js';
+import { buildDiffRows, DEFAULT_VISIBLE_LINES, DiffCard } from '../src/renderer/components/DiffCard.js';
 import type { SnapshotForCallShape } from '../src/shared/protocol.js';
 
 /* —— buildDiffRows 纯函数 —— */
@@ -118,7 +118,7 @@ describe('DiffCard 组件', () => {
 
   it('缺少 seq → 不调用 IPC，显示缺键降级', async () => {
     const api = {
-      getSnapshotForCall: vi.fn(async () => ({ ok: true } as SnapshotForCallShape)),
+      getSnapshotForCall: vi.fn(async () => ({ ok: true }) as SnapshotForCallShape),
     };
     (window as unknown as { harness2: { getSnapshotForCall: () => Promise<SnapshotForCallShape> } }).harness2 = api;
     render(<DiffCard sessionId="s1" file="c.txt" onUndo={() => {}} />);

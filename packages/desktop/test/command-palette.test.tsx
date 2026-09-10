@@ -227,7 +227,13 @@ describe('CommandPalette 组件', () => {
     const onClose = vi.fn();
     const onSelectSession = vi.fn();
     render(
-      <CommandPalette open commands={cmds} sessions={MOCK_SESSIONS} onClose={onClose} onSelectSession={onSelectSession} />,
+      <CommandPalette
+        open
+        commands={cmds}
+        sessions={MOCK_SESSIONS}
+        onClose={onClose}
+        onSelectSession={onSelectSession}
+      />,
     );
     const input = screen.getByPlaceholderText('输入命令…') as HTMLInputElement;
 
@@ -249,7 +255,9 @@ describe('CommandPalette 组件', () => {
   it('会话态按 Esc 先回命令态，再按一次才关闭', () => {
     const cmds: PaletteCommand[] = [{ id: JUMP_TO_SESSION_ID, label: '跳转到会话…', run: vi.fn() }];
     const onClose = vi.fn();
-    render(<CommandPalette open commands={cmds} sessions={MOCK_SESSIONS} onClose={onClose} onSelectSession={vi.fn()} />);
+    render(
+      <CommandPalette open commands={cmds} sessions={MOCK_SESSIONS} onClose={onClose} onSelectSession={vi.fn()} />,
+    );
     const input = screen.getByPlaceholderText('输入命令…') as HTMLInputElement;
     fireEvent.keyDown(input, { key: 'Enter' }); // 进入会话态
     expect(screen.getByPlaceholderText('搜索会话…')).toBeTruthy();
@@ -303,14 +311,27 @@ function makeFakeApi(): any {
     saveLayout: vi.fn(async () => undefined),
     getStatus: vi.fn(async () => ({ status: 'connected' })),
     settingsGetConfig: vi.fn(async () => ({
-      providers: {}, roles: {}, approval: { mode: 'default' }, memory: { mode: 'off', nudgeInterval: 10 },
-      browser: { enabled: true, idleDestroyMs: 300_000, maxConcurrent: 2 }, plugins: { enabled: true, allow: [] },
-      mcpServers: {}, subagent: { maxDepth: 1, maxTurns: 25 }, sources: { global: true, project: false }, warnings: [], errors: [],
+      providers: {},
+      roles: {},
+      approval: { mode: 'default' },
+      memory: { mode: 'off', nudgeInterval: 10 },
+      browser: { enabled: true, idleDestroyMs: 300_000, maxConcurrent: 2 },
+      plugins: { enabled: true, allow: [] },
+      mcpServers: {},
+      subagent: { maxDepth: 1, maxTurns: 25 },
+      sources: { global: true, project: false },
+      warnings: [],
+      errors: [],
     })),
     settingsUpdateConfig: vi.fn(async () => ({ ok: true })),
     settingsGetAuthMasked: vi.fn(async () => ({ channels: [], gateways: [] })),
     settingsUpdateAuth: vi.fn(async () => ({ ok: true })),
-    settingsGetPreferences: vi.fn(async () => ({ theme: 'warmPaper', defaultPaneCount: 1, showWelcome: true, notifyDetails: 'minimal' })),
+    settingsGetPreferences: vi.fn(async () => ({
+      theme: 'warmPaper',
+      defaultPaneCount: 1,
+      showWelcome: true,
+      notifyDetails: 'minimal',
+    })),
     settingsSetPreferences: vi.fn(async (p: unknown) => p),
     settingsGetDoctorReport: vi.fn(async () => ({ checks: [], exitCode: 0 })),
     settingsGetCrashReports: vi.fn(async () => []),

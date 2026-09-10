@@ -3,12 +3,7 @@
 // **覆层语义红线**：只读写本文件；绝不触碰会话目录里的事件溯源日志（session.v1.jsonl/rewind_points.jsonl）。
 import { homedir } from 'node:os';
 import { join } from 'node:path';
-import {
-  defaultMetadata,
-  METADATA_FILE,
-  normalizeMetadata,
-  type SessionMetadataMap,
-} from '../shared/metadata.js';
+import { defaultMetadata, METADATA_FILE, normalizeMetadata, type SessionMetadataMap } from '../shared/metadata.js';
 import { readJsonWithDefault, writeJsonNormalized } from './json-file.js';
 
 export function metadataFilePath(home: string): string {

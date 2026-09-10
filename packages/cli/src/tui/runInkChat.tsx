@@ -15,8 +15,13 @@ import { ConfirmDialog } from './ConfirmDialog.js';
 import { useTurnStream, type TurnSnapshot } from './useTurnStream.js';
 import { parseCommand, HELP_TEXT } from '../commands.js';
 import { expandContextRefs, hasContextRefs } from '../context-ref.js';
-import { CORE_MODE_TO_ALIAS, MODE_ALIAS_ORDER, MODE_ALIAS_LABEL, MODE_ALIAS_TO_CORE, type ModeAlias } from '../mode-alias.js';
-import type { ApprovalMode } from '@harness2/core';
+import {
+  CORE_MODE_TO_ALIAS,
+  MODE_ALIAS_ORDER,
+  MODE_ALIAS_LABEL,
+  MODE_ALIAS_TO_CORE,
+  type ModeAlias,
+} from '../mode-alias.js';
 import { getContextUsage } from '@harness2/core';
 
 /** 现代终端检测：Windows Terminal（WT_SESSION）或 VS Code 终端（TERM_PROGRAM=vscode） */
@@ -99,10 +104,9 @@ export async function runInkChat(options: ChatOptions = {}): Promise<void> {
   });
 
   await new Promise<void>((resolve) => {
-    const app = render(
-      <InkShell runtime={runtime} bootLines={bootLines} dialog={dialog} onExit={resolve} />,
-      { exitOnCtrlC: false },
-    );
+    const app = render(<InkShell runtime={runtime} bootLines={bootLines} dialog={dialog} onExit={resolve} />, {
+      exitOnCtrlC: false,
+    });
     const timer = setInterval(() => {
       if (process.stdin.destroyed) {
         clearInterval(timer);
@@ -119,7 +123,6 @@ function InkShell({
   runtime,
   bootLines,
   dialog,
-  onExit,
 }: {
   runtime: ChatRuntime;
   bootLines: string[];
@@ -255,9 +258,7 @@ function InkShell({
       case '/context': {
         const current = runtime.getCurrent();
         const usage = current !== null ? getContextUsage(current.dir) : undefined;
-        sendSystem(
-          `上下文占用: ${usage === undefined ? '—（无活动会话）' : `${Math.round(usage * 100)}%`}`,
-        );
+        sendSystem(`上下文占用: ${usage === undefined ? '—（无活动会话）' : `${Math.round(usage * 100)}%`}`);
         return;
       }
       case '/compact':
@@ -334,7 +335,14 @@ function InkShell({
     <Box flexDirection="column" flexGrow={1}>
       <StatusBar runtime={runtime} />
       {overlayOpen ? <OverlayHost>{overlay}</OverlayHost> : null}
-      <Transcript settled={settled} liveText={live.text} liveTools={live.tools} reasoningText={live.reasoning} busy={busy} reasoningExpanded={reasoningExpanded} />
+      <Transcript
+        settled={settled}
+        liveText={live.text}
+        liveTools={live.tools}
+        reasoningText={live.reasoning}
+        busy={busy}
+        reasoningExpanded={reasoningExpanded}
+      />
       <Composer busy={busy} active={!overlayOpen} onSend={(t) => void submit(t)} onExit={() => exit(0)} />
     </Box>
   );

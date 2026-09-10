@@ -4,10 +4,11 @@
 > **来源：** 2026-09-09 全仓静态审计；对照 `CODE_REVIEW.md`、`coding-standards.md`、`docs/issue-log/OPEN.md`、`docs/HANDOFF.md`、`docs/RELEASE-CHECKLIST.md`
 > **角色：** 本文件是**唯一计划文件**——背景、约束、执行顺序、12 个任务细节、验收总表全在这里，从上往下读一遍就能开工。
 > **配套文档（只有两份）：**
+>
 > - 验收与证据登记：`docs/ai-framework/plans/2026-09-09-phase-quality-closeout-acceptance.md`（你要往里填证据）
 > - 代码审查任务书：`docs/ai-framework/plans/2026-09-09-phase-quality-closeout-review-brief.md`（给专职审查者，执行者不必细读）
-> **已删除：** `…-track-a.md` / `…-track-b.md`（双轨并行方案，2026-09-09 人类决定改单人后已合并进本文件并删除。任务编号 **A0–A5 / B1–B6 原样保留**，与 acceptance 表格一一对应）
-> **元规范：** `docs/ai-framework/phased-plan-driven.md`
+>   **已删除：** `…-track-a.md` / `…-track-b.md`（双轨并行方案，2026-09-09 人类决定改单人后已合并进本文件并删除。任务编号 **A0–A5 / B1–B6 原样保留**，与 acceptance 表格一一对应）
+>   **元规范：** `docs/ai-framework/phased-plan-driven.md`
 
 **Goal：** 在 R2 激进-终端（T0–T5）与激进-桌面（D0–D6）大规模开工、以及 v1.0.0 正式发布之前，清掉四类欠账：**Windows 可用性 P0**、**真实模型端到端零验证**、**serve 发布前安全加固**、**工程规范与文档空账**。
 **Architecture：** 不引入新架构。全部为既有模块内的修复、加固、等价拆分与文档补齐。
@@ -33,48 +34,48 @@
 
 ## 前置阅读
 
-| 优先级 | 文件 |
-|--------|------|
-| P0 | 本文件 + `…-acceptance.md` |
-| P0 | `AGENTS.md`、`CODE_REVIEW.md`、`docs/ai-framework/phased-plan-driven.md` |
-| P0 | `docs/HANDOFF.md`、`docs/issue-log/OPEN.md`（31KB，任务 2 要拆它） |
-| P0 | `packages/core/src/tools/`（bash / executor / 内置工具）、`packages/core/src/agent/loop.ts` |
-| P0 | `packages/core/src/server/{http.ts,ws.ts,sessions.ts}` |
-| P0 | `packages/core/src/provider/{openai.ts,anthropic.ts,factory.ts}`、`packages/core/src/config/schema.ts`（A2 要用：协议路径拼接与 providers/roles 校验） |
-| P1 | `architecture.md`（443 行，不变量权威来源）、`coding-standards.md`（重点看「项目专属约定」空白节）、`docs/API-STABILITY.md` |
-| P1 | `packages/cli/src/index.ts`、`packages/desktop/src/renderer/App.tsx` |
-| P1 | `docs/ai-framework/plans/2026-09-08-phase-aggressive-core-foundation.md`（下游 R2 底座契约，**只读，不改**） |
-| P2 | `docs/RELEASE-CHECKLIST.md`、`docs/MIGRATION.md`、`docs/issue-log/2026-09-07.md`（Windows 空回复案发记录）、`docs/diary/2026-09-06.md`、`2026-09-07.md`（release note 素材） |
+| 优先级 | 文件                                                                                                                                                                         |
+| ------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| P0     | 本文件 + `…-acceptance.md`                                                                                                                                                   |
+| P0     | `AGENTS.md`、`CODE_REVIEW.md`、`docs/ai-framework/phased-plan-driven.md`                                                                                                     |
+| P0     | `docs/HANDOFF.md`、`docs/issue-log/OPEN.md`（31KB，任务 2 要拆它）                                                                                                           |
+| P0     | `packages/core/src/tools/`（bash / executor / 内置工具）、`packages/core/src/agent/loop.ts`                                                                                  |
+| P0     | `packages/core/src/server/{http.ts,ws.ts,sessions.ts}`                                                                                                                       |
+| P0     | `packages/core/src/provider/{openai.ts,anthropic.ts,factory.ts}`、`packages/core/src/config/schema.ts`（A2 要用：协议路径拼接与 providers/roles 校验）                       |
+| P1     | `architecture.md`（443 行，不变量权威来源）、`coding-standards.md`（重点看「项目专属约定」空白节）、`docs/API-STABILITY.md`                                                  |
+| P1     | `packages/cli/src/index.ts`、`packages/desktop/src/renderer/App.tsx`                                                                                                         |
+| P1     | `docs/ai-framework/plans/2026-09-08-phase-aggressive-core-foundation.md`（下游 R2 底座契约，**只读，不改**）                                                                 |
+| P2     | `docs/RELEASE-CHECKLIST.md`、`docs/MIGRATION.md`、`docs/issue-log/2026-09-07.md`（Windows 空回复案发记录）、`docs/diary/2026-09-06.md`、`2026-09-07.md`（release note 素材） |
 
 ---
 
 ## 阶段地图
 
-| 位置 | 内容 |
-|------|------|
-| 上游 | 阶段 1–12（v1.0.0 物料就绪，发布待授权）；阶段 14 共享底座 S0–S7 已验收合并 main |
-| **本阶段** | 质量收口：12 个任务，一人顺序做完 |
-| 下游 | R2 激进-终端 T0–T5、激进-桌面 D0–D6；v1.0.0 正式发布 |
-| 明确不做 | ❌ T/D 两轨任何新交互功能 ❌ 修改共享底座已冻结契约 ❌ 架构重构（只做行为等价的文件拆分）❌ 新增依赖，除 lint/format 工具链 |
+| 位置       | 内容                                                                                                                        |
+| ---------- | --------------------------------------------------------------------------------------------------------------------------- |
+| 上游       | 阶段 1–12（v1.0.0 物料就绪，发布待授权）；阶段 14 共享底座 S0–S7 已验收合并 main                                            |
+| **本阶段** | 质量收口：12 个任务，一人顺序做完                                                                                           |
+| 下游       | R2 激进-终端 T0–T5、激进-桌面 D0–D6；v1.0.0 正式发布                                                                        |
+| 明确不做   | ❌ T/D 两轨任何新交互功能 ❌ 修改共享底座已冻结契约 ❌ 架构重构（只做行为等价的文件拆分）❌ 新增依赖，除 lint/format 工具链 |
 
 ---
 
 ## 执行顺序（照这张表从上往下做，别跳）
 
-| # | 任务 | 预计 | 为什么排在这个位置 |
-|---|------|------|--------------------|
-| 1 | **A0** 仓库卫生与基线 | Day 1 上午 | 先把基线数字记下来，后面所有「全绿」都跟它比 |
-| 2 | **B1** OPEN.md 拆分 | Day 1 下午 | 后面每个任务都要往 OPEN.md 里写结论，先把它理顺 |
-| 3 | **B2** lint/format + CI + 全量格式化 | Day 2 | **趁代码还没动**一次性格式化完，之后所有 diff 都干净；这是全阶段唯一的排他任务 |
-| 4 | **A1** Windows 可用性 P0 | Day 3–5 | 全阶段最高优先级，产品当前最痛的 bug |
-| 5 | **A2** 真实模型端到端验证 | Day 6 | 环境已就绪；放在 A1 之后，才能顺带验证 Windows 修复的真机效果 |
-| 6 | **A3** serve 发布前安全加固 | Day 7–8 | 发布前必须的安全基线 |
-| 7 | **A4** core/server 大文件拆分 | Day 8–9 | 必须在 A3 之后，避免拆分与安全改动混在一起没法审 |
-| 8 | **B3** cli / desktop 大文件拆分 | Day 9–10 | 与 A4 同性质，连着做手感一致，审查者也能一起看 |
-| 9 | **B4** 规范文档补齐 | Day 10–11 | 必须在 B2 之后：`coding-standards.md` 要填的就是 B2 落地的真实配置 |
-| 10 | **A5** 阶段 9（IM 网关）独立复审 | Day 11（半天） | 独立任务，放在文档收尾前，结论正好并进 B5 |
-| 11 | **B5** 文档与验收欠账 | Day 11–12 | 收尾：把前面所有结论归位 |
-| 12 | **B6** v1.0.0 发布准备 | Day 12 | 最后一步，且逐项等人类授权 |
+| #   | 任务                                 | 预计           | 为什么排在这个位置                                                             |
+| --- | ------------------------------------ | -------------- | ------------------------------------------------------------------------------ |
+| 1   | **A0** 仓库卫生与基线                | Day 1 上午     | 先把基线数字记下来，后面所有「全绿」都跟它比                                   |
+| 2   | **B1** OPEN.md 拆分                  | Day 1 下午     | 后面每个任务都要往 OPEN.md 里写结论，先把它理顺                                |
+| 3   | **B2** lint/format + CI + 全量格式化 | Day 2          | **趁代码还没动**一次性格式化完，之后所有 diff 都干净；这是全阶段唯一的排他任务 |
+| 4   | **A1** Windows 可用性 P0             | Day 3–5        | 全阶段最高优先级，产品当前最痛的 bug                                           |
+| 5   | **A2** 真实模型端到端验证            | Day 6          | 环境已就绪；放在 A1 之后，才能顺带验证 Windows 修复的真机效果                  |
+| 6   | **A3** serve 发布前安全加固          | Day 7–8        | 发布前必须的安全基线                                                           |
+| 7   | **A4** core/server 大文件拆分        | Day 8–9        | 必须在 A3 之后，避免拆分与安全改动混在一起没法审                               |
+| 8   | **B3** cli / desktop 大文件拆分      | Day 9–10       | 与 A4 同性质，连着做手感一致，审查者也能一起看                                 |
+| 9   | **B4** 规范文档补齐                  | Day 10–11      | 必须在 B2 之后：`coding-standards.md` 要填的就是 B2 落地的真实配置             |
+| 10  | **A5** 阶段 9（IM 网关）独立复审     | Day 11（半天） | 独立任务，放在文档收尾前，结论正好并进 B5                                      |
+| 11  | **B5** 文档与验收欠账                | Day 11–12      | 收尾：把前面所有结论归位                                                       |
+| 12  | **B6** v1.0.0 发布准备               | Day 12         | 最后一步，且逐项等人类授权                                                     |
 
 **只有两条先后关系是硬的：** ①B2 在所有逻辑改动之前 ②A4 在 A3 之后。其余顺序可按手感微调，但改之前先看一眼上表「为什么」列。
 
@@ -93,29 +94,29 @@
 
 ## File Structure（预期变更）
 
-| 文件 | 动作 | 职责 |
-|------|------|------|
-| `.gitignore`、根 `package.json` | 修改 | A0（版本号）、B2（lint script） |
-| `docs/issue-log/OPEN.md` | 重构 | B1：只留真实待办 |
-| `docs/issue-log/DECISIONS.md` | 新建 | B1：已关闭 / 不修 / 口径登记迁入 |
-| `eslint.config.js`、`.prettierrc`、`.prettierignore` | 新建 | B2 |
-| `.github/workflows/**` | 修改 | B2：lint 入 CI |
-| `packages/core/src/tools/`（bash 工具实现） | 修改 | A1-1/A1-2：shell 探测与 UTF-8 解码 |
-| `packages/core/src/config/schema.ts` | 修改 | A1-1：新增 `bash.shell` 配置项（可选） |
-| `packages/core/src/doctor/**` | 修改 | A1-1：doctor 报告实际使用的 shell |
-| `packages/core/src/agent/loop.ts` | 修改 | A1-3：连续工具失败熔断 + 非空 finalText |
-| `packages/core/src/tools/executor.ts` | 修改 | A1-4：参数校验错误带 schema 片段与最小示例 |
-| `packages/core/src/server/{http.ts,ws.ts,sessions.ts}` | 修改 | A3：Origin/Host 白名单、一次性 token、WS 帧上限 |
-| `packages/core/package.json` | 修改 | A3-3：playwright 移出 runtime dependencies |
-| `packages/core/src/server/sessions.ts` | 拆分 | A4：hub 装配 / 订阅恢复 / 任务协调 |
-| `packages/core/test/{windows-bash,tool-failure-circuit,serve-security}.test.ts` | 新增 | A1 / A3 验收 |
-| `packages/cli/src/index.ts` | 拆分 | B3：命令注册 + 各子命令分文件 |
-| `packages/desktop/src/renderer/App.tsx` | 拆分 | B3：分栏 / 会话列表 / 消息流 |
-| `packages/desktop/src/renderer/components/SettingsDialog.tsx` | 拆分 | B3（评估后决定） |
-| `architecture.md`（Provider / Server 小节） | 修改 | A2/A3 结论落盘 |
-| `coding-standards.md`、`CODE_REVIEW.md`、`README.md` | 修改 | B4、B5 |
-| `docs/HANDOFF.md`、accept-phase 结论文件 | 修改/新增 | B5 |
-| `docs/RELEASE-CHECKLIST.md` | 勾选 | B6 |
+| 文件                                                                            | 动作      | 职责                                            |
+| ------------------------------------------------------------------------------- | --------- | ----------------------------------------------- |
+| `.gitignore`、根 `package.json`                                                 | 修改      | A0（版本号）、B2（lint script）                 |
+| `docs/issue-log/OPEN.md`                                                        | 重构      | B1：只留真实待办                                |
+| `docs/issue-log/DECISIONS.md`                                                   | 新建      | B1：已关闭 / 不修 / 口径登记迁入                |
+| `eslint.config.js`、`.prettierrc`、`.prettierignore`                            | 新建      | B2                                              |
+| `.github/workflows/**`                                                          | 修改      | B2：lint 入 CI                                  |
+| `packages/core/src/tools/`（bash 工具实现）                                     | 修改      | A1-1/A1-2：shell 探测与 UTF-8 解码              |
+| `packages/core/src/config/schema.ts`                                            | 修改      | A1-1：新增 `bash.shell` 配置项（可选）          |
+| `packages/core/src/doctor/**`                                                   | 修改      | A1-1：doctor 报告实际使用的 shell               |
+| `packages/core/src/agent/loop.ts`                                               | 修改      | A1-3：连续工具失败熔断 + 非空 finalText         |
+| `packages/core/src/tools/executor.ts`                                           | 修改      | A1-4：参数校验错误带 schema 片段与最小示例      |
+| `packages/core/src/server/{http.ts,ws.ts,sessions.ts}`                          | 修改      | A3：Origin/Host 白名单、一次性 token、WS 帧上限 |
+| `packages/core/package.json`                                                    | 修改      | A3-3：playwright 移出 runtime dependencies      |
+| `packages/core/src/server/sessions.ts`                                          | 拆分      | A4：hub 装配 / 订阅恢复 / 任务协调              |
+| `packages/core/test/{windows-bash,tool-failure-circuit,serve-security}.test.ts` | 新增      | A1 / A3 验收                                    |
+| `packages/cli/src/index.ts`                                                     | 拆分      | B3：命令注册 + 各子命令分文件                   |
+| `packages/desktop/src/renderer/App.tsx`                                         | 拆分      | B3：分栏 / 会话列表 / 消息流                    |
+| `packages/desktop/src/renderer/components/SettingsDialog.tsx`                   | 拆分      | B3（评估后决定）                                |
+| `architecture.md`（Provider / Server 小节）                                     | 修改      | A2/A3 结论落盘                                  |
+| `coding-standards.md`、`CODE_REVIEW.md`、`README.md`                            | 修改      | B4、B5                                          |
+| `docs/HANDOFF.md`、accept-phase 结论文件                                        | 修改/新增 | B5                                              |
+| `docs/RELEASE-CHECKLIST.md`                                                     | 勾选      | B6                                              |
 
 ---
 
@@ -174,24 +175,29 @@
 **案发记录：** 会话 `20260907-032949-546d13`（检索今日 3 件时政要闻）跑满 25 步 `maxSteps`、`finalText` 为空、用户零回复。根因是 Windows 适配缺陷，**不是任务复杂度**。
 
 #### A1-1 bash 工具的 shell 选择
+
 - 现状：`spawn(command, { shell: true })` 在 Windows 实际走 cmd.exe，`ls`/`head`/`tail`/`pwd` 全部失败并反复烧步数。
 - 目标：探测顺序 `config.bash.shell` > Git Bash（`GIT_BASH` 环境变量 / 常见安装路径）> cmd 回退；`harness2 doctor` 输出**实际使用的 shell**（而非配置里写的）。
 - **Commit：** `🐛fix(core): Windows bash 工具优先 Git Bash 并在 doctor 中报告（A1-1）`
 
 #### A1-2 输出编码统一 UTF-8
+
 - Windows 控制台默认 GBK，子进程输出必须按 UTF-8 解码，**乱码不得进模型上下文**。
 - **Commit：** `🐛fix(core): 子进程输出统一 UTF-8 解码（A1-2）`
 
 #### A1-3 熔断语义改造
+
 - 在 `maxSteps` 之外增加「连续工具失败次数上限」（建议 5）；触发时 turn 以 `stopReason=tool_failures` 结束，并**必须**产出面向用户的 finalText，**禁止空回复**。同时评估默认 `maxSteps=25` 是否上调。
 - **边界（勿与底座 S4 混淆）：** 本项是「连续失败熔断」（防烧步/防空回复），与 `interaction/retry-policy` 的「有界重试」是两套独立机制。落点在 agent 控制流（`loop.ts`/turn 组装层），**不改 `interaction/` 下的公共契约**。
 - **Commit：** `✨feat(core): 连续工具失败熔断与非空终态回复（A1-3）`
 
 #### A1-4 工具参数校验反馈
+
 - 缺必填参数时（案例里 `write` 漏 `file_path`），error 中带该参数的 schema 片段 + 一个最小正确调用示例。
 - **Commit：** `✨feat(core): 工具参数缺失时返回 schema 与最小示例（A1-4）`
 
 #### A1-5 browser 工具提示语核对
+
 - `browser_*` 未安装 chromium 时提示应明确指向 `harness2 browser install`。
 - **Commit：** `📝fix(core): 校正 browser 工具未安装提示（A1-5）`
 
@@ -213,23 +219,24 @@
 
 #### A2-1（必做）本地统一网关 — 人类已提供，2026-09-09 实测通过
 
-| 项 | 值 |
-|----|----|
-| Base URL | `http://127.0.0.1:40080/v1` |
-| Key | `sk-unified-local`（本地网关口令，非云端机密；仍只写 auth.json 或环境变量，**不入库、不进日志**） |
-| 模型 | `big-pickle` |
-| 上下文 | 200K → `contextWindow: 200000` |
-| 模态 | **纯文本大模型**（无视觉/多模态；相关用例直接记 ➖，不要伪造） |
+| 项       | 值                                                                                                |
+| -------- | ------------------------------------------------------------------------------------------------- |
+| Base URL | `http://127.0.0.1:40080/v1`                                                                       |
+| Key      | `sk-unified-local`（本地网关口令，非云端机密；仍只写 auth.json 或环境变量，**不入库、不进日志**） |
+| 模型     | `big-pickle`                                                                                      |
+| 上下文   | 200K → `contextWindow: 200000`                                                                    |
+| 模态     | **纯文本大模型**（无视觉/多模态；相关用例直接记 ➖，不要伪造）                                    |
 
 实测结论（写计划时用 PowerShell 直连，可复现）：
 
-| 端点 | 协议 | 实测结果 |
-|------|------|----------|
-| `GET /v1/models` | — | 200，列表含 `big-pickle` |
-| `POST /v1/chat/completions`（`Authorization: Bearer …`） | OpenAI 兼容 | 200；非流式带 `reasoning_content` 与 `usage{prompt_tokens,completion_tokens,total_tokens}`；`stream:true` 返回 `text/event-stream`，delta 先 `reasoning_content` 后 `content`，收尾依次是 `finish_reason=stop` 帧 → `choices:[]` 的 usage 帧 → `data: [DONE]` |
+| 端点                                                                 | 协议           | 实测结果                                                                                                                                                                                                                                                                                                 |
+| -------------------------------------------------------------------- | -------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `GET /v1/models`                                                     | —              | 200，列表含 `big-pickle`                                                                                                                                                                                                                                                                                 |
+| `POST /v1/chat/completions`（`Authorization: Bearer …`）             | OpenAI 兼容    | 200；非流式带 `reasoning_content` 与 `usage{prompt_tokens,completion_tokens,total_tokens}`；`stream:true` 返回 `text/event-stream`，delta 先 `reasoning_content` 后 `content`，收尾依次是 `finish_reason=stop` 帧 → `choices:[]` 的 usage 帧 → `data: [DONE]`                                            |
 | `POST /v1/messages`（`x-api-key` + `anthropic-version: 2023-06-01`） | Anthropic 原生 | 200；content 块为 `thinking` + `text`，`stop_reason=end_turn`，`usage{input_tokens,output_tokens}`；流式事件序列 `message_start` → `ping` → `content_block_start/delta(thinking_delta)/stop` → `content_block_start/delta(text_delta)/stop` → `message_delta`（带 stop_reason 与 usage）→ `message_stop` |
 
 **⚠️ baseUrl 最容易踩的坑（写错就是 404，先看 `config/schema.ts` 第 18 行注释）：**
+
 - `protocol: "openai"` → 代码请求 `{baseUrl}/chat/completions`，baseUrl **要带 `/v1`**：`http://127.0.0.1:40080/v1`
 - `protocol: "anthropic"` → 代码请求 `{baseUrl}/v1/messages`，baseUrl **不能带 `/v1`**：`http://127.0.0.1:40080`
 
@@ -273,16 +280,16 @@
 
 两个渠道（`local-oai` / `local-ant`）各过一遍下面八项：
 
-| # | 项目 | 通过条件 |
-|---|------|----------|
-| 1 | `harness2 config check --home <临时home> --root .` | 两渠道各显示 protocol 与 baseUrl、`models: big-pickle`、`main -> local-oai/big-pickle`；key 来源显示 `auth.json`（或 `env:LOCAL_UNIFIED_KEY`）；**输出里不得出现 `sk-unified-local` 明文** |
-| 2 | `harness2 chat` 一轮对话 + 一次工具调用 | SSE 流式渲染、tool_calls 组装、`reasoning_content`/`thinking` 展示、usage 统计、错误脱敏均正常 |
-| 3 | undo/redo/审批/会话 | `/undo --dry-run` → `/undo`（文件复原）→ `/redo`（内容回放）→ 审批 ask 的 y/a/n → `/sessions` 搜索 → `/exit` |
-| 4 | 记忆三态 | off / ask / auto + nudge 复盘；手工改坏 `§` 结构应被拒并生成 .bak |
-| 5 | MCP 与插件 | filesystem server `mcp list` 探测 + `mcp__filesystem__*` 真实调用；第三方插件从零装载 + `plugin enable` |
-| 6 | 桌面端 | 接本地网关走一遍对话 / 流式 / 审批 / undo |
-| 7 | 上下文与压缩 | 声明 200K 时压缩阈值 ≈ 150K token，**别真堆长文**：临时把该渠道 `contextWindow` 改成 4000 触发一次压缩，确认压缩事件与摘要落盘、后续回答不崩，再改回 200000 |
-| 8 | 失败与降级 | 故意把 baseUrl 写错（如 anthropic 渠道错带 `/v1`）→ 报错可读且不含 key 明文；停掉网关 → `network` 类错误经有界重试（2/10/30s）后给出**非空** finalText，不得空回复 |
+| #   | 项目                                               | 通过条件                                                                                                                                                                                   |
+| --- | -------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| 1   | `harness2 config check --home <临时home> --root .` | 两渠道各显示 protocol 与 baseUrl、`models: big-pickle`、`main -> local-oai/big-pickle`；key 来源显示 `auth.json`（或 `env:LOCAL_UNIFIED_KEY`）；**输出里不得出现 `sk-unified-local` 明文** |
+| 2   | `harness2 chat` 一轮对话 + 一次工具调用            | SSE 流式渲染、tool_calls 组装、`reasoning_content`/`thinking` 展示、usage 统计、错误脱敏均正常                                                                                             |
+| 3   | undo/redo/审批/会话                                | `/undo --dry-run` → `/undo`（文件复原）→ `/redo`（内容回放）→ 审批 ask 的 y/a/n → `/sessions` 搜索 → `/exit`                                                                               |
+| 4   | 记忆三态                                           | off / ask / auto + nudge 复盘；手工改坏 `§` 结构应被拒并生成 .bak                                                                                                                          |
+| 5   | MCP 与插件                                         | filesystem server `mcp list` 探测 + `mcp__filesystem__*` 真实调用；第三方插件从零装载 + `plugin enable`                                                                                    |
+| 6   | 桌面端                                             | 接本地网关走一遍对话 / 流式 / 审批 / undo                                                                                                                                                  |
+| 7   | 上下文与压缩                                       | 声明 200K 时压缩阈值 ≈ 150K token，**别真堆长文**：临时把该渠道 `contextWindow` 改成 4000 触发一次压缩，确认压缩事件与摘要落盘、后续回答不崩，再改回 200000                                |
+| 8   | 失败与降级                                         | 故意把 baseUrl 写错（如 anthropic 渠道错带 `/v1`）→ 报错可读且不含 key 明文；停掉网关 → `network` 类错误经有界重试（2/10/30s）后给出**非空** finalText，不得空回复                         |
 
 #### A2-2（可选，缺 key 就记 ➖）真实云端厂商
 
@@ -297,15 +304,18 @@ DeepSeek / 智谱 GLM / Anthropic 官方各过同一份清单。**本地网关�
 ### 6. A3 — serve 发布前安全加固（Day 7–8 · 2 天）
 
 #### A3-1 本地信任域加固
+
 - 现状：HTTP/WS 只监听 127.0.0.1 但**无鉴权、无 Origin/Host 白名单**，任意本地进程都能驱动 agent 执行工具。OPEN.md 里挂着「M2 发布前加固项」，已顺延到 M4。
 - 目标：Origin/Host 白名单 + 启动时生成的一次性 token（CLI 与桌面自动携带）；拒绝非 127.0.0.1。
 - **Commit：** `🔒feat(core): serve 增加 Origin 白名单与一次性 token 鉴权（A3-1）`
 
 #### A3-2 WS 帧大小上限
+
 - 对齐 HTTP 的 1 MiB，超限断连并记账（WS 侧目前无 cap）。
 - **Commit：** `🔒feat(core): WS 帧大小上限与超限断连记账（A3-2）`
 
 #### A3-3 playwright 依赖瘦身
+
 - 现状：playwright 是 `@harness2/core` 的 **runtime dependency**，任何 `npm i -g harness2` 的用户都会拖一份。
 - 目标：改 `optionalDependencies` 或运行时动态 import；未安装时 `browser_*` 走既有「未安装指引」降级（bundle 侧已 `--external:playwright`，降级路径本就存在）。
 - **Commit：** `⚡chore(core): playwright 改为可选依赖并保留降级路径（A3-3）`
@@ -330,11 +340,11 @@ DeepSeek / 智谱 GLM / Anthropic 官方各过同一份清单。**本地网关�
 
 **为什么现在做：** 违反自家编码规范「单文件保持合理长度」，而且这两个文件正是 R2 终端轨 T0–T5 与桌面轨 D0–D6 要重度改动的地方，先拆开后面才好并行。
 
-| 文件 | 当前 | 拆分方向 |
-|------|------|----------|
-| `packages/cli/src/index.ts` | 39KB | 命令注册 + 各子命令分文件 |
-| `packages/desktop/src/renderer/App.tsx` | 31KB | 分栏 / 会话列表 / 消息流 组件 |
-| `packages/desktop/src/renderer/components/SettingsDialog.tsx` | 30KB | 评估后决定是否拆 |
+| 文件                                                          | 当前 | 拆分方向                      |
+| ------------------------------------------------------------- | ---- | ----------------------------- |
+| `packages/cli/src/index.ts`                                   | 39KB | 命令注册 + 各子命令分文件     |
+| `packages/desktop/src/renderer/App.tsx`                       | 31KB | 分栏 / 会话列表 / 消息流 组件 |
+| `packages/desktop/src/renderer/components/SettingsDialog.tsx` | 30KB | 评估后决定是否拆              |
 
 - **要求：纯搬运不改行为**；一次只拆一个；每次跑全量 `pnpm test` + `pnpm -r typecheck`。
 - 如果动到 `@harness2/core` 的导出面：**同一提交**更新 api-surface fixture。
@@ -346,11 +356,15 @@ DeepSeek / 智谱 GLM / Anthropic 官方各过同一份清单。**本地网关�
 ### 9. B4 — 规范文档补齐（Day 10–11）
 
 #### B4-1 `coding-standards.md` 的「项目专属约定」
+
 整节还是 `____________` 空白模板（技术栈、构建命令、包管理器、测试命令、分层结构、lint 配置全空）。这是 AI 子代理协作的地基，必须按 B2 落地的真实配置填实。**写进去的每条命令都要亲自跑一遍**——写错命令比空白更坏。
+
 - **Commit：** `📝docs(standards): 填实项目专属约定（B4-1）`
 
 #### B4-2 `CODE_REVIEW.md` 增补 harness2 专属红线
+
 现在这份是通用清单，对本项目零针对性。需增补：
+
 - 四条不变量（Model-visible ⟺ logged / append-only 单写者 / core 与 UI 解耦 / 文件快照独立于 git）
 - 密钥脱敏闸门
 - 快照范围（bash 副作用不入快照）
@@ -360,7 +374,9 @@ DeepSeek / 智谱 GLM / Anthropic 官方各过同一份清单。**本地网关�
 - **Commit：** `📝docs(review): 增补 harness2 专属审查红线（B4-2）`
 
 #### B4-3 插件边界如实声明
+
 v1 插件是**同进程非隔离**，manifest 权限只是 API 层约束。在 README、文档站、`plugin list` 输出三处显著位置写明，避免用户默认有沙箱。（`plugin list` 输出文案落点在 core，一并改掉。）任何暗示「有沙箱 / 已隔离」的措辞都是安全误导。
+
 - **Commit：** `📝docs(plugins): 声明 v1 插件同进程非隔离边界（B4-3）`
 
 ---
@@ -380,6 +396,7 @@ v1 插件是**同进程非隔离**，manifest 权限只是 API 层约束。在 R
 2. README 三张截图：终端 chat 流式与工具行、桌面多会话分屏、traj 时间线；补完**删掉 HTML 占位注释**。
 3. `docs/HANDOFF.md` 状态快照更新到当前（含本阶段进展与三份计划文档索引）。
 4. 汇总本阶段 `docs/diary/` 记录。
+
 - **验收：** 三份 accept-phase 四段结论落盘；README 图可见；HANDOFF 读完能零上下文接手。
 - **Commit：** `📝docs(plans): 补齐阶段 5/6/8 形式验收与交接快照（B5）`
 
@@ -391,6 +408,7 @@ v1 插件是**同进程非隔离**，manifest 权限只是 API 层约束。在 R
 2. `NPM_TOKEN` secret 由人类配置；你把需要的字段与步骤列清单给他。
 3. tag `v1.0.0` **等明确授权后再推**；release note 说明 M1/M2/M3 合并进 1.0.0 的对应关系（素材取自 `docs/diary/`）。
 4. 对照 `docs/RELEASE-CHECKLIST.md` ③ 逐项打勾，把勾好的清单发人类。
+
 - **发布后核对：** release workflow 全绿；npm 两包可安装；干净机器上 `npm i -g harness2` 后 `harness2 config check` 可跑。
 
 ---
@@ -403,16 +421,16 @@ v1 插件是**同进程非隔离**，manifest 权限只是 API 层约束。在 R
 
 ### 审查窗口（边做边审，不是最后一次总审）
 
-| 时机 | 审查对象 | 阻塞合入 | 说明 |
-|------|----------|----------|------|
-| Day 1 | 审查者读文档、建只读工作树、跑自己的基线 | — | 与 A0 并行 |
-| Day 2 | A0、B1、B2 | 否（事后核） | 重点：B1 只搬不删；B2 的 `🎨style` 提交抽查有无夹带逻辑 |
-| Day 5 | **A1** | 是 | 全阶段最细一批 |
-| Day 6 | A2 的证据 | 否 | 只核证据真实性：有无 mock 冒充、有无 key 明文、anthropic baseUrl 是否配对 |
-| Day 8 | **A3** | 是 | 安全类最严 |
-| Day 10 | A4、B3 | 是 | 两批拆分一起看，重点零行为变更 |
-| Day 12 | B4、A5、B5 | 是 | 文档与复审 |
-| Day 12 末 | 联合验收 J-1～J-6 | 阻塞发布 | 全部合入后 |
+| 时机      | 审查对象                                 | 阻塞合入     | 说明                                                                      |
+| --------- | ---------------------------------------- | ------------ | ------------------------------------------------------------------------- |
+| Day 1     | 审查者读文档、建只读工作树、跑自己的基线 | —            | 与 A0 并行                                                                |
+| Day 2     | A0、B1、B2                               | 否（事后核） | 重点：B1 只搬不删；B2 的 `🎨style` 提交抽查有无夹带逻辑                   |
+| Day 5     | **A1**                                   | 是           | 全阶段最细一批                                                            |
+| Day 6     | A2 的证据                                | 否           | 只核证据真实性：有无 mock 冒充、有无 key 明文、anthropic baseUrl 是否配对 |
+| Day 8     | **A3**                                   | 是           | 安全类最严                                                                |
+| Day 10    | A4、B3                                   | 是           | 两批拆分一起看，重点零行为变更                                            |
+| Day 12    | B4、A5、B5                               | 是           | 文档与复审                                                                |
+| Day 12 末 | 联合验收 J-1～J-6                        | 阻塞发布     | 全部合入后                                                                |
 
 **SLA：** 声明「完成待审」后 24 小时内出结论。P0 当面/群里直达，不能只写在文档里等人看。审查者预计投入约 5 个半天，散在 12 天内。
 
@@ -422,6 +440,7 @@ v1 插件是**同进程非隔离**，manifest 权限只是 API 层约束。在 R
 2. 两份审查报告 P0/P1 清零
 3. 同步 `docs/issue-log/<日期>.md`（需求描述 / 处理过程 / 修改结果 / 遗留风险四要素）、`OPEN.md`、`docs/diary/`
 4. 在 `…-acceptance.md` 对应行填状态、证据命令、日期
+5. **收尾前跑一次 `pnpm lint` 并确认 exit 0**（改文档也算改动；B2 只保证格式化执行「那一刻」全库干净，之后任何新增/修改都必须再过一遍 lint）
 
 ---
 
@@ -441,54 +460,54 @@ v1 插件是**同进程非隔离**，manifest 权限只是 API 层约束。在 R
 
 ## 阶段开头：上阶段遗留（元规范 §4.1）
 
-| 遗留项 | 来源 | 未通过/未做原因 | 承接 |
-|--------|------|----------------|------|
-| 阶段 5 / 6 / 8 未做形式验收 | 阶段 12 收口 | 当时按档位跳过，登记为「未执行」 | ⬜ B5-1 |
-| 阶段 9（IM 网关）曾判 fail，修复后未复审 | 阶段 9 验收 | 修复后无独立复审 | ⬜ A5 |
-| serve 本地信任域加固（M2 发布前项） | OPEN.md | 一路顺延至 M4 仍未做 | ⬜ A3-1 |
-| 真实模型端到端零验证 | OPEN.md「待 key」 | 原因是缺 API key；**2026-09-09 人类已提供本地统一网关，依赖解除**，只剩云端厂商差异待补 | ⬜ A2 |
-| `coding-standards.md`「项目专属约定」整节空白 | 静态审计 | 从未填写 | ⬜ B4-1 |
-| Windows bash 工具不可用导致空回复（会话 `20260907-032949-546d13`） | issue-log | 定位后未修 | ⬜ A1 |
+| 遗留项                                                             | 来源              | 未通过/未做原因                                                                         | 承接    |
+| ------------------------------------------------------------------ | ----------------- | --------------------------------------------------------------------------------------- | ------- |
+| 阶段 5 / 6 / 8 未做形式验收                                        | 阶段 12 收口      | 当时按档位跳过，登记为「未执行」                                                        | ⬜ B5-1 |
+| 阶段 9（IM 网关）曾判 fail，修复后未复审                           | 阶段 9 验收       | 修复后无独立复审                                                                        | ⬜ A5   |
+| serve 本地信任域加固（M2 发布前项）                                | OPEN.md           | 一路顺延至 M4 仍未做                                                                    | ⬜ A3-1 |
+| 真实模型端到端零验证                                               | OPEN.md「待 key」 | 原因是缺 API key；**2026-09-09 人类已提供本地统一网关，依赖解除**，只剩云端厂商差异待补 | ⬜ A2   |
+| `coding-standards.md`「项目专属约定」整节空白                      | 静态审计          | 从未填写                                                                                | ⬜ B4-1 |
+| Windows bash 工具不可用导致空回复（会话 `20260907-032949-546d13`） | issue-log         | 定位后未修                                                                              | ⬜ A1   |
 
 ---
 
 ## 验收标准总表（逐项明细与证据填 `…-acceptance.md` 第 2/3 节）
 
-| # | 标准 | 通过条件 | 验证方式 |
-|---|------|----------|----------|
-| 1 | Windows 四类缺陷闭环 | `windows-bash`、`tool-failure-circuit`、编码与参数示范用例全绿 | 自动化 |
-| 2 | 真机清单 | **A2-1（必做）** 本地网关 openai + anthropic 两渠道八项逐项 pass 或已登记缺陷；**A2-2（可选）** 云端厂商差异，无 key 记 ➖ | 人类签收 |
-| 3 | serve 越权被拒 | `serve-security` 全绿 + 手工 curl 输出 | 自动化 + 手工 |
-| 4 | core/server 拆分零行为变更 | `sessions.ts` < 25KB 且拆分前后同组测试结果一致 | 自动化 + 审查复核 |
-| 5 | 阶段 9 网关复审结论落盘 | 四段结论 + 复跑输出 | 独立角色 |
-| 6 | OPEN.md 只剩真实待办 | 逐条为待办，已决策项迁入 DECISIONS.md | 人工审阅 diff |
-| 7 | lint 进 CI 且绿 | `pnpm lint` 本地与 CI 均通过；`🎨style` 提交无逻辑变更 | 自动化 + 抽查 |
-| 8 | cli/desktop 拆分零行为变更 | 目标文件 < 20KB + 桌面 smoke 通过 | 自动化 + 手工 |
-| 9 | 两份规范文档无空白占位 | `coding-standards.md`、`CODE_REVIEW.md` 项目专属内容落地且命令实测可用 | 人工 |
-| 10 | 文档欠账清零 | accept-phase 5/6/8 落盘 + README 三图 + HANDOFF 更新 | 人工 |
-| 11 | 全量回归 | `pnpm test` 真实命中全绿，通过数不低于 A0 基线 | 自动化 |
-| 12 | 阶段级代码审查 | 每批两份报告，结论 ✅/⚠️；❌ 下放 | 审查者 + 子代理 |
-| 13 | 红线 | 无密钥入库；`git ls-files` 无敏感文件；未改人类全局配置 | 自检 + 审查 |
+| #   | 标准                       | 通过条件                                                                                                                   | 验证方式          |
+| --- | -------------------------- | -------------------------------------------------------------------------------------------------------------------------- | ----------------- |
+| 1   | Windows 四类缺陷闭环       | `windows-bash`、`tool-failure-circuit`、编码与参数示范用例全绿                                                             | 自动化            |
+| 2   | 真机清单                   | **A2-1（必做）** 本地网关 openai + anthropic 两渠道八项逐项 pass 或已登记缺陷；**A2-2（可选）** 云端厂商差异，无 key 记 ➖ | 人类签收          |
+| 3   | serve 越权被拒             | `serve-security` 全绿 + 手工 curl 输出                                                                                     | 自动化 + 手工     |
+| 4   | core/server 拆分零行为变更 | `sessions.ts` < 25KB 且拆分前后同组测试结果一致                                                                            | 自动化 + 审查复核 |
+| 5   | 阶段 9 网关复审结论落盘    | 四段结论 + 复跑输出                                                                                                        | 独立角色          |
+| 6   | OPEN.md 只剩真实待办       | 逐条为待办，已决策项迁入 DECISIONS.md                                                                                      | 人工审阅 diff     |
+| 7   | lint 进 CI 且绿            | `pnpm lint` 本地与 CI 均通过；`🎨style` 提交无逻辑变更                                                                     | 自动化 + 抽查     |
+| 8   | cli/desktop 拆分零行为变更 | 目标文件 < 20KB + 桌面 smoke 通过                                                                                          | 自动化 + 手工     |
+| 9   | 两份规范文档无空白占位     | `coding-standards.md`、`CODE_REVIEW.md` 项目专属内容落地且命令实测可用                                                     | 人工              |
+| 10  | 文档欠账清零               | accept-phase 5/6/8 落盘 + README 三图 + HANDOFF 更新                                                                       | 人工              |
+| 11  | 全量回归                   | `pnpm test` 真实命中全绿，通过数不低于 A0 基线                                                                             | 自动化            |
+| 12  | 阶段级代码审查             | 每批两份报告，结论 ✅/⚠️；❌ 下放                                                                                          | 审查者 + 子代理   |
+| 13  | 红线                       | 无密钥入库；`git ls-files` 无敏感文件；未改人类全局配置                                                                    | 自检 + 审查       |
 
 ---
 
 ## 风险与降级
 
-| 风险 | 缓解 |
-|------|------|
+| 风险                                          | 缓解                                                                                                                                                |
+| --------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
 | 全量格式化前置产生一个超大 diff，审查者看不动 | 它是纯 `🎨style` 提交，用 `git diff --ignore-all-space` 与 `pnpm prettier --check` 复核即可，不必逐行读；且放在最前面意味着后面所有业务 diff 都干净 |
-| 新 lint 规则把存量正常代码判红，CI 长期红 | 首轮只把明显错误设 error，其余 warning；先跑通再收紧 |
-| 格式化污染 api-surface fixture 导致快照测试炸 | `.prettierignore` 排除 `packages/core/test/fixtures/**`；格式化后立刻跑全量测试与 `api-surface.test.ts` |
-| Windows shell 探测在他人机器上路径不同 | 探测顺序可配置（`config.bash.shell` 最高优先级）+ doctor 输出实际 shell |
-| 熔断阈值误伤长任务 | 阈值可配置；只统计**连续**失败；触发时给出可行动 finalText 而非静默结束 |
-| 安全加固挡住自家客户端 | A3 完成即自己跑 desktop smoke + CLI serve 冒烟才算通过 |
-| 本地网关通过 ≠ 云端厂商通过 | A2-1 必做（环境已就绪）；A2-2 缺 key 记 ➖，不得由 A2-1 或 stub 顶替 |
-| 本地网关未启动 / 端口 40080 被占 | 先直连 `/v1/models` 确认 200 再动 harness2；网关不可用则 A2 顺延，不阻塞 A3 |
-| 200K 上下文导致压缩路径测不到 | 临时把渠道 `contextWindow` 调成 4000 触发压缩，验完改回，别真堆 15 万 token |
-| 拆分意外引入行为变更 | 纯搬运；一次一个文件；拆分前后跑同一组测试并贴对比 |
-| 单人执行没人交叉发现问题 | 这正是设专职审查者的原因；审查者缺位必须在 acceptance 第 5 节写明「无独立人工审查」 |
-| 结论只写在本机 issue-log，别人看不到 | 跨人可见的结论必须进 `…-acceptance.md` 与 `OPEN.md`（两者入库） |
-| 12 天工期被打断后忘记进度 | 每完成一个任务立刻在 acceptance 填状态，进度以那张表为准，不以记忆为准 |
+| 新 lint 规则把存量正常代码判红，CI 长期红     | 首轮只把明显错误设 error，其余 warning；先跑通再收紧                                                                                                |
+| 格式化污染 api-surface fixture 导致快照测试炸 | `.prettierignore` 排除 `packages/core/test/fixtures/**`；格式化后立刻跑全量测试与 `api-surface.test.ts`                                             |
+| Windows shell 探测在他人机器上路径不同        | 探测顺序可配置（`config.bash.shell` 最高优先级）+ doctor 输出实际 shell                                                                             |
+| 熔断阈值误伤长任务                            | 阈值可配置；只统计**连续**失败；触发时给出可行动 finalText 而非静默结束                                                                             |
+| 安全加固挡住自家客户端                        | A3 完成即自己跑 desktop smoke + CLI serve 冒烟才算通过                                                                                              |
+| 本地网关通过 ≠ 云端厂商通过                   | A2-1 必做（环境已就绪）；A2-2 缺 key 记 ➖，不得由 A2-1 或 stub 顶替                                                                                |
+| 本地网关未启动 / 端口 40080 被占              | 先直连 `/v1/models` 确认 200 再动 harness2；网关不可用则 A2 顺延，不阻塞 A3                                                                         |
+| 200K 上下文导致压缩路径测不到                 | 临时把渠道 `contextWindow` 调成 4000 触发压缩，验完改回，别真堆 15 万 token                                                                         |
+| 拆分意外引入行为变更                          | 纯搬运；一次一个文件；拆分前后跑同一组测试并贴对比                                                                                                  |
+| 单人执行没人交叉发现问题                      | 这正是设专职审查者的原因；审查者缺位必须在 acceptance 第 5 节写明「无独立人工审查」                                                                 |
+| 结论只写在本机 issue-log，别人看不到          | 跨人可见的结论必须进 `…-acceptance.md` 与 `OPEN.md`（两者入库）                                                                                     |
+| 12 天工期被打断后忘记进度                     | 每完成一个任务立刻在 acceptance 填状态，进度以那张表为准，不以记忆为准                                                                              |
 
 ---
 

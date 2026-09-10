@@ -181,31 +181,31 @@ describe('ServeManager（真实子进程）', () => {
   it('意外退出 → reconnecting → 自动重启回 connected；达上限后 offline', async () => {
     process.env['FAKE_EXIT_MS'] = '400'; // 子进程健康后 400ms 自杀，触发重启链
     try {
-    const statuses: string[] = [];
-    const mgr = makeManager({
-      restartAttempts: 1,
-      restartBaseDelayMs: 40,
-      onStatus: (status) => statuses.push(status),
-    });
-    await mgr.start();
-    statuses.length = 0; // 只看重启段
+      const statuses: string[] = [];
+      const mgr = makeManager({
+        restartAttempts: 1,
+        restartBaseDelayMs: 40,
+        onStatus: (status) => statuses.push(status),
+      });
+      await mgr.start();
+      statuses.length = 0; // 只看重启段
 
-    // 等第一次意外退出（脚本 400ms 后 exit）→ reconnecting → 自动重启 → 第二次 connected
-    for (let i = 0; i < 200 && mgr.status !== 'reconnecting'; i++) {
-      await new Promise((r) => setTimeout(r, 25));
-    }
-    expect(statuses).toContain('reconnecting');
-    for (let i = 0; i < 200 && mgr.status !== 'connected'; i++) {
-      await new Promise((r) => setTimeout(r, 25));
-    }
-    expect(mgr.status).toBe('connected');
+      // 等第一次意外退出（脚本 400ms 后 exit）→ reconnecting → 自动重启 → 第二次 connected
+      for (let i = 0; i < 200 && mgr.status !== 'reconnecting'; i++) {
+        await new Promise((r) => setTimeout(r, 25));
+      }
+      expect(statuses).toContain('reconnecting');
+      for (let i = 0; i < 200 && mgr.status !== 'connected'; i++) {
+        await new Promise((r) => setTimeout(r, 25));
+      }
+      expect(mgr.status).toBe('connected');
 
-    // 第二次退出后达到上限（restartAttempts=1）→ offline
-    for (let i = 0; i < 300 && mgr.status !== 'offline'; i++) {
-      await new Promise((r) => setTimeout(r, 25));
-    }
-    expect(mgr.status).toBe('offline');
-    await mgr.stop();
+      // 第二次退出后达到上限（restartAttempts=1）→ offline
+      for (let i = 0; i < 300 && mgr.status !== 'offline'; i++) {
+        await new Promise((r) => setTimeout(r, 25));
+      }
+      expect(mgr.status).toBe('offline');
+      await mgr.stop();
     } finally {
       delete process.env['FAKE_EXIT_MS'];
     }

@@ -21,18 +21,8 @@ import {
   type ServeHandle,
   type WsServerMessage,
 } from '../src/index.js';
-import type {
-  CancelRequest,
-  CancelAck,
-  ResumeSubscriptionRequest,
-  ResumeSnapshot,
-  SubmitRequest,
-  SubmitAck,
-} from '../src/interaction/types.js';
-import {
-  WatermarkCursor,
-  type ResumeStateProvider,
-} from '../src/server/ws.js';
+import type { CancelRequest, SubmitRequest } from '../src/interaction/types.js';
+import { WatermarkCursor, type ResumeStateProvider } from '../src/server/ws.js';
 
 const dirs: string[] = [];
 const handles: ServeHandle[] = [];
@@ -220,7 +210,9 @@ describe('cancel 三态 ack（传输帧层）', () => {
       provider: new MockProvider([{ textChunks: ['回复'] }]),
       resumeState: provider({
         cancelAck: (req) =>
-          req.target.id === 'turn-7' ? { requestId: req.requestId, state: 'stopping' } : { requestId: req.requestId, state: 'cancelled' },
+          req.target.id === 'turn-7'
+            ? { requestId: req.requestId, state: 'stopping' }
+            : { requestId: req.requestId, state: 'cancelled' },
       }),
     });
     handles.push(handle);
@@ -228,11 +220,19 @@ describe('cancel 三态 ack（传输帧层）', () => {
     await client.open;
     // stopping branch
     client.send({ op: 'cancel', requestId: 'cnl-1', target: { kind: 'turn', id: 'turn-7' }, expectedId: 'turn-7' });
-    const a = await client.waitFor((f) => f.type === 'cancel-ack' && (f.type === 'cancel-ack' ? f.requestId : '') === 'cnl-1', 'cancel-ack stopping', 0);
+    const a = await client.waitFor(
+      (f) => f.type === 'cancel-ack' && (f.type === 'cancel-ack' ? f.requestId : '') === 'cnl-1',
+      'cancel-ack stopping',
+      0,
+    );
     expect(a.type === 'cancel-ack' && a.state).toBe('stopping');
     // cancelled branch (provider 对 id != turn-7 回 cancelled；传输层原样转发)
     client.send({ op: 'cancel', requestId: 'cnl-2', target: { kind: 'task', id: 'task-9' }, expectedId: 'task-9' });
-    const c = await client.waitFor((f) => f.type === 'cancel-ack' && (f.type === 'cancel-ack' ? f.requestId : '') === 'cnl-2', 'cancel-ack cancelled', 0);
+    const c = await client.waitFor(
+      (f) => f.type === 'cancel-ack' && (f.type === 'cancel-ack' ? f.requestId : '') === 'cnl-2',
+      'cancel-ack cancelled',
+      0,
+    );
     expect(c.type === 'cancel-ack' && c.state).toBe('cancelled');
     expect(c.type === 'cancel-ack' && c.requestId).toBe('cnl-2');
     client.close();
@@ -261,7 +261,11 @@ describe('submit 帧定义 + ack（传输帧层；实际入队归 S3c2）', () =
     const ok = await client.waitFor((f) => f.type === 'submit-ack', 'submit-ack');
     expect(ok.type === 'submit-ack' && ok.state).toBe('accepted');
     client.send({ op: 'submit', clientMessageId: 'cm-2', sessionId: 's1', rawText: 'no', intent: 'queue' });
-    const rej = await client.waitFor((f) => f.type === 'submit-ack' && (f.type === 'submit-ack' ? f.clientMessageId : '') === 'cm-2', 'submit-ack rej', 1);
+    const rej = await client.waitFor(
+      (f) => f.type === 'submit-ack' && (f.type === 'submit-ack' ? f.clientMessageId : '') === 'cm-2',
+      'submit-ack rej',
+      1,
+    );
     expect(rej.type === 'submit-ack' && rej.state).toBe('rejected');
     client.close();
   });
@@ -272,16 +276,44 @@ describe('delta 带水位 + 重复 offset 丢弃（传输层映射，纯逻辑�
     const cursor = new WatermarkCursor();
     const d1 = cursor.accept('s1', { kind: 'text', text: '你好' }, { turnId: 't1', attemptId: 'a1' }, 0);
     const d2 = cursor.accept('s1', { kind: 'text', text: '世界' }, { turnId: 't1', attemptId: 'a1' }, 2);
-    expect(d1).toEqual({ type: 'text-delta', sessionId: 's1', turnId: 't1', attemptId: 'a1', chunkOffset: 0, text: '你好' });
-    expect(d2).toEqual({ type: 'text-delta', sessionId: 's1', turnId: 't1', attemptId: 'a1', chunkOffset: 2, text: '世界' });
+    expect(d1).toEqual({
+      type: 'text-delta',
+      sessionId: 's1',
+      turnId: 't1',
+      attemptId: 'a1',
+      chunkOffset: 0,
+      text: '你好',
+    });
+    expect(d2).toEqual({
+      type: 'text-delta',
+      sessionId: 's1',
+      turnId: 't1',
+      attemptId: 'a1',
+      chunkOffset: 2,
+      text: '世界',
+    });
   });
 
   it('reasoning 与 text 各自独立水位', () => {
     const cursor = new WatermarkCursor();
     const r = cursor.accept('s1', { kind: 'reasoning', text: '思' }, { turnId: 't1', attemptId: 'a1' }, 0);
     const t = cursor.accept('s1', { kind: 'text', text: '答' }, { turnId: 't1', attemptId: 'a1' }, 0);
-    expect(r).toEqual({ type: 'reasoning-delta', sessionId: 's1', turnId: 't1', attemptId: 'a1', chunkOffset: 0, text: '思' });
-    expect(t).toEqual({ type: 'text-delta', sessionId: 's1', turnId: 't1', attemptId: 'a1', chunkOffset: 0, text: '答' });
+    expect(r).toEqual({
+      type: 'reasoning-delta',
+      sessionId: 's1',
+      turnId: 't1',
+      attemptId: 'a1',
+      chunkOffset: 0,
+      text: '思',
+    });
+    expect(t).toEqual({
+      type: 'text-delta',
+      sessionId: 's1',
+      turnId: 't1',
+      attemptId: 'a1',
+      chunkOffset: 0,
+      text: '答',
+    });
   });
 
   it('重复/重叠 offset 丢弃（assertSequentialChunk 语义）→ null', () => {
@@ -300,7 +332,14 @@ describe('delta 带水位 + 重复 offset 丢弃（传输层映射，纯逻辑�
     const cursor = new WatermarkCursor();
     cursor.accept('s1', { kind: 'text', text: 'abc' }, { turnId: 't1', attemptId: 'a1' }, 0);
     const fresh = cursor.accept('s1', { kind: 'text', text: 'x' }, { turnId: 't1', attemptId: 'a2' }, 0);
-    expect(fresh).toEqual({ type: 'text-delta', sessionId: 's1', turnId: 't1', attemptId: 'a2', chunkOffset: 0, text: 'x' });
+    expect(fresh).toEqual({
+      type: 'text-delta',
+      sessionId: 's1',
+      turnId: 't1',
+      attemptId: 'a2',
+      chunkOffset: 0,
+      text: 'x',
+    });
   });
 });
 
@@ -340,7 +379,10 @@ describe('S3c2：submit 幂等接线（durable-then-ack + 按序派发不重复�
     client.send({ op: 'subscribe', sessionId: id });
     // 新提交 → accepted（queueSeq 0）
     client.send({ op: 'submit', clientMessageId: 'cm-1', sessionId: id, rawText: '同一个动作', intent: 'queue' });
-    const a1 = await client.waitFor((f) => f.type === 'submit-ack' && f.state === 'accepted' && f.clientMessageId === 'cm-1', 'accepted');
+    const a1 = await client.waitFor(
+      (f) => f.type === 'submit-ack' && f.state === 'accepted' && f.clientMessageId === 'cm-1',
+      'accepted',
+    );
     expect(a1.type === 'submit-ack' && a1.queueSeq).toBe(0);
     // 等首个 turn 落定
     await client.waitFor((f) => f.type === 'turn-end', 'turn-end');
@@ -358,7 +400,11 @@ describe('S3c2：submit 幂等接线（durable-then-ack + 按序派发不重复�
     client.send({ op: 'resume-subscription', sessionId: id, lastSeq: 0, epoch: 2 });
     const snap = await client.waitFor((f) => f.type === 'resume-snapshot', 'resume-snapshot');
     expect(snap.type === 'resume-snapshot' && snap.snapshot.queue.length).toBe(1);
-    expect(snap.type === 'resume-snapshot' && snap.snapshot.queue[0]).toMatchObject({ id: 'cm-1', state: 'queued', intent: 'queue' });
+    expect(snap.type === 'resume-snapshot' && snap.snapshot.queue[0]).toMatchObject({
+      id: 'cm-1',
+      state: 'queued',
+      intent: 'queue',
+    });
     client.close();
   });
 });
@@ -407,7 +453,11 @@ describe('S3c2：cancel 接线（不撤销已完成文件变更）', () => {
       home: tmpDir('h2-resume-home-'),
       root,
       provider: new MockProvider([
-        { toolCalls: [{ id: 'call-w', name: 'write', arguments: JSON.stringify({ file_path: outPath, content: '已写入内容' }) }] },
+        {
+          toolCalls: [
+            { id: 'call-w', name: 'write', arguments: JSON.stringify({ file_path: outPath, content: '已写入内容' }) },
+          ],
+        },
         { textChunks: ['继续生成后续内容持续流式输出'], chunkDelayMs: 300 },
       ]),
       decide: () => 'allow',
@@ -434,7 +484,10 @@ describe('S3c2：cancel 接线（不撤销已完成文件变更）', () => {
     client.send({ op: 'cancel', requestId: 'cnl-1', target: { kind: 'turn', id: turnId as string } });
     const a = await client.waitFor((f) => f.type === 'cancel-ack' && f.requestId === 'cnl-1', 'cancel-ack stopping');
     expect(a.type === 'cancel-ack' && a.state).toBe('stopping');
-    const end = await client.waitFor((f) => f.type === 'turn-end' && f.stopReason === 'cancelled', 'turn-end cancelled');
+    const end = await client.waitFor(
+      (f) => f.type === 'turn-end' && f.stopReason === 'cancelled',
+      'turn-end cancelled',
+    );
     expect(end.type === 'turn-end' && end.stopReason).toBe('cancelled');
     // 文件保留（cancel 不撤销已完成工具变更）
     expect(readFileSync(outPath, 'utf8')).toBe('已写入内容');
@@ -457,7 +510,15 @@ describe('S3c2：resume-snapshot 在途审批（activeAttempt waiting-approval +
       home: tmpDir('h2-resume-home-'),
       root: tmpDir('h2-resume-root-'),
       provider: new MockProvider([
-        { toolCalls: [{ id: 'call-w', name: 'write', arguments: JSON.stringify({ file_path: join(tmpDir('h2-resume-ap-'), 'tmp.txt'), content: 'x' }) }] },
+        {
+          toolCalls: [
+            {
+              id: 'call-w',
+              name: 'write',
+              arguments: JSON.stringify({ file_path: join(tmpDir('h2-resume-ap-'), 'tmp.txt'), content: 'x' }),
+            },
+          ],
+        },
         { textChunks: ['写完了'] },
       ]),
       decide: () => 'ask',
@@ -478,7 +539,9 @@ describe('S3c2：resume-snapshot 在途审批（activeAttempt waiting-approval +
     b.send({ op: 'resume-subscription', sessionId: id, lastSeq: 0, epoch: 1 });
     const snap = await b.waitFor((f) => f.type === 'resume-snapshot', 'snapshot');
     expect(snap.type === 'resume-snapshot' && snap.snapshot.activeAttempt?.status).toBe('waiting-approval');
-    expect(snap.type === 'resume-snapshot' && snap.snapshot.pendingApprovals.map((p) => p.requestId)).toContain(requestId);
+    expect(snap.type === 'resume-snapshot' && snap.snapshot.pendingApprovals.map((p) => p.requestId)).toContain(
+      requestId,
+    );
     b.close();
     // 放行 → 写工具完成、turn 自然结束
     a.send({ op: 'approval-response', requestId, decision: 'allow' });

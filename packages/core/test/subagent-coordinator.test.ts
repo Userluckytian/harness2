@@ -3,7 +3,7 @@
 // 审批上抛一路到父（task 内工具审批带 taskId/parentTaskId，父 pendingApprovalsFor 可见）；
 // queue continue 清场（paused 队列 continue 后能接受新 submit）；task/transition 落 runtime journal。
 import { afterEach, describe, expect, it } from 'vitest';
-import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { existsSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
@@ -12,16 +12,17 @@ import {
   registerBuiltinTools,
   SessionHub,
   SessionManager,
+  ToolExecutor,
   ToolRegistry,
   runTurn,
   SnapshotStore,
 } from '../src/index.js';
 import { writeTool } from '../src/tools/predefined/index.js';
 import { createSubagentTools } from '../src/agent/subagent.js';
-import { RUNTIME_JOURNAL_FILE, RuntimeJournal } from '../src/interaction/runtime-journal.js';
+import { RuntimeJournal } from '../src/interaction/runtime-journal.js';
 import type { RuntimeJournalEntry } from '../src/interaction/runtime-journal.js';
-import type { TaskRunResult, TaskSpec } from '../src/agent/task-coordinator.js';
-import type { CancelRequest, ResumeSubscriptionRequest } from '../src/interaction/types.js';
+import type { TaskRunResult } from '../src/agent/task-coordinator.js';
+import type { CancelRequest } from '../src/interaction/types.js';
 
 const dirs: string[] = [];
 function tmpDir(prefix = 'h2-subcoord-'): string {
@@ -228,7 +229,8 @@ describe('审批上抛一路到父（task 内工具审批带 taskId/parentTaskId
     const pid = hub.create(cwd).id;
     const approvals: Array<{ taskId?: string; parentTaskId?: string; requestId: string }> = [];
     hub.addHooks({
-      onApprovalRequest: (a) => approvals.push({ taskId: a.taskId, parentTaskId: a.parentTaskId, requestId: a.requestId }),
+      onApprovalRequest: (a) =>
+        approvals.push({ taskId: a.taskId, parentTaskId: a.parentTaskId, requestId: a.requestId }),
     });
     hub.registerTask({
       taskId: 't-ap',
@@ -332,7 +334,11 @@ describe('S5 生产路径：后台子代理任务（buildTurnTools → createSub
     expect(hub.tasks.status(meta.taskId)?.state).toBe('running');
     expect(parentStop).toBe('');
     // cancel 子任务：不应误伤父 turn
-    const ack = hub.cancelAck({ requestId: 'cnl-prod', target: { kind: 'task', id: meta.taskId }, expectedId: 'running' });
+    const ack = hub.cancelAck({
+      requestId: 'cnl-prod',
+      target: { kind: 'task', id: meta.taskId },
+      expectedId: 'running',
+    });
     expect(ack.state).toBe('stopping');
     await waitFor(() => parentStop !== '');
     expect(parentStop).toBe('end_turn'); // 父 turn 正常收尾，未被 abort
@@ -377,11 +383,17 @@ describe('S5 生产路径：后台子代理任务（buildTurnTools → createSub
       coordinator: hub.tasks,
       background: true,
     });
-    const cont = defs.find((d) => d.name === 'subagent_continue')!;
-    const r = await cont.execute(
-      { taskId: meta.taskId, childSessionId: '', message: '' },
-      { cwd: root, signal: new AbortController().signal } as never,
+    // P1-1 修复回归：只传 taskId 经 ToolExecutor 端到端——不得被 A1-4 必填参数预校验误拦，
+    // 且能真实取到协调器里的后台任务状态/结果。
+    const contRegistry = new ToolRegistry();
+    for (const d of defs) contRegistry.register(d);
+    const contExecutor = new ToolExecutor(contRegistry);
+    const r = await contExecutor.execute(
+      { callId: 'cont-taskid', tool: 'subagent_continue', args: { taskId: meta.taskId } },
+      { cwd: root, signal: new AbortController().signal },
     );
+    expect(r.ok).toBe(true);
+    expect(r.error).toBeUndefined();
     const parsed = JSON.parse(r.output!) as { childSessionId: string; stopReason: string; finalText?: string };
     expect(parsed.stopReason).toBe('end_turn');
     expect(parsed.finalText).toBeDefined();

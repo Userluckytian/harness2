@@ -167,7 +167,12 @@ describe('effectiveDelay：Retry-After 优先；超剩余预算 → stop', () =>
     b.record(30_000);
     b.record(30_000);
     expect(b.remainingWaitMs()).toBe(0);
-    expect(effectiveDelay(backoffSeconds(0, () => 0.5), b).stop).toBe(true);
+    expect(
+      effectiveDelay(
+        backoffSeconds(0, () => 0.5),
+        b,
+      ).stop,
+    ).toBe(true);
   });
 
   it('Retry-After 非法（0/负/NaN/Infinity）→ 忽略为即时（delayMs 0）', () => {
@@ -221,7 +226,10 @@ describe('整合调度：429 单失败链档位 + per-turn 停止边界', () => 
     while (chain < RETRY_MAX_EXTRA_ATTEMPTS) {
       expect(classifyAttemptError(error).retryable).toBe(true);
       if (!budget.canRetry()) break;
-      const eff = effectiveDelay(backoffSeconds(chain, () => 0.5), budget);
+      const eff = effectiveDelay(
+        backoffSeconds(chain, () => 0.5),
+        budget,
+      );
       if (eff.stop) break;
       budget.record(eff.delayMs);
       got.push(eff.delayMs);
@@ -253,7 +261,8 @@ describe('整合调度：429 单失败链档位 + per-turn 停止边界', () => 
     expect(RETRY_MAX_EXTRA_ATTEMPTS).toBe(3);
     expect(RETRY_MAX_EXTRA_PER_TURN).toBe(6);
     expect(RETRY_MAX_EXTRA_ATTEMPTS).toBeLessThan(RETRY_MAX_EXTRA_PER_TURN);
-    const sum = RETRY_BACKOFF_SECONDS.reduce((a, b) => a + b, 0) + RETRY_BACKOFF_SECONDS[RETRY_BACKOFF_SECONDS.length - 1]!;
+    const sum =
+      RETRY_BACKOFF_SECONDS.reduce((a, b) => a + b, 0) + RETRY_BACKOFF_SECONDS[RETRY_BACKOFF_SECONDS.length - 1]!;
     expect(sum).toBe(72);
     expect(sum).toBeLessThanOrEqual(RETRY_MAX_TOTAL_WAIT_SECONDS);
   });

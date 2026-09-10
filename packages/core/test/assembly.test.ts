@@ -13,7 +13,6 @@ import { loadSession } from '../src/session/reader.js';
 import { SUBAGENT_TOOL_NAMES } from '../src/agent/subagent.js';
 import { PluginBus } from '../src/plugins/bus.js';
 import { defaultPluginsRoot } from '../src/plugins/loader.js';
-import { McpManager } from '../src/mcp/client.js';
 import { startServe } from '../src/server/http.js';
 import { KNOWN_EVENT_TYPES } from '../src/session/types.js';
 
@@ -63,7 +62,14 @@ describe('SessionHub subagent 装配', () => {
       provider: new MockProvider(parentScript),
       tools,
       cwd: root,
-      subagent: { provider: new MockProvider([{ toolCalls: [{ id: 'cc1', name: 'child_tool', arguments: '{}' }] }, { text: 'child done' }]), maxDepth: 1, maxTurns: 5 },
+      subagent: {
+        provider: new MockProvider([
+          { toolCalls: [{ id: 'cc1', name: 'child_tool', arguments: '{}' }] },
+          { text: 'child done' },
+        ]),
+        maxDepth: 1,
+        maxTurns: 5,
+      },
       decide: () => 'allow',
       approvalTimeoutMs: 2000,
       hooks: {},
@@ -84,7 +90,10 @@ describe('SessionHub subagent 装配', () => {
     // 父日志：tool/result.output 带 childSessionId；事件类型全部既有（零新增事件类型）
     const parentSession = loadSession(hub.events(created.id).dir);
     const tr = parentSession.events.find((e) => e.event.type === 'tool/result')!;
-    const out = JSON.parse((tr.event.payload as { output: string }).output) as { childSessionId: string; finalText?: string };
+    const out = JSON.parse((tr.event.payload as { output: string }).output) as {
+      childSessionId: string;
+      finalText?: string;
+    };
     expect(out.finalText).toBe('child done');
     for (const e of parentSession.events) expect(KNOWN_EVENT_TYPES).toContain(e.event.type);
     // 子会话独立落盘 + 血缘 header
@@ -164,10 +173,20 @@ describe('SessionHub subagent 装配', () => {
     tools.register(toolDef('child_tool', childLog));
     const hub = new SessionHub({
       manager,
-      provider: new MockProvider([{ toolCalls: [{ id: 'c1', name: 'subagent_start', arguments: '{"prompt":"p"}' }] }, { text: 'wrapped' }]),
+      provider: new MockProvider([
+        { toolCalls: [{ id: 'c1', name: 'subagent_start', arguments: '{"prompt":"p"}' }] },
+        { text: 'wrapped' },
+      ]),
       tools,
       cwd: root,
-      subagent: { provider: new MockProvider([{ toolCalls: [{ id: 'cc1', name: 'child_tool', arguments: '{}' }] }, { text: 'child done' }]), maxDepth: 1, maxTurns: 5 },
+      subagent: {
+        provider: new MockProvider([
+          { toolCalls: [{ id: 'cc1', name: 'child_tool', arguments: '{}' }] },
+          { text: 'child done' },
+        ]),
+        maxDepth: 1,
+        maxTurns: 5,
+      },
       decide: () => 'ask', // child_tool 不在安全集 → 子会话 ask
       approvalTimeoutMs: 3000,
       hooks: {},
@@ -253,7 +272,9 @@ describe('startServe 插件/MCP 装配', () => {
     const root = tmpDir();
     writeHomeFixture(home, {
       ...MIN_CONFIG,
-      mcpServers: { probe: { command: process.execPath, args: [join(import.meta.dirname, 'fixtures', 'mcp-stdio-server.mjs')] } },
+      mcpServers: {
+        probe: { command: process.execPath, args: [join(import.meta.dirname, 'fixtures', 'mcp-stdio-server.mjs')] },
+      },
     });
     const handle = await startServe({ port: 0, home, root });
     try {

@@ -1,339 +1,1465 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="zh-CN">
-<head>
-<meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>harness2 · 暖纸原型</title>
-<link rel="preconnect" href="https://fonts.googleapis.com" />
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-<link href="https://fonts.googleapis.com/css2?family=Calistoga&family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
-<style>
-:root{
-  --bg:#F6EFE3; --surface:#FFFCF6; --surface2:#FBF4E9; --muted:#F0E7D8;
-  --border:#E6D9C3; --border2:#D7C7AC;
-  --fg:#3B2E21; --fg-muted:#8A7A66; --fg-dim:#B5A58C;
-  --accent:#C7743B; --accent-2:#A85D28; --accent-soft:#F6E4D3;
-  --ink:#4A3826;
-  --ok:#6B8F4E; --ok-soft:#E9F0E0; --warn:#C98A2E; --warn-soft:#F9EAD3; --danger:#B5482E; --danger-soft:#F6E2DC;
-  --code-bg:#33271A; --code-fg:#F2E8D6;
-  --shadow:0 1px 2px rgba(70,50,30,.06),0 12px 32px rgba(70,50,30,.10);
-  --radius:14px;
-  font-family:'Inter',system-ui,sans-serif;
-}
-*{box-sizing:border-box}
-body{margin:0;background:var(--bg);color:var(--fg);font-size:14px;background-image:radial-gradient(rgba(120,100,70,.05) 1px,transparent 1px);background-size:22px 22px}
-svg{display:block}.i{width:16px;height:16px;stroke:currentColor;stroke-width:1.7;fill:none;stroke-linecap:round;stroke-linejoin:round}
-.app{display:flex;height:100vh}
-/* sidebar */
-.side{width:200px;flex-shrink:0;display:flex;flex-direction:column;background:var(--surface);border-right:1px solid var(--border);padding:14px 12px;font-size:13px}
-.logo{display:flex;align-items:center;gap:9px;margin:2px 6px 14px}
-.logo .l{width:26px;height:26px;border-radius:8px;display:grid;place-items:center;background:linear-gradient(135deg,var(--accent),#8a4a1f);color:#fff;font-family:'Calistoga';font-size:14px}
-.logo .n{font-weight:700;font-size:15px;color:var(--ink);font-family:'Calistoga';letter-spacing:.3px}
-.navitem{display:flex;align-items:center;gap:9px;padding:7px 9px;border-radius:9px;color:var(--fg-muted);cursor:pointer}
-.navitem:hover{background:var(--muted);color:var(--fg)}
-.navitem.primary{color:var(--accent)}
-.sec{font-size:10.5px;font-weight:600;letter-spacing:.4px;color:var(--fg-dim);text-transform:uppercase;margin:18px 9px 6px}
-.proj{display:flex;align-items:center;gap:8px;padding:6px 9px;border-radius:8px;color:var(--fg);cursor:pointer;font-size:12.5px}
-.proj:hover{background:var(--muted)}
-.proj .pi{width:20px;height:20px;border-radius:6px;background:var(--accent-soft);color:var(--accent);display:grid;place-items:center;font-size:11px;flex-shrink:0;font-weight:600}
-.proj .n{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.sesslist{overflow-y:auto}
-.conv{display:flex;flex-direction:column;gap:2px;width:100%;text-align:left;padding:6px 9px;border-radius:8px;background:transparent;border:none;cursor:pointer;color:inherit}
-.conv:hover{background:var(--muted)}
-.conv.active{background:var(--accent-soft)}
-.conv .t{display:flex;align-items:center;gap:6px;font-size:12.5px}
-.conv .n{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.conv .m{font-size:11px;color:var(--fg-muted)}
-.badge{margin-left:auto;background:var(--accent);color:#fff;border-radius:999px;font-size:10px;padding:0 5px}
-.side .spacer{flex:1}
-.sideset{display:flex;align-items:center;gap:9px;padding:7px 9px;border-radius:9px;color:var(--fg-muted);cursor:pointer;border-top:1px solid var(--border);margin-top:8px}
-.sideset:hover{background:var(--muted);color:var(--fg)}
-/* center */
-.main{flex:1;display:flex;min-width:0}
-.center{flex:1;display:flex;flex-direction:column;min-width:0}
-/* landing */
-.landing{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:18px;padding:24px}
-.landing h1{font-family:'Calistoga';font-size:34px;font-weight:400;color:var(--ink);margin:0;letter-spacing:.2px}
-.landing .sub{font-size:13px;color:var(--fg-muted)}
-.bigin{width:100%;max-width:660px;background:var(--surface);border:1px solid var(--border);border-radius:18px;box-shadow:var(--shadow);padding:9px 11px;display:flex;flex-direction:column;gap:7px}
-.bigin textarea{width:100%;min-height:54px;border:none;background:none;resize:none;font:inherit;font-size:15px;outline:none;color:var(--fg);font-weight:400}
-.bigin .bar{display:flex;align-items:center;gap:8px;padding:2px 2px 2px 6px}
-.att{display:grid;place-items:center;width:28px;height:28px;border-radius:8px;color:var(--fg-muted);cursor:pointer}
-.att:hover{background:var(--muted);color:var(--fg)}
-.selector{display:inline-flex;align-items:center;gap:5px;padding:5px 10px;border-radius:9px;font-size:12.5px;color:var(--fg-muted);cursor:pointer;background:var(--muted);border:1px solid var(--border);position:relative}
-.selector:hover{color:var(--fg)}
-.selector b{font-weight:600}
-.menu{position:absolute;top:calc(100% + 5px);left:0;background:var(--surface);border:1px solid var(--border);border-radius:10px;box-shadow:var(--shadow);min-width:168px;padding:5px;display:none;z-index:40}
-.menu.open{display:block}
-.mi{width:100%;display:flex;align-items:center;gap:8px;padding:7px 9px;border:none;background:transparent;border-radius:7px;font-size:12.5px;color:var(--fg);cursor:pointer;text-align:left}
-.mi:hover{background:var(--muted)}
-.mi.on{color:var(--accent);font-weight:600}
-.mi .d{color:var(--fg-dim);font-size:10.5px;margin-left:auto}
-.bigin .spacer,.spacer{flex:1}
-.mic,.sendbtn{display:grid;place-items:center;border-radius:9px;cursor:pointer;height:32px;border:none;background:transparent}
-.mic{width:32px;color:var(--fg-muted)}
-.mic:hover{background:var(--muted);color:var(--fg)}
-.sendbtn{width:34px;background:var(--accent);color:#fff;box-shadow:0 2px 8px rgba(199,116,59,.35)}
-.sendbtn:hover{background:var(--accent-2)}
-.enterproj{display:inline-flex;align-items:center;gap:6px;font-size:12.5px;color:var(--fg-muted);cursor:pointer;padding:5px 8px;border-radius:8px}
-.enterproj:hover{background:var(--muted);color:var(--fg)}
-.cards{display:flex;gap:12px;width:100%;max-width:660px;margin-top:4px}
-.card{flex:1;background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:15px;cursor:pointer;transition:.18s;box-shadow:0 1px 2px rgba(70,50,30,.04)}
-.card:hover{box-shadow:var(--shadow);transform:translateY(-2px);border-color:var(--border2)}
-.card .ci{width:32px;height:32px;border-radius:10px;background:var(--accent-soft);color:var(--accent);display:grid;place-items:center;margin-bottom:10px}
-.card .ct{font-weight:600;font-size:13px;margin-bottom:4px;color:var(--ink)}
-.card .cd{font-size:12px;color:var(--fg-muted);line-height:1.5}
-/* conversation */
-.convx{flex:1;display:none;flex-direction:column;min-width:0}
-.convx.show{display:flex}
-.chatbar{display:flex;align-items:center;gap:10px;padding:14px 14px 8px;font-size:13px;max-width:900px;margin:0 auto;width:100%}
-.chatbar .sname{font-weight:600;color:var(--ink)}
-.chatbar .pill{font-size:12px;color:var(--fg-muted);background:var(--surface);border:1px solid var(--border);border-radius:999px;padding:3px 10px}
-.chatbar .iconbtn{display:grid;place-items:center;width:30px;height:30px;border-radius:9px;border:1px solid var(--border);background:var(--surface);color:var(--fg-muted);cursor:pointer}
-.chatbar .iconbtn:hover{color:var(--accent);border-color:var(--accent)}
-.layoutrow{flex:1;display:flex;min-height:0;max-width:900px;margin:0 auto;width:100%}
-.msgs{flex:1;overflow-y:auto;padding:12px 10px;display:flex;flex-direction:column;gap:12px}
-.mu{max-width:64%;align-self:flex-end;background:var(--accent-soft);border:1px solid var(--accent);border-radius:16px 16px 4px 16px;padding:9px 12px}
-.mu .w{display:block;font-size:11px;opacity:.7;margin-bottom:2px}
-.ma{align-self:flex-start;display:flex;flex-direction:column;gap:8px;width:100%}
-.ma .w{font-size:11px;color:var(--fg-muted);display:flex;gap:6px;align-items:center}
-.ma .txt{white-space:pre-wrap;line-height:1.65;font-size:13.5px}
-.plan{background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:13px 15px;box-shadow:var(--shadow)}
-.plan .ph{display:flex;align-items:center;gap:8px;font-weight:600;font-size:13px;margin-bottom:8px;color:var(--ink)}
-.plan .ph .pct{margin-left:auto;font-size:12px;color:var(--accent);font-family:'JetBrains Mono',monospace}
-.plan .pbar{height:6px;border-radius:999px;background:var(--muted);overflow:hidden;margin-bottom:10px;border:1px solid var(--border)}
-.plan .pbar i{display:block;height:100%;background:linear-gradient(90deg,var(--ok),var(--accent));width:57%}
-.planitem{display:flex;align-items:center;gap:10px;padding:5px 0;font-size:13px}
-.planitem .cb{width:17px;height:17px;border-radius:5px;border:1.5px solid var(--border2);display:grid;place-items:center;cursor:pointer;flex-shrink:0;color:#fff}
-.planitem.done .cb{background:var(--ok);border-color:var(--ok)}
-.planitem .tx{flex:1}
-.planitem.done .tx{text-decoration:line-through;color:var(--fg-muted)}
-.planitem .st{font-size:10px;color:var(--fg-muted)}
-.planitem.done .st{color:var(--ok)}
-.plan .confirm{display:flex;gap:8px;margin-top:10px;padding-top:10px;border-top:1px dashed var(--border2)}
-.btn{padding:6px 14px;border-radius:9px;border:none;font-weight:600;font-size:12.5px;cursor:pointer}
-.btn-go{background:var(--accent);color:#fff}
-.btn-go:hover{background:var(--accent-2)}
-.btn-ghost{background:transparent;border:1px solid var(--border);color:var(--fg-muted)}
-.tool{display:flex;flex-direction:column;gap:6px;font-family:'JetBrains Mono',monospace;font-size:12px;background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:8px 11px}
-.tool .th{display:flex;align-items:center;gap:8px}
-.tool .ic{width:22px;height:22px;border-radius:7px;display:grid;place-items:center;background:var(--muted);border:1px solid var(--border)}
-.tool .nm{font-weight:600}.tool .args{color:var(--fg-muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1}
-.st{font-size:11px;padding:1px 8px;border-radius:999px}
-.st.ok{color:var(--ok);background:var(--ok-soft)}.st.run{color:var(--warn);background:var(--warn-soft)}
-.code{margin-top:2px;border:1px solid var(--border);border-radius:10px;overflow:hidden}
-.code .ch{display:flex;align-items:center;gap:8px;background:var(--surface2);padding:5px 10px;font-size:11px;color:var(--fg-muted);border-bottom:1px solid var(--border)}
-.code .ch .f{color:var(--fg);margin-left:auto;font-family:'JetBrains Mono',monospace}
-.code pre{margin:0;background:var(--code-bg);color:var(--code-fg);font:12px/1.6 'JetBrains Mono',monospace;overflow:auto;padding:8px 0}
-.code .cl{display:flex;padding:0 12px}
-.code .cl .n{width:26px;text-align:right;color:var(--fg-dim);opacity:.4;user-select:none}
-.code .cl .t{white-space:pre;padding:0 10px}
-.code .cl.hl{background:rgba(199,116,59,.3)}
-.code .cl.hl .t{color:var(--accent-soft);font-weight:600}
-.code .cl.dim .t{color:var(--fg-dim);opacity:.5}
-.compose{max-width:900px;background:var(--surface);border:1px solid var(--border);border-radius:16px;box-shadow:var(--shadow);padding:8px 11px;display:flex;flex-direction:column;gap:7px;margin:0 auto 12px;width:100%}
-.compose textarea{width:100%;min-height:40px;border:none;background:none;resize:none;font:inherit;font-size:14px;outline:none;color:var(--fg)}
-.compose .bar{display:flex;align-items:center;gap:8px;padding:2px 2px 2px 6px}
-/* workbench */
-.wb{width:0;flex-shrink:0;display:flex;flex-direction:column;background:var(--surface);border-left:1px solid var(--border);overflow:hidden;transition:width .2s}
-.wb.open{width:280px}
-.wb-tabs{display:flex;gap:2px;padding:6px;background:var(--muted);border-bottom:1px solid var(--border)}
-.wb-tab{flex:1;padding:6px;border:none;background:transparent;border-radius:8px;font-size:12px;color:var(--fg-muted);cursor:pointer}
-.wb-tab.active{background:var(--surface);color:var(--fg);font-weight:600;box-shadow:var(--shadow)}
-.wb-body{flex:1;overflow:auto;padding:10px}
-.treeitem{display:flex;align-items:center;gap:6px;padding:4px 6px;border-radius:6px;font-size:12.5px;cursor:pointer;font-family:'JetBrains Mono',monospace;color:var(--fg-muted)}
-.treeitem:hover{background:var(--muted);color:var(--fg)}
-.treeitem.folder{color:var(--fg);font-weight:500}
-/* settings modal */
-.overlay{position:fixed;inset:0;background:rgba(59,46,33,.45);display:none;place-items:center;z-index:50}
-.overlay.open{display:grid}
-.modal{width:640px;max-height:84vh;display:flex;flex-direction:column;background:var(--surface);border:1px solid var(--border);border-radius:20px;box-shadow:var(--shadow);overflow:hidden}
-.mhead{display:flex;align-items:center;padding:15px 20px;border-bottom:1px solid var(--border)}
-.mhead .t{font-weight:700;font-size:16px;color:var(--ink)}
-.mhead .x{margin-left:auto}
-.mside{display:flex;flex:1;min-height:0}
-.menu{width:150px;padding:10px 8px;background:var(--surface2);border-right:1px solid var(--border)}
-.mi{width:100%;display:flex;align-items:center;gap:8px;padding:8px 10px;border:none;background:transparent;border-radius:8px;font-size:13px;color:var(--fg-muted);cursor:pointer;text-align:left}
-.mi.active{background:var(--accent-soft);color:var(--accent);font-weight:600}
-.mbody{flex:1;padding:16px 20px;overflow:auto}
-.sec h3{font-size:13px;margin:0 0 12px;color:var(--ink)}
-.row{display:flex;align-items:center;gap:10px;padding:9px 0;border-bottom:1px solid var(--border)}
-.row:last-child{border-bottom:none}
-.row .k{width:120px;font-size:13px;color:var(--fg-muted)}
-.row .v{flex:1;font-family:'JetBrains Mono',monospace;font-size:12.5px;background:var(--muted);border:1px solid var(--border);border-radius:8px;padding:6px 10px}
-.gate{display:flex;align-items:center;gap:10px;padding:10px;background:var(--surface2);border:1px solid var(--border);border-radius:10px;margin-bottom:8px}
-.gate .gicon{width:32px;height:32px;border-radius:8px;display:grid;place-items:center;color:#fff;font-weight:700}
-.gate .gm{flex:1}.gate .gname{font-weight:600;font-size:13px}.gate .gmeta{font-size:11px;color:var(--fg-muted)}.gate .gst{font-size:11px}
-.sw{width:34px;height:20px;border-radius:999px;background:var(--border2);position:relative;cursor:pointer;flex-shrink:0}
-.sw.on{background:var(--ok)}.sw::after{content:"";position:absolute;top:2px;left:2px;width:16px;height:16px;border-radius:50%;background:#fff;transition:.2s}.sw.on::after{left:16px}
-.note{margin-top:10px;font-size:11.5px;color:var(--fg-muted)}
-.iconbtn{display:grid;place-items:center;width:30px;height:30px;border-radius:9px;border:1px solid var(--border);background:var(--surface);color:var(--fg-muted);cursor:pointer}
-.iconbtn:hover{color:var(--accent);border-color:var(--accent)}
-</style>
-</head>
-<body>
-<div class="app">
-  <!-- SIDEBAR -->
-  <aside class="side">
-    <div class="logo"><span class="l">h</span><span class="n">harness2</span></div>
-    <div class="navitem primary"><svg class="i"><path d="M12 5v14M5 12h14"/></svg>新对话</div>
-    <div class="navitem"><svg class="i"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3-3"/></svg>搜索</div>
-    <div class="navitem"><svg class="i"><path d="M4 5a2 2 0 012-2h4l2 3h6a2 2 0 012 2v9a2 2 0 01-2 2H6a2 2 0 01-2-2z"/></svg>插件</div>
-    <div class="navitem"><svg class="i"><path d="M12 4v4M12 16v4M4 12h4M16 12h4"/><circle cx="12" cy="12" r="3"/></svg>自动化</div>
-    <div class="sec">项目</div>
-    <div class="proj"><span class="pi">h</span><span class="n">harness2</span></div>
-    <div class="proj"><span class="pi">d</span><span class="n">packages/desktop</span></div>
-    <div class="proj"><span class="pi">n</span><span class="n">news-daily</span></div>
-    <div class="sec">对话</div>
-    <div class="sesslist">
-      <button class="conv active" onclick="openConv()"><span class="t"><span class="n">添加用户认证 + 重构查询</span></span><span class="m">13:02 · ☑ 4/7</span></button>
-      <button class="conv" onclick="openConv()"><span class="t"><span class="n">检索今日3件时政要闻</span><span class="badge">2</span></span><span class="m">11:46</span></button>
-      <button class="conv" onclick="openConv()"><span class="t"><span class="n">迁移 docs 到 docsify</span></span><span class="m">10:02</span></button>
-    </div>
-    <div class="spacer"></div>
-    <div class="sideset" onclick="openSettings()"><svg class="i"><path d="M12 15a3 3 0 100-6 3 3 0 000 6z"/><path d="M19.4 15a1.6 1.6 0 00.3 1.8l.1.1a2 2 0 11-2.8 2.8l-.1-.1a1.6 1.6 0 00-1.8-.3 1.6 1.6 0 00-1 1.5V21a2 2 0 11-4 0v-.1a1.6 1.6 0 00-1-1.5 1.6 1.6 0 00-1.8.3l-.1.1a2 2 0 11-2.8-2.8l.1-.1a1.6 1.6 0 00.3-1.8 1.6 1.6 0 00-1.5-1H3a2 2 0 110-4h.1a1.6 1.6 0 001.5-1 1.6 1.6 0 00-.3-1.8l-.1-.1a2 2 0 112.8-2.8l.1.1a1.6 1.6 0 001.8.3 1.6 1.6 0 001-1.5V3a2 2 0 114 0v.1a1.6 1.6 0 001 1.5 1.6 1.6 0 001.8-.3l.1-.1a2 2 0 112.8 2.8l-.1.1a1.6 1.6 0 00-.3 1.8 1.6 1.6 0 001.5 1h.1a2 2 0 110 4h-.1a1.6 1.6 0 00-1.5 1z"/></svg>设置</div>
-  </aside>
-
-  <!-- CENTER -->
-  <div class="main"><div class="center">
-    <!-- LANDING -->
-    <div class="landing" id="landing">
-      <h1>我们该做什么？</h1>
-      <div class="sub">和 harness2 一起，把想法变成可执行的计划</div>
-      <div class="bigin">
-        <textarea placeholder="随心输入，或试试下面的入口…"></textarea>
-        <div class="bar">
-          <span class="att" title="添加上下文 / 文件"><svg class="i"><path d="M12 5v14M5 12h14"/></svg></span>
-          <span class="selector" id="modeSel" onclick="toggleMenu(event,'landing-mode',this)">
-            <svg class="i" style="width:13px;height:13px"><path d="M20 6L9 17l-5-5"/></svg>
-            <b id="modeLabel1">替我审批</b> ▾
-            <div class="menu" id="landing-mode"></div>
-          </span>
-          <span class="selector"><svg class="i" style="width:13px;height:13px"><path d="M12 3l2 6 6 2-6 2-2 6-2-6-6-2 6-2z"/></svg> big-pickle ▾</span>
-          <span class="spacer"></span>
-          <span class="mic"><svg class="i"><path d="M12 3a3 3 0 013 3v5a3 3 0 01-6 0V6a3 3 0 013-3z"/><path d="M6 11a6 6 0 0012 0M12 19v3"/></svg></span>
-          <button class="sendbtn" onclick="openConv()"><svg class="i"><path d="M12 19V5M6 11l6-6 6 6"/></svg></button>
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>harness2 · 暖纸原型</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Calistoga&family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap"
+      rel="stylesheet"
+    />
+    <style>
+      :root {
+        --bg: #f6efe3;
+        --surface: #fffcf6;
+        --surface2: #fbf4e9;
+        --muted: #f0e7d8;
+        --border: #e6d9c3;
+        --border2: #d7c7ac;
+        --fg: #3b2e21;
+        --fg-muted: #8a7a66;
+        --fg-dim: #b5a58c;
+        --accent: #c7743b;
+        --accent-2: #a85d28;
+        --accent-soft: #f6e4d3;
+        --ink: #4a3826;
+        --ok: #6b8f4e;
+        --ok-soft: #e9f0e0;
+        --warn: #c98a2e;
+        --warn-soft: #f9ead3;
+        --danger: #b5482e;
+        --danger-soft: #f6e2dc;
+        --code-bg: #33271a;
+        --code-fg: #f2e8d6;
+        --shadow: 0 1px 2px rgba(70, 50, 30, 0.06), 0 12px 32px rgba(70, 50, 30, 0.1);
+        --radius: 14px;
+        font-family: 'Inter', system-ui, sans-serif;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        background: var(--bg);
+        color: var(--fg);
+        font-size: 14px;
+        background-image: radial-gradient(rgba(120, 100, 70, 0.05) 1px, transparent 1px);
+        background-size: 22px 22px;
+      }
+      svg {
+        display: block;
+      }
+      .i {
+        width: 16px;
+        height: 16px;
+        stroke: currentColor;
+        stroke-width: 1.7;
+        fill: none;
+        stroke-linecap: round;
+        stroke-linejoin: round;
+      }
+      .app {
+        display: flex;
+        height: 100vh;
+      }
+      /* sidebar */
+      .side {
+        width: 200px;
+        flex-shrink: 0;
+        display: flex;
+        flex-direction: column;
+        background: var(--surface);
+        border-right: 1px solid var(--border);
+        padding: 14px 12px;
+        font-size: 13px;
+      }
+      .logo {
+        display: flex;
+        align-items: center;
+        gap: 9px;
+        margin: 2px 6px 14px;
+      }
+      .logo .l {
+        width: 26px;
+        height: 26px;
+        border-radius: 8px;
+        display: grid;
+        place-items: center;
+        background: linear-gradient(135deg, var(--accent), #8a4a1f);
+        color: #fff;
+        font-family: 'Calistoga';
+        font-size: 14px;
+      }
+      .logo .n {
+        font-weight: 700;
+        font-size: 15px;
+        color: var(--ink);
+        font-family: 'Calistoga';
+        letter-spacing: 0.3px;
+      }
+      .navitem {
+        display: flex;
+        align-items: center;
+        gap: 9px;
+        padding: 7px 9px;
+        border-radius: 9px;
+        color: var(--fg-muted);
+        cursor: pointer;
+      }
+      .navitem:hover {
+        background: var(--muted);
+        color: var(--fg);
+      }
+      .navitem.primary {
+        color: var(--accent);
+      }
+      .sec {
+        font-size: 10.5px;
+        font-weight: 600;
+        letter-spacing: 0.4px;
+        color: var(--fg-dim);
+        text-transform: uppercase;
+        margin: 18px 9px 6px;
+      }
+      .proj {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 6px 9px;
+        border-radius: 8px;
+        color: var(--fg);
+        cursor: pointer;
+        font-size: 12.5px;
+      }
+      .proj:hover {
+        background: var(--muted);
+      }
+      .proj .pi {
+        width: 20px;
+        height: 20px;
+        border-radius: 6px;
+        background: var(--accent-soft);
+        color: var(--accent);
+        display: grid;
+        place-items: center;
+        font-size: 11px;
+        flex-shrink: 0;
+        font-weight: 600;
+      }
+      .proj .n {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .sesslist {
+        overflow-y: auto;
+      }
+      .conv {
+        display: flex;
+        flex-direction: column;
+        gap: 2px;
+        width: 100%;
+        text-align: left;
+        padding: 6px 9px;
+        border-radius: 8px;
+        background: transparent;
+        border: none;
+        cursor: pointer;
+        color: inherit;
+      }
+      .conv:hover {
+        background: var(--muted);
+      }
+      .conv.active {
+        background: var(--accent-soft);
+      }
+      .conv .t {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        font-size: 12.5px;
+      }
+      .conv .n {
+        flex: 1;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .conv .m {
+        font-size: 11px;
+        color: var(--fg-muted);
+      }
+      .badge {
+        margin-left: auto;
+        background: var(--accent);
+        color: #fff;
+        border-radius: 999px;
+        font-size: 10px;
+        padding: 0 5px;
+      }
+      .side .spacer {
+        flex: 1;
+      }
+      .sideset {
+        display: flex;
+        align-items: center;
+        gap: 9px;
+        padding: 7px 9px;
+        border-radius: 9px;
+        color: var(--fg-muted);
+        cursor: pointer;
+        border-top: 1px solid var(--border);
+        margin-top: 8px;
+      }
+      .sideset:hover {
+        background: var(--muted);
+        color: var(--fg);
+      }
+      /* center */
+      .main {
+        flex: 1;
+        display: flex;
+        min-width: 0;
+      }
+      .center {
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+        min-width: 0;
+      }
+      /* landing */
+      .landing {
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 18px;
+        padding: 24px;
+      }
+      .landing h1 {
+        font-family: 'Calistoga';
+        font-size: 34px;
+        font-weight: 400;
+        color: var(--ink);
+        margin: 0;
+        letter-spacing: 0.2px;
+      }
+      .landing .sub {
+        font-size: 13px;
+        color: var(--fg-muted);
+      }
+      .bigin {
+        width: 100%;
+        max-width: 660px;
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: 18px;
+        box-shadow: var(--shadow);
+        padding: 9px 11px;
+        display: flex;
+        flex-direction: column;
+        gap: 7px;
+      }
+      .bigin textarea {
+        width: 100%;
+        min-height: 54px;
+        border: none;
+        background: none;
+        resize: none;
+        font: inherit;
+        font-size: 15px;
+        outline: none;
+        color: var(--fg);
+        font-weight: 400;
+      }
+      .bigin .bar {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 2px 2px 2px 6px;
+      }
+      .att {
+        display: grid;
+        place-items: center;
+        width: 28px;
+        height: 28px;
+        border-radius: 8px;
+        color: var(--fg-muted);
+        cursor: pointer;
+      }
+      .att:hover {
+        background: var(--muted);
+        color: var(--fg);
+      }
+      .selector {
+        display: inline-flex;
+        align-items: center;
+        gap: 5px;
+        padding: 5px 10px;
+        border-radius: 9px;
+        font-size: 12.5px;
+        color: var(--fg-muted);
+        cursor: pointer;
+        background: var(--muted);
+        border: 1px solid var(--border);
+        position: relative;
+      }
+      .selector:hover {
+        color: var(--fg);
+      }
+      .selector b {
+        font-weight: 600;
+      }
+      .menu {
+        position: absolute;
+        top: calc(100% + 5px);
+        left: 0;
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        box-shadow: var(--shadow);
+        min-width: 168px;
+        padding: 5px;
+        display: none;
+        z-index: 40;
+      }
+      .menu.open {
+        display: block;
+      }
+      .mi {
+        width: 100%;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 7px 9px;
+        border: none;
+        background: transparent;
+        border-radius: 7px;
+        font-size: 12.5px;
+        color: var(--fg);
+        cursor: pointer;
+        text-align: left;
+      }
+      .mi:hover {
+        background: var(--muted);
+      }
+      .mi.on {
+        color: var(--accent);
+        font-weight: 600;
+      }
+      .mi .d {
+        color: var(--fg-dim);
+        font-size: 10.5px;
+        margin-left: auto;
+      }
+      .bigin .spacer,
+      .spacer {
+        flex: 1;
+      }
+      .mic,
+      .sendbtn {
+        display: grid;
+        place-items: center;
+        border-radius: 9px;
+        cursor: pointer;
+        height: 32px;
+        border: none;
+        background: transparent;
+      }
+      .mic {
+        width: 32px;
+        color: var(--fg-muted);
+      }
+      .mic:hover {
+        background: var(--muted);
+        color: var(--fg);
+      }
+      .sendbtn {
+        width: 34px;
+        background: var(--accent);
+        color: #fff;
+        box-shadow: 0 2px 8px rgba(199, 116, 59, 0.35);
+      }
+      .sendbtn:hover {
+        background: var(--accent-2);
+      }
+      .enterproj {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        font-size: 12.5px;
+        color: var(--fg-muted);
+        cursor: pointer;
+        padding: 5px 8px;
+        border-radius: 8px;
+      }
+      .enterproj:hover {
+        background: var(--muted);
+        color: var(--fg);
+      }
+      .cards {
+        display: flex;
+        gap: 12px;
+        width: 100%;
+        max-width: 660px;
+        margin-top: 4px;
+      }
+      .card {
+        flex: 1;
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: 16px;
+        padding: 15px;
+        cursor: pointer;
+        transition: 0.18s;
+        box-shadow: 0 1px 2px rgba(70, 50, 30, 0.04);
+      }
+      .card:hover {
+        box-shadow: var(--shadow);
+        transform: translateY(-2px);
+        border-color: var(--border2);
+      }
+      .card .ci {
+        width: 32px;
+        height: 32px;
+        border-radius: 10px;
+        background: var(--accent-soft);
+        color: var(--accent);
+        display: grid;
+        place-items: center;
+        margin-bottom: 10px;
+      }
+      .card .ct {
+        font-weight: 600;
+        font-size: 13px;
+        margin-bottom: 4px;
+        color: var(--ink);
+      }
+      .card .cd {
+        font-size: 12px;
+        color: var(--fg-muted);
+        line-height: 1.5;
+      }
+      /* conversation */
+      .convx {
+        flex: 1;
+        display: none;
+        flex-direction: column;
+        min-width: 0;
+      }
+      .convx.show {
+        display: flex;
+      }
+      .chatbar {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        padding: 14px 14px 8px;
+        font-size: 13px;
+        max-width: 900px;
+        margin: 0 auto;
+        width: 100%;
+      }
+      .chatbar .sname {
+        font-weight: 600;
+        color: var(--ink);
+      }
+      .chatbar .pill {
+        font-size: 12px;
+        color: var(--fg-muted);
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: 999px;
+        padding: 3px 10px;
+      }
+      .chatbar .iconbtn {
+        display: grid;
+        place-items: center;
+        width: 30px;
+        height: 30px;
+        border-radius: 9px;
+        border: 1px solid var(--border);
+        background: var(--surface);
+        color: var(--fg-muted);
+        cursor: pointer;
+      }
+      .chatbar .iconbtn:hover {
+        color: var(--accent);
+        border-color: var(--accent);
+      }
+      .layoutrow {
+        flex: 1;
+        display: flex;
+        min-height: 0;
+        max-width: 900px;
+        margin: 0 auto;
+        width: 100%;
+      }
+      .msgs {
+        flex: 1;
+        overflow-y: auto;
+        padding: 12px 10px;
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+      }
+      .mu {
+        max-width: 64%;
+        align-self: flex-end;
+        background: var(--accent-soft);
+        border: 1px solid var(--accent);
+        border-radius: 16px 16px 4px 16px;
+        padding: 9px 12px;
+      }
+      .mu .w {
+        display: block;
+        font-size: 11px;
+        opacity: 0.7;
+        margin-bottom: 2px;
+      }
+      .ma {
+        align-self: flex-start;
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+        width: 100%;
+      }
+      .ma .w {
+        font-size: 11px;
+        color: var(--fg-muted);
+        display: flex;
+        gap: 6px;
+        align-items: center;
+      }
+      .ma .txt {
+        white-space: pre-wrap;
+        line-height: 1.65;
+        font-size: 13.5px;
+      }
+      .plan {
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: 16px;
+        padding: 13px 15px;
+        box-shadow: var(--shadow);
+      }
+      .plan .ph {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        font-weight: 600;
+        font-size: 13px;
+        margin-bottom: 8px;
+        color: var(--ink);
+      }
+      .plan .ph .pct {
+        margin-left: auto;
+        font-size: 12px;
+        color: var(--accent);
+        font-family: 'JetBrains Mono', monospace;
+      }
+      .plan .pbar {
+        height: 6px;
+        border-radius: 999px;
+        background: var(--muted);
+        overflow: hidden;
+        margin-bottom: 10px;
+        border: 1px solid var(--border);
+      }
+      .plan .pbar i {
+        display: block;
+        height: 100%;
+        background: linear-gradient(90deg, var(--ok), var(--accent));
+        width: 57%;
+      }
+      .planitem {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        padding: 5px 0;
+        font-size: 13px;
+      }
+      .planitem .cb {
+        width: 17px;
+        height: 17px;
+        border-radius: 5px;
+        border: 1.5px solid var(--border2);
+        display: grid;
+        place-items: center;
+        cursor: pointer;
+        flex-shrink: 0;
+        color: #fff;
+      }
+      .planitem.done .cb {
+        background: var(--ok);
+        border-color: var(--ok);
+      }
+      .planitem .tx {
+        flex: 1;
+      }
+      .planitem.done .tx {
+        text-decoration: line-through;
+        color: var(--fg-muted);
+      }
+      .planitem .st {
+        font-size: 10px;
+        color: var(--fg-muted);
+      }
+      .planitem.done .st {
+        color: var(--ok);
+      }
+      .plan .confirm {
+        display: flex;
+        gap: 8px;
+        margin-top: 10px;
+        padding-top: 10px;
+        border-top: 1px dashed var(--border2);
+      }
+      .btn {
+        padding: 6px 14px;
+        border-radius: 9px;
+        border: none;
+        font-weight: 600;
+        font-size: 12.5px;
+        cursor: pointer;
+      }
+      .btn-go {
+        background: var(--accent);
+        color: #fff;
+      }
+      .btn-go:hover {
+        background: var(--accent-2);
+      }
+      .btn-ghost {
+        background: transparent;
+        border: 1px solid var(--border);
+        color: var(--fg-muted);
+      }
+      .tool {
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 12px;
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        padding: 8px 11px;
+      }
+      .tool .th {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
+      .tool .ic {
+        width: 22px;
+        height: 22px;
+        border-radius: 7px;
+        display: grid;
+        place-items: center;
+        background: var(--muted);
+        border: 1px solid var(--border);
+      }
+      .tool .nm {
+        font-weight: 600;
+      }
+      .tool .args {
+        color: var(--fg-muted);
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        flex: 1;
+      }
+      .st {
+        font-size: 11px;
+        padding: 1px 8px;
+        border-radius: 999px;
+      }
+      .st.ok {
+        color: var(--ok);
+        background: var(--ok-soft);
+      }
+      .st.run {
+        color: var(--warn);
+        background: var(--warn-soft);
+      }
+      .code {
+        margin-top: 2px;
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        overflow: hidden;
+      }
+      .code .ch {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        background: var(--surface2);
+        padding: 5px 10px;
+        font-size: 11px;
+        color: var(--fg-muted);
+        border-bottom: 1px solid var(--border);
+      }
+      .code .ch .f {
+        color: var(--fg);
+        margin-left: auto;
+        font-family: 'JetBrains Mono', monospace;
+      }
+      .code pre {
+        margin: 0;
+        background: var(--code-bg);
+        color: var(--code-fg);
+        font:
+          12px/1.6 'JetBrains Mono',
+          monospace;
+        overflow: auto;
+        padding: 8px 0;
+      }
+      .code .cl {
+        display: flex;
+        padding: 0 12px;
+      }
+      .code .cl .n {
+        width: 26px;
+        text-align: right;
+        color: var(--fg-dim);
+        opacity: 0.4;
+        user-select: none;
+      }
+      .code .cl .t {
+        white-space: pre;
+        padding: 0 10px;
+      }
+      .code .cl.hl {
+        background: rgba(199, 116, 59, 0.3);
+      }
+      .code .cl.hl .t {
+        color: var(--accent-soft);
+        font-weight: 600;
+      }
+      .code .cl.dim .t {
+        color: var(--fg-dim);
+        opacity: 0.5;
+      }
+      .compose {
+        max-width: 900px;
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: 16px;
+        box-shadow: var(--shadow);
+        padding: 8px 11px;
+        display: flex;
+        flex-direction: column;
+        gap: 7px;
+        margin: 0 auto 12px;
+        width: 100%;
+      }
+      .compose textarea {
+        width: 100%;
+        min-height: 40px;
+        border: none;
+        background: none;
+        resize: none;
+        font: inherit;
+        font-size: 14px;
+        outline: none;
+        color: var(--fg);
+      }
+      .compose .bar {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 2px 2px 2px 6px;
+      }
+      /* workbench */
+      .wb {
+        width: 0;
+        flex-shrink: 0;
+        display: flex;
+        flex-direction: column;
+        background: var(--surface);
+        border-left: 1px solid var(--border);
+        overflow: hidden;
+        transition: width 0.2s;
+      }
+      .wb.open {
+        width: 280px;
+      }
+      .wb-tabs {
+        display: flex;
+        gap: 2px;
+        padding: 6px;
+        background: var(--muted);
+        border-bottom: 1px solid var(--border);
+      }
+      .wb-tab {
+        flex: 1;
+        padding: 6px;
+        border: none;
+        background: transparent;
+        border-radius: 8px;
+        font-size: 12px;
+        color: var(--fg-muted);
+        cursor: pointer;
+      }
+      .wb-tab.active {
+        background: var(--surface);
+        color: var(--fg);
+        font-weight: 600;
+        box-shadow: var(--shadow);
+      }
+      .wb-body {
+        flex: 1;
+        overflow: auto;
+        padding: 10px;
+      }
+      .treeitem {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        padding: 4px 6px;
+        border-radius: 6px;
+        font-size: 12.5px;
+        cursor: pointer;
+        font-family: 'JetBrains Mono', monospace;
+        color: var(--fg-muted);
+      }
+      .treeitem:hover {
+        background: var(--muted);
+        color: var(--fg);
+      }
+      .treeitem.folder {
+        color: var(--fg);
+        font-weight: 500;
+      }
+      /* settings modal */
+      .overlay {
+        position: fixed;
+        inset: 0;
+        background: rgba(59, 46, 33, 0.45);
+        display: none;
+        place-items: center;
+        z-index: 50;
+      }
+      .overlay.open {
+        display: grid;
+      }
+      .modal {
+        width: 640px;
+        max-height: 84vh;
+        display: flex;
+        flex-direction: column;
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: 20px;
+        box-shadow: var(--shadow);
+        overflow: hidden;
+      }
+      .mhead {
+        display: flex;
+        align-items: center;
+        padding: 15px 20px;
+        border-bottom: 1px solid var(--border);
+      }
+      .mhead .t {
+        font-weight: 700;
+        font-size: 16px;
+        color: var(--ink);
+      }
+      .mhead .x {
+        margin-left: auto;
+      }
+      .mside {
+        display: flex;
+        flex: 1;
+        min-height: 0;
+      }
+      .menu {
+        width: 150px;
+        padding: 10px 8px;
+        background: var(--surface2);
+        border-right: 1px solid var(--border);
+      }
+      .mi {
+        width: 100%;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 8px 10px;
+        border: none;
+        background: transparent;
+        border-radius: 8px;
+        font-size: 13px;
+        color: var(--fg-muted);
+        cursor: pointer;
+        text-align: left;
+      }
+      .mi.active {
+        background: var(--accent-soft);
+        color: var(--accent);
+        font-weight: 600;
+      }
+      .mbody {
+        flex: 1;
+        padding: 16px 20px;
+        overflow: auto;
+      }
+      .sec h3 {
+        font-size: 13px;
+        margin: 0 0 12px;
+        color: var(--ink);
+      }
+      .row {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        padding: 9px 0;
+        border-bottom: 1px solid var(--border);
+      }
+      .row:last-child {
+        border-bottom: none;
+      }
+      .row .k {
+        width: 120px;
+        font-size: 13px;
+        color: var(--fg-muted);
+      }
+      .row .v {
+        flex: 1;
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 12.5px;
+        background: var(--muted);
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        padding: 6px 10px;
+      }
+      .gate {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        padding: 10px;
+        background: var(--surface2);
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        margin-bottom: 8px;
+      }
+      .gate .gicon {
+        width: 32px;
+        height: 32px;
+        border-radius: 8px;
+        display: grid;
+        place-items: center;
+        color: #fff;
+        font-weight: 700;
+      }
+      .gate .gm {
+        flex: 1;
+      }
+      .gate .gname {
+        font-weight: 600;
+        font-size: 13px;
+      }
+      .gate .gmeta {
+        font-size: 11px;
+        color: var(--fg-muted);
+      }
+      .gate .gst {
+        font-size: 11px;
+      }
+      .sw {
+        width: 34px;
+        height: 20px;
+        border-radius: 999px;
+        background: var(--border2);
+        position: relative;
+        cursor: pointer;
+        flex-shrink: 0;
+      }
+      .sw.on {
+        background: var(--ok);
+      }
+      .sw::after {
+        content: '';
+        position: absolute;
+        top: 2px;
+        left: 2px;
+        width: 16px;
+        height: 16px;
+        border-radius: 50%;
+        background: #fff;
+        transition: 0.2s;
+      }
+      .sw.on::after {
+        left: 16px;
+      }
+      .note {
+        margin-top: 10px;
+        font-size: 11.5px;
+        color: var(--fg-muted);
+      }
+      .iconbtn {
+        display: grid;
+        place-items: center;
+        width: 30px;
+        height: 30px;
+        border-radius: 9px;
+        border: 1px solid var(--border);
+        background: var(--surface);
+        color: var(--fg-muted);
+        cursor: pointer;
+      }
+      .iconbtn:hover {
+        color: var(--accent);
+        border-color: var(--accent);
+      }
+    </style>
+  </head>
+  <body>
+    <div class="app">
+      <!-- SIDEBAR -->
+      <aside class="side">
+        <div class="logo"><span class="l">h</span><span class="n">harness2</span></div>
+        <div class="navitem primary">
+          <svg class="i"><path d="M12 5v14M5 12h14" /></svg>新对话
         </div>
-      </div>
-      <div class="enterproj" onclick="openConv()"><svg class="i"><path d="M4 7h16M4 12h16M4 17h16"/></svg> 进入项目工作 ▾</div>
-      <div class="cards">
-        <div class="card" onclick="openConv()"><span class="ci"><svg class="i"><path d="M12 20h9M16.5 3.5a2.1 2.1 0 013 3L7 19l-4 1 1-4z"/></svg></span><div class="ct">梳理按钮调用逻辑</div><div class="cd">选中页面元素，追到它背后的接口与代码</div></div>
-        <div class="card" onclick="openConv()"><span class="ci"><svg class="i"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3-3"/></svg></span><div class="ct">检索今日要闻</div><div class="cd">浏览权威新闻源，汇总今天的时政热点</div></div>
-        <div class="card" onclick="openConv()"><span class="ci"><svg class="i"><path d="M4 6h16M4 12h16M4 18h16"/></svg></span><div class="ct">重构成代码</div><div class="cd">重构一段代码，先出计划再执行</div></div>
-      </div>
-    </div>
+        <div class="navitem">
+          <svg class="i">
+            <circle cx="11" cy="11" r="7" />
+            <path d="M20 20l-3-3" /></svg
+          >搜索
+        </div>
+        <div class="navitem">
+          <svg class="i"><path d="M4 5a2 2 0 012-2h4l2 3h6a2 2 0 012 2v9a2 2 0 01-2 2H6a2 2 0 01-2-2z" /></svg>插件
+        </div>
+        <div class="navitem">
+          <svg class="i">
+            <path d="M12 4v4M12 16v4M4 12h4M16 12h4" />
+            <circle cx="12" cy="12" r="3" /></svg
+          >自动化
+        </div>
+        <div class="sec">项目</div>
+        <div class="proj"><span class="pi">h</span><span class="n">harness2</span></div>
+        <div class="proj"><span class="pi">d</span><span class="n">packages/desktop</span></div>
+        <div class="proj"><span class="pi">n</span><span class="n">news-daily</span></div>
+        <div class="sec">对话</div>
+        <div class="sesslist">
+          <button class="conv active" onclick="openConv()">
+            <span class="t"><span class="n">添加用户认证 + 重构查询</span></span
+            ><span class="m">13:02 · ☑ 4/7</span>
+          </button>
+          <button class="conv" onclick="openConv()">
+            <span class="t"><span class="n">检索今日3件时政要闻</span><span class="badge">2</span></span
+            ><span class="m">11:46</span>
+          </button>
+          <button class="conv" onclick="openConv()">
+            <span class="t"><span class="n">迁移 docs 到 docsify</span></span
+            ><span class="m">10:02</span>
+          </button>
+        </div>
+        <div class="spacer"></div>
+        <div class="sideset" onclick="openSettings()">
+          <svg class="i">
+            <path d="M12 15a3 3 0 100-6 3 3 0 000 6z" />
+            <path
+              d="M19.4 15a1.6 1.6 0 00.3 1.8l.1.1a2 2 0 11-2.8 2.8l-.1-.1a1.6 1.6 0 00-1.8-.3 1.6 1.6 0 00-1 1.5V21a2 2 0 11-4 0v-.1a1.6 1.6 0 00-1-1.5 1.6 1.6 0 00-1.8.3l-.1.1a2 2 0 11-2.8-2.8l.1-.1a1.6 1.6 0 00.3-1.8 1.6 1.6 0 00-1.5-1H3a2 2 0 110-4h.1a1.6 1.6 0 001.5-1 1.6 1.6 0 00-.3-1.8l-.1-.1a2 2 0 112.8-2.8l.1.1a1.6 1.6 0 001.8.3 1.6 1.6 0 001-1.5V3a2 2 0 114 0v.1a1.6 1.6 0 001 1.5 1.6 1.6 0 001.8-.3l.1-.1a2 2 0 112.8 2.8l-.1.1a1.6 1.6 0 00-.3 1.8 1.6 1.6 0 001.5 1h.1a2 2 0 110 4h-.1a1.6 1.6 0 00-1.5 1z"
+            /></svg
+          >设置
+        </div>
+      </aside>
 
-    <!-- CONVERSATION -->
-    <div class="convx" id="conv">
-      <div class="chatbar">
-        <span class="sname">添加用户认证 + 重构查询</span>
-        <span class="pill">🤖 big-pickle</span>
-        <span class="pill">上下文 42%</span>
-        <span class="pill" id="modePill">替我审批</span>
-        <span class="spacer"></span>
-        <button class="iconbtn" title="工作区" onclick="toggleWb()">▤</button>
-        <button class="iconbtn" title="设置" onclick="openSettings()">⚙</button>
-      </div>
-      <div class="layoutrow">
-        <div class="msgs">
-          <div class="mu"><span class="w">你</span>帮我给用户模块加 JWT 认证，把 fetch 查询改成 React Query，并补测试。</div>
-          <div class="ma"><span class="w">助理</span><div class="txt">好，我先出一份执行计划，确认后再动手：</div></div>
-          <!-- PLAN (gated by confirm) -->
-          <div class="plan" id="plan">
-            <div class="ph">☑ 执行计划<span class="pct">0 / 4</span></div>
-            <div class="pbar"><i style="width:0%"></i></div>
-            <div class="planitem"><span class="cb"></span><span class="tx">1. 梳理现有 auth 模块与 fetch 调用点</span><span class="st">待办</span></div>
-            <div class="planitem"><span class="cb"></span><span class="tx">2. 实现 JWT 签发/校验（src/auth/jwt.ts）</span><span class="st">待办</span></div>
-            <div class="planitem"><span class="cb"></span><span class="tx">3. 接入 React Query（useQuery/mutations）</span><span class="st">待办</span></div>
-            <div class="planitem"><span class="cb"></span><span class="tx">4. 补 auth 单测（含 401/过期 token）</span><span class="st">待办</span></div>
-            <div class="confirm" id="confirm" style="display:flex">
-              <button class="btn btn-go" onclick="startPlan()">确认执行</button>
-              <button class="btn btn-ghost">修改计划</button>
+      <!-- CENTER -->
+      <div class="main">
+        <div class="center">
+          <!-- LANDING -->
+          <div class="landing" id="landing">
+            <h1>我们该做什么？</h1>
+            <div class="sub">和 harness2 一起，把想法变成可执行的计划</div>
+            <div class="bigin">
+              <textarea placeholder="随心输入，或试试下面的入口…"></textarea>
+              <div class="bar">
+                <span class="att" title="添加上下文 / 文件"
+                  ><svg class="i"><path d="M12 5v14M5 12h14" /></svg
+                ></span>
+                <span class="selector" id="modeSel" onclick="toggleMenu(event, 'landing-mode', this)">
+                  <svg class="i" style="width: 13px; height: 13px"><path d="M20 6L9 17l-5-5" /></svg>
+                  <b id="modeLabel1">替我审批</b> ▾
+                  <div class="menu" id="landing-mode"></div>
+                </span>
+                <span class="selector"
+                  ><svg class="i" style="width: 13px; height: 13px">
+                    <path d="M12 3l2 6 6 2-6 2-2 6-2-6-6-2 6-2z" />
+                  </svg>
+                  big-pickle ▾</span
+                >
+                <span class="spacer"></span>
+                <span class="mic"
+                  ><svg class="i">
+                    <path d="M12 3a3 3 0 013 3v5a3 3 0 01-6 0V6a3 3 0 013-3z" />
+                    <path d="M6 11a6 6 0 0012 0M12 19v3" /></svg
+                ></span>
+                <button class="sendbtn" onclick="openConv()">
+                  <svg class="i"><path d="M12 19V5M6 11l6-6 6 6" /></svg>
+                </button>
+              </div>
+            </div>
+            <div class="enterproj" onclick="openConv()">
+              <svg class="i"><path d="M4 7h16M4 12h16M4 17h16" /></svg> 进入项目工作 ▾
+            </div>
+            <div class="cards">
+              <div class="card" onclick="openConv()">
+                <span class="ci"
+                  ><svg class="i"><path d="M12 20h9M16.5 3.5a2.1 2.1 0 013 3L7 19l-4 1 1-4z" /></svg
+                ></span>
+                <div class="ct">梳理按钮调用逻辑</div>
+                <div class="cd">选中页面元素，追到它背后的接口与代码</div>
+              </div>
+              <div class="card" onclick="openConv()">
+                <span class="ci"
+                  ><svg class="i">
+                    <circle cx="11" cy="11" r="7" />
+                    <path d="M20 20l-3-3" /></svg
+                ></span>
+                <div class="ct">检索今日要闻</div>
+                <div class="cd">浏览权威新闻源，汇总今天的时政热点</div>
+              </div>
+              <div class="card" onclick="openConv()">
+                <span class="ci"
+                  ><svg class="i"><path d="M4 6h16M4 12h16M4 18h16" /></svg
+                ></span>
+                <div class="ct">重构成代码</div>
+                <div class="cd">重构一段代码，先出计划再执行</div>
+              </div>
             </div>
           </div>
-          <!-- after confirm: tool + code -->
-          <div id="after" style="display:none;display:flex;flex-direction:column;gap:12px">
-            <div class="tool"><div class="th"><span class="ic"><svg class="i"><path d="M4 5a2 2 0 012-2h4l2 3h6a2 2 0 012 2v9a2 2 0 01-2 2H6a2 2 0 01-2-2z"/></svg></span><span class="nm">edit</span><span class="args">src/auth/jwt.ts</span><span class="st ok">ok</span></div></div>
-            <div class="code"><div class="ch">src/auth/jwt.ts <span class="f">已编辑</span></div><pre>
+
+          <!-- CONVERSATION -->
+          <div class="convx" id="conv">
+            <div class="chatbar">
+              <span class="sname">添加用户认证 + 重构查询</span>
+              <span class="pill">🤖 big-pickle</span>
+              <span class="pill">上下文 42%</span>
+              <span class="pill" id="modePill">替我审批</span>
+              <span class="spacer"></span>
+              <button class="iconbtn" title="工作区" onclick="toggleWb()">▤</button>
+              <button class="iconbtn" title="设置" onclick="openSettings()">⚙</button>
+            </div>
+            <div class="layoutrow">
+              <div class="msgs">
+                <div class="mu">
+                  <span class="w">你</span>帮我给用户模块加 JWT 认证，把 fetch 查询改成 React Query，并补测试。
+                </div>
+                <div class="ma">
+                  <span class="w">助理</span>
+                  <div class="txt">好，我先出一份执行计划，确认后再动手：</div>
+                </div>
+                <!-- PLAN (gated by confirm) -->
+                <div class="plan" id="plan">
+                  <div class="ph">☑ 执行计划<span class="pct">0 / 4</span></div>
+                  <div class="pbar"><i style="width: 0%"></i></div>
+                  <div class="planitem">
+                    <span class="cb"></span><span class="tx">1. 梳理现有 auth 模块与 fetch 调用点</span
+                    ><span class="st">待办</span>
+                  </div>
+                  <div class="planitem">
+                    <span class="cb"></span><span class="tx">2. 实现 JWT 签发/校验（src/auth/jwt.ts）</span
+                    ><span class="st">待办</span>
+                  </div>
+                  <div class="planitem">
+                    <span class="cb"></span><span class="tx">3. 接入 React Query（useQuery/mutations）</span
+                    ><span class="st">待办</span>
+                  </div>
+                  <div class="planitem">
+                    <span class="cb"></span><span class="tx">4. 补 auth 单测（含 401/过期 token）</span
+                    ><span class="st">待办</span>
+                  </div>
+                  <div class="confirm" id="confirm" style="display: flex">
+                    <button class="btn btn-go" onclick="startPlan()">确认执行</button>
+                    <button class="btn btn-ghost">修改计划</button>
+                  </div>
+                </div>
+                <!-- after confirm: tool + code -->
+                <div id="after" style="display: none; display: flex; flex-direction: column; gap: 12px">
+                  <div class="tool">
+                    <div class="th">
+                      <span class="ic"
+                        ><svg class="i">
+                          <path d="M4 5a2 2 0 012-2h4l2 3h6a2 2 0 012 2v9a2 2 0 01-2 2H6a2 2 0 01-2-2z" /></svg></span
+                      ><span class="nm">edit</span><span class="args">src/auth/jwt.ts</span
+                      ><span class="st ok">ok</span>
+                    </div>
+                  </div>
+                  <div class="code">
+                    <div class="ch">src/auth/jwt.ts <span class="f">已编辑</span></div>
+                    <pre>
 <div class="cl"><span class="n">12</span><span class="t">import jwt from 'jsonwebtoken';</span></div>
 <div class="cl dim"><span class="n">13</span><span class="t">export const sign = (u) =&gt; jwt.sign(u, SECRET);</span></div>
 <div class="cl hl"><span class="n">14</span><span class="t">export const verifyToken = (t, s) =&gt;</span></div>
 <div class="cl hl"><span class="n">15</span><span class="t">  jwt.verify(t, s, {algorithms:['HS256']});</span></div>
-<div class="cl dim"><span class="n">16</span><span class="t">export default { sign, verifyToken };</span></div></pre></div>
+<div class="cl dim"><span class="n">16</span><span class="t">export default { sign, verifyToken };</span></div></pre>
+                  </div>
+                </div>
+              </div>
+              <div class="wb" id="wb">
+                <div class="wb-tabs">
+                  <button class="wb-tab active" onclick="wb(this, 'tree')">文件</button
+                  ><button class="wb-tab" onclick="wb(this, 'diff')">Diff</button
+                  ><button class="wb-tab" onclick="wb(this, 'term')">终端</button>
+                </div>
+                <div class="wb-body" id="wbb">
+                  <div class="treeitem folder">📦 packages</div>
+                  <div class="treeitem">&nbsp;&nbsp;src/auth/jwt.ts</div>
+                  <div class="treeitem">&nbsp;&nbsp;src/views/Login/index.tsx</div>
+                  <div class="treeitem">&nbsp;&nbsp;src/api/auth.ts</div>
+                </div>
+              </div>
+            </div>
+            <div class="compose">
+              <textarea placeholder="继续…（Enter 发送）"></textarea>
+              <div class="bar">
+                <span class="att"
+                  ><svg class="i"><path d="M12 5v14M5 12h14" /></svg
+                ></span>
+                <span class="selector" onclick="toggleMenu(event, 'conv-mode', this)"
+                  ><svg class="i" style="width: 13px; height: 13px"><path d="M20 6L9 17l-5-5" /></svg
+                  ><b id="modeLabel2">替我审批</b> ▾
+                  <div class="menu" id="conv-mode"></div
+                ></span>
+                <span class="selector"
+                  ><svg class="i" style="width: 13px; height: 13px">
+                    <path d="M12 3l2 6 6 2-6 2-2 6-2-6-6-2 6-2z" />
+                  </svg>
+                  big-pickle ▾</span
+                >
+                <span class="spacer"></span>
+                <span class="mic"
+                  ><svg class="i">
+                    <path d="M12 3a3 3 0 013 3v5a3 3 0 01-6 0V6a3 3 0 013-3z" />
+                    <path d="M6 11a6 6 0 0012 0M12 19v3" /></svg
+                ></span>
+                <button class="sendbtn">
+                  <svg class="i"><path d="M12 19V5M6 11l6-6 6 6" /></svg>
+                </button>
+              </div>
+            </div>
           </div>
         </div>
-        <div class="wb" id="wb">
-          <div class="wb-tabs"><button class="wb-tab active" onclick="wb(this,'tree')">文件</button><button class="wb-tab" onclick="wb(this,'diff')">Diff</button><button class="wb-tab" onclick="wb(this,'term')">终端</button></div>
-          <div class="wb-body" id="wbb"><div class="treeitem folder">📦 packages</div><div class="treeitem">&nbsp;&nbsp;src/auth/jwt.ts</div><div class="treeitem">&nbsp;&nbsp;src/views/Login/index.tsx</div><div class="treeitem">&nbsp;&nbsp;src/api/auth.ts</div></div>
-        </div>
       </div>
-      <div class="compose">
-        <textarea placeholder="继续…（Enter 发送）"></textarea>
-        <div class="bar">
-          <span class="att"><svg class="i"><path d="M12 5v14M5 12h14"/></svg></span>
-          <span class="selector" onclick="toggleMenu(event,'conv-mode',this)"><svg class="i" style="width:13px;height:13px"><path d="M20 6L9 17l-5-5"/></svg><b id="modeLabel2">替我审批</b> ▾<div class="menu" id="conv-mode"></div></span>
-          <span class="selector"><svg class="i" style="width:13px;height:13px"><path d="M12 3l2 6 6 2-6 2-2 6-2-6-6-2 6-2z"/></svg> big-pickle ▾</span>
-          <span class="spacer"></span>
-          <span class="mic"><svg class="i"><path d="M12 3a3 3 0 013 3v5a3 3 0 01-6 0V6a3 3 0 013-3z"/><path d="M6 11a6 6 0 0012 0M12 19v3"/></svg></span>
-          <button class="sendbtn"><svg class="i"><path d="M12 19V5M6 11l6-6 6 6"/></svg></button>
+
+      <!-- SETTINGS -->
+      <div class="overlay" id="overlay" onclick="if (event.target === this) closeSettings();">
+        <div class="modal">
+          <div class="mhead">
+            <span class="t">设置</span><button class="iconbtn x" onclick="closeSettings()">✕</button>
+          </div>
+          <div class="mside">
+            <div class="menu">
+              <button class="mi active" onclick="sec(this, 'models')">模型与角色</button>
+              <button class="mi" onclick="sec(this, 'mode')">执行模式</button>
+              <button class="mi" onclick="sec(this, 'theme')">主题</button>
+              <button class="mi" onclick="sec(this, 'gateway')">IM 网关</button>
+              <button class="mi" onclick="sec(this, 'cron')">定时任务</button>
+              <button class="mi" onclick="sec(this, 'about')">关于</button>
+            </div>
+            <div class="mbody">
+              <div class="sec" id="sec-models">
+                <h3>模型与角色</h3>
+                <div class="row"><span class="k">主模型</span><span class="v">big-pickle（local）</span></div>
+                <div class="row"><span class="k">小模型（摘要）</span><span class="v">deepseek-v4-flash</span></div>
+                <div class="row"><span class="k">子代理模型</span><span class="v">muse-spark-1.3</span></div>
+                <div class="row"><span class="k">上下文</span><span class="v">200K</span></div>
+              </div>
+              <div class="sec" id="sec-mode" style="display: none">
+                <h3>执行模式（审批）</h3>
+                <div class="row">
+                  <span class="k">每次执行前询问</span><span class="v">替我审批（default）</span
+                  ><span class="sw on"></span>
+                </div>
+                <div class="row">
+                  <span class="k">自动接受编辑</span><span class="v">acceptEdits（write/edit 放行）</span
+                  ><span class="sw"></span>
+                </div>
+                <div class="row">
+                  <span class="k">完全控制</span><span class="v">bypass（全放行）</span><span class="sw"></span>
+                </div>
+                <div class="row">
+                  <span class="k">先计划再执行</span><span class="v">plan（出计划→确认→执行）</span
+                  ><span class="sw on"></span>
+                </div>
+                <div class="note">新增「先计划再执行」：agent 先列计划，等你确认后才动手，执行中划掉计划项。</div>
+              </div>
+              <div class="sec" id="sec-theme" style="display: none">
+                <h3>主题</h3>
+                <div class="row">
+                  <span class="k">当前</span><span class="v">暖纸（默认）</span
+                  ><button class="btn btn-ghost">切换深色</button>
+                </div>
+                <div class="note">暖纸皮色调，柔和护眼。</div>
+              </div>
+              <div class="sec" id="sec-gateway" style="display: none">
+                <h3>IM 网关（QQ / 飞书）</h3>
+                <div class="gate">
+                  <div class="gicon" style="background: #12b7f5">Q</div>
+                  <div class="gm">
+                    <div class="gname">QQ</div>
+                    <div class="gmeta">config.json.gateways.qq · auth.json.gateways.qq</div>
+                  </div>
+                  <div class="gst" style="color: var(--ok)">● 已配置</div>
+                </div>
+                <div class="gate">
+                  <div class="gicon" style="background: #3370ff">✈</div>
+                  <div class="gm">
+                    <div class="gname">飞书</div>
+                    <div class="gmeta">config.json.gateways.feishu · auth.json.gateways.feishu</div>
+                  </div>
+                  <div class="gst" style="color: var(--warn)">○ 未启用</div>
+                </div>
+                <div class="note">现状：配置文件 + CLI；此处为可视化入口占位。</div>
+              </div>
+              <div class="sec" id="sec-cron" style="display: none">
+                <h3>定时任务（cron）</h3>
+                <div class="row">
+                  <span class="k">每日新闻汇总</span><span class="v">daily 09:00</span><span class="sw on"></span>
+                </div>
+                <div class="row">
+                  <span class="k">喝水提醒（桌宠）</span><span class="v">every 90m</span><span class="sw on"></span>
+                </div>
+                <div class="note">桌宠为后续功能（参考 u-tools 喵提醒）。</div>
+              </div>
+              <div class="sec" id="sec-about" style="display: none">
+                <h3>关于</h3>
+                <div class="row"><span class="k">版本</span><span class="v">harness2 1.0.0</span></div>
+                <div class="row"><span class="k">内核</span><span class="v">事件溯源 · 单写者 · 崩溃一致</span></div>
+                <div class="row"><span class="k">数据</span><span class="v">仅本地，无遥测</span></div>
+              </div>
+            </div>
+          </div>
         </div>
       </div>
     </div>
-  </div></div>
 
-  <!-- SETTINGS -->
-  <div class="overlay" id="overlay" onclick="if(event.target===this)closeSettings()">
-    <div class="modal">
-      <div class="mhead"><span class="t">设置</span><button class="iconbtn x" onclick="closeSettings()">✕</button></div>
-      <div class="mside">
-        <div class="menu">
-          <button class="mi active" onclick="sec(this,'models')">模型与角色</button>
-          <button class="mi" onclick="sec(this,'mode')">执行模式</button>
-          <button class="mi" onclick="sec(this,'theme')">主题</button>
-          <button class="mi" onclick="sec(this,'gateway')">IM 网关</button>
-          <button class="mi" onclick="sec(this,'cron')">定时任务</button>
-          <button class="mi" onclick="sec(this,'about')">关于</button>
-        </div>
-        <div class="mbody">
-          <div class="sec" id="sec-models"><h3>模型与角色</h3><div class="row"><span class="k">主模型</span><span class="v">big-pickle（local）</span></div><div class="row"><span class="k">小模型（摘要）</span><span class="v">deepseek-v4-flash</span></div><div class="row"><span class="k">子代理模型</span><span class="v">muse-spark-1.3</span></div><div class="row"><span class="k">上下文</span><span class="v">200K</span></div></div>
-          <div class="sec" id="sec-mode" style="display:none"><h3>执行模式（审批）</h3><div class="row"><span class="k">每次执行前询问</span><span class="v">替我审批（default）</span><span class="sw on"></span></div><div class="row"><span class="k">自动接受编辑</span><span class="v">acceptEdits（write/edit 放行）</span><span class="sw"></span></div><div class="row"><span class="k">完全控制</span><span class="v">bypass（全放行）</span><span class="sw"></span></div><div class="row"><span class="k">先计划再执行</span><span class="v">plan（出计划→确认→执行）</span><span class="sw on"></span></div><div class="note">新增「先计划再执行」：agent 先列计划，等你确认后才动手，执行中划掉计划项。</div></div>
-          <div class="sec" id="sec-theme" style="display:none"><h3>主题</h3><div class="row"><span class="k">当前</span><span class="v">暖纸（默认）</span><button class="btn btn-ghost">切换深色</button></div><div class="note">暖纸皮色调，柔和护眼。</div></div>
-          <div class="sec" id="sec-gateway" style="display:none"><h3>IM 网关（QQ / 飞书）</h3><div class="gate"><div class="gicon" style="background:#12b7f5">Q</div><div class="gm"><div class="gname">QQ</div><div class="gmeta">config.json.gateways.qq · auth.json.gateways.qq</div></div><div class="gst" style="color:var(--ok)">● 已配置</div></div><div class="gate"><div class="gicon" style="background:#3370ff">✈</div><div class="gm"><div class="gname">飞书</div><div class="gmeta">config.json.gateways.feishu · auth.json.gateways.feishu</div></div><div class="gst" style="color:var(--warn)">○ 未启用</div></div><div class="note">现状：配置文件 + CLI；此处为可视化入口占位。</div></div>
-          <div class="sec" id="sec-cron" style="display:none"><h3>定时任务（cron）</h3><div class="row"><span class="k">每日新闻汇总</span><span class="v">daily 09:00</span><span class="sw on"></span></div><div class="row"><span class="k">喝水提醒（桌宠）</span><span class="v">every 90m</span><span class="sw on"></span></div><div class="note">桌宠为后续功能（参考 u-tools 喵提醒）。</div></div>
-          <div class="sec" id="sec-about" style="display:none"><h3>关于</h3><div class="row"><span class="k">版本</span><span class="v">harness2 1.0.0</span></div><div class="row"><span class="k">内核</span><span class="v">事件溯源 · 单写者 · 崩溃一致</span></div><div class="row"><span class="k">数据</span><span class="v">仅本地，无遥测</span></div></div>
-        </div>
-      </div>
-    </div>
-  </div>
-</div>
-
-<script>
-const MODES=[['替我审批','default，只读放行其余询问'],['直接执行','bypass，完全控制全放行'],['先计划再执行','plan，出计划→确认→执行']];
-let curMode='替我审批';
-function menuItems(id,labelId,pill){
-  const m=document.getElementById(id);m.innerHTML='';
-  MODES.forEach(([name,desc])=>{const b=document.createElement('button');b.className='mi'+(name===curMode?' on':'');b.innerHTML=`${name}<span class="d">${desc}</span>`;b.onclick=()=>{curMode=name;document.getElementById(labelId).textContent=name;if(pill)document.getElementById(pill).textContent=name;m.classList.remove('open');if(name==='先计划再执行'){const c=document.getElementById('confirm');if(c)c.style.display='flex';}};m.appendChild(b);});
-}
-function toggleMenu(e,id,el){e.stopPropagation();document.querySelectorAll('.menu').forEach(x=>x.classList.remove('open'));const m=document.getElementById(id);menuItems(id,el===document.getElementById(id)?'modeLabel2':'modeLabel1',el.id.includes('landing')?'':'modePill');/* rebuild with right label */if(m.classList.contains('open')){m.classList.remove('open')}else{m.classList.add('open');el.querySelectorAll('.mi').forEach(x=>x.onclick=null);buildFor(el);}}
-function buildFor(el){const m=el.querySelector('.menu');const labelId=el.closest('.bigin')?'modeLabel1':'modeLabel2';const pill='modePill';m.innerHTML='';MODES.forEach(([name,desc])=>{const b=document.createElement('button');b.className='mi'+(name===curMode?' on':'');b.innerHTML=`${name}<span class="d">${desc}</span>`;b.onclick=(e)=>{e.stopPropagation();curMode=name;document.getElementById(labelId).textContent=name;if(pill&&document.getElementById(pill))document.getElementById(pill).textContent=name;m.classList.remove('open');const c=document.getElementById('confirm');if(c&&name==='先计划再执行')c.style.display='flex';};m.appendChild(b);});}
-function openConv(){document.getElementById('landing').style.display='none';document.getElementById('conv').classList.add('show');}
-function toggleWb(){document.getElementById('wb').classList.toggle('open');}
-function wb(btn,name){document.querySelectorAll('.wb-tab').forEach(x=>x.classList.remove('active'));btn.classList.add('active');const b=document.getElementById('wbb');b.innerHTML={tree:'<div class="treeitem folder">📦 packages</div><div class="treeitem">&nbsp;&nbsp;src/auth/jwt.ts</div><div class="treeitem">&nbsp;&nbsp;src/views/Login/index.tsx</div>',diff:'<div class="treeitem" style="color:var(--ok)">+ 14  verifyToken</div><div class="treeitem" style="color:var(--ok)">+ 15    jwt.verify</div>',term:'<div class="treeitem">$ pnpm test -- auth ✓</div><div class="treeitem" style="color:var(--fg-dim)">$ _</div>'}[name];}
-function openSettings(){document.getElementById('overlay').classList.add('open');}
-function closeSettings(){document.getElementById('overlay').classList.remove('open');}
-function sec(btn,id){document.querySelectorAll('.mi').forEach(x=>x.classList.remove('active'));btn.classList.add('active');document.querySelectorAll('.sec').forEach(s=>s.style.display='none');document.getElementById('sec-'+id).style.display='block';}
-document.addEventListener('keydown',e=>{if(e.key==='Escape')closeSettings();});
-document.addEventListener('click',()=>{document.querySelectorAll('.menu').forEach(x=>x.classList.remove('open'));});
-/* plan mode: confirm -> execute progressively strike-through */
-function startPlan(){
-  document.getElementById('confirm').style.display='none';
-  const items=[...document.querySelectorAll('#plan .planitem')];
-  const pct=document.querySelector('#plan .pct');const bar=document.querySelector('#plan .pbar i');
-  document.getElementById('after').style.display='flex';
-  let i=0;
-  const step=()=>{if(i<items.length){items[i].classList.add('done');items[i].querySelector('.cb').textContent='✓';items[i].querySelector('.st').textContent='完成';i++;pct.textContent=i+' / '+items.length;bar.style.width=Math.round(i/items.length*100)+'%';setTimeout(step,700);}};
-  step();
-}
-</script>
-</body>
+    <script>
+      const MODES = [
+        ['替我审批', 'default，只读放行其余询问'],
+        ['直接执行', 'bypass，完全控制全放行'],
+        ['先计划再执行', 'plan，出计划→确认→执行'],
+      ];
+      let curMode = '替我审批';
+      function menuItems(id, labelId, pill) {
+        const m = document.getElementById(id);
+        m.innerHTML = '';
+        MODES.forEach(([name, desc]) => {
+          const b = document.createElement('button');
+          b.className = 'mi' + (name === curMode ? ' on' : '');
+          b.innerHTML = `${name}<span class="d">${desc}</span>`;
+          b.onclick = () => {
+            curMode = name;
+            document.getElementById(labelId).textContent = name;
+            if (pill) document.getElementById(pill).textContent = name;
+            m.classList.remove('open');
+            if (name === '先计划再执行') {
+              const c = document.getElementById('confirm');
+              if (c) c.style.display = 'flex';
+            }
+          };
+          m.appendChild(b);
+        });
+      }
+      function toggleMenu(e, id, el) {
+        e.stopPropagation();
+        document.querySelectorAll('.menu').forEach((x) => x.classList.remove('open'));
+        const m = document.getElementById(id);
+        menuItems(
+          id,
+          el === document.getElementById(id) ? 'modeLabel2' : 'modeLabel1',
+          el.id.includes('landing') ? '' : 'modePill',
+        );
+        /* rebuild with right label */ if (m.classList.contains('open')) {
+          m.classList.remove('open');
+        } else {
+          m.classList.add('open');
+          el.querySelectorAll('.mi').forEach((x) => (x.onclick = null));
+          buildFor(el);
+        }
+      }
+      function buildFor(el) {
+        const m = el.querySelector('.menu');
+        const labelId = el.closest('.bigin') ? 'modeLabel1' : 'modeLabel2';
+        const pill = 'modePill';
+        m.innerHTML = '';
+        MODES.forEach(([name, desc]) => {
+          const b = document.createElement('button');
+          b.className = 'mi' + (name === curMode ? ' on' : '');
+          b.innerHTML = `${name}<span class="d">${desc}</span>`;
+          b.onclick = (e) => {
+            e.stopPropagation();
+            curMode = name;
+            document.getElementById(labelId).textContent = name;
+            if (pill && document.getElementById(pill)) document.getElementById(pill).textContent = name;
+            m.classList.remove('open');
+            const c = document.getElementById('confirm');
+            if (c && name === '先计划再执行') c.style.display = 'flex';
+          };
+          m.appendChild(b);
+        });
+      }
+      function openConv() {
+        document.getElementById('landing').style.display = 'none';
+        document.getElementById('conv').classList.add('show');
+      }
+      function toggleWb() {
+        document.getElementById('wb').classList.toggle('open');
+      }
+      function wb(btn, name) {
+        document.querySelectorAll('.wb-tab').forEach((x) => x.classList.remove('active'));
+        btn.classList.add('active');
+        const b = document.getElementById('wbb');
+        b.innerHTML = {
+          tree: '<div class="treeitem folder">📦 packages</div><div class="treeitem">&nbsp;&nbsp;src/auth/jwt.ts</div><div class="treeitem">&nbsp;&nbsp;src/views/Login/index.tsx</div>',
+          diff: '<div class="treeitem" style="color:var(--ok)">+ 14  verifyToken</div><div class="treeitem" style="color:var(--ok)">+ 15    jwt.verify</div>',
+          term: '<div class="treeitem">$ pnpm test -- auth ✓</div><div class="treeitem" style="color:var(--fg-dim)">$ _</div>',
+        }[name];
+      }
+      function openSettings() {
+        document.getElementById('overlay').classList.add('open');
+      }
+      function closeSettings() {
+        document.getElementById('overlay').classList.remove('open');
+      }
+      function sec(btn, id) {
+        document.querySelectorAll('.mi').forEach((x) => x.classList.remove('active'));
+        btn.classList.add('active');
+        document.querySelectorAll('.sec').forEach((s) => (s.style.display = 'none'));
+        document.getElementById('sec-' + id).style.display = 'block';
+      }
+      document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape') closeSettings();
+      });
+      document.addEventListener('click', () => {
+        document.querySelectorAll('.menu').forEach((x) => x.classList.remove('open'));
+      });
+      /* plan mode: confirm -> execute progressively strike-through */
+      function startPlan() {
+        document.getElementById('confirm').style.display = 'none';
+        const items = [...document.querySelectorAll('#plan .planitem')];
+        const pct = document.querySelector('#plan .pct');
+        const bar = document.querySelector('#plan .pbar i');
+        document.getElementById('after').style.display = 'flex';
+        let i = 0;
+        const step = () => {
+          if (i < items.length) {
+            items[i].classList.add('done');
+            items[i].querySelector('.cb').textContent = '✓';
+            items[i].querySelector('.st').textContent = '完成';
+            i++;
+            pct.textContent = i + ' / ' + items.length;
+            bar.style.width = Math.round((i / items.length) * 100) + '%';
+            setTimeout(step, 700);
+          }
+        };
+        step();
+      }
+    </script>
+  </body>
 </html>

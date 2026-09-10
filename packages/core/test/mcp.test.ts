@@ -3,7 +3,7 @@
 // config.mcpServers schema 校验。
 // 本地 MCP server 全部用同一 SDK 的 server 端构造（InMemory 配对 / stdio 子进程 / Streamable HTTP），
 // 零外部依赖、零真实网络。
-import { afterEach, describe, expect, it } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import { createServer as createHttpServer, type Server as HttpServer } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { join } from 'node:path';
@@ -112,7 +112,12 @@ describe('mcpToolName / mcpResultToOutput', () => {
   });
 
   it('结果文本化：text 块拼接、非文本块占位、非数组容错', () => {
-    expect(mcpResultToOutput([{ type: 'text', text: 'a' }, { type: 'text', text: 'b' }])).toEqual({ output: 'a\nb' });
+    expect(
+      mcpResultToOutput([
+        { type: 'text', text: 'a' },
+        { type: 'text', text: 'b' },
+      ]),
+    ).toEqual({ output: 'a\nb' });
     expect(mcpResultToOutput([{ type: 'image', data: '...' }])).toEqual({ output: '[非文本内容 image]' });
     expect(mcpResultToOutput(undefined)).toEqual({ output: '' });
   });
@@ -223,7 +228,9 @@ describe('McpManager 断线退避重启', () => {
     await manager.connectAll({ demo: { command: 'unused' } });
     expect(stateOf(manager, 'demo').state).toBe('connected');
     // 等待断开 → 重启 → 恢复
-    await waitFor(() => stateOf(manager, 'demo').state === 'connected' && spawns >= 2 && stateOf(manager, 'demo').restarts === 0);
+    await waitFor(
+      () => stateOf(manager, 'demo').state === 'connected' && spawns >= 2 && stateOf(manager, 'demo').restarts === 0,
+    );
     expect(spawns).toBeGreaterThanOrEqual(2);
     const def = tools.get('mcp__demo__echo')!;
     expect(def).toBeDefined();
@@ -272,46 +279,51 @@ describe('McpManager 断线退避重启', () => {
     let inFlight = 0;
     let maxInFlight = 0;
     const manager = new McpManager(
-      testManagerOptions(tools, lines, () => {
-        created += 1;
-        inFlight += 1;
-        maxInFlight = Math.max(maxInFlight, inFlight);
-        // 自定义 transport：initialize 正常应答；tools/list 时同时触发 onerror + send reject
-        //（P1-1 竞态原现场：断开落在 listTools 窗口）
-        let isClosed = false;
-        const transport: Transport = {
-          start: async () => {},
-          send: async (message) => {
-            const m = message as { method?: string; id?: unknown };
-            if (m.method === 'initialize') {
-              queueMicrotask(() => {
-                transport.onmessage?.({
-                  jsonrpc: '2.0',
-                  id: m.id as number,
-                  result: {
-                    protocolVersion: '2025-06-18',
-                    capabilities: { tools: {} },
-                    serverInfo: { name: 'fake-broken', version: '1.0.0' },
-                  },
-                } as never);
-              });
-              return;
-            }
-            if (m.method === 'tools/list') {
-              transport.onerror?.(new Error('transport broken during listTools'));
-              throw new Error('send failed: transport closed');
-            }
-            // notifications 等：无响应
-          },
-          close: async () => {
-            if (isClosed) return;
-            isClosed = true;
-            closed += 1;
-            inFlight -= 1;
-          },
-        };
-        return transport;
-      }, { stableResetMs: 3_600_000 }), // 永不稳定 → 重启计数累计（同 flapping 用例口径）
+      testManagerOptions(
+        tools,
+        lines,
+        () => {
+          created += 1;
+          inFlight += 1;
+          maxInFlight = Math.max(maxInFlight, inFlight);
+          // 自定义 transport：initialize 正常应答；tools/list 时同时触发 onerror + send reject
+          //（P1-1 竞态原现场：断开落在 listTools 窗口）
+          let isClosed = false;
+          const transport: Transport = {
+            start: async () => {},
+            send: async (message) => {
+              const m = message as { method?: string; id?: unknown };
+              if (m.method === 'initialize') {
+                queueMicrotask(() => {
+                  transport.onmessage?.({
+                    jsonrpc: '2.0',
+                    id: m.id as number,
+                    result: {
+                      protocolVersion: '2025-06-18',
+                      capabilities: { tools: {} },
+                      serverInfo: { name: 'fake-broken', version: '1.0.0' },
+                    },
+                  } as never);
+                });
+                return;
+              }
+              if (m.method === 'tools/list') {
+                transport.onerror?.(new Error('transport broken during listTools'));
+                throw new Error('send failed: transport closed');
+              }
+              // notifications 等：无响应
+            },
+            close: async () => {
+              if (isClosed) return;
+              isClosed = true;
+              closed += 1;
+              inFlight -= 1;
+            },
+          };
+          return transport;
+        },
+        { stableResetMs: 3_600_000 },
+      ), // 永不稳定 → 重启计数累计（同 flapping 用例口径）
     );
     await manager.connectAll({ demo: { command: 'unused' } });
     await waitFor(() => stateOf(manager, 'demo').state === 'down');
@@ -327,11 +339,9 @@ describe('McpManager 断线退避重启', () => {
   it('P2-2：down 状态恢复路径——connectAll 二次调用对 down entry 重连成功（补测：含工具恢复）', async () => {
     const tools = new ToolRegistry();
     const lines: string[] = [];
-    let attempts = 0;
     let healthy = false;
     const manager = new McpManager(
       testManagerOptions(tools, lines, async () => {
-        attempts += 1;
         if (!healthy) throw new Error('connection refused');
         return (await makeLinkedServer({})).transport;
       }),
@@ -425,7 +435,12 @@ describe('McpManager 生产传输（stdio / Streamable HTTP）', () => {
 async function startUrlEchoServer(): Promise<{ url: string; close: () => Promise<void> }> {
   const mcpServer = new McpServer({ name: 'url-test-server', version: '1.0.0' }, { capabilities: { tools: {} } });
   mcpServer.setRequestHandler(ListToolsRequestSchema, async () => ({
-    tools: [(() => { const t = echoTool(); return { name: t.name, description: t.description, inputSchema: t.inputSchema }; })()],
+    tools: [
+      (() => {
+        const t = echoTool();
+        return { name: t.name, description: t.description, inputSchema: t.inputSchema };
+      })(),
+    ],
   }));
   mcpServer.setRequestHandler(CallToolRequestSchema, async (req) => ({
     content: [{ type: 'text', text: `echo:${String((req.params.arguments as Record<string, unknown>)['msg'] ?? '')}` }],
@@ -442,7 +457,10 @@ async function startUrlEchoServer(): Promise<{ url: string; close: () => Promise
         const chunks: Buffer[] = [];
         for await (const c of req) chunks.push(c as Buffer);
         const body = JSON.parse(Buffer.concat(chunks).toString('utf8'));
-        const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined, enableJsonResponse: true });
+        const transport = new StreamableHTTPServerTransport({
+          sessionIdGenerator: undefined,
+          enableJsonResponse: true,
+        });
         res.on('close', () => {
           void transport.close().catch(() => {});
         });
@@ -494,8 +512,7 @@ describe('config.mcpServers schema', () => {
   });
 
   it('非法形态报错：双填 / 都不填 / url 非 http / 服务器名不满足工具名约束 / args 类型', () => {
-    const bad = (mcpServers: unknown): string[] =>
-      parseConfig({ ...base, mcpServers }).errors;
+    const bad = (mcpServers: unknown): string[] => parseConfig({ ...base, mcpServers }).errors;
     expect(bad({ x: { command: 'a', url: 'http://b' } }).join()).toContain('只能二选一');
     expect(bad({ x: {} }).join()).toContain('必须提供 command');
     expect(bad({ x: { url: 'ftp://b' } }).join()).toContain('http(s)');

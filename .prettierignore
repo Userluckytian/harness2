@@ -1,0 +1,22 @@
+# Prettier 忽略清单（阶段 15 B2）
+# 依赖与构建产物
+node_modules/
+dist/
+dist-*/
+dist-electron/
+release/
+coverage/
+*.log
+
+# 本机临时目录（一次性脚本，不入库）
+.tmp-*/
+
+# 包管理器生成物：格式化后会与 pnpm install 互相刷屏
+pnpm-lock.yaml
+
+# 快照 / 基线 fixture —— B2 红线 1：格式化会污染 api-surface.test.ts 的比对基准
+packages/core/test/fixtures/**
+packages/core/fixtures/**
+
+# 本机留痕（每日 issue-log 不入库），避免 pnpm lint 因本地笔记误红
+docs/issue-log/

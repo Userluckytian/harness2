@@ -15,7 +15,6 @@
 //   v1 口径其余不变：子会话不注入记忆/压缩（短生命周期子任务，与 cron 执行同口径）；
 //   非沙箱——子会话与父同进程运行，隔离边界与插件小节一致（architecture.md 如实声明）。
 import { resolve, isAbsolute } from 'node:path';
-import { randomUUID } from 'node:crypto';
 import { loadSession } from '../session/reader.js';
 import { SESSION_ID_PATTERN } from '../session/manager.js';
 import { SnapshotStore } from '../session/snapshots.js';
@@ -275,7 +274,8 @@ export function createSubagentTools(options: SubagentOptions): ToolDefinition[] 
 
   const continueTool: ToolDefinition = {
     name: 'subagent_continue',
-    description: '向此前派发的子会话追加一条消息并继续其任务（返回新结果）；或给 background taskId 查询后台任务状态/结果。',
+    description:
+      '向此前派发的子会话追加一条消息并继续其任务（返回新结果）；或给 background taskId 查询后台任务状态/结果。',
     parameters: {
       type: 'object',
       properties: {
@@ -283,7 +283,10 @@ export function createSubagentTools(options: SubagentOptions): ToolDefinition[] 
         message: { type: 'string', description: '追加给子会话的消息' },
         taskId: { type: 'string', description: 'S5 可选：后台任务 id；提供时返回其当前状态/最终结果（不做续跑）' },
       },
-      required: ['childSessionId', 'message'],
+      // P1-1 修复："多选一"必填——taskId（只读查询后台任务）或 childSessionId+message（续跑）。
+      // 不能用顶层 required（会经执行器误杀 taskId 查询路径）；anyOf 同时让模型看到两种用法，
+      // 执行器对 anyOf/oneOf schema 不做硬拦（见 tools/executor.ts）。
+      anyOf: [{ required: ['taskId'] }, { required: ['childSessionId', 'message'] }],
     },
     async execute(args: unknown, ctx: ToolContext) {
       const { childSessionId, message, taskId } = (args ?? {}) as {
@@ -310,7 +313,9 @@ export function createSubagentTools(options: SubagentOptions): ToolDefinition[] 
         return { output: JSON.stringify({ taskId, childSessionId, state: st.state }) };
       }
       if (typeof childSessionId !== 'string' || childSessionId.trim() === '') {
-        return { error: 'childSessionId 必须是非空字符串' };
+        return {
+          error: 'childSessionId 必须是非空字符串（续跑需 childSessionId + message；仅查询后台任务请只传 taskId）',
+        };
       }
       // P2-3：id 格式先于文件系统校验（与 hub SESSION_ID_PATTERN 同源）——遍历形/任意串
       // 不触达 manager.locate 的路径拼接
@@ -318,7 +323,9 @@ export function createSubagentTools(options: SubagentOptions): ToolDefinition[] 
         return { error: `childSessionId 格式非法: ${childSessionId}` };
       }
       if (typeof message !== 'string' || message.trim() === '') {
-        return { error: 'message 必须是非空字符串' };
+        return {
+          error: 'message 必须是非空字符串（续跑需 childSessionId + message；仅查询后台任务请只传 taskId）',
+        };
       }
       let dir: string;
       try {

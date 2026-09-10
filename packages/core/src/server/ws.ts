@@ -23,7 +23,7 @@
 // 事件溯源不破坏：text/reasoning/reasoning-* delta 是**展示投影**，非模型上下文；模型可见输入仍
 // 由 session.log 投影。旧客户端继续既有帧（未强制 protocolVersion=2 不突然切形状）。
 import { WebSocketServer, type WebSocket } from 'ws';
-import type { Server } from 'node:http';
+import type { IncomingMessage, Server } from 'node:http';
 import type { TurnStopReason } from '../agent/types.js';
 import type { ToolCallRequest } from '../provider/types.js';
 import type { AnySessionEvent } from '../session/types.js';
@@ -31,17 +31,18 @@ import type {
   ApprovalRequestContract,
   ApprovalScope,
   AttemptFinalFrame,
-  CancelAck,
   CancelAckState,
-  CancelRequest,
-  DeliveryDeltaFrame,
   MessageReference,
   ResumeSnapshot,
-  ResumeSubscriptionRequest,
   SubmitAck,
-  SubmitRequest,
 } from '../interaction/types.js';
-import { isCancelTargetKind, isSubmitIntent, isTurnGeneration, isValidEpoch, isValidLastSeq } from '../interaction/types.js';
+import {
+  isCancelTargetKind,
+  isSubmitIntent,
+  isTurnGeneration,
+  isValidEpoch,
+  isValidLastSeq,
+} from '../interaction/types.js';
 import { HubError, SessionHub, type TurnDelta } from './sessions.js';
 import type { ResumeStateProvider } from '../interaction/resume-state.js';
 // S3c2 起 DeltaAttribution/WatermarkCursor/ResumeStateProvider 移驻 interaction/resume-state.ts
@@ -49,6 +50,13 @@ import type { ResumeStateProvider } from '../interaction/resume-state.js';
 export { WatermarkCursor } from '../interaction/resume-state.js';
 export type { DeltaAttribution, ResumeStateProvider } from '../interaction/resume-state.js';
 import { isTrustedHost, isTrustedOrigin, normalizeOriginHeader, WS_MAX_PAYLOAD } from './trust.js';
+import {
+  extractServeToken,
+  isServeTokenValid,
+  isWsPayloadExceededError,
+  warnServeNoTokenOnce,
+  type ServeSecurityStats,
+} from './security.js';
 
 export const WS_PATH = '/ws';
 
@@ -61,7 +69,13 @@ export type WsClientMessage =
   | { op: 'fork'; sessionId: string; atSeq?: number }
   // S3c1 新增帧（对齐 S0 共享契约；旧客户端不感知）
   | { op: 'resume-subscription'; sessionId: string; lastSeq: number; epoch: number }
-  | { op: 'cancel'; requestId: string; target: { kind: 'turn' | 'task'; id: string }; expectedId?: string; expectedTurnGeneration?: number }
+  | {
+      op: 'cancel';
+      requestId: string;
+      target: { kind: 'turn' | 'task'; id: string };
+      expectedId?: string;
+      expectedTurnGeneration?: number;
+    }
   | {
       op: 'submit';
       clientMessageId: string;
@@ -78,10 +92,25 @@ export type WsServerMessage =
   // S3c1/S0 带水位增量（展示投影）：chunkOffset 单调，续块 = 上一块 offset + 文本长度
   | { type: 'text-delta'; sessionId: string; turnId: string; attemptId: string; chunkOffset: number; text: string }
   | { type: 'reasoning-delta'; sessionId: string; turnId: string; attemptId: string; chunkOffset: number; text: string }
-  | { type: 'attempt-final'; sessionId: string; turnId: string; attemptId: string; state: AttemptFinalFrame['state']; finalText?: string; error?: string }
+  | {
+      type: 'attempt-final';
+      sessionId: string;
+      turnId: string;
+      attemptId: string;
+      state: AttemptFinalFrame['state'];
+      finalText?: string;
+      error?: string;
+    }
   | { type: 'resume-snapshot'; sessionId: string; epoch: number; snapshot: ResumeSnapshot }
   | { type: 'cancel-ack'; requestId: string; state: CancelAckState }
-  | { type: 'submit-ack'; clientMessageId: string; sessionId: string; state: SubmitAck['state']; reason?: string; queueSeq?: number }
+  | {
+      type: 'submit-ack';
+      clientMessageId: string;
+      sessionId: string;
+      state: SubmitAck['state'];
+      reason?: string;
+      queueSeq?: number;
+    }
   | { type: 'event'; sessionId: string; event: AnySessionEvent }
   | {
       type: 'turn-end';
@@ -130,6 +159,13 @@ export interface WsPlaneOptions {
    * 未注入（或返回 null / 缺省 unknown）时如实回 unknown/error，不冒充已接线执行。
    */
   resumeState?: ResumeStateProvider;
+  /**
+   * A3-1：WS 升级握手 token 鉴权（startServe 统一注入；未注入 = 仅白名单校验，向后兼容）。
+   * 与 HTTP 同口径：带 token 必须匹配，不带 token 则严格模式拒 / 兼容模式放行并计数。
+   */
+  auth?: { token: string; requireToken: boolean; stats?: ServeSecurityStats };
+  /** A3-2：WS 帧超限断连记账回调（除计数/日志外的可观测出口；测试注入） */
+  onFrameOversize?: (info: { remote: string; limitBytes: number }) => void;
 }
 
 export interface WsPlane {
@@ -164,16 +200,19 @@ function approvalFrame(a: ApprovalRequestContract): WsServerMessage {
 }
 
 /** 把 WS 事件面挂到 HTTP server 上（hub 观察者 → 订阅连接分发）。
- *  升级握手经信任域校验（Origin/Host 与 HTTP 同规则，Task 4）；帧上限 1MiB 对齐 HTTP。 */
+ *  升级握手经信任域校验（Origin/Host 与 HTTP 同规则，Task 4）+ A3-1 token 鉴权；
+ *  A3-2 帧上限 1MiB 对齐 HTTP，超限断连并计数/日志。 */
 export function attachWsServer(server: Server, hub: SessionHub, options: WsPlaneOptions = {}): WsPlane {
   const path = options.path ?? WS_PATH;
+  const auth = options.auth;
+  const stats = auth?.stats;
   const wss = new WebSocketServer({ noServer: true, maxPayload: WS_MAX_PAYLOAD });
   server.on('upgrade', (req, socket, head) => {
-    let pathname = '';
+    let url: URL;
     try {
-      pathname = new URL(req.url ?? '/', 'http://127.0.0.1').pathname;
+      url = new URL(req.url ?? '/', 'http://127.0.0.1');
     } catch {
-      pathname = '';
+      url = new URL('http://127.0.0.1/');
     }
     // P2-5（阶段 7 审查）：与 HTTP 同口径——重复 Origin 头取首值规范化后再校验
     const origin = normalizeOriginHeader(req.headers.origin);
@@ -181,13 +220,32 @@ export function attachWsServer(server: Server, hub: SessionHub, options: WsPlane
     const address = server.address();
     const port = address !== null && typeof address === 'object' ? address.port : undefined;
     const trusted =
-      isTrustedOrigin(origin) &&
-      (port === undefined || isTrustedHost(host, port)) &&
-      pathname === path;
+      isTrustedOrigin(origin) && (port === undefined || isTrustedHost(host, port)) && url.pathname === path;
     if (!trusted) {
+      if (stats !== undefined) stats.trustRejected += 1;
       socket.write('HTTP/1.1 403 Forbidden\r\nconnection: close\r\n\r\n');
       socket.destroy();
       return;
+    }
+    // A3-1：token 门禁（与 HTTP checkServeToken 同口径；错误 token 绝不回退）
+    if (auth !== undefined) {
+      const provided = extractServeToken(req.headers, url);
+      if (provided !== undefined) {
+        if (!isServeTokenValid(provided, auth.token)) {
+          if (stats !== undefined) stats.invalidTokenRejected += 1;
+          socket.write('HTTP/1.1 401 Unauthorized\r\nconnection: close\r\n\r\n');
+          socket.destroy();
+          return;
+        }
+      } else if (auth.requireToken) {
+        if (stats !== undefined) stats.noTokenRejected += 1;
+        socket.write('HTTP/1.1 401 Unauthorized\r\nconnection: close\r\n\r\n');
+        socket.destroy();
+        return;
+      } else {
+        if (stats !== undefined) stats.noTokenAllowed += 1;
+        warnServeNoTokenOnce();
+      }
     }
     wss.handleUpgrade(req, socket, head, (ws) => wss.emit('connection', ws, req));
   });
@@ -260,7 +318,7 @@ export function attachWsServer(server: Server, hub: SessionHub, options: WsPlane
       }),
   });
 
-  wss.on('connection', (ws: WebSocket) => {
+  wss.on('connection', (ws: WebSocket, req: IncomingMessage) => {
     const conn: Conn = { ws, subs: new Set<string>(), epoch: 0, v2: false };
     conns.add(conn);
     ws.on('message', (data: unknown) => {
@@ -322,7 +380,9 @@ export function attachWsServer(server: Server, hub: SessionHub, options: WsPlane
             const fromSeq = msg.lastSeq + 1;
             const toSeq = hub.events(msg.sessionId).lastSeq;
             const state =
-              resumeState !== undefined ? resumeState.resumeSnapshot({ sessionId: msg.sessionId, lastSeq: msg.lastSeq, epoch: msg.epoch }) : null;
+              resumeState !== undefined
+                ? resumeState.resumeSnapshot({ sessionId: msg.sessionId, lastSeq: msg.lastSeq, epoch: msg.epoch })
+                : null;
             if (state === null) {
               sendSafe(ws, { type: 'error', error: `resume 未支持或会话无恢复状态（S3c2 未接线）: ${msg.sessionId}` });
               break;
@@ -347,7 +407,9 @@ export function attachWsServer(server: Server, hub: SessionHub, options: WsPlane
               requestId: msg.requestId,
               target: msg.target,
               expectedId: msg.expectedId,
-              ...(msg.expectedTurnGeneration !== undefined ? { expectedTurnGeneration: msg.expectedTurnGeneration } : {}),
+              ...(msg.expectedTurnGeneration !== undefined
+                ? { expectedTurnGeneration: msg.expectedTurnGeneration }
+                : {}),
             });
             sendSafe(ws, { type: 'cancel-ack', requestId: ack.requestId, state: ack.state });
             break;
@@ -392,7 +454,14 @@ export function attachWsServer(server: Server, hub: SessionHub, options: WsPlane
     ws.on('close', () => {
       conns.delete(conn);
     });
-    ws.on('error', () => {
+    ws.on('error', (err: Error) => {
+      // A3-2：帧超限不是静默断连——计数 + 日志（不含帧内容/token）+ 可注入回调记账
+      if (isWsPayloadExceededError(err)) {
+        const remote = `${req.socket.remoteAddress ?? '?'}:${req.socket.remotePort ?? 0}`;
+        if (stats !== undefined) stats.wsOversizeClosed += 1;
+        console.error(`serve: WS 帧超限（>${WS_MAX_PAYLOAD} 字节），已断连 ${remote}`);
+        options.onFrameOversize?.({ remote, limitBytes: WS_MAX_PAYLOAD });
+      }
       conns.delete(conn);
     });
   });
@@ -434,7 +503,17 @@ function sendSafe(ws: WebSocket, frame: WsServerMessage): void {
   }
 }
 
-const OPS = new Set(['subscribe', 'unsubscribe', 'abort', 'user-message', 'approval-response', 'fork', 'resume-subscription', 'cancel', 'submit']);
+const OPS = new Set([
+  'subscribe',
+  'unsubscribe',
+  'abort',
+  'user-message',
+  'approval-response',
+  'fork',
+  'resume-subscription',
+  'cancel',
+  'submit',
+]);
 
 export function parseClientMessage(data: unknown): WsClientMessage {
   let obj: unknown;

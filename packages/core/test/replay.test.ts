@@ -74,7 +74,11 @@ describe('fixture: demo-session', () => {
   it('writer 重放：相同事件流写入新日志后投影一致（无分叉）', () => {
     const replayDir = mkdtempSync(join(tmpdir(), 'h2-replay-'));
     try {
-      const w = SessionWriter.create(replayDir, { sessionId: 'demo-session', parentSession: 'demo-session', isSeeded: true }, { fsync: false });
+      const w = SessionWriter.create(
+        replayDir,
+        { sessionId: 'demo-session', parentSession: 'demo-session', isSeeded: true },
+        { fsync: false },
+      );
       for (const { event } of loadSession(fixtureDir).events) {
         if (event.type === 'session/header') continue; // writer.create 已写新 header
         w.append(event.type, event.payload);

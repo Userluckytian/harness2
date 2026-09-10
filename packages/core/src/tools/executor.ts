@@ -12,7 +12,7 @@
 // 执行生命周期观察（S3/S7 消费；纯观察，不加第二套日志）：observer.onExecuteStart 在工具
 // 真正启动前回调，onExecuteEnd 对每个提交调用的终态结果回调一次（含未启动的取消/拒绝/未知工具）。
 import type { ToolRegistry } from './registry.js';
-import type { ApprovalHandler, ToolOutput, ToolResult } from './types.js';
+import type { ApprovalHandler, ToolDefinition, ToolOutput, ToolResult } from './types.js';
 
 export interface ToolExecutionRequest {
   callId: string;
@@ -58,6 +58,84 @@ export const DENIED_MESSAGE = 'denied by approval policy';
 /** 任意抛出值归一为可读错误串 */
 function errorMessage(e: unknown): string {
   return (e as Error | undefined)?.message ?? String(e);
+}
+
+/** 工具声明的必填参数名（parameters.required；非字符串项忽略） */
+function requiredParamNames(def: ToolDefinition): string[] {
+  const params = def.parameters as { required?: unknown } | undefined;
+  return Array.isArray(params?.required) ? params.required.filter((k): k is string => typeof k === 'string') : [];
+}
+
+/** 参数占位值（最小示例用）：按 JSON Schema type 给最小合法值 */
+function placeholderValue(schema: unknown): unknown {
+  if (typeof schema === 'object' && schema !== null && !Array.isArray(schema)) {
+    const s = schema as Record<string, unknown>;
+    const enumValues = s['enum'];
+    if (Array.isArray(enumValues) && enumValues.length > 0) return enumValues[0];
+    switch (s['type']) {
+      case 'number':
+      case 'integer':
+        return 0;
+      case 'boolean':
+        return false;
+      case 'array':
+        return [];
+      case 'object':
+        return {};
+      default:
+        return '<string>';
+    }
+  }
+  return '<string>';
+}
+
+/** 最小正确调用示例：必填参数逐个给占位值（缺参数时模型可照抄自纠） */
+function minimalCallExample(def: ToolDefinition, keys: readonly string[]): string {
+  const params = def.parameters as { properties?: unknown } | undefined;
+  const props =
+    typeof params?.properties === 'object' && params.properties !== null && !Array.isArray(params.properties)
+      ? (params.properties as Record<string, unknown>)
+      : {};
+  const example: Record<string, unknown> = {};
+  for (const key of keys) example[key] = placeholderValue(props[key]);
+  return JSON.stringify(example);
+}
+
+/**
+ * A1-4：缺必填参数时的自纠提示。返回 undefined = 参数合法（交给工具自身校验类型）。
+ * 消息包含：缺哪些参数 + 这些参数的 schema 片段 + 一个最小正确调用示例。
+ * 在审批之后、工具执行之前拦截：不执行工具；审批请求时机保持不变（兼容既有网关审批链路）。
+ */
+function describeMissingRequiredArgs(def: ToolDefinition, args: unknown): string | undefined {
+  const params = def.parameters as { anyOf?: unknown; oneOf?: unknown } | undefined;
+  // P1-1 修复：anyOf/oneOf = 「多选一」必填组合（如 subagent_continue: taskId 或
+  // childSessionId+message；MCP inputSchema 透传同理）。执行器无法在不误杀合法分支的前提下
+  // 硬拦，故不做执行器级拦截，交给工具/服务端自身校验（任一分支满足即通过）。
+  if (Array.isArray(params?.anyOf) || Array.isArray(params?.oneOf)) return undefined;
+  const required = requiredParamNames(def);
+  if (required.length === 0) return undefined;
+  const example = minimalCallExample(def, required);
+  if (typeof args !== 'object' || args === null || Array.isArray(args)) {
+    return [
+      `tool "${def.name}": arguments must be an object with required keys: ${required.join(', ')}`,
+      `参数 schema 片段: ${JSON.stringify(
+        Object.fromEntries(
+          required.map((k) => [k, (def.parameters as { properties?: Record<string, unknown> }).properties?.[k] ?? {}]),
+        ),
+      )}`,
+      `最小正确调用示例: ${example}`,
+    ].join('\n');
+  }
+  const record = args as Record<string, unknown>;
+  const missing = required.filter((k) => record[k] === undefined);
+  if (missing.length === 0) return undefined;
+  const props = (def.parameters as { properties?: Record<string, unknown> }).properties ?? {};
+  const schemaSnippet = Object.fromEntries(missing.map((k) => [k, props[k] ?? {}]));
+  return [
+    `tool "${def.name}": 缺少必填参数 ${missing.map((k) => `"${k}"`).join(', ')}`,
+    `参数 schema 片段: ${JSON.stringify(schemaSnippet)}`,
+    `最小正确调用示例: ${example}`,
+  ].join('\n');
 }
 
 /**
@@ -137,6 +215,11 @@ export class ToolExecutor {
     // 取消前置门（审批后）：allow 到达同时取消的竞态——信号先到则本 callId 不再执行，
     // 不启动第二个 write；已启动（信号前完成启动）的 execute 只记录其结果一次。
     if (env.signal.aborted) return { ok: false, error: CANCELLED_RESULT, durationMs: elapsed() };
+
+    // A1-4：缺必填参数 → 带 schema 片段与最小示例的自纠错误（不执行；审批语义保持不变，
+    // 校验在审批之后，避免改变既有审批请求时机）
+    const argError = describeMissingRequiredArgs(def, req.args);
+    if (argError !== undefined) return { ok: false, error: argError, durationMs: elapsed() };
 
     // 超时信号与外部取消信号组合（AbortSignal.timeout 的定时器不阻塞事件循环退出）
     const signal =
@@ -235,8 +318,10 @@ export class ToolExecutor {
             this.emitEnd(env, item, failed);
             return failed;
           }
-          const run = async (): Promise<ExecutedToolResult> =>
-            ({ ...(await this.execute(item, env)), callId: item.callId });
+          const run = async (): Promise<ExecutedToolResult> => ({
+            ...(await this.execute(item, env)),
+            callId: item.callId,
+          });
           if (key === undefined) return run();
           const prev = lockChains.get(key) ?? Promise.resolve();
           const next = prev.then(run);

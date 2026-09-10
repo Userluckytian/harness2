@@ -17,6 +17,7 @@ import { loadSession } from '../session/reader.js';
 import { SESSION_LOG_FILE } from '../session/types.js';
 import { defaultSkillsRoot, projectSkillsRoot, SkillStore } from '../skills/store.js';
 import { ToolRegistry } from '../tools/registry.js';
+import { resolveBashShell } from '../tools/shell.js';
 import { CORE_VERSION } from '../version.js';
 
 /** 单项检查结果 */
@@ -81,7 +82,8 @@ function checkConfig(opts: DoctorOptions): {
       ? {
           id: 'config',
           status: 'warn',
-          summary: '未找到配置文件（全新环境——真实 provider 前先配置 config.json + auth.json，可用 harness2 config check 核对）',
+          summary:
+            '未找到配置文件（全新环境——真实 provider 前先配置 config.json + auth.json，可用 harness2 config check 核对）',
           details,
         }
       : { id: 'config', status: 'fail', summary: 'config 加载失败', details };
@@ -130,6 +132,28 @@ function checkHomeWritable(opts: DoctorOptions): DoctorCheck {
   }
 }
 
+/** bash 工具实际使用的 shell（A1-1）：报告探测结果而非配置里写的值。
+ *  Windows 上回退到 cmd.exe = WARN：ls/head/tail/pwd 等命令不可用，正是 P0 案发根因之一。 */
+function checkBash(config: HarnessConfig | null): DoctorCheck {
+  const configured = config?.bash?.shell;
+  const shell = resolveBashShell(configured !== undefined ? { configured } : {});
+  const details = [
+    `config.bash.shell: ${configured ?? '（未配置，自动探测）'}`,
+    `实际使用: ${shell.kind} → ${shell.executable}${shell.useNodeShell ? '（Node shell:true）' : ` ${shell.argsPrefix.join(' ')} <command>`}`,
+  ];
+  if (shell.kind === 'cmd') {
+    return {
+      id: 'bash',
+      status: 'warn',
+      // R2：warn 分支也报告实际使用的 shell（回退 cmd.exe 也是「实际使用」），与 ok 分支共用「实际使用」契约词，
+      // 保证 doctor.test.ts 的 toContain('实际使用') 断言不依赖本机是否装了 Git Bash。
+      summary: `bash 工具回退到 cmd.exe——实际使用 ${shell.display}（Windows 上 ls/head/tail/pwd 等命令不可用；安装 Git for Windows 或设置 config.bash.shell）`,
+      details,
+    };
+  }
+  return { id: 'bash', status: 'ok', summary: `bash 工具实际使用 ${shell.display}`, details };
+}
+
 function describeMcpServer(cfg: McpServerConfig): string {
   if ('command' in cfg) return `[stdio] ${cfg.command}${cfg.args?.length ? ` ${cfg.args.join(' ')}` : ''}`;
   return `[url] ${cfg.url}`;
@@ -155,7 +179,13 @@ async function checkMcp(config: HarnessConfig | null, unavailable: boolean, opts
   for (const name of names) {
     const cfg = servers[name]!;
     const tools = new ToolRegistry();
-    const manager = new McpManager({ tools, maxRestarts: 0, timeoutMs, connectTimeoutMs: timeoutMs, logSink: () => {} });
+    const manager = new McpManager({
+      tools,
+      maxRestarts: 0,
+      timeoutMs,
+      connectTimeoutMs: timeoutMs,
+      logSink: () => {},
+    });
     try {
       const report = await manager.connectAll({ [name]: cfg });
       const status = manager.status().find((s) => s.server === name);
@@ -301,6 +331,7 @@ export async function runDoctor(opts: DoctorOptions = {}): Promise<DoctorReport>
     checks.push(crashedCheck('config', e));
   }
   run('home', () => checkHomeWritable(opts));
+  run('bash', () => checkBash(config));
   await runAsync('mcp', () => checkMcp(config, configUnavailable, opts));
   run('sessions', () => checkSessions(opts));
   run('skills', () => checkSkills(opts));

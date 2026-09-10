@@ -12,11 +12,11 @@
 
 ## 前置阅读（必须）
 
-| 优先级 | 文件 |
-|--------|------|
-| P0 | 本文件、`packages/core/src/index.ts`（公开导出面现状）、`CHANGELOG.md`（0.1→0.6 变更史——迁移指南素材） |
-| P0 | `README.md`、`architecture.md`（导出/Skills/子会话语义终稿口径）、`docs/issue-log/OPEN.md`（全部手工清单——回归汇总素材） |
-| P1 | `.github/workflows/ci.yml`（Pages job 落点）、`AGENTS.md` |
+| 优先级 | 文件                                                                                                                     |
+| ------ | ------------------------------------------------------------------------------------------------------------------------ |
+| P0     | 本文件、`packages/core/src/index.ts`（公开导出面现状）、`CHANGELOG.md`（0.1→0.6 变更史——迁移指南素材）                   |
+| P0     | `README.md`、`architecture.md`（导出/Skills/子会话语义终稿口径）、`docs/issue-log/OPEN.md`（全部手工清单——回归汇总素材） |
+| P1     | `.github/workflows/ci.yml`（Pages job 落点）、`AGENTS.md`                                                                |
 
 **仓库路径：** `D:\AI_projects\harness2`（默认分支 `master`）
 **基线分支：** 从 master 拉 `feat/phase-12-v1-closeout`
@@ -36,15 +36,15 @@
 
 ## File Structure（预期变更）
 
-| 文件 | 动作 | 职责 |
-|------|------|------|
-| `docs/API-STABILITY.md` | 新建 | semver 政策、公开面范围声明、internal 不承诺声明 |
-| `packages/core/test/api-surface.test.ts` | 新建 | 导出面快照（从 dist/index.d.ts 提取导出清单 vs 基线快照 fixture） |
-| `docs/MIGRATION.md` | 新建 | 0.6→1.0（含 0.1→0.6 历史变更索引） |
-| `docs/site/index.html` + `.github/workflows/ci.yml` | 新建/修改 | docsify 单页 + Pages 部署 job |
-| `docs/RELEASE-CHECKLIST.md` | 新建 | 发布前全面回归汇总（自动化覆盖声明 + OPEN 全部手工清单索引） |
-| `CHANGELOG.md`、四包 `package.json`、`README.md` | 修改 | 1.0.0 物料 |
-| `docs/ROADMAP.md` | 修改 | v1.x 下一周期 backlog 草案（标注未批准） |
+| 文件                                                | 动作      | 职责                                                              |
+| --------------------------------------------------- | --------- | ----------------------------------------------------------------- |
+| `docs/API-STABILITY.md`                             | 新建      | semver 政策、公开面范围声明、internal 不承诺声明                  |
+| `packages/core/test/api-surface.test.ts`            | 新建      | 导出面快照（从 dist/index.d.ts 提取导出清单 vs 基线快照 fixture） |
+| `docs/MIGRATION.md`                                 | 新建      | 0.6→1.0（含 0.1→0.6 历史变更索引）                                |
+| `docs/site/index.html` + `.github/workflows/ci.yml` | 新建/修改 | docsify 单页 + Pages 部署 job                                     |
+| `docs/RELEASE-CHECKLIST.md`                         | 新建      | 发布前全面回归汇总（自动化覆盖声明 + OPEN 全部手工清单索引）      |
+| `CHANGELOG.md`、四包 `package.json`、`README.md`    | 修改      | 1.0.0 物料                                                        |
+| `docs/ROADMAP.md`                                   | 修改      | v1.x 下一周期 backlog 草案（标注未批准）                          |
 
 ---
 
@@ -78,26 +78,26 @@
 
 ## 验收标准总表
 
-| # | 标准 | 通过条件 |
-|---|------|----------|
-| 1 | API 快照 | 快照测试通过；模拟破坏导出可红 |
-| 2 | 迁移指南 | 逐项有据（CHANGELOG/git log 引用），无编造步骤 |
-| 3 | 文档站 | docsify 页本地可开（file:// 或 http-server）；Pages job YAML 校验过 |
-| 4 | 回归汇总 | RELEASE-CHECKLIST 覆盖自动化+手工+发布动作三层；连续 2 次全量全绿 |
-| 5 | 物料 | CHANGELOG 1.0.0 / 四包版本 / README 终稿核对通过 |
-| 6 | 红线 | 零功能新增（types.ts 零 diff）；密钥三不 |
-| 7 | 单测/构建 | `pnpm test && pnpm -r typecheck` exit 0 |
+| #   | 标准      | 通过条件                                                            |
+| --- | --------- | ------------------------------------------------------------------- |
+| 1   | API 快照  | 快照测试通过；模拟破坏导出可红                                      |
+| 2   | 迁移指南  | 逐项有据（CHANGELOG/git log 引用），无编造步骤                      |
+| 3   | 文档站    | docsify 页本地可开（file:// 或 http-server）；Pages job YAML 校验过 |
+| 4   | 回归汇总  | RELEASE-CHECKLIST 覆盖自动化+手工+发布动作三层；连续 2 次全量全绿   |
+| 5   | 物料      | CHANGELOG 1.0.0 / 四包版本 / README 终稿核对通过                    |
+| 6   | 红线      | 零功能新增（types.ts 零 diff）；密钥三不                            |
+| 7   | 单测/构建 | `pnpm test && pnpm -r typecheck` exit 0                             |
 
 ---
 
 ## 风险与降级
 
-| 风险 | 缓解 |
-|------|------|
+| 风险                               | 缓解                                                                  |
+| ---------------------------------- | --------------------------------------------------------------------- |
 | 导出面快照过脆（类型签名摘要抖动） | 只钉导出名 + 存在性，签名摘要宽松匹配；快照更新流程写进 API-STABILITY |
-| Pages 本地不可验证 | YAML 语法校验 + docsify 本地 file:// 冒烟；待远程登记 |
-| 迁移指南变「编造文章」 | 硬约束 4：每节必须引用 CHANGELOG 条目或提交号 |
-| 1.0 前发现真缺陷 | 修复单独提交并在 CHANGELOG 标注；不影响收口结构 |
+| Pages 本地不可验证                 | YAML 语法校验 + docsify 本地 file:// 冒烟；待远程登记                 |
+| 迁移指南变「编造文章」             | 硬约束 4：每节必须引用 CHANGELOG 条目或提交号                         |
+| 1.0 前发现真缺陷                   | 修复单独提交并在 CHANGELOG 标注；不影响收口结构                       |
 
 ---
 
@@ -110,25 +110,30 @@
 你是 **harness2** 阶段 12 的实现代理。请**完整执行本阶段**，不要只写方案。
 
 ### 基线
+
 - 目录：`D:\AI_projects\harness2`（Windows，Git Bash，pnpm monorepo，Node ≥22）；从 master 创建并切换 `feat/phase-12-v1-closeout`
 - 已完成勿重做：阶段 1-11 全部验收闭环（ROADMAP 26/26 ✅ + 稳定化/分发完成）；基线测试以开工日 `pnpm test` 实跑为准（预期 610+ 项，1 skipped 为 H2_GEN_LOOP_DEMO 门控非失败）
 - 唯一实施计划：`docs/ai-framework/plans/2026-09-07-phase-12-v1-closeout.md`
 - 必读：本计划、`packages/core/src/index.ts`、`CHANGELOG.md`（0.1→0.6 全部——迁移指南素材）、`docs/issue-log/OPEN.md`、`README.md`、`architecture.md`、`AGENTS.md`
 
 ### 做
+
 1. 严格按 Task 1→4 顺序执行；每 Task 测试通过后规范 commit（gitmoji 中文，禁止 push）
 2. 遵守 Global Constraints：零功能新增（types.ts 零 diff）；快照只钉导出名级别；迁移指南逐项有据；文档站零构建工具链
 3. Task 4 更新 CHANGELOG/版本/README/ROADMAP 草案/HANDOFF/diary/OPEN
 
 ### 不做
+
 - 任何运行时行为变更（真缺陷除外，单独提交说明）；vitepress/mkdocs 等构建链；发布动作执行；任何 `git push`
 
 ### 工作方式
+
 1. 先跑基线 `pnpm test` 确认全绿再动工
 2. 证据优先：交卷前重跑 `pnpm test && pnpm -r typecheck`，粘贴真实输出
 3. 简体中文回复；代码标识符原样
 
 ### 交卷
+
 分支名、提交列表、验收总表逐项自评（带命令与真实结果）、新增测试数、残留风险与未关闭项。
 
 现在开始：读完本阶段计划，从 Task 1 执行到 Task 4。

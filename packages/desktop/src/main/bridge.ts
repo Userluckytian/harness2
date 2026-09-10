@@ -3,13 +3,7 @@
 // 这里只与 127.0.0.1 的本地 serve 通信；WS 帧（含密钥三不约束的脱敏事件）原样转发。
 import { BrowserWindow, Notification, dialog, ipcMain, type IpcMainInvokeEvent } from 'electron';
 import { composeNotifyContent } from '../shared/notify.js';
-import type {
-  ConnectionStatus,
-  InvokeCommand,
-  SessionSummaryShape,
-  StatusDetail,
-  WsFrame,
-} from '../shared/protocol.js';
+import type { ConnectionStatus, SessionSummaryShape, StatusDetail, WsFrame } from '../shared/protocol.js';
 import { readLayout, writeLayout } from './layout-file.js';
 import type { ServeManager } from './serve-manager.js';
 import { readPreferences, writePreferences } from './preferences-file.js';
@@ -51,7 +45,11 @@ function sessionDirFor(sessionId: string, home?: string): string | null {
 }
 
 /** 读 rewind_points.jsonl，返回 seq 匹配的条目（解析失败/撕裂行跳过，与 core SnapshotStore 同策略） */
-function readSnapshotEntry(sessionId: string, seq: number, home?: string): { file: string; before: string | null; after: string | null } | null {
+function readSnapshotEntry(
+  sessionId: string,
+  seq: number,
+  home?: string,
+): { file: string; before: string | null; after: string | null } | null {
   const dir = sessionDirFor(sessionId, home);
   if (dir === null) return null;
   const filePath = join(dir, 'rewind_points.jsonl');
@@ -83,7 +81,11 @@ function readSnapshotEntry(sessionId: string, seq: number, home?: string): { fil
 /** 读 git 分支（主进程执行；非 git 目录/无 .git → null） */
 async function gitBranchForDir(dir: string): Promise<string | null> {
   try {
-    const { stdout } = await execFile('git', ['rev-parse', '--abbrev-ref', 'HEAD'], { cwd: dir, timeout: 5000, windowsHide: true });
+    const { stdout } = await execFile('git', ['rev-parse', '--abbrev-ref', 'HEAD'], {
+      cwd: dir,
+      timeout: 5000,
+      windowsHide: true,
+    });
     const branch = stdout.trim();
     return branch.length > 0 ? branch : null;
   } catch {
@@ -92,7 +94,10 @@ async function gitBranchForDir(dir: string): Promise<string | null> {
 }
 
 /** @file 引用读取（B8；主进程 fs，64KB 截断；不存在/读失败 → error，不抛给渲染层） */
-function readFileForRefMain(path: string, cwd: string): { ok: boolean; content?: string; truncated?: boolean; error?: string } {
+function readFileForRefMain(
+  path: string,
+  cwd: string,
+): { ok: boolean; content?: string; truncated?: boolean; error?: string } {
   const CRASH_CAP = 64 * 1024;
   if (path.length === 0) return { ok: false, error: '路径为空' };
   try {
@@ -184,7 +189,15 @@ export function createBridge(deps: BridgeDeps): Bridge {
    * - 不支持的原生平台（部分 Linux/打包环境）回退 Electron 对话框（同为"待点击"交互，仍能聚焦跳转）
    * 渲染端不等待结果（fire-and-forget）；本函数永不抛错。
    */
-  const triggerNotification = ({ title, body, sessionId }: { title: string; body: string; sessionId?: string }): void => {
+  const triggerNotification = ({
+    title,
+    body,
+    sessionId,
+  }: {
+    title: string;
+    body: string;
+    sessionId?: string;
+  }): void => {
     const n = new Notification({ title, body, silent: false });
     n.on('click', () => {
       const win = BrowserWindow.getAllWindows()[0];
@@ -200,7 +213,7 @@ export function createBridge(deps: BridgeDeps): Bridge {
     try {
       if (Notification.isSupported()) n.show();
       else {
-        dialog.showMessageBox({
+        void dialog.showMessageBox({
           type: 'info',
           title,
           message: title,
@@ -298,7 +311,9 @@ export function createBridge(deps: BridgeDeps): Bridge {
         return httpJson(`${base}/api/sessions`, {
           method: 'POST',
           headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({ cwd: typeof args['cwd'] === 'string' && args['cwd'].length > 0 ? args['cwd'] : deps.root }),
+          body: JSON.stringify({
+            cwd: typeof args['cwd'] === 'string' && args['cwd'].length > 0 ? args['cwd'] : deps.root,
+          }),
         });
       case 'events':
         return httpJson(`${base}/api/sessions/${encodeURIComponent(String(args['sessionId']))}/events`);
@@ -408,7 +423,8 @@ export function createBridge(deps: BridgeDeps): Bridge {
           firstUserText: null,
           replyText: typeof args['body'] === 'string' ? args['body'] : '',
         });
-        const sessionId = typeof args['sessionId'] === 'string' && args['sessionId'].length > 0 ? args['sessionId'] : undefined;
+        const sessionId =
+          typeof args['sessionId'] === 'string' && args['sessionId'].length > 0 ? args['sessionId'] : undefined;
         triggerNotification({ title: composed.title, body: composed.body, sessionId });
         return null;
       }

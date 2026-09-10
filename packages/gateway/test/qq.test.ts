@@ -17,7 +17,10 @@ async function listen(server: Server): Promise<number> {
 }
 
 /** QQ 平台 stub：/token 鉴权 + /gateway 返回本地 ws 地址 + /v2/* 出站捕获 */
-async function startQqStub(opts: { wsPort: number; tokenDelayMs?: number }): Promise<{ port: number; sent: Array<{ path: string; body: Record<string, unknown> }> }> {
+async function startQqStub(opts: {
+  wsPort: number;
+  tokenDelayMs?: number;
+}): Promise<{ port: number; sent: Array<{ path: string; body: Record<string, unknown> }> }> {
   const sent: Array<{ path: string; body: Record<string, unknown> }> = [];
   const server = createServer((req, res) => {
     if (req.url === '/token') {
@@ -51,10 +54,14 @@ async function startQqStub(opts: { wsPort: number; tokenDelayMs?: number }): Pro
 }
 
 /** QQ WS 网关模拟：hello → 收 identify → READY → 收心跳；可推 dispatch */
-async function startQqWsGateway(dispatches: Array<{ t: string; d: Record<string, unknown> }>): Promise<{ received: unknown[]; port: number }> {
+async function startQqWsGateway(
+  dispatches: Array<{ t: string; d: Record<string, unknown> }>,
+): Promise<{ received: unknown[]; port: number }> {
   const received: unknown[] = [];
   const wss = new WebSocketServer({ port: 0 });
-  const port = await new Promise<number>((resolve) => wss.once('listening', () => resolve((wss.address() as { port: number }).port)));
+  const port = await new Promise<number>((resolve) =>
+    wss.once('listening', () => resolve((wss.address() as { port: number }).port)),
+  );
   let identified = false;
   wss.on('connection', (socket: WebSocket) => {
     socket.send(JSON.stringify({ op: 10, d: { heartbeat_interval: 120 } }));
@@ -76,7 +83,11 @@ async function startQqWsGateway(dispatches: Array<{ t: string; d: Record<string,
   return { received, port };
 }
 
-function makeAdapter(wsPort: number, httpPort: number, config: { groupPolicy?: 'open' | 'allowlist' | 'disabled'; allow?: string[] }): {
+function makeAdapter(
+  wsPort: number,
+  httpPort: number,
+  config: { groupPolicy?: 'open' | 'allowlist' | 'disabled'; allow?: string[] },
+): {
   adapter: QqAdapter;
   handlerQueue: InboundMessage[];
 } {
@@ -100,7 +111,12 @@ function makeAdapter(wsPort: number, httpPort: number, config: { groupPolicy?: '
 describe('QqApi', () => {
   it('token 单飞：并发 getToken 共享一次刷新', async () => {
     const { port } = await startQqStub({ wsPort: 1, tokenDelayMs: 80 });
-    const api = new QqApi({ appId: 'a', appSecret: 's', tokenUrl: `http://127.0.0.1:${port}/token`, apiBase: `http://127.0.0.1:${port}` });
+    const api = new QqApi({
+      appId: 'a',
+      appSecret: 's',
+      tokenUrl: `http://127.0.0.1:${port}/token`,
+      apiBase: `http://127.0.0.1:${port}`,
+    });
     const [t1, t2] = await Promise.all([api.getToken(), api.getToken()]);
     expect(t1).toBe('stub-token');
     expect(t2).toBe('stub-token');
@@ -108,7 +124,13 @@ describe('QqApi', () => {
 
   it('出站队列串行 + 携带 QQBot token', async () => {
     const { port, sent } = await startQqStub({ wsPort: 1 });
-    const api = new QqApi({ appId: 'a', appSecret: 's', tokenUrl: `http://127.0.0.1:${port}/token`, apiBase: `http://127.0.0.1:${port}`, minIntervalMs: 10 });
+    const api = new QqApi({
+      appId: 'a',
+      appSecret: 's',
+      tokenUrl: `http://127.0.0.1:${port}/token`,
+      apiBase: `http://127.0.0.1:${port}`,
+      minIntervalMs: 10,
+    });
     await api.enqueue(() => api.request('/v2/groups/g1/messages', { content: 'a', msg_type: 0 }));
     await api.enqueue(() => api.request('/v2/groups/g1/messages', { content: 'b', msg_type: 0 }));
     expect(sent).toHaveLength(2);

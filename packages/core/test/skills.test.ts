@@ -31,11 +31,7 @@ afterEach(() => {
 
 function writeSkill(dir: string, fileName: string, name: string, description: string, body = '步骤：照做。'): void {
   mkdirSync(dir, { recursive: true });
-  writeFileSync(
-    join(dir, fileName),
-    `---\nname: ${name}\ndescription: ${description}\n---\n\n${body}\n`,
-    'utf8',
-  );
+  writeFileSync(join(dir, fileName), `---\nname: ${name}\ndescription: ${description}\n---\n\n${body}\n`, 'utf8');
 }
 
 describe('parseSkillFrontmatter', () => {
@@ -104,7 +100,9 @@ describe('SkillStore.scan', () => {
     const scan = new SkillStore(project, undefined).scan();
     expect(scan.skills).toHaveLength(1);
     expect(scan.skills[0]!.description).toBe('先文件'); // 文件名排序在前者保留
-    expect(scan.warnings.some((w) => w.includes('层内重名 "dup"') && w.includes('b-dup.md') && w.includes('a-dup.md'))).toBe(true);
+    expect(
+      scan.warnings.some((w) => w.includes('层内重名 "dup"') && w.includes('b-dup.md') && w.includes('a-dup.md')),
+    ).toBe(true);
     expect(scan.warnings.some((w) => w.includes('覆盖全局同名'))).toBe(false); // 不再误用跨级文案
   });
 

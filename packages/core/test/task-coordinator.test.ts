@@ -6,7 +6,6 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { randomUUID } from 'node:crypto';
 import { RuntimeJournal } from '../src/interaction/runtime-journal.js';
 import { TASK_STATES, TASK_TERMINAL_STATES } from '../src/interaction/types.js';
 import type { TaskState } from '../src/interaction/types.js';
@@ -27,7 +26,14 @@ const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 
 /** 内存账本记录器：断言任务迁移序列 + clientMessageId 溯源 */
 class MemRecorder implements TaskTransitionRecorder {
-  readonly log: Array<{ taskId: string; parentTaskId?: string; clientMessageId?: string; background?: boolean; from: TaskState; to: TaskState }> = [];
+  readonly log: Array<{
+    taskId: string;
+    parentTaskId?: string;
+    clientMessageId?: string;
+    background?: boolean;
+    from: TaskState;
+    to: TaskState;
+  }> = [];
   appendTaskTransition(i: Parameters<TaskTransitionRecorder['appendTaskTransition']>[0]): void {
     this.log.push(i);
   }
@@ -57,7 +63,9 @@ describe('注册 ack 后立即 handle（background 立返）', () => {
     expect(handle.background).toBe(true);
     expect(TASK_STATES).toContain(handle.state);
     // 已落账 registered→queued（ack 后立即入队 handle）
-    expect(rec.log.filter((l) => l.taskId === 'task-1' && l.from === 'registered' && l.to === 'queued')).toHaveLength(1);
+    expect(rec.log.filter((l) => l.taskId === 'task-1' && l.from === 'registered' && l.to === 'queued')).toHaveLength(
+      1,
+    );
     // clientMessageId 溯源落账
     expect(rec.log.some((l) => l.taskId === 'task-1' && l.clientMessageId === 'cm-1')).toBe(true);
     // run 由调度异步触发（本同步帧内尚未执行）
@@ -186,7 +194,16 @@ describe('终态单调（状态不倒退）', () => {
 describe('status / wait / cancel', () => {
   it('status 不存在 → undefined；wait 阻塞至终态返回终态契约', async () => {
     const c = new TaskCoordinator({ recorder: new MemRecorder() });
-    c.register(spec({ taskId: 't1', writeMode: 'readonly', run: async () => { await sleep(40); return { ok: true }; } }));
+    c.register(
+      spec({
+        taskId: 't1',
+        writeMode: 'readonly',
+        run: async () => {
+          await sleep(40);
+          return { ok: true };
+        },
+      }),
+    );
     expect(c.status('ghost')).toBeUndefined();
     const terminal = await c.wait('t1');
     expect(TASK_TERMINAL_STATES.has(terminal.state)).toBe(true);
@@ -212,7 +229,16 @@ describe('status / wait / cancel', () => {
   it('cancel 排队未启动任务 → 直接 cancelled；cancel 已终态任务 → cancelled 确认', async () => {
     const c = new TaskCoordinator({ recorder: new MemRecorder(), maxReadonlyConcurrency: 1 });
     const gates: Array<() => void> = [];
-    c.register(spec({ taskId: 'big', writeMode: 'readonly', run: async () => { await new Promise<void>((r) => gates.push(r)); return { ok: true }; } }));
+    c.register(
+      spec({
+        taskId: 'big',
+        writeMode: 'readonly',
+        run: async () => {
+          await new Promise<void>((r) => gates.push(r));
+          return { ok: true };
+        },
+      }),
+    );
     // 第二个 readonly 排队（槽位被 big 占满）
     c.register(spec({ taskId: 'queued', writeMode: 'readonly', run: async () => ({ ok: true }) }));
     await sleep(30);
@@ -232,7 +258,16 @@ describe('expectedId 陈旧目标校验（S3c2 carry-over）', () => {
   it('cancel 带错误 expectedId（≠ 当前状态）→ unknown 被拒，不误伤', async () => {
     const c = new TaskCoordinator({ recorder: new MemRecorder() });
     const gates: Array<() => void> = [];
-    c.register(spec({ taskId: 't', writeMode: 'readonly', run: async () => { await new Promise<void>((r) => gates.push(r)); return { ok: true }; } }));
+    c.register(
+      spec({
+        taskId: 't',
+        writeMode: 'readonly',
+        run: async () => {
+          await new Promise<void>((r) => gates.push(r));
+          return { ok: true };
+        },
+      }),
+    );
     await sleep(30);
     expect(c.status('t')?.state).toBe('running');
     // 陈旧期望：期望 starting，但实际 running → 拒绝
@@ -271,7 +306,15 @@ describe('runtime journal 落账（S3a 账本 + clientMessageId 溯源）', () =
         }),
     };
     const c = new TaskCoordinator({ recorder });
-    c.register(spec({ taskId: 'task-j', background: true, clientMessageId: 'cm-j', writeMode: 'readonly', run: async () => ({ ok: true }) }));
+    c.register(
+      spec({
+        taskId: 'task-j',
+        background: true,
+        clientMessageId: 'cm-j',
+        writeMode: 'readonly',
+        run: async () => ({ ok: true }),
+      }),
+    );
     await sleep(50);
     // 从 journal 重建：registered→queued→starting→running→completed 单调，含 clientMessageId
     const transitions = journal

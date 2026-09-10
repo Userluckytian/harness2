@@ -43,7 +43,11 @@ const APPROVAL_MODES = [
   { value: 'default', label: '每次执行前询问', desc: 'default：安全工具自动执行，有副作用工具先询问' },
   { value: 'acceptEdits', label: '自动接受编辑', desc: 'acceptEdits：write/edit 直接执行，其余有副作用工具仍询问' },
   { value: 'bypass', label: '完全控制', desc: 'bypass：全部工具自动执行，不作询问' },
-  { value: 'plan', label: '先计划再执行', desc: 'plan：agent 先给计划等你确认，write/edit/bash 等被拒执行（内核支持随终端轨道 T1 提供）' },
+  {
+    value: 'plan',
+    label: '先计划再执行',
+    desc: 'plan：agent 先给计划等你确认，write/edit/bash 等被拒执行（内核支持随终端轨道 T1 提供）',
+  },
 ];
 
 const MEMORY_MODES = [
@@ -70,7 +74,13 @@ function Section({ title, desc, children }: { title: string; desc?: string; chil
   );
 }
 
-function GeneralSection({ prefs, onSave }: { prefs: SettingsPreferencesShape; onSave: (p: SettingsPreferencesShape) => Promise<void> }) {
+function GeneralSection({
+  prefs,
+  onSave,
+}: {
+  prefs: SettingsPreferencesShape;
+  onSave: (p: SettingsPreferencesShape) => Promise<void>;
+}) {
   const [count, setCount] = useState(prefs.defaultPaneCount);
   const [notify, setNotify] = useState<NotifyDetails>(prefs.notifyDetails);
   const save = (): Promise<void> => onSave({ ...prefs, defaultPaneCount: count, notifyDetails: notify });
@@ -87,10 +97,18 @@ function GeneralSection({ prefs, onSave }: { prefs: SettingsPreferencesShape; on
       </Section>
       <Section title="通知详情级别" desc="任务完成系统通知里附带的内容粒度（仅影响桌面通知文案）">
         <div className="settings-row">
-          <button type="button" className={`seg${notify === 'minimal' ? ' seg-on' : ''}`} onClick={() => setNotify('minimal')}>
+          <button
+            type="button"
+            className={`seg${notify === 'minimal' ? ' seg-on' : ''}`}
+            onClick={() => setNotify('minimal')}
+          >
             精简（仅标题）
           </button>
-          <button type="button" className={`seg${notify === 'full' ? ' seg-on' : ''}`} onClick={() => setNotify('full')}>
+          <button
+            type="button"
+            className={`seg${notify === 'full' ? ' seg-on' : ''}`}
+            onClick={() => setNotify('full')}
+          >
             完整（含回复摘要）
           </button>
         </div>
@@ -105,7 +123,13 @@ function GeneralSection({ prefs, onSave }: { prefs: SettingsPreferencesShape; on
   );
 }
 
-function AppearanceSection({ prefs, onSave }: { prefs: SettingsPreferencesShape; onSave: (p: SettingsPreferencesShape) => Promise<void> }) {
+function AppearanceSection({
+  prefs,
+  onSave,
+}: {
+  prefs: SettingsPreferencesShape;
+  onSave: (p: SettingsPreferencesShape) => Promise<void>;
+}) {
   const themes: Array<{ value: SettingsTheme; label: string }> = [
     { value: 'warmPaper', label: '暖纸浅色' },
     { value: 'dark', label: '深色' },
@@ -129,7 +153,7 @@ function AppearanceSection({ prefs, onSave }: { prefs: SettingsPreferencesShape;
   );
 }
 
-function ProvidersSection({ cfg, onSave }: { cfg: SettingsConfigShape; onSave: () => Promise<void> }) {
+function ProvidersSection({ cfg }: { cfg: SettingsConfigShape; onSave: () => Promise<void> }) {
   return (
     <Section title="模型与角色" desc="channel 列表与 roles 映射（config.json 同一份，与 CLI 共用）">
       <div className="settings-table">
@@ -141,7 +165,9 @@ function ProvidersSection({ cfg, onSave }: { cfg: SettingsConfigShape; onSave: (
             {p.envKey !== undefined && <span className="row-val mono">env:{p.envKey}</span>}
           </div>
         ))}
-        {Object.keys(cfg.providers).length === 0 && <div className="settings-desc">未配置 provider（可在 CLI 的 ~/.harness2/config.json 配置）</div>}
+        {Object.keys(cfg.providers).length === 0 && (
+          <div className="settings-desc">未配置 provider（可在 CLI 的 ~/.harness2/config.json 配置）</div>
+        )}
       </div>
       <div className="settings-table">
         {Object.entries(cfg.roles).map(([role, r]) => (
@@ -152,7 +178,9 @@ function ProvidersSection({ cfg, onSave }: { cfg: SettingsConfigShape; onSave: (
           </div>
         ))}
       </div>
-      <p className="settings-note">增删 provider / 调整 roles 当前请在 CLI 配置文件中进行（reasoning effort 由模型侧控制）。</p>
+      <p className="settings-note">
+        增删 provider / 调整 roles 当前请在 CLI 配置文件中进行（reasoning effort 由模型侧控制）。
+      </p>
       {cfg.sources.global === false && cfg.sources.project === false && (
         <p className="settings-warn">尚未找到任何配置文件（~/.harness2/config.json）</p>
       )}
@@ -160,7 +188,13 @@ function ProvidersSection({ cfg, onSave }: { cfg: SettingsConfigShape; onSave: (
   );
 }
 
-function ApprovalSection({ cfg, onSave }: { cfg: SettingsConfigShape; onSave: (patch: Record<string, unknown>) => Promise<void> }) {
+function ApprovalSection({
+  cfg,
+  onSave,
+}: {
+  cfg: SettingsConfigShape;
+  onSave: (patch: Record<string, unknown>) => Promise<void>;
+}) {
   const [mode, setMode] = useState(cfg.approval.mode);
   const [feedback, setFeedback] = useState<string | null>(null);
   const apply = (): void => {
@@ -205,7 +239,13 @@ function ApprovalSection({ cfg, onSave }: { cfg: SettingsConfigShape; onSave: (p
   );
 }
 
-function MemorySection({ cfg, onSave }: { cfg: SettingsConfigShape; onSave: (patch: Record<string, unknown>) => Promise<void> }) {
+function MemorySection({
+  cfg,
+  onSave,
+}: {
+  cfg: SettingsConfigShape;
+  onSave: (patch: Record<string, unknown>) => Promise<void>;
+}) {
   const [mode, setMode] = useState(cfg.memory.mode);
   const [interval, setInterval] = useState(String(cfg.memory.nudgeInterval));
   const apply = (): void => {
@@ -218,17 +258,31 @@ function MemorySection({ cfg, onSave }: { cfg: SettingsConfigShape; onSave: (pat
       <Section title="记忆模式" desc="off/ask/auto 三态（memory.mode）">
         <div className="settings-row">
           {MEMORY_MODES.map((m) => (
-            <button key={m.value} type="button" className={`seg${mode === m.value ? ' seg-on' : ''}`} onClick={() => setMode(m.value)}>
+            <button
+              key={m.value}
+              type="button"
+              className={`seg${mode === m.value ? ' seg-on' : ''}`}
+              onClick={() => setMode(m.value)}
+            >
               {m.label}
             </button>
           ))}
         </div>
       </Section>
       <Section title="复盘提醒间隔" desc="nudgeInterval（分钟，1..1000）">
-        <input className="settings-input" type="number" min={1} max={1000} value={interval} onChange={(e) => setInterval(e.target.value)} />
+        <input
+          className="settings-input"
+          type="number"
+          min={1}
+          max={1000}
+          value={interval}
+          onChange={(e) => setInterval(e.target.value)}
+        />
       </Section>
       <Section title="待审批记忆" desc="ask 模式下的暂存条目可在 CLI 中用 harness2 memory pending 查看与审批">
-        <p className="settings-note">完整管理功能见后续版本（当前经 CLI：harness2 memory pending / approve / reject）</p>
+        <p className="settings-note">
+          完整管理功能见后续版本（当前经 CLI：harness2 memory pending / approve / reject）
+        </p>
       </Section>
       <button type="button" className="btn-primary" onClick={apply}>
         保存
@@ -237,7 +291,13 @@ function MemorySection({ cfg, onSave }: { cfg: SettingsConfigShape; onSave: (pat
   );
 }
 
-function BrowserSection({ cfg, onSave }: { cfg: SettingsConfigShape; onSave: (patch: Record<string, unknown>) => Promise<void> }) {
+function BrowserSection({
+  cfg,
+  onSave,
+}: {
+  cfg: SettingsConfigShape;
+  onSave: (patch: Record<string, unknown>) => Promise<void>;
+}) {
   const [enabled, setEnabled] = useState(cfg.browser.enabled);
   const [max, setMax] = useState(String(cfg.browser.maxConcurrent));
   const [idle, setIdle] = useState(String(cfg.browser.idleDestroyMs));
@@ -257,10 +317,23 @@ function BrowserSection({ cfg, onSave }: { cfg: SettingsConfigShape; onSave: (pa
         </label>
       </Section>
       <Section title="最大并发数" desc="maxConcurrent（1..8）">
-        <input className="settings-input" type="number" min={1} max={8} value={max} onChange={(e) => setMax(e.target.value)} />
+        <input
+          className="settings-input"
+          type="number"
+          min={1}
+          max={8}
+          value={max}
+          onChange={(e) => setMax(e.target.value)}
+        />
       </Section>
       <Section title="空闲销毁时长" desc="idleDestroyMs（毫秒，≥1000）">
-        <input className="settings-input" type="number" min={1000} value={idle} onChange={(e) => setIdle(e.target.value)} />
+        <input
+          className="settings-input"
+          type="number"
+          min={1000}
+          value={idle}
+          onChange={(e) => setIdle(e.target.value)}
+        />
       </Section>
       <button type="button" className="btn-primary" onClick={apply}>
         保存
@@ -298,7 +371,10 @@ function PluginsSection({ cfg }: { cfg: SettingsConfigShape }) {
           {mcpNames.length === 0 && <div className="settings-desc">未配置 MCP 服务器</div>}
           {mcpNames.map((name) => {
             const m = cfg.mcpServers[name] as Record<string, unknown> | undefined;
-            const kind = m !== undefined && 'command' in m ? `${String(m['command'])} ${Array.isArray(m['args']) ? (m['args'] as string[]).join(' ') : ''}` : String(m?.['url']);
+            const kind =
+              m !== undefined && 'command' in m
+                ? `${String(m['command'])} ${Array.isArray(m['args']) ? (m['args'] as string[]).join(' ') : ''}`
+                : String(m?.['url']);
             return (
               <div key={name} className="settings-table-row">
                 <span className="row-key">{name}</span>
@@ -318,7 +394,13 @@ function PluginsSection({ cfg }: { cfg: SettingsConfigShape }) {
   );
 }
 
-function SubagentSection({ cfg, onSave }: { cfg: SettingsConfigShape; onSave: (patch: Record<string, unknown>) => Promise<void> }) {
+function SubagentSection({
+  cfg,
+  onSave,
+}: {
+  cfg: SettingsConfigShape;
+  onSave: (patch: Record<string, unknown>) => Promise<void>;
+}) {
   const [maxDepth, setMaxDepth] = useState(String(cfg.subagent.maxDepth));
   const [maxTurns, setMaxTurns] = useState(String(cfg.subagent.maxTurns));
   const apply = (): void => {
@@ -331,10 +413,24 @@ function SubagentSection({ cfg, onSave }: { cfg: SettingsConfigShape; onSave: (p
   return (
     <>
       <Section title="子代理深度" desc="maxDepth（1..10）">
-        <input className="settings-input" type="number" min={1} max={10} value={maxDepth} onChange={(e) => setMaxDepth(e.target.value)} />
+        <input
+          className="settings-input"
+          type="number"
+          min={1}
+          max={10}
+          value={maxDepth}
+          onChange={(e) => setMaxDepth(e.target.value)}
+        />
       </Section>
       <Section title="子代理最大步数" desc="maxTurns（1..200）">
-        <input className="settings-input" type="number" min={1} max={200} value={maxTurns} onChange={(e) => setMaxTurns(e.target.value)} />
+        <input
+          className="settings-input"
+          type="number"
+          min={1}
+          max={200}
+          value={maxTurns}
+          onChange={(e) => setMaxTurns(e.target.value)}
+        />
       </Section>
       <Section title="子代理模型" desc="roles.subagent 的 channel / model（可在 CLI 配置文件调整）">
         <p className="settings-desc">
@@ -348,7 +444,12 @@ function SubagentSection({ cfg, onSave }: { cfg: SettingsConfigShape; onSave: (p
   );
 }
 
-function GatewaySection({ cfg, auth, onSaveCfg, onSaveAuth }: {
+function GatewaySection({
+  cfg,
+  auth,
+  onSaveCfg,
+  onSaveAuth,
+}: {
   cfg: SettingsConfigShape;
   auth: SettingsAuthMaskedShape;
   onSaveCfg: (patch: Record<string, unknown>) => Promise<void>;
@@ -378,7 +479,7 @@ function GatewaySection({ cfg, auth, onSaveCfg, onSaveAuth }: {
     void onSaveAuth({ gateways: gatewayPatch });
   };
   const savePolicy = (c: (typeof channels)[number]): void => {
-    const current = ((cfg.gateways?.[c] ?? {}) as Record<string, unknown>);
+    const current = (cfg.gateways?.[c] ?? {}) as Record<string, unknown>;
     void onSaveCfg({
       gateways: {
         [c]: {
@@ -394,7 +495,7 @@ function GatewaySection({ cfg, auth, onSaveCfg, onSaveAuth }: {
   return (
     <Section title="IM 网关" desc="QQ / 飞书凭据写 auth.json（只显示掩码），私聊/群策略写 config.json">
       {channels.map((c) => {
-        const gw = ((cfg.gateways?.[c] ?? {}) as Record<string, unknown>);
+        const gw = (cfg.gateways?.[c] ?? {}) as Record<string, unknown>;
         const enabled = gw['enabled'] !== false;
         const masked = auth.gateways.find((g) => g.channel === c);
         const appIdMasked = masked?.maskedAppId ?? false;
@@ -412,19 +513,35 @@ function GatewaySection({ cfg, auth, onSaveCfg, onSaveAuth }: {
             </label>
             <div className="settings-row">
               <span className="row-key">AppID</span>
-              <input className="settings-input" placeholder={appIdMasked ? '已配置（掩码）' : ''} value={appId[c] ?? ''} onChange={(e) => setAppId((p) => ({ ...p, [c]: e.target.value }))} />
+              <input
+                className="settings-input"
+                placeholder={appIdMasked ? '已配置（掩码）' : ''}
+                value={appId[c] ?? ''}
+                onChange={(e) => setAppId((p) => ({ ...p, [c]: e.target.value }))}
+              />
               <button type="button" className="btn-primary" onClick={() => saveGateway(c)}>
                 保存凭据
               </button>
             </div>
             <div className="settings-row">
               <span className="row-key">AppSecret</span>
-              <input className="settings-input" type="password" placeholder={secretMasked ? '已配置（掩码）' : ''} value={secret[c] ?? ''} onChange={(e) => setSecret((p) => ({ ...p, [c]: e.target.value }))} />
+              <input
+                className="settings-input"
+                type="password"
+                placeholder={secretMasked ? '已配置（掩码）' : ''}
+                value={secret[c] ?? ''}
+                onChange={(e) => setSecret((p) => ({ ...p, [c]: e.target.value }))}
+              />
             </div>
             <div className="settings-row">
               <span className="row-key">私聊/群策略</span>
               {GATEWAY_POLICIES.map((p) => (
-                <button key={p.value} type="button" className={`seg${(policy[c] ?? 'allowlist') === p.value ? ' seg-on' : ''}`} onClick={() => setPolicy((prev) => ({ ...prev, [c]: p.value }))}>
+                <button
+                  key={p.value}
+                  type="button"
+                  className={`seg${(policy[c] ?? 'allowlist') === p.value ? ' seg-on' : ''}`}
+                  onClick={() => setPolicy((prev) => ({ ...prev, [c]: p.value }))}
+                >
                   {p.label}
                 </button>
               ))}
@@ -468,8 +585,15 @@ function DiagnosticsSection() {
   const run = (): void => {
     setLoading(true);
     setError(null);
-    void window.harness2.settingsGetDoctorReport().then((r) => setReport(r)).catch((e: Error) => setError(e.message)).finally(() => setLoading(false));
-    void window.harness2.settingsGetCrashReports().then(setCrashes).catch(() => {});
+    void window.harness2
+      .settingsGetDoctorReport()
+      .then((r) => setReport(r))
+      .catch((e: Error) => setError(e.message))
+      .finally(() => setLoading(false));
+    void window.harness2
+      .settingsGetCrashReports()
+      .then(setCrashes)
+      .catch(() => {});
   };
   useEffect(run, []); // eslint-disable-line react-hooks/exhaustive-deps
   const statusLabel: Record<SettingsDoctorCheck['status'], string> = { ok: 'OK', warn: 'WARN', fail: 'FAIL' };
@@ -624,7 +748,12 @@ export function SettingsDialog({
       cron: <CronSection key="c" />,
       plugins: cfg !== null ? <PluginsSection key="pl" cfg={cfg} /> : <LoadingPane />,
       subagent: cfg !== null ? <SubagentSection key="s" cfg={cfg} onSave={saveCfg} /> : <LoadingPane />,
-      gateway: cfg !== null && auth !== null ? <GatewaySection key="g2" cfg={cfg} auth={auth} onSaveCfg={saveCfg} onSaveAuth={saveAuth} /> : <LoadingPane />,
+      gateway:
+        cfg !== null && auth !== null ? (
+          <GatewaySection key="g2" cfg={cfg} auth={auth} onSaveCfg={saveCfg} onSaveAuth={saveAuth} />
+        ) : (
+          <LoadingPane />
+        ),
       sessions: <SessionsSection key="se" />,
       diagnostics: <DiagnosticsSection key="d" />,
       shortcuts: <ShortcutsSection key="k" />,
@@ -655,9 +784,7 @@ export function SettingsDialog({
         </div>
         <div className="settings-content">
           <div className="settings-content-head">
-            <span className="settings-head-title">
-              {CATEGORIES.find((c) => c.id === active)?.label}
-            </span>
+            <span className="settings-head-title">{CATEGORIES.find((c) => c.id === active)?.label}</span>
             <button type="button" className="btn-close" onClick={onClose} aria-label="关闭">
               ✕
             </button>

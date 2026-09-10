@@ -13,13 +13,13 @@
 
 ## 前置阅读（必须）
 
-| 优先级 | 文件 |
-|--------|------|
-| P0 | `docs/ai-framework/phased-plan-driven.md` |
-| P0 | 本文件 |
-| P0 | `docs/ROADMAP.md`（决策 D1–D6） |
-| P0 | `docs/research/2026-09-06-reference-analysis.md` §2.4 |
-| P1 | `AGENTS.md`、`CODE_REVIEW.md` |
+| 优先级 | 文件                                                  |
+| ------ | ----------------------------------------------------- |
+| P0     | `docs/ai-framework/phased-plan-driven.md`             |
+| P0     | 本文件                                                |
+| P0     | `docs/ROADMAP.md`（决策 D1–D6）                       |
+| P0     | `docs/research/2026-09-06-reference-analysis.md` §2.4 |
+| P1     | `AGENTS.md`、`CODE_REVIEW.md`                         |
 
 **仓库路径：** `D:\AI_projects\harness2`
 **基线分支：** 从 `main` 拉 `feat/phase-1-session-core`
@@ -42,25 +42,25 @@
 
 ## 与前后阶段
 
-| 阶段 | 状态 | 交付 |
-|------|------|------|
-| 上阶段（Phase 0 调研） | ✅ | `docs/research/2026-09-06-reference-analysis.md`、`docs/ROADMAP.md` |
-| **本阶段** | ⬜ | 可复用的 core 包 + `harness2 traj` CLI + 快照回放测试 |
-| 下阶段 | | P0-4/5：Agent loop + 工具系统（勿塞进本阶段） |
+| 阶段                   | 状态 | 交付                                                                |
+| ---------------------- | ---- | ------------------------------------------------------------------- |
+| 上阶段（Phase 0 调研） | ✅   | `docs/research/2026-09-06-reference-analysis.md`、`docs/ROADMAP.md` |
+| **本阶段**             | ⬜   | 可复用的 core 包 + `harness2 traj` CLI + 快照回放测试               |
+| 下阶段                 |      | P0-4/5：Agent loop + 工具系统（勿塞进本阶段）                       |
 
 ---
 
 ## File Structure（预期变更）
 
-| 文件 | 动作 | 职责 |
-|------|------|------|
-| `package.json` / `pnpm-workspace.yaml` | 新建 | monorepo 根 |
-| `packages/core/src/session/types.ts` | 新建 | 事件类型 v1（session/header、user/message、assistant/message、step/*、tool/call、tool/result、rewind/marker） |
-| `packages/core/src/session/writer.ts` | 新建 | 单写者 JSONL 追加器（fsync + 原子 rename + 跨进程文件锁） |
-| `packages/core/src/session/reader.ts` | 新建 | 代际文件读取 + 内存投影（重建会话） |
-| `packages/core/src/trajectory/view.ts` | 新建 | 事件 → 时间线渲染（turn/step/tool 树） |
-| `packages/cli/src/index.ts` | 新建 | `harness2 traj <session-dir>` 命令 |
-| `packages/core/test/replay.test.ts` | 新建 | 快照回放测试：录制事件序列 → 重建 → 断言一致 |
+| 文件                                   | 动作 | 职责                                                                                                          |
+| -------------------------------------- | ---- | ------------------------------------------------------------------------------------------------------------- |
+| `package.json` / `pnpm-workspace.yaml` | 新建 | monorepo 根                                                                                                   |
+| `packages/core/src/session/types.ts`   | 新建 | 事件类型 v1（session/header、user/message、assistant/message、step/*、tool/call、tool/result、rewind/marker） |
+| `packages/core/src/session/writer.ts`  | 新建 | 单写者 JSONL 追加器（fsync + 原子 rename + 跨进程文件锁）                                                     |
+| `packages/core/src/session/reader.ts`  | 新建 | 代际文件读取 + 内存投影（重建会话）                                                                           |
+| `packages/core/src/trajectory/view.ts` | 新建 | 事件 → 时间线渲染（turn/step/tool 树）                                                                        |
+| `packages/cli/src/index.ts`            | 新建 | `harness2 traj <session-dir>` 命令                                                                            |
+| `packages/core/test/replay.test.ts`    | 新建 | 快照回放测试：录制事件序列 → 重建 → 断言一致                                                                  |
 
 ---
 
@@ -139,23 +139,23 @@
 
 ## 验收标准总表
 
-| # | 标准 | 通过条件 |
-|---|------|----------|
-| 1 | 事件日志可完整重建会话（含 rewind 后的影子事件可导出） | Task 3/5 测试通过 |
-| 2 | `harness2 traj` 能渲染 fixture 时间线 | Task 4 命令 exit 0 且输出含 tool 树 |
-| 3 | 单测/构建 | `pnpm -r test && pnpm -r build` exit 0 |
-| 4 | 红线 | 日志文件无 update/delete 路径；无 API key 入 fixture |
-| 5 | 密钥 | `git ls-files` 无 `.env`、`auth.json` 等敏感文件 |
+| #   | 标准                                                   | 通过条件                                             |
+| --- | ------------------------------------------------------ | ---------------------------------------------------- |
+| 1   | 事件日志可完整重建会话（含 rewind 后的影子事件可导出） | Task 3/5 测试通过                                    |
+| 2   | `harness2 traj` 能渲染 fixture 时间线                  | Task 4 命令 exit 0 且输出含 tool 树                  |
+| 3   | 单测/构建                                              | `pnpm -r test && pnpm -r build` exit 0               |
+| 4   | 红线                                                   | 日志文件无 update/delete 路径；无 API key 入 fixture |
+| 5   | 密钥                                                   | `git ls-files` 无 `.env`、`auth.json` 等敏感文件     |
 
 ---
 
 ## 风险与降级
 
-| 风险 | 缓解 |
-|------|------|
-| Windows NTFS 无目录 fsync | 学习 grok persistence.rs 的语义：文件 fsync + 父目录尽力刷新，测试覆盖崩溃模拟 |
-| pnpm 在 Windows 的符号链接问题 | 备选 npm workspaces（D1 确认时一并定） |
-| 事件类型 v1 设计缺陷 | 字段命名对齐 dsh，留 `v` 字段，后续按代际迁移链升级 |
+| 风险                           | 缓解                                                                           |
+| ------------------------------ | ------------------------------------------------------------------------------ |
+| Windows NTFS 无目录 fsync      | 学习 grok persistence.rs 的语义：文件 fsync + 父目录尽力刷新，测试覆盖崩溃模拟 |
+| pnpm 在 Windows 的符号链接问题 | 备选 npm workspaces（D1 确认时一并定）                                         |
+| 事件类型 v1 设计缺陷           | 字段命名对齐 dsh，留 `v` 字段，后续按代际迁移链升级                            |
 
 ---
 
@@ -168,6 +168,7 @@
 你是负责 **harness2** 的实现代理。请**完整执行本阶段**，不要只写方案。
 
 ### 基线
+
 - 目录：`D:\AI_projects\harness2`
 - 从 `main` 创建并切换：`feat/phase-1-session-core`
 - 已完成：参考调研（docs/research/）、ROADMAP、monorepo 技术栈已确认（TypeScript/Node ≥22/pnpm）
@@ -175,21 +176,25 @@
 - 必读：`docs/ai-framework/phased-plan-driven.md`、`AGENTS.md`、`docs/ROADMAP.md`
 
 ### 做
+
 1. Task 1–5 依次执行：monorepo 骨架 → 事件类型+写入器 → 读取投影 → 轨迹 CLI → 回放测试
 2. 每 Task 跑指定验证命令，exit 0 后按规范 commit（gitmoji + 中文描述）
 3. 遵守 Global Constraints：append-only、Model-visible ⟺ logged、密钥不进 git
 
 ### 不做
+
 - Electron、真实 provider 调用、SQLite、插件公开 API
 - 提交密钥；未授权的 `git push`
 
 ### 工作方式
+
 1. 先跑基线构建确认干净。
 2. **严格按计划 Task 顺序**；每 Task 测试后 commit。
 3. 证据优先：完成前必须重跑计划中的验证命令。
 4. 用简体中文回复进度；代码标识符保持原样。
 
 ### 交卷
+
 全部完成后给出：分支名、提交列表、验收表自评、测试/构建结果、残留风险。
 
 现在开始：读完本阶段计划，从 Task 1 执行到最后。

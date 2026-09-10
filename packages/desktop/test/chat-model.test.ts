@@ -17,8 +17,6 @@ function ev(type: string, payload: Record<string, unknown>, active = true): Acti
   return { v: 1, seq: seqCounter, ts: '2026-09-06T00:00:00Z', type, payload, active };
 }
 
-const TURN1 = { turnId: 't1' };
-
 function fullTurnEvents(): ActiveEvent[] {
   seqCounter = 0; // 每次从 1 开始（影子测试按相对 seq 遮蔽）
   return [
@@ -39,14 +37,7 @@ describe('projectChatItems 折叠', () => {
       t1: { stopReason: 'end_turn' } as TurnEndInfo,
     });
     const kinds = items.map((i) => i.kind);
-    expect(kinds).toEqual([
-      'turn-header',
-      'user',
-      'assistant',
-      'tool',
-      'assistant',
-      'turn-summary',
-    ]);
+    expect(kinds).toEqual(['turn-header', 'user', 'assistant', 'tool', 'assistant', 'turn-summary']);
     const assistant1 = items[2]!;
     expect(assistant1.text).toBe('好的，我来创建。');
     expect(assistant1.reasoning).toBe('先思考一下');
@@ -60,8 +51,8 @@ describe('projectChatItems 折叠', () => {
   });
 
   it('影子事件不显示（active=false），undo 后重折叠天然生效', () => {
-    const events = fullTurnEvents().map((e) =>
-      e.seq >= 5 ? { ...e, active: false } : e, // 模拟 rewindToSeq=4 后 seq>4 遮蔽
+    const events = fullTurnEvents().map(
+      (e) => (e.seq >= 5 ? { ...e, active: false } : e), // 模拟 rewindToSeq=4 后 seq>4 遮蔽
     );
     const items = projectChatItems(events, emptyLive(), {});
     expect(items.filter((i) => i.kind === 'user')).toHaveLength(1);
@@ -72,7 +63,10 @@ describe('projectChatItems 折叠', () => {
 
   it('attempt 行显示失败尝试', () => {
     const items = projectChatItems(
-      [ev('user/message', { text: 'x', turnId: 't2' }), ev('assistant/attempt', { error: 'network down', turnId: 't2' })],
+      [
+        ev('user/message', { text: 'x', turnId: 't2' }),
+        ev('assistant/attempt', { error: 'network down', turnId: 't2' }),
+      ],
       emptyLive(),
       {},
     );
@@ -80,7 +74,11 @@ describe('projectChatItems 折叠', () => {
   });
 
   it('在途增量：streaming 条目（text 光标 + pending tool 调用）', () => {
-    const live = { text: '正在输出', reasoning: '思考', toolCalls: [{ id: 'px', name: 'bash', arguments: '{"cmd":"ls"}' }] };
+    const live = {
+      text: '正在输出',
+      reasoning: '思考',
+      toolCalls: [{ id: 'px', name: 'bash', arguments: '{"cmd":"ls"}' }],
+    };
     const items = projectChatItems([], live, {});
     const streaming = items.filter((i) => i.kind === 'streaming');
     expect(streaming).toHaveLength(2); // 1 pending tool + 1 text 光标
@@ -112,11 +110,29 @@ describe('重放与增量去重', () => {
   it('applyEvent：seq 去重（重复/落后忽略）', () => {
     const base = [ev('user/message', { text: 'x' })];
     const lastSeq = base[0]!.seq;
-    const dup = applyEvent(base, lastSeq, { v: 1, seq: lastSeq, ts: 't', type: 'user/message', payload: { text: 'dup' } });
+    const dup = applyEvent(base, lastSeq, {
+      v: 1,
+      seq: lastSeq,
+      ts: 't',
+      type: 'user/message',
+      payload: { text: 'dup' },
+    });
     expect(dup).toBeNull();
-    const stale = applyEvent(base, lastSeq, { v: 1, seq: lastSeq - 1, ts: 't', type: 'user/message', payload: { text: 'old' } });
+    const stale = applyEvent(base, lastSeq, {
+      v: 1,
+      seq: lastSeq - 1,
+      ts: 't',
+      type: 'user/message',
+      payload: { text: 'old' },
+    });
     expect(stale).toBeNull();
-    const fresh = applyEvent(base, lastSeq, { v: 1, seq: lastSeq + 1, ts: 't', type: 'assistant/message', payload: { text: 'new' } });
+    const fresh = applyEvent(base, lastSeq, {
+      v: 1,
+      seq: lastSeq + 1,
+      ts: 't',
+      type: 'assistant/message',
+      payload: { text: 'new' },
+    });
     expect(fresh?.events).toHaveLength(2);
     expect(fresh?.lastSeq).toBe(lastSeq + 1);
   });
@@ -151,7 +167,10 @@ describe('subagent 子会话跳转', () => {
       ev('user/message', { text: '派子任务', turnId: 't1' }),
       ev('tool/call', { callId: 'c1', tool: 'subagent_start', args: { prompt: 'x' }, turnId: 't1' }),
       ev('tool/result', {
-        callId: 'c1', ok: true, durationMs: 5, turnId: 't1',
+        callId: 'c1',
+        ok: true,
+        durationMs: 5,
+        turnId: 't1',
         output: JSON.stringify({ childSessionId: '20260906-000000-abc123', finalText: 'done', stopReason: 'end_turn' }),
       }),
       ev('tool/call', { callId: 'c2', tool: 'subagent_start', args: {}, turnId: 't1' }),

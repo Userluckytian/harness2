@@ -48,11 +48,12 @@ export function composeNotifyContent(opts: {
   firstUserText?: string | null;
   replyText: string;
 }): { title: string; body: string } {
-  const title = opts.title !== undefined && opts.title !== null && opts.title.trim().length > 0
-    ? collapseWhitespace(opts.title)
-    : opts.firstUserText !== undefined && opts.firstUserText !== null && opts.firstUserText.trim().length > 0
-      ? collapseWhitespace(opts.firstUserText)
-      : NOTIFY_WINDOW_TITLE;
+  const title =
+    opts.title !== undefined && opts.title !== null && opts.title.trim().length > 0
+      ? collapseWhitespace(opts.title)
+      : opts.firstUserText !== undefined && opts.firstUserText !== null && opts.firstUserText.trim().length > 0
+        ? collapseWhitespace(opts.firstUserText)
+        : NOTIFY_WINDOW_TITLE;
   const body = organizeSummary(collapseWhitespace(opts.replyText));
   return { title, body };
 }

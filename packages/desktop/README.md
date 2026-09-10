@@ -17,12 +17,12 @@ src/
 
 ## 命令
 
-| 命令 | 说明 |
-|------|------|
-| `pnpm dev` | 构建 + 打开窗口（默认加载 config provider；`H2_PROVIDER=mock` 零 key 体验） |
+| 命令         | 说明                                                                                          |
+| ------------ | --------------------------------------------------------------------------------------------- |
+| `pnpm dev`   | 构建 + 打开窗口（默认加载 config provider；`H2_PROVIDER=mock` 零 key 体验）                   |
 | `pnpm smoke` | 构建 + 无头冒烟：stdout 打一行 JSON `{ok,port,rendererLoaded,bridgeReady}` 后退出（exit 0/1） |
-| `pnpm test` | vitest（主进程纯函数/ServeManager 真子进程/store） |
-| `pnpm dist` | 构建 + electron-builder win 打包（Task 6） |
+| `pnpm test`  | vitest（主进程纯函数/ServeManager 真子进程/store）                                            |
+| `pnpm dist`  | 构建 + electron-builder win 打包（Task 6）                                                    |
 
 ## 安全边界（阶段 5 红线）
 

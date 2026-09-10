@@ -1,6 +1,10 @@
 # harness2
 
-<!-- 截图占位（待补，见 docs/issue-log/OPEN.md）：终端 chat 流式/工具行、桌面端多会话分屏、traj 时间线 -->
+> **截图区（待真机截图补入，人工项，见 `docs/issue-log/OPEN.md` 与阶段 15 验收表第 8 节）。** 以下三张真实 UI 截图请在真机运行后放入 `docs/screenshots/` 并按文件名约定命名，然后删除本段说明：
+>
+> 1. `docs/screenshots/cli-chat.png` —— 终端 chat 流式对话 + 工具调用行
+> 2. `docs/screenshots/desktop-multi.png` —— 桌面端多会话分屏
+> 3. `docs/screenshots/traj-timeline.png` —— traj 轨迹时间线视图
 
 自研跨端 AI agent harness（CLI / 桌面 / IM 网关多形态）。**M1（v0.1）= 终端里接真实模型干活**：流式对话、读写文件、跑命令、`/undo` `/redo`、轨迹可查、审批可控。**M2（v0.3）= 桌面可用**：多会话并行分屏、上下文压缩、浏览器工具、定时任务。**M3（v0.6）= 连接外部**：插件 / MCP / 子代理、QQ/飞书机器人、轨迹导出回放、项目级 Skills。**M4（v1.0.0）= 公开发布收口**：API 稳定承诺（semver + 导出面快照）、迁移指南、文档站、发布回归汇总——首个公开发布版本（发布动作待授权，见 `docs/RELEASE-CHECKLIST.md`）。
 
@@ -91,7 +95,8 @@ MIT
 ## 插件 / MCP / 子代理 / IM 网关（阶段 8-9）
 
 - **插件**：manifest 声明式权限，装载需审批——`harness2 plugin list` 查看权限清单，`plugin enable <name> [--yes]` 写入全局
-  config 的 `plugins.allow`（重启 chat/serve 后装载）；事件总线 + disposer 逆序展开；v1 与主进程同进程运行（非隔离）。
+  config 的 `plugins.allow`（重启 chat/serve 后装载）；事件总线 + disposer 逆序展开。**安全边界（如实声明）：v1 插件与主进程
+  同进程运行（非隔离），manifest 权限仅为 API 层约束，不提供沙箱**——装载前请确认插件来源可信。
 - **MCP**：`config.json` 的 `"mcpServers"` 声明 stdio（command）或 Streamable HTTP（url）服务器，工具以
   `mcp__<server>__<tool>` 命名空间接入；断线退避重启；`harness2 mcp list` 逐 server 连接探测。
 - **子代理**：模型可用 `subagent_start` 派发独立子会话跑子任务（独立轨迹/undo，深度默认 1，父取消传播）；
