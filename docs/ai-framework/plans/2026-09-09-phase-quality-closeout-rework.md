@@ -297,3 +297,72 @@ git merge --no-ff chore/phase15-quality-closeout
 | A2-1 第 8 项 finalText 为空 | `A-7`      | 执行者已登记缺陷，随 R1 一并复核 |
 
 此外，A3 的 `P1-1`/`P1-2`（serve token 默认不强制、desktop 把 401 当已连接）与 A5 阶段 9 的 3 个 P1 已登记在验收表第 6 节，属**发布前必闭环**，不在本次返工范围内，但合入 `main` 前需确认它们仍在册未丢失。
+---
+
+## 10. 第二轮收尾（2026-09-11 人类授权：R7 / R8 / R9）
+
+第一轮 `R1`–`R6` 已于 2026-09-10 全部闭环，并经编排者独立复跑验收：`pnpm lint` exit 0、`pnpm -r typecheck` exit 0、core 835 passed + 1 skipped · desktop 158 · gateway 14 默认超时全绿；cli 3 例 `Test timed out in 5000ms.` 假红，`--testTimeout=30000` 复核 17 files / 71 passed exit 0。执行者额外自查出并闭环了 1 条 P1（doctor warn 分支 summary 不含「实际使用」，`c5b9ea8`），该缺陷是本清单 `R2` 方案自身的漏洞，属超出清单要求的正确加分。
+
+人类于 2026-09-11 授权继续执行 `R7`、`R8`，两项全绿后授权合入 `main`（`R9`）。**「独立人工审查（丙）」经人类明确豁免，本阶段不再安排**——因此 `R7` 必须把豁免事实写进文档，而不是留空或伪装成已审查。
+
+### R7（P1，文档一致性）回填 §5 审查登记表 + 声明人工审查豁免
+
+- 文件：`docs/ai-framework/plans/2026-09-09-phase-quality-closeout-acceptance.md` 第 5 节（约 L105–L119）
+- 现状问题：`A1`/`A3`/`A4`/`B2`/`B3`/`B4` 六行的「丙（专职审查者）」与「只读子代理」两列**全空**，但 `A-13`/`B-16` 单元格已写明子代理审查报告的范围与结论，`J-6`（文档一致）又标了 ✅ → 表内自相矛盾。
+- 做法：
+  1. 「只读子代理」列按 `A-13` 已有结论逐行回填：审查范围（commit 区间）、结论、P0/P1 清零情况、日期。本阶段未派子代理审查的行写 `➖ 未派`，**不要留空**。
+  2. 「丙（专职审查者）」列统一写 `➖ 人类豁免（2026-09-11）`，同样不留空。
+  3. 表尾补一句说明：本阶段独立人工审查经人类于 2026-09-11 明确豁免，代码审查由「执行者自评 + 独立只读子代理 + 编排者独立复跑」三层承担；`git worktree` 只读审查树未建立。
+  4. `A-13`/`B-16` 由 🟡 转 ✅，证据原文必须保留「人工丙审查已豁免」字样，**不得**改写成「两份报告齐备」。
+  5. 在验收表第 6 节（发布前必闭环）新增一条遗留风险：**本阶段无独立人工审查**，下一阶段计划的「阶段开头：上阶段遗留」小节需抄入并考虑补做。
+- `J-6` 的 ✅ 要等 1–3 做完才继续成立；先回填，再复核 `J-6`。
+
+### R8（P1，让 `pnpm test` 默认为绿）给 cli 配确定性 testTimeout
+
+- 事实依据：三个失败用例报的都是 `Test timed out in 5000ms.`（vitest 默认值），说明它们**没有** per-test 超时；而 `chat.test.ts` / `chat-cancel.test.ts` / `context-ref-integration.test.ts` 等同类 spawn 型用例本来就显式写 `}, 30000)`。`packages/cli` 目前**没有** vitest 配置文件，走的是默认 5s。
+- 做法（照 `packages/desktop` 的现成范式，不要自创）：
+  1. 新建 `packages/cli/vitest.config.mts`（**用 `.mts`**，与 desktop 一致，不要用 `.ts`）：
+
+     ```ts
+     // cli 集成用例大量 spawn 真实子进程（serve / export / memory / crash-drill），
+     // vitest 默认 5s 在高负载机器上会假红（阶段 15 终验实测 3–7 例抖动）。
+     // 统一抬到 30s：与既有 spawn 型用例显式写的 }, 30000) 口径一致。
+     import { defineConfig } from 'vitest/config';
+
+     export default defineConfig({
+       test: {
+         include: ['test/**/*.test.ts', 'test/**/*.test.tsx'],
+         testTimeout: 30000,
+         hookTimeout: 30000,
+       },
+     });
+     ```
+
+  2. 把该文件加进 `packages/cli/tsconfig.json` 的 `include`：`["src", "test", "vitest.config.mts"]`。**不要**加进 `tsconfig.build.json`（会被编译进 `dist`）。
+     - 依据：desktop 的 `include` 正是 `["src", "test", "vite.config.mts", "vitest.config.mts"]`；ESLint 类型感知用 `projectService`，文件不在任何 tsconfig project 内会直接报 parsing error（`eslint.config.js` 顶部注释与 `allowDefaultProject` 就是为此存在）。
+  3. 若 `pnpm -r typecheck` 因 `NodeNext` + `verbatimModuleSyntax` 对该文件报错，参照 desktop 的 `compilerOptions`（`module: ESNext` / `moduleResolution: Bundler` / `verbatimModuleSyntax: false`）**只补必要项**，禁止改 `tsconfig.base.json`。
+  4. 禁止用 `--passWithNoTests`；禁止在根 `package.json` 的 test 脚本上加全局 `--testTimeout`（会掩盖其它包的真实超时问题）。
+- 验收：`pnpm lint` exit 0；`pnpm -r typecheck` exit 0；**`pnpm test` 不带任何额外参数默认 exit 0**（四包全绿）。随后把 `A-12`/`B-15` 由 🟡 转 ✅ 并附本次复跑原文（含 cli 的 `Test Files 17 passed`），并订正第 9 节总结论里「`pnpm test` 整体 exit 1」那句为默认全绿，保留一句原因说明（原为环境超时 flake，已由确定性 testTimeout 消除）。
+- issue-log：属测试基线行为变化，按四要素在 `docs/issue-log/2026-09-11.md` 记一笔。
+
+### R9（合入，`R7` + `R8` 全绿后执行）
+
+- 前置：`R7`、`R8` 各自独立 commit；工作树干净；三条命令默认全绿。
+- 执行：
+
+  ```
+  git switch main
+  git merge --no-ff chore/phase15-quality-closeout
+  ```
+
+- 合入后在 `main` 上再跑一遍 `pnpm lint` / `pnpm -r typecheck` / `pnpm test`，全绿才把 `J-1` 由 🟡 转 ✅ 并附 `main` 上的输出；随后第 9 节总结论定稿（B6 发布仍待人类授权，保持 ⬜）。
+- **`push` 仍然禁止**（`J-2` 保持 ➖）。`main` 领先 `origin/main` 的提交数是人类刻意口径，不要「顺手」推。
+- 合入前确认验收表第 6 节的 A3 `P1-1`/`P1-2`、A5 的 3 条 P1、B2「CI 从未真实运行」、以及 `R7` 新增的「无独立人工审查」仍在册未丢。
+
+### 完成定义与提交规范
+
+沿用第 7 节验证纪律与第 8 节完成定义（含收尾跑 `pnpm lint`、只显式 `git add <具体文件>`、禁止 `git add -A`、默认不 push）。提交信息示例：
+
+- `📝docs(plans): 回填 §5 审查登记表并声明人工审查豁免（R7）`
+- `🔧chore(cli): 配置确定性 testTimeout 30s 消除 spawn 型假红（R8）`
+- `🔧chore(repo): 合入 chore/phase15-quality-closeout 到 main（R9）`
