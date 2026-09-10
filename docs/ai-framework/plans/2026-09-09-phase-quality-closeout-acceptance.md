@@ -89,14 +89,14 @@
 
 ## 4. 全部任务完成后的联合验收
 
-| #   | 标准            | 通过条件                                                   | 状态 | 证据                                                                                                                                                                                                                                                                    | 日期       |
-| --- | --------------- | ---------------------------------------------------------- | ---- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------- |
-| J-1 | main 上全量回归 | 12 个任务全部合入后 `pnpm -r typecheck` + `pnpm test` 全绿 | 🟡   | 合入前已在分支 `chore/phase15-quality-closeout` 复跑（证据见 A-12）；`main` 上复跑待**合入后**执行——合入需人类明确点头（rework §6）                                                                                                                                     | 2026-09-10 |
-| J-2 | CI 全绿         | build / test / lint 三项均绿                               | ➖   | 仓库未 push，CI 无法触发（rework §9 已列「不适用」）。解除条件：人类授权 push 后由 GitHub Actions 实跑 build / typecheck / lint / test                                                                                                                                  | 2026-09-10 |
-| J-3 | 桌面 + CLI 冒烟 | 安全加固后客户端仍能正常连接与对话                         | ✅   | A3 真机 serve 冒烟：无 token → `200`、WS → `OPEN`（不误挡自家客户端）；desktop `pnpm --filter @harness2/desktop test` → **158 passed**；R1 后 `harness2 doctor` → **7 OK / 0 WARN / 0 FAIL**，bash 分节 `[OK] … D:\Program Files\Gitinash.exe（Git Bash）`              | 2026-09-10 |
-| J-4 | 导出面快照一致  | `api-surface.test.ts` 绿，fixture 与实际导出一致           | ✅   | `pnpm --filter @harness2/core exec vitest run test/api-surface.test.ts` → **7 passed**；`git diff main..HEAD -- packages/core/test/fixtures/api-surface-baseline.json` 仅 **+2 行**（`BashConfig` interface、`DEFAULT_BASH_CONFIG` const，A1 加性），未被全量格式化污染 | 2026-09-10 |
-| J-5 | 红线            | 无密钥入库；`git ls-files` 无敏感文件；未改人类全局配置    | ✅   | `git ls-files` 无 auth.json / .env / 密钥 / 证书入库；`.gitignore` 排除 `auth.json`、`.env*`、`node_modules`、`dist`；未改 `~/.harness2` 人类全局配置                                                                                                                   | 2026-09-10 |
-| J-6 | 文档一致        | OPEN.md / HANDOFF.md / issue-log 与实际状态一致            | ✅   | `OPEN.md` 已精简回当前真实待办；`HANDOFF.md` 更新到阶段 15；`docs/issue-log/2026-09-10.md` 按四要素记录 R1 行为变化；阶段 15 四份计划文档索引在 OPEN/HANDOFF 可见；R7（2026-09-11）§5 审查登记表已逐行回填、人工审查豁免已声明，本文件自洽                              | 2026-09-10 |
+| #   | 标准            | 通过条件                                                   | 状态 | 证据                                                                                                                                                                                                                                                                                                                       | 日期       |
+| --- | --------------- | ---------------------------------------------------------- | ---- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------- |
+| J-1 | main 上全量回归 | 12 个任务全部合入后 `pnpm -r typecheck` + `pnpm test` 全绿 | ✅   | **合入后 main 复跑（2026-09-11，PowerShell + 注册表 PATH）**：`pnpm lint` exit 0；`pnpm -r typecheck` 4 包 Done exit 0；`pnpm test`（默认、零额外参数）**exit 0** —— core 835+1（60 files）· desktop 158（15）· gateway 14（5）· cli 17 files / 71 passed。合入提交 `3d82e5b`（`--no-ff`）。**push 未执行**（J-2 维持 ➖） | 2026-09-11 |
+| J-2 | CI 全绿         | build / test / lint 三项均绿                               | ➖   | 仓库未 push，CI 无法触发（rework §9 已列「不适用」）。解除条件：人类授权 push 后由 GitHub Actions 实跑 build / typecheck / lint / test                                                                                                                                                                                     | 2026-09-10 |
+| J-3 | 桌面 + CLI 冒烟 | 安全加固后客户端仍能正常连接与对话                         | ✅   | A3 真机 serve 冒烟：无 token → `200`、WS → `OPEN`（不误挡自家客户端）；desktop `pnpm --filter @harness2/desktop test` → **158 passed**；R1 后 `harness2 doctor` → **7 OK / 0 WARN / 0 FAIL**，bash 分节 `[OK] … D:\Program Files\Gitinash.exe（Git Bash）`                                                                 | 2026-09-10 |
+| J-4 | 导出面快照一致  | `api-surface.test.ts` 绿，fixture 与实际导出一致           | ✅   | `pnpm --filter @harness2/core exec vitest run test/api-surface.test.ts` → **7 passed**；`git diff main..HEAD -- packages/core/test/fixtures/api-surface-baseline.json` 仅 **+2 行**（`BashConfig` interface、`DEFAULT_BASH_CONFIG` const，A1 加性），未被全量格式化污染                                                    | 2026-09-10 |
+| J-5 | 红线            | 无密钥入库；`git ls-files` 无敏感文件；未改人类全局配置    | ✅   | `git ls-files` 无 auth.json / .env / 密钥 / 证书入库；`.gitignore` 排除 `auth.json`、`.env*`、`node_modules`、`dist`；未改 `~/.harness2` 人类全局配置                                                                                                                                                                      | 2026-09-10 |
+| J-6 | 文档一致        | OPEN.md / HANDOFF.md / issue-log 与实际状态一致            | ✅   | `OPEN.md` 已精简回当前真实待办；`HANDOFF.md` 更新到阶段 15；`docs/issue-log/2026-09-10.md` 按四要素记录 R1 行为变化；阶段 15 四份计划文档索引在 OPEN/HANDOFF 可见；R7（2026-09-11）§5 审查登记表已逐行回填、人工审查豁免已声明，本文件自洽                                                                                 | 2026-09-10 |
 
 ---
 
@@ -166,14 +166,15 @@
 
 ## 9. 阶段总结论（验收方填）
 
-- **结论：** ⬜ 通过 / ✅ **有条件通过** / ⬜ 不通过
+- **结论：** ⬜ 通过 / ✅ **有条件通过** / ⬜ 不通过 —— 条件为：人类真机项（A2 桌面端/云端 A2-2、A-6）、A3 `P1-1/P1-2` 与 A5 三条 P1（发布前/下阶段闭环）、A4/B3 拆分类独立子代理审查未派（下阶段评估）、B6 发布授权（⬜）；**B6 保持 ⬜**
 - **验收方：** 编排者（AI 助手）独立验收 —— 每任务亲自复跑认证据，不采信执行者自评；关键节点（A1/A3/A4/A5）另派独立只读审查子代理
-- **日期：** 2026-09-09 初判 / 2026-09-10 第一轮返工 R1–R6 / 2026-09-11 第二轮 R7–R8 收尾（B6 发布授权待人类）
+- **日期：** 2026-09-09 初判 / 2026-09-10 第一轮返工 R1–R6 / 2026-09-11 第二轮 R7–R8 收尾 + 合入 main（`3d82e5b`）后定稿
 - **复跑的命令与结果：**
   - `pnpm -r typecheck` → 4 包全 Done，exit 0（PowerShell + 注册表 PATH 重建，2026-09-10）
   - `pnpm lint` → exit 0（ESLint 0 error / 38 warning + Prettier 全过）
   - 全量 `pnpm test`（默认、零额外参数）→ **exit 0**：core **835 passed + 1 skipped**（60 files）· desktop **158**（15）· gateway **14**（5）· **cli 17 files / 71 passed**——R8 新增 `packages/cli/vitest.config.mts`（testTimeout/hookTimeout 30s）消除 cli spawn 型默认 5s 假红；历史「整体 exit 1」已订正
   - `api-surface.test.ts` → 7 passed（fixture 491 导出；A2 本地网关与安全件均未改导出面，除了 A1 加性 +2）
   - `serve-security.test.ts` → 15 passed；A4 sessions 拆分前后同组测试逐项一致
+  - **合入后 main 复跑（2026-09-11）**：`pnpm lint` / `pnpm -r typecheck` / `pnpm test`（默认）→ 三条 **exit 0**（见 J-1）；push 未执行（J-2 ➖）
 - **阶段 15 各任务结论：** A0 ✅ · B1 ✅ · B2 ✅ · **A1 ✅（订正：原判 ✅ 系 Git Bash 终端 PATH 遮丑的误判 → 终验转 🟡 → R1 修复 + R2 确定性用例 + PowerShell 真实 PATH 复验后回 ✅，见第 6 节 R1）** · A2 🟡（八项自动化 1/2/3/4/5/7 ✅；6 桌面端需真机、8 finalText 空、云端 A2-2 ➖）· A3 🟡（有条件：无 P0，2 个 P1 发布前闭环）· A4 ✅ · B3 ✅ · B4 ✅ · A5 🟡（有条件：无 P0，3 个 P1 下放）· B5 🟡（文档✅；README 三图待人类真机）· B6 ⬜（待人类授权） · **A-13/B-16 代码审查 ✅**（独立只读子代理报告已出、R1–R5 整体 ⚠️→P0 清零+1 P1 由 `c5b9ea8` 闭环；人工「丙」审查经人类 2026-09-11 明确豁免，见第 5 节）· **R7/R8 已闭环**
 - **下一阶段入口：** R2 激进-终端 `2026-09-08-phase-aggressive-cli-interaction.md`；激进-桌面 `2026-09-08-phase-aggressive-desktop-interaction.md` —— 计划开头必须设「阶段开头：上阶段遗留」小节，把验收表第 6 节（A3 的 P1-1/P1-2/P2-3/P2-1/P2-2 + A5 的 P1-1/P1-2/P1-3）逐条抄入并优先处理
