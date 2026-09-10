@@ -66,12 +66,18 @@ function gitBashCandidates(env: NodeJS.ProcessEnv): string[] {
     out.push(join(root, 'bin', 'bash.exe'));
     out.push(join(root, 'usr', 'bin', 'bash.exe'));
   }
-  // PATH 中的 Git 目录（仅限路径含 git，避免误选 WSL/其它 bash）：`...\Git\usr\bin\bash.exe`
-  for (const entry of (env['PATH'] ?? '').split(delimiter)) {
+  // PATH 中的 Git 目录（仅限路径含 git，避免误选 WSL / 其它 bash）。
+  // 注意：PATH 里通常只有 `...\Git\cmd`（git.exe 所在），bash.exe 在兄弟目录 bin\ 与 usr\bin\，
+  // 因此除了 entry 自身，还要用 dirname(entry) 推出 Git 安装根目录再拼一次（Git 装在非 C 盘时这是唯一可靠来源）。
+  for (const raw of (env['PATH'] ?? '').split(delimiter)) {
+    const entry = raw.trim().replace(/^"|"$/g, '');
     if (entry.length === 0 || !/git/i.test(entry)) continue;
     out.push(join(entry, 'bash.exe'));
+    const root = dirname(entry);
+    out.push(join(root, 'bin', 'bash.exe'));
+    out.push(join(root, 'usr', 'bin', 'bash.exe'));
   }
-  return out;
+  return [...new Set(out)];
 }
 
 /** 探测顺序：config.bash.shell > Git Bash（GIT_BASH / 常见路径）> cmd 回退 */
