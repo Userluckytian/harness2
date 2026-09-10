@@ -1,0 +1,299 @@
+# 阶段 15 质量收口 · 终验返工清单（R1–R6）
+
+> **状态：** ⬜ 待执行 —— 2026-09-10 编排者终验后开出
+>
+> **判定：** ❌ 联合验收不通过，**阻塞合入 `main`**。任务实现基本完成，收尾没收干净。
+>
+> **被返工对象：** 分支 `chore/phase15-quality-closeout`，45 个提交（`7efc0c5` … `a3db36d`）
+>
+> **执行者：** 原执行者（一人顺序执行）
+>
+> **口径：** 本清单闭环前分支不得合入 `main`；本清单只做返工，**不新增功能、不改架构、不扩范围**。
+>
+> **配套文档：** 计划 `2026-09-09-phase-quality-closeout.md` · 验收表 `2026-09-09-phase-quality-closeout-acceptance.md` · 审查任务书 `2026-09-09-phase-quality-closeout-review-brief.md`
+
+---
+
+## 0. 终验实测基线
+
+环境：本机 Windows 10 LTSC，**PowerShell 5.1（注意：不是 Git Bash 终端）**，Node v22.23.1，pnpm 11.13.0。时间 2026-09-10 12:46–12:56。
+
+| 检查            | 命令                                                                           | 结果                                                                                                                  | 判定              |
+| --------------- | ------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------- | ----------------- |
+| 类型            | `pnpm -r typecheck`                                                            | 4 包全 Done，exit 0                                                                                                   | ✅                |
+| lint · ESLint   | `pnpm lint` 前半段                                                             | 0 error / 38 warning                                                                                                  | ✅                |
+| lint · Prettier | `pnpm lint` 后半段                                                             | 3 个文件未过，exit 1                                                                                                  | ❌ → R3           |
+| 全量回归        | `pnpm test`                                                                    | core **830 passed / 2 failed / 1 skipped（833）**，exit 1；`pnpm -r` 首败即停，desktop / gateway / cli **根本没跑到** | ❌ → R1           |
+| 对照实验        | 注入 `GIT_BASH` 后复跑同样两个测试文件                                         | **25 passed，exit 0**                                                                                                 | R1 的根因证据     |
+| 工作树          | `git status` / `git stash list`                                                | 干净，无 stash，无 `dist/`·`node_modules`·`.tmp` 误入                                                                 | ✅                |
+| 导出面基线      | `git diff main..HEAD -- packages/core/test/fixtures/api-surface-baseline.json` | 仅 +2 行（`BashConfig`、`DEFAULT_BASH_CONFIG`），属 A1-1 加性变更                                                     | ✅ 未被格式化污染 |
+
+> 执行者在验收表 §9 记录的是「core 832 passed + 1 skipped」。**总数一致（833），差异全部落在 R1 的两个用例上**——说明不是有人改坏了代码，而是当时的运行环境把缺陷遮住了。详见 R1。
+
+---
+
+## 1. R1 ｜ P0 ｜ 阻塞合入 ｜ Git Bash 探测在 Git 装于非 C 盘时失效
+
+### 现象
+
+- `packages/core/test/doctor.test.ts:64` → `AssertionError: expected 'warn' to be 'ok'`（bash 分节）
+- `packages/core/test/windows-bash.test.ts:157` → `AssertionError: expected 'exit code 1' to be undefined`（`ls package.json`）
+
+### 根因
+
+落点 `packages/core/src/tools/shell.ts` 的 `gitBashCandidates()`：
+
+1. 固定候选只覆盖 `GIT_BASH` / `ProgramFiles` / `ProgramW6432` / `ProgramFiles(x86)` / `LOCALAPPDATA`，外加硬编码的 `C:\Program Files\Git` 与 `C:\Program Files (x86)\Git`。本机 Git 装在 **`D:\Program Files\Git`**，以上全部落空。
+2. PATH 分支只做了 `join(entry, 'bash.exe')`。Windows 上 PATH 里通常只有 `...\Git\cmd`（`git.exe` 所在目录），拼出来的 `...\Git\cmd\bash.exe` **不存在**；真正的 `bash.exe` 在兄弟目录 `bin\` 与 `usr\bin\`（本机两处都在）。
+3. 于是探测一路走到 `cmd.exe` 回退：`ls` 不是 cmd 内建命令 → exit 1；doctor 的 bash 分节报 `warn` 而不是 `ok`。
+
+本机实测佐证：
+
+- `(Get-Command git).Source` → `D:\Program Files\Git\cmd\git.exe`
+- `Test-Path 'D:\Program Files\Git\bin\bash.exe'` → `True`
+- `Test-Path 'C:\Program Files\Git\bin\bash.exe'` → `False`
+- `(Get-Command bash).Source` → `C:\Windows\system32\bash.exe`（WSL 的壳，不是 Git Bash）
+
+### 为什么之前是绿的
+
+从 **Git Bash 终端**里跑测试时，该终端的 PATH 自带 `...\Git\usr\bin`，恰好命中 PATH 分支，探测成功；换成 PowerShell / cmd 就红。
+
+**这正是 A1「Windows 可用性 P0」立项要消灭的那一类问题，却因为验证终端选错而漏网。** A1 此前被判 ✅ 属于误判，依据是被环境掩盖的绿。
+
+### 改法（约十几行，不动对外契约）
+
+`shell.ts` 顶部补 `dirname` 导入：
+
+```ts
+import { delimiter, dirname, join } from 'node:path';
+```
+
+把 `gitBashCandidates()` 末尾的 PATH 循环替换掉。
+
+改前：
+
+```ts
+// PATH 中的 Git 目录（仅限路径含 git，避免误选 WSL/其它 bash）：`...\Git\usr\bin\bash.exe`
+for (const entry of (env['PATH'] ?? '').split(delimiter)) {
+  if (entry.length === 0 || !/git/i.test(entry)) continue;
+  out.push(join(entry, 'bash.exe'));
+}
+return out;
+```
+
+改后：
+
+```ts
+// PATH 中的 Git 目录（仅限路径含 git，避免误选 WSL / 其它 bash）。
+// 注意：PATH 里通常只有 `...\Git\cmd`（git.exe 所在），bash.exe 在兄弟目录 bin\ 与 usr\bin\，
+// 因此除了 entry 自身，还要用 dirname(entry) 推出 Git 安装根目录再拼一次（Git 装在非 C 盘时这是唯一可靠来源）。
+for (const raw of (env['PATH'] ?? '').split(delimiter)) {
+  const entry = raw.trim().replace(/^"|"$/g, '');
+  if (entry.length === 0 || !/git/i.test(entry)) continue;
+  out.push(join(entry, 'bash.exe'));
+  const root = dirname(entry);
+  out.push(join(root, 'bin', 'bash.exe'));
+  out.push(join(root, 'usr', 'bin', 'bash.exe'));
+}
+return [...new Set(out)];
+```
+
+要点：
+
+- `/git/i` 的过滤保持不变（继续挡住 WSL 的 `C:\Windows\system32\bash.exe`）。
+- 去引号是顺手加固：Windows PATH 条目允许带引号。
+- `new Set` 去重，避免候选表在多来源命中时重复探测。
+- **不要**改 `resolveBashShell` 的探测优先级（`config.bash.shell` > Git Bash > cmd），也不要改返回结构。
+
+### 完成判据
+
+- 在 **PowerShell**（且 `$env:GIT_BASH` 为空）下执行：
+  `pnpm --filter @harness2/core exec vitest run test/windows-bash.test.ts test/doctor.test.ts` → 全绿
+- `harness2 doctor` 的 bash 分节显示「实际使用 … `D:\Program Files\Git\…\bash.exe`」，状态 `ok`
+- 提交：`🐛fix(core): Git Bash 探测支持非 C 盘安装（从 PATH 推导 Git 根目录）（R1）`
+
+---
+
+## 2. R2 ｜ P1 ｜ 真机用例会被终端类型掩盖 —— 补确定性覆盖
+
+### 问题
+
+`windows-bash.test.ts` 的真机块是 `describe.skipIf(!IS_WINDOWS)`，内部直接跑真实 shell；`doctor.test.ts:64` 也直接断言本机探测结果。两者都读真实 `process.env`，**结论随运行终端而变**——这就是 R1 漏网的机制性原因。修完 R1 如果不补这一条，同样的坑还会再踩。
+
+### 改法
+
+`resolveBashShell` 本身已支持注入（`{ platform, env, exists, configured }`），直接用它写确定性用例。加在 `windows-bash.test.ts` 的**非真机**区（不带 `skipIf`，Linux CI 也要跑）：
+
+```ts
+it('Git 装在非 C 盘：PATH 只有 ...\\Git\\cmd 时仍能探到 Git Bash', () => {
+  const bash = 'D:\\Program Files\\Git\\bin\\bash.exe';
+  const spec = resolveBashShell({
+    platform: 'win32',
+    env: {
+      PATH: 'C:\\Windows\\system32;D:\\Program Files\\Git\\cmd',
+      ComSpec: 'C:\\Windows\\system32\\cmd.exe',
+    },
+    exists: (p) => p === bash,
+  });
+  expect(spec.kind).toBe('git-bash');
+  expect(spec.executable).toBe(bash);
+});
+
+it('机器上没有 Git Bash：回退 cmd 且 display 写明原因', () => {
+  const spec = resolveBashShell({
+    platform: 'win32',
+    env: { PATH: 'C:\\Windows\\system32', ComSpec: 'C:\\Windows\\system32\\cmd.exe' },
+    exists: () => false,
+  });
+  expect(spec.kind).toBe('cmd');
+  expect(spec.display).toContain('未找到 Git Bash');
+});
+
+it('PATH 里的 WSL bash 不会被误选', () => {
+  const spec = resolveBashShell({
+    platform: 'win32',
+    env: { PATH: 'C:\\Windows\\system32', ComSpec: 'C:\\Windows\\system32\\cmd.exe' },
+    exists: (p) => p.toLowerCase() === 'c:\\windows\\system32\\bash.exe',
+  });
+  expect(spec.kind).toBe('cmd');
+});
+```
+
+`doctor.test.ts:64` 同步改成不依赖本机是否装了 Git Bash：
+
+- 断言 `byId.get('bash')!.summary` 含「实际使用」（这条是 A1-1 的真实契约）
+- `status` 放宽为 `ok | warn`，并保留 `r.exitCode` 为 `0`
+- 「探测是否命中 Git Bash」的正确性由上面三条注入用例保证
+
+### 完成判据
+
+- 新增 3 条用例在 Windows 与非 Windows 下都执行且通过（不是 skip）
+- 故意把 R1 的改动回退，新增用例应当**变红**（自证用例真的命中，不是空跑）
+- 提交：`✅test(core): 补 shell 探测确定性用例（非 C 盘 / 无 Git Bash / 不误选 WSL）（R2）`
+
+---
+
+## 3. R3 ｜ P1 ｜ 阻塞合入 ｜ `pnpm lint` 现在是红的
+
+### 问题
+
+`prettier --check .` 未通过，exit 1，三个文件：
+
+1. `docs/ai-framework/plans/2026-09-09-phase-quality-closeout-acceptance.md`
+2. `docs/HANDOFF.md`
+3. `docs/screenshots/README.md`
+
+原因：B2 的全量格式化排在 Day1（顺序是对的），但 B5 阶段之后又写了这些文档，写完没再格式化。验收表 B-2 标着 ✅，**在终验时点已经过期**。
+
+### 改法
+
+```powershell
+pnpm format
+pnpm lint    # 必须 exit 0
+```
+
+- 独立提交，**不得夹带任何逻辑改动**：`🎨style(docs): 补格式化 B5 之后新增/修改的文档（R3）`
+- 若 `pnpm format` 顺带改动了本清单文件，一并提交，属正常。
+
+### 附带的流程修补
+
+在计划文档「完成的统一定义」里加一条硬性要求：**每个任务收尾前跑一次 `pnpm lint`，改文档也算改动**。B2 只保证了「某一时刻干净」，不保证之后一直干净。
+
+---
+
+## 4. R4 ｜ P1 ｜ 阻塞合入 ｜ 验收表回填与 §9 结论订正
+
+### 问题
+
+验收表内部自相矛盾：`A-12`、`B-15`、`J-1`～`J-6` 全部空着（⬜），但 §9 总结论已经写了完整复跑数据并给出「有条件通过」。而且 §9 那组数据在终验时点已不成立。
+
+### 改法
+
+1. **待回填（R1–R3 全绿之后，用真实输出填）**：`A-12`、`B-15`、`J-1`、`J-2`、`J-3`、`J-4`、`J-5`、`J-6`
+2. **需订正**：
+   - `B-2` —— 终验时为红，R3 之后复跑再标 ✅，证据写复跑时间与 exit code
+   - §9 的「复跑的命令与结果」三行整体作废重填
+   - §9 的「阶段 15 各任务结论」中 `A1 ✅` 改为 `A1 🟡`（R1 闭环后再回 ✅），并注明「原 ✅ 系环境掩盖导致的误判」
+3. **需新增到第 6 节（不通过项与下放）**：R1 作为终验发现的 P0 缺陷登记，标注「本清单内闭环，不下放」
+4. `J-2`（CI 首次真实运行）：仓库未 push，CI 无法触发 → 维持 ➖，并写明解除条件为「人类授权 push 后由 GitHub Actions 实跑」
+5. 规则不变：**每行必须「状态 + 一句证据（命令 / 输出 / 提交号）」，证据为空视为未完成**
+
+提交：`📝docs(plans): 回填阶段15联合验收证据并订正 §9 总结论（R4）`
+
+---
+
+## 5. R5 ｜ P2 ｜ 四个包的 test 脚本仍带 `--passWithNoTests`
+
+四个 `package.json` 的 test 脚本全是 `vitest run --passWithNoTests`，与计划红线「禁止用 `--passWithNoTests`」冲突。四个包都有真实用例（core 60 / desktop 15 / gateway 5 / cli 17 个测试文件），该 flag 没有存在必要，去掉即可暴露「用例被意外全过滤」这类事故。
+
+- 若判定为历史遗留且有人依赖，请在 issue-log 写明理由后保留，不要默默留着
+- 提交：`🔧chore(repo): 移除 test 脚本中的 --passWithNoTests（R5）`
+
+---
+
+## 6. R6 ｜ P1 ｜ 联合验收与合入
+
+### 执行顺序（不要跳步）
+
+1. R1（改代码）
+2. R2（补测试）
+3. R3（格式化）
+4. R5（去 flag）
+5. **全量复跑**（见下）
+6. R4（拿复跑输出回填验收表）
+7. 请专职审查者补 `A-13` / `B-16` 两份审查报告
+8. 再谈合入
+
+### 复跑命令（必须在 PowerShell 里跑，逐条记 exit code）
+
+```powershell
+cd D:\AI_Projects\harness2
+pnpm -r typecheck
+pnpm lint
+pnpm test
+```
+
+三条全绿才算联合验收通过。cli 的 crash-drill / export / memory 三个 spawn 型用例在机器高负载时会因 5s 默认超时假红，复跑时若遇到，用 `--testTimeout=30000` 复核并在证据里注明，**不得直接标绿**。
+
+### 合入方式
+
+```powershell
+git switch main
+git merge --no-ff chore/phase15-quality-closeout
+```
+
+- **需人类明确点头后才执行**
+- `push` 仍然默认禁止；`main` 目前领先 `origin/main` 31 个提交，是人类刻意的口径
+
+---
+
+## 7. 验证纪律（本次事故的直接教训）
+
+1. **跑 Windows 相关测试一律用 PowerShell 或 cmd，不要在 Git Bash 终端里跑。** Git Bash 会往 PATH 里塞 `...\Git\usr\bin`，直接掩盖 shell 探测缺陷。
+2. **任何依赖本机环境的「真机」用例，必须配一条注入 env 的确定性用例。** 真机用例证明「这台机器能用」，注入用例才证明「逻辑是对的」。
+3. **任务收尾前跑 `pnpm lint`，改文档也要跑。**
+4. **验收表的 ✅ 只能来自当次复跑输出**，不能来自「我记得刚才是绿的」。
+
+---
+
+## 8. 完成的定义（每一条 R 都适用）
+
+代码改完 + 相关测试在 PowerShell 下绿 + `pnpm lint` exit 0 + 验收表对应行有状态与证据 + 独立 commit（`<gitmoji><type>(<scope>): <中文描述>（R编号）`）+ 涉及行为变化时在 `docs/issue-log/` 当日文件按四要素记一笔（需求描述 / 处理过程 / 修改结果 / 遗留风险）。
+
+提交红线不变：**只显式 `git add <具体文件>`，禁止 `git add -A`；小步提交；默认不 push。**
+
+---
+
+## 9. 仍需人类决定或执行（不属于本清单，别卡在这里）
+
+| 事项                        | 关联验收行 | 状态                             |
+| --------------------------- | ---------- | -------------------------------- |
+| 授权 push 到 `origin/main`  | `J-2`、A0  | 待人类                           |
+| 云端三家 API key            | `A-7b`     | 待人类，无 key 记 ➖，不得顶替   |
+| `NPM_TOKEN` 与 `v1.0.0` tag | B6         | 待人类逐项授权                   |
+| README 三张真机截图         | `B-13`     | 图槽已就位，待人类出图           |
+| Windows 真机联网任务验证    | `A-6`      | 待人类                           |
+| A2-1 第 6 项（桌面端真机）  | `A-7`      | 待人类                           |
+| A2-1 第 8 项 finalText 为空 | `A-7`      | 执行者已登记缺陷，随 R1 一并复核 |
+
+此外，A3 的 `P1-1`/`P1-2`（serve token 默认不强制、desktop 把 401 当已连接）与 A5 阶段 9 的 3 个 P1 已登记在验收表第 6 节，属**发布前必闭环**，不在本次返工范围内，但合入 `main` 前需确认它们仍在册未丢失。
