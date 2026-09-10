@@ -147,6 +147,41 @@ describe('A1-2 输出统一 UTF-8 解码', () => {
   });
 });
 
+describe('R2 确定性回归：非 C 盘 / 无 Git Bash / 不误选 WSL', () => {
+  it('Git 装在非 C 盘：PATH 只有 ...\\Git\\cmd 时仍能探到 Git Bash', () => {
+    const bash = 'D:\\Program Files\\Git\\bin\\bash.exe';
+    const spec = resolveBashShell({
+      platform: 'win32',
+      env: {
+        PATH: 'C:\\Windows\\system32;D:\\Program Files\\Git\\cmd',
+        ComSpec: 'C:\\Windows\\system32\\cmd.exe',
+      },
+      exists: (p) => p === bash,
+    });
+    expect(spec.kind).toBe('git-bash');
+    expect(spec.executable).toBe(bash);
+  });
+
+  it('机器上没有 Git Bash：回退 cmd 且 display 写明原因', () => {
+    const spec = resolveBashShell({
+      platform: 'win32',
+      env: { PATH: 'C:\\Windows\\system32', ComSpec: 'C:\\Windows\\system32\\cmd.exe' },
+      exists: () => false,
+    });
+    expect(spec.kind).toBe('cmd');
+    expect(spec.display).toContain('未找到 Git Bash');
+  });
+
+  it('PATH 里的 WSL bash 不会被误选', () => {
+    const spec = resolveBashShell({
+      platform: 'win32',
+      env: { PATH: 'C:\\Windows\\system32', ComSpec: 'C:\\Windows\\system32\\cmd.exe' },
+      exists: (p) => p.toLowerCase() === 'c:\\windows\\system32\\bash.exe',
+    });
+    expect(spec.kind).toBe('cmd');
+  });
+});
+
 describe.skipIf(!IS_WINDOWS)('Windows 真机：bash 工具走 Git Bash / cmd 回退', () => {
   it('Git Bash：ls / pwd / head 经真实 shell 成功执行', async () => {
     const file = join(tmpDir(), 'sample.txt');

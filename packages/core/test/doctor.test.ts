@@ -60,8 +60,10 @@ describe('runDoctor 分节检查', () => {
     expect(byId.get('config')!.status).toBe('warn'); // 未配置 = 全新环境提示
     expect(byId.get('config')!.summary).toContain('未找到配置文件');
     expect(byId.get('home')!.status).toBe('ok');
-    // A1-1：doctor 报告 bash 工具实际使用的 shell（探测结果，不是配置里写的值）
-    expect(byId.get('bash')!.status).toBe('ok');
+    // A1-1：doctor 报告 bash 工具实际使用的 shell（探测结果，不是配置里写的值）。
+    // 不依赖本机是否装了 Git Bash：命中与否由 shell.ts 的注入用例保证，这里只锁「实际使用」这条契约；
+    // 状态放宽为 ok | warn（装了 Git Bash → ok，没装 → warn 回退 cmd），exit code 仍必须为 0。
+    expect(['ok', 'warn']).toContain(byId.get('bash')!.status);
     expect(byId.get('bash')!.summary).toContain('实际使用');
     expect(byId.get('mcp')!.status).toBe('ok');
     expect(byId.get('sessions')!.status).toBe('ok');
