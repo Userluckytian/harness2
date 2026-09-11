@@ -2,9 +2,22 @@
 // 红线：不臆造配置；密钥不出现在界面；无能力/无配置给可行动提示（不摆假入口）。
 import { useEffect, useState } from 'react';
 import { capabilityEnabled, capabilityReason, CAPABILITY_LABELS } from '../../../shared/capabilities.js';
-import type { CapabilityIdShape } from '../../../shared/protocol.js';
+import type { CapabilityIdShape, EffectiveRunConfigShape } from '../../../shared/protocol.js';
 import { controller, store, useAppState } from '../../app-shared.js';
 import { cancelStateLabel, deriveRuntimeStatus } from '../runtime/runtime-status.js';
+
+/** P1-1 连带防御：指派分栏现在也会写入视图缓存 —— 旧 serve/异常数据可能缺关键字段。
+ *  形状不完整时按「未载入」呈现：不渲染半份配置，也不崩溃。 */
+function isDisplayableRunConfig(rc: EffectiveRunConfigShape): boolean {
+  return (
+    rc.session?.cwd !== undefined &&
+    rc.provider?.channel !== undefined &&
+    rc.approval?.mode !== undefined &&
+    rc.modes?.memory !== undefined &&
+    rc.connection?.status !== undefined &&
+    rc.context !== undefined
+  );
+}
 
 /** 能力行（不可用时 disabled + 原因，不摆可点假入口） */
 function CapabilityRow({ id }: { id: CapabilityIdShape }) {
@@ -47,7 +60,7 @@ export function EffectiveConfigPanel({ sessionId }: { sessionId: string | null }
   if (sessionId === null) return <div className="panel-empty">未选择会话</div>;
   const views = store.peekViews(sessionId);
   const rc = views?.runConfig;
-  if (rc === undefined) {
+  if (rc === undefined || !isDisplayableRunConfig(rc)) {
     return (
       <div className="panel config-panel">
         <div className="panel-head">
@@ -55,7 +68,9 @@ export function EffectiveConfigPanel({ sessionId }: { sessionId: string | null }
         </div>
         <div className="panel-empty">
           {views?.errors.runConfig ??
-            '尚未载入有效配置：serve 未连接或会话未就绪（连接后自动载入；此处不显示占位配置）'}
+            (rc !== undefined
+              ? '配置数据形状不完整（旧 serve 或读取异常）：已如实丢弃，不渲染半份配置'
+              : '尚未载入有效配置：serve 未连接或会话未就绪（连接后自动载入；此处不显示占位配置）')}
         </div>
         <div className="panel-foot">
           <button type="button" onClick={() => void controller.refreshRunConfig(sessionId)}>

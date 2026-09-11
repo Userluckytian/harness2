@@ -191,12 +191,7 @@ describe('cancel-ack 三态（全局表；不假报停止）', () => {
 
 // —— 审查 P2-2：resume 路径接线（重连自动恢复 + force 在途去重 + UI 真实调用点）——
 import { createController } from '../src/renderer/app-controller.js';
-import type {
-  ConnectionStatus,
-  Harness2Api,
-  StatusDetail,
-  WsFrame,
-} from '../src/shared/protocol.js';
+import type { ConnectionStatus, Harness2Api, StatusDetail, WsFrame } from '../src/shared/protocol.js';
 
 function reconnectApi(over: Partial<Harness2Api> = {}): {
   api: Harness2Api;

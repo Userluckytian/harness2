@@ -67,10 +67,7 @@ export interface Controller {
   setPaneCount(count: number): Promise<void>;
   assignToPane(paneIndex: number, sessionId: string | null): Promise<void>;
   /** P2-4：审批模式切换落地 —— 写全局 config.json 的 approval.mode（settings:updateConfig 白名单深合并） */
-  setApprovalMode(
-    sessionId: string,
-    mode: 'default' | 'plan',
-  ): Promise<{ ok: boolean; message: string }>;
+  setApprovalMode(sessionId: string, mode: 'default' | 'plan'): Promise<{ ok: boolean; message: string }>;
 }
 
 export function createController(store: AppStore, api: Harness2Api): Controller {

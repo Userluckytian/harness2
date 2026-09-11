@@ -144,7 +144,9 @@ export function workspaceInfoFrom(
   sessionId: string,
   runConfig: { session: { root: string; cwd: string; perSessionCwd: boolean } } | undefined,
 ): WorkspaceInfo | null {
-  if (runConfig === undefined) return null;
+  // P1-1 连带防御：视图缓存可能在「指派分栏」时写入 —— 形状不完整（缺 session）按未载入处理，
+  // 不渲染半份工作区信息，也不崩溃。
+  if (runConfig?.session === undefined) return null;
   return {
     sessionId,
     root: runConfig.session.root,

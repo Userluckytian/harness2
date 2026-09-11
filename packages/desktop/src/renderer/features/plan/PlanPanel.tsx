@@ -11,7 +11,9 @@ export function PlanPanel({ sessionId }: { sessionId: string | null }) {
   const views = store.peekViews(sessionId);
   const display = buildPlanDisplay(views?.planState);
   const runConfig = views?.runConfig;
-  const currentMode = runConfig?.approval.mode ?? '（未知）';
+  // P1-1 连带防御：指派分栏现在也会写入视图缓存 —— 旧 serve/异常数据可能缺 approval 字段，
+  // 读缺时如实显示（未知），绝不因半份配置崩溃。
+  const currentMode = runConfig?.approval?.mode ?? '（未知）';
 
   const switchMode = (to: 'default' | 'plan'): void => {
     // 显式动作：这里 explicit=true 由「用户点击」这一事实决定；纯函数再校验一次语义
