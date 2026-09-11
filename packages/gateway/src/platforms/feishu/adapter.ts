@@ -86,8 +86,24 @@ export class FeishuAdapter implements PlatformAdapter {
     server.on('error', (e: Error) => {
       console.error(`[gateway/feishu] webhook 端点错误: ${e.message}`);
     });
+    // P1-a（A5 P1-1）：listen 失败（EADDRINUSE 等）必须让 start() 落定拒绝——
+    // 仅靠持久 error 监听打日志会让 await start() 永久挂死（CLI gateway 假死）。
+    // 监听成功后摘除启动期 error 监听（后续错误仍由持久监听记录）。
+    await new Promise<void>((resolve, reject) => {
+      const onError = (e: Error): void => {
+        server.removeListener('listening', onListening);
+        reject(e);
+      };
+      const onListening = (): void => {
+        server.removeListener('error', onError);
+        resolve();
+      };
+      server.once('error', onError);
+      server.once('listening', onListening);
+      server.listen(port, '127.0.0.1');
+    });
+    // 仅在 listen 成功后登记：失败时保持 null，stop() 不会对未监听 server 调 close
     this.server = server;
-    await new Promise<void>((resolve) => server.listen(port, '127.0.0.1', resolve));
   }
 
   /** 解析飞书事件体：url_verification 应答挑战；消息事件 → 统一 InboundMessage */
