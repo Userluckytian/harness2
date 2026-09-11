@@ -2,29 +2,71 @@
 // 按键：可打印字符插入光标位；Backspace/Delete 删除；左右键移光标；Enter 发送（清空，
 // 触发 onSend）；Shift+Enter 或行尾 \ 续行不发送；上下键在本会话已发送历史回溯/前进
 // （仅本会话，不跨会话持久化）；Ctrl+C 两次退出；空 buffer 时 Ctrl+D 退出。
+// T0：忙时不再吞掉输入——字符照常编辑草稿、Enter 交给上层排队/执行、Esc 取消当前 turn；
+// 空闲 Ctrl+C 首按仅显示瞬时页脚提示（用局部 state，绝不写入 draft）。
 // 退出逻辑经 onExit 回调上交（复用 existing 退出语义）。
 import React from 'react';
 import { useInput, Box, Text } from 'ink';
 import { matchCommands } from '../command-registry.js';
+import { createCtrlCGuard, type ExitReason } from './shutdown.js';
+
+const CTRL_C_WINDOW_MS = 2000;
 
 export interface ComposerProps {
-  /** 双行视觉提示当前输入多行状态 */
+  /** 双行视觉提示当前输入多行状态；true 时仍可编辑草稿 */
   busy?: boolean;
   /** 输入焦点（浮层打开时 false，卸载非激活键盘监听实现互斥） */
   active?: boolean;
-  /** Enter 发送（携带清空后的内容；由调用方决定语义） */
+  /** Enter 发送（携带清空后的内容；由调用方决定语义，忙时由上层排队） */
   onSend: (text: string) => void;
-  /** Ctrl+C 两次 / 空 buffer 时 Ctrl+D 的上交退出钩子 */
-  onExit: () => void;
+  /** Ctrl+C 两次 / 空 buffer 时 Ctrl+D 的上交退出钩子（reason 供退出码区分） */
+  onExit: (reason?: ExitReason) => void;
+  /** 忙时 Esc / Ctrl+C 触发：取消当前 turn */
+  onAbort?: () => void;
+  /** 上层 FIFO 队列长度（>0 时页脚提示） */
+  queuedCount?: number;
 }
 
-export function Composer({ busy = false, active = true, onSend, onExit }: ComposerProps): React.ReactElement {
+export function Composer({
+  busy = false,
+  active = true,
+  onSend,
+  onExit,
+  onAbort,
+  queuedCount = 0,
+}: ComposerProps): React.ReactElement {
   const [value, setValue] = React.useState('');
   const [cursor, setCursor] = React.useState(0);
   const [candidateIndex, setCandidateIndex] = React.useState(0);
+  // 空闲 Ctrl+C 首次按键的瞬时页脚提示（局部 state，不污染 draft）
+  const [ctrlCHint, setCtrlCHint] = React.useState<string | null>(null);
   const historyRef = React.useRef<string[]>([]);
   const historyIdxRef = React.useRef(-1);
-  const lastCtrlCAtRef = React.useRef(0);
+  const ctrlCGuardRef = React.useRef(createCtrlCGuard({ windowMs: CTRL_C_WINDOW_MS }));
+  const hintTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const clearCtrlCHint = (): void => {
+    if (hintTimerRef.current !== null) {
+      clearTimeout(hintTimerRef.current);
+      hintTimerRef.current = null;
+    }
+    setCtrlCHint(null);
+  };
+  const showCtrlCHint = (msg: string): void => {
+    clearCtrlCHint();
+    setCtrlCHint(msg);
+    hintTimerRef.current = setTimeout(() => {
+      hintTimerRef.current = null;
+      setCtrlCHint(null);
+    }, CTRL_C_WINDOW_MS);
+  };
+  // 卸载清理提示定时器（退出后无遗留 timer）
+  React.useEffect(
+    () => () => {
+      if (hintTimerRef.current !== null) clearTimeout(hintTimerRef.current);
+    },
+    [],
+  );
 
   // 命令名阶段：value 以 / 开头且不含空格/换行（输入单个命令名，未进入参数）
   const commandNameActive = value.startsWith('/') && !value.includes(' ') && !value.includes('\n');
@@ -37,7 +79,12 @@ export function Composer({ busy = false, active = true, onSend, onExit }: Compos
 
   useInput(
     (input, key) => {
-      if (busy) return; // turn 期间不响应输入（发送后清空，缓冲由上层策略处理）
+      const isCtrlC = Boolean(key.ctrl && input === 'c');
+      // 任何非 Ctrl+C 按键都视为退出协议中断：重置窗口并清掉提示
+      if (!isCtrlC) {
+        ctrlCGuardRef.current.reset();
+        if (ctrlCHint !== null) clearCtrlCHint();
+      }
 
       // —— 命令名阶段：↑↓ 切候选、Tab 补全候选（不发送）；其余按键照常（含字符输入） ——
       if (candidates.length > 0) {
@@ -61,19 +108,23 @@ export function Composer({ busy = false, active = true, onSend, onExit }: Compos
         // 其余按键落到普通输入流（Enter 触发 onSend 等）
       }
 
-      if (key.ctrl && input === 'c') {
-        const now = Date.now();
-        if (now - lastCtrlCAtRef.current < 2000) {
-          onExit();
+      if (isCtrlC) {
+        const verdict = ctrlCGuardRef.current.press({ busy });
+        if (verdict === 'cancel') {
+          clearCtrlCHint();
+          onAbort?.();
           return;
         }
-        lastCtrlCAtRef.current = now;
-        setValue((v) => v + '（再按一次 Ctrl+C 退出）');
-        setCursor((c) => c + 1);
+        if (verdict === 'confirm') {
+          clearCtrlCHint();
+          onExit('sigint');
+          return;
+        }
+        showCtrlCHint('（再按一次 Ctrl+C 退出）');
         return;
       }
       if (key.ctrl && input === 'd') {
-        if (value.trim().length === 0) onExit();
+        if (value.trim().length === 0) onExit('eof');
         return;
       }
       if (key.shift && key.return) {
@@ -149,6 +200,11 @@ export function Composer({ busy = false, active = true, onSend, onExit }: Compos
         return;
       }
       if (key.escape) {
+        if (busy) {
+          // 忙时 Esc：停止当前 turn（不清草稿）
+          onAbort?.();
+          return;
+        }
         setValue('');
         setCursor(0);
         return;
@@ -161,14 +217,20 @@ export function Composer({ busy = false, active = true, onSend, onExit }: Compos
         });
       }
     },
-    { isActive: active && !busy },
+    { isActive: active },
   );
 
   const visualValue = value.replace(/\n/g, '¶\n');
 
   return (
     <Box flexDirection="column" borderStyle="round" flexShrink={0}>
-      {busy && <Text color="gray">忙碌中…（等待当前 turn 完成）</Text>}
+      {busy && (
+        <Text color="gray">
+          Esc 停止当前 turn · Enter 排队
+          {queuedCount > 0 ? ` · 已排队 ${queuedCount} 条` : ''}
+        </Text>
+      )}
+      {ctrlCHint !== null && <Text color="gray">{ctrlCHint}</Text>}
       <Box flexDirection="row">
         <Text color="green">&gt; </Text>
         <Text>{visualValue}</Text>

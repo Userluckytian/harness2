@@ -35,7 +35,7 @@ describe('ReasoningBlock（当前 turn 推理折叠块）', () => {
   it('折叠态：单行灰色标题 + 前 72 字符预览', () => {
     const long = '推理内容 '.repeat(30);
     const out = renderToString(<ReasoningBlock text={long} expanded={false} />);
-    expect(out).toContain('[reasoning · 按 r 展开]');
+    expect(out).toContain('[reasoning · 按 Ctrl+R 展开]');
     expect(out).not.toContain(
       '推理内容 推理内容 推理内容 推理内容 推理内容 推理内容 推理内容 推理内容 推理内容 推理内容 推理内容 推理内容 推理内容 推理内容 推理内容',
     ); // 完整长文本不出现在折叠行
@@ -45,7 +45,7 @@ describe('ReasoningBlock（当前 turn 推理折叠块）', () => {
     const out = renderToString(<ReasoningBlock text={'先想想\n再动手'} expanded />);
     expect(out).toContain('先想想');
     expect(out).toContain('再动手');
-    expect(out).not.toContain('[reasoning · 按 r 展开]');
+    expect(out).not.toContain('[reasoning · 按 Ctrl+R 展开]');
   });
 
   it('空文本：不渲染', () => {

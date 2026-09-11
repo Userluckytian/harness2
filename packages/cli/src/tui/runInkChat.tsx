@@ -2,7 +2,7 @@
 // 门控（T0 决策）：isTTY && !(HARNESS2_NO_TUI || --no-tui) && (HARNESS2_TUI=1 || 现代终端 || 默认全量)。
 // 装配与 legacy 共用 setupChatSession（禁止两套装配）；渲染走 React state 桥接。
 import React, { useRef, useState } from 'react';
-import { render, useApp, useInput, Box, Text } from 'ink';
+import { render, useInput, Box, Text } from 'ink';
 import { setupChatSession, type ChatRuntime, type TurnResult } from '../chat-setup.js';
 import type { ChatOptions } from '../legacy-chat.js';
 import { StatusBar } from './StatusBar.js';
@@ -13,6 +13,7 @@ import { Modal } from './Modal.js';
 import { SelectList } from './SelectList.js';
 import { ConfirmDialog } from './ConfirmDialog.js';
 import { useTurnStream, type TurnSnapshot } from './useTurnStream.js';
+import { createShutdown, type ExitReason } from './shutdown.js';
 import { parseCommand, HELP_TEXT } from '../commands.js';
 import { expandContextRefs, hasContextRefs } from '../context-ref.js';
 import {
@@ -104,16 +105,32 @@ export async function runInkChat(options: ChatOptions = {}): Promise<void> {
   });
 
   await new Promise<void>((resolve) => {
-    const app = render(<InkShell runtime={runtime} bootLines={bootLines} dialog={dialog} onExit={resolve} />, {
-      exitOnCtrlC: false,
-    });
-    const timer = setInterval(() => {
-      if (process.stdin.destroyed) {
-        clearInterval(timer);
-        app.unmount();
+    let app: ReturnType<typeof render> | null = null;
+    // T0 幂等退出：finish 只执行一次（ink unmount + runtime.finish），随后写 process.exitCode
+    // 并放开等待；不再用 setInterval 轮询 stdin.destroyed（会遗留 timer）。
+    const shutdown = createShutdown({
+      finish: async () => {
+        app?.unmount();
+        await runtime.finish({
+          destroyInput: () => process.stdin.destroy(),
+        });
+      },
+      exit: (code) => {
+        process.exitCode = code; // 不 abrupt process.exit，让 ink 拆屏与锁释放完成
         resolve();
-      }
-    }, 200);
+      },
+    });
+    app = render(
+      <InkShell
+        runtime={runtime}
+        bootLines={bootLines}
+        dialog={dialog}
+        onExit={(reason: ExitReason) => {
+          shutdown.request(reason);
+        }}
+      />,
+      { exitOnCtrlC: false },
+    );
   });
 }
 
@@ -123,21 +140,26 @@ function InkShell({
   runtime,
   bootLines,
   dialog,
+  onExit,
 }: {
   runtime: ChatRuntime;
   bootLines: string[];
   dialog: ReturnType<typeof createDialogController>;
-  onExit: () => void;
+  onExit: (reason: ExitReason) => void;
 }): React.ReactElement {
-  const { exit } = useApp();
   const [settled, setSettled] = useState<string[]>(bootLines);
   const [busy, setBusy] = useState(false);
-  // T8：推理折叠块展开态（turn 内按 r 切换；busy 期间由 InkShell 层 useInput 接管）
+  // T8：推理折叠块展开态（turn 内 Ctrl+R 切换；忙时 Composer 接管普通字符输入，故用带修饰键快捷键）
   const [reasoningExpanded, setReasoningExpanded] = useState(false);
   // T5/T6：单一浮层宿主。命令与审批都经 overlay 呈现；存在即互斥接管键盘。
   const [overlay, setOverlay] = useState<React.ReactNode>(null);
   const closeOverlayRef = useRef<() => void>(() => undefined);
   const overlayOpen = overlay !== null;
+  // T0：忙时 FIFO 排队（对齐 legacy-chat：忙碌中的输入不并发、当前 turn 收尾后立即执行下一条）
+  const busyRef = useRef(false);
+  const exitingRef = useRef(false);
+  const queueRef = useRef<string[]>([]);
+  const [queuedCount, setQueuedCount] = useState(0);
 
   const { live, handler, commit, reset } = useTurnStream((snapshot: TurnSnapshot) => {
     const text = snapshot.text.trim();
@@ -166,11 +188,11 @@ function InkShell({
     );
   }, [dialog, reqTick]);
 
-  // T8：busy 期间按 r 展开/收起当前 turn 的推理折叠块（Composer 此时不接管，互不冲突）
+  // T8：busy 期间 Ctrl+R 展开/收起当前 turn 的推理折叠块。
+  // T0 起 Composer 忙时也接管普通字符输入，故推理快捷键改为 Ctrl+R，避免与草稿输入冲突。
   useInput(
     (input, key) => {
-      // 推理折叠展开快捷键：busy 期间按 r（enter/空格等由 Composer 处理）
-      if (input.toLowerCase() === 'r' && !key.ctrl && !key.meta) setReasoningExpanded((v) => !v);
+      if (key.ctrl && input.toLowerCase() === 'r') setReasoningExpanded((v) => !v);
     },
     { isActive: busy && !overlayOpen },
   );
@@ -272,7 +294,7 @@ function InkShell({
         }
         if (arg === 'on') {
           runtime.setReasoning(true);
-          sendSystem('推理展示已开启（turn 内按 r 展开/收起折叠块）。');
+          sendSystem('推理展示已开启（turn 内按 Ctrl+R 展开/收起折叠块）。');
           return;
         }
         if (arg === 'off') {
@@ -288,22 +310,60 @@ function InkShell({
         sendSystem('任务列表请使用 `harness2 cron list` 查看（REPL 只读展示将在后续版本提供）。');
         return;
       case '/exit':
-        exit(0);
+        exitingRef.current = true;
+        if (busyRef.current) {
+          // turn 进行中：先取消，等本轮收尾后由 finally 触发退出（对齐 legacy requestExit）
+          runtime.abortTurn();
+          return;
+        }
+        onExit('exit');
         return;
       default:
         sendSystem(`error: 未实现命令 ${name}（/help 查看）`);
     }
   }
 
-  async function submit(text: string): Promise<void> {
-    if (text.trim().length === 0 || busy) return;
+  /** T0：取消当前 turn（Esc/Ctrl+C 忙时触发；abort 后 stopReason=cancelled，部分文本照常落定） */
+  function abortCurrentTurn(): void {
+    if (!busyRef.current) return;
+    sendSystem('^C（正在取消当前 turn…）');
+    runtime.abortTurn();
+  }
+
+  /** 取出一条排队输入并执行；exiting 后不再取（对齐 legacy 的 queue.shift 收尾逻辑） */
+  function drainQueue(): void {
+    if (exitingRef.current) return;
+    const next = queueRef.current.shift();
+    if (next === undefined) return;
+    setQueuedCount(queueRef.current.length);
+    void handleInput(next);
+  }
+
+  /** 忙时入队（不并发）；空闲时直接执行。命令与普通 turn 走同一入口（对齐 legacy）。 */
+  function submit(text: string): void {
+    if (text.trim().length === 0) return;
+    if (busyRef.current) {
+      queueRef.current.push(text);
+      setQueuedCount(queueRef.current.length);
+      return;
+    }
+    void handleInput(text);
+  }
+
+  async function handleInput(text: string): Promise<void> {
     const parsed = parseCommand(text);
     if (parsed !== null) {
       setSettled((l) => [...l, `> ${text}`]);
       handleCommand(parsed.name, parsed.rest);
+      if (!busyRef.current) drainQueue();
       return;
     }
+    await runTurnText(text);
+  }
+
+  async function runTurnText(text: string): Promise<void> {
     reset();
+    busyRef.current = true;
     let result: TurnResult | undefined;
     setBusy(true);
     setSettled((l) => [...l, `> ${text}`]);
@@ -317,7 +377,7 @@ function InkShell({
       result = await runtime.runUserTurn(sendText, handler);
       commit();
       if (result !== undefined) {
-        // turn 摘要（对齐 legacy 的 [end_turn ...] 行）
+        // turn 摘要（对齐 legacy 的 [end_turn ...] 行）；abort 时 stopReason 为 cancelled
         const parts = [`[${result.stopReason}`, `steps ${result.steps}`, `toolCalls ${result.toolCalls}`];
         if (result.error !== undefined) parts.push(`error: ${result.error}`);
         if (result.warning !== undefined) parts.push(`warning: ${result.warning}`);
@@ -326,8 +386,11 @@ function InkShell({
     } catch (e) {
       setSettled((l) => [...l, `error: ${(e as Error)?.message ?? String(e)}`]);
     } finally {
+      busyRef.current = false;
       setBusy(false);
       setReasoningExpanded(false);
+      if (exitingRef.current) onExit('exit');
+      else drainQueue();
     }
   }
 
@@ -343,7 +406,14 @@ function InkShell({
         busy={busy}
         reasoningExpanded={reasoningExpanded}
       />
-      <Composer busy={busy} active={!overlayOpen} onSend={(t) => void submit(t)} onExit={() => exit(0)} />
+      <Composer
+        busy={busy}
+        active={!overlayOpen}
+        onSend={submit}
+        onExit={(reason) => onExit(reason ?? 'exit')}
+        onAbort={abortCurrentTurn}
+        queuedCount={queuedCount}
+      />
     </Box>
   );
 }
