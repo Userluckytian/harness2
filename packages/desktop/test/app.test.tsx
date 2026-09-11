@@ -85,6 +85,8 @@ function makeFakeApi() {
     capabilities: vi.fn(async () => ({ probedAt: '', entries: [] })),
     notify: vi.fn(async () => undefined),
     metadataGet: vi.fn(async () => ({})),
+    draftsGet: vi.fn(async () => ({})),
+    draftsSet: vi.fn(async (d: Record<string, string>) => d),
     metadataSet: vi.fn(async (id: string, patch: { title?: string; archived?: boolean; deleted?: boolean }) => {
       const meta: Record<string, { title?: string; archived?: boolean; deleted?: boolean }> = {};
       meta[id] = patch;
@@ -167,7 +169,7 @@ describe('对话 UI（jsdom）', () => {
     expect((saveCalls.at(-1)?.[0] as { panes: unknown[] }).panes).toHaveLength(3);
   });
 
-  it('输入框：Enter 发送（trim）→ 转运行中（停止按钮）→ 停止调 abort；Shift+Enter 换行不发送', async () => {
+  it('输入框：Enter 提交（trim）→ 转运行中（停止按钮）→ 停止发 cancel；Shift+Enter 换行不提交', async () => {
     const api = makeFakeApi();
     const App = (await bootApp(api)) as { App: () => React.ReactNode };
     render(<App.App />);
@@ -175,15 +177,19 @@ describe('对话 UI（jsdom）', () => {
 
     const box = (await screen.findByPlaceholderText(/输入消息/)) as HTMLTextAreaElement;
     fireEvent.change(box, { target: { value: '  你好  ' } });
-    fireEvent.keyDown(box, { key: 'Enter', shiftKey: true }); // 换行：不发送
-    fireEvent.keyDown(box, { key: 'Enter', shiftKey: false }); // 发送
-    expect(api.sendMessage).toHaveBeenCalledWith('s1', '你好');
-    expect(box.value).toBe(''); // 发送后清空
+    fireEvent.keyDown(box, { key: 'Enter', shiftKey: true }); // 换行：不提交
+    fireEvent.keyDown(box, { key: 'Enter', shiftKey: false }); // 提交
+    // D1：发送走 submit（幂等 clientMessageId + queue 语义），不再走无 ack 的 user-message
+    expect(api.submit).toHaveBeenCalledWith(
+      expect.objectContaining({ sessionId: 's1', rawText: '你好', intent: 'queue' }),
+    );
+    expect(box.value).toBe(''); // 提交后清空草稿
 
     // 乐观 running → 停止按钮出现
     expect(await screen.findByRole('button', { name: /停止/ })).toBeTruthy();
     fireEvent.click(screen.getByRole('button', { name: /停止/ }));
-    expect(api.abort).toHaveBeenCalledWith('s1');
+    // D3/D4：停止走 cancel（三态 ack），目标 = 当前 turn
+    expect(api.cancel).toHaveBeenCalledWith(expect.objectContaining({ target: { kind: 'turn', id: 't1' } }));
   });
 
   it('审批条：approval-request 帧 → 允许/拒绝按钮 → respondApproval 带决策', async () => {

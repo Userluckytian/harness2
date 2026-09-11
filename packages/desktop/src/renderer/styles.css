@@ -522,6 +522,51 @@ body,
 .btn-deny {
   background: var(--danger);
 }
+/* D1：可见队列（排队/暂停/待确认/未确认）+ @引用 来源报告 */
+.queue-bar,
+.ref-report {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 6px 16px;
+  border-top: 1px solid var(--border);
+  font-size: 0.85em;
+}
+.ref-sources {
+  color: var(--muted);
+}
+.ref-skipped,
+.ref-missing {
+  color: var(--warn);
+}
+.queue-item {
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+}
+.queue-kind {
+  flex: 0 0 auto;
+  border-radius: 4px;
+  padding: 1px 6px;
+  background: var(--panel);
+  color: var(--muted);
+}
+.queue-item.queue-unconfirmed .queue-kind {
+  background: var(--danger);
+  color: white;
+}
+.queue-item.queue-paused .queue-kind {
+  background: var(--warn);
+}
+.queue-text {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.queue-note {
+  color: var(--muted);
+}
 .composer {
   display: flex;
   gap: 8px;

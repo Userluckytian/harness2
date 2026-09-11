@@ -350,6 +350,8 @@ function makeFakeApi(): any {
     capabilities: vi.fn(async () => ({ probedAt: '', entries: [] })),
     notify: vi.fn(async () => undefined),
     metadataGet: vi.fn(async () => ({})),
+    draftsGet: vi.fn(async () => ({})),
+    draftsSet: vi.fn(async (d: Record<string, string>) => d),
     metadataSet: vi.fn(async () => ({})),
     onEvent: vi.fn(() => () => {}),
     onConnectionStatus: vi.fn((cb: (s: string) => void) => {

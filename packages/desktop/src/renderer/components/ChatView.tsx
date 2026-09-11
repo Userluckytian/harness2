@@ -1,8 +1,9 @@
-// 消息流（B3-2 拆分产物）：ChatItemView / ChatView（气泡、tool 行、diff 卡、审批条、输入框）。
-// 原 App.tsx 第 319–547 行逐字搬入；状态与 controller 来自 ../app-shared。
-import { useEffect, useRef, useState } from 'react';
+// 消息流（B3-2 拆分产物；D1 起接 Composer 草稿/引用/可见队列）。
+// ChatItemView / ChatView（气泡、tool 行、diff 卡、审批条、输入框）。
+import { useEffect, useRef } from 'react';
 import { displayToolName, type ChatItem } from '../chat-model.js';
 import { resolveFileRefs } from '../../shared/file-ref.js';
+import { autoHeightFor, composeQueueView, shouldSubmitOnKey } from '../features/composer/composer-model.js';
 import { DiffCard } from './DiffCard.js';
 import { controller, store, targetPaneFor, useAppState } from '../app-shared.js';
 
@@ -133,7 +134,8 @@ export function ChatView({ streamId }: { streamId: string | null }) {
   const state = useAppState();
   const stream = streamId !== null ? store.peekStream(streamId) : undefined;
   const items = streamId !== null ? store.chatItems(streamId) : [];
-  const [draft, setDraft] = useState('');
+  // D1：草稿按会话隔离（store 持事实；切换会话各自保留），持久化经 controller 去抖落盘
+  const draft = streamId !== null ? store.draftFor(streamId) : '';
   const scrollRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -158,22 +160,32 @@ export function ChatView({ streamId }: { streamId: string | null }) {
 
   const draftText = draft.trim();
   const send = (): void => {
-    if (draftText.length === 0 || stream.running) return;
-    setDraft('');
-    // B8 @file 引用：文本含 @ 且当前会话有 cwd → 经 IPC 解析并把代码块拼到消息最前。
-    // cwd 未知/为空时按无 @ 处理（不报错、不发 IPC）；UI 输入框内容保持不变（用户仍看到原文本）。
-    const session = streamId !== null ? state.sessions.find((s) => s.id === streamId) : undefined;
+    if (draftText.length === 0) return;
+    const session = state.sessions.find((s) => s.id === streamId);
     const cwd = session?.cwd;
+    // 原始输入与模型上下文分离：草稿先清（用户可继续输入下一句），随后解析 @引用 合成 finalText
+    controller.setDraft(streamId, '');
     if (cwd && cwd.length > 0 && draftText.includes('@')) {
+      // D1：@引用 解析（路径边界/字节预算/二进制由 shared/file-ref 统一把关）
       void resolveFileRefs(draftText, cwd, (path, c) => window.harness2.readFileForRef(path, c)).then(
-        ({ finalText }) => {
-          void controller.sendMessage(streamId!, finalText);
+        ({ finalText, sources, skipped, notFound }) => {
+          // 引用来源可见：进了上下文的 / 被拒的 / 未找到的，全部记账后展示
+          store.setRefReport(streamId, { sources, skipped, notFound });
+          void controller.submitMessage(streamId, finalText);
         },
       );
       return;
     }
-    void controller.sendMessage(streamId!, draftText);
+    store.setRefReport(streamId, { sources: [], skipped: [], notFound: [] });
+    void controller.submitMessage(streamId, draftText);
   };
+
+  const queueView = composeQueueView({
+    queue: stream.queue,
+    pendingSubmits: stream.pendingSubmits,
+    submitAcks: stream.submitAcks,
+  });
+  const refReport = store.peekRefReport(streamId);
 
   return (
     <div className="chat">
@@ -208,23 +220,75 @@ export function ChatView({ streamId }: { streamId: string | null }) {
           ))}
         </div>
       )}
+      {refReport !== undefined &&
+        refReport.sources.length + refReport.skipped.length + refReport.notFound.length > 0 && (
+          <div className="ref-report" aria-label="引用来源">
+            {refReport.sources.length > 0 && (
+              <span className="ref-sources">
+                引用：{refReport.sources.map((s) => `${s.token}(${s.bytes}B${s.truncated ? ' 截断' : ''})`).join(' ')}
+              </span>
+            )}
+            {refReport.skipped.map((s) => (
+              <span key={s.token} className="ref-skipped">
+                {s.token} 未纳入（{s.reason === 'binary' ? '二进制' : '超出字节预算'}）
+              </span>
+            ))}
+            {refReport.notFound.map((t) => (
+              <span key={t} className="ref-missing">
+                {t} 未找到
+              </span>
+            ))}
+          </div>
+        )}
+      {queueView.length > 0 && (
+        <div className="queue-bar" aria-label="待发送队列">
+          {queueView.map((q) => (
+            <div key={q.id} className={`queue-item queue-${q.kind}`}>
+              <span className="queue-kind">
+                {q.kind === 'queued'
+                  ? '排队'
+                  : q.kind === 'paused'
+                    ? '暂停'
+                    : q.kind === 'pending'
+                      ? '待确认'
+                      : '未确认'}
+              </span>
+              <span className="queue-text">{q.text}</span>
+              {q.note !== undefined && <span className="queue-note">{q.note}</span>}
+            </div>
+          ))}
+        </div>
+      )}
       <div className="composer">
         <textarea
           value={draft}
+          style={{ height: autoHeightFor(draft) }}
           placeholder={state.status === 'connected' ? '输入消息（Enter 发送，Shift+Enter 换行）' : '服务未连接…'}
           disabled={state.status !== 'connected'}
-          onChange={(e) => setDraft(e.target.value)}
+          onChange={(e) => controller.setDraft(streamId, e.target.value)}
           onKeyDown={(e) => {
-            if (e.key === 'Enter' && !e.shiftKey) {
+            // IME 不误发：组合中（isComposing / keyCode 229）绝不提交
+            if (shouldSubmitOnKey(e)) {
               e.preventDefault();
               send();
             }
           }}
         />
         {stream.running ? (
-          <button type="button" className="btn-stop" onClick={() => void controller.abort(streamId)}>
-            ■ 停止
-          </button>
+          <>
+            <button
+              type="button"
+              className="btn-send"
+              disabled={draftText.length === 0}
+              title="排队发送（当前 turn 结束后按序执行）"
+              onClick={send}
+            >
+              排队
+            </button>
+            <button type="button" className="btn-stop" onClick={() => void controller.cancelTurn(streamId)}>
+              ■ 停止
+            </button>
+          </>
         ) : (
           <button type="button" className="btn-send" disabled={draftText.length === 0} onClick={send}>
             发送

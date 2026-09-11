@@ -53,6 +53,8 @@ const api: Harness2Api = {
   metadataGet: () => ipcRenderer.invoke(IPC_INVOKE, { cmd: 'metadata:get' }),
   metadataSet: (id: string, patch: { title?: string; archived?: boolean; deleted?: boolean }) =>
     ipcRenderer.invoke(IPC_INVOKE, { cmd: 'metadata:set', id, patch }),
+  draftsGet: () => ipcRenderer.invoke(IPC_INVOKE, { cmd: 'drafts:get' }),
+  draftsSet: (drafts: Record<string, string>) => ipcRenderer.invoke(IPC_INVOKE, { cmd: 'drafts:set', drafts }),
   // —— D0：S7 只读查询 + S3 交互 op + 能力盘点 ——
   runConfig: (sessionId: string) => ipcRenderer.invoke(IPC_INVOKE, { cmd: 'runConfig', sessionId }),
   planState: (sessionId: string) => ipcRenderer.invoke(IPC_INVOKE, { cmd: 'planState', sessionId }),

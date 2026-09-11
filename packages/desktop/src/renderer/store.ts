@@ -23,6 +23,8 @@ import type {
   WsFrame,
 } from '../shared/protocol.js';
 import { acceptDelta, type DeltaWatermark } from './delivery.js';
+import { getDraftValue, normalizeDrafts, setDraftValue, type DraftsMap } from '../shared/drafts.js';
+import type { FileRefSkipReason, FileRefSource } from '../shared/file-ref.js';
 import * as layoutFns from '../shared/layout.js';
 import {
   assignSession as assignPaneInLayout,
@@ -148,6 +150,8 @@ export interface AppState {
   capabilities?: CapabilityReportShape;
   /** 取消三态 ack（requestId 全局唯一 → 全局表；UI 立即展示 stopping，unknown 不假报停止） */
   cancelAcks: Record<string, CancelAckStateShape>;
+  /** 会话草稿（D1：sessionId → 原始输入；按会话隔离，A/B 项目不串） */
+  drafts: DraftsMap;
 }
 
 export function initialState(): AppState {
@@ -159,7 +163,15 @@ export function initialState(): AppState {
     layout: defaultLayout(),
     metadata: {},
     cancelAcks: {},
+    drafts: {},
   };
+}
+
+/** 本轮 @引用 的来源报告（D1：引用来源可见——哪些进了上下文、哪些被拒及原因） */
+export interface RefReport {
+  sources: FileRefSource[];
+  skipped: Array<{ token: string; reason: FileRefSkipReason }>;
+  notFound: string[];
 }
 
 export class AppStore {
@@ -168,6 +180,43 @@ export class AppStore {
   private readonly streams = new Map<string, SessionStream>();
   /** 只读查询缓存（S7 契约；不进 AppState，读经 peekViews，变更经 notify 触发渲染） */
   private readonly views = new Map<string, SessionViews>();
+  /** @引用 来源报告（D1；不进 AppState，读经 peekRefReport） */
+  private readonly refReports = new Map<string, RefReport>();
+
+  // —— D1：会话草稿（按会话隔离；持久化由 controller 落主进程 desktop-drafts.json） ——
+
+  /** 整份应用草稿（drafts:get 响应）：normalize 后替换（磁盘为事实源） */
+  applyDrafts(raw: unknown): void {
+    this.set({ drafts: normalizeDrafts(raw) });
+  }
+
+  /** 写单会话草稿（内存即时生效；落盘由 controller 去抖合并） */
+  setDraft(id: string, text: string): void {
+    const next = setDraftValue(this.state.drafts, id, text);
+    if (next === this.state.drafts) return;
+    this.set({ drafts: next });
+  }
+
+  /** 取单会话草稿（无 → 空串） */
+  draftFor(id: string): string {
+    return getDraftValue(this.state.drafts, id);
+  }
+
+  /** 丢弃会话草稿（会话被物理移除时） */
+  dropDraft(id: string): void {
+    this.setDraft(id, '');
+  }
+
+  /** 写本轮 @引用 来源报告（发送前解析结果；UI 展示「引用来源」） */
+  setRefReport(id: string, report: RefReport): void {
+    this.refReports.set(id, report);
+    this.notify();
+  }
+
+  /** 读最近一次 @引用 来源报告 */
+  peekRefReport(id: string): RefReport | undefined {
+    return this.refReports.get(id);
+  }
 
   getState = (): AppState => this.state;
 

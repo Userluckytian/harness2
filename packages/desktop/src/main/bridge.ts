@@ -19,6 +19,7 @@ import { readLayout, writeLayout } from './layout-file.js';
 import type { ServeManager } from './serve-manager.js';
 import { readPreferences, writePreferences } from './preferences-file.js';
 import { readMetadata, writeMetadataPatch } from './metadata-file.js';
+import { readDrafts, writeDrafts } from './drafts-file.js';
 import { readAuthMasked, readSettingsConfig, updateAuth, updateSettingsConfig } from './config-file.js';
 import { getCrashReports, getDoctorReport } from './diagnostics.js';
 import { getContextUsageForSession } from './context-usage.js';
@@ -556,6 +557,10 @@ export function createBridge(deps: BridgeDeps): Bridge {
           ...(typeof patch.deleted === 'boolean' ? { deleted: patch.deleted } : {}),
         });
       }
+      case 'drafts:get':
+        return readDrafts(deps.home);
+      case 'drafts:set':
+        return writeDrafts(deps.home, args['drafts']);
       case 'settings:getDoctorReport':
         return getDoctorReport(deps.home, deps.root);
       case 'settings:getCrashReports':

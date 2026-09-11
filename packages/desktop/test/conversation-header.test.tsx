@@ -96,6 +96,8 @@ function makeFakeApi(): Harness2Api {
     capabilities: vi.fn(async () => ({ probedAt: '', entries: [] })),
     notify: vi.fn(async () => undefined),
     metadataGet: vi.fn(async () => ({})),
+    draftsGet: vi.fn(async () => ({})),
+    draftsSet: vi.fn(async (d: Record<string, string>) => d),
     metadataSet: vi.fn(async (id: string) => ({ [id]: {} })),
     onEvent: vi.fn((_cb: (f: WsFrame) => void) => () => {}),
     onConnectionStatus: vi.fn((_cb: (s: string, d?: unknown) => void) => () => {}),

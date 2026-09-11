@@ -56,6 +56,10 @@ export interface Controller {
   initLayout(): Promise<void>;
   /** 启动时读取会话展示态覆层（~/.harness2/desktop-metadata.json；重命名/归档的展示源） */
   initMetadata(): Promise<void>;
+  /** D1：读会话草稿（~/.harness2/desktop-drafts.json；按会话隔离） */
+  initDrafts(): Promise<void>;
+  /** D1：写单会话草稿（内存即时生效；落盘去抖合并，避免每个按键一次写盘） */
+  setDraft(id: string, text: string): void;
   /** 重命名会话（仅展示态 title 覆层，不碰事件日志）；返回新覆层整体 */
   renameSession(id: string, title: string): Promise<void>;
   /** 归档/恢复（archived 覆盖层软删除；数据仍在，可随时恢复） */
@@ -120,6 +124,16 @@ export function createController(store: AppStore, api: Harness2Api): Controller 
     } catch {
       // 持久化失败不影响使用
     }
+  };
+
+  /** D1：草稿落盘去抖（500ms 合并；关闭/切换期间不丢——内存即时生效，落盘尽力而为） */
+  let draftsTimer: ReturnType<typeof setTimeout> | null = null;
+  const persistDraftsSoon = (): void => {
+    if (draftsTimer !== null) clearTimeout(draftsTimer);
+    draftsTimer = setTimeout(() => {
+      draftsTimer = null;
+      void api.draftsSet(store.getState().drafts).catch(() => {});
+    }, 500);
   };
 
   return {
@@ -360,6 +374,17 @@ export function createController(store: AppStore, api: Harness2Api): Controller 
       } catch {
         // 覆层加载失败：保持空（回退默认展示）
       }
+    },
+    async initDrafts(): Promise<void> {
+      try {
+        store.applyDrafts(await api.draftsGet());
+      } catch {
+        // 草稿加载失败：保持空（不影响发送）
+      }
+    },
+    setDraft(id: string, text: string): void {
+      store.setDraft(id, text);
+      persistDraftsSoon();
     },
     async renameSession(id: string, title: string): Promise<void> {
       store.updateMetadata(id, { title });

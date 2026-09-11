@@ -257,6 +257,9 @@ export interface SessionMetadataEntryShape {
 /** metadata:get / metadata:set 的响应（整体覆层映射 sessionId → entry） */
 export type SessionMetadataMapShape = Record<string, SessionMetadataEntryShape>;
 
+/** 会话草稿映射（D1：sessionId → 原始输入草稿；与模型上下文分离，仅发送时合成 finalText） */
+export type DraftsMapShape = Record<string, string>;
+
 // —— S0/S3/S7 冻结契约镜像（core interaction/* 同形；core 冻结后只能加性同步） ——
 //
 // 说明：core 的 `textOutcome` 在 turn-end 帧恒发（必填），本镜像声明为可选——这是 API-STABILITY.md
@@ -553,6 +556,9 @@ export type InvokeCommand =
   | { cmd: 'notify'; title: string; body: string; sessionId?: string }
   | { cmd: 'metadata:get' }
   | { cmd: 'metadata:set'; id: string; patch: { title?: string; archived?: boolean; deleted?: boolean } }
+  // —— D1：会话草稿持久化（desktop-drafts.json；按会话隔离） ——
+  | { cmd: 'drafts:get' }
+  | { cmd: 'drafts:set'; drafts: DraftsMapShape }
   // —— D0：S7 只读查询端点 + S3 交互 op ——
   | { cmd: 'runConfig'; sessionId: string }
   | { cmd: 'planState'; sessionId: string }
@@ -632,6 +638,10 @@ export interface Harness2Api {
     id: string,
     patch: { title?: string; archived?: boolean; deleted?: boolean },
   ): Promise<SessionMetadataMapShape>;
+  /** 读会话草稿（desktop-drafts.json；按会话隔离；损坏回退空映射） */
+  draftsGet(): Promise<DraftsMapShape>;
+  /** 整体写回草稿映射（写前归一化；返回归一化后的结果） */
+  draftsSet(drafts: DraftsMapShape): Promise<DraftsMapShape>;
   // —— D0：S7 只读查询 + S3 交互 op + 能力盘点 ——
   /** 有效运行配置只读视图（脱敏；serve 未就绪/失败 → 抛错，由调用方 fallback） */
   runConfig(sessionId: string): Promise<EffectiveRunConfigShape>;
