@@ -100,12 +100,12 @@ export interface ChatSetupHooks {
 /** 每轮 turn 的流式渲染回调（legacy=直写 stdout；ink=桥接 React state） */
 export type TurnStreamHandler = (event: StreamEvent) => void;
 
-/** 与 legacy onStream 对齐的事件联合 */
+/** 与 legacy onStream 对齐的事件联合（T3 加性：携带 turnId 供 typed transcript 归属；legacy 忽略） */
 export type StreamEvent =
-  | { type: 'text-delta'; text: string }
-  | { type: 'tool-call'; call: { id: string; name: string; arguments: string } }
-  | { type: 'reasoning-delta'; text: string }
-  | { type: 'tool-result'; callId: string; ok: boolean; error?: string };
+  | { type: 'text-delta'; text: string; turnId: string }
+  | { type: 'tool-call'; call: { id: string; name: string; arguments: string }; turnId: string }
+  | { type: 'reasoning-delta'; text: string; turnId: string }
+  | { type: 'tool-result'; callId: string; ok: boolean; error?: string; turnId: string };
 
 export type { TurnResult } from '@harness2/core';
 
@@ -410,12 +410,12 @@ export async function setupChatSession(options: ChatOptions, hooks: ChatSetupHoo
         signal: ac.signal,
         snapshots,
         onStream: (event) => {
-          if (event.type === 'text-delta') onStream({ type: 'text-delta', text: event.text });
-          else if (event.type === 'tool-call') onStream({ type: 'tool-call', call: event.call });
+          if (event.type === 'text-delta') onStream({ type: 'text-delta', text: event.text, turnId: event.turnId });
+          else if (event.type === 'tool-call') onStream({ type: 'tool-call', call: event.call, turnId: event.turnId });
           else if (event.type === 'reasoning-delta') {
             // reasoning 增量：默认不渲染（legacy 保持折叠）；开启后转给调用方（ink 展示）
-            if (reasoningEnabled) onStream({ type: 'reasoning-delta', text: event.text });
-          } else onStream({ type: 'tool-result', callId: event.callId, ok: event.ok, error: event.error });
+            if (reasoningEnabled) onStream({ type: 'reasoning-delta', text: event.text, turnId: event.turnId });
+          } else onStream({ type: 'tool-result', callId: event.callId, ok: event.ok, error: event.error, turnId: event.turnId });
         },
       });
       return result;

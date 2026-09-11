@@ -2,22 +2,32 @@
 // 门控（T2）：委托 terminal-capabilities.ts 的纯决策 —— 显式覆盖（HARNESS2_NO_TUI / --no-tui / HARNESS2_TUI）
 // 优先，其后 非 TTY → legacy，Windows 走四场景闸门（现代终端标记才默认 ink），非 Windows TTY → ink。
 // 装配与 legacy 共用 setupChatSession（禁止两套装配）；渲染走 React state 桥接。
+// T3：历史由 typed TranscriptState 持有（TranscriptView 虚拟化渲染），会话切换重投影；
+//     工具/推理卡片在 turn 落定后仍可按稳定 id 展开（闭 H2）。
 import React, { useRef, useState } from 'react';
-import { render, useInput, Box, Text } from 'ink';
+import { render, useInput, useStdout, Box, Text } from 'ink';
 import { setupChatSession, type ChatRuntime, type TurnResult } from '../chat-setup.js';
 import type { ChatOptions } from '../legacy-chat.js';
 import { StatusBar } from './StatusBar.js';
 import { Composer } from './Composer.js';
-import { Transcript } from './Transcript.js';
+import { Transcript } from './TranscriptView.js';
 import { OverlayHost } from './OverlayHost.js';
 import { Modal } from './Modal.js';
 import { SelectList } from './SelectList.js';
 import { ConfirmDialog } from './ConfirmDialog.js';
-import { useTurnStream, type TurnSnapshot } from './useTurnStream.js';
+import { useTurnStream } from './useTurnStream.js';
 import { createShutdown, type ExitReason } from './shutdown.js';
 import { decideTuiMode, detectTerminalCapabilities, hasModernTerminalMarker } from './terminal-capabilities.js';
 import { parseCommand, HELP_TEXT } from '../commands.js';
 import { expandContextRefs, hasContextRefs } from '../context-ref.js';
+import {
+  emptyTranscript,
+  projectSession,
+  transcriptReducer,
+  type TranscriptEvent,
+  type TranscriptState,
+} from './transcript.js';
+import { turnSummaryLine } from '../render.js';
 import {
   CORE_MODE_TO_ALIAS,
   MODE_ALIAS_ORDER,
@@ -153,6 +163,24 @@ export async function runInkChat(options: ChatOptions = {}): Promise<void> {
 
 const ASK_CANCELLED = '\u0000ask-cancelled';
 
+function initialTranscript(bootLines: string[]): TranscriptState {
+  let state = emptyTranscript();
+  bootLines.forEach((text, i) => {
+    state = transcriptReducer(state, { type: 'system', id: `boot:${i}`, text });
+  });
+  return state;
+}
+
+function safeProject(dir: string | undefined): TranscriptState {
+  if (dir === undefined) return emptyTranscript();
+  try {
+    return projectSession(dir);
+  } catch {
+    // 新会话日志尚未落盘 / 读取失败：退化为空转录（不阻塞会话切换）
+    return emptyTranscript();
+  }
+}
+
 function InkShell({
   runtime,
   bootLines,
@@ -164,10 +192,17 @@ function InkShell({
   dialog: ReturnType<typeof createDialogController>;
   onExit: (reason: ExitReason) => void;
 }): React.ReactElement {
-  const [settled, setSettled] = useState<string[]>(bootLines);
+  // T3：typed 转录（替代 string[] + Static）；会话切换时整体重投影
+  const [transcript, setTranscript] = useState<TranscriptState>(() => initialTranscript(bootLines));
   const [busy, setBusy] = useState(false);
   // T8：推理折叠块展开态（turn 内 Ctrl+R 切换；忙时 Composer 接管普通字符输入，故用带修饰键快捷键）
   const [reasoningExpanded, setReasoningExpanded] = useState(false);
+  // T3：已展开卡片 id 集合（shell 持有；turn 落定后仍有效 → H2）
+  const [expandedIds, setExpandedIds] = useState<ReadonlySet<string>>(() => new Set());
+  // T3：follow/anchor 滚动（PageUp/PageDown 滚动；Ctrl+G 回到末尾跟随）
+  const [follow, setFollow] = useState(true);
+  const [scrollTop, setScrollTop] = useState(0);
+  const [anchorId, setAnchorId] = useState<string | undefined>(undefined);
   // T5/T6：单一浮层宿主。命令与审批都经 overlay 呈现；存在即互斥接管键盘。
   const [overlay, setOverlay] = useState<React.ReactNode>(null);
   const closeOverlayRef = useRef<() => void>(() => undefined);
@@ -177,11 +212,36 @@ function InkShell({
   const exitingRef = useRef(false);
   const queueRef = useRef<string[]>([]);
   const [queuedCount, setQueuedCount] = useState(0);
+  // 转录状态镜像（供键盘回调读取最新 items，不触发额外订阅）
+  const transcriptRef = useRef(transcript);
+  transcriptRef.current = transcript;
+  // 滚动 source of truth（ref 供 key handler 读取；state 仅驱动渲染）
+  const followRef = useRef(true);
+  const scrollRef = useRef(0);
+  const anchorRef = useRef<string | undefined>(undefined);
+  const liveSeqRef = useRef(0);
+  const viewportRef = useRef<{ maxScroll: number; firstVisibleId?: string }>({ maxScroll: 0 });
+  const { stdout } = useStdout();
+  const rows = stdout.rows ?? 24;
+  const cols = stdout.columns ?? 80;
+  const SCROLL_PAGE = Math.max(1, Math.floor(rows / 2));
 
-  const { live, handler, commit, reset } = useTurnStream((snapshot: TurnSnapshot) => {
-    const text = snapshot.text.trim();
-    if (text.length > 0) setSettled((l) => [...l, text]);
-  });
+  const dispatch = React.useCallback((event: TranscriptEvent) => {
+    setTranscript((s) => transcriptReducer(s, event));
+  }, []);
+  const onTranscriptEvent = React.useCallback((event: TranscriptEvent) => dispatch(event), [dispatch]);
+
+  const { live, handler, finalize, reset } = useTurnStream(onTranscriptEvent);
+
+  const onViewportChange = React.useCallback(
+    (info: { totalHeight: number; maxScroll: number; start: number; end: number; firstVisibleId?: string }) => {
+      viewportRef.current = {
+        maxScroll: info.maxScroll,
+        ...(info.firstVisibleId !== undefined ? { firstVisibleId: info.firstVisibleId } : {}),
+      };
+    },
+    [],
+  );
 
   // 同步 dialog controller 里的挂起请求（审批弹窗）到 overlay。
   // dialog 是外置稳定对象（open 只改闭包），须经订阅计数驱动 effect 重跑（审查 P0 修复）
@@ -205,6 +265,83 @@ function InkShell({
     );
   }, [dialog, reqTick]);
 
+  function applyFollow(value: boolean): void {
+    followRef.current = value;
+    setFollow(value);
+  }
+  function applyScroll(value: number): void {
+    scrollRef.current = value;
+    setScrollTop(value);
+  }
+  function applyAnchor(id: string | undefined): void {
+    anchorRef.current = id;
+    setAnchorId(id);
+  }
+
+  /** PageUp：从贴尾切到锚定（保留当前首个可见 item），再向上滚动一屏 */
+  function scrollUp(): void {
+    if (followRef.current) {
+      const first = viewportRef.current.firstVisibleId;
+      applyAnchor(first);
+      applyScroll(Math.max(0, viewportRef.current.maxScroll - SCROLL_PAGE));
+      applyFollow(false);
+      return;
+    }
+    applyScroll(Math.max(0, scrollRef.current - SCROLL_PAGE));
+  }
+
+  /** PageDown：向下滚动；到底后自动恢复跟随 */
+  function scrollDown(): void {
+    if (followRef.current) return;
+    const next = Math.min(viewportRef.current.maxScroll, scrollRef.current + SCROLL_PAGE);
+    if (next >= viewportRef.current.maxScroll) {
+      resumeFollow();
+      return;
+    }
+    applyScroll(next);
+  }
+
+  /** Ctrl+G：回到末尾并恢复跟随（文档化快捷键） */
+  function resumeFollow(): void {
+    applyFollow(true);
+    applyAnchor(undefined);
+    applyScroll(0);
+  }
+
+  /** Ctrl+O：展开/收起最近一张工具卡（落定后仍可操作 = H2） */
+  function toggleLastTool(): void {
+    setExpandedIds((prev) => {
+      const last = [...transcriptRef.current.items].reverse().find((i) => i.kind === 'tool');
+      if (last === undefined) return prev;
+      const next = new Set(prev);
+      if (next.has(last.id)) next.delete(last.id);
+      else next.add(last.id);
+      return next;
+    });
+  }
+
+  // T3 滚动/展开快捷键（与 Composer 不冲突：PageUp/PageDown/Ctrl+G/Ctrl+O 输入框不消费）
+  useInput(
+    (input, key) => {
+      if (key.pageUp) {
+        scrollUp();
+        return;
+      }
+      if (key.pageDown) {
+        scrollDown();
+        return;
+      }
+      if (key.ctrl && input.toLowerCase() === 'g') {
+        resumeFollow();
+        return;
+      }
+      if (key.ctrl && input.toLowerCase() === 'o') {
+        toggleLastTool();
+      }
+    },
+    { isActive: !overlayOpen },
+  );
+
   // T8：busy 期间 Ctrl+R 展开/收起当前 turn 的推理折叠块。
   // T0 起 Composer 忙时也接管普通字符输入，故推理快捷键改为 Ctrl+R，避免与草稿输入冲突。
   useInput(
@@ -215,7 +352,23 @@ function InkShell({
   );
 
   function sendSystem(line: string): void {
-    setSettled((l) => [...l, line]);
+    liveSeqRef.current += 1;
+    dispatch({ type: 'system', id: `sys:${liveSeqRef.current}`, text: line });
+  }
+
+  /**
+   * 会话切换统一处理：收集 switch/fork 的输出，重投影新会话转录（整体替换，不在旧 items 上追加），
+   * 清除展开/滚动状态，最后回放切换提示。
+   */
+  function applySessionChange(fn: (print: (t: string) => void) => void): void {
+    const lines: string[] = [];
+    fn((t) => lines.push(t));
+    setTranscript(safeProject(runtime.getCurrent()?.dir));
+    setExpandedIds(new Set());
+    applyFollow(true);
+    applyAnchor(undefined);
+    applyScroll(0);
+    for (const l of lines) sendSystem(l);
   }
 
   function openModePicker(): void {
@@ -260,7 +413,7 @@ function InkShell({
           selected={current?.id ?? ''}
           isActive
           onSelect={(id: string) => {
-            runtime.switchSession(id, { print: sendSystem });
+            applySessionChange((print) => runtime.switchSession(id, { print }));
             setOverlay(null);
           }}
           onCancel={() => setOverlay(null)}
@@ -294,6 +447,24 @@ function InkShell({
       case '/sessions':
         openSessions();
         return;
+      case '/new':
+        // 新建会话：重投影（新会话日志可能尚未落盘 → 空转录）
+        applySessionChange((print) => runtime.switchSession(null, { print }));
+        return;
+      case '/resume': {
+        const id = rest.split(/\s+/)[0] ?? '';
+        if (id.length === 0) {
+          sendSystem('error: 用法 /resume <id>（/sessions 查看 id）');
+          return;
+        }
+        applySessionChange((print) => runtime.switchSession(id, { print }));
+        return;
+      }
+      case '/fork': {
+        const at = rest.length > 0 && Number.isInteger(Number(rest)) ? Number(rest) : undefined;
+        applySessionChange((print) => runtime.fork(at, { print }));
+        return;
+      }
       case '/context': {
         const current = runtime.getCurrent();
         const usage = current !== null ? getContextUsage(current.dir) : undefined;
@@ -370,7 +541,8 @@ function InkShell({
   async function handleInput(text: string): Promise<void> {
     const parsed = parseCommand(text);
     if (parsed !== null) {
-      setSettled((l) => [...l, `> ${text}`]);
+      liveSeqRef.current += 1;
+      dispatch({ type: 'system', id: `echo:${liveSeqRef.current}`, text: `> ${text}` });
       handleCommand(parsed.name, parsed.rest);
       if (!busyRef.current) drainQueue();
       return;
@@ -383,7 +555,8 @@ function InkShell({
     busyRef.current = true;
     let result: TurnResult | undefined;
     setBusy(true);
-    setSettled((l) => [...l, `> ${text}`]);
+    liveSeqRef.current += 1;
+    dispatch({ type: 'user/message', seq: 0, id: `user:live:${liveSeqRef.current}`, text });
     try {
       // @file/@dir 引用解析（发送前预处理；回显保持原始 text；无引用时直接用原文）
       let sendText = text;
@@ -392,17 +565,17 @@ function InkShell({
         if (ref.hasRefs && ref.header.length > 0) sendText = `${ref.header}\n\n${text}`;
       }
       result = await runtime.runUserTurn(sendText, handler);
-      commit();
+      // 终态（final/partial/empty）由 TurnResult.textOutcome 决定，工具卡已在流式期落定
+      const terminal = finalize(result);
+      if (terminal !== null) dispatch(terminal);
       if (result !== undefined) {
-        // turn 摘要（对齐 legacy 的 [end_turn ...] 行）；abort 时 stopReason 为 cancelled
-        const parts = [`[${result.stopReason}`, `steps ${result.steps}`, `toolCalls ${result.toolCalls}`];
-        if (result.error !== undefined) parts.push(`error: ${result.error}`);
-        if (result.warning !== undefined) parts.push(`warning: ${result.warning}`);
-        setSettled((l) => [...l, parts.join(' · ') + ']']);
+        liveSeqRef.current += 1;
+        dispatch({ type: 'status', id: `status:${liveSeqRef.current}`, text: turnSummaryLine(result) });
       }
     } catch (e) {
-      setSettled((l) => [...l, `error: ${(e as Error)?.message ?? String(e)}`]);
+      sendSystem(`error: ${(e as Error)?.message ?? String(e)}`);
     } finally {
+      reset();
       busyRef.current = false;
       setBusy(false);
       setReasoningExpanded(false);
@@ -416,12 +589,18 @@ function InkShell({
       <StatusBar runtime={runtime} />
       {overlayOpen ? <OverlayHost>{overlay}</OverlayHost> : null}
       <Transcript
-        settled={settled}
+        items={transcript.items}
         liveText={live.text}
-        liveTools={live.tools}
-        reasoningText={live.reasoning}
+        liveReasoning={live.reasoning}
         busy={busy}
         reasoningExpanded={reasoningExpanded}
+        expandedIds={expandedIds}
+        follow={follow}
+        scrollTop={scrollTop}
+        {...(anchorId !== undefined ? { anchorId } : {})}
+        height={Math.max(3, rows - 8)}
+        width={cols}
+        onViewportChange={onViewportChange}
       />
       <Composer
         busy={busy}

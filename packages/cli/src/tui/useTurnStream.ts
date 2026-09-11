@@ -1,44 +1,90 @@
-// useTurnStream：把 runTurn 事件桥接进 React state，带 50ms 节流合并（一次真正重绘）。
-// 完结 turn 直接落 lines（调用方 set）；流式中只有最后一块随 state 重绘，避免长会话闪烁。
+// useTurnStream（T3）：把 runTurn 流式事件桥接为 typed transcript 事件，带稳定身份与 turnId。
+// - tool-call/tool-result 立即经 onTranscriptEvent 交给 shell 的 transcriptReducer（卡片落定后仍可展开）；
+// - text/reasoning 增量仍 50ms 节流合并进 live 快照（一次真正重绘，长流不抖动）；
+// - finalize(TurnResult) 依冻结的 textOutcome 生成 final|partial|empty 终态事件（缺省按 finalText/partialText 推断）。
 import { useCallback, useRef, useState } from 'react';
+import type { TurnResult, TurnTextOutcome } from '@harness2/core';
 import { summarizeArgs } from '../render.js';
 import type { TurnStreamHandler } from '../chat-setup.js';
-
-export interface ToolCallState {
-  callId: string;
-  tool: string;
-  summary: string;
-  /** 工具参数原始 JSON 串（供 DiffCard 解析变更片段，如 edit.old_text/new_text） */
-  args: string;
-  status: 'pending' | 'ok' | 'failed';
-}
+import type { TranscriptEvent } from './transcript.js';
 
 export interface TurnSnapshot {
+  /** 本 turn 的真实 id（首个流式事件即已知；用于终态事件归属） */
+  turnId: string | undefined;
+  /** 当前 turn 流式累积正文（仅 live） */
   text: string;
-  /** 当前 turn 流式累积的推理过程（仅 live；commit 后丢弃，因默认 off 且落定期退化） */
+  /** 当前 turn 流式累积推理（仅 provider 明确暴露的 reasoning-delta） */
   reasoning: string;
-  tools: ToolCallState[];
 }
 
 export interface UseTurnStream {
   /** 当前流式快照（未完结，随每次 flush 更新） */
   live: TurnSnapshot;
-  /** 注册到 runUserTurn 的 onStream 回调（内部做节流合并） */
+  /** 注册到 runUserTurn 的 onStream 回调（内部节流合并 + typed 事件分发） */
   handler: TurnStreamHandler;
-  /** turn 结束后调用：把暂存的完整文本/工具卡片落定到 history（调用方持有 lines setter） */
-  commit: () => TurnSnapshot;
-  /** turn 开始前重置 */
+  /** turn 结束后调用：返回终态 transcript 事件（final/partial/empty）；无结果返回 null */
+  finalize: (result: TurnResult | undefined) => TranscriptEvent | null;
+  /** turn 开始前/结束后重置 live 缓冲 */
   reset: () => void;
 }
 
 const FLUSH_MS = 50;
 
-export function useTurnStream(onCommit: (snapshot: TurnSnapshot) => void): UseTurnStream {
-  const [live, setLive] = useState<TurnSnapshot>({ text: '', reasoning: '', tools: [] });
-  const bufferRef = useRef<TurnSnapshot>({ text: '', reasoning: '', tools: [] });
+/**
+ * 终态判别（冻结契约 docs/API-STABILITY.md）：
+ * textOutcome 恒为权威；缺失时按 finalText/partialText 推断（兼容旧 serve 实例），
+ * 两者皆空 → empty。finalText 与 partialText 互斥。
+ */
+export function inferTextOutcome(result: TurnResult | undefined): TurnTextOutcome {
+  if (result?.textOutcome !== undefined) return result.textOutcome;
+  if ((result?.finalText?.length ?? 0) > 0) return 'final';
+  if ((result?.partialText?.length ?? 0) > 0) return 'partial';
+  return 'empty';
+}
+
+/** 由 TurnResult + live 快照构造终态 transcript 事件（纯函数，便于单测） */
+export function terminalEvent(result: TurnResult | undefined, live: TurnSnapshot): TranscriptEvent | null {
+  if (result === undefined) return null;
+  const turnId = result.turnId ?? live.turnId;
+  const scope = turnId !== undefined && turnId.length > 0 ? { turnId } : {};
+  const outcome = inferTextOutcome(result);
+  if (outcome === 'final') {
+    const text = result.finalText !== undefined && result.finalText.length > 0 ? result.finalText : live.text;
+    return { type: 'turn-final', ...scope, text, ...(live.reasoning.length > 0 ? { reasoning: live.reasoning } : {}) };
+  }
+  if (outcome === 'partial') {
+    const text = result.partialText !== undefined && result.partialText.length > 0 ? result.partialText : live.text;
+    return {
+      type: 'turn-partial',
+      ...scope,
+      text,
+      ...(result.error !== undefined ? { error: result.error } : {}),
+      stopReason: result.stopReason,
+    };
+  }
+  return {
+    type: 'turn-empty',
+    ...scope,
+    ...(result.error !== undefined ? { error: result.error } : {}),
+    stopReason: result.stopReason,
+  };
+}
+
+export function useTurnStream(onTranscriptEvent: (event: TranscriptEvent) => void): UseTurnStream {
+  const [live, setLive] = useState<TurnSnapshot>({ turnId: undefined, text: '', reasoning: '' });
+  const bufferRef = useRef<TurnSnapshot>({ turnId: undefined, text: '', reasoning: '' });
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const scheduledRef = useRef(false);
-  const toolsByIdRef = useRef(new Map<string, ToolCallState>());
+  const onEventRef = useRef(onTranscriptEvent);
+  onEventRef.current = onTranscriptEvent;
+
+  const clearTimer = useCallback(() => {
+    if (timerRef.current !== null) {
+      clearTimeout(timerRef.current);
+      timerRef.current = null;
+    }
+    scheduledRef.current = false;
+  }, []);
 
   const scheduleFlush = useCallback(() => {
     if (scheduledRef.current || timerRef.current !== null) return;
@@ -46,11 +92,7 @@ export function useTurnStream(onCommit: (snapshot: TurnSnapshot) => void): UseTu
     timerRef.current = setTimeout(() => {
       scheduledRef.current = false;
       timerRef.current = null;
-      setLive({
-        text: bufferRef.current.text,
-        reasoning: bufferRef.current.reasoning,
-        tools: Array.from(toolsByIdRef.current.values()),
-      });
+      setLive({ ...bufferRef.current });
     }, FLUSH_MS);
   }, []);
 
@@ -58,53 +100,56 @@ export function useTurnStream(onCommit: (snapshot: TurnSnapshot) => void): UseTu
     (event) => {
       const buf = bufferRef.current;
       if (event.type === 'text-delta') {
+        buf.turnId = event.turnId;
         buf.text += event.text;
-      } else if (event.type === 'reasoning-delta') {
+        scheduleFlush();
+        return;
+      }
+      if (event.type === 'reasoning-delta') {
+        buf.turnId = event.turnId;
         buf.reasoning += event.text;
-      } else if (event.type === 'tool-call') {
-        const summary = summarizeArgs(event.call.arguments);
-        toolsByIdRef.current.set(event.call.id, {
+        scheduleFlush();
+        return;
+      }
+      if (event.type === 'tool-call') {
+        buf.turnId = event.turnId;
+        onEventRef.current({
+          type: 'tool/call',
+          seq: 0,
           callId: event.call.id,
           tool: event.call.name,
-          summary,
           args: event.call.arguments,
-          status: 'pending',
+          summary: summarizeArgs(event.call.arguments),
+          turnId: event.turnId,
         });
-        buf.text += buf.text.length > 0 && !buf.text.endsWith('\n') ? '\n' : '';
-        buf.text += `> ${event.call.name} (${summary})\n`;
-      } else if (event.type === 'tool-result') {
-        const existing = toolsByIdRef.current.get(event.callId);
-        if (existing) {
-          existing.status = event.ok ? 'ok' : 'failed';
-          if (event.error) existing.summary = event.error;
-        }
-        buf.text += `\n< ${event.ok ? 'ok' : 'FAILED'} [${event.callId}]${event.error ? ` ${event.error}` : ''}\n`;
+        return;
       }
-      scheduleFlush();
+      // tool-result
+      buf.turnId = event.turnId;
+      onEventRef.current({
+        type: 'tool/result',
+        callId: event.callId,
+        ok: event.ok,
+        ...(event.error !== undefined ? { error: event.error } : {}),
+        turnId: event.turnId,
+      });
     },
     [scheduleFlush],
   );
 
-  const commit = useCallback((): TurnSnapshot => {
-    if (timerRef.current !== null) {
-      clearTimeout(timerRef.current);
-      timerRef.current = null;
-      scheduledRef.current = false;
-    }
-    const snapshot: TurnSnapshot = {
-      text: bufferRef.current.text,
-      reasoning: bufferRef.current.reasoning,
-      tools: Array.from(toolsByIdRef.current.values()),
-    };
-    onCommit(snapshot);
-    return snapshot;
-  }, [onCommit]);
+  const finalize = useCallback(
+    (result: TurnResult | undefined): TranscriptEvent | null => {
+      clearTimer();
+      return terminalEvent(result, bufferRef.current);
+    },
+    [clearTimer],
+  );
 
   const reset = useCallback(() => {
-    bufferRef.current = { text: '', reasoning: '', tools: [] };
-    toolsByIdRef.current.clear();
-    setLive({ text: '', reasoning: '', tools: [] });
-  }, []);
+    clearTimer();
+    bufferRef.current = { turnId: undefined, text: '', reasoning: '' };
+    setLive({ turnId: undefined, text: '', reasoning: '' });
+  }, [clearTimer]);
 
-  return { live, handler, commit, reset };
+  return { live, handler, finalize, reset };
 }
