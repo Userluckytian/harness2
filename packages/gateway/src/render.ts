@@ -5,6 +5,10 @@ const MAX_TOOL_LINES = 3;
 
 export interface RenderInput {
   finalText: string;
+  /** P3-b：不完整 attempt 的半截文本（非空时必须标注「未完成」，不得冒充完整正文） */
+  partialText?: string;
+  /** P3-a/P3-b：终态文本展示判别（与 core WS `turn-end` 帧同契约；缺省按文本推断，兼容旧调用） */
+  textOutcome?: 'final' | 'partial' | 'empty';
   toolLines: string[];
   stopReason: string;
   error?: string;
@@ -15,21 +19,28 @@ export function renderTurnEnd(input: RenderInput): string {
   if (input.toolLines.length > 0) {
     parts.push(...input.toolLines.slice(-MAX_TOOL_LINES), '');
   }
-  if (input.finalText.length > 0) {
+  const partial = input.partialText ?? '';
+  const outcome =
+    input.textOutcome ?? (input.finalText.length > 0 ? 'final' : partial.length > 0 ? 'partial' : 'empty');
+  if (outcome === 'final' && input.finalText.length > 0) {
     parts.push(input.finalText);
+  } else if (outcome === 'partial' && partial.length > 0) {
+    // P3-b：半截文本 + 明确中断标注（与终端/桌面同一语义）
+    parts.push(partial, `（未完成：${input.error ?? emptyReason(input.stopReason)}）`);
   } else {
-    parts.push(
-      input.stopReason === 'cancelled'
-        ? '(已取消)'
-        : input.stopReason === 'error'
-          ? `(出错：${input.error ?? '未知原因'})`
-          : input.stopReason === 'max_steps'
-            ? '(达到步数上限，摘要见轨迹)'
-            : `(turn 结束：${input.stopReason})`,
-    );
+    // P3-a：无最终文本但有可行动结果——工具行已在上面，这里只给原因，不造空白正文
+    parts.push(emptyReason(input.stopReason, input.error));
   }
   const text = parts.join('\n');
   return withTruncationNotice(text);
+}
+
+/** empty 收尾的原因行（stopReason + 可选 error） */
+function emptyReason(stopReason: string, error?: string): string {
+  if (stopReason === 'cancelled') return '(已取消)';
+  if (stopReason === 'error') return `(出错：${error ?? '未知原因'})`;
+  if (stopReason === 'max_steps') return '(达到步数上限，摘要见轨迹)';
+  return `(turn 结束：${stopReason})`;
 }
 
 /** 审批请求 → 平台文本（回复 1/2 决策） */

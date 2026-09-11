@@ -94,10 +94,13 @@ export async function startGateway(options: StartGatewayOptions): Promise<Gatewa
         if (adapter === undefined) return;
         const toolSummary = toolLines.get(frame.sessionId) ?? [];
         toolLines.delete(frame.sessionId);
-        const finalText = sessionText.get(frame.sessionId) ?? '';
+        const accumulated = sessionText.get(frame.sessionId) ?? '';
         sessionText.delete(frame.sessionId);
+        // P3-a/P3-b：优先采信 turn-end 帧的终态文本语义（finalText/partialText/textOutcome）
         const rendered = renderTurnEnd({
-          finalText,
+          finalText: frame.finalText ?? accumulated,
+          ...(frame.partialText !== undefined ? { partialText: frame.partialText } : {}),
+          ...(frame.textOutcome !== undefined ? { textOutcome: frame.textOutcome } : {}),
           toolLines: toolSummary,
           stopReason: frame.stopReason,
           ...(frame.error !== undefined ? { error: frame.error } : {}),

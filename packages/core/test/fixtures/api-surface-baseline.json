@@ -337,6 +337,7 @@
     "TurnResult": "interface",
     "TurnStopReason": "type",
     "TurnStreamEvent": "type",
+    "TurnTextOutcome": "type",
     "UNKNOWN_RESULT": "const",
     "USER_BUDGET_CHARS": "const",
     "USER_FILE_NAME": "const",

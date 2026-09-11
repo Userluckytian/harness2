@@ -6,7 +6,7 @@ import type { SnapshotStore } from '../session/snapshots.js';
 import type { ToolRegistry } from '../tools/registry.js';
 import type { ApprovalHandler } from '../tools/types.js';
 import type { ExecutionLifecycleObserver } from '../tools/executor.js';
-import type { SteerRequest, SteerResult } from '../interaction/types.js';
+import type { SteerRequest, SteerResult, TurnTextOutcome } from '../interaction/types.js';
 import type { RetryBudgetState } from '../interaction/retry-policy.js';
 
 /**
@@ -163,6 +163,13 @@ export interface TurnResult {
   turnId?: string;
   /** end_turn 时的最终 assistant 文本 */
   finalText?: string;
+  /**
+   * P3-b：最后一条不完整 `assistant/attempt` 的半截文本（error/cancelled 且有产出时）。
+   * 仅供展示（必须标注未完成/已中断），**不得**当作完整正文，也绝不出现在 `finalText`。
+   */
+  partialText?: string;
+  /** P3-a/P3-b：终态文本展示判别（final / partial / empty）——跨端共用同一定义 */
+  textOutcome?: TurnTextOutcome;
   /** error/cancelled 时的错误摘要 */
   error?: string;
   /** 非致命告警（如 provider 请求暂停续跑 paused）：turn 正常返回，调用方应向用户展示 */

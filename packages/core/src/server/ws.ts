@@ -13,7 +13,7 @@
 //   ← {type:'cancel-ack', requestId, state}         # stopping | cancelled | unknown
 //   ← {type:'submit-ack', clientMessageId, sessionId, state, reason?, queueSeq?}
 //   ← {type:'event', sessionId, event}              # 落盘事件镜像（含 rewind/marker）
-//   ← {type:'turn-end', sessionId, stopReason, error?, warning?}
+//   ← {type:'turn-end', sessionId, stopReason, finalText?, partialText?, textOutcome, error?, warning?}
 //   ← {type:'approval-request', sessionId, tool, args, requestId, scope, expiresAt, cwd?, taskId?, parentTaskId?}
 //   ← {type:'nudge-started', sessionId} / {type:'nudge-finished', sessionId, stopReason, toolCalls, staged, error?}
 //   ← {type:'forked', sessionId, parentSession, copiedEvents} / {type:'cron', op:'finished', ...}
@@ -35,6 +35,7 @@ import type {
   MessageReference,
   ResumeSnapshot,
   SubmitAck,
+  TurnTextOutcome,
 } from '../interaction/types.js';
 import {
   isCancelTargetKind,
@@ -116,6 +117,12 @@ export type WsServerMessage =
       type: 'turn-end';
       sessionId: string;
       stopReason: TurnStopReason;
+      /** P3-a：完整最终文本（仅 textOutcome='final' 时存在；半截文本绝不进此字段） */
+      finalText?: string;
+      /** P3-b：不完整 attempt 的半截文本（仅 textOutcome='partial' 时存在；展示须标注未完成/已中断） */
+      partialText?: string;
+      /** P3-a/P3-b：终态文本展示判别（final / partial / empty，跨端共用同一定义） */
+      textOutcome: TurnTextOutcome;
       error?: string;
       warning?: string;
     }
@@ -302,6 +309,9 @@ export function attachWsServer(server: Server, hub: SessionHub, options: WsPlane
         type: 'turn-end',
         sessionId,
         stopReason: result.stopReason,
+        ...(result.finalText !== undefined ? { finalText: result.finalText } : {}),
+        ...(result.partialText !== undefined ? { partialText: result.partialText } : {}),
+        textOutcome: result.textOutcome ?? 'empty',
         ...(result.error !== undefined ? { error: result.error } : {}),
         ...(result.warning !== undefined ? { warning: result.warning } : {}),
       }),

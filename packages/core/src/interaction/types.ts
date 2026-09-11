@@ -378,6 +378,17 @@ export interface AttemptFinalFrame {
   error?: string;
 }
 
+/**
+ * P3-a / P3-b：跨端（终端 / 桌面 / 网关）统一的 turn 终态文本展示判别。
+ *   - `'final'`  ：有完整最终文本（`finalText`）——按普通 assistant 正文渲染；
+ *   - `'partial'`：仅有不完整的半截 attempt 文本（`partialText`）——渲染时必须标注
+ *                  「未完成 / 已中断」并附 `stopReason` + `error`，**不得当作完整正文**；
+ *   - `'empty'`  ：无可展示正文（如首个 token 前网络失败）——只展示 `stopReason` + `error`
+ *                  与已执行的工具行（「无最终文本但有可行动结果」）；禁止空白气泡。
+ * 半截文本绝不允许进 `finalText`；两者互斥，判别以 `textOutcome` 为准。
+ */
+export type TurnTextOutcome = 'final' | 'partial' | 'empty';
+
 // —— 重试默认策略（S4 实现预算/Retry-After/退避；S0 只冻结枚举位与常量） ——
 
 /** 可恢复错误码（network/timeout/429/可恢复 5xx/stream_truncated） */
