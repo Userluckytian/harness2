@@ -366,3 +366,46 @@ git merge --no-ff chore/phase15-quality-closeout
 - `📝docs(plans): 回填 §5 审查登记表并声明人工审查豁免（R7）`
 - `🔧chore(cli): 配置确定性 testTimeout 30s 消除 spawn 型假红（R8）`
 - `🔧chore(repo): 合入 chore/phase15-quality-closeout 到 main（R9）`
+
+## 11. 第三轮：CI 首次真实运行即红（2026-09-11，人类授权 push 后发现）
+
+### 背景（事实，勿改写）
+
+- 人类于 2026-09-11 08:24（+08:00）授权推送，`main` 一次性推出 91 个提交：`b1c2d81..05d43ab  main -> main`；推送后 `git rev-list --left-right --count origin/main...main` = `0  0`。
+- 这是本仓库 CI 的**首次真实运行**，验收表第 6 节登记的「B2 CI 从未真实运行」由此解除 —— 而首跑即 failure。
+- run #40：<https://github.com/Userluckytian/harness2/actions/runs/34546351918>（`head_sha` = `05d43ab`，event = `push`，结论 = **failure**）
+  - 7 个 job：`pages (docsify)` ✅ · `desktop build (win-setup)` ✅ · `desktop build (mac-dmg)` ✅ · `desktop build (linux-appimage)` ✅ · `test (windows-latest)` ✅ · **`test (ubuntu-latest)` ❌** · **`test (macos-latest)` ❌**
+  - 两个红 job 都只在第 10 步 `Test`（根脚本 `pnpm test` = `pnpm -r build && pnpm -r test`）失败；同 job 内 `Install dependencies` / `Install chromium` / `Build packages` / `Typecheck` / `Lint` 全部 ✅。
+  - ubuntu 红 job：<https://github.com/Userluckytian/harness2/actions/runs/34546351918/job/103099713528>（Test 步 `00:25:36Z` → `00:26:09Z`，33s）
+  - macos 红 job：<https://github.com/Userluckytian/harness2/actions/runs/34546351918/job/103099713431>（Test 步 `00:25:22Z` → `00:25:54Z`，32s）
+  - windows 绿 job：<https://github.com/Userluckytian/harness2/actions/runs/34546351918/job/103099713560>（Test 步 113s，全绿）
+  - 公开 API 能取到的失败信息只有注解 `Process completed with exit code 1.`（指向 workflow 的 `Test` 步）；**日志正文需登录才能下载**，因此根因尚未确定。
+- 根因教训：阶段 15 的 91 个提交全部只在一台 Windows 机器上验过，POSIX 分支从未被执行过一次。
+
+### 已排除的假设（编排者 2026-09-11 静态核查，勿重复排查）
+
+- `doctor.test.ts` 的 `toContain('实际使用')` 跨平台安全：`packages/core/src/doctor/index.ts` 的 `checkBash` 在 ok 分支（`bash 工具实际使用 …`）与 warn 分支都含该契约词。
+- R2 三条注入用例（`packages/core/test/windows-bash.test.ts` L150–182）显式传 `platform: 'win32'` 并注入 `env` / `exists`，不依赖宿主平台。
+- 真机用例位于 L185 起的 `describe.skipIf(!IS_WINDOWS)` 内，POSIX 上 skip。
+- 全仓 `*.test.ts` 只有 8 处平台分支（`process.platform` / `IS_WINDOWS` / `skipIf`）；其余 Windows 字面量（如 `encodeCwd('C:\\')`、desktop 的 `'C:\\work'`）只作纯函数输入，不依赖宿主。
+- 不是 cli 的 spawn 超时：R8 已配 30s，且 windows job 的 Test 步 113s 全绿。
+
+### 头号嫌疑（待日志确认，**不得据此直接开修**）
+
+- 失败包很可能是 **core**：POSIX 上 Test 步 32–33s（其中 `pnpm -r build` 约 5–8s）即退出，而 `pnpm -r test` 按拓扑先跑 core，`-r` 遇首个失败包即中止。
+- core 中「在 Windows 上从未走过 POSIX 分支」的用例：`browser.test.ts`（CI 装了 chromium，三平台都会真跑）、`command-output-exit-code.test.ts` 与 `serve-functional-query.test.ts`（POSIX 走 `/bin/sh` 分支，Windows 走 `ComSpec` 分支）。
+
+### R10（定位并修复 CI 在 POSIX 上的红 · P0 · 先取证后动手）
+
+1. **取证（不许猜）**：打开上面两个红 job → 展开 `Test` 步 → 找**第一个** `FAIL` / `AssertionError` / `Error:`，把从该行起连续 40 行原文按四要素记进 `docs/issue-log/2026-09-11.md`。有 `gh` 权限的话更快：`gh auth login` 后 `gh run view 34546351918 --log-failed > ci-run40.log`。**在贴出失败原文之前，禁止改任何代码。**
+2. **POSIX 复现**：用 Docker 或 WSL2 的**原生目录**（不要在 `/mnt/d` 上装依赖，会慢到不可用）：`node:22` 容器内 `corepack enable` → `pnpm install --frozen-lockfile` → `pnpm --filter @harness2/core exec playwright install chromium` → `pnpm test`。复现不出来就以 CI 为准，在**分支**上 push 迭代，**不要拿 `main` 当试验场**。
+3. **修复原则**：只修被日志点名的用例/实现；**禁止为了变绿而 skip 掉 POSIX 分支**（确需 skip 必须在验收表第 6 节登记理由并下放到下阶段）；禁止 `--passWithNoTests`；除非日志证明是 workflow 缺陷（例如 ubuntu 缺 chromium 系统依赖 → 改为 `playwright install --with-deps chromium`），否则不许改 CI 迁就代码，且这类改动要在 issue-log 写清依据。
+4. **分支纪律**：新分支 `fix/ci-posix-red`，小步提交；在该分支上 push 让 CI 验证；**7 个 job 全绿**后再 `git switch main` + `git merge --no-ff fix/ci-posix-red`，合入后 `main` 上的 CI 也必须绿。
+5. **文档回填**：
+   - 验收表 `J-2` 立刻从 ➖ 改为 ❌，写明「run #40 首跑：windows 绿，ubuntu / macos 在 `pnpm test` 红」并附 run 链接；修复绿了再转 ✅ 附新 run 链接。
+   - 第 9 节总结论从「✅ 有条件通过」**下调**为「❌ 未通过（CI 三平台未全绿）」，直到 R10 全绿再恢复。
+   - 第 6 节把「B2 CI 从未真实运行」改写为「已真实运行；首跑 POSIX 两平台红，由 R10 跟踪」。
+6. **P2（可同批、须独立提交）**：run #40 注解提示 `actions/checkout@v4`、`actions/setup-node@v4`、`pnpm/action-setup@v4` 因 Node 20 弃用被强制跑在 Node 24 上，按官方公告升级到各自新版本，单独提交、单独验证。
+
+- **验收门槛**：贴出 run 链接且 7 个 job 全绿；POSIX 环境（容器或 CI）内 `pnpm test` 不带任何额外参数 exit 0；Windows 本机三条命令仍全绿；未用 skip 换绿。
+- **禁止**：force push；在 `main` 上试错；注释掉或删掉失败用例；把「本机绿」当作通过证据 —— 本轮红的全部成因就是只在一台 Windows 上验过。
