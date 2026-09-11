@@ -2,14 +2,9 @@
 // 纯逻辑（可注入假 api 单测）；React 组件只读 store + 调 controller 方法。
 // 切换会话流程（多会话切换不断流核心路径）：subscribe → /events 全量重放（store 判重）
 // → 后续增量由 WS 帧按 seq 去重追加；后台会话的帧持续缓冲进各自 SessionStream。
-import type {
-  Harness2Api,
-  MessageReferenceShape,
-  SubmitIntentShape,
-  UndoRedoResponseShape,
-  WsFrame,
-} from '../shared/protocol.js';
+import type { Harness2Api, MessageReferenceShape, SubmitIntentShape, WsFrame } from '../shared/protocol.js';
 import { newCancelRequestId, newClientMessageId } from '../shared/ids.js';
+import { decideUndo, summarizeUndoPreview } from './features/workspace/change-review-model.js';
 import type { ActiveEvent } from './chat-model.js';
 import type { AppStore } from './store.js';
 
@@ -352,16 +347,17 @@ export function createController(store: AppStore, api: Harness2Api): Controller 
           ...(opts?.n !== undefined ? { n: opts.n } : {}),
           dryRun: true,
         });
-        const externallyModified = countExternalModifications(preview);
-        if (externallyModified > 0 && opts?.decision !== 'overwrite') {
-          return { blocked: true, externallyModified };
+        const summary = summarizeUndoPreview(preview);
+        const verdict = decideUndo(summary, opts?.decision);
+        if (!verdict.proceed) {
+          return { blocked: true, externallyModified: summary.externallyModified };
         }
         // 2) 用户显式决定后（或本就无冲突）才真正恢复
         await api.undo(id, {
           ...(opts?.n !== undefined ? { n: opts.n } : {}),
         });
         await refreshSessions();
-        return { blocked: false, externallyModified };
+        return { blocked: false, externallyModified: summary.externallyModified };
       } catch (e) {
         store.applyFrame({ type: 'error', error: `撤销失败: ${(e as Error).message}` });
         return undefined;
@@ -467,13 +463,4 @@ function lastTurnIdOf(stream: { events: readonly ActiveEvent[] }): string | unde
     if (typeof t === 'string' && t.length > 0) return t;
   }
   return undefined;
-}
-
-/** undo dryRun 报告里被外部改动的文件数（>0 → 必须用户显式决定，不得静默覆盖） */
-function countExternalModifications(preview: UndoRedoResponseShape): number {
-  let count = 0;
-  for (const result of preview.results ?? []) {
-    for (const f of result.files ?? []) if (f.externallyModified) count += 1;
-  }
-  return count;
 }

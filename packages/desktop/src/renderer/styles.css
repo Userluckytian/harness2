@@ -815,6 +815,84 @@ body,
   color: var(--warn);
   font-size: 0.8em;
 }
+/* D5：变更审查 + 工作区 */
+.change-file {
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 6px;
+  margin-bottom: 6px;
+}
+.change-dirty {
+  border-color: var(--warn);
+}
+.change-head {
+  display: flex;
+  gap: 6px;
+  align-items: baseline;
+  flex-wrap: wrap;
+}
+.change-path {
+  flex: 1;
+  word-break: break-all;
+}
+.change-badge {
+  border-radius: 4px;
+  padding: 0 6px;
+  font-size: 0.8em;
+}
+.change-badge-dirty {
+  background: var(--warn);
+  color: white;
+}
+.change-badge-clean {
+  background: var(--composer-bg);
+  color: var(--muted);
+}
+.change-meta,
+.ws-cwd,
+.ws-list-head {
+  color: var(--muted);
+  font-size: 0.8em;
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.change-diff {
+  max-height: 220px;
+  overflow: auto;
+  margin-top: 4px;
+}
+.change-conflict {
+  border: 1px solid var(--danger);
+  border-radius: 6px;
+  padding: 6px;
+  margin-bottom: 6px;
+}
+.change-conflict-actions {
+  display: flex;
+  gap: 6px;
+  margin-top: 4px;
+}
+.ws-current {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  word-break: break-all;
+  margin-bottom: 6px;
+}
+.ws-item {
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+  word-break: break-all;
+}
+.ws-item-current {
+  color: var(--ok);
+}
+.ws-diff {
+  color: var(--warn);
+  font-size: 0.8em;
+}
 .composer {
   display: flex;
   gap: 8px;

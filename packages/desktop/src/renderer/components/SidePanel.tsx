@@ -1,17 +1,21 @@
-// 右侧工作面板（D3）：计划 / 任务 / 审批 三视图（后续 D5/D6 追加变更/配置页签）。
+// 右侧工作面板（D3）：计划 / 任务 / 审批 / 变更 / 工作区（后续 D6 追加配置页签）。
 // 数据一律来自真实后端快照/只读端点；无数据时给明确空态，不摆占位内容。
 import { useState } from 'react';
 import { controller, store, useAppState } from '../app-shared.js';
 import { PlanPanel } from '../features/plan/PlanPanel.js';
 import { TaskPanel } from '../features/plan/TaskPanel.js';
 import { ApprovalCenter } from '../features/plan/ApprovalCenter.js';
+import { ChangeReviewPanel } from '../features/workspace/ChangeReviewPanel.js';
+import { WorkspacePanel } from '../features/workspace/WorkspacePanel.js';
 
-type PanelTab = 'plan' | 'tasks' | 'approvals';
+type PanelTab = 'plan' | 'tasks' | 'approvals' | 'changes' | 'workspace';
 
 const TAB_LABELS: Record<PanelTab, string> = {
   plan: '计划',
   tasks: '任务',
   approvals: '审批',
+  changes: '变更',
+  workspace: '工作区',
 };
 
 export function SidePanel() {
@@ -40,6 +44,8 @@ export function SidePanel() {
         {tab === 'plan' && <PlanPanel sessionId={sessionId} />}
         {tab === 'tasks' && <TaskPanel sessionId={sessionId} />}
         {tab === 'approvals' && <ApprovalCenter />}
+        {tab === 'changes' && <ChangeReviewPanel sessionId={sessionId} />}
+        {tab === 'workspace' && <WorkspacePanel sessionId={sessionId} />}
       </div>
       {sessionId !== null && (
         <div className="side-foot">
