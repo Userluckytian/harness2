@@ -4,7 +4,7 @@
 //   （id 以 turnId+stepIndex 为作用域），再落工具项；后续文本另起一段——`解释→工具→解释` 不再塌成一块；
 // - text/reasoning 增量仍 50ms 节流合并进 live 快照（一次真正重绘，长流不抖动）；
 // - finalize(TurnResult) 依冻结的 textOutcome 生成 final|partial|empty 终态事件（缺省按 finalText/partialText 推断）。
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import type { TurnResult, TurnTextOutcome } from '@harness2/core';
 import { summarizeArgs } from '../render.js';
 import type { TurnStreamHandler } from '../chat-setup.js';
@@ -181,6 +181,10 @@ export function useTurnStream(onTranscriptEvent: (event: TranscriptEvent) => voi
     bufferRef.current = { turnId: undefined, text: '', reasoning: '' };
     setLive({ turnId: undefined, text: '', reasoning: '' });
   }, [clearTimer]);
+
+  // 卸载清理（审查 P2）：挂起中的 50ms flush timer 必须随组件卸载取消，
+  // 否则 ink 卸载后仍会 setLive 一次（悬挂 timer + 无效重渲）。
+  useEffect(() => () => clearTimer(), [clearTimer]);
 
   return { live, handler, finalize, reset };
 }
