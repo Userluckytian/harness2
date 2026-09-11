@@ -506,6 +506,12 @@ export function createController(store: AppStore, api: Harness2Api): Controller 
       if (sessionId !== null) {
         await subscribeSession(sessionId);
         await replaySession(sessionId);
+        // P1-1：SidePanel 六页签以 selectedId 取数（SidePanel.tsx），拖拽/分叉入栏的主路径是
+        // 本方法——必须与 selectSession 同口径：选中 + 拉齐只读视图 + 权威重订阅，
+        // 否则分屏右侧数据源永不写入（恒为空）。desktop-workspace-switch.test.ts 已锁死。
+        store.select(sessionId);
+        if (store.getState().status === 'connected') refreshAllViews(sessionId);
+        refreshAuthoritativeState(sessionId);
       }
       await persistLayout();
     },

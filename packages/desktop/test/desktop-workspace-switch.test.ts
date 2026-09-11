@@ -92,6 +92,60 @@ describe('A/B 项目不串（F1）', () => {
     expect(store.draftFor('A')).not.toContain('另一个项目');
   });
 
+  it('P1-1 接线：assignToPane 指派会话到分栏 = 同步选中 + 拉齐六页签数据源 + 权威重订阅', async () => {
+    // SidePanel 六个页签全部以 state.selectedId 取数（SidePanel.tsx:26）；
+    // 拖拽入栏 / 分叉入栏（SessionList.tsx:95、ChatView.tsx:37、PaneArea.tsx:52）的主路径是
+    // controller.assignToPane —— 它必须与 selectSession 同口径：select + refreshAllViews +
+    // refreshAuthoritativeState，否则分屏右侧数据源永不写入（恒为空）。
+    const store = new AppStore();
+    const resumeCalls: Array<{ id: string; lastSeq: number; epoch: number }> = [];
+    const saveLayout = vi.fn(async () => undefined);
+    const api = {
+      listSessions: vi.fn(async () => [
+        { id: 'A', dir: 'd', mtimeMs: 2, firstUserText: 'A 问题', messageCount: 1, lastSeq: 1 },
+        { id: 'B', dir: 'd', mtimeMs: 1, firstUserText: 'B 问题', messageCount: 1, lastSeq: 1 },
+      ]),
+      runConfig: vi.fn(async (id: string) => runConfig(id, `C:\\proj${id}`, `C:\\proj${id}`)),
+      planState: vi.fn(async () => null),
+      executionViews: vi.fn(async () => []),
+      changeReview: vi.fn(async () => ({
+        sourceDir: 'd',
+        files: [],
+        changedFiles: 0,
+        dirtyFiles: 0,
+        readOnly: true as const,
+      })),
+      events: vi.fn(async (id: string) => events(id)),
+      subscribe: vi.fn(async () => undefined),
+      resumeSubscription: vi.fn(async (id: string, lastSeq: number, epoch: number) => {
+        resumeCalls.push({ id, lastSeq, epoch });
+      }),
+      saveLayout,
+      getStatus: vi.fn(async () => ({ status: 'connected' as const })),
+    } as unknown as Harness2Api;
+
+    const controller = createController(store, api);
+    store.applyStatus('connected'); // 视图拉齐/权威重订阅只在 connected 下发生（与 selectSession 同口径）
+    await controller.refreshSessions();
+    await controller.selectSession('A');
+    expect(store.getState().selectedId).toBe('A');
+    store.applyPaneCount(2); // 用户先开双栏（UI 的 setPaneCount），再拖 B 入第 2 栏
+
+    // 用户把 B 拖入第 2 分栏（未经 selectSession('B')——这正是缺陷路径）
+    await controller.assignToPane(1, 'B');
+
+    // ① 选中同步：SidePanel 的数据源切到 B
+    expect(store.getState().selectedId).toBe('B');
+    // ② 六页签数据源已为 B 写入（run-config 视图非空且归属正确）
+    expect(store.peekViews('B')?.runConfig?.session.cwd).toBe('C:\\projB');
+    // ③ 权威在途状态重订阅：selectSession('A') 一次 + assignToPane('B') 一次（replay 后 lastSeq=1，epoch 0→1）
+    expect(resumeCalls.map((c) => c.id)).toEqual(['A', 'B']);
+    expect(resumeCalls[1]).toEqual({ id: 'B', lastSeq: 1, epoch: 1 });
+    // ④ 分栏绑定与布局持久化保持原有行为
+    expect(store.getState().layout.panes[1]?.sessionId).toBe('B');
+    expect(saveLayout).toHaveBeenCalledTimes(1);
+  });
+
   it('分叉：调用 fork 原会话 id，不修改原会话（无本地状态改写）', async () => {
     const store = new AppStore();
     const fork = vi.fn(async () => undefined);
