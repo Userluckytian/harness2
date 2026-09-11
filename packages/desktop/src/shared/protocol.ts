@@ -41,8 +41,75 @@ export type WsFrame =
       error?: string;
       warning?: string;
     }
-  | { type: 'approval-request'; sessionId: string; tool: string; args: unknown; requestId: string }
+  | {
+      type: 'approval-request';
+      sessionId: string;
+      tool: string;
+      args: unknown;
+      requestId: string;
+      /** once=一次性 / session=「本会话总是」（框定 sessionId；跨 session 卡片会被策略层拒收） */
+      scope?: ApprovalScopeShape;
+      /** 过期时刻 ISO；迟到将被拒（客户端据此计时自弃） */
+      expiresAt?: string;
+      /** 卡片归属会话 cwd（工具执行基于它） */
+      cwd?: string;
+      /** 任务分组链路（加性字段；旧 serve 不发时为 undefined） */
+      taskId?: string;
+      parentTaskId?: string;
+    }
   | { type: 'error'; error: string }
+  // —— S0/S3 冻结契约镜像（core server/ws.ts WsServerMessage 同形；加性同步，旧 serve 不发） ——
+  /** 带水位的文本增量：chunkOffset 单调，续块 = 上一块 offset + 该块文本长度 */
+  | {
+      type: 'text-delta';
+      sessionId: string;
+      turnId: string;
+      attemptId: string;
+      chunkOffset: number;
+      text: string;
+    }
+  | {
+      type: 'reasoning-delta';
+      sessionId: string;
+      turnId: string;
+      attemptId: string;
+      chunkOffset: number;
+      text: string;
+    }
+  /** 单次 attempt 终态（含半截文本；attemptId 归属明确） */
+  | {
+      type: 'attempt-final';
+      sessionId: string;
+      turnId: string;
+      attemptId: string;
+      state: AttemptFinalStateShape;
+      finalText?: string;
+      error?: string;
+    }
+  /** 重订阅快照：在途 attempt / 任务 / 待批 / 队列一次补齐（epoch 旧值丢弃） */
+  | { type: 'resume-snapshot'; sessionId: string; epoch: number; snapshot: ResumeSnapshotShape }
+  /** 取消三态 ack：stopping=已受理 / cancelled=确认已取消 / unknown=连接不明 */
+  | { type: 'cancel-ack'; requestId: string; state: CancelAckStateShape }
+  /** 提交幂等 ack：unknown ≠ rejected（调用方不得把 unknown 当拒绝） */
+  | {
+      type: 'submit-ack';
+      clientMessageId: string;
+      sessionId: string;
+      state: SubmitAckStateShape;
+      reason?: string;
+      queueSeq?: number;
+    }
+  | { type: 'forked'; sessionId: string; parentSession: string; copiedEvents: number }
+  | { type: 'nudge-started'; sessionId: string }
+  | {
+      type: 'nudge-finished';
+      sessionId: string;
+      stopReason: string;
+      toolCalls: number;
+      /** ask 模式下本次复盘新增暂存的待审批条数 */
+      staged: number;
+      error?: string;
+    }
   /**
    * 本地回传帧（非服务帧）：系统通知被点击 → 主进程聚焦窗口并把该帧推给渲染端，
    * 渲染端据此 selectSession 跳转。走既有的 IPC_EVENT 通道，无需新建 IPC。
@@ -190,6 +257,271 @@ export interface SessionMetadataEntryShape {
 /** metadata:get / metadata:set 的响应（整体覆层映射 sessionId → entry） */
 export type SessionMetadataMapShape = Record<string, SessionMetadataEntryShape>;
 
+// —— S0/S3/S7 冻结契约镜像（core interaction/* 同形；core 冻结后只能加性同步） ——
+//
+// 说明：core 的 `textOutcome` 在 turn-end 帧恒发（必填），本镜像声明为可选——这是 API-STABILITY.md
+// 「跨端展示语义」节明示并接受的差异（兼容旧版 serve 实例），不要「顺手修齐」。
+
+export type AttemptFinalStateShape = 'completed' | 'failed' | 'cancelled' | 'unknown';
+export type SubmitAckStateShape = 'accepted' | 'rejected' | 'unknown';
+export type CancelAckStateShape = 'stopping' | 'cancelled' | 'unknown';
+export type QueueItemStateShape = 'queued' | 'paused';
+export type SubmitIntentShape = 'queue' | 'steer';
+export type ApprovalScopeShape = { mode: 'once' } | { mode: 'session'; sessionId: string };
+export type TaskStateShape =
+  | 'registered'
+  | 'queued'
+  | 'starting'
+  | 'running'
+  | 'waiting-approval'
+  | 'stopping'
+  | 'completed'
+  | 'failed'
+  | 'cancelled'
+  | 'unknown';
+
+/** 终态集合（与 core TASK_TERMINAL_STATES 同口径；进入即单调不回退） */
+export const TASK_TERMINAL_STATES: ReadonlySet<TaskStateShape> = new Set([
+  'completed',
+  'failed',
+  'cancelled',
+  'unknown',
+]);
+
+export interface MessageReferenceShape {
+  id: string;
+  kind: 'file' | 'clipboard' | 'url';
+  path?: string;
+  text?: string;
+  url?: string;
+  range?: { start: number; end: number };
+}
+
+export interface TaskContractShape {
+  taskId: string;
+  parentTaskId?: string;
+  /** background:true 注册后立即返回 handle（status/wait/continue/cancel 分离） */
+  background: boolean;
+  state: TaskStateShape;
+  expectedTurnId?: string;
+  updatedAt?: string;
+}
+
+export interface AttemptSnapshotShape {
+  attemptId: string;
+  turnId: string;
+  textChunkOffset: number;
+  reasoningChunkOffset: number;
+  status: 'running' | 'waiting-approval' | 'unknown';
+  /** 本 turn 的代次（重连快照据此发正确代次的 cancel） */
+  generation?: number;
+}
+
+export interface QueueEntryShape {
+  /** 幂等键 = 提交时的 clientMessageId */
+  id: string;
+  revision: number;
+  rawText: string;
+  references?: MessageReferenceShape[];
+  intent: SubmitIntentShape;
+  state: QueueItemStateShape;
+}
+
+export interface ResumeSnapshotShape {
+  epoch: number;
+  replay: { fromSeq: number; toSeq: number };
+  activeAttempt?: AttemptSnapshotShape;
+  tasks: TaskContractShape[];
+  pendingApprovals: Array<{
+    requestId: string;
+    sessionId: string;
+    parentTaskId?: string;
+    taskId?: string;
+    tool: string;
+    args: unknown;
+    cwd?: string;
+    scope: ApprovalScopeShape;
+    expiresAt: string;
+  }>;
+  queue: QueueEntryShape[];
+}
+
+/** WsFrame 之外的客户端→服务端操作（bridge 经 WS 发送；与 core WsClientMessage 同形） */
+export type WsClientOp =
+  | { op: 'subscribe'; sessionId: string }
+  | { op: 'unsubscribe'; sessionId: string }
+  | { op: 'abort'; sessionId: string }
+  | { op: 'user-message'; sessionId: string; text: string }
+  | { op: 'approval-response'; requestId: string; decision: 'allow' | 'deny' }
+  | { op: 'fork'; sessionId: string; atSeq?: number }
+  | { op: 'resume-subscription'; sessionId: string; lastSeq: number; epoch: number }
+  | {
+      op: 'cancel';
+      requestId: string;
+      target: { kind: 'turn' | 'task'; id: string };
+      expectedId?: string;
+      expectedTurnGeneration?: number;
+    }
+  | {
+      op: 'submit';
+      clientMessageId: string;
+      sessionId: string;
+      rawText: string;
+      intent: SubmitIntentShape;
+      references?: MessageReferenceShape[];
+      expectedTurnId?: string;
+    };
+
+// —— S7 只读查询端点镜像（serve GET /api/sessions/:id/{run-config,plan-state,execution-view,change-review}） ——
+
+export type EffectiveConnectionStatusShape = 'connected' | 'disconnected' | 'unknown';
+
+/** 有效运行配置只读视图（脱敏；同一次 run 内不被后续异步变化改写） */
+export interface EffectiveRunConfigShape {
+  session: { sessionId: string; root: string; cwd: string; perSessionCwd: boolean };
+  provider: {
+    role: string;
+    channel: string;
+    model: string;
+    protocol: 'openai' | 'anthropic';
+    name: string;
+  };
+  approval: { mode: string; tools: Record<string, 'allow' | 'ask' | 'deny'> };
+  modes: { memory: string };
+  tools: string[];
+  connection: { status: EffectiveConnectionStatusShape };
+  instructions: { skills: Array<{ name: string; source: 'project' | 'global' }> };
+  context: {
+    contextWindow?: number;
+    maxOutputTokens?: number;
+    retry: {
+      maxExtraAttempts: number;
+      backoffSeconds: number[];
+      maxExtraPerTurn: number;
+      maxTotalWaitSeconds: number;
+      budget?: {
+        usedAttempts: number;
+        remainingAttempts: number;
+        waitMs: number;
+        remainingWaitMs: number;
+        maxExtraAttempts: number;
+        maxWaitMs: number;
+        stopReason: string;
+      };
+    };
+  };
+  snapshot: { revision: number; capturedAt: string; effectiveAt: string };
+  redacted: true;
+}
+
+/** 计划状态只读投影（可指回 journal seq 与 user/message 事件，不臆造） */
+export interface PlanStateShape {
+  planId: string;
+  goal: string;
+  goalEvidence?: {
+    source: 'user-message';
+    seq: number;
+    ts: string;
+    anchor: { kind: 'session-log-seq'; seq: number } | { kind: 'journal-ts'; ts: string };
+  };
+  steps: Array<{
+    stepId: string;
+    state: TaskStateShape;
+    evidence: { source: 'runtime-journal'; taskId: string; journalSeqs: number[] };
+  }>;
+  readOnly: true;
+  sourceDir: string;
+}
+
+export type ToolExecutionStatusShape = 'not-executed' | 'running' | 'success' | 'failed' | 'cancelled' | 'unknown';
+export type ToolExecutionCommandSourceShape = 'executed' | 'planned-only' | 'none';
+export type ToolExecutionExitCodeSourceShape = 'bash-error' | 'bash-ok' | 'none';
+
+/** 工具/命令执行只读视图：真实 shell 与 exitCode 归属清楚（未执行不虚构） */
+export interface ToolExecutionViewShape {
+  callId: string;
+  taskId?: string;
+  turnId?: string;
+  tool: string;
+  args: unknown;
+  plannedCommand?: string;
+  actualCommand?: string;
+  commandSource: ToolExecutionCommandSourceShape;
+  cwd: string;
+  shell?: string;
+  startedAt?: string;
+  endedAt?: string;
+  durationMs?: number;
+  outputRef: string;
+  outputTruncated: boolean;
+  exitCode?: number;
+  exitCodeSource: ToolExecutionExitCodeSourceShape;
+  status: ToolExecutionStatusShape;
+  error?: string;
+  readOnly: true;
+}
+
+/** 变更审查只读视图（区分拟议 diff 与真实落盘；外部改动 dirty 标记） */
+export interface ChangeSetShape {
+  sourceDir: string;
+  files: Array<{
+    file: string;
+    planned: { before: string | null; after: string | null };
+    current: string | null;
+    lastKnown: string | null;
+    dirty: boolean;
+    matchesPlan: boolean;
+  }>;
+  changedFiles: number;
+  dirtyFiles: number;
+  readOnly: true;
+}
+
+/** undo/redo 前比对报告（外部修改不静默覆盖） */
+export interface UndoRedoCompareShape {
+  kind: 'undo' | 'redo';
+  scopeSeq: number;
+  items: Array<{
+    file: string;
+    expected: string | null;
+    current: string | null;
+    target: string | null;
+    externallyModified: boolean;
+  }>;
+  externalModifications: number;
+  requiresUserDecision: boolean;
+  readOnly: true;
+}
+
+// —— 能力盘点（D0）：把「后端真实具备什么」如实投影为可行动的能力表 ——
+
+export type CapabilityStatusShape = 'available' | 'unavailable';
+
+export type CapabilityIdShape =
+  | 'serve'
+  | 'run-config'
+  | 'plan-state'
+  | 'execution-view'
+  | 'change-review'
+  | 'queue'
+  | 'steer'
+  | 'cancel'
+  | 'fork'
+  | 'resume-subscription';
+
+export interface CapabilityEntryShape {
+  id: CapabilityIdShape;
+  status: CapabilityStatusShape;
+  /** unavailable 时的可行动原因（一句话；UI 据此 disabled + 解释，不摆假入口） */
+  reason?: string;
+}
+
+export interface CapabilityReportShape {
+  /** probe 时点 ISO */
+  probedAt: string;
+  entries: CapabilityEntryShape[];
+}
+
 // —— IPC 调用命令 ——
 
 export type InvokeCommand =
@@ -220,7 +552,31 @@ export type InvokeCommand =
   | { cmd: 'readFileForRef'; path: string; cwd: string }
   | { cmd: 'notify'; title: string; body: string; sessionId?: string }
   | { cmd: 'metadata:get' }
-  | { cmd: 'metadata:set'; id: string; patch: { title?: string; archived?: boolean; deleted?: boolean } };
+  | { cmd: 'metadata:set'; id: string; patch: { title?: string; archived?: boolean; deleted?: boolean } }
+  // —— D0：S7 只读查询端点 + S3 交互 op ——
+  | { cmd: 'runConfig'; sessionId: string }
+  | { cmd: 'planState'; sessionId: string }
+  | { cmd: 'executionViews'; sessionId: string }
+  | { cmd: 'changeReview'; sessionId: string }
+  | { cmd: 'fork'; sessionId: string; atSeq?: number }
+  | {
+      cmd: 'submit';
+      clientMessageId: string;
+      sessionId: string;
+      rawText: string;
+      intent: SubmitIntentShape;
+      references?: MessageReferenceShape[];
+      expectedTurnId?: string;
+    }
+  | {
+      cmd: 'cancel';
+      requestId: string;
+      target: { kind: 'turn' | 'task'; id: string };
+      expectedId?: string;
+      expectedTurnGeneration?: number;
+    }
+  | { cmd: 'resumeSubscription'; sessionId: string; lastSeq: number; epoch: number }
+  | { cmd: 'capabilities'; sessionId?: string };
 
 /** window.harness2 的形状（preload contextBridge 暴露） */
 export interface Harness2Api {
@@ -276,6 +632,37 @@ export interface Harness2Api {
     id: string,
     patch: { title?: string; archived?: boolean; deleted?: boolean },
   ): Promise<SessionMetadataMapShape>;
+  // —— D0：S7 只读查询 + S3 交互 op + 能力盘点 ——
+  /** 有效运行配置只读视图（脱敏；serve 未就绪/失败 → 抛错，由调用方 fallback） */
+  runConfig(sessionId: string): Promise<EffectiveRunConfigShape>;
+  /** 计划状态只读投影（会话无 task/transition 账本 → null，不臆造计划） */
+  planState(sessionId: string): Promise<PlanStateShape | null>;
+  /** 工具/命令执行只读视图列表（真实 shell/cwd/输出/退出码；未执行不虚构） */
+  executionViews(sessionId: string): Promise<ToolExecutionViewShape[]>;
+  /** 变更审查只读视图（拟议 vs 真实落盘；外部改动 dirty） */
+  changeReview(sessionId: string): Promise<ChangeSetShape>;
+  /** 从既有会话分叉（不改原会话）；成功经 'forked' 帧回传 */
+  fork(sessionId: string, atSeq?: number): Promise<void>;
+  /** 提交（幂等 clientMessageId；结果经 'submit-ack' 帧回传，unknown ≠ rejected） */
+  submit(op: {
+    clientMessageId: string;
+    sessionId: string;
+    rawText: string;
+    intent: SubmitIntentShape;
+    references?: MessageReferenceShape[];
+    expectedTurnId?: string;
+  }): Promise<void>;
+  /** 取消 turn/task（三态经 'cancel-ack' 帧回传；不把取消当 undo） */
+  cancel(op: {
+    requestId: string;
+    target: { kind: 'turn' | 'task'; id: string };
+    expectedId?: string;
+    expectedTurnGeneration?: number;
+  }): Promise<void>;
+  /** 重订阅：带水位回放 + 在途状态（结果经 'resume-snapshot' 帧回传） */
+  resumeSubscription(sessionId: string, lastSeq: number, epoch: number): Promise<void>;
+  /** 能力盘点：后端真实具备哪些能力（unavailable 带可行动原因） */
+  capabilities(sessionId?: string): Promise<CapabilityReportShape>;
   /** 订阅服务事件帧（delta/event/turn-end/approval-request/error）；返回退订函数 */
   onEvent(listener: (frame: WsFrame) => void): () => void;
   /** 订阅连接状态变化；返回退订函数 */

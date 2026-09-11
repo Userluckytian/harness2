@@ -5,13 +5,24 @@
 // 多会话"切换不断流"核心：每个会话独立 SessionStream 缓冲（事件 + 在途 delta + 审批 +
 // 未读计数），与是否正在渲染无关；切换会话 = 选中 id 变化 + 必要时全量重放（store 自动判重）。
 import type {
+  AttemptSnapshotShape,
+  CancelAckStateShape,
+  CapabilityReportShape,
+  ChangeSetShape,
   ConnectionStatus,
+  EffectiveRunConfigShape,
+  PlanStateShape,
+  QueueEntryShape,
   SessionEventShape,
   SessionSummaryShape,
   SessionEventsPayloadShape,
   StatusDetail,
+  SubmitAckStateShape,
+  TaskContractShape,
+  ToolExecutionViewShape,
   WsFrame,
 } from '../shared/protocol.js';
+import { acceptDelta, type DeltaWatermark } from './delivery.js';
 import * as layoutFns from '../shared/layout.js';
 import {
   assignSession as assignPaneInLayout,
@@ -47,6 +58,14 @@ export interface SessionMeta {
   lastSeq: number;
 }
 
+/** 提交的本地在途记录（ack 未到；丢失时标 unknown，绝不自动重发） */
+export interface PendingSubmit {
+  clientMessageId: string;
+  rawText: string;
+  intent: 'queue' | 'steer';
+  ts: number;
+}
+
 /** 单会话流缓冲（渲染与缓冲解耦：后台会话只记事件不渲染） */
 export interface SessionStream {
   id: string;
@@ -59,10 +78,59 @@ export interface SessionStream {
   running: boolean;
   /** 非当前视图期间新增的落盘事件数（后台徽标，视图聚焦时清零） */
   unread: number;
-  /** 待审批（requestId → {tool,args}） */
-  approvals: Array<{ requestId: string; tool: string; args: unknown }>;
+  /** 待审批（requestId → 卡片全量字段；含 scope/expiresAt/taskId 供审批中心分组） */
+  approvals: Array<{
+    requestId: string;
+    tool: string;
+    args: unknown;
+    scope?: 'once' | 'session';
+    expiresAt?: string;
+    cwd?: string;
+    taskId?: string;
+    parentTaskId?: string;
+  }>;
   /** 历史加载完成（首次重放成功后 true；未加载前渲染加载态） */
   loaded: boolean;
+  // —— D0：S0/S3 契约状态（带水位 delta / attempt / 队列 / 任务 / 取消 / 重订阅） ——
+  /** 带水位 delta 的连续性水位（attemptId → text/reasoning 各自水位） */
+  watermarks: Record<string, { text?: DeltaWatermark; reasoning?: DeltaWatermark }>;
+  /** 当前正在流式的 attemptId（新 attempt 开始时重置在途文本） */
+  liveAttemptId?: string;
+  /** attempt 终态（attemptId → 终态与半截文本；P3-b 展示标注用） */
+  attempts: Record<string, { turnId: string; state: string; finalText?: string; error?: string }>;
+  /** 待确认提交（clientMessageId → 本地在途；ack 丢失 → unknown，不重复提交） */
+  pendingSubmits: Record<string, PendingSubmit>;
+  /** submit-ack 结论（clientMessageId → ack；unknown ≠ rejected） */
+  submitAcks: Record<string, { state: SubmitAckStateShape; reason?: string; queueSeq?: number }>;
+  /** 服务端可见队列（submit-ack / resume-snapshot 同步；重启恢复默认 paused） */
+  queue: QueueEntryShape[];
+  /** 任务表（resume-snapshot 同步；D3 计划/任务面板） */
+  tasks: TaskContractShape[];
+  /** 连接代次（resume-subscription 携带；旧 epoch 快照丢弃） */
+  epoch: number;
+  /** 最近一次重订阅快照的回放区间 */
+  resume?: { fromSeq: number; toSeq: number; at: number };
+  /** 重连快照里的在途 attempt（D4 据此展示「仍在跑」而非永久 loading） */
+  activeAttempt?: AttemptSnapshotShape;
+  /** 分叉来源（forked 帧；原会话不变） */
+  forkedFrom?: string;
+  /** 记忆复盘（nudge）状态：运行中 + 最近一次结论 */
+  nudge: {
+    running: boolean;
+    last?: { stopReason: string; toolCalls: number; staged: number; error?: string };
+  };
+}
+
+/** 单会话的只读查询结果缓存（S7 四契约 + 能力盘点；面板渲染数据源） */
+export interface SessionViews {
+  runConfig?: EffectiveRunConfigShape;
+  /** null = 会话暂无计划数据（非错误） */
+  planState?: PlanStateShape | null;
+  executionViews: ToolExecutionViewShape[];
+  changeReview?: ChangeSetShape;
+  capabilities?: CapabilityReportShape;
+  /** 各查询的错误文案（失败时如实显示，不静默吞） */
+  errors: Partial<Record<'runConfig' | 'planState' | 'executionViews' | 'changeReview', string>>;
 }
 
 export interface AppState {
@@ -76,16 +144,30 @@ export interface AppState {
   layout: DesktopLayout;
   /** 会话展示态覆层（B3：desktop-metadata.json；title/archived 覆盖层，不碰事件日志） */
   metadata: SessionMetadataMap;
+  /** 能力盘点结果（D0；无后端能力如实 disabled + 解释，不摆假入口） */
+  capabilities?: CapabilityReportShape;
+  /** 取消三态 ack（requestId 全局唯一 → 全局表；UI 立即展示 stopping，unknown 不假报停止） */
+  cancelAcks: Record<string, CancelAckStateShape>;
 }
 
 export function initialState(): AppState {
-  return { rev: 0, status: 'connecting', sessions: [], selectedId: null, layout: defaultLayout(), metadata: {} };
+  return {
+    rev: 0,
+    status: 'connecting',
+    sessions: [],
+    selectedId: null,
+    layout: defaultLayout(),
+    metadata: {},
+    cancelAcks: {},
+  };
 }
 
 export class AppStore {
   private state: AppState = initialState();
   private readonly listeners = new Set<() => void>();
   private readonly streams = new Map<string, SessionStream>();
+  /** 只读查询缓存（S7 契约；不进 AppState，读经 peekViews，变更经 notify 触发渲染） */
+  private readonly views = new Map<string, SessionViews>();
 
   getState = (): AppState => this.state;
 
@@ -221,10 +303,84 @@ export class AppStore {
         unread: 0,
         approvals: [],
         loaded: false,
+        watermarks: {},
+        attempts: {},
+        pendingSubmits: {},
+        submitAcks: {},
+        queue: [],
+        tasks: [],
+        epoch: 0,
+        nudge: { running: false },
       };
       this.streams.set(id, s);
     }
     return s;
+  }
+
+  /** 只读查询缓存（不存在则建空壳；组件据此显示加载/空态） */
+  private ensureViews(id: string): SessionViews {
+    let v = this.views.get(id);
+    if (!v) {
+      v = { executionViews: [], errors: {} };
+      this.views.set(id, v);
+    }
+    return v;
+  }
+
+  /** 只读视图缓存（S7 四契约）；返回引用，调用方不得改写 */
+  peekViews(id: string): SessionViews | undefined {
+    return this.views.get(id);
+  }
+
+  // —— D0：只读查询结果写入（controller 经 IPC 取回后调用） ——
+
+  setRunConfig(id: string, view: EffectiveRunConfigShape | undefined, error?: string): void {
+    const v = this.ensureViews(id);
+    if (error !== undefined) v.errors.runConfig = error;
+    else {
+      delete v.errors.runConfig;
+      v.runConfig = view;
+    }
+    this.notify();
+  }
+
+  setPlanState(id: string, plan: PlanStateShape | null | undefined, error?: string): void {
+    const v = this.ensureViews(id);
+    if (error !== undefined) v.errors.planState = error;
+    else {
+      delete v.errors.planState;
+      v.planState = plan ?? null;
+    }
+    this.notify();
+  }
+
+  setExecutionViews(id: string, views: ToolExecutionViewShape[], error?: string): void {
+    const v = this.ensureViews(id);
+    if (error !== undefined) v.errors.executionViews = error;
+    else {
+      delete v.errors.executionViews;
+      v.executionViews = views;
+    }
+    this.notify();
+  }
+
+  setChangeReview(id: string, set: ChangeSetShape | undefined, error?: string): void {
+    const v = this.ensureViews(id);
+    if (error !== undefined) v.errors.changeReview = error;
+    else {
+      delete v.errors.changeReview;
+      v.changeReview = set;
+    }
+    this.notify();
+  }
+
+  /** 能力盘点（全局，不是 per-session） */
+  setCapabilities(report: CapabilityReportShape): void {
+    this.set({ capabilities: report });
+  }
+
+  capabilities(): CapabilityReportShape | undefined {
+    return this.state.capabilities;
   }
 
   /** 只读流视图（不存在返回 undefined；组件据此显示加载态） */
@@ -268,11 +424,16 @@ export class AppStore {
     this.notify();
   }
 
-  /** 增量帧（WS delta/event/turn-end/approval-request/error）统一入口 */
+  /** 增量帧（WS delta/event/turn-end/approval-request/error 及 S0/S3 新帧）统一入口 */
   applyFrame(frame: WsFrame): void {
     if (frame.type === 'error') {
       // 协议错误：记录在 statusDetail（不打断会话流；输入框等处可见）
       this.set({ statusDetail: { ...this.state.statusDetail, error: frame.error } });
+      return;
+    }
+    if (frame.type === 'cancel-ack') {
+      // 取消 ack 无 sessionId（全局 requestId 归属）：记全局表，UI 据 requestId 展示三态
+      this.set({ cancelAcks: { ...this.state.cancelAcks, [frame.requestId]: frame.state } });
       return;
     }
     const id: string = frame.sessionId;
@@ -287,20 +448,80 @@ export class AppStore {
       if (frame.kind === 'tool') stream.live.toolCalls = [...stream.live.toolCalls, frame.call];
       else if (frame.kind === 'text') stream.live.text += frame.text;
       else stream.live.reasoning += frame.text;
+    } else if (frame.type === 'text-delta' || frame.type === 'reasoning-delta') {
+      const kind = frame.type === 'text-delta' ? 'text' : 'reasoning';
+      // 新 attempt（含首块 offset=0）开始时清空在途文本，避免上一 attempt 残留拼接
+      if (stream.liveAttemptId !== frame.attemptId) {
+        stream.liveAttemptId = frame.attemptId;
+        stream.live.text = '';
+        stream.live.reasoning = '';
+      }
+      const slot = stream.watermarks[frame.attemptId] ?? {};
+      const next = acceptDelta(slot[kind], frame.chunkOffset, frame.text);
+      if (next === null) return; // 重复/重叠/缺口：丢弃（不 notify，避免无谓重渲）
+      slot[kind] = next;
+      stream.watermarks[frame.attemptId] = slot;
+      if (kind === 'text') stream.live.text += frame.text;
+      else stream.live.reasoning += frame.text;
+    } else if (frame.type === 'attempt-final') {
+      stream.attempts[frame.attemptId] = {
+        turnId: frame.turnId,
+        state: frame.state,
+        ...(frame.finalText !== undefined ? { finalText: frame.finalText } : {}),
+        ...(frame.error !== undefined ? { error: frame.error } : {}),
+      };
+      // attempt 终态：该 attempt 的水位作废（后续 attempt 从 0 重新计数）
+      delete stream.watermarks[frame.attemptId];
+      if (stream.liveAttemptId === frame.attemptId) stream.liveAttemptId = undefined;
     } else if (frame.type === 'turn-end') {
       const turnId = lastTurnId(stream.events);
       if (turnId !== undefined) {
         stream.turnEnds[turnId] = {
           stopReason: frame.stopReason,
+          ...(frame.textOutcome !== undefined ? { textOutcome: frame.textOutcome } : {}),
+          ...(frame.finalText !== undefined ? { finalText: frame.finalText } : {}),
+          ...(frame.partialText !== undefined ? { partialText: frame.partialText } : {}),
           ...(frame.error !== undefined ? { error: frame.error } : {}),
           ...(frame.warning !== undefined ? { warning: frame.warning } : {}),
         };
       }
       stream.running = false;
       stream.live = emptyLive(); // turn 收尾：在途增量清空（落盘事件已覆盖）
+      stream.liveAttemptId = undefined;
+      stream.activeAttempt = undefined;
       stream.approvals = []; // turn 结束：审批等待要么已响应要么已超时，全部失效
     } else if (frame.type === 'approval-request') {
-      stream.approvals = [...stream.approvals, { requestId: frame.requestId, tool: frame.tool, args: frame.args }];
+      stream.approvals = [
+        ...stream.approvals,
+        {
+          requestId: frame.requestId,
+          tool: frame.tool,
+          args: frame.args,
+          ...(frame.scope !== undefined ? { scope: frame.scope.mode } : {}),
+          ...(frame.expiresAt !== undefined ? { expiresAt: frame.expiresAt } : {}),
+          ...(frame.cwd !== undefined ? { cwd: frame.cwd } : {}),
+          ...(frame.taskId !== undefined ? { taskId: frame.taskId } : {}),
+          ...(frame.parentTaskId !== undefined ? { parentTaskId: frame.parentTaskId } : {}),
+        },
+      ];
+    } else if (frame.type === 'submit-ack') {
+      this.resolveSubmitAck(stream, frame);
+    } else if (frame.type === 'resume-snapshot') {
+      this.applyResumeSnapshot(stream, frame);
+    } else if (frame.type === 'forked') {
+      stream.forkedFrom = frame.parentSession;
+    } else if (frame.type === 'nudge-started') {
+      stream.nudge = { running: true, ...(stream.nudge.last !== undefined ? { last: stream.nudge.last } : {}) };
+    } else if (frame.type === 'nudge-finished') {
+      stream.nudge = {
+        running: false,
+        last: {
+          stopReason: frame.stopReason,
+          toolCalls: frame.toolCalls,
+          staged: frame.staged,
+          ...(frame.error !== undefined ? { error: frame.error } : {}),
+        },
+      };
     }
     // 后台会话徽标：非选中且未绑定分栏的会话，按"新消息"口径计数（assistant/message / turn-end）
     if (this.isBackground(id)) {
@@ -311,14 +532,103 @@ export class AppStore {
     this.notify();
   }
 
+  /** submit-ack 收敛：accepted 保留队列项并登记序号；rejected 移除；unknown ≠ rejected（保留待定） */
+  private resolveSubmitAck(stream: SessionStream, frame: Extract<WsFrame, { type: 'submit-ack' }>): void {
+    stream.submitAcks = {
+      ...stream.submitAcks,
+      [frame.clientMessageId]: {
+        state: frame.state,
+        ...(frame.reason !== undefined ? { reason: frame.reason } : {}),
+        ...(frame.queueSeq !== undefined ? { queueSeq: frame.queueSeq } : {}),
+      },
+    };
+    delete stream.pendingSubmits[frame.clientMessageId];
+    if (frame.state === 'rejected') {
+      // 明确拒绝：从可见队列移除（不假装已排队）
+      stream.queue = stream.queue.filter((q) => q.id !== frame.clientMessageId);
+    } else if (frame.state === 'accepted' && frame.queueSeq !== undefined) {
+      stream.queue = stream.queue.map((q) => (q.id === frame.clientMessageId ? { ...q, revision: q.revision + 1 } : q));
+    }
+  }
+
+  /**
+   * 重订阅快照（S3 契约）：以服务端为权威补齐在途 attempt / 任务 / 待批 / 队列。
+   * 旧 epoch（< 当前）直接丢弃；事件回放由既有 /events 全量重放负责（此处只补状态，不重复插事件）。
+   */
+  private applyResumeSnapshot(stream: SessionStream, frame: Extract<WsFrame, { type: 'resume-snapshot' }>): void {
+    if (frame.epoch < stream.epoch) return; // 旧连接代次：丢弃
+    stream.epoch = frame.epoch;
+    const snap = frame.snapshot;
+    stream.resume = { fromSeq: snap.replay.fromSeq, toSeq: snap.replay.toSeq, at: Date.now() };
+    stream.tasks = snap.tasks;
+    stream.queue = snap.queue;
+    stream.activeAttempt = snap.activeAttempt;
+    stream.approvals = snap.pendingApprovals.map((a) => ({
+      requestId: a.requestId,
+      tool: a.tool,
+      args: a.args,
+      scope: a.scope.mode,
+      expiresAt: a.expiresAt,
+      ...(a.cwd !== undefined ? { cwd: a.cwd } : {}),
+      ...(a.taskId !== undefined ? { taskId: a.taskId } : {}),
+      ...(a.parentTaskId !== undefined ? { parentTaskId: a.parentTaskId } : {}),
+    }));
+    // 在途 attempt 存在 → 会话确实仍在跑（不因客户端重连而假报停止）
+    stream.running = snap.activeAttempt !== undefined || stream.running;
+  }
+
+  /** 本地登记一次提交（乐观可见队列）；ack 到达前不计入确认态 */
+  noteSubmit(sessionId: string, submit: { clientMessageId: string; rawText: string; intent: 'queue' | 'steer' }): void {
+    const stream = this.ensureStream(sessionId);
+    stream.pendingSubmits = {
+      ...stream.pendingSubmits,
+      [submit.clientMessageId]: {
+        clientMessageId: submit.clientMessageId,
+        rawText: submit.rawText,
+        intent: submit.intent,
+        ts: Date.now(),
+      },
+    };
+    if (submit.intent === 'queue') {
+      stream.queue = [
+        ...stream.queue,
+        { id: submit.clientMessageId, revision: 0, rawText: submit.rawText, intent: 'queue', state: 'queued' },
+      ];
+    }
+    this.notify();
+  }
+
+  /**
+   * ack 丢失判定：超过 timeoutMs 仍在途 → 记 unknown（渲染为「未确认，勿重复提交」），
+   * **不自动重发**（把重连当重发是明令禁止的）。返回超时项供 UI 提示。
+   */
+  expirePendingSubmits(timeoutMs = 5000, now = Date.now()): PendingSubmit[] {
+    const expired: PendingSubmit[] = [];
+    for (const stream of this.streams.values()) {
+      for (const p of Object.values(stream.pendingSubmits)) {
+        if (now - p.ts < timeoutMs) continue;
+        expired.push(p);
+        delete stream.pendingSubmits[p.clientMessageId];
+        stream.submitAcks = {
+          ...stream.submitAcks,
+          [p.clientMessageId]: { state: 'unknown', reason: '未收到服务端确认（连接中断）——请勿重复提交' },
+        };
+      }
+    }
+    if (expired.length > 0) this.notify();
+    return expired;
+  }
+
   /** 落盘事件应用的联动规则（delta 一致性：最终以落盘事件为准） */
   private absorbEvent(stream: SessionStream, event: SessionEventShape): void {
     if (event.type === 'user/message') {
       stream.live = emptyLive();
+      stream.liveAttemptId = undefined;
       stream.running = true; // 用户消息落盘 = turn 开始
     } else if (event.type === 'assistant/message') {
       stream.live.text = '';
       stream.live.reasoning = '';
+      stream.liveAttemptId = undefined;
     } else if (event.type === 'tool/call') {
       const callId = (event.payload as Record<string, unknown>)['callId'];
       stream.live.toolCalls = stream.live.toolCalls.filter((c) => c.id !== callId);

@@ -73,6 +73,16 @@ function makeFakeApi() {
     getContextUsage: vi.fn(async () => ({ usage: 0.5, label: '50%' })),
     getSnapshotForCall: vi.fn(async () => ({ ok: false, error: '未找到对应快照' })),
     readFileForRef: vi.fn(async () => ({ ok: false, error: '未找到' })),
+    // —— D0：S7 只读查询 + S3 交互 op + 能力盘点（默认最小可用实现） ——
+    runConfig: vi.fn(async () => ({ redacted: true }) as never),
+    planState: vi.fn(async () => null),
+    executionViews: vi.fn(async () => []),
+    changeReview: vi.fn(async () => ({ readOnly: true }) as never),
+    fork: vi.fn(async () => undefined),
+    submit: vi.fn(async () => undefined),
+    cancel: vi.fn(async () => undefined),
+    resumeSubscription: vi.fn(async () => undefined),
+    capabilities: vi.fn(async () => ({ probedAt: '', entries: [] })),
     notify: vi.fn(async () => undefined),
     metadataGet: vi.fn(async () => ({})),
     metadataSet: vi.fn(async (id: string, patch: { title?: string; archived?: boolean; deleted?: boolean }) => {

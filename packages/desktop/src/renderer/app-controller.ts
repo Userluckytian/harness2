@@ -2,7 +2,15 @@
 // 纯逻辑（可注入假 api 单测）；React 组件只读 store + 调 controller 方法。
 // 切换会话流程（多会话切换不断流核心路径）：subscribe → /events 全量重放（store 判重）
 // → 后续增量由 WS 帧按 seq 去重追加；后台会话的帧持续缓冲进各自 SessionStream。
-import type { Harness2Api, WsFrame } from '../shared/protocol.js';
+import type {
+  Harness2Api,
+  MessageReferenceShape,
+  SubmitIntentShape,
+  UndoRedoResponseShape,
+  WsFrame,
+} from '../shared/protocol.js';
+import { newCancelRequestId, newClientMessageId } from '../shared/ids.js';
+import type { ActiveEvent } from './chat-model.js';
 import type { AppStore } from './store.js';
 
 export interface Controller {
@@ -14,10 +22,36 @@ export interface Controller {
   selectSession(id: string): Promise<void>;
   replaySession(id: string): Promise<void>;
   sendMessage(id: string, text: string): Promise<void>;
+  /** D1：submit 提交（幂等 clientMessageId；queue 进可见队列；结果经 submit-ack 帧收敛） */
+  submitMessage(
+    id: string,
+    rawText: string,
+    opts?: { intent?: SubmitIntentShape; references?: MessageReferenceShape[]; expectedTurnId?: string },
+  ): Promise<{ clientMessageId: string }>;
+  /** D3/D4：取消当前 turn（三态 ack；不把取消当 undo，不假报停止） */
+  cancelTurn(id: string): Promise<void>;
+  /** D3：取消任务（目标为 task id） */
+  cancelTask(taskId: string): Promise<void>;
+  /** D5：从既有会话分叉（不改原会话） */
+  forkSession(id: string, atSeq?: number): Promise<void>;
+  /** D4：重订阅（带水位回放 + 在途状态补齐） */
+  resumeSession(id: string): Promise<void>;
   abort(id: string): Promise<void>;
   /** B5：撤销会话最近一次被快照追踪的修改（调用既有 api.undo；失败经 store.applyFrame 报错） */
   undoSession(id: string): Promise<void>;
+  /** D5：undo 前比对（dryRun）；有外部冲突返回冲突项，UI 须显式决定后才真正 undo */
+  undoWithGuard(
+    id: string,
+    opts?: { n?: number; decision?: 'abort' | 'overwrite' },
+  ): Promise<{ blocked: boolean; externallyModified: number } | undefined>;
   respondApproval(requestId: string, decision: 'allow' | 'deny'): Promise<void>;
+  /** D0：拉取 S7 只读契约（run-config / plan-state / execution-view / change-review） */
+  refreshRunConfig(id: string): Promise<void>;
+  refreshPlanState(id: string): Promise<void>;
+  refreshExecutionViews(id: string): Promise<void>;
+  refreshChangeReview(id: string): Promise<void>;
+  /** D0：能力盘点（serve 就绪 + 实测端点缺失） */
+  refreshCapabilities(id?: string): Promise<void>;
   /** 启动时读取持久化布局（~/.harness2/desktop-layout.json 经主进程） */
   initLayout(): Promise<void>;
   /** 启动时读取会话展示态覆层（~/.harness2/desktop-metadata.json；重命名/归档的展示源） */
@@ -109,7 +143,10 @@ export function createController(store: AppStore, api: Harness2Api): Controller 
           // 通道尚未就绪：等 onConnectionStatus 事件补齐
         });
       void refreshSessions();
+      // D0/F7：ack 丢失判定——提交后 5s 未收到 submit-ack → 标 unknown（不自动重发）
+      const pendingTimer = setInterval(() => store.expirePendingSubmits(), 1000);
       return () => {
+        clearInterval(pendingTimer);
         statusUnsub();
         eventUnsub();
       };
@@ -154,6 +191,143 @@ export function createController(store: AppStore, api: Harness2Api): Controller 
         await api.abort(id);
       } catch {
         // 通道未连接：无可取消的运行中 turn
+      }
+    },
+    async submitMessage(
+      id: string,
+      rawText: string,
+      opts?: { intent?: SubmitIntentShape; references?: MessageReferenceShape[]; expectedTurnId?: string },
+    ): Promise<{ clientMessageId: string }> {
+      const clientMessageId = newClientMessageId();
+      const intent: SubmitIntentShape = opts?.intent === 'steer' ? 'steer' : 'queue';
+      // 本地先登记（可见队列 + pendingSubmits）；ack 到达或超时后收敛
+      store.noteSubmit(id, { clientMessageId, rawText, intent });
+      store.markSending(id);
+      try {
+        await api.submit({
+          clientMessageId,
+          sessionId: id,
+          rawText,
+          intent,
+          ...(opts?.references !== undefined ? { references: opts.references } : {}),
+          ...(opts?.expectedTurnId !== undefined ? { expectedTurnId: opts.expectedTurnId } : {}),
+        });
+      } catch (e) {
+        // 发送通道失败：立即记 unknown（不重发），避免用户以为已提交
+        store.applyFrame({
+          type: 'submit-ack',
+          clientMessageId,
+          sessionId: id,
+          state: 'unknown',
+          reason: `提交未送达: ${(e as Error).message}`,
+        });
+      }
+      return { clientMessageId };
+    },
+    async cancelTurn(id: string): Promise<void> {
+      const requestId = newCancelRequestId();
+      const stream = store.peekStream(id);
+      const turnId = stream !== undefined ? lastTurnIdOf(stream) : undefined;
+      if (turnId === undefined) {
+        // 无运行中 turn：仍需服务端明确结论；用 abort 语义兜底并如实记录
+        try {
+          await api.abort(id);
+        } catch (e) {
+          store.applyFrame({ type: 'error', error: `取消失败: ${(e as Error).message}` });
+        }
+        return;
+      }
+      try {
+        await api.cancel({ requestId, target: { kind: 'turn', id: turnId } });
+      } catch (e) {
+        store.applyFrame({ type: 'error', error: `取消失败: ${(e as Error).message}` });
+      }
+    },
+    async cancelTask(taskId: string): Promise<void> {
+      const requestId = newCancelRequestId();
+      try {
+        await api.cancel({ requestId, target: { kind: 'task', id: taskId } });
+      } catch (e) {
+        store.applyFrame({ type: 'error', error: `取消任务失败: ${(e as Error).message}` });
+      }
+    },
+    async forkSession(id: string, atSeq?: number): Promise<void> {
+      try {
+        await api.fork(id, atSeq);
+        // 分叉结果经 'forked' 帧回传；新会话出现在列表，等待用户主动切换（不改原会话）
+        await refreshSessions();
+      } catch (e) {
+        store.applyFrame({ type: 'error', error: `分叉失败: ${(e as Error).message}` });
+      }
+    },
+    async resumeSession(id: string): Promise<void> {
+      const stream = store.peekStream(id);
+      const lastSeq = stream?.lastSeq ?? 0;
+      const epoch = (stream?.epoch ?? 0) + 1; // 新连接代次：旧 epoch 快照被 store 丢弃
+      try {
+        await api.resumeSubscription(id, lastSeq, epoch);
+      } catch (e) {
+        store.applyFrame({ type: 'error', error: `重订阅失败: ${(e as Error).message}` });
+      }
+    },
+    async undoWithGuard(
+      id: string,
+      opts?: { n?: number; decision?: 'abort' | 'overwrite' },
+    ): Promise<{ blocked: boolean; externallyModified: number } | undefined> {
+      try {
+        // 1) dryRun 比对：外部改动不静默覆盖（F5 硬要求）
+        const preview = await api.undo(id, {
+          ...(opts?.n !== undefined ? { n: opts.n } : {}),
+          dryRun: true,
+        });
+        const externallyModified = countExternalModifications(preview);
+        if (externallyModified > 0 && opts?.decision !== 'overwrite') {
+          return { blocked: true, externallyModified };
+        }
+        // 2) 用户显式决定后（或本就无冲突）才真正恢复
+        await api.undo(id, {
+          ...(opts?.n !== undefined ? { n: opts.n } : {}),
+        });
+        await refreshSessions();
+        return { blocked: false, externallyModified };
+      } catch (e) {
+        store.applyFrame({ type: 'error', error: `撤销失败: ${(e as Error).message}` });
+        return undefined;
+      }
+    },
+    async refreshRunConfig(id: string): Promise<void> {
+      try {
+        store.setRunConfig(id, await api.runConfig(id));
+      } catch (e) {
+        store.setRunConfig(id, undefined, (e as Error).message);
+      }
+    },
+    async refreshPlanState(id: string): Promise<void> {
+      try {
+        store.setPlanState(id, await api.planState(id));
+      } catch (e) {
+        store.setPlanState(id, undefined, (e as Error).message);
+      }
+    },
+    async refreshExecutionViews(id: string): Promise<void> {
+      try {
+        store.setExecutionViews(id, await api.executionViews(id));
+      } catch (e) {
+        store.setExecutionViews(id, [], (e as Error).message);
+      }
+    },
+    async refreshChangeReview(id: string): Promise<void> {
+      try {
+        store.setChangeReview(id, await api.changeReview(id));
+      } catch (e) {
+        store.setChangeReview(id, undefined, (e as Error).message);
+      }
+    },
+    async refreshCapabilities(id?: string): Promise<void> {
+      try {
+        store.setCapabilities(await api.capabilities(id));
+      } catch {
+        // 探测失败：保持上次结果（不伪造「全部可用」）
       }
     },
     async undoSession(id: string): Promise<void> {
@@ -230,4 +404,23 @@ export function createController(store: AppStore, api: Harness2Api): Controller 
       await persistLayout();
     },
   };
+}
+
+/** 事件流里最后一个 turnId（与 store 内部口径一致；取消目标定位用） */
+function lastTurnIdOf(stream: { events: readonly ActiveEvent[] }): string | undefined {
+  for (let i = stream.events.length - 1; i >= 0; i--) {
+    const p = stream.events[i]!.payload as Record<string, unknown>;
+    const t = p['turnId'];
+    if (typeof t === 'string' && t.length > 0) return t;
+  }
+  return undefined;
+}
+
+/** undo dryRun 报告里被外部改动的文件数（>0 → 必须用户显式决定，不得静默覆盖） */
+function countExternalModifications(preview: UndoRedoResponseShape): number {
+  let count = 0;
+  for (const result of preview.results ?? []) {
+    for (const f of result.files ?? []) if (f.externallyModified) count += 1;
+  }
+  return count;
 }

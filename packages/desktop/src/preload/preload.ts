@@ -3,7 +3,13 @@
 // 注意：sandbox 模式的 preload 不允许 require 相对模块——IPC 通道名在此内联，
 // 与 shared/protocol.ts 保持一致（test/protocol.test.ts 有静态一致性校验）。
 import { contextBridge, ipcRenderer } from 'electron';
-import type { ConnectionStatus, Harness2Api, StatusDetail, WsFrame } from '../shared/protocol.js';
+import type {
+  ConnectionStatus,
+  Harness2Api,
+  MessageReferenceShape,
+  StatusDetail,
+  WsFrame,
+} from '../shared/protocol.js';
 
 const IPC_INVOKE = 'harness2:invoke';
 const IPC_EVENT = 'harness2:event';
@@ -47,6 +53,31 @@ const api: Harness2Api = {
   metadataGet: () => ipcRenderer.invoke(IPC_INVOKE, { cmd: 'metadata:get' }),
   metadataSet: (id: string, patch: { title?: string; archived?: boolean; deleted?: boolean }) =>
     ipcRenderer.invoke(IPC_INVOKE, { cmd: 'metadata:set', id, patch }),
+  // —— D0：S7 只读查询 + S3 交互 op + 能力盘点 ——
+  runConfig: (sessionId: string) => ipcRenderer.invoke(IPC_INVOKE, { cmd: 'runConfig', sessionId }),
+  planState: (sessionId: string) => ipcRenderer.invoke(IPC_INVOKE, { cmd: 'planState', sessionId }),
+  executionViews: (sessionId: string) => ipcRenderer.invoke(IPC_INVOKE, { cmd: 'executionViews', sessionId }),
+  changeReview: (sessionId: string) => ipcRenderer.invoke(IPC_INVOKE, { cmd: 'changeReview', sessionId }),
+  fork: (sessionId: string, atSeq?: number) =>
+    ipcRenderer.invoke(IPC_INVOKE, { cmd: 'fork', sessionId, ...(atSeq !== undefined ? { atSeq } : {}) }),
+  submit: (op: {
+    clientMessageId: string;
+    sessionId: string;
+    rawText: string;
+    intent: 'queue' | 'steer';
+    references?: MessageReferenceShape[];
+    expectedTurnId?: string;
+  }) => ipcRenderer.invoke(IPC_INVOKE, { cmd: 'submit', ...op }),
+  cancel: (op: {
+    requestId: string;
+    target: { kind: 'turn' | 'task'; id: string };
+    expectedId?: string;
+    expectedTurnGeneration?: number;
+  }) => ipcRenderer.invoke(IPC_INVOKE, { cmd: 'cancel', ...op }),
+  resumeSubscription: (sessionId: string, lastSeq: number, epoch: number) =>
+    ipcRenderer.invoke(IPC_INVOKE, { cmd: 'resumeSubscription', sessionId, lastSeq, epoch }),
+  capabilities: (sessionId?: string) =>
+    ipcRenderer.invoke(IPC_INVOKE, { cmd: 'capabilities', ...(sessionId !== undefined ? { sessionId } : {}) }),
   onEvent: (listener: (frame: WsFrame) => void) => {
     const wrapped = (_e: Electron.IpcRendererEvent, frame: WsFrame): void => listener(frame);
     ipcRenderer.on(IPC_EVENT, wrapped);
