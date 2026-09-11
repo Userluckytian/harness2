@@ -406,6 +406,7 @@
     "editTool": "const",
     "emptyAuth": "function",
     "encodeCwd": "function",
+    "enforceLockFileMode": "function",
     "estimateContextTokens": "function",
     "expandEnvVars": "function",
     "exportAllEvents": "function",

@@ -7,7 +7,7 @@
 // 错误约定：全部 JSON 单行 {error}（400 输入校验 / 404 未知资源或路径 / 405 方法不符 /
 // 409 忙碌或锁冲突 / 500 内部错误），消息一行中文，无堆栈。
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
-import { existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { buildConfigReport } from '../config/report.js';
@@ -69,7 +69,7 @@ export interface ServeLockContent {
   pid: number;
   port: number;
   ts: string;
-  /** A3-1：本次 serve 实例的一次性 token（0600 锁文件；desktop 旧版解析忽略该字段） */
+  /** A3-1：本次 serve 实例的一次性 token（POSIX 0600 / Windows 继承目录 ACL 的锁文件；desktop 旧版解析忽略该字段） */
   token?: string;
 }
 
@@ -113,6 +113,21 @@ function readServeLock(path: string): ServeLockContent | null {
 }
 
 /**
+ * P3-d：锁文件写入后强制收紧权限。
+ * `writeFileSync` 的 `mode` 仅在**创建**时生效：覆盖已存在锁文件时不会收紧 → 必须在写入后显式 chmod。
+ * Windows 无 POSIX mode 语义（0o600 无法表达），如实口径为「Windows 继承目录 ACL」—— 此时不调用。
+ * 注入 platform/chmod 便于确定性单测（默认 = 真实 process.platform 与 fs.chmodSync）。
+ */
+export function enforceLockFileMode(
+  path: string,
+  platform: NodeJS.Platform = process.platform,
+  chmod: (path: string, mode: number) => void = chmodSync,
+): void {
+  if (platform === 'win32') return;
+  chmod(path, 0o600);
+}
+
+/**
  * 获取端口锁（listen 成功后调用）：持有者存活 → ServeLockError；
  * 陈旧/损坏锁 → 接管。返回 release（close 时删除锁文件；已不存在则静默）。
  */
@@ -123,8 +138,9 @@ export function acquireServeLock(port: number, home?: string, token?: string): {
     throw new ServeLockError(existing.pid, existing.port);
   }
   mkdirSync(dirname(path), { recursive: true }); // ~/.harness2 链缺失时自动创建（与会话布局一致）
-  // A3-1：token 随锁文件下发（mode 0600，POSIX 生效；Windows 尽力而为）——同用户进程仍可读，
-  // 该限制如实记入 issue-log 遗留（无 OS 级 peer 认证时的固有边界）。
+  // A3-1：token 随锁文件下发——**POSIX 0600 / Windows 继承目录 ACL**（Windows 无 POSIX mode 语义）。
+  // P3-d：写入后显式 chmod（覆盖已存在文件时 writeFileSync 的 mode 不生效）；
+  // 同用户进程仍可读，该限制如实记入 issue-log（无 OS 级 peer 认证时的固有边界）。
   writeFileSync(
     path,
     JSON.stringify({
@@ -135,6 +151,7 @@ export function acquireServeLock(port: number, home?: string, token?: string): {
     } satisfies ServeLockContent),
     { encoding: 'utf8', mode: 0o600 },
   );
+  enforceLockFileMode(path);
   return {
     release(): void {
       try {
@@ -204,7 +221,7 @@ export interface ServeHandle {
   mcp?: McpManager;
   /** 优雅关闭：停止调度器 → 取消运行中 turn → 拒绝待审批 → 关 hub → 关 WS → 关 HTTP → 释放端口锁 */
   close(): Promise<void>;
-  /** A3-1：本实例一次性 token（只经此返回值/0600 锁文件暴露；不入日志） */
+  /** A3-1：本实例一次性 token（只经此返回值/锁文件暴露；不入日志） */
   token: string;
   /** A3-1/A3-2：安全计数（兼容回退/token 拒绝/WS 超限等） */
   security: ServeSecurityStats;

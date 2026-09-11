@@ -5,7 +5,7 @@
 //   审批上抛（onAsk → 待处理表；超时拒绝 / allow / deny 往返）
 //   崩溃安全（服务重启后 /events 全量重放）与 ensureOpen 恢复路径。
 import { afterEach, describe, expect, it } from 'vitest';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
@@ -21,7 +21,7 @@ import {
   type SessionHubHooks,
   type SessionHubMemory,
 } from '../src/index.js';
-import { acquireServeLock } from '../src/server/http.js';
+import { acquireServeLock, enforceLockFileMode } from '../src/server/http.js';
 
 const dirs: string[] = [];
 const handles: ServeHandle[] = [];
@@ -502,6 +502,31 @@ describe('端口锁（~/.harness2/serve.lock）', () => {
     // 恢复后的会话可继续 undo（ensureOpen 路径）
     const undo = await api(second, 'POST', `/api/sessions/${id}/undo`, { dryRun: true });
     expect(undo.status).toBe(200);
+  });
+
+  it('P3-d 锁文件权限：POSIX 平台显式 chmod 0o600（覆盖已存在文件），win32 不做 POSIX chmod', () => {
+    const calls: Array<{ path: string; mode: number }> = [];
+    const spy = (p: string, m: number): void => void calls.push({ path: p, mode: m });
+    enforceLockFileMode('/tmp/h2/serve.lock', 'linux', spy);
+    expect(calls).toEqual([{ path: '/tmp/h2/serve.lock', mode: 0o600 }]);
+    enforceLockFileMode('/tmp/h2/serve.lock', 'darwin', spy);
+    expect(calls).toHaveLength(2);
+    enforceLockFileMode('/tmp/h2/serve.lock', 'win32', spy);
+    expect(calls).toHaveLength(2); // win32：Windows 无 POSIX mode 语义（继承目录 ACL），不调用
+  });
+
+  // POSIX 真实权限断言；Windows 无 POSIX mode 语义 → 明确跳过（不冒充通过），由 ubuntu/macos CI 覆盖。
+  it.skipIf(process.platform === 'win32')('P3-d 锁文件真实权限（POSIX）：覆盖 0644 旧锁后为 0600', () => {
+    const home = tmpDir('h2-serve-home-');
+    const lockPath = serveLockPath(home);
+    mkdirSync(join(home, '.harness2'), { recursive: true });
+    writeFileSync(lockPath, '{}', { encoding: 'utf8', mode: 0o644 });
+    const lock = acquireServeLock(12345, home, 'tok-p3d');
+    try {
+      expect(statSync(lockPath).mode & 0o777).toBe(0o600);
+    } finally {
+      lock.release();
+    }
   });
 });
 
