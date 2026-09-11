@@ -14,6 +14,7 @@ import type {
 const IPC_INVOKE = 'harness2:invoke';
 const IPC_EVENT = 'harness2:event';
 const IPC_STATUS = 'harness2:status';
+const IPC_STOP_ALL = 'harness2:stop-all';
 
 const api: Harness2Api = {
   listSessions: (cwd?: string) => ipcRenderer.invoke(IPC_INVOKE, { cmd: 'listSessions', cwd }),
@@ -80,6 +81,8 @@ const api: Harness2Api = {
     ipcRenderer.invoke(IPC_INVOKE, { cmd: 'resumeSubscription', sessionId, lastSeq, epoch }),
   capabilities: (sessionId?: string) =>
     ipcRenderer.invoke(IPC_INVOKE, { cmd: 'capabilities', ...(sessionId !== undefined ? { sessionId } : {}) }),
+  setBusy: (busy: boolean, counts?: { runningTurns: number; backgroundTasks: number }) =>
+    ipcRenderer.invoke(IPC_INVOKE, { cmd: 'runtime:setBusy', busy, ...counts }),
   onEvent: (listener: (frame: WsFrame) => void) => {
     const wrapped = (_e: Electron.IpcRendererEvent, frame: WsFrame): void => listener(frame);
     ipcRenderer.on(IPC_EVENT, wrapped);
@@ -93,6 +96,13 @@ const api: Harness2Api = {
     ipcRenderer.on(IPC_STATUS, wrapped);
     return () => {
       ipcRenderer.removeListener(IPC_STATUS, wrapped);
+    };
+  },
+  onStopAll: (listener: () => void) => {
+    const wrapped = (): void => listener();
+    ipcRenderer.on(IPC_STOP_ALL, wrapped);
+    return () => {
+      ipcRenderer.removeListener(IPC_STOP_ALL, wrapped);
     };
   },
 };

@@ -146,6 +146,8 @@ export interface BridgeDeps {
   sendEvent: (frame: WsFrame) => void;
   /** 渲染窗口推送（连接状态） */
   sendStatus: (status: ConnectionStatus, detail?: StatusDetail) => void;
+  /** D4：运行态上报（main 据此在关窗口前提示；关 UI ≠ 已停任务） */
+  setBusy?: (info: { busy: boolean; runningTurns: number; backgroundTasks: number }) => void;
 }
 
 export interface Bridge {
@@ -524,6 +526,13 @@ export function createBridge(deps: BridgeDeps): Bridge {
       }
       case 'capabilities':
         return probeCapabilities(typeof args['sessionId'] === 'string' ? args['sessionId'] : undefined);
+      case 'runtime:setBusy':
+        deps.setBusy?.({
+          busy: args['busy'] === true,
+          runningTurns: typeof args['runningTurns'] === 'number' ? args['runningTurns'] : 0,
+          backgroundTasks: typeof args['backgroundTasks'] === 'number' ? args['backgroundTasks'] : 0,
+        });
+        return null;
       case 'loadLayout':
         return readLayout(deps.home);
       case 'saveLayout':

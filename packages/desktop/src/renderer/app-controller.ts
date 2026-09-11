@@ -27,6 +27,8 @@ export interface Controller {
   cancelTurn(id: string): Promise<void>;
   /** D3：取消任务（目标为 task id） */
   cancelTask(taskId: string): Promise<void>;
+  /** D4：关窗口「请求停止并退出」→ 取消全部运行中工作（如实：这是请求，不是保证已停） */
+  stopAll(): Promise<void>;
   /** D5：从既有会话分叉（不改原会话） */
   forkSession(id: string, atSeq?: number): Promise<void>;
   /** D4：重订阅（带水位回放 + 在途状态补齐） */
@@ -132,6 +134,42 @@ export function createController(store: AppStore, api: Harness2Api): Controller 
     }
   };
 
+  /** D3/D4：取消当前 turn（三态 ack；不把取消当 undo，不假报停止） */
+  const cancelTurnLocal = async (id: string): Promise<void> => {
+    const requestId = newCancelRequestId();
+    const stream = store.peekStream(id);
+    const turnId = stream !== undefined ? lastTurnIdOf(stream) : undefined;
+    if (turnId === undefined) {
+      // 无运行中 turn：仍要服务端明确结论；用 abort 语义兜底并如实记录
+      try {
+        await api.abort(id);
+      } catch (e) {
+        store.applyFrame({ type: 'error', error: `取消失败: ${(e as Error).message}` });
+      }
+      return;
+    }
+    try {
+      await api.cancel({ requestId, target: { kind: 'turn', id: turnId } });
+    } catch (e) {
+      store.applyFrame({ type: 'error', error: `取消失败: ${(e as Error).message}` });
+    }
+  };
+  /** D3：取消单个任务（目标 task id，不误伤兄弟） */
+  const cancelTaskLocal = async (taskId: string): Promise<void> => {
+    const requestId = newCancelRequestId();
+    try {
+      await api.cancel({ requestId, target: { kind: 'task', id: taskId } });
+    } catch (e) {
+      store.applyFrame({ type: 'error', error: `取消任务失败: ${(e as Error).message}` });
+    }
+  };
+  /** D4：把运行态推给主进程（关窗口提示依据；fire-and-forget） */
+  const pushBusy = (): void => {
+    const counts = store.runtimeCounts();
+    const busy = counts.runningTurns > 0 || counts.backgroundTasks > 0 || store.anyPendingApprovals();
+    void api.setBusy(busy, counts).catch(() => {});
+  };
+
   const refreshSessions = async (): Promise<void> => {
     try {
       store.setSessions(await api.listSessions());
@@ -212,8 +250,12 @@ export function createController(store: AppStore, api: Harness2Api): Controller 
       void refreshSessions();
       // D0/F7：ack 丢失判定——提交后 5s 未收到 submit-ack → 标 unknown（不自动重发）
       const pendingTimer = setInterval(() => store.expirePendingSubmits(), 1000);
+      // D4：运行态变化即上报主进程（关窗口提示依据）
+      const storeUnsub = store.subscribe(pushBusy);
+      pushBusy();
       return () => {
         clearInterval(pendingTimer);
+        storeUnsub();
         statusUnsub();
         eventUnsub();
       };
@@ -291,32 +333,25 @@ export function createController(store: AppStore, api: Harness2Api): Controller 
       }
       return { clientMessageId };
     },
-    async cancelTurn(id: string): Promise<void> {
-      const requestId = newCancelRequestId();
-      const stream = store.peekStream(id);
-      const turnId = stream !== undefined ? lastTurnIdOf(stream) : undefined;
-      if (turnId === undefined) {
-        // 无运行中 turn：仍需服务端明确结论；用 abort 语义兜底并如实记录
-        try {
-          await api.abort(id);
-        } catch (e) {
-          store.applyFrame({ type: 'error', error: `取消失败: ${(e as Error).message}` });
-        }
-        return;
-      }
-      try {
-        await api.cancel({ requestId, target: { kind: 'turn', id: turnId } });
-      } catch (e) {
-        store.applyFrame({ type: 'error', error: `取消失败: ${(e as Error).message}` });
-      }
-    },
-    async cancelTask(taskId: string): Promise<void> {
-      const requestId = newCancelRequestId();
-      try {
-        await api.cancel({ requestId, target: { kind: 'task', id: taskId } });
-      } catch (e) {
-        store.applyFrame({ type: 'error', error: `取消任务失败: ${(e as Error).message}` });
-      }
+    cancelTurn: cancelTurnLocal,
+    cancelTask: cancelTaskLocal,
+    async stopAll(): Promise<void> {
+      // 关窗口「请求停止并退出」：取消全部运行中 turn + 未终态任务。
+      // 如实语义：这是**请求**；服务端确认前不宣称已停（cancel-ack 三态由 store 记录）。
+      const runningIds = store.streamIds().filter((id) => store.peekStream(id)?.running === true);
+      const cancelTasks = store
+        .allTasks()
+        .filter(
+          ({ task }) =>
+            task.state !== 'completed' &&
+            task.state !== 'failed' &&
+            task.state !== 'cancelled' &&
+            task.state !== 'unknown',
+        );
+      await Promise.all([
+        ...runningIds.map((id) => cancelTurnLocal(id)),
+        ...cancelTasks.map(({ task }) => cancelTaskLocal(task.taskId)),
+      ]);
     },
     async forkSession(id: string, atSeq?: number): Promise<void> {
       try {

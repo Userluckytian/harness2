@@ -121,6 +121,8 @@ export interface SessionStream {
     running: boolean;
     last?: { stopReason: string; toolCalls: number; staged: number; error?: string };
   };
+  /** D4：最近一次收到该会话帧的时刻（ms epoch）——断流判定用，不永久 loading */
+  lastFrameAt?: number;
 }
 
 /** 单会话的只读查询结果缓存（S7 四契约 + 能力盘点；面板渲染数据源） */
@@ -483,6 +485,41 @@ export class AppStore {
     return out;
   }
 
+  // —— D4：关窗口决策所需的运行态汇总（main 进程据此决定是否提示） ——
+
+  /** 是否有任何会话在跑 turn（关窗口提示依据） */
+  anyRunning(): boolean {
+    for (const stream of this.streams.values()) if (stream.running) return true;
+    return false;
+  }
+
+  /** 运行中的 turn 数 / 后台任务数（非终态） */
+  runtimeCounts(): { runningTurns: number; backgroundTasks: number } {
+    let runningTurns = 0;
+    let backgroundTasks = 0;
+    for (const stream of this.streams.values()) {
+      if (stream.running) runningTurns += 1;
+      for (const task of stream.tasks) {
+        if (
+          task.background &&
+          task.state !== 'completed' &&
+          task.state !== 'failed' &&
+          task.state !== 'cancelled' &&
+          task.state !== 'unknown'
+        ) {
+          backgroundTasks += 1;
+        }
+      }
+    }
+    return { runningTurns, backgroundTasks };
+  }
+
+  /** 是否有待审批（关窗口提示一并计入运行中工作） */
+  anyPendingApprovals(): boolean {
+    for (const stream of this.streams.values()) if (stream.approvals.length > 0) return true;
+    return false;
+  }
+
   /** 会话渲染条目（派生；含在途流式条目） */
   chatItems(id: string): ChatItem[] {
     const s = this.streams.get(id);
@@ -533,6 +570,7 @@ export class AppStore {
     }
     const id: string = frame.sessionId;
     const stream = this.ensureStream(id);
+    stream.lastFrameAt = Date.now(); // D4：断流判定水位（帧到达即刷新）
     if (frame.type === 'event') {
       const applied = applyEvent(stream.events, stream.lastSeq, frame.event);
       if (applied === null) return; // 重复/落后（重放已覆盖）

@@ -931,6 +931,31 @@ body,
   color: var(--warn);
   font-size: 0.85em;
 }
+/* D4：运行态行（断流/等待审批/取消结论如实呈现） */
+.runtime-row {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 4px 6px;
+  margin-bottom: 6px;
+  font-size: 0.85em;
+}
+.runtime-stalled .runtime-label,
+.runtime-unknown .runtime-label {
+  color: var(--danger);
+}
+.runtime-awaiting-approval .runtime-label {
+  color: var(--warn);
+}
+.runtime-running .runtime-label {
+  color: var(--ok);
+}
+.runtime-hint,
+.runtime-cancel {
+  color: var(--muted);
+}
 .composer {
   display: flex;
   gap: 8px;

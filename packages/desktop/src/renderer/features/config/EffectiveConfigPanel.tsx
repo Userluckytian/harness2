@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { capabilityEnabled, capabilityReason, CAPABILITY_LABELS } from '../../../shared/capabilities.js';
 import type { CapabilityIdShape } from '../../../shared/protocol.js';
 import { controller, store, useAppState } from '../../app-shared.js';
+import { cancelStateLabel, deriveRuntimeStatus } from '../runtime/runtime-status.js';
 
 /** 能力行（不可用时 disabled + 原因，不摆可点假入口） */
 function CapabilityRow({ id }: { id: CapabilityIdShape }) {
@@ -21,7 +22,7 @@ function CapabilityRow({ id }: { id: CapabilityIdShape }) {
 }
 
 export function EffectiveConfigPanel({ sessionId }: { sessionId: string | null }) {
-  useAppState();
+  const state = useAppState();
   const [usage, setUsage] = useState<{ usage: number | null; label: string } | null>(null);
 
   useEffect(() => {
@@ -69,6 +70,16 @@ export function EffectiveConfigPanel({ sessionId }: { sessionId: string | null }
   }
 
   const retry = rc.context.retry;
+  // D4：运行态（不永久 loading：断流/未连接都如实说出来）+ 最近一次取消结论（不假报停止）
+  const stream = store.peekStream(sessionId);
+  const runtime = deriveRuntimeStatus({
+    running: stream?.running === true,
+    approvals: stream?.approvals.length ?? 0,
+    ...(stream?.lastFrameAt !== undefined ? { lastFrameAt: stream.lastFrameAt } : {}),
+    hasActiveAttempt: stream?.activeAttempt !== undefined,
+    connection: state.status,
+  });
+  const lastCancel = Object.entries(state.cancelAcks).at(-1);
   return (
     <div className="panel config-panel">
       <div className="panel-head">
@@ -76,6 +87,13 @@ export function EffectiveConfigPanel({ sessionId }: { sessionId: string | null }
         <span className="panel-mode">
           revision {rc.snapshot.revision} · {rc.redacted ? '已脱敏' : ''}
         </span>
+      </div>
+      <div className={`runtime-row runtime-${runtime.state}`}>
+        <span className="runtime-label">{runtime.label}</span>
+        {runtime.hint !== undefined && <span className="runtime-hint">{runtime.hint}</span>}
+        {lastCancel !== undefined && (
+          <span className="runtime-cancel">最近取消：{cancelStateLabel(lastCancel[1])}</span>
+        )}
       </div>
       <dl className="config-list">
         <dt>会话 cwd</dt>

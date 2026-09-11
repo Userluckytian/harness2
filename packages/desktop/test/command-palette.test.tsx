@@ -348,6 +348,8 @@ function makeFakeApi(): any {
     cancel: vi.fn(async () => undefined),
     resumeSubscription: vi.fn(async () => undefined),
     capabilities: vi.fn(async () => ({ probedAt: '', entries: [] })),
+    setBusy: vi.fn(async () => undefined),
+    onStopAll: vi.fn(() => () => {}),
     notify: vi.fn(async () => undefined),
     metadataGet: vi.fn(async () => ({})),
     draftsGet: vi.fn(async () => ({})),

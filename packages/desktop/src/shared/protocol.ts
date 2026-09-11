@@ -5,6 +5,8 @@
 export const IPC_INVOKE = 'harness2:invoke';
 export const IPC_EVENT = 'harness2:event';
 export const IPC_STATUS = 'harness2:status';
+/** D4：关窗口「请求停止并退出」时主进程要求渲染端取消全部运行中工作 */
+export const IPC_STOP_ALL = 'harness2:stop-all';
 
 // —— 连接状态（桌面壳 → 渲染端角标） ——
 
@@ -582,7 +584,9 @@ export type InvokeCommand =
       expectedTurnGeneration?: number;
     }
   | { cmd: 'resumeSubscription'; sessionId: string; lastSeq: number; epoch: number }
-  | { cmd: 'capabilities'; sessionId?: string };
+  | { cmd: 'capabilities'; sessionId?: string }
+  // —— D4：运行态上报（关窗口提示依据：关 UI 不等于停任务） ——
+  | { cmd: 'runtime:setBusy'; busy: boolean; runningTurns?: number; backgroundTasks?: number };
 
 /** window.harness2 的形状（preload contextBridge 暴露） */
 export interface Harness2Api {
@@ -673,8 +677,12 @@ export interface Harness2Api {
   resumeSubscription(sessionId: string, lastSeq: number, epoch: number): Promise<void>;
   /** 能力盘点：后端真实具备哪些能力（unavailable 带可行动原因） */
   capabilities(sessionId?: string): Promise<CapabilityReportShape>;
+  /** D4：上报「是否有运行中工作」（main 进程据此在关窗口前提示，不静默丢弃任务） */
+  setBusy(busy: boolean, counts?: { runningTurns: number; backgroundTasks: number }): Promise<void>;
   /** 订阅服务事件帧（delta/event/turn-end/approval-request/error）；返回退订函数 */
   onEvent(listener: (frame: WsFrame) => void): () => void;
   /** 订阅连接状态变化；返回退订函数 */
   onConnectionStatus(listener: (status: ConnectionStatus, detail?: StatusDetail) => void): () => void;
+  /** D4：订阅主进程「请求停止全部」（用户选择「请求停止并退出」时）；返回退订函数 */
+  onStopAll(listener: () => void): () => void;
 }

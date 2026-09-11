@@ -59,7 +59,15 @@ export function App(): React.ReactNode {
     void controller.initLayout();
     void controller.initMetadata();
     void controller.initDrafts();
-    return controller.start();
+    // D4：关窗口「请求停止并退出」→ 主进程要求取消全部运行中工作
+    const stopAllUnsub = window.harness2.onStopAll(() => {
+      void controller.stopAll();
+    });
+    const started = controller.start();
+    return () => {
+      stopAllUnsub();
+      started();
+    };
   }, []);
   // 主题/通知偏好：启动时读取并应用；设置页保存后 onPreferenceChange 即时同步（保存回调里更新各状态）
   useEffect(() => {
