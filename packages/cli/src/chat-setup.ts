@@ -28,6 +28,7 @@ import {
   registerBuiltinTools,
   resolveCompactionOptions,
   runTurn,
+  SessionSteerSink,
   forkSession,
   SessionManager,
   SkillStore,
@@ -53,7 +54,7 @@ import {
 } from '@harness2/core';
 import type { ChatOptions } from './legacy-chat.js';
 import { PLAN_MODE_SYSTEM_PREFIX } from './mode-alias.js';
-import { CliSteerSink, buildSteerRequest, makeSteerId, type SteerSubmitOutcome } from './steer.js';
+import { buildSteerRequest, makeSteerId, type SteerSubmitOutcome } from './steer.js';
 
 /** --provider mock 的内置演示脚本：两轮工具调用（write 文件 + read 验证） */
 export const MOCK_DEMO_SCRIPT: MockScript = [
@@ -174,9 +175,10 @@ export async function setupChatSession(options: ChatOptions, hooks: ChatSetupHoo
   let current: ChatSession | null = null;
   let currentAbort: AbortController | null = null;
 
-  // T5：会话级 steer 控制通道。core loop 只在安全 step 边界 take()；CLI 持有 sink 做接收/去重，
-  // 并把回帧转发给 UI 观察者。steer 不写 session.log、不进投影正文。
-  const steerSink = new CliSteerSink();
+  // T5：会话级 steer 控制通道。core loop 只在安全 step 边界 take()；sink 本体用 core 的
+  // SessionSteerSink（主入口导出，解冻窗口 #2 起），CLI 只做接收/回帧转发，不再本地实现。
+  // steer 不写 session.log、不进投影正文。
+  const steerSink = new SessionSteerSink();
   const steerObservers = new Set<(result: SteerResult) => void>();
   steerSink.observe({
     onSteerResult: (result) => {

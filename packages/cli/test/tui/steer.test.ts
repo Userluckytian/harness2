@@ -19,7 +19,8 @@ import {
   type SteerResult,
   type StreamChunk,
 } from '@harness2/core';
-import { CliSteerSink, buildSteerRequest, describeSteerResult, makeSteerId } from '../../src/steer.js';
+import { SessionSteerSink } from '@harness2/core';
+import { buildSteerRequest, describeSteerResult, makeSteerId } from '../../src/steer.js';
 import { MOCK_DEMO_SCRIPT } from '../../src/chat-setup.js';
 import { createTestRuntime, type TestRuntime } from './shell-runtime.js';
 
@@ -59,9 +60,9 @@ describe('T5 steer 纯函数', () => {
   });
 });
 
-describe('T5 CliSteerSink：入队/去重/回帧', () => {
+describe('T5 SessionSteerSink（core 主入口，CLI 装配所用）：入队/去重/回帧', () => {
   it('同 id 重复提交 → 第二次 push false 且立刻 rejected 回帧（不占队位、不双注入）', () => {
-    const sink = new CliSteerSink();
+    const sink = new SessionSteerSink();
     const seen: SteerResult[] = [];
     const un = sink.observe({ onSteerResult: (r) => seen.push(r) });
     const req = { id: 'dup-1', expectedTurnId: 'turn-1', text: 'x' };
@@ -75,7 +76,7 @@ describe('T5 CliSteerSink：入队/去重/回帧', () => {
   });
 
   it('take 按 FIFO 出队；resolve 记录 history', () => {
-    const sink = new CliSteerSink();
+    const sink = new SessionSteerSink();
     sink.push({ id: 'a', expectedTurnId: 't', text: '1' });
     sink.push({ id: 'b', expectedTurnId: 't', text: '2' });
     expect(sink.take()?.id).toBe('a');
@@ -135,7 +136,7 @@ describe('T5 steer 与真实 core loop 联调（in-process）', () => {
   it('安全 step 边界 accepted：控制文本进入下一 step 请求，且不写入会话投影正文', async () => {
     const { dir, root, writer } = newSession();
     const provider = new ScriptedProvider(TWO_STEP_SCRIPT);
-    const sink = new CliSteerSink();
+    const sink = new SessionSteerSink();
     const seen: SteerResult[] = [];
     sink.observe({ onSteerResult: (r) => seen.push(r) });
     let pushed = false;
@@ -166,7 +167,7 @@ describe('T5 steer 与真实 core loop 联调（in-process）', () => {
   it('expectedTurnId 不符 → stale + draftKept（不应用、不中断 turn）', async () => {
     const { root, writer } = newSession();
     const provider = new ScriptedProvider(TWO_STEP_SCRIPT);
-    const sink = new CliSteerSink();
+    const sink = new SessionSteerSink();
     const seen: SteerResult[] = [];
     sink.observe({ onSteerResult: (r) => seen.push(r) });
     let pushed = false;
