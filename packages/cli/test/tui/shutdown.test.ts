@@ -1,6 +1,6 @@
 // T0 退出控制器单测：幂等 request、退出码映射、finish reject 收敛、Ctrl+C 协议状态机。
-import { describe, expect, it } from 'vitest';
-import { createShutdown, createCtrlCGuard, type ExitReason } from '../../src/tui/shutdown.js';
+import { describe, expect, it, vi } from 'vitest';
+import { bindShutdownSignals, createShutdown, createCtrlCGuard, type ExitReason } from '../../src/tui/shutdown.js';
 
 describe('createShutdown（幂等退出控制器）', () => {
   it('并发两次 request：finish 只调一次、exit 只调一次', async () => {
@@ -42,6 +42,8 @@ describe('createShutdown（幂等退出控制器）', () => {
     ['exit', 0],
     ['eof', 0],
     ['sigint', 130],
+    ['sigterm', 143],
+    ['sighup', 129],
     ['error', 1],
   ] as const)('退出码映射：%s → %i', async (reason, code) => {
     const c = createShutdown({ finish: async () => undefined, exit: () => undefined });
@@ -94,6 +96,73 @@ describe('createShutdown（幂等退出控制器）', () => {
     });
     c.request('exit');
     await expect(c.awaitDone()).resolves.toBe(0);
+  });
+});
+
+describe('bindShutdownSignals（SIGTERM/SIGHUP 复用幂等退出路径）', () => {
+  /** 记录 on/off 的假 process（不碰真实进程信号） */
+  function fakeProc() {
+    const on: Array<{ name: string; handler: () => void }> = [];
+    const off: Array<{ name: string; handler: () => void }> = [];
+    const proc = {
+      on: (name: NodeJS.Signals, handler: () => void) => {
+        on.push({ name, handler });
+      },
+      off: (name: NodeJS.Signals, handler: () => void) => {
+        off.push({ name, handler });
+      },
+    };
+    return { proc: proc as unknown as Pick<NodeJS.Process, 'on' | 'off'>, on, off };
+  }
+
+  it('挂载 SIGTERM/SIGHUP 各一次；触发即以对应 reason 走幂等 request', async () => {
+    const { proc, on } = fakeProc();
+    const reasons: ExitReason[] = [];
+    const c = createShutdown({
+      finish: async () => undefined,
+      exit: () => undefined,
+    });
+    const detach = bindShutdownSignals((reason) => {
+      reasons.push(reason);
+      c.request(reason);
+    }, proc);
+    expect(on.map((h) => h.name)).toEqual(['SIGTERM', 'SIGHUP']);
+
+    // 幂等：SIGTERM 触发真正收敛；随后到达的 SIGHUP 只记录、不再改变退出码
+    on[0]!.handler();
+    on[1]!.handler();
+    expect(reasons).toEqual(['sigterm', 'sighup']);
+    await expect(c.awaitDone()).resolves.toBe(143); // SIGTERM → 143（128+15）
+
+    detach();
+  });
+
+  it('SIGTERM 请求后 awaitDone 以 143 收敛；SIGHUP 以 129 收敛（独立控制器）', async () => {
+    const hup = createShutdown({ finish: async () => undefined, exit: () => undefined });
+    hup.request('sighup');
+    await expect(hup.awaitDone()).resolves.toBe(129);
+  });
+
+  it('detach 解绑全部信号监听（off 与 on 一一对应）', () => {
+    const { proc, on, off } = fakeProc();
+    const detach = bindShutdownSignals(() => undefined, proc);
+    expect(off).toHaveLength(0);
+    detach();
+    expect(off).toHaveLength(on.length);
+    expect(off.map((h) => h.name)).toEqual(['SIGTERM', 'SIGHUP']);
+    // 解绑后触发不再进入 request（handler 已从假 proc 移除；直接调用旧引用也应无害——幂等）
+    expect(() => on[0]!.handler()).not.toThrow();
+  });
+
+  it('默认注入真实 process：on/off 均被调用且可安全解绑', () => {
+    const onSpy = vi.spyOn(process, 'on');
+    const offSpy = vi.spyOn(process, 'off');
+    const detach = bindShutdownSignals(() => undefined);
+    expect(onSpy.mock.calls.filter(([n]) => n === 'SIGTERM' || n === 'SIGHUP')).toHaveLength(2);
+    detach();
+    expect(offSpy.mock.calls.filter(([n]) => n === 'SIGTERM' || n === 'SIGHUP')).toHaveLength(2);
+    onSpy.mockRestore();
+    offSpy.mockRestore();
   });
 });
 

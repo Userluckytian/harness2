@@ -16,7 +16,7 @@ import { Modal } from './Modal.js';
 import { SelectList } from './SelectList.js';
 import { ConfirmDialog } from './ConfirmDialog.js';
 import { useTurnStream } from './useTurnStream.js';
-import { createShutdown, type ExitReason } from './shutdown.js';
+import { bindShutdownSignals, createShutdown, type ExitReason } from './shutdown.js';
 import { createUiScheduler, type UiScheduler } from './scheduler.js';
 import { QueuePanel, cancelQueueItem, type QueuePanelItem } from './panels/queue-panel.js';
 import { RetryPanel, retryBudgetHasActivity, type RetryBudgetSnapshot } from './panels/retry-panel.js';
@@ -165,6 +165,10 @@ export async function runInkChat(options: ChatOptions = {}): Promise<void> {
       />,
       { exitOnCtrlC: false, alternateScreen: useAlternateScreen },
     );
+    // 审查 P2：SIGTERM（kill）/SIGHUP（终端关闭）复用同一条幂等退出路径——
+    // 外部终止时锁释放/拆屏还原/awaitDone 收敛不再悬挂；退出收敛后解绑监听。
+    const detachSignals = bindShutdownSignals((reason) => shutdown.request(reason));
+    void shutdown.awaitDone().then(detachSignals);
   });
 }
 
