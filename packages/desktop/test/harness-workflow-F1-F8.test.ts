@@ -127,7 +127,7 @@ function writeConfigHome(home: string): void {
   );
   writeFileSync(
     join(cfgDir, 'auth.json'),
-    JSON.stringify({ channels: { 'local-oai': { apiKey: 'sk-unified-local' } } }),
+    JSON.stringify({ channels: { 'local-oai': { apiKey: 'sk-fixture-local-0000' } } }),
     'utf8',
   );
 }
@@ -206,7 +206,7 @@ describe('F1 + F8：项目/会话隔离与有效配置真实来源', () => {
     expect(rcA.tools).toContain('bash');
     expect(rcA.tools).toContain('write');
     expect(rcA.redacted).toBe(true);
-    expect(JSON.stringify(rcA)).not.toContain('sk-unified-local');
+    expect(JSON.stringify(rcA)).not.toContain('sk-fixture-local-0000');
 
     // 草稿按会话隔离（F1：A/B 不串）
     store.setDraft(idA, 'A 项目的草稿');
