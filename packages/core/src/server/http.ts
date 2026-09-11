@@ -51,6 +51,7 @@ import {
   serveRequireTokenFromEnv,
   serveTokenFromEnv,
   warnServeNoTokenOnce,
+  warnServeStrictDisabledOnce,
   type ServeSecurityStats,
 } from './security.js';
 
@@ -226,8 +227,10 @@ export async function startServe(options: StartServeOptions = {}): Promise<Serve
   const home = options.home;
   const port = options.port ?? DEFAULT_SERVE_PORT;
   // A3-1：一次性 token（预置 > 环境变量 > 随机生成）+ 严格模式开关 + 安全计数
+  // P2：严格模式**默认开启**（options.requireToken 显式传值优先；仅环境变量显式 0/false/no 才关闭）
   const token = options.token ?? serveTokenFromEnv() ?? generateServeToken();
   const requireToken = options.requireToken ?? serveRequireTokenFromEnv();
+  if (!requireToken && options.requireToken === undefined) warnServeStrictDisabledOnce();
   const security = createServeSecurityStats();
 
   // 共享工具注册表（本地 → 插件 → MCP → subagent 的装配基底）
@@ -497,7 +500,7 @@ async function handleRequest(
 /**
  * A3-1 token 门禁（HTTP 侧；WS upgrade 在 ws.ts 用同一组 helper 与同一统计对象）：
  *   - 带 token：必须匹配，否则 401（任何模式下都不回退——防“故意送错 token 触发降级”）；
- *   - 不带 token：严格模式 401；兼容模式放行并计数 + 一次性告警（不误挡既有 desktop/CLI）。
+ *   - 不带 token：严格模式（默认）401；仅当环境变量显式关闭严格时放行并计数 + 一次性告警。
  */
 function checkServeToken(
   auth: ServeAuthContext,

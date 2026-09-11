@@ -266,6 +266,7 @@ describe('WS 重连重放：旧 cancel 帧不撞运行中的新 turn', () => {
     { timeout: 20000 },
     async () => {
       const handle = await startServe({
+        requireToken: false,
         port: 0,
         home: tmpDir('h2-cancel-gen-home-'),
         root: tmpDir('h2-cancel-gen-root-'),
@@ -356,6 +357,7 @@ describe('WS 重连重放：旧 cancel 帧不撞运行中的新 turn', () => {
 
   it('旧客户端 cancel 帧（无 expectedTurnGeneration）在 WS 层不崩，转发原样', { timeout: 20000 }, async () => {
     const handle = await startServe({
+      requireToken: false,
       port: 0,
       home: tmpDir('h2-cancel-gen-home-'),
       root: tmpDir('h2-cancel-gen-root-'),

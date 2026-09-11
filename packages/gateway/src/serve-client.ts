@@ -13,11 +13,16 @@ export type ServeFrame =
 export interface ServeClientOptions {
   baseUrl: string;
   wsUrl: string;
+  /** P2：serve 一次性 token（默认严格鉴权下的必需凭证；缺省 = 不携带 → 严格 serve 会 401） */
+  token?: string;
   /** WS 帧回调（网关据此渲染出站） */
   onFrame: (frame: ServeFrame) => void;
   /** 连接状态变化（适配器可用于提示平台侧） */
   onStatus?: (status: 'connecting' | 'connected' | 'reconnecting' | 'offline', detail?: string) => void;
 }
+
+/** A3-1 token 请求头名（与 core server/security.ts 同契约；core 未公开导出该内部件） */
+const SERVE_TOKEN_HEADER = 'x-harness2-token';
 
 export class ServeClient {
   private ws: WebSocket | null = null;
@@ -68,7 +73,7 @@ export class ServeClient {
   }
 
   private async httpJson<T>(url: string, init?: RequestInit): Promise<T> {
-    const res = await fetch(url, init);
+    const res = await fetch(url, this.withToken(init));
     const text = await res.text();
     let body: unknown = null;
     if (text.length > 0) {
@@ -85,6 +90,14 @@ export class ServeClient {
     return body as T;
   }
 
+  /** P2：所有 HTTP 请求携带一次性 token（未配置时不加头，保持旧行为） */
+  private withToken(init?: RequestInit): RequestInit {
+    if (this.options.token === undefined) return init ?? {};
+    const headers = new Headers(init?.headers);
+    headers.set(SERVE_TOKEN_HEADER, this.options.token);
+    return { ...init, headers };
+  }
+
   // —— WS 事件面 ——
 
   connect(): void {
@@ -93,7 +106,11 @@ export class ServeClient {
     this.options.onStatus?.('connecting');
     this.readyPromise = new Promise<void>((resolve, reject) => {
       try {
-        const socket = new WebSocket(this.options.wsUrl);
+        // P2：WS 升级握手同样携带 token（header 优先级最高；不放 URL，避免 token 进日志）
+        const socket =
+          this.options.token !== undefined
+            ? new WebSocket(this.options.wsUrl, { headers: { [SERVE_TOKEN_HEADER]: this.options.token } })
+            : new WebSocket(this.options.wsUrl);
         socket.on('open', () => {
           this.ws = socket;
           // P1-1：serve 侧订阅按连接存储，重连后重发全部订阅（否则一次掉线即永久失联）

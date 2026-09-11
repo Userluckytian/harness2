@@ -20,6 +20,8 @@ export interface ServeLockShape {
   pid: number;
   port: number;
   ts?: string;
+  /** P2：严格鉴权下的一次性 token（桌面据此携带；旧版锁文件可能无此字段） */
+  token?: string;
 }
 
 /** 解析一行 serve stdout：JSON {"port":1..65535,"pid":n}；其他行返回 null */
@@ -71,7 +73,12 @@ export function readServeLock(home: string): ServeLockShape | null {
   try {
     const obj = JSON.parse(readFileSync(path, 'utf8')) as Record<string, unknown>;
     if (typeof obj['pid'] !== 'number' || typeof obj['port'] !== 'number') return null;
-    return { pid: obj['pid'], port: obj['port'], ...(typeof obj['ts'] === 'string' ? { ts: obj['ts'] } : {}) };
+    return {
+      pid: obj['pid'],
+      port: obj['port'],
+      ...(typeof obj['ts'] === 'string' ? { ts: obj['ts'] } : {}),
+      ...(typeof obj['token'] === 'string' && obj['token'].length > 0 ? { token: obj['token'] } : {}),
+    };
   } catch {
     return null;
   }
@@ -92,24 +99,40 @@ const STDOUT_TAIL_MAX_BYTES = 8 * 1024;
 
 // —— 健康检查 ——
 
-/** 轮询 GET /api/config（任何 HTTP 响应即视为服务可用）；超时抛错 */
+/**
+ * 轮询 GET /api/config；**仅 2xx 视为健康**，超时抛错。
+ * P2（A3 P1-2）：修复前 `res.status > 0` 把 `401` 也当健康 → 桌面显示「已连接」但所有 API/WS 失败。
+ * tokenProvider 提供当前一次性 token（桌面从 serve.lock 读）：
+ *   - 无 token + 401 → 继续等待（锁尚未写入的启动竞态可自愈）；
+ *   - 有 token 仍 401 → token 不匹配，立即明确报错（不再干等）。
+ */
 export async function waitForHealth(
   port: number,
   timeoutMs: number,
   fetchImpl: typeof fetch = fetch,
   intervalMs = 200,
+  tokenProvider?: () => string | undefined,
 ): Promise<void> {
   const deadline = Date.now() + timeoutMs;
   let lastError = '';
   while (Date.now() < deadline) {
+    const token = tokenProvider?.();
     try {
-      const res = await fetchImpl(`http://127.0.0.1:${port}/api/config`);
-      if (res.status > 0) return; // 服务已应答（ok:false = 配置未就绪，也是活的）
-      return;
+      const res = await fetchImpl(
+        `http://127.0.0.1:${port}/api/config`,
+        token !== undefined ? { headers: { 'x-harness2-token': token } } : undefined,
+      );
+      if (res.status >= 200 && res.status < 300) return; // 服务已应答（ok:false = 配置未就绪，也是活的）
+      if (res.status === 401 && token !== undefined) {
+        throw new Error('serve 健康检查 401：token 无效（serve.lock 与实例不匹配）');
+      }
+      lastError = `HTTP ${res.status}（严格鉴权下需携带 serve token）`;
     } catch (e) {
-      lastError = (e as Error).message;
-      await new Promise((r) => setTimeout(r, intervalMs));
+      const msg = (e as Error).message;
+      if (msg.startsWith('serve 健康检查 401')) throw e; // 明确错误立即上抛，不进重试
+      lastError = msg;
     }
+    await new Promise((r) => setTimeout(r, intervalMs));
   }
   throw new Error(`serve 健康检查超时（${timeoutMs}ms）：${lastError || '无响应'}`);
 }
@@ -147,6 +170,8 @@ export class ServeManager {
   private restartCount = 0;
   private adoptedPort: number | null = null;
   private port: number | null = null;
+  /** P2：本实例/采纳实例的一次性 token（从 serve.lock 读；渲染端不出网，仅主进程用于 HTTP/WS 鉴权） */
+  private token: string | null = null;
 
   status: ServeManagerStatus = 'offline';
   /** 最近一次状态详情（供 getStatus 主动查询；port/error/attemptsLeft） */
@@ -173,6 +198,17 @@ export class ServeManager {
     return this.port;
   }
 
+  /** P2：serve 一次性 token（未就绪/旧版锁无 token 时为 null）；供 bridge 携带 HTTP/WS 鉴权 */
+  get authToken(): string | null {
+    return this.token;
+  }
+
+  /** 从 serve.lock 重读 token（每次健康检查重读：兼容锁文件晚于 stdout 端口行的极短竞态） */
+  private tokenFromLock(): string | undefined {
+    if (this.options.home === undefined) return undefined;
+    return readServeLock(this.options.home)?.token;
+  }
+
   private setStatus(status: ServeManagerStatus, detail?: StatusDetail): void {
     this.status = status;
     this.statusDetail = detail;
@@ -188,19 +224,21 @@ export class ServeManager {
       this.restartTimer = null;
     }
     this.restartCount = 0;
+    this.token = null;
     this.setStatus('connecting');
     // 端口锁被既有实例持有 → 采纳（避免与 CLI serve 双实例互踢）
     if ((this.options.adoptExisting ?? true) && this.options.home !== undefined) {
       const lock = readServeLock(this.options.home);
       if (lock && isPidAlive(lock.pid)) {
         try {
-          await waitForHealth(lock.port, 3000);
+          await waitForHealth(lock.port, 3000, fetch, 200, () => lock.token);
           this.adoptedPort = lock.port;
           this.port = lock.port;
+          this.token = lock.token ?? null;
           this.setStatus('connected', { port: lock.port });
           return { port: lock.port, adopted: true };
         } catch {
-          // 锁信息陈旧（持有者未监听）→ 忽略，走自建
+          // 锁信息陈旧（持有者未监听）/token 不匹配 → 忽略，走自建
         }
       }
     }
@@ -250,10 +288,11 @@ export class ServeManager {
         if (!line) return;
         settled = true;
         this.port = line.port;
-        waitForHealth(line.port, this.options.healthTimeoutMs ?? 15000)
+        waitForHealth(line.port, this.options.healthTimeoutMs ?? 15000, fetch, 200, () => this.tokenFromLock())
           .then(() => {
             // 注意：这里不重置 restartCount——连续失败计数只在 stop()/新一轮 start() 归零，
             // 保证"必崩"服务也会按上限停止（退避封顶 15s），不会无限重启循环。
+            this.token = this.tokenFromLock() ?? null;
             this.setStatus('connected', { port: line.port });
             resolve({ port: line.port, adopted: false });
           })
@@ -322,6 +361,7 @@ export class ServeManager {
     this.restartCount = 0;
     const child = this.child;
     this.adoptedPort = null;
+    this.token = null;
     if (child === null) {
       this.setStatus('offline');
       return;

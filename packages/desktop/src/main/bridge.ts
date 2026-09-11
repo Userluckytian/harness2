@@ -147,7 +147,7 @@ export interface Bridge {
 
 export class InvokeError extends Error {}
 
-async function httpJson<T>(url: string, init?: RequestInit): Promise<T> {
+async function httpJsonRaw<T>(url: string, init?: RequestInit): Promise<T> {
   let res: Response;
   try {
     res = await fetch(url, init);
@@ -171,6 +171,18 @@ async function httpJson<T>(url: string, init?: RequestInit): Promise<T> {
 }
 
 export function createBridge(deps: BridgeDeps): Bridge {
+  /**
+   * P2：所有 serve HTTP 请求携带一次性 token（serve 默认严格鉴权）。
+   * token 只在主进程流转，渲染进程不感知；未就绪（null）时不加头，保持旧行为。
+   */
+  const httpJson = <T>(url: string, init?: RequestInit): Promise<T> => {
+    const token = deps.serve.authToken;
+    if (!token) return httpJsonRaw<T>(url, init);
+    const headers = new Headers(init?.headers);
+    headers.set('x-harness2-token', token);
+    return httpJsonRaw<T>(url, { ...init, headers });
+  };
+
   let ws: WebSocket | null = null;
   let wsIntentionalClose = false;
   let wsReconnectTimer: NodeJS.Timeout | null = null;
@@ -237,7 +249,11 @@ export function createBridge(deps: BridgeDeps): Bridge {
       ws = null;
     }
     try {
-      const socket = new WebSocket(deps.serve.wsUrl);
+      // P2：严格鉴权下 WS 升级同样需 token。主进程用全局 WebSocket（不支持自定义 header），
+      // 故走 ?token= 查询参数（serve 端 extractServeToken 兼容三种形态，优先级最低）。
+      const token = deps.serve.authToken;
+      const wsUrl = token ? `${deps.serve.wsUrl}?token=${encodeURIComponent(token)}` : deps.serve.wsUrl;
+      const socket = new WebSocket(wsUrl);
       socket.addEventListener('open', () => {
         ws = socket;
       });

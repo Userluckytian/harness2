@@ -28,6 +28,8 @@ function makeClient(handle: ServeHandle, frames: ServeFrame[]): ServeClient {
   const client = new ServeClient({
     baseUrl: `http://127.0.0.1:${handle.port}`,
     wsUrl: `ws://127.0.0.1:${handle.port}/ws`,
+    // P2：真实 serve 默认严格鉴权——客户端必须携带一次性 token
+    token: handle.token,
     onFrame: (f) => frames.push(f),
   });
   clients.push(client);

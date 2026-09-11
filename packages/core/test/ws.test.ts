@@ -85,6 +85,7 @@ async function start(
   opts: { script?: MockScript; approvalTimeoutMs?: number; decide?: (input: ApprovalInput) => ApprovalDecision } = {},
 ): Promise<ServeHandle> {
   const handle = await startServe({
+    requireToken: false,
     port: 0,
     home: tmpDir('h2-ws-home-'),
     root: tmpDir('h2-ws-root-'),
@@ -253,6 +254,7 @@ describe('WS abort 与审批往返', () => {
 
   it('approval-request → approval-response(allow) 往返：工具真实执行', async () => {
     const askHandle = await startServe({
+      requireToken: false,
       port: 0,
       home: tmpDir('h2-ws-home-'),
       root: tmpDir('h2-ws-root-'),
@@ -289,6 +291,7 @@ describe('WS abort 与审批往返', () => {
 
   it('approval-response(deny) → tool/result ok:false（denied by approval policy）', async () => {
     const askHandle = await startServe({
+      requireToken: false,
       port: 0,
       home: tmpDir('h2-ws-home-'),
       root: tmpDir('h2-ws-root-'),
@@ -329,6 +332,7 @@ describe('serve 记忆装配（审查 P1-1 防回归）', () => {
     // 注入假 store + 记录 requests 的 mock provider（nudgeInterval 拉高：本例不触发复盘）
     const provider = new MockProvider([{ textChunks: ['回复。'] }]);
     const handle = await startServe({
+      requireToken: false,
       port: 0,
       home: tmpDir('h2-ws-home-'),
       root: tmpDir('h2-ws-root-'),

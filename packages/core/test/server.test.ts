@@ -102,6 +102,7 @@ interface StartOpts {
 
 async function start(opts: StartOpts = {}): Promise<ServeHandle> {
   const handle = await startServe({
+    requireToken: false,
     port: 0,
     home: opts.home ?? tmpDir('h2-serve-home-'),
     root: opts.root ?? tmpDir('h2-serve-root-'),

@@ -272,6 +272,7 @@ describe('WS 接线：断线重连补发 pending approvals', () => {
 
   it('订阅（重连）即补发该 session 的 pending approval（含 scope/expiresAt）；respond allow 后工具执行', async () => {
     const handle = await startServe({
+      requireToken: false,
       port: 0,
       home: tmpDir('h2-queue-home-'),
       root: tmpDir('h2-queue-root-'),

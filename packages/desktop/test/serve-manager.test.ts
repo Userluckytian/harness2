@@ -38,13 +38,29 @@ afterEach(async () => {
   for (const d of dirs.splice(0)) rmSync(d, { recursive: true, force: true });
 });
 
-/** 假 serve 子进程脚本：HTTP 健康端点 + stdout 端口 JSON 行 + 保活；exitAfterMs 存在则定时退出 */
+/** 假 serve 子进程脚本：HTTP 健康端点 + stdout 端口 JSON 行 + 保活；exitAfterMs 存在则定时退出。
+ * FAKE_TOKEN 存在时：健康端点要求 x-harness2-token，并在端口行前写入含 token 的 serve.lock（模拟真实 strict serve）。 */
 const FAKE_SERVE_SCRIPT = `
 const http = require('node:http');
+const fs = require('node:fs');
+const path = require('node:path');
 const exitAfterMs = Number(process.env['FAKE_EXIT_MS'] || 0);
-const app = http.createServer((req, res) => { res.end(JSON.stringify({ ok: true })); });
+const token = process.env['FAKE_TOKEN'] || '';
+const home = process.env['FAKE_HOME'] || '';
+const app = http.createServer((req, res) => {
+  if (token && req.headers['x-harness2-token'] !== token) {
+    res.writeHead(401, { 'content-type': 'application/json' });
+    res.end(JSON.stringify({ error: '拒绝访问：缺少 serve token（严格模式）' }));
+    return;
+  }
+  res.end(JSON.stringify({ ok: true }));
+});
 app.listen(0, '127.0.0.1', () => {
   const port = app.address().port;
+  if (token && home) {
+    fs.mkdirSync(path.join(home, '.harness2'), { recursive: true });
+    fs.writeFileSync(path.join(home, '.harness2', 'serve.lock'), JSON.stringify({ pid: process.pid, port, token }));
+  }
   console.log(JSON.stringify({ port, pid: process.pid }));
 });
 setInterval(() => {}, 1000);
@@ -154,6 +170,40 @@ describe('纯函数', () => {
     await expect(waitForHealth(port, 2000)).resolves.toBeUndefined();
 
     await expect(waitForHealth(1, 250, fetch, 50)).rejects.toThrow('健康检查超时');
+  });
+
+  it('P2 waitForHealth：401 绝不判健康（无 token 等待至超时；错误 token 立即明确报错；正确 token 2xx 通过）', async () => {
+    const server = createServer((req, res) => {
+      if (req.headers['x-harness2-token'] === 'tok-1') {
+        res.writeHead(200, { 'content-type': 'application/json' });
+        res.end('{"ok":true}');
+        return;
+      }
+      res.writeHead(401, { 'content-type': 'application/json' });
+      res.end('{"error":"缺少 serve token（严格模式）"}');
+    });
+    servers.push(server);
+    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+    const port = (server.address() as { port: number }).port;
+
+    // 无 tokenProvider：401 必须重试到超时（不得像修复前那样 res.status>0 直接当健康）
+    await expect(waitForHealth(port, 700, fetch, 50)).rejects.toThrow('401');
+    // 锁里已有 token 但仍 401（不匹配）→ 立即明确报错，不留“已连接但全部失败”
+    await expect(waitForHealth(port, 700, fetch, 50, () => 'wrong')).rejects.toThrow('401');
+    // 正确 token → 2xx 通过
+    await expect(waitForHealth(port, 1500, fetch, 50, () => 'tok-1')).resolves.toBeUndefined();
+  });
+
+  it('P2 readServeLock：读出 token（桌面据此携带鉴权；无 token 字段保持旧行为）', () => {
+    const home = tmpDir();
+    mkdirSync(join(home, '.harness2'), { recursive: true });
+    writeFileSync(
+      join(home, '.harness2', 'serve.lock'),
+      JSON.stringify({ pid: process.pid, port: 4321, token: 'tok-lock' }),
+    );
+    expect(readServeLock(home)).toMatchObject({ pid: process.pid, port: 4321, token: 'tok-lock' });
+    writeFileSync(join(home, '.harness2', 'serve.lock'), JSON.stringify({ pid: process.pid, port: 4321 }));
+    expect(readServeLock(home)).toMatchObject({ pid: process.pid, port: 4321 });
   });
 });
 
@@ -292,6 +342,59 @@ describe('ServeManager（真实子进程）', () => {
     expect(spawned).toBe(0);
     await mgr.stop();
   });
+
+  it('P2 adoptExisting：严格实例（健康端点要 token）也能采纳——用锁里的 token 通过健康检查', async () => {
+    const server = createServer((req, res) => {
+      if (req.headers['x-harness2-token'] !== 'tok-adopt') {
+        res.writeHead(401, { 'content-type': 'application/json' });
+        res.end('{"error":"缺少 serve token"}');
+        return;
+      }
+      res.writeHead(200, { 'content-type': 'application/json' });
+      res.end('{"ok":true}');
+    });
+    servers.push(server);
+    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+    const port = (server.address() as { port: number }).port;
+    const home = tmpDir();
+    mkdirSync(join(home, '.harness2'), { recursive: true });
+    writeFileSync(
+      join(home, '.harness2', 'serve.lock'),
+      JSON.stringify({ pid: process.pid, port, token: 'tok-adopt' }),
+    );
+    const mgr = makeManager({
+      home,
+      spawnImpl: (() => {
+        throw new Error('不应 spawn');
+      }) as never,
+    });
+    const result = await mgr.start();
+    expect(result).toEqual({ port, adopted: true });
+    expect(mgr.authToken).toBe('tok-adopt');
+    await mgr.stop();
+  });
+
+  it('P2 start：自建严格子进程——从 serve.lock 取 token 完成健康检查，第三方无 token 被 401', async () => {
+    const home = tmpDir();
+    process.env['FAKE_TOKEN'] = 'tok-2';
+    process.env['FAKE_HOME'] = home;
+    try {
+      const mgr = makeManager({ home });
+      const { port, adopted } = await mgr.start();
+      expect(adopted).toBe(false);
+      expect(mgr.authToken).toBe('tok-2');
+      const denied = await fetch(`http://127.0.0.1:${port}/api/config`);
+      expect(denied.status).toBe(401);
+      const allowed = await fetch(`http://127.0.0.1:${port}/api/config`, {
+        headers: { 'x-harness2-token': mgr.authToken ?? '' },
+      });
+      expect(allowed.status).toBe(200);
+      await mgr.stop();
+    } finally {
+      delete process.env['FAKE_TOKEN'];
+      delete process.env['FAKE_HOME'];
+    }
+  }, 15000);
 });
 
 describe('AppStore（渲染端纯状态）', () => {

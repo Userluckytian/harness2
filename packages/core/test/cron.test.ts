@@ -457,6 +457,7 @@ describe('serve 集成（startServe 内置调度器 + WS 通知帧）', () => {
     const root = tmpDir();
     writeJobsFile(defaultCronRoot(home), [makeJob({ instruction: '巡检一次' })]);
     const handle = await startServe({
+      requireToken: false,
       port: 0,
       home,
       root,
