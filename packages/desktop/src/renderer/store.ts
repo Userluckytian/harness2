@@ -568,6 +568,11 @@ export class AppStore {
       this.set({ cancelAcks: { ...this.state.cancelAcks, [frame.requestId]: frame.state } });
       return;
     }
+    if (frame.type === 'cron') {
+      // cron 通知帧广播全部连接、无会话归属（core ws.ts）。桌面本阶段无 cron 工作台：
+      // 如实丢弃，绝不落到 ensureStream(frame.sessionId = undefined) 造幽灵流（审查 P2）。
+      return;
+    }
     const id: string = frame.sessionId;
     const stream = this.ensureStream(id);
     stream.lastFrameAt = Date.now(); // D4：断流判定水位（帧到达即刷新）

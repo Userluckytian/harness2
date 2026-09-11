@@ -113,6 +113,12 @@ export type WsFrame =
       error?: string;
     }
   /**
+   * cron 通知帧（core server/ws.ts WsServerMessage 同形镜像）：**广播全部连接、无会话归属**
+   * （core ws.ts「cron 通知帧广播：不按会话订阅过滤，投递全部连接」）。漏镜像时它会被
+   * 当作会话帧落到 ensureStream(frame.sessionId = undefined) → undefined 幽灵流（审查 P2）。
+   */
+  | { type: 'cron'; op: 'finished'; id: string; ok: boolean; error?: string }
+  /**
    * 本地回传帧（非服务帧）：系统通知被点击 → 主进程聚焦窗口并把该帧推给渲染端，
    * 渲染端据此 selectSession 跳转。走既有的 IPC_EVENT 通道，无需新建 IPC。
    */

@@ -3,7 +3,7 @@
 import { describe, expect, it } from 'vitest';
 import { AppStore } from '../src/renderer/store.js';
 import { acceptDelta } from '../src/renderer/delivery.js';
-import type { SessionEventsPayloadShape } from '../src/shared/protocol.js';
+import type { SessionEventsPayloadShape, WsFrame } from '../src/shared/protocol.js';
 
 let seq = 0;
 function ev(type: string, payload: Record<string, unknown>): any {
@@ -36,6 +36,21 @@ describe('acceptDelta：ChunkOffset 连续性判定（与 core WatermarkCursor �
     expect(acceptDelta({ offset: 0, length: 2 }, 5, 'x')).toBeNull(); // 缺口
     expect(acceptDelta(undefined, -1, 'x')).toBeNull(); // 非法
     expect(acceptDelta(undefined, 1.5, 'x')).toBeNull(); // 非整数
+  });
+});
+
+describe('cron 通知帧：无会话归属广播不得造幽灵流（审查 P2）', () => {
+  it('cron 帧被如实丢弃：不 ensureStream(undefined)、不记协议错误、不影响既有会话', () => {
+    const store = freshStore('s1');
+    expect(store.streamIds()).toEqual(['s1']);
+    // core ws.ts 广播的 cron 帧（无 sessionId 字段）。经 unknown 断言构造：
+    // 无论镜像与否都能编译，专测运行期行为。
+    const cronFrame = { type: 'cron', op: 'finished', id: 'job-1', ok: false, error: '超时' };
+    expect(() => store.applyFrame(cronFrame as unknown as WsFrame)).not.toThrow();
+    // 修复前：落到 ensureStream(frame.sessionId=undefined) → streamIds 出现 undefined 幽灵流
+    expect(store.streamIds()).toEqual(['s1']);
+    // 也不得被当协议错误记入 statusDetail
+    expect(store.getState().statusDetail?.error).toBeUndefined();
   });
 });
 
