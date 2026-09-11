@@ -409,3 +409,12 @@ git merge --no-ff chore/phase15-quality-closeout
 
 - **验收门槛**：贴出 run 链接且 7 个 job 全绿；POSIX 环境（容器或 CI）内 `pnpm test` 不带任何额外参数 exit 0；Windows 本机三条命令仍全绿；未用 skip 换绿。
 - **禁止**：force push；在 `main` 上试错；注释掉或删掉失败用例；把「本机绿」当作通过证据 —— 本轮红的全部成因就是只在一台 Windows 上验过。
+
+### R10 闭环记录（2026-09-11，编排者复核后登记）
+
+- **取证**：CI 日志正文不可得（`gh` 未登录、环境无 `GH_TOKEN`，公开 API 只有注解 `Process completed with exit code 1.`）→ 改用 **WSL2 Ubuntu-24.04 原生目录等价复现**；四要素已记入 `docs/issue-log/2026-09-11.md`。
+- **四处真因与修复**（分支 `fix/ci-posix-red`）：`4f2937c` win32 路径语义（`shell.ts` 用宿主 `join`/`delimiter` 拼 Windows 路径）· `bcbbc84` pending 暂存毫秒单调（同毫秒排序不确定）· `d0ac358` cron 完成帧轮询等待（固定 `sleep(150)` 竞态）· `07e2e6c` core 确定性 `testTimeout/hookTimeout 30s`；P2 独立提交 `26399f9` 升 checkout/setup-node/pnpm-action-setup 至 v5。`browser.test.ts`×8 判定为 WSL 缺 chromium 系统库（`libnspr4.so`，非缺陷），**未据此改 CI**。
+- **CI**：分支 [run #43](https://github.com/Userluckytian/harness2/actions/runs/34554717607) 6/6 绿（`pages` 按 `ref==main` 跳过）；`--no-ff` 合入 main（`fd8979a`，parents `94c30b5` + `26399f9`）后 [run #44](https://github.com/Userluckytian/harness2/actions/runs/34555011219) **7/7 全绿**；文档提交 `e2fb34a` 的 [run #45](https://github.com/Userluckytian/harness2/actions/runs/34555365483) 仍 7/7。
+- **编排者独立复核（2026-09-11）**：全量 diff 核对**未出现** skip / `--passWithNoTests` / `continue-on-error` / `.only` / 新增 `if:` 门控（`ci.yml` 仅 3 处 action 版本号变更）；core 新增 `vitest.config.mts` 的 `include: ['test/**/*.test.ts']` 与实际 **60 个**测试文件完全吻合（`src/` 下无测试文件，`test/` 下无 `.tsx`/`.mts`/`.spec`），无用例被静默排除；本机 `e2fb34a` 复跑 `pnpm lint` / `pnpm -r typecheck` / `pnpm test` 三条 **exit 0**（core 60 files · desktop 15 · gateway 5 · cli 17）。
+- **状态：✅ 已闭环** —— 验收表 J-2 ✅、第 6 节 R10 ✅、第 9 节总结论恢复「✅ 有条件通过」。
+- **遗留（登记，不擅自动）**：`upload-artifact@v4` / `configure-pages@v5` / `deploy-pages@v4` / `download-artifact@v4` 仍 targeting node20（本次按指定范围只升三个 action）；分支 `fix/ci-posix-red` 已合入，本地与 origin 仍在，可择机删除。
