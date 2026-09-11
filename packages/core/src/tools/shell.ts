@@ -8,7 +8,7 @@
 // POSIX 一律走 Node 的 shell:true（/bin/sh -c），行为与改造前完全一致。
 // 本模块只做「选哪个 shell」，不执行命令；实际 spawn 在 predefined/bash.ts。
 import { existsSync } from 'node:fs';
-import { delimiter, dirname, join, resolve } from 'node:path';
+import { dirname, join, resolve, win32 } from 'node:path';
 import { CONFIG_FILE_NAME, HARNESS_DIR, loadConfig } from '../config/load.js';
 
 export type BashShellKind = 'posix' | 'configured' | 'git-bash' | 'cmd';
@@ -44,7 +44,7 @@ function normalizeGitBashEnv(value: string): string | undefined {
   const raw = value.trim();
   if (raw.length === 0) return undefined;
   if (/bash\.exe$/i.test(raw)) return raw;
-  return join(raw, 'bin', 'bash.exe');
+  return win32.join(raw, 'bin', 'bash.exe');
 }
 
 /** 常见 Git for Windows 安装位置（含 64/32 位与用户级安装）+ PATH 里的 Git bash.exe
@@ -52,10 +52,10 @@ function normalizeGitBashEnv(value: string): string | undefined {
 function gitBashCandidates(env: NodeJS.ProcessEnv): string[] {
   const roots = [
     env['GIT_BASH'] !== undefined ? normalizeGitBashEnv(env['GIT_BASH']) : undefined,
-    env['ProgramFiles'] !== undefined ? join(env['ProgramFiles'], 'Git') : undefined,
-    env['ProgramW6432'] !== undefined ? join(env['ProgramW6432'], 'Git') : undefined,
-    env['ProgramFiles(x86)'] !== undefined ? join(env['ProgramFiles(x86)'], 'Git') : undefined,
-    env['LOCALAPPDATA'] !== undefined ? join(env['LOCALAPPDATA'], 'Programs', 'Git') : undefined,
+    env['ProgramFiles'] !== undefined ? win32.join(env['ProgramFiles'], 'Git') : undefined,
+    env['ProgramW6432'] !== undefined ? win32.join(env['ProgramW6432'], 'Git') : undefined,
+    env['ProgramFiles(x86)'] !== undefined ? win32.join(env['ProgramFiles(x86)'], 'Git') : undefined,
+    env['LOCALAPPDATA'] !== undefined ? win32.join(env['LOCALAPPDATA'], 'Programs', 'Git') : undefined,
     'C:\\Program Files\\Git',
     'C:\\Program Files (x86)\\Git',
   ];
@@ -63,19 +63,19 @@ function gitBashCandidates(env: NodeJS.ProcessEnv): string[] {
   for (const root of roots) {
     if (root === undefined) continue;
     out.push(root); // GIT_BASH 直接给 bash.exe 时 root 就是可执行文件
-    out.push(join(root, 'bin', 'bash.exe'));
-    out.push(join(root, 'usr', 'bin', 'bash.exe'));
+    out.push(win32.join(root, 'bin', 'bash.exe'));
+    out.push(win32.join(root, 'usr', 'bin', 'bash.exe'));
   }
   // PATH 中的 Git 目录（仅限路径含 git，避免误选 WSL / 其它 bash）。
   // 注意：PATH 里通常只有 `...\Git\cmd`（git.exe 所在），bash.exe 在兄弟目录 bin\ 与 usr\bin\，
   // 因此除了 entry 自身，还要用 dirname(entry) 推出 Git 安装根目录再拼一次（Git 装在非 C 盘时这是唯一可靠来源）。
-  for (const raw of (env['PATH'] ?? '').split(delimiter)) {
+  for (const raw of (env['PATH'] ?? '').split(win32.delimiter)) {
     const entry = raw.trim().replace(/^"|"$/g, '');
     if (entry.length === 0 || !/git/i.test(entry)) continue;
-    out.push(join(entry, 'bash.exe'));
-    const root = dirname(entry);
-    out.push(join(root, 'bin', 'bash.exe'));
-    out.push(join(root, 'usr', 'bin', 'bash.exe'));
+    out.push(win32.join(entry, 'bash.exe'));
+    const root = win32.dirname(entry);
+    out.push(win32.join(root, 'bin', 'bash.exe'));
+    out.push(win32.join(root, 'usr', 'bin', 'bash.exe'));
   }
   return [...new Set(out)];
 }
