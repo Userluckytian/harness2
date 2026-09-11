@@ -13,7 +13,16 @@ export function registerBrowserCommand(program: Command): void {
     .description('安装 chromium（Playwright 浏览器二进制，约 130MB；浏览器工具首次使用前必须安装）')
     .action(async () => {
       console.log('正在安装 chromium（Playwright）…');
-      const code = await installBrowserRuntime();
+      // P3-c：playwright 模块缺失等可预期失败 → 一行可读提示 + exit 1，
+      // 不冒泡为未处理拒绝（否则经 crash reporter 落盘，给出的信息不如直接指引）。
+      let code: number;
+      try {
+        code = await installBrowserRuntime();
+      } catch (e) {
+        console.error(`error: ${(e as Error).message}`);
+        process.exitCode = 1;
+        return;
+      }
       if (code !== 0) {
         console.error(`error: chromium 安装失败（exit ${code}）`);
         process.exit(code);

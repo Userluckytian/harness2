@@ -50,6 +50,10 @@ export interface BrowserPoolOptions {
   loader?: PlaywrightLoader;
 }
 
+/** playwright 模块缺失时的降级文案（browser_* 运行时与 `harness2 browser install` 共用，避免两套措辞） */
+const BROWSER_MISSING_PLAYWRIGHT_HINT =
+  '浏览器运行时未安装：缺少 playwright 模块——请先重新安装 harness2（如 npm i -g harness2），再运行 harness2 browser install 安装 chromium';
+
 /** chromium 未安装（Playwright 在但浏览器二进制缺失）或 playwright 模块缺失（A1-5） */
 export class BrowserNotInstalledError extends Error {
   constructor(detail?: string) {
@@ -58,7 +62,7 @@ export class BrowserNotInstalledError extends Error {
     const moduleMissing =
       detail !== undefined && /Cannot find (?:module|package)\s+['"]?playwright|ERR_MODULE_NOT_FOUND/i.test(detail);
     const hint = moduleMissing
-      ? '浏览器运行时未安装：缺少 playwright 模块——请先重新安装 harness2（如 npm i -g harness2），再运行 harness2 browser install 安装 chromium'
+      ? BROWSER_MISSING_PLAYWRIGHT_HINT
       : '浏览器未安装：请先运行 harness2 browser install（或 npx playwright install chromium）';
     super(`${hint}${detail ? `；原始错误: ${detail}` : ''}`);
     this.name = 'BrowserNotInstalledError';
@@ -477,9 +481,22 @@ export function createBrowserTools(sessionKey: string, pool: BrowserPool): ToolD
 // —— 安装（harness2 browser install） ——
 
 /**
+ * 解析 playwright 自带的 cli.js。
+ * P3-c：模块缺失（require.resolve 报 MODULE_NOT_FOUND）时复用既有降级文案——
+ * 以前裸抛 MODULE_NOT_FOUND 会经 commander 未处理拒绝进 crash reporter，而给不出「先装」指引。
+ */
+function resolvePlaywrightCliPath(require: NodeRequire): string {
+  try {
+    return require.resolve('playwright/cli.js');
+  } catch (e) {
+    throw new Error(`${BROWSER_MISSING_PLAYWRIGHT_HINT}；原始错误: ${(e as Error).message}`);
+  }
+}
+
+/**
  * 安装 chromium（Playwright 浏览器二进制）：以 playwright 包自带的 cli.js 起子进程执行
  * `playwright install chromium`（继承 stdio，exit code 透传）。从 core 上下文解析依赖，
- * CLI 无需直接依赖 playwright。
+ * CLI 无需直接依赖 playwright；模块缺失时抛可读降级文案（见 resolvePlaywrightCliPath）。
  */
 export async function installBrowserRuntime(): Promise<number> {
   const { createRequire } = await import('node:module');
@@ -490,7 +507,7 @@ export async function installBrowserRuntime(): Promise<number> {
     // CJS bundle（esbuild cjs 输出中 import.meta 为空）：以 cwd 为解析基点兜底
     require = createRequire(join(process.cwd(), 'package.json'));
   }
-  const cliPath = require.resolve('playwright/cli.js');
+  const cliPath = resolvePlaywrightCliPath(require);
   const { spawn } = await import('node:child_process');
   return new Promise((resolve, reject) => {
     const child = spawn(process.execPath, [cliPath, 'install', 'chromium'], { stdio: 'inherit' });
