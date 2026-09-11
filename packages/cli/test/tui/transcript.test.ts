@@ -39,20 +39,61 @@ function ids(state: TranscriptState): string[] {
   return state.items.map((i) => i.id);
 }
 
+/** 供顺序断言用的可读文本（tool 用 tool 名，empty 无正文） */
+function itemText(item: TranscriptItem): string {
+  if (item.kind === 'tool') return item.tool;
+  if (item.kind === 'empty') return '';
+  return item.text;
+}
+
 describe('transcriptReducer：稳定 id 与顺序', () => {
   it('projectSession 同一会话两次投影 id 完全一致（幂等）', () => {
+    // 真实日志每条 payload 都带 turnId（core 一 turn 一 turnId）；此处刻意带上，
+    // 以覆盖「同 turn 多段消息不得因 turnId 相同而互相覆盖」的重投影路径。
     const dir = writeSession([
       ev(1, 'session/header', { sessionId: 's1' }),
-      ev(2, 'user/message', { text: '你好' }),
-      ev(3, 'tool/call', { callId: 'c1', tool: 'read', args: { file_path: 'a.txt' } }),
-      ev(4, 'tool/result', { callId: 'c1', tool: 'read', ok: true, output: '内容' }),
-      ev(5, 'assistant/message', { text: '完成' }),
+      ev(2, 'user/message', { text: '你好', turnId: 't1' }),
+      ev(3, 'tool/call', { callId: 'c1', tool: 'read', args: { file_path: 'a.txt' }, turnId: 't1' }),
+      ev(4, 'tool/result', { callId: 'c1', tool: 'read', ok: true, output: '内容', turnId: 't1' }),
+      ev(5, 'assistant/message', { text: '完成', turnId: 't1' }),
     ]);
     const a = projectSession(dir);
     const b = projectSession(dir);
     expect(ids(a)).toEqual(['user:2', 'tool:c1', 'assistant:5']);
     expect(ids(b)).toEqual(ids(a));
     expect(b.items).toEqual(a.items);
+  });
+
+  it('同 turn 多步 assistant/message 全部保留且按 seq 排序（真实日志形状，P1 回归）', () => {
+    // 形状对齐 core/fixtures/loop-demo/session.v1.jsonl：一个 turnId + 3 段 assistant + 2 个工具。
+    // 修复前：assistant 段共享 id `assistant:<turnId>` 被 put() 原地覆盖 →
+    // 只剩最后一段且被排到两张工具卡之前（4 items）；修复后：6 items，顺序与 seq 一致。
+    const turnId = 't-multi';
+    const dir = writeSession([
+      ev(1, 'session/header', { sessionId: 's-multi' }),
+      ev(2, 'user/message', { text: '创建并验证', turnId }),
+      ev(3, 'step/start', { stepId: 'st1', turnId }),
+      ev(4, 'assistant/message', { text: '先创建。', model: 'mock', turnId }),
+      ev(5, 'tool/call', { callId: 'c1', tool: 'write', args: { file_path: 'hello.txt' }, turnId }),
+      ev(6, 'tool/result', { callId: 'c1', tool: 'write', ok: true, output: 'written', turnId }),
+      ev(7, 'step/end', { stepId: 'st1', turnId }),
+      ev(8, 'step/start', { stepId: 'st2', turnId }),
+      ev(9, 'assistant/message', { text: '再读取。', model: 'mock', turnId }),
+      ev(10, 'tool/call', { callId: 'c2', tool: 'read', args: { file_path: 'hello.txt' }, turnId }),
+      ev(11, 'tool/result', { callId: 'c2', tool: 'read', ok: true, output: '内容', turnId }),
+      ev(12, 'step/end', { stepId: 'st2', turnId }),
+      ev(13, 'step/start', { stepId: 'st3', turnId }),
+      ev(14, 'assistant/message', { text: '完成。', model: 'mock', turnId }),
+      ev(15, 'step/end', { stepId: 'st3', turnId }),
+    ]);
+    const s = projectSession(dir);
+    // 每一段 assistant 都在，且顺序为 解释→工具→解释→工具→解释
+    expect(s.items).toHaveLength(6);
+    expect(s.items.map((i) => i.kind)).toEqual(['user', 'assistant', 'tool', 'assistant', 'tool', 'assistant']);
+    expect(s.items.map(itemText)).toEqual(['创建并验证', '先创建。', 'write', '再读取。', 'read', '完成。']);
+    expect(ids(s)).toEqual(['user:2', 'assistant:4', 'tool:c1', 'assistant:9', 'tool:c2', 'assistant:14']);
+    // 两次投影 id 完全稳定（重投影幂等）
+    expect(ids(projectSession(dir))).toEqual(ids(s));
   });
 
   it('item 顺序与 seq 顺序一致（tool 结果原地更新位置不变）', () => {

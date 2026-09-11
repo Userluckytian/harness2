@@ -11,6 +11,7 @@
 //   finalText 与 partialText 互斥，textOutcome 是唯一判别。
 import { computeProjection, loadSession, type AnySessionEvent } from '@harness2/core';
 import { summarizeArgs } from '../render.js';
+import { displayWidth } from './input.js';
 
 /** 已落定的结构条目（判别联合；id 稳定，供展开态/高度缓存按 id 引用） */
 export type TranscriptItem =
@@ -36,11 +37,40 @@ export type ToolItem = Extract<TranscriptItem, { kind: 'tool' }>;
 
 export interface TranscriptState {
   items: TranscriptItem[];
-  byId: Map<string, number>;
+  readonly byId: Map<string, number>;
 }
 
 export function emptyTranscript(): TranscriptState {
-  return { items: [], byId: new Map() };
+  return stateWith([]);
+}
+
+/**
+ * 构造 TranscriptState：byId 惰性构建（首次访问才建 Map 并缓存）。
+ * 长历史重投影会逐事件产生数千次 append；若每次 append 都 `new Map(state.byId)` 克隆，
+ * 就是 O(n²)（万级事件下实测单 reduce 逾 500ms，逼近 1.5s 性能预算）。
+ * 惰性索引让 reducer 全程只做「数组追加 + 反查」，Map 仅在读取时构建一次，
+ * 同时保持 reducer 纯函数语义（不原地改旧 state 的 items/byId，React updater 可安全重放）。
+ */
+function stateWith(items: TranscriptItem[]): TranscriptState {
+  let cached: Map<string, number> | undefined;
+  return {
+    items,
+    get byId(): Map<string, number> {
+      if (cached === undefined) {
+        cached = new Map();
+        for (let i = 0; i < items.length; i += 1) cached.set(items[i]!.id, i);
+      }
+      return cached;
+    },
+  };
+}
+
+/** 从尾向前查找 id 的数组下标（-1 = 不存在）；tool/result 紧跟 tool/call，尾部命中更快 */
+function findItemIndex(items: TranscriptItem[], id: string): number {
+  for (let i = items.length - 1; i >= 0; i -= 1) {
+    if (items[i]!.id === id) return i;
+  }
+  return -1;
 }
 
 /**
@@ -98,18 +128,13 @@ function scopedId(
   return `${kind}:${seq ?? 0}`;
 }
 
-/** 按 id 追加或原地替换（byId 提供 O(1) 反查；未变化时复用 Map） */
+/** 按 id 追加或原地替换（惰性 byId 见 stateWith；未变化时复用 items） */
 function put(state: TranscriptState, item: TranscriptItem): TranscriptState {
-  const idx = state.byId.get(item.id);
-  if (idx === undefined) {
-    const items = state.items.concat(item);
-    const byId = new Map(state.byId);
-    byId.set(item.id, items.length - 1);
-    return { items, byId };
-  }
+  const idx = findItemIndex(state.items, item.id);
+  if (idx < 0) return stateWith(state.items.concat(item));
   const items = state.items.slice();
   items[idx] = item;
-  return { items, byId: state.byId };
+  return stateWith(items);
 }
 
 function toolArgsString(args: string | undefined): string | undefined {
@@ -168,7 +193,7 @@ export function transcriptReducer(state: TranscriptState, event: TranscriptEvent
       });
     }
     case 'tool/call': {
-      const existing = state.items[state.byId.get(`tool:${event.callId}`) ?? -1];
+      const existing = state.items[findItemIndex(state.items, `tool:${event.callId}`)];
       const args = toolArgsString(event.args) ?? (existing?.kind === 'tool' ? existing.args : undefined);
       return put(state, {
         kind: 'tool',
@@ -182,7 +207,7 @@ export function transcriptReducer(state: TranscriptState, event: TranscriptEvent
     }
     case 'tool/result': {
       const id = `tool:${event.callId}`;
-      const existing = state.items[state.byId.get(id) ?? -1];
+      const existing = state.items[findItemIndex(state.items, id)];
       const base: ToolItem =
         existing?.kind === 'tool'
           ? existing
@@ -281,12 +306,26 @@ function argsToString(args: unknown): string | undefined {
   }
 }
 
-/** core 会话事件 → transcript 事件；结构性事件（header/step/memory/compaction/rewind）返回 null */
+/**
+ * core 会话事件 → transcript 事件；结构性事件（header/step/memory/compaction/rewind）返回 null。
+ *
+ * 重投影 id 语义（为何显式给 seq id，而不是让 scopedId 改判 seq 优先）：
+ * core 的 loop 一个 turn 只分配**一个 turnId**，但每个 step 都会 append 一条
+ * `assistant/message`（见 core/src/agent/loop.ts）。若沿用 scopedId 的 turnId 优先，
+ * 同一 turn 的所有 assistant 段都会得到 `assistant:<turnId>`，put() 原地覆盖 →
+ * 前面的解释被静默丢弃，且最终答案渲染在工具卡之前（验收 4 重投影 / T3 顺序保真被破坏）。
+ * 因此重投影按事件 seq 派生唯一 id（seq 在日志内严格单调），保证顺序与完整性。
+ *
+ * 不能在 scopedId 里全局改成 seq 优先：live 事件可能带 `seq:0`/缺省（如 useTurnStream 的
+ * 流式事件），会互相碰撞，破坏真实流式的 turn 级稳定 id（assistant:<turnId>:step:N / turn-final）。
+ * tool/call、tool/result 仍按 callId 键控（本就在日志内唯一，且是 call↔result 原地合并所必需）。
+ */
 export function sessionEventToTranscript(event: AnySessionEvent): TranscriptEvent | null {
   switch (event.type) {
     case 'user/message':
       return {
         type: 'user/message',
+        id: `user:${event.seq}`,
         seq: event.seq,
         text: event.payload.text,
         ...(event.payload.turnId !== undefined ? { turnId: event.payload.turnId } : {}),
@@ -294,6 +333,7 @@ export function sessionEventToTranscript(event: AnySessionEvent): TranscriptEven
     case 'assistant/message':
       return {
         type: 'assistant/message',
+        id: `assistant:${event.seq}`,
         seq: event.seq,
         text: event.payload.text,
         ...(event.payload.reasoning !== undefined ? { reasoning: event.payload.reasoning } : {}),
@@ -302,6 +342,7 @@ export function sessionEventToTranscript(event: AnySessionEvent): TranscriptEven
     case 'assistant/attempt':
       return {
         type: 'assistant/attempt',
+        id: `attempt:${event.seq}`,
         seq: event.seq,
         error: event.payload.error,
         ...(event.payload.text !== undefined ? { text: event.payload.text } : {}),
@@ -448,7 +489,7 @@ export function transcriptHeightCache(): TranscriptHeightCache {
 function countWrappedLines(text: string, width: number): number {
   if (text.length === 0) return 1;
   let total = 0;
-  for (const segment of text.split('\n')) total += Math.max(1, Math.ceil(segment.length / width));
+  for (const segment of text.split('\n')) total += Math.max(1, Math.ceil(displayWidth(segment) / width));
   return total;
 }
 

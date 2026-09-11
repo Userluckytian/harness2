@@ -96,9 +96,14 @@ describe('T5 长历史压力：1000 消息 / 万级事件投影预算', () => {
 
     // 生成规模符合计划口径
     expect(session.events.length).toBeGreaterThanOrEqual(10_000);
-    // 1000 条消息（user+assistant）
-    expect(projectedMessageCount(state)).toBeGreaterThanOrEqual(1_000);
-    expect(state.items.length).toBeGreaterThanOrEqual(2_000);
+    // 结构精确断言（否则「塌缩」也会让宽松的 >= 断言通过）：
+    // 每轮 3 user + 3 assistant + 3 tool = 9 items，共 500 轮 → 4500 items / 3000 条消息。
+    // 修复前同 turnId 覆盖只会得到 ~2500 items / 1000 条消息，本断言必失败。
+    expect(state.items.length).toBe(4_500);
+    expect(projectedMessageCount(state)).toBe(3_000);
+    // 每轮 3 段 assistant 都在（不得被同 turnId 覆盖塌成每轮 1 段）
+    const assistantTexts = new Set(state.items.flatMap((i) => (i.kind === 'assistant' ? [i.text] : [])));
+    expect(assistantTexts.size).toBe(1_500);
     // 投影命中第一条与最后一条
     expect(view.start).toBeGreaterThanOrEqual(0);
     expect(view.end).toBeLessThanOrEqual(state.items.length);

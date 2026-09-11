@@ -139,4 +139,11 @@ describe('estimateItemHeight', () => {
     expect(estimateItemHeight(sysItem('s', ''), 30)).toBe(1);
     expect(estimateItemHeight(sysItem('s', 'a\nb'), 30)).toBe(2);
   });
+
+  it('CJK 宽字符按 2 列计（显示宽度而非 UTF-16 长度）', () => {
+    // 6 个汉字 = 12 显示列；宽度 4 → 3 行（若误用 segment.length=6 则得 2 行）
+    expect(estimateItemHeight(sysItem('s', '你好你好你好'), 4)).toBe(3);
+    // 混合：'ab你好' = 2+4 = 6 列；宽度 3 → 2 行
+    expect(estimateItemHeight(sysItem('s', 'ab你好'), 3)).toBe(2);
+  });
 });

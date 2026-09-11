@@ -424,6 +424,9 @@ export function InkShell({
     schedulerRef.current?.flushNow(); // 先落定待处理事件，避免重投影后混入
     setTranscript(safeProject(runtime.getCurrent()?.dir));
     setExpandedIds(new Set());
+    // 重投影会整体替换转录（/undo /redo /new /resume /fork、会话切换）：上一轮的冻结重试面板
+    // 已不属于新转录，必须清掉，否则旧 turn 的 retry 面板会残留在新会话视图上。
+    setRetryBudget(undefined);
     applyFollow(true);
     applyAnchor(undefined);
     applyScroll(0);

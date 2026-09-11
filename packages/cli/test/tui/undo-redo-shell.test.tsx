@@ -77,6 +77,42 @@ describe('T5 ink /undo /redo：rewind 后重投影', () => {
     }
   });
 
+  it('重投影清掉上一轮冻结的重试面板（/undo 后不残留）', async () => {
+    // 脚本先注入 503（可重试）再正常回答：turn 结束携带 usedAttempts=1 的 retryBudget → 面板可见。
+    const tr = await createTestRuntime([{ error: 503 }, { textChunks: ['重试后回答'] }]);
+    running.push(tr);
+    const t = mountTui(
+      <InkShell
+        runtime={tr.runtime}
+        bootLines={['会话: test（新建）']}
+        dialog={createDialogController()}
+        onExit={() => undefined}
+      />,
+      { columns: 100, rows: 30 },
+    );
+    try {
+      await t.flush();
+      t.write('hi');
+      await t.flush();
+      t.write('\r');
+      await waitFor(() => t.output().includes('重试 已用 1/6'), t.flush, 15000);
+      expect(t.output()).toContain('重试 已用 1/6');
+
+      // /undo 触发重投影：上一轮的重试面板必须消失，不得残留在新视图。
+      t.write('/undo');
+      await t.flush();
+      t.write('\r');
+      await waitFor(() => t.output().includes('已撤回'), t.flush);
+      // output() 是累积的 ANSI 流，故只看「重投影帧之后」新追加的渲染：
+      const before = t.output().length;
+      t.write('x'); // 强制一次新重绘
+      await waitFor(() => t.output().length > before, t.flush);
+      expect(t.output().slice(before)).not.toContain('重试 已用');
+    } finally {
+      t.unmount();
+    }
+  });
+
   it('共享 /help 文本与本地浮层同源（含 /undo /redo 说明）', async () => {
     const tr = await createTestRuntime();
     running.push(tr);
