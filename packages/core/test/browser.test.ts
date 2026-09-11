@@ -42,6 +42,18 @@ afterEach(async () => {
 const servers: Server[] = [];
 const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 
+/**
+ * 确定性屏障：显式 deferred 控制「谁在里面 / 何时放行」，替代靠 sleep 互相重叠的计时假设
+ * （CI windows 机器慢时重叠不成立 → 峰值断言抖动）。
+ */
+function deferred(): { promise: Promise<void>; resolve: () => void } {
+  let release: () => void = () => undefined;
+  const promise = new Promise<void>((r) => {
+    release = r;
+  });
+  return { promise, resolve: () => release() };
+}
+
 /** 本地 stub 页面：按钮（点击写 #out）、输入框、文本；/empty 路径返回无交互元素页面（ref 失配场景） */
 function startStubServer(): Promise<string> {
   return new Promise((resolve) => {
@@ -239,20 +251,37 @@ describe.skipIf(!hasChromium)('浏览器全链（真实 headless chromium + 本�
   }, 30_000);
 
   it('并发上限：maxConcurrent=2 时三个会话的操作排队（同时在执行 ≤2）', async () => {
+    // 屏障化（CI windows 抖动修复）：原先靠三个 sleep(120) 互相重叠取峰值——机器慢时第二个
+    // 任务在第一个 sleep 结束后才进入，峰值退化成 1（CI 实红 expected 1 to be 2）。
+    // 现在前两个进入后卡在 gate 上，主体确认「第三个进不来」再放行：峰值与排队都由屏障钉死。
     const pool = smallPool({ maxConcurrent: 2 });
     let inFlight = 0;
     let peak = 0;
+    let entered = 0;
+    const gate = deferred();
+    const twoInside = deferred();
     const run = (key: string): Promise<void> =>
       pool
         .withPage(key, async () => {
           inFlight += 1;
+          entered += 1;
           peak = Math.max(peak, inFlight);
-          await sleep(120);
+          if (entered === 2) twoInside.resolve();
+          await gate.promise;
           inFlight -= 1;
         })
         .then(() => {});
-    await Promise.all([run('c1'), run('c2'), run('c3')]);
-    expect(peak).toBe(2); // 第三个排队
+    const all = [run('c1'), run('c2'), run('c3')];
+    await twoInside.promise; // 确定性：两个确实同时在执行，不依赖计时重叠
+    expect(peak).toBe(2);
+    // 第三个必须仍在排队：等待远超调度所需的时长，上限失效时它会进入并把 entered 抬到 3
+    await sleep(150);
+    expect(entered).toBe(2);
+    expect(inFlight).toBe(2);
+    gate.resolve(); // 放行 → 第三个补位
+    await Promise.all(all);
+    expect(entered).toBe(3); // 排队者最终被执行，不是被丢弃
+    expect(peak).toBe(2); // 全程峰值未破上限
     expect(pool.size).toBeLessThanOrEqual(2); // 存活上下文同样受限
   }, 40_000);
 

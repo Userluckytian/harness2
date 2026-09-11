@@ -18,6 +18,7 @@ export * from './interaction/run-config.js';
 export * from './interaction/plan-state.js';
 export * from './interaction/execution-view.js';
 export * from './interaction/change-review.js';
+export * from './interaction/steer-sink.js';
 export * from './config/index.js';
 export * from './config/report.js';
 export * from './tools/types.js';
