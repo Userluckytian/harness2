@@ -19,13 +19,13 @@ jobs:
       matrix:
         os: [windows-latest, ubuntu-latest, macos-latest]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       # 不指定 version：由 package.json 的 packageManager（pnpm@11.13.0）驱动，
       # 避免 action-setup 的严格相等比较与 "version: 11" 冲突（Multiple versions of pnpm specified）
-      - uses: pnpm/action-setup@v4
+      - uses: pnpm/action-setup@v5
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
           node-version: 22
           cache: pnpm
@@ -82,11 +82,11 @@ jobs:
       # macOS 无证书（总控计划既定）：显式跳过签名发现，构建日志声明 unsigned
       CSC_IDENTITY_AUTO_DISCOVERY: false
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
-      - uses: pnpm/action-setup@v4
+      - uses: pnpm/action-setup@v5
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
           node-version: 22
           cache: pnpm
@@ -125,7 +125,7 @@ jobs:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Stage docs site（零构建：仅文件拷贝）
         run: |
