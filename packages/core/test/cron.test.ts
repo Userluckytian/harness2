@@ -472,13 +472,18 @@ describe('serve 集成（startServe 内置调度器 + WS 通知帧）', () => {
     client.addEventListener('message', (ev) => frames.push(JSON.parse(String(ev.data)) as Record<string, unknown>));
 
     await handle.cron.tick(new Date()); // 手动驱动一轮扫描（绕过 60s tick）
-    await new Promise((r) => setTimeout(r, 150)); // 等待执行收尾 + 帧送达
-    const cronFrame = frames.find((f) => f['type'] === 'cron');
+    // 轮询等待完成帧：不要用固定 sleep（负载下帧可能晚到，固定 150ms 会假红）
+    const deadline = Date.now() + 5_000;
+    let cronFrame = frames.find((f) => f['type'] === 'cron');
+    while (cronFrame === undefined && Date.now() < deadline) {
+      await new Promise((r) => setTimeout(r, 25));
+      cronFrame = frames.find((f) => f['type'] === 'cron');
+    }
     expect(cronFrame).toMatchObject({ type: 'cron', op: 'finished', id: 'cron-test1', ok: true });
 
     expect(handle.cron.running).toBe(true);
     await handle.close();
     expect(handle.cron.running).toBe(false);
     client.close();
-  }, 15_000);
+  }, 30_000);
 });

@@ -34,8 +34,8 @@ export interface PendingApproveResult {
   error?: string;
 }
 
-function pendingFileName(now: Date): { id: string; file: string } {
-  const id = `${now.getTime()}-${randomBytes(2).toString('hex')}`;
+function pendingFileName(ms: number): { id: string; file: string } {
+  const id = `${ms}-${randomBytes(2).toString('hex')}`;
   return { id, file: `${id}.json` };
 }
 
@@ -56,6 +56,8 @@ function parsePendingFile(raw: string): PendingMemory | null {
 
 export class PendingMemoryStore {
   private chain: Promise<unknown> = Promise.resolve();
+  /** 上次使用的毫秒（单调）：保证同毫秒内多次 stage 的 createdAt/id 严格递增 */
+  private lastMs = 0;
 
   constructor(
     readonly root: string = defaultPendingRoot(),
@@ -83,10 +85,13 @@ export class PendingMemoryStore {
           `pending: 暂存已达上限 ${PENDING_MAX_ITEMS} 条，请先处理（harness2 memory approve/reject，或 memory pending --clear 清空）`,
         );
       }
-      const { id, file } = pendingFileName(new Date());
+      // 毫秒单调：同毫秒内多次 stage 也保证 createdAt 严格递增，使「createdAt 升序 / 先到先审」确定
+      const ms = Math.max(Date.now(), this.lastMs + 1);
+      this.lastMs = ms;
+      const { id, file } = pendingFileName(ms);
       const pending: PendingMemory = {
         id,
-        createdAt: new Date().toISOString(),
+        createdAt: new Date(ms).toISOString(),
         sessionId,
         ops: [...ops],
       };
