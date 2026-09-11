@@ -88,6 +88,12 @@ export function createController(store: AppStore, api: Harness2Api): Controller 
       // D0/D4：子代理任务/队列在本轮内变化 → 重取权威状态（否则任务面板会一直空着）
       refreshAuthoritativeState(frame.sessionId);
     }
+    if (frame.type === 'resume-snapshot') {
+      resumeInFlight.delete(frame.sessionId); // 快照已回：解除该会话在途（P2-2 去重）
+    } else if (frame.type === 'error') {
+      // 协议错误帧无会话归属（含旧 serve 对 resume 的拒绝）：全部解除在途，允许后续重试
+      resumeInFlight.clear();
+    }
     for (const listener of [...frameListeners]) listener(frame);
   };
 
@@ -146,18 +152,41 @@ export function createController(store: AppStore, api: Harness2Api): Controller 
    */
   const lastResumeAt = new Map<string, number>();
   const RESUME_MIN_INTERVAL_MS = 1000;
+  /** P2-2：同会话 resume 在途去重（force 同样受约束）——id → 发出时刻；
+   *  resume-snapshot 回来 / 协议错误帧 / 断连 / 请求失败时解除，超时视为丢失自愈。 */
+  const resumeInFlight = new Map<string, number>();
+  const RESUME_INFLIGHT_TIMEOUT_MS = 10_000;
   const refreshAuthoritativeState = (id: string, force = false): void => {
     if (store.getState().status !== 'connected') return; // 未连接：发了也白发（等重连后再补）
     const now = Date.now();
+    const sentAt = resumeInFlight.get(id);
+    if (sentAt !== undefined && now - sentAt < RESUME_INFLIGHT_TIMEOUT_MS) return; // 在途未回：不叠加
     const prev = lastResumeAt.get(id) ?? 0;
     if (!force && now - prev < RESUME_MIN_INTERVAL_MS) return;
     lastResumeAt.set(id, now);
     const stream = store.peekStream(id);
     const lastSeq = stream?.lastSeq ?? 0;
     const epoch = (stream?.epoch ?? 0) + 1; // 新连接代次：旧 epoch 快照被 store 丢弃
+    resumeInFlight.set(id, now);
     void api.resumeSubscription(id, lastSeq, epoch).catch(() => {
-      // 通道未就绪/旧 serve：忽略（已发送的请求失败不影响本地状态）
+      resumeInFlight.delete(id); // 请求失败：解除在途（连接异常时另有断连清空）
     });
+  };
+
+  /** P2-2：WS/serve 重连 = 全新连接，core 按连接保存订阅（conn.subs）——
+   *  重发 subscribe 恢复事件流，再 resume-subscription 强制拉权威快照（任务/队列/待批 + v2 带水位）。
+   *  此前重连后无人重订阅/重拉，resumeSession 也没有任何渲染层调用点（审查 P2）。 */
+  const resyncSubscriptions = (): void => {
+    const ids = new Set<string>();
+    for (const p of store.getState().layout.panes) {
+      if (p.sessionId !== null) ids.add(p.sessionId);
+    }
+    const selected = store.getState().selectedId;
+    if (selected !== null) ids.add(selected);
+    for (const id of ids) {
+      void api.subscribe(id).catch(() => {});
+      refreshAuthoritativeState(id, true);
+    }
   };
 
   /** D3/D4：取消当前 turn（三态 ack；不把取消当 undo，不假报停止） */
@@ -256,6 +285,9 @@ export function createController(store: AppStore, api: Harness2Api): Controller 
         if (status === 'connected') {
           void refreshSessions();
           void loadCapabilities(store.getState().selectedId ?? undefined);
+          resyncSubscriptions(); // P2-2：重连 = 新连接，重发订阅 + 强制拉权威快照
+        } else {
+          resumeInFlight.clear(); // 断连：在途请求随连接作废，解除去重
         }
       });
       const eventUnsub = api.onEvent((frame) => {
@@ -270,6 +302,7 @@ export function createController(store: AppStore, api: Harness2Api): Controller 
           if (s.status === 'connected') {
             void refreshSessions();
             void loadCapabilities();
+            resyncSubscriptions(); // P2-2：启动即 connected 的同口径恢复
           }
         })
         .catch(() => {

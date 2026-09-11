@@ -2,7 +2,7 @@
 //   - resume-snapshot 以服务端为权威补齐在途 attempt / 任务 / 待批 / 队列；旧 epoch 丢弃；
 //   - submit-ack 三态收敛（unknown ≠ rejected）；ack 丢失 → 标 unknown 且**不自动重发**。
 // 纯 store 单测：直接驱动 applyFrame / noteSubmit / expirePendingSubmits。
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { AppStore } from '../src/renderer/store.js';
 import type { ResumeSnapshotShape, SessionEventsPayloadShape } from '../src/shared/protocol.js';
 
@@ -186,5 +186,107 @@ describe('cancel-ack 三态（全局表；不假报停止）', () => {
     store.applyFrame({ type: 'cancel-ack', requestId: 'cx-1', state: 'stopping' });
     store.applyFrame({ type: 'cancel-ack', requestId: 'cx-2', state: 'unknown' });
     expect(store.getState().cancelAcks).toEqual({ 'cx-1': 'stopping', 'cx-2': 'unknown' });
+  });
+});
+
+// —— 审查 P2-2：resume 路径接线（重连自动恢复 + force 在途去重 + UI 真实调用点）——
+import { createController } from '../src/renderer/app-controller.js';
+import type {
+  ConnectionStatus,
+  Harness2Api,
+  StatusDetail,
+  WsFrame,
+} from '../src/shared/protocol.js';
+
+function reconnectApi(over: Partial<Harness2Api> = {}): {
+  api: Harness2Api;
+  subscribe: ReturnType<typeof vi.fn>;
+  resumeSubscription: ReturnType<typeof vi.fn>;
+  emitStatus: (status: ConnectionStatus, detail?: StatusDetail) => void;
+  dispatch: (frame: WsFrame) => void;
+} {
+  let statusHandler: ((status: ConnectionStatus, detail?: StatusDetail) => void) | undefined;
+  let frameHandler: ((frame: WsFrame) => void) | undefined;
+  const subscribe = vi.fn(async () => undefined);
+  const resumeSubscription = vi.fn(async () => undefined);
+  const api = {
+    listSessions: vi.fn(async () => [
+      { id: 'A', dir: 'd', mtimeMs: 2, firstUserText: 'A', messageCount: 1, lastSeq: 1 },
+    ]),
+    events: vi.fn(async (id: string) => replayPayload(id)),
+    subscribe,
+    resumeSubscription,
+    runConfig: vi.fn(async () => null),
+    planState: vi.fn(async () => null),
+    executionViews: vi.fn(async () => []),
+    changeReview: vi.fn(async () => null),
+    getStatus: vi.fn(async () => ({ status: 'connected' as const })),
+    onConnectionStatus: vi.fn((h: (status: ConnectionStatus, detail?: StatusDetail) => void) => {
+      statusHandler = h;
+      return () => undefined;
+    }),
+    onEvent: vi.fn((h: (frame: WsFrame) => void) => {
+      frameHandler = h;
+      return () => undefined;
+    }),
+    setBusy: vi.fn(async () => undefined),
+    ...over,
+  } as unknown as Harness2Api;
+  return {
+    api,
+    subscribe,
+    resumeSubscription,
+    emitStatus: (status, detail) => statusHandler?.(status, detail),
+    dispatch: (frame) => frameHandler?.(frame),
+  };
+}
+
+describe('P2-2 resume 路径接线', () => {
+  it('重连（reconnecting→connected）后重发 subscribe 并强制 resume 拉权威快照', async () => {
+    const store = new AppStore();
+    const h = reconnectApi();
+    const controller = createController(store, h.api);
+    const stop = controller.start();
+    store.applyStatus('connected');
+    await controller.selectSession('A');
+
+    expect(h.subscribe).toHaveBeenCalledTimes(1);
+    expect(h.resumeSubscription).toHaveBeenCalledTimes(1);
+
+    // 模拟 serve 重启：断连（在途作废）→ 重连成功
+    h.emitStatus('reconnecting', { error: 'serve 重启中' });
+    h.emitStatus('connected');
+    await new Promise((r) => setTimeout(r, 0)); // 放行 resync 内的 void 异步
+
+    // 修复前：重连后无人重订阅/重拉，事件流与权威面板静默失效
+    expect(h.subscribe.mock.calls.filter((c) => c[0] === 'A').length).toBe(2);
+    expect(h.resumeSubscription.mock.calls.filter((c) => c[0] === 'A').length).toBe(2);
+    stop();
+  });
+
+  it('force 连点在途去重：同会话在途期间只发一次；resume-snapshot 回来后解除', async () => {
+    const store = new AppStore();
+    const h = reconnectApi();
+    const controller = createController(store, h.api);
+    const stop = controller.start();
+    store.applyStatus('connected');
+    await controller.selectSession('A'); // 第 1 次（select 路径，在途未回）
+    expect(h.resumeSubscription).toHaveBeenCalledTimes(1);
+
+    // force 连点：select 的 resume 仍在途（快照未回）→ 不叠加，绝不多发
+    await controller.resumeSession('A');
+    await controller.resumeSession('A');
+    expect(h.resumeSubscription).toHaveBeenCalledTimes(1);
+
+    // 快照回来 → 解除在途，手动重拉立即生效
+    h.dispatch({
+      type: 'resume-snapshot',
+      sessionId: 'A',
+      epoch: 1,
+      snapshot: snapshot({ epoch: 1 }),
+    });
+    await controller.resumeSession('A');
+    expect(h.resumeSubscription).toHaveBeenCalledTimes(2);
+    stop();
   });
 });

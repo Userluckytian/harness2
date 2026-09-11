@@ -55,6 +55,13 @@ export function SidePanel() {
           <button type="button" onClick={() => void controller.refreshExecutionViews(sessionId)}>
             刷新只读视图
           </button>
+          <button
+            type="button"
+            title="重连/恢复后重拉服务端权威任务、队列与待批（resume-subscription）"
+            onClick={() => void controller.resumeSession(sessionId)}
+          >
+            重新同步
+          </button>
           {!planAvailable && (
             <span className="side-hint" title="会话无计划账本时该视图为空">
               计划视图依赖任务账本
