@@ -3,6 +3,9 @@
 // Ctrl+C 退出协议、Ctrl+D 空草稿退出、queuedCount 页脚、空闲 Ctrl+C 提示只进局部 state。
 // T1 新增：输入内核迁到 input.ts（grapheme/软折行/词移动/Home End/历史往返），
 // 视觉光标按显示列渲染，软折行多行渲染，Shift+Enter 换行并给出行尾 \ 的终端替代键提示。
+// T2 新增：usePaste 接管 bracketed paste（与 useInput 分离通道，粘贴不会伪装成提交）。
+//   短单行 → inline 原子插入；多行/超大 → chip 占位标签（草稿只显示标签）；> 1MB → 拒绝并页脚提示。
+//   提交时把 chip 占位标签展开回**完整原文**（绝不截断）；内嵌换行绝不触发提交，粘贴 /exit 也不会自动执行命令。
 //
 // 词移动按键（已实测 ink 7.1.1 parse-keypress 的解析结果）：
 //   '\x1b[1;5D'（Ctrl+Left）→ key.leftArrow=true, key.ctrl=true
@@ -13,9 +16,10 @@
 // 无法观测真实组合中文本。这里保留 input.ts 的 composing/canSubmit 挂点并用其拦截 Enter，
 // 但**不伪造** composition 行为；真机 IME 组合仍需手工签收（见计划「残留手工验收清单」）。
 import React from 'react';
-import { useInput, useStdout, Box, Text } from 'ink';
+import { useInput, usePaste, useStdout, Box, Text } from 'ink';
 import { matchCommands } from '../command-registry.js';
 import { createCtrlCGuard, type ExitReason } from './shutdown.js';
+import { classifyPaste, renderChipLabel, type PasteChip } from './paste.js';
 import {
   canSubmit,
   createHistoryState,
@@ -87,6 +91,15 @@ function groupCells(cells: Cell[]): { text: string; active: boolean }[] {
   return groups;
 }
 
+/** 提交前把 draft 里的 chip 占位标签展开回完整原文（绝不截断；标签不存在则原样保留）。 */
+function expandChips(value: string, chips: PasteChip[]): string {
+  let out = value;
+  for (const chip of chips) {
+    out = out.split(renderChipLabel(chip)).join(chip.text);
+  }
+  return out;
+}
+
 export function Composer({
   busy = false,
   active = true,
@@ -97,8 +110,11 @@ export function Composer({
 }: ComposerProps): React.ReactElement {
   const [draft, setDraft] = React.useState<InputState>(() => createInputState(''));
   const [candidateIndex, setCandidateIndex] = React.useState(0);
-  // 空闲 Ctrl+C 首次按键的瞬时页脚提示（局部 state，不污染 draft）
-  const [ctrlCHint, setCtrlCHint] = React.useState<string | null>(null);
+  // 瞬时页脚提示（Ctrl+C 协议 / 粘贴拒绝等）：局部 state，**绝不写入 draft**。
+  const [hint, setHint] = React.useState<string | null>(null);
+  // 粘贴 chip（多行/超大）：draft 只放占位标签，提交时展开为完整原文。
+  const [chips, setChips] = React.useState<PasteChip[]>([]);
+  const chipSeqRef = React.useRef(0);
   const historyRef = React.useRef(createHistoryState());
   const ctrlCGuardRef = React.useRef(createCtrlCGuard({ windowMs: CTRL_C_WINDOW_MS }));
   const hintTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -107,19 +123,19 @@ export function Composer({
 
   const layout = layoutInput(draft, inputWidth);
 
-  const clearCtrlCHint = (): void => {
+  const clearHint = (): void => {
     if (hintTimerRef.current !== null) {
       clearTimeout(hintTimerRef.current);
       hintTimerRef.current = null;
     }
-    setCtrlCHint(null);
+    setHint(null);
   };
-  const showCtrlCHint = (msg: string): void => {
-    clearCtrlCHint();
-    setCtrlCHint(msg);
+  const showHint = (msg: string): void => {
+    clearHint();
+    setHint(msg);
     hintTimerRef.current = setTimeout(() => {
       hintTimerRef.current = null;
-      setCtrlCHint(null);
+      setHint(null);
     }, CTRL_C_WINDOW_MS);
   };
   // 卸载清理提示定时器（退出后无遗留 timer）
@@ -142,7 +158,7 @@ export function Composer({
       // 任何非 Ctrl+C 按键都视为退出协议中断：重置窗口并清掉提示
       if (!isCtrlC) {
         ctrlCGuardRef.current.reset();
-        if (ctrlCHint !== null) clearCtrlCHint();
+        if (hint !== null) clearHint();
       }
 
       // —— 命令名阶段：↑↓ 切候选、Tab 补全候选（不发送）；其余按键照常 ——
@@ -169,16 +185,16 @@ export function Composer({
       if (isCtrlC) {
         const verdict = ctrlCGuardRef.current.press({ busy });
         if (verdict === 'cancel') {
-          clearCtrlCHint();
+          clearHint();
           onAbort?.();
           return;
         }
         if (verdict === 'confirm') {
-          clearCtrlCHint();
+          clearHint();
           onExit('sigint');
           return;
         }
-        showCtrlCHint('（再按一次 Ctrl+C 退出）');
+        showHint('（再按一次 Ctrl+C 退出）');
         return;
       }
       if (key.ctrl && ch === 'd') {
@@ -200,10 +216,13 @@ export function Composer({
           setDraft(createInputState(`${text.trimEnd().slice(0, -1)}\n`));
           return;
         }
-        historyRef.current = historyPush(historyRef.current, text);
+        const expanded = expandChips(text, chips);
+        historyRef.current = historyPush(historyRef.current, expanded);
         setDraft(createInputState(''));
+        setChips([]);
         setCandidateIndex(0);
-        onSend(text);
+        // chip 占位标签展开回完整原文（内嵌换行不会在此前被当作提交键）
+        onSend(expanded);
         return;
       }
       if (key.home) {
@@ -250,11 +269,32 @@ export function Composer({
           return;
         }
         setDraft(createInputState(''));
+        setChips([]);
         return;
       }
       if (ch !== undefined && ch !== '' && !key.ctrl && !key.meta) {
         setDraft((d) => reduceInput(d, { type: 'insert', text: ch }));
       }
+    },
+    { isActive: active },
+  );
+
+  // T2：粘贴走 usePaste 独立通道（bracketed paste）——粘贴内容绝不进入 useInput，故内嵌换行/回车不会触发提交。
+  // 短单行 → inline 原子插入；多行/超大 → chip；超 1MB → 拒绝并页脚提示（提示只在局部 state）。
+  usePaste(
+    (raw) => {
+      const result = classifyPaste(raw, chipSeqRef.current + 1);
+      if (result.kind === 'inline') {
+        setDraft((d) => reduceInput(d, { type: 'paste', text: result.text }));
+        return;
+      }
+      if (result.kind === 'rejected') {
+        showHint(`粘贴被拒绝：${result.reason}`);
+        return;
+      }
+      chipSeqRef.current += 1;
+      setChips((cs) => [...cs, result.chip]);
+      setDraft((d) => reduceInput(d, { type: 'paste', text: renderChipLabel(result.chip) }));
     },
     { isActive: active },
   );
@@ -297,7 +337,7 @@ export function Composer({
           {queuedCount > 0 ? ` · 已排队 ${queuedCount} 条` : ''}
         </Text>
       )}
-      {ctrlCHint !== null && <Text color="gray">{ctrlCHint}</Text>}
+      {hint !== null && <Text color="gray">{hint}</Text>}
       <Box flexDirection="row">
         <Text color="green">&gt; </Text>
         <Box flexDirection="column">{rows.map((rowText, i) => renderRow(rowText, i))}</Box>

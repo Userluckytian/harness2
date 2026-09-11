@@ -1,5 +1,6 @@
 // ink 全屏 TUI 入口：现代终端下启用，piped/CI/逃生舱仍走 legacy。
-// 门控（T0 决策）：isTTY && !(HARNESS2_NO_TUI || --no-tui) && (HARNESS2_TUI=1 || 现代终端 || 默认全量)。
+// 门控（T2）：委托 terminal-capabilities.ts 的纯决策 —— 显式覆盖（HARNESS2_NO_TUI / --no-tui / HARNESS2_TUI）
+// 优先，其后 非 TTY → legacy，Windows 走四场景闸门（现代终端标记才默认 ink），非 Windows TTY → ink。
 // 装配与 legacy 共用 setupChatSession（禁止两套装配）；渲染走 React state 桥接。
 import React, { useRef, useState } from 'react';
 import { render, useInput, Box, Text } from 'ink';
@@ -14,6 +15,7 @@ import { SelectList } from './SelectList.js';
 import { ConfirmDialog } from './ConfirmDialog.js';
 import { useTurnStream, type TurnSnapshot } from './useTurnStream.js';
 import { createShutdown, type ExitReason } from './shutdown.js';
+import { decideTuiMode, detectTerminalCapabilities, hasModernTerminalMarker } from './terminal-capabilities.js';
 import { parseCommand, HELP_TEXT } from '../commands.js';
 import { expandContextRefs, hasContextRefs } from '../context-ref.js';
 import {
@@ -25,18 +27,29 @@ import {
 } from '../mode-alias.js';
 import { getContextUsage } from '@harness2/core';
 
-/** 现代终端检测：Windows Terminal（WT_SESSION）或 VS Code 终端（TERM_PROGRAM=vscode） */
+/** 现代终端检测：兼容旧导出，委托纯函数标记探测（WT_SESSION / TERM_PROGRAM / ConEmu / ANSICON / xterm 等） */
 export function isModernTerminal(env: NodeJS.ProcessEnv = process.env): boolean {
-  return Boolean(env.WT_SESSION) || env.TERM_PROGRAM === 'vscode';
+  return hasModernTerminalMarker(env);
 }
 
-/** T0 决策：默认所有 TTY 都尝试 ink；现代终端检测通过或 HARNESS2_TUI=1 强制开启 */
-export function shouldUseInk(argv: string[] = process.argv, env: NodeJS.ProcessEnv = process.env): boolean {
-  if (env.HARNESS2_NO_TUI === '1') return false;
-  if (argv.includes('--no-tui')) return false;
-  if (!process.stdin.isTTY) return false;
-  if (env.HARNESS2_TUI === '1' || isModernTerminal(env)) return true;
-  return true; // T0 决策：默认全量启用 TTY → ink
+/**
+ * T2 门控：基于 terminal-capabilities.ts 的纯决策。
+ * 显式覆盖优先：HARNESS2_NO_TUI=1 / --no-tui（禁）> HARNESS2_TUI=1（启用）；
+ * 其后非 TTY → legacy；Windows 四场景闸门；非 Windows TTY → ink。
+ */
+export function shouldUseInk(
+  argv: string[] = process.argv,
+  env: NodeJS.ProcessEnv = process.env,
+  isTTY: boolean = Boolean(process.stdin.isTTY),
+  platform: NodeJS.Platform = process.platform,
+): boolean {
+  const caps = detectTerminalCapabilities(env, platform, isTTY);
+  return (
+    decideTuiMode(caps, {
+      forceNoTui: env.HARNESS2_NO_TUI === '1' || argv.includes('--no-tui'),
+      forceTui: env.HARNESS2_TUI === '1',
+    }).mode === 'ink'
+  );
 }
 
 /** 浮层请求：render(node, resolve) 由 InkShell 挂载；resolve 关闭浮层 */
@@ -106,6 +119,10 @@ export async function runInkChat(options: ChatOptions = {}): Promise<void> {
 
   await new Promise<void>((resolve) => {
     let app: ReturnType<typeof render> | null = null;
+    // T2：能力齐备时才启用 alternate screen（交互模式下的全屏视口 + 退出还原）。
+    // 非 TTY / dumb / CI / 能力缺失时 runChat 已降级 legacy，此处再以 stdout TTY 兜底。
+    const caps = detectTerminalCapabilities(process.env, process.platform, Boolean(process.stdin.isTTY));
+    const useAlternateScreen = caps.altScreen && caps.bracketedPaste && Boolean(process.stdout.isTTY);
     // T0 幂等退出：finish 只执行一次（ink unmount + runtime.finish），随后写 process.exitCode
     // 并放开等待；不再用 setInterval 轮询 stdin.destroyed（会遗留 timer）。
     const shutdown = createShutdown({
@@ -129,7 +146,7 @@ export async function runInkChat(options: ChatOptions = {}): Promise<void> {
           shutdown.request(reason);
         }}
       />,
-      { exitOnCtrlC: false },
+      { exitOnCtrlC: false, alternateScreen: useAlternateScreen },
     );
   });
 }
