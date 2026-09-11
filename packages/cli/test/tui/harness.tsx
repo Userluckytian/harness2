@@ -34,9 +34,9 @@ export interface MountedTui {
 }
 
 /** 挂载 node 到虚拟 TTY；返回按键注入与输出读取助手。 */
-export function mountTui(node: React.ReactElement): MountedTui {
+export function mountTui(node: React.ReactElement, opts?: { columns?: number; rows?: number }): MountedTui {
   const stdin = fakeStdin();
-  const stdout = fakeStdout();
+  const stdout = fakeStdout(opts?.columns ?? 80, opts?.rows ?? 24);
   let buf = '';
   stdout.on('data', (chunk: Buffer | string) => {
     buf += chunk.toString();
