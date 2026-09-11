@@ -3,8 +3,8 @@
 // 环境闸门：仅当 H2_E2E_LOCAL=1 时启用（CI/无本地服务时 describe.skip，不是 --passWithNoTests）。
 // 端点：baseUrl http://127.0.0.1:40080/v1、协议 openai（请求打到 {baseUrl}/chat/completions，
 // 故 baseUrl 必须含 /v1）、模型 big-pickle。
-// 隔离：--home <tmp>，config.json / auth.json 只写该临时目录；key 从 env LOCAL_UNIFIED_KEY 注入
-// （文档化兜底 sk-unified-local，本地非机密），**绝不写入仓库**。
+// 隔离：--home <tmp>，config.json / auth.json 只写该临时目录；key 一律取自 env LOCAL_UNIFIED_KEY，
+// **不设源码兜底字面量**（审查 P2）：闸门开启但未提供 key 时显式失败并提示，key 串绝不进仓库。
 // 真实请求 + 真实模型回复断言（正文非空、stopReason=end_turn）；端点不可达则失败，不做任何 stub。
 import { describe, expect, it } from 'vitest';
 import { spawn } from 'node:child_process';
@@ -18,7 +18,7 @@ const describeE2E = ENABLED ? describe : describe.skip;
 
 const LOCAL_BASE_URL = process.env.LOCAL_UNIFIED_BASE_URL ?? 'http://127.0.0.1:40080/v1';
 const LOCAL_MODEL = process.env.LOCAL_UNIFIED_MODEL ?? 'big-pickle';
-const LOCAL_KEY = process.env.LOCAL_UNIFIED_KEY ?? 'sk-unified-local'; // 文档化本地兜底（非机密）
+const LOCAL_KEY: string | undefined = process.env.LOCAL_UNIFIED_KEY; // 仅环境注入（无源码兜底字面量）
 
 const cliEntry = join(dirname(fileURLToPath(import.meta.url)), '..', 'dist', 'index.js');
 
@@ -38,6 +38,8 @@ function assistantText(stdout: string): string {
 
 describeE2E('T5 真实本地模型 E2E（H2_E2E_LOCAL=1）', () => {
   it('真实往返：piped legacy chat 对本地 big-pickle 发一轮，得到非空模型正文并干净退出', async () => {
+    // key 只经环境注入：闸门开启但未提供时在此显式失败（不静默跳过、不退回源码字面量）
+    expect(LOCAL_KEY, 'H2_E2E_LOCAL=1 需同时提供 LOCAL_UNIFIED_KEY（key 仅经环境注入，不进 git）').toBeTruthy();
     const home = mkdtempSync(join(tmpdir(), 'h2-e2e-home-'));
     const root = mkdtempSync(join(tmpdir(), 'h2-e2e-root-'));
     mkdirSync(join(home, '.harness2'), { recursive: true });
@@ -59,7 +61,7 @@ describeE2E('T5 真实本地模型 E2E（H2_E2E_LOCAL=1）', () => {
     // key 只写隔离 home 的 auth.json；测试运行期生成，不入库
     writeFileSync(
       join(home, '.harness2', 'auth.json'),
-      JSON.stringify({ channels: { 'local-oai': { apiKey: LOCAL_KEY } } }),
+      JSON.stringify({ channels: { 'local-oai': { apiKey: LOCAL_KEY as string } } }),
       'utf8',
     );
 
