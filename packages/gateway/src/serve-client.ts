@@ -116,7 +116,8 @@ export class ServeClient {
     if (this.closed) return;
     if (this.readyPromise !== null) return; // 已连接/重连中：单飞
     this.options.onStatus?.('connecting');
-    this.readyPromise = new Promise<void>((resolve, reject) => {
+    let syncFailed = false;
+    const ready = new Promise<void>((resolve, reject) => {
       try {
         // P2：WS 升级握手同样携带 token（header 优先级最高；不放 URL，避免 token 进日志）
         const socket =
@@ -124,6 +125,20 @@ export class ServeClient {
             ? new WebSocket(this.options.wsUrl, { headers: { [SERVE_TOKEN_HEADER]: this.options.token } })
             : new WebSocket(this.options.wsUrl);
         socket.on('open', () => {
+          // B1：close() 可能先于本回调发生（此时服务端往往已完成握手）。旧实现在这里无条件
+          // this.ws = socket，于是 close() 早已返回、这条 WS 反而留活着 → 服务端永远收不到 close
+          // （CI run #34600671647 的 3s 超时；生产上等于 stop() 之后仍在回调 onFrame）。
+          // 注：不能改由 close() 去中止在途握手——实测 ws 8.21.3 / Node 22 下 CONNECTING 期的
+          // terminate() 只中止客户端请求，并不释放底层 TCP，服务端照样收不到 close。
+          if (this.closed) {
+            try {
+              socket.terminate();
+            } catch {
+              // 已关闭
+            }
+            reject(new Error('serve 客户端已关闭'));
+            return;
+          }
           this.ws = socket;
           // P1-1：serve 侧订阅按连接存储，重连后重发全部订阅（否则一次掉线即永久失联）
           for (const sessionId of this.subscribed) {
@@ -163,11 +178,17 @@ export class ServeClient {
           // 已建立后的错误由 close 统一收尾
         });
       } catch (e) {
-        this.readyPromise = null;
+        syncFailed = true;
         this.options.onStatus?.('offline', (e as Error).message);
         reject(e);
       }
     });
+    // B1：即使无人 await（stop 路径），拒绝也不得变成 unhandled rejection；
+    // waitReady() 的调用方拿到的仍是同一个 promise，仍能看到拒绝。
+    void ready.catch(() => {});
+    // 同步构造失败（如 wsUrl 非法）不得把 readyPromise 留成已拒绝值，
+    // 否则单飞判定永久命中 → 此后再也不会重连。
+    this.readyPromise = syncFailed ? null : ready;
   }
 
   /** 订阅会话（路由命中后调用；断线重连后自动重发） */
