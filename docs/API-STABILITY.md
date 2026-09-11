@@ -36,6 +36,10 @@
 2. `assistant/attempt` 事件（append-only）是半截文本的**日志权威**；`turn-end.partialText` 是它的展示投影。
 3. 「无最终文本但有可行动结果」= `empty` + 已执行工具行 + 可读错误原因（不是静默、也不是伪造正文）。
 
+> **镜像类型强度（阶段级审查 P2 记录）：** core 端 `turn-end.textOutcome` **恒发（必填）**；gateway / desktop 的镜像帧类型声明为**可选**，仅为兼容旧版 serve 实例（缺失时客户端按 `finalText`/`partialText` 推断，见 `packages/gateway/src/render.ts`）。
+>
+> **鉴权携带方式（如实边界）：** 桌面主进程 WS 握手走 `?token=` 查询参数（主进程全局 WebSocket 不支持自定义 header），gateway 走 `x-harness2-token` 请求头；两者均被 serve 端 `extractServeToken` 接受。`?token=` 可能出现在本地 URL，serve 端不记录/不回显 token。
+
 ---
 
 ## 快照测试口径（宽松匹配，防抖动）
