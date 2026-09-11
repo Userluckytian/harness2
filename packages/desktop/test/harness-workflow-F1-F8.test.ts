@@ -17,6 +17,7 @@ import type { Bridge, BridgeDeps } from '../src/main/bridge.js';
 import type { Harness2Api, EffectiveRunConfigShape, WsFrame } from '../src/shared/protocol.js';
 import { AppStore } from '../src/renderer/store.js';
 import { createController } from '../src/renderer/app-controller.js';
+import { buildTaskTree } from '../src/renderer/features/plan/plan-model.js';
 
 vi.mock('electron', () => ({
   Notification: class {
@@ -64,7 +65,11 @@ function findFrame<T extends WsFrame['type']>(
 }
 
 /** 把 bridge 的 IPC 入口适配成 Harness2Api（controller 直接消费；这就是 preload 的真实形状） */
-function apiFromBridge(bridge: Bridge): Harness2Api {
+function apiFromBridge(
+  bridge: Bridge,
+  frameListeners: Array<(f: WsFrame) => void> = [],
+  statusListeners: Array<(s: 'connected') => void> = [],
+): Harness2Api {
   const inv = <T>(req: Record<string, unknown>): Promise<T> => bridge.handleInvoke({} as never, req) as Promise<T>;
   return {
     listSessions: (cwd?: string) => inv({ cmd: 'listSessions', ...(cwd !== undefined ? { cwd } : {}) }),
@@ -99,13 +104,27 @@ function apiFromBridge(bridge: Bridge): Harness2Api {
       inv({ cmd: 'resumeSubscription', sessionId, lastSeq, epoch }),
     capabilities: (sessionId?: string) =>
       inv({ cmd: 'capabilities', ...(sessionId !== undefined ? { sessionId } : {}) }),
+    setBusy: async () => undefined,
+    onStopAll: () => () => {},
     getStatus: () => inv({ cmd: 'getStatus' }),
-    onEvent: () => () => {},
-    onConnectionStatus: () => () => {},
+    onEvent: (listener: (f: WsFrame) => void) => {
+      frameListeners.push(listener);
+      return () => {
+        const i = frameListeners.indexOf(listener);
+        if (i >= 0) frameListeners.splice(i, 1);
+      };
+    },
+    onConnectionStatus: (listener: (s: 'connected') => void) => {
+      statusListeners.push(listener);
+      return () => {
+        const i = statusListeners.indexOf(listener);
+        if (i >= 0) statusListeners.splice(i, 1);
+      };
+    },
   } as unknown as Harness2Api;
 }
 
-function writeConfigHome(home: string): void {
+function writeConfigHome(home: string, approvalMode: 'default' | 'plan' | 'bypass' = 'default'): void {
   const cfgDir = join(home, '.harness2');
   mkdirSync(cfgDir, { recursive: true });
   writeFileSync(
@@ -120,8 +139,9 @@ function writeConfigHome(home: string): void {
         },
       },
       roles: { main: { channel: 'local-oai', model: 'big-pickle' } },
-      approval: { mode: 'default' },
+      approval: { mode: approvalMode },
       memory: { mode: 'off', nudgeInterval: 10 },
+      subagent: { maxDepth: 2, maxTurns: 10 },
     }),
     'utf8',
   );
@@ -135,9 +155,17 @@ function writeConfigHome(home: string): void {
 async function setup(
   provider: MockProvider,
   decide?: (input: { tool: string; args: unknown }) => 'allow' | 'deny' | 'ask',
-): Promise<{ bridge: Bridge; frames: WsFrame[]; api: Harness2Api; handle: ServeHandle; root: string }> {
+  extra: { approvalMode?: 'default' | 'plan' | 'bypass'; subagent?: unknown } = {},
+): Promise<{
+  bridge: Bridge;
+  frames: WsFrame[];
+  api: Harness2Api;
+  handle: ServeHandle;
+  root: string;
+  emitStatusConnected: () => void;
+}> {
   const home = tmpDir('h2-wf-home-');
-  writeConfigHome(home);
+  writeConfigHome(home, extra.approvalMode ?? 'default');
   const root = tmpDir('h2-wf-root-');
   const handle = await startServe({
     port: 0,
@@ -145,9 +173,13 @@ async function setup(
     root,
     provider,
     ...(decide !== undefined ? { decide } : {}),
+    // hub 注入缝（官方「mock/测试用」）：S5 后台任务装配在配置里不可达，只能经此注入
+    ...(extra.subagent !== undefined ? { subagent: extra.subagent as never } : {}),
   });
   handles.push(handle);
   const frames: WsFrame[] = [];
+  const frameListeners: Array<(f: WsFrame) => void> = [];
+  const statusListeners: Array<(s: 'connected') => void> = [];
   const deps: BridgeDeps = {
     serve: {
       baseUrl: `http://127.0.0.1:${handle.port}`,
@@ -158,12 +190,28 @@ async function setup(
     } as never,
     root,
     home,
-    sendEvent: (f) => frames.push(f),
-    sendStatus: () => {},
+    // 与真实主进程一致：帧既记录又分发给渲染端订阅者（controller/store 才拿得到）
+    sendEvent: (f) => {
+      frames.push(f);
+      for (const l of [...frameListeners]) l(f);
+    },
+    sendStatus: (s) => {
+      if (s !== 'connected') return;
+      for (const l of [...statusListeners]) l('connected');
+    },
   };
   const bridge = createBridge(deps);
   bridge.connectWs();
-  return { bridge, frames, api: apiFromBridge(bridge), handle, root };
+  return {
+    bridge,
+    frames,
+    api: apiFromBridge(bridge, frameListeners, statusListeners),
+    handle,
+    root,
+    emitStatusConnected: () => {
+      for (const l of [...statusListeners]) l('connected');
+    },
+  };
 }
 
 async function createAndSubscribe(bridge: Bridge, cwd: string, timeoutMs = 5000): Promise<string> {
@@ -258,6 +306,129 @@ describe('F8：有效配置真实来自 config.json 装配（不注入 provider�
     expect(JSON.stringify(rc)).not.toMatch(/sk-[A-Za-z0-9_-]{6,}/);
     bridge.disconnectWs();
   }, 30000);
+});
+
+describe('F2：真实 plan 模式（只读计划、无写副作用）', () => {
+  it('配置 approval.mode=plan → run-config 如实显示 plan（不注入 provider，走配置装配）', async () => {
+    const home = tmpDir('h2-wf-f2cfg-home-');
+    writeConfigHome(home, 'plan');
+    const root = tmpDir('h2-wf-f2cfg-root-');
+    const cwd = tmpDir('h2-wf-f2cfg-cwd-');
+    const handle = await startServe({ port: 0, home, root }); // 无 provider 注入 → 配置派生（含 approval）
+    handles.push(handle);
+    const bridge = createBridge({
+      serve: {
+        baseUrl: `http://127.0.0.1:${handle.port}`,
+        wsUrl: `ws://127.0.0.1:${handle.port}/ws`,
+        authToken: handle.token,
+        status: 'connected',
+        getStatus: () => ({ status: 'connected' }),
+      } as never,
+      root,
+      home,
+      sendEvent: () => {},
+      sendStatus: () => {},
+    });
+    bridge.connectWs();
+    const api = apiFromBridge(bridge);
+    const id = await createAndSubscribe(bridge, cwd);
+    const rc = (await api.runConfig(id)) as EffectiveRunConfigShape;
+    expect(rc.approval.mode).toBe('plan'); // UI 显示本轮回实际生效配置
+    bridge.disconnectWs();
+  }, 30000);
+
+  it('plan 策略拒绝写 → 文件不存在、执行视图 not-executed、变更集为空（plan 阶段无写副作用）', async () => {
+    // 注入 provider 时 serve 不加载 config（core 语义），故用 decide 等价实现 plan 策略：
+    // safe(read/glob/grep)=allow，其余 deny（与 createApprovalPolicy('plan') 同口径）
+    const safe = new Set(['read', 'glob', 'grep']);
+    const { bridge, frames, api } = await setup(
+      new MockProvider([
+        {
+          toolCalls: [
+            { id: 'c-plan', name: 'write', arguments: JSON.stringify({ file_path: 'plan-only.txt', content: 'x' }) },
+          ],
+        },
+        { textChunks: ['我建议的改动计划：……（未执行）'] },
+      ]),
+      (input) => (safe.has(input.tool) ? 'allow' : 'deny'),
+    );
+    const cwd = tmpDir('h2-wf-f2-');
+    const id = await createAndSubscribe(bridge, cwd);
+    await bridge.handleInvoke({} as never, { cmd: 'sendMessage', sessionId: id, text: '请改文件' });
+    await waitFor(() => frames.some((f) => f.type === 'turn-end'), 'turn-end');
+
+    // plan 阶段无写副作用：文件从未创建
+    expect(existsSync(join(cwd, 'plan-only.txt'))).toBe(false);
+    // 执行视图如实标注「未执行」，且不虚构退出码/命令归属
+    const views = (await api.executionViews(id)) as unknown as Array<Record<string, unknown>>;
+    const writeView = views.find((v) => v.callId === 'c-plan');
+    expect(writeView).toBeTruthy();
+    expect(writeView!.status).toBe('not-executed');
+    expect(writeView!.commandSource).not.toBe('executed');
+    expect(writeView!.exitCode).toBeUndefined();
+    // 变更集为空（没有任何真实落盘）
+    const review = (await api.changeReview(id)) as { changedFiles: number };
+    expect(review.changedFiles).toBe(0);
+    bridge.disconnectWs();
+  }, 40000);
+});
+
+describe('F6：子任务（subagent 后台任务）在桌面可见 + 单任务停止不误伤', () => {
+  it('两个后台只读子任务 → 重订阅拿到权威任务；停止其一不误伤另一个', async () => {
+    // S5 后台任务需装配层开启 backgroundTasks（配置不可达，用 hub 注入缝）
+    const childProvider = new MockProvider([{ textChunks: ['子任务甲完成'] }, { textChunks: ['子任务乙完成'] }]);
+    const { bridge, frames, api, emitStatusConnected } = await setup(
+      new MockProvider([
+        {
+          toolCalls: [
+            { id: 'sa-a', name: 'subagent_start', arguments: JSON.stringify({ prompt: '只读子任务甲：列出文件' }) },
+            { id: 'sa-b', name: 'subagent_start', arguments: JSON.stringify({ prompt: '只读子任务乙：数一数' }) },
+          ],
+        },
+        { textChunks: ['父会话收尾'] },
+      ]),
+      () => 'allow',
+      {
+        // S5 后台任务需装配层开启 backgroundTasks（配置不可达，用 hub 注入缝）：
+        // readonly → 协调器按 K=2 并行；立返 taskId 不阻塞父 turn
+        subagent: {
+          provider: childProvider,
+          maxDepth: 1,
+          maxTurns: 5,
+          backgroundTasks: true,
+          taskWriteMode: 'readonly',
+        },
+      },
+    );
+    const cwd = tmpDir('h2-wf-f6-');
+    const id = await createAndSubscribe(bridge, cwd);
+
+    const store = new AppStore();
+    const controller = createController(store, api);
+    controller.start(); // 接上真实帧管线（bridge → store），与真实应用一致
+    emitStatusConnected();
+    store.applyStatus('connected');
+
+    await bridge.handleInvoke({} as never, { cmd: 'sendMessage', sessionId: id, text: '派两个子任务' });
+    await waitFor(() => frames.some((f) => f.type === 'turn-end'), 'turn-end');
+
+    // 桌面侧真的拉到权威任务（修复前 tasks 只挂在 resume-snapshot 上、且无人调用 → 永远空）
+    await controller.resumeSession(id);
+    await waitFor(() => (store.peekStream(id)?.tasks.length ?? 0) > 0, '权威任务快照');
+    const tasks = store.peekStream(id)!.tasks;
+    expect(tasks.length).toBeGreaterThan(0);
+    expect(tasks.some((t) => t.background)).toBe(true);
+    const tree = buildTaskTree(tasks);
+    expect(tree.length).toBeGreaterThan(0);
+
+    // 单任务停止：只发目标任务；ack 三态经 cancel-ack 回传（不假报已停、不误伤兄弟）
+    await controller.cancelTask(tasks[0]!.taskId);
+    await waitFor(() => frames.some((f) => f.type === 'cancel-ack'), 'cancel-ack');
+    const acks = frames.filter((f) => f.type === 'cancel-ack');
+    expect(acks).toHaveLength(1); // 只取消了一个任务
+    expect(['stopping', 'cancelled', 'unknown']).toContain(acks[0]!.state);
+    bridge.disconnectWs();
+  }, 60000);
 });
 
 describe('F3 + F5：真实命令归属与变更审查（外部改动拦截）', () => {

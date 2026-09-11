@@ -85,6 +85,8 @@ export function createController(store: AppStore, api: Harness2Api): Controller 
     if (frame.type === 'turn-end') {
       void loadExecutionViews(frame.sessionId);
       void loadChangeReview(frame.sessionId);
+      // D0/D4：子代理任务/队列在本轮内变化 → 重取权威状态（否则任务面板会一直空着）
+      refreshAuthoritativeState(frame.sessionId);
     }
     for (const listener of [...frameListeners]) listener(frame);
   };
@@ -132,6 +134,30 @@ export function createController(store: AppStore, api: Harness2Api): Controller 
     } catch {
       // 探测失败：保持上次结果
     }
+  };
+
+  /**
+   * D0/D4：重订阅，取**服务端权威**的在途 attempt / 任务 / 待批 / 队列。
+   * 只在这几处触发（够用且不打扰后端）：
+   *   - 切到某会话（进入视图即补齐真实状态）；
+   *   - turn 收尾后（子代理任务/队列在这一轮里发生变化）；
+   *   - 用户显式点「重订阅」。
+   * 去抖 1s/会话：重连抖动时不至于打爆 serve；事件回放由 store 按 seq 去重，不会重复渲染。
+   */
+  const lastResumeAt = new Map<string, number>();
+  const RESUME_MIN_INTERVAL_MS = 1000;
+  const refreshAuthoritativeState = (id: string, force = false): void => {
+    if (store.getState().status !== 'connected') return; // 未连接：发了也白发（等重连后再补）
+    const now = Date.now();
+    const prev = lastResumeAt.get(id) ?? 0;
+    if (!force && now - prev < RESUME_MIN_INTERVAL_MS) return;
+    lastResumeAt.set(id, now);
+    const stream = store.peekStream(id);
+    const lastSeq = stream?.lastSeq ?? 0;
+    const epoch = (stream?.epoch ?? 0) + 1; // 新连接代次：旧 epoch 快照被 store 丢弃
+    void api.resumeSubscription(id, lastSeq, epoch).catch(() => {
+      // 通道未就绪/旧 serve：忽略（已发送的请求失败不影响本地状态）
+    });
   };
 
   /** D3/D4：取消当前 turn（三态 ack；不把取消当 undo，不假报停止） */
@@ -201,6 +227,8 @@ export function createController(store: AppStore, api: Harness2Api): Controller 
     await replaySession(id); // 切换 = 全量重放（含 active 标记），随后增量按 seq 去重接入
     // D0：切到该会话即拉齐只读契约（有效配置/计划/命令日志/变更审查）
     if (store.getState().status === 'connected') refreshAllViews(id);
+    // D0/D4：取服务端权威在途状态（任务/待批/队列；重连恢复也靠它）
+    refreshAuthoritativeState(id);
   };
 
   const persistLayout = async (): Promise<void> => {
@@ -363,14 +391,8 @@ export function createController(store: AppStore, api: Harness2Api): Controller 
       }
     },
     async resumeSession(id: string): Promise<void> {
-      const stream = store.peekStream(id);
-      const lastSeq = stream?.lastSeq ?? 0;
-      const epoch = (stream?.epoch ?? 0) + 1; // 新连接代次：旧 epoch 快照被 store 丢弃
-      try {
-        await api.resumeSubscription(id, lastSeq, epoch);
-      } catch (e) {
-        store.applyFrame({ type: 'error', error: `重订阅失败: ${(e as Error).message}` });
-      }
+      // 与自动重订阅共用一条路径（同一 epoch 语义，避免双路径各推一次 epoch 导致快照被判陈旧）
+      refreshAuthoritativeState(id, true);
     },
     async undoWithGuard(
       id: string,
