@@ -1,9 +1,10 @@
 # 阶段 14-激进-桌面：功能优先桌面 Harness（D0–D6，Electron React）
 
-> **状态：** 计划已就绪（2026-09-08，修订 R2）
+> **状态：** 计划已就绪（2026-09-08，修订 R2）；**修订 R3（2026-09-11）：并行双轨开工版 —— 本轨为「乙」，与终端 T 轨同时进行**
 > **来源：** `docs/research/notion-ai-20260908-0056/04-implementation-plan.md`（I1 R2）§5.2/§5.3/§7 的 D0–D6。本文档是其一**正式阶段化落地**。
 > **方向变更（R2，用户确认）：** 桌面**不再复刻 CodexMonitor 界面**，改为**功能优先的 coding-agent harness**。**不验收视觉相似度 / 布局 / 配色 / 动画 / 截图相似度**；普通表单、列表、日志、Diff 即可交付。`02-codexmonitor-research.md` 只作历史参考，不再作桌面产品规格或必读移植清单。
 > **角色：** 激进版「桌面 harness」owner。**依赖共享底座 S0–S7（尤其 S7 桌面功能契约）冻结后才能真实联调**；未冻结前可在 mock adapter 上隔离开发 D1/D2/D5，但真实模型/工具执行、变更、恢复、任务/审批必须与共享实现联调，不能用 mock 冒充端到端。
+> **开工闸门（R3 新增）：** 共享底座 S0–S7 已于 2026-09-08 完成；阶段 15 质量收口已于 2026-09-11 验收（CI 三平台 7/7 全绿）。本轨开工的硬前置是 **`docs/ai-framework/plans/2026-09-11-phase-foundation-patch.md`（地基补丁 P0–P4）合入 main 并宣布 core/gateway 冻结**。冻结后本轨对 `packages/core`、`packages/gateway`、`packages/cli` 一律只读；边界与合入纪律以该文档「并行开工守则」小节为准。
 > **For agentic workers:** 按 Task 顺序执行；每 Task 测完再进下一 Task。
 > **交接提示词**见文末「给接手 AI 的完整提示词」。
 > **元规范：** `docs/ai-framework/phased-plan-driven.md`
@@ -28,7 +29,7 @@
 | P1     | 共享底座契约（S0–S7：`interaction/types.ts`、`runtime-journal.ts`、`run-config.ts`、`plan-state.ts`、`execution-view.ts`、`change-review.ts`、`task-coordinator.ts`，S 冻结后） |
 
 **仓库路径：** `D:/AI_Projects/harness2`
-**基线分支 / worktree：** **从共享底座合入集成分支之后**建 `feat/notion-i1-desktop`。**别在主工作树切分支**；不删他人 worktree；git 不 reset/clean；**默认不 push**。
+**基线分支 / worktree：** **从地基补丁阶段（P0–P4）的冻结 commit** 建 `feat/notion-i1-desktop`。**别在主工作树切分支**；不删他人 worktree；git 不 reset/clean。**可 push 本分支**；合入 main 前该分支 CI 必须三平台全绿，并以 `--no-ff` 合入。
 
 ---
 
@@ -38,8 +39,9 @@
 2. **渲染端不直接读写文件**：一律走现有 `contextIsolation` IPC 桥；**不暴露通用 shell / 任意 fs** 给 renderer；引用路径做 realpath 校验。
 3. **先功能后美观**：普通 tabs/面板组织即可；**不做**左树右栏硬要求、新面板拖调、主题、动画、像素复刻。但**可用性不可省**：IME 不误发、草稿隔离、长输出折叠、稳定滚动、加载失败入口、键盘焦点、关窗口前提示正在运行的任务。
 4. **真实执行必须联调**：不得拿 fixture/mock 成功冒充端到端。
-5. 密钥不进 git；只显式 add 本任务文件；**默认不 push**；改同一文件前检查并发变化。
-6. **明确不做（本阶段）**
+5. 密钥不进 git；只显式 add 本任务文件（**禁 `git add -A`**）；改同一文件前检查并发变化。**可 push 自己的分支 `feat/notion-i1-desktop`；合入 main 前该分支 CI 必须三平台全绿，并以 `--no-ff` 合入；禁 force push、禁在 main 上试错。**
+6. **并行边界（R3 新增，红线）**：本轨独占 `packages/desktop/`；`packages/core/`、`packages/gateway/`、`packages/cli/` 一律**只读**。需要改动它们时**停手**，在 `docs/issue-log/<日期>-D.md` 登记并上报编排者裁决，不得自行修改，也不得把 core 逻辑复制进 desktop 绕过。根级 `pnpm-lock.yaml`、`package.json`、`tsconfig.base.json`、`.github/workflows/`、eslint / prettier 配置禁止擅改（新增依赖须先报备）。共享文档（`OPEN.md` / `DECISIONS.md` / `HANDOFF.md` / `MASTER-PLAN.md` / `CHANGELOG.md` / `ROADMAP.md`）阶段内不改，各自记在本计划文档里、合入后由编排者统一回填；日志只写 `docs/issue-log/<日期>-D.md`。完整边界表见 `2026-09-11-phase-foundation-patch.md` 的「并行开工守则」小节。
+7. **明确不做（本阶段）**
    - ❌ 不迁移 Tauri / 不启动第二套 Codex 后端
    - ❌ 不新增完整 IDE / Git 工作台 / 交互式 PTY 终端 / codemap / 语音 / 移动端（但**必须能显示真实 shell、cwd、输出、退出码、取消状态**，缺命令执行闭环不行）
    - ❌ 不把「取消当 undo」「重连当重发」；不对 shell/MCP 承诺 exactly-once；不默认自动 retry 工具
@@ -51,6 +53,24 @@
 ## 阶段开头：上阶段遗留（必填）
 
 > 上阶段（阶段 12/桌面 + 设置面板）已并入 main。审计确认的桌面侧缺口须在本阶段闭环。
+>
+> **R3 补充（2026-09-11）：** 直接上阶段为**阶段 15 质量收口**（验收结论「✅ 有条件通过」，CI 三平台 7/7 全绿）。其验收表 §6 要求下一阶段逐条抄入，见下表。
+
+### 阶段 15 遗留（抄自 `2026-09-09-phase-quality-closeout-acceptance.md` §6）
+
+| 遗留项                                                       | 处理方                        | 本轨动作                                                                       |
+| ------------------------------------------------------------ | ----------------------------- | ------------------------------------------------------------------------------ |
+| A3 P1-1：serve token 三端贯通 + 默认严格模式                 | 地基补丁 **P2**（开工前完成） | 开工后桌面已带 token；本轨**不得再改鉴权逻辑**，但 D0 能力盘点须按严格模式验证 |
+| A3 P1-2：`serve-manager.ts` 的 `waitForHealth` 把 401 当健康 | 地基补丁 **P2**               | **已修**；D1 真机复验「serve 未就绪竞态」时以修复后行为为准，不得回退          |
+| A3 P2-3 / P2-1 / P2-2：playwright 降级、锁文件权限           | 地基补丁 **P3**               | core 侧，与本轨无关                                                            |
+| A5 P1-1 / P1-2 / P1-3：网关挂死、双会话、测试缺口            | 地基补丁 **P0–P1**            | gateway 侧，与本轨无关                                                         |
+| 「按 key 解析或新建会话必须做 in-flight 去重」               | 地基补丁 **P0** 定口径        | 本轨若引入任何「按 key 取或建」的会话/缓存逻辑，**必须同样做在途去重**         |
+| network 错误收尾 `finalText` 为空的展示语义                  | 地基补丁 **P3** 一次定死      | **D2 必须消费 P3 的定义，不得自行发明**                                        |
+| assistant / attempt 半截文本展示语义                         | 地基补丁 **P3** 一次定死      | 原计划下放到本阶段确认，**改为 P3 统一定义**；D2 按定义渲染                    |
+| 无独立人工审查（R7）、A4/B3 拆分类审查未派                   | 地基补丁阶段补派              | 本轨阶段末**仍需**派独立只读子代理审查                                         |
+| CI 首跑 POSIX 两平台红（R10）                                | ✅ 已闭环（main 7/7 全绿）    | 纪律沿用：**本轨分支 CI 红即停线**，不得合入                                   |
+
+### 阶段 12 桌面侧遗留（原表）
 
 | 上阶段遗留项                                   | 来源                   | 未通过原因                                       | 状态                                    |
 | ---------------------------------------------- | ---------------------- | ------------------------------------------------ | --------------------------------------- |
@@ -148,6 +168,8 @@
 | 9   | 全量回归     | `pnpm -r test` 全绿（真实命中，非 `--passWithNoTests`）                                                                                                                          | 自动化            |
 | 2b  | 代码审查     | ✅ / ⚠️；❌ 下放                                                                                                                                                                 | 独立角色          |
 | 10  | 红线/密钥    | 无禁止项、不暴露任意 fs、`git ls-files` 无敏感文件                                                                                                                               | 自动化            |
+| 11  | 并行边界     | 未改 core/gateway/cli 与根级配置；`api-surface-baseline.json` 无变化；日志只写 `<日期>-D.md`                                                                                     | 自动化 + 编排者   |
+| 12  | 真实模型联调 | D6 的 F1–F8 用本地 `http://127.0.0.1:40080/v1`（`big-pickle`）跑真实往返，禁止只接 mock                                                                                          | 自动化 + 人工     |
 
 ---
 
@@ -171,6 +193,8 @@
 你是 harness2 激进版「桌面功能优先 harness（D0-D6）」的实现者。先完整读：
 - docs/ai-framework/phased-plan-driven.md（元规范）
 - docs/ai-framework/plans/2026-09-08-phase-aggressive-desktop-interaction.md（本计划）
+- docs/ai-framework/plans/2026-09-11-phase-foundation-patch.md（开工闸门 + 【并行开工守则】，边界以它为准）
+- docs/ai-framework/plans/2026-09-09-phase-quality-closeout-acceptance.md 的 §6（上阶段遗留）
 - docs/research/notion-ai-20260908-0056/04-implementation-plan.md（I1 R2 §5.2/§5.3/§7）
 - docs/research/notion-ai-20260908-0056/03-harness2-core-audit.md（队列底座/观察缝/缺口）
 
@@ -179,9 +203,10 @@
 会话/任务恢复。先功能后美观，普通列表/表单/日志/Diff 即可；不评视觉相似度、不做主题/动画/像素。
 02-codexmonitor-research.md 仅历史参考，不按它做产品规格。
 
-前提：共享底座（激进-共享底座 S0-S7，尤其 S7 功能契约）须已冻结并入集成分支；本计划从该
-commit 建 worktree `feat/notion-i1-desktop`。若底座未冻结，先只用 mock adapter 隔离开发 D1/D2/D5，
-并显式标「未联调」；真实模型/工具执行、变更、恢复/任务/审批必须等底座联调，不能拿 mock 冒充端到端。
+前提：共享底座 S0-S7 已完成（2026-09-08），阶段 15 质量收口已验收（2026-09-11，CI 三平台 7/7 全绿）。
+开工闸门＝地基补丁阶段 P0-P4 已合入 main 并宣布 core/gateway 冻结；本计划从该冻结 commit 建分支
+`feat/notion-i1-desktop`。终端 T 轨由另一人同期并行，两轨只经 main 交汇。
+真实模型/工具执行、变更、恢复/任务/审批必须真联调，不能拿 mock 冒充端到端。
 
 Global Constraints 优先级最高：
 - 桌面只是观察者：不成为第二模型上下文来源；不改 agent 内核编排；不新增事件类型；turn-end 语义不变；
@@ -192,7 +217,17 @@ Global Constraints 优先级最高：
 - 不做：Tauri；第二套 Codex 后端；完整 Git/PTY 工作台/codemap；把取消当 undo、把重连当重发、
   承诺 shell/MCP exactly-once；自动 retry 工具；Steer 仅 S6 交付后启用，可靠排队可独立验收。
 - 命令 PowerShell 5.1 分行，每条查 $LASTEXITCODE；测试名真实命中 >0，禁止 --passWithNoTests 假绿。
-- Git：只显式 add 本任务文件，小步 commit；***默认不 push***。
+- Git：只显式 add 本任务文件（禁 git add -A），小步 commit，提交格式 <gitmoji><type>(<scope>): <中文描述>；
+  可 push 自己的分支 feat/notion-i1-desktop；合入 main 前该分支 CI 必须三平台全绿并 --no-ff 合入；
+  禁 force push、禁在 main 上试错、禁 --passWithNoTests、禁注释或删除失败用例。
+- 并行边界（红线）：本轨独占 packages/desktop。packages/core、packages/gateway、packages/cli 只读；
+  根级 pnpm-lock.yaml、package.json、tsconfig.base.json、.github/workflows、eslint/prettier 配置禁止擅改。
+  需要改这些时停手，在 docs/issue-log/<日期>-D.md 登记并上报编排者，不得自行修改，
+  也不得把 core 逻辑复制进 desktop 绕过。新增依赖须先报备。
+- 日志分文件：本轨只写 docs/issue-log/<日期>-D.md（四要素：需求描述/处理过程/修改结果/遗留风险）；
+  不改 OPEN.md、DECISIONS.md、HANDOFF.md、MASTER-PLAN.md、CHANGELOG.md、ROADMAP.md（阶段末由编排者统一回填）。
+- 本地真实模型（D6 的 F1-F8 用）：base URL http://127.0.0.1:40080/v1、key sk-unified-local、模型 big-pickle
+  （200K 上下文、纯文本）；用隔离 --home，key 只写该目录下的 auth.json，不进 git。
 
 每 Task：先写失败用例 → 最小实现 → 跑 `pnpm --filter @harness2/desktop test` → 贴「实际命令+输出」。
 最后跑 `pnpm -r test` 全量回归。完成后给出：worktree 名、commit 清单、逐 Task/逐 F 项结果（真实执行
