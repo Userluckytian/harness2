@@ -19,6 +19,25 @@
 - **best-effort 范围（不属本 semver 承诺）**：`harness2`（CLI）的命令行输出格式、桌面端 protocol、serve HTTP/WS API——v1 冻结是工程约定（见 `architecture.md`「会话服务」），破坏性调整在 `CHANGELOG.md` 显著声明。
 - 事件日志格式（`session.v1.jsonl`）的兼容性由「代际字段 v + 加性演进」机制独立保障（见 `architecture.md`「会话事件日志」），不在本政策范围。
 
+## 跨端展示语义：turn 终态文本（P3-a / P3-b，2026-09-11 冻结）
+
+> 契约落点：serve WS `turn-end` 帧（`packages/core/src/server/ws.ts`；`TurnTextOutcome` 定义在 `interaction/types.ts`）。
+> 终端（cli）、桌面（desktop）、网关（gateway）**必须引用同一处定义**（帧字段 + 本表），不得各自发明。
+
+| `textOutcome` | 含义                                           | 客户端渲染规则                                                                  |
+| ------------- | ---------------------------------------------- | ------------------------------------------------------------------------------- |
+| `final`       | 有完整最终文本（`finalText`）                  | 按普通 assistant 正文渲染                                                       |
+| `partial`     | 仅有不完整 attempt 的半截文本（`partialText`） | 渲染 `partialText`，并**必须**显式标注「未完成 / 已中断」+ `stopReason`/`error` |
+| `empty`       | 无可展示正文（如首个 token 前失败）            | 只渲染 `stopReason`/`error` 与已执行工具行；**禁止空白气泡**                    |
+
+不变量（冻结）：
+
+1. `finalText` 只承载完整正文；半截文本只进 `partialText`，两者互斥，`textOutcome` 是唯一判别。
+2. `assistant/attempt` 事件（append-only）是半截文本的**日志权威**；`turn-end.partialText` 是它的展示投影。
+3. 「无最终文本但有可行动结果」= `empty` + 已执行工具行 + 可读错误原因（不是静默、也不是伪造正文）。
+
+---
+
 ## 快照测试口径（宽松匹配，防抖动）
 
 - 测试从**构建产物** `dist/index.d.ts` 递归解析导出面（处理 `export *`、named 别名重导出、import 后裸 `export {}`），与基线 fixture 逐名比对。

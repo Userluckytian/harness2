@@ -1,7 +1,10 @@
-// A3 serve 安全加固测试（阶段 15）：
+// A3 serve 安全加固测试（阶段 15 + 地基补丁 P2）：
 //   A3-1 本地信任域：Origin/Host 白名单 + 启动时一次性 token——
 //        合法 token 放行（header 两种形态）、错误 token 一律 401（兼容模式下也不回退）、
-//        严格模式无 token 401、兼容回退放行且计数（既有 desktop/CLI 不误挡）、token 不入日志/错误体；
+//        严格模式无 token 401、显式关闭严格模式时放行并计数、token 不入日志/错误体；
+//   P2（地基补丁）：**默认即严格**——不传 requireToken（不设任何 env）时无 token 401、
+//        带 token 200；显式 requireToken:false（或 HARNESS2_SERVE_REQUIRE_TOKEN=0）才回退兼容。
+//        （本文件非鉴权用例显式传 requireToken:false，并把默认严格单列断言。）
 //   A3-2 WS 帧大小上限：超 1MiB 断连（close 1009）并记账（security.wsOversizeClosed + onFrameOversize）；
 //   A3-3 playwright 可选：无 playwright 时 import @harness2/core 不报错、browser_* 返回安装指引。
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -12,6 +15,7 @@ import { fileURLToPath } from 'node:url';
 import { request as httpRequest } from 'node:http';
 import WebSocketWS from 'ws';
 import { startServe, type ServeHandle } from '../src/server/http.js';
+import { SERVE_REQUIRE_TOKEN_ENV, serveRequireTokenFromEnv } from '../src/server/security.js';
 import { MockProvider } from '../src/provider/mock.js';
 import type { WsServerMessage } from '../src/server/ws.js';
 
@@ -33,7 +37,10 @@ afterEach(async () => {
 });
 
 async function start(
-  opts: { requireToken?: boolean; onFrameOversize?: (info: { remote: string; limitBytes: number }) => void } = {},
+  opts: {
+    requireToken?: boolean;
+    onFrameOversize?: (info: { remote: string; limitBytes: number }) => void;
+  } = {},
 ): Promise<ServeHandle> {
   const handle = await startServe({
     port: 0,
@@ -41,7 +48,8 @@ async function start(
     root: tmpDir('h2-a3-root-'),
     provider: new MockProvider([{ text: '回复。' }]),
     token: TEST_TOKEN,
-    ...(opts.requireToken !== undefined ? { requireToken: opts.requireToken } : {}),
+    // 本文件非鉴权用例默认显式关闭严格模式（默认严格另由「默认严格鉴权」块单独断言）
+    requireToken: opts.requireToken ?? false,
     ...(opts.onFrameOversize !== undefined ? { wsOptions: { onFrameOversize: opts.onFrameOversize } } : {}),
   });
   handles.push(handle);
@@ -80,7 +88,7 @@ function wsHandshake(url: string, headers?: Record<string, string>): Promise<'op
 }
 
 describe('A3-1 一次性 token（HTTP）', () => {
-  it('兼容回退：无 token 仍放行（既有 desktop/CLI 不误挡）并计数', async () => {
+  it('显式关闭严格模式（requireToken:false）：无 token 仍放行并计数', async () => {
     const handle = await start();
     const r = await get(`http://127.0.0.1:${handle.port}/api/sessions`);
     expect(r.status).toBe(200);
@@ -181,10 +189,51 @@ describe('A3-1 一次性 token（WS 升级握手）', () => {
     expect(handle.security.invalidTokenRejected).toBe(1);
   });
 
-  it('兼容回退：无 token 升级放行（旧客户端行为不变）', async () => {
+  it('兼容回退（显式关闭严格模式）：无 token 升级放行', async () => {
     const handle = await start();
     expect(await wsHandshake(wsUrl(handle))).toBe('opened');
     expect(handle.security.noTokenAllowed).toBe(1);
+  });
+});
+
+describe('P2 默认严格鉴权（不传 requireToken、不设任何 env）', () => {
+  /** 直连 startServe，不传 requireToken 选项（走默认值） */
+  async function startDefaultStrict(): Promise<ServeHandle> {
+    const handle = await startServe({
+      port: 0,
+      home: tmpDir('h2-a3-strict-home-'),
+      root: tmpDir('h2-a3-strict-root-'),
+      provider: new MockProvider([{ text: '回复。' }]),
+      token: TEST_TOKEN,
+    });
+    handles.push(handle);
+    return handle;
+  }
+
+  it('默认严格：无 token HTTP 401、带 token 200、回退计数恒为 0', async () => {
+    const handle = await startDefaultStrict();
+    const base = `http://127.0.0.1:${handle.port}/api/sessions`;
+    expect((await get(base)).status).toBe(401);
+    expect(handle.security.noTokenRejected).toBe(1);
+    expect(handle.security.noTokenAllowed).toBe(0);
+    expect((await get(base, { 'x-harness2-token': handle.token })).status).toBe(200);
+    expect(handle.security.noTokenAllowed).toBe(0);
+  });
+
+  it('默认严格：无 token 的第三方进程连不上 WS；带 token 可连', async () => {
+    const handle = await startDefaultStrict();
+    expect(await wsHandshake(`ws://127.0.0.1:${handle.port}/ws`)).toBe('rejected');
+    expect(handle.security.noTokenRejected).toBe(1);
+    expect(await wsHandshake(`ws://127.0.0.1:${handle.port}/ws?token=${handle.token}`)).toBe('opened');
+  });
+
+  it('serveRequireTokenFromEnv：未设/空值默认 true；显式 0/false/no 才关闭', () => {
+    expect(serveRequireTokenFromEnv({})).toBe(true);
+    expect(serveRequireTokenFromEnv({ [SERVE_REQUIRE_TOKEN_ENV]: '' })).toBe(true);
+    expect(serveRequireTokenFromEnv({ [SERVE_REQUIRE_TOKEN_ENV]: '1' })).toBe(true);
+    expect(serveRequireTokenFromEnv({ [SERVE_REQUIRE_TOKEN_ENV]: '0' })).toBe(false);
+    expect(serveRequireTokenFromEnv({ [SERVE_REQUIRE_TOKEN_ENV]: 'false' })).toBe(false);
+    expect(serveRequireTokenFromEnv({ [SERVE_REQUIRE_TOKEN_ENV]: 'NO' })).toBe(false);
   });
 });
 

@@ -8,7 +8,7 @@ import { randomBytes, timingSafeEqual } from 'node:crypto';
 export const SERVE_TOKEN_HEADER = 'x-harness2-token';
 /** 预置 token 环境变量（可选；未设则启动时随机生成 32 字节 base64url） */
 export const SERVE_TOKEN_ENV = 'HARNESS2_SERVE_TOKEN';
-/** 强制 token 鉴权（严格模式）环境变量：1/true/yes 时无 token 一律 401 */
+/** 强制 token 鉴权（**默认开启**）：显式设 0/false/no 才关闭（仅供本地调试，启动时告警） */
 export const SERVE_REQUIRE_TOKEN_ENV = 'HARNESS2_SERVE_REQUIRE_TOKEN';
 
 /** A3-1/A3-2：serve 安全计数（只读投影，测试与诊断用；绝不含 token 明文） */
@@ -77,10 +77,22 @@ export function serveTokenFromEnv(env: NodeJS.ProcessEnv = process.env): string 
   return typeof v === 'string' && v.trim().length >= 16 ? v.trim() : undefined;
 }
 
-/** HARNESS2_SERVE_REQUIRE_TOKEN=1/true/yes → 严格模式（无 token 一律拒绝） */
+/** HARNESS2_SERVE_REQUIRE_TOKEN：**缺省严格**（未设/空值/任意其他值 → true）；
+ * 显式 0/false/no 才关闭（本地调试开关，startServe 会打一次性告警） */
 export function serveRequireTokenFromEnv(env: NodeJS.ProcessEnv = process.env): boolean {
   const v = env[SERVE_REQUIRE_TOKEN_ENV]?.trim().toLowerCase();
-  return v === '1' || v === 'true' || v === 'yes';
+  return !(v === '0' || v === 'false' || v === 'no');
+}
+
+let warnedStrictDisabled = false;
+
+/** 严格鉴权被环境变量显式关闭时的一次性启动告警（不含任何敏感值） */
+export function warnServeStrictDisabledOnce(): void {
+  if (warnedStrictDisabled) return;
+  warnedStrictDisabled = true;
+  console.error(
+    `warning: serve 严格鉴权已被环境变量显式关闭（${SERVE_REQUIRE_TOKEN_ENV}=0/false/no）——仅限本地调试，生产环境请保持严格`,
+  );
 }
 
 let warnedNoToken = false;

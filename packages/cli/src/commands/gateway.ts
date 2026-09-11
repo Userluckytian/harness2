@@ -90,7 +90,11 @@ export function registerGatewayCommand(program: Command): void {
       const gw = await startGateway({
         root: opts.root,
         ...(home !== undefined ? { home } : {}),
-        serve: { baseUrl: `http://127.0.0.1:${serve.port}`, wsUrl: `ws://127.0.0.1:${serve.port}/ws` },
+        serve: {
+          baseUrl: `http://127.0.0.1:${serve.port}`,
+          wsUrl: `ws://127.0.0.1:${serve.port}/ws`,
+          token: serve.token,
+        },
         adapters,
       });
       console.log(JSON.stringify({ gateway: true, platforms: adapters.map((a) => a.channel), port: serve.port }));

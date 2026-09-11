@@ -26,6 +26,7 @@ afterEach(async () => {
 
 async function start(): Promise<ServeHandle> {
   const handle = await startServe({
+    requireToken: false,
     port: 0,
     home: tmpDir('h2-trust-home-'),
     root: tmpDir('h2-trust-root-'),

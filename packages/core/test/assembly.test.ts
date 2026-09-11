@@ -244,7 +244,7 @@ describe('startServe 插件/MCP 装配', () => {
     const home = tmpDir();
     const root = tmpDir();
     writeHomeFixture(home, { ...MIN_CONFIG, plugins: { enabled: true, allow: ['demo'] } }, { name: 'demo' });
-    const handle = await startServe({ port: 0, home, root });
+    const handle = await startServe({ requireToken: false, port: 0, home, root });
     try {
       expect(handle.plugins).toBeDefined();
       const ts = handle.hub.toolsForSession('20260906-000000-aaaaaa');
@@ -258,7 +258,7 @@ describe('startServe 插件/MCP 装配', () => {
     // disable 开关：enabled=false → 不装载
     const home2 = tmpDir();
     writeHomeFixture(home2, { ...MIN_CONFIG, plugins: { enabled: false, allow: ['demo'] } }, { name: 'demo' });
-    const handle2 = await startServe({ port: 0, home: home2, root });
+    const handle2 = await startServe({ requireToken: false, port: 0, home: home2, root });
     try {
       expect(handle2.plugins).toBeUndefined();
       expect(handle2.hub.toolsForSession('20260906-000000-aaaaaa').get('p_greet')).toBeUndefined();
@@ -276,7 +276,7 @@ describe('startServe 插件/MCP 装配', () => {
         probe: { command: process.execPath, args: [join(import.meta.dirname, 'fixtures', 'mcp-stdio-server.mjs')] },
       },
     });
-    const handle = await startServe({ port: 0, home, root });
+    const handle = await startServe({ requireToken: false, port: 0, home, root });
     try {
       expect(handle.mcp).toBeDefined();
       const ts = handle.hub.toolsForSession('20260906-000000-aaaaaa');

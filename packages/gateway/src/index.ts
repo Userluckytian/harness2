@@ -18,7 +18,11 @@ export interface StartGatewayOptions {
   root: string;
   /** 用户数据根（缺省 ~/.harness2） */
   home?: string;
-  serve: { baseUrl: string; wsUrl: string };
+  serve: {
+    baseUrl: string;
+    wsUrl: string;
+    /** P2：serve 一次性 token（默认严格鉴权必需；缺省不携带） */ token?: string;
+  };
   /** 已构建的平台适配器（凭据/策略由装配方注入） */
   adapters: PlatformAdapter[];
 }
@@ -48,6 +52,7 @@ export async function startGateway(options: StartGatewayOptions): Promise<Gatewa
   const client = new ServeClient({
     baseUrl: options.serve.baseUrl,
     wsUrl: options.serve.wsUrl,
+    ...(options.serve.token !== undefined ? { token: options.serve.token } : {}),
     onFrame: (frame) => {
       if (frame.type === 'error') {
         // 陈旧路由/协议错误：一行可见（此前静默会让 chat 永久失联无反馈）
@@ -89,10 +94,13 @@ export async function startGateway(options: StartGatewayOptions): Promise<Gatewa
         if (adapter === undefined) return;
         const toolSummary = toolLines.get(frame.sessionId) ?? [];
         toolLines.delete(frame.sessionId);
-        const finalText = sessionText.get(frame.sessionId) ?? '';
+        const accumulated = sessionText.get(frame.sessionId) ?? '';
         sessionText.delete(frame.sessionId);
+        // P3-a/P3-b：优先采信 turn-end 帧的终态文本语义（finalText/partialText/textOutcome）
         const rendered = renderTurnEnd({
-          finalText,
+          finalText: frame.finalText ?? accumulated,
+          ...(frame.partialText !== undefined ? { partialText: frame.partialText } : {}),
+          ...(frame.textOutcome !== undefined ? { textOutcome: frame.textOutcome } : {}),
           toolLines: toolSummary,
           stopReason: frame.stopReason,
           ...(frame.error !== undefined ? { error: frame.error } : {}),

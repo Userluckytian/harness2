@@ -104,6 +104,8 @@ export abstract class SessionHubTurn extends SessionHubAssembly {
         toolCalls: 0,
         durationMs: 0,
         error: redactSecrets((e as Error)?.message ?? String(e)),
+        // P3-a：非预期异常在首个 token 前发生（无任何可展示正文）→ empty（展开展示靠 stopReason+error）
+        textOutcome: 'empty',
       };
       this.emitTurnEnd(id, errorResult);
       this.finalizeAttempt(id, errorResult);

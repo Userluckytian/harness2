@@ -329,6 +329,19 @@ async function runTurnWithWriter(writer: SessionWriter | SessionAppender, option
   let steps = 0;
   let toolCallsTotal = 0;
   let finalText: string | undefined;
+  // P3-b：最后一条不完整 attempt 的半截文本（error/cancelled 展示用；绝不进 finalText）
+  let lastAttemptText: string | undefined;
+  /**
+   * P3-a/P3-b：终态文本展示判别（跨端共用；定义见 interaction/types.ts `TurnTextOutcome`）。
+   * 优先级：完整 finalText > 半截 attempt 文本 > 无可展示正文（靠 stopReason/error 表达）。
+   */
+  const textOutcomeFields = (): Pick<TurnResult, 'finalText' | 'partialText' | 'textOutcome'> => {
+    if (finalText !== undefined && finalText.length > 0) return { finalText, textOutcome: 'final' };
+    if (lastAttemptText !== undefined && lastAttemptText.length > 0) {
+      return { partialText: lastAttemptText, textOutcome: 'partial' };
+    }
+    return { textOutcome: 'empty' };
+  };
   let stopReason: TurnStopReason = 'end_turn';
   let error: string | undefined;
   // A1-3：连续工具失败计数（成功即归零）；触发阈值时以 tool_failures 收尾并给非空 finalText
@@ -401,6 +414,7 @@ async function runTurnWithWriter(writer: SessionWriter | SessionAppender, option
     // 取消分类公共出口：半截尝试以 assistant/attempt 记录（append-only），绝不冒充 assistant/message
     // text 为半截产出（可展开渲染），但从不作为完整 assistant/message 落盘
     const finishCancelled = (msg: string, partialText?: string): TurnResult => {
+      if (partialText !== undefined && partialText.length > 0) lastAttemptText = partialText;
       writer.append('assistant/attempt', {
         error: `cancelled: ${msg}`,
         ...(partialText !== undefined && partialText.length > 0 ? { text: partialText } : {}),
@@ -419,6 +433,7 @@ async function runTurnWithWriter(writer: SessionWriter | SessionAppender, option
         durationMs: elapsed(),
         error: msg,
         turnId,
+        ...textOutcomeFields(),
       };
     };
     // —— S4b 有界 attempt 重试（仅约束在本模型 step 内、完整工具计划未提交前）——
@@ -454,6 +469,8 @@ async function runTurnWithWriter(writer: SessionWriter | SessionAppender, option
           model: provider.name,
           turnId,
         });
+        // P3-b：记住已流式展示过的半截文本（重试新 attempt 从零开始，但在无产出失败时保留上一次可展示的半截）
+        if (text.length > 0) lastAttemptText = text;
         const classification = classifyAttemptError(e);
         // 不可恢复（401/403/参数/quota/取消/拒绝/内容过滤）或预算耗尽 → 不重试，直接停止并告知
         if (!classification.retryable) {
@@ -504,6 +521,7 @@ async function runTurnWithWriter(writer: SessionWriter | SessionAppender, option
         durationMs: elapsed(),
         error: stepError,
         turnId,
+        ...textOutcomeFields(),
         ...(retryBudgetView() !== undefined ? { retryBudget: retryBudgetView() } : {}),
       };
     }
@@ -691,7 +709,7 @@ async function runTurnWithWriter(writer: SessionWriter | SessionAppender, option
     toolCalls: toolCallsTotal,
     durationMs: elapsed(),
     turnId,
-    ...(finalText !== undefined ? { finalText } : {}),
+    ...textOutcomeFields(),
     ...(error !== undefined ? { error } : {}),
     ...(warning !== undefined ? { warning } : {}),
     ...(retryBudgetView() !== undefined ? { retryBudget: retryBudgetView() } : {}),

@@ -71,7 +71,11 @@ describe('网关审批桥接（真实 serve）', () => {
     const gateway: GatewayHandle = await startGateway({
       home,
       root,
-      serve: { baseUrl: `http://127.0.0.1:${handle.port}`, wsUrl: `ws://127.0.0.1:${handle.port}/ws` },
+      serve: {
+        baseUrl: `http://127.0.0.1:${handle.port}`,
+        wsUrl: `ws://127.0.0.1:${handle.port}/ws`,
+        token: handle.token,
+      },
       adapters: [adapter],
     });
     handles.push(() => gateway.stop());
@@ -109,7 +113,11 @@ describe('网关审批桥接（真实 serve）', () => {
     const gateway: GatewayHandle = await startGateway({
       home,
       root,
-      serve: { baseUrl: `http://127.0.0.1:${handle.port}`, wsUrl: `ws://127.0.0.1:${handle.port}/ws` },
+      serve: {
+        baseUrl: `http://127.0.0.1:${handle.port}`,
+        wsUrl: `ws://127.0.0.1:${handle.port}/ws`,
+        token: handle.token,
+      },
       adapters: [adapter],
     });
     handles.push(() => gateway.stop());

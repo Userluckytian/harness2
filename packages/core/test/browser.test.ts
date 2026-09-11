@@ -2,7 +2,7 @@
 // 本地 stub HTTP 页面 + 真实 headless chromium 全链（navigate→snapshot→click→type→snapshot、
 // 截图落盘）、资源管控（并发排队/空闲销毁/close 清理/LRU 腾位）、未安装分支（loader 注入失败）。
 // chromium 未安装时真实浏览器用例整体跳过（CI 由 chromium 安装步骤保证运行）。
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createServer, type Server } from 'node:http';
 import { mkdtempSync, existsSync, rmSync, statSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -273,4 +273,27 @@ describe.skipIf(!hasChromium)('浏览器全链（真实 headless chromium + 本�
     const r2 = await runTool(toolByName(t1, 'browser_snapshot'), {});
     expect(r2.text).toContain('腾位');
   }, 40_000);
+});
+
+describe('P3-c playwright 缺失时 browser install 的降级文案', () => {
+  it('installBrowserRuntime：模块缺失 → 抛含 harness2 browser install 的可读错误（不是裸 MODULE_NOT_FOUND 进 crash reporter）', async () => {
+    vi.doMock('node:module', () => ({
+      createRequire: () => ({
+        resolve: () => {
+          const err = new Error("Cannot find module 'playwright/cli.js'") as NodeJS.ErrnoException;
+          err.code = 'MODULE_NOT_FOUND';
+          throw err;
+        },
+      }),
+    }));
+    vi.resetModules();
+    try {
+      const mod = await import('../src/tools/predefined/browser.js');
+      await expect(mod.installBrowserRuntime()).rejects.toThrow(/harness2 browser install/);
+      await expect(mod.installBrowserRuntime()).rejects.not.toThrow(/^Cannot find module/);
+    } finally {
+      vi.doUnmock('node:module');
+      vi.resetModules();
+    }
+  });
 });

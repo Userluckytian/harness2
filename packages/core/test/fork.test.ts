@@ -235,6 +235,7 @@ describe('forkSession 内核语义', () => {
 describe('hub / HTTP / WS 分叉入口', () => {
   it('hub.fork：返回新会话；events 投影一致；busy 会话也可分叉（只读日志）', async () => {
     const handle = await startServe({
+      requireToken: false,
       provider: new MockProvider([{ textChunks: ['回复。'] }, { textChunks: ['回复二。'] }]),
     });
     handles.push(handle);
@@ -257,7 +258,7 @@ describe('hub / HTTP / WS 分叉入口', () => {
   }, 20000);
 
   it('HTTP：POST /api/sessions/:id/fork → 200；未知会话 404；非法 atSeq 400', async () => {
-    const handle = await startServe({ provider: new MockProvider([{ textChunks: ['回复。'] }]) });
+    const handle = await startServe({ requireToken: false, provider: new MockProvider([{ textChunks: ['回复。'] }]) });
     handles.push(handle);
     const root = tmpDir('h2-fork-root-');
     const created = await api(handle, 'POST', '/api/sessions', { cwd: root });
@@ -280,7 +281,7 @@ describe('hub / HTTP / WS 分叉入口', () => {
   }, 20000);
 
   it('WS：op fork → forked 帧（新会话 id + 血缘 + 事件数）', async () => {
-    const handle = await startServe({ provider: new MockProvider([{ textChunks: ['回复。'] }]) });
+    const handle = await startServe({ requireToken: false, provider: new MockProvider([{ textChunks: ['回复。'] }]) });
     handles.push(handle);
     const root = tmpDir('h2-fork-root-');
     const { id } = handle.hub.create(root);

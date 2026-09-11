@@ -32,6 +32,12 @@ export type WsFrame =
       type: 'turn-end';
       sessionId: string;
       stopReason: string;
+      /** P3-a：完整最终文本（textOutcome='final'） */
+      finalText?: string;
+      /** P3-b：半截 attempt 文本（textOutcome='partial'；展示须标注未完成） */
+      partialText?: string;
+      /** P3-a/P3-b：终态文本展示判别（与 core WS 帧同契约） */
+      textOutcome?: 'final' | 'partial' | 'empty';
       error?: string;
       warning?: string;
     }

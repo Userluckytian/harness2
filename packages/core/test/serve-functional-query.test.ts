@@ -141,8 +141,8 @@ describe('FixA /run-config：有效运行配置真接线（装配来源 + root/c
     const cwdA = tmpDir('h2-fq-cwdA-');
     const cwdB = tmpDir('h2-fq-cwdB-');
     const cwdC = tmpDir('h2-fq-cwdC-');
-    const serveA = await startServe({ port: 0, home: homeA, root: rootA });
-    const serveB = await startServe({ port: 0, home: homeB, root: rootB });
+    const serveA = await startServe({ requireToken: false, port: 0, home: homeA, root: rootA });
+    const serveB = await startServe({ requireToken: false, port: 0, home: homeB, root: rootB });
     handles.push(serveA, serveB);
     const idA = await createSession(serveA, cwdA);
     const idB = await createSession(serveA, cwdB);
@@ -218,6 +218,7 @@ describe('FixA /run-config：有效运行配置真接线（装配来源 + root/c
 describe('FixA /plan-state：账本重建只读 + 展示不触发审批放行', () => {
   it('真实 startServe：种 task/transition 账本 → 端点重建计划；查询不改 journal；挂起审批不被展示放行', async () => {
     const handle = await startServe({
+      requireToken: false,
       port: 0,
       home: tmpDir('h2-fq-home-'),
       root: tmpDir('h2-fq-root-'),
@@ -307,6 +308,7 @@ describe('FixA /plan-state：账本重建只读 + 展示不触发审批放行', 
 
   it('无账本 → 明确 error 帧 404（会话暂无计划数据），不臆造空计划', async () => {
     const handle = await startServe({
+      requireToken: false,
       port: 0,
       home: tmpDir('h2-fq-home-'),
       root: tmpDir('h2-fq-root-'),
@@ -323,6 +325,7 @@ describe('FixA /plan-state：账本重建只读 + 展示不触发审批放行', 
 describe('FixA /execution-view：真实 shell/exitCode 归属 + cwd 归属 + 脱敏', () => {
   it('真实 serve turn 执行 bash（exit 7 + 输出含密钥）→ 端点如实归属 shell/exitCode，密钥被脱敏', async () => {
     const handle = await startServe({
+      requireToken: false,
       port: 0,
       home: tmpDir('h2-fq-home-'),
       root: tmpDir('h2-fq-root-'),
@@ -386,6 +389,7 @@ describe('FixA /execution-view：真实 shell/exitCode 归属 + cwd 归属 + 脱
 describe('FixA /change-review：外部修改标 dirty 不静默覆盖', () => {
   it('真实 serve turn 写文件 → 端点 changeSet；外部修改后 dirty=true、matchesPlan=false、不覆盖', async () => {
     const handle = await startServe({
+      requireToken: false,
       port: 0,
       home: tmpDir('h2-fq-home-'),
       root: tmpDir('h2-fq-root-'),
