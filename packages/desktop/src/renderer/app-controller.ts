@@ -66,6 +66,11 @@ export interface Controller {
   /** 分栏数变化 / 会话分配：更新 store 并持久化；绑定的会话自动订阅+重放 */
   setPaneCount(count: number): Promise<void>;
   assignToPane(paneIndex: number, sessionId: string | null): Promise<void>;
+  /** P2-4：审批模式切换落地 —— 写全局 config.json 的 approval.mode（settings:updateConfig 白名单深合并） */
+  setApprovalMode(
+    sessionId: string,
+    mode: 'default' | 'plan',
+  ): Promise<{ ok: boolean; message: string }>;
 }
 
 export function createController(store: AppStore, api: Harness2Api): Controller {
@@ -547,6 +552,22 @@ export function createController(store: AppStore, api: Harness2Api): Controller 
         refreshAuthoritativeState(sessionId);
       }
       await persistLayout();
+    },
+    async setApprovalMode(sessionId, mode) {
+      // P2-4：把「切到 default/plan」真正写下去 —— 走 settings:updateConfig 白名单深合并
+      // 全局 config.json（密钥类字段被拒、写前 parseConfig 校验）。作用范围必须如实告知：
+      // per-session effective run-config 在会话创建时解析，**当前会话不变，新会话生效**。
+      void sessionId; // 预留：未来 core 提供 per-session 覆写时按会话定向
+      try {
+        const res = await api.settingsUpdateConfig({ approval: { mode } });
+        if (!res.ok) return { ok: false, message: `切换失败：${res.error ?? '配置校验未通过'}` };
+        return {
+          ok: true,
+          message: `已写入全局配置 approval.mode=${mode}；当前会话保持既有模式，新会话起生效`,
+        };
+      } catch (e) {
+        return { ok: false, message: `切换失败：${(e as Error).message}` };
+      }
     },
   };
 }

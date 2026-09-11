@@ -6,21 +6,42 @@ import { buildPlanDisplay, resolveModeSwitch } from './plan-model.js';
 export function PlanPanel({ sessionId }: { sessionId: string | null }) {
   useAppState(); // 订阅 store 变更（计划/配置到达后重渲）
   const [notice, setNotice] = useState<string | null>(null);
+  const [switching, setSwitching] = useState(false);
   if (sessionId === null) return <div className="panel-empty">未选择会话</div>;
   const views = store.peekViews(sessionId);
   const display = buildPlanDisplay(views?.planState);
   const runConfig = views?.runConfig;
   const currentMode = runConfig?.approval.mode ?? '（未知）';
 
-  const switchMode = (to: string): void => {
+  const switchMode = (to: 'default' | 'plan'): void => {
     // 显式动作：这里 explicit=true 由「用户点击」这一事实决定；纯函数再校验一次语义
     const result = resolveModeSwitch(currentMode, to, true);
-    setNotice(
-      result.changed
-        ? `已请求切换审批模式：${currentMode} → ${result.mode}（需在设置中持久化）`
-        : (result.reason ?? '模式未变化'),
-    );
+    if (!result.changed) {
+      setNotice(result.reason ?? '模式未变化');
+      return;
+    }
+    // P2-4：点击必须落地 —— 真实写入全局 config.json 的 approval.mode
+    // （settings:updateConfig 白名单深合并，密钥类字段被拒、写前经 parseConfig 校验）。
+    // 作用范围如实展示：当前会话的 effective run-config 是创建期快照，新会话起生效。
+    setSwitching(true);
+    void controller
+      .setApprovalMode(sessionId, to)
+      .then((res) => setNotice(res.message))
+      .catch((e: unknown) => setNotice(`切换失败：${(e as Error).message}`))
+      .finally(() => setSwitching(false));
   };
+
+  const modeSwitchButtons = (
+    <div className="mode-switch">
+      <span>切换权限是显式动作：</span>
+      <button type="button" onClick={() => switchMode('default')} disabled={switching || currentMode === 'default'}>
+        切到 default
+      </button>
+      <button type="button" onClick={() => switchMode('plan')} disabled={switching || currentMode === 'plan'}>
+        切到 plan（只读）
+      </button>
+    </div>
+  );
 
   if ('plan' in display) {
     return (
@@ -30,15 +51,7 @@ export function PlanPanel({ sessionId }: { sessionId: string | null }) {
           <span className="panel-mode">审批模式：{currentMode}</span>
         </div>
         <div className="panel-empty">{display.reason}</div>
-        <div className="mode-switch">
-          <span>切换权限是显式动作：</span>
-          <button type="button" onClick={() => switchMode('default')} disabled={currentMode === 'default'}>
-            切到 default
-          </button>
-          <button type="button" onClick={() => switchMode('plan')} disabled={currentMode === 'plan'}>
-            切到 plan（只读）
-          </button>
-        </div>
+        {modeSwitchButtons}
         {notice !== null && <div className="panel-notice">{notice}</div>}
       </div>
     );
@@ -75,13 +88,8 @@ export function PlanPanel({ sessionId }: { sessionId: string | null }) {
       </ol>
       <div className="mode-switch">
         <span>切换权限是显式动作（展示计划不会提权）：</span>
-        <button type="button" onClick={() => switchMode('default')} disabled={currentMode === 'default'}>
-          切到 default
-        </button>
-        <button type="button" onClick={() => switchMode('plan')} disabled={currentMode === 'plan'}>
-          切到 plan（只读）
-        </button>
       </div>
+      {modeSwitchButtons}
       {notice !== null && <div className="panel-notice">{notice}</div>}
       <div className="panel-foot">
         <button type="button" onClick={() => void controller.refreshPlanState(sessionId)}>
