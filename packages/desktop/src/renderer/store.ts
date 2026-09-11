@@ -437,6 +437,52 @@ export class AppStore {
     return this.streams.get(id);
   }
 
+  /** 已缓冲的会话 id 列表（后台会话也含；面板聚合展示用） */
+  streamIds(): string[] {
+    return [...this.streams.keys()];
+  }
+
+  /**
+   * 全部会话的待审批卡片（F4：全部待批可见）。
+   * 返回带 sessionId 的扁平列表；卡片字段全部来自服务端帧，不做本地推断。
+   */
+  allApprovals(): Array<{
+    sessionId: string;
+    requestId: string;
+    tool: string;
+    args: unknown;
+    scope?: 'once' | 'session';
+    expiresAt?: string;
+    cwd?: string;
+    taskId?: string;
+    parentTaskId?: string;
+  }> {
+    const out: Array<{
+      sessionId: string;
+      requestId: string;
+      tool: string;
+      args: unknown;
+      scope?: 'once' | 'session';
+      expiresAt?: string;
+      cwd?: string;
+      taskId?: string;
+      parentTaskId?: string;
+    }> = [];
+    for (const stream of this.streams.values()) {
+      for (const a of stream.approvals) out.push({ sessionId: stream.id, ...a });
+    }
+    return out;
+  }
+
+  /** 全部会话的任务（含子会话；父子归属由 parentTaskId 表达） */
+  allTasks(): Array<{ sessionId: string; task: TaskContractShape }> {
+    const out: Array<{ sessionId: string; task: TaskContractShape }> = [];
+    for (const stream of this.streams.values()) {
+      for (const task of stream.tasks) out.push({ sessionId: stream.id, task });
+    }
+    return out;
+  }
+
   /** 会话渲染条目（派生；含在途流式条目） */
   chatItems(id: string): ChatItem[] {
     const s = this.streams.get(id);

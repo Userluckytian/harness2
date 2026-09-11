@@ -16,6 +16,7 @@ import {
 } from './components/CommandPalette.js';
 import { SessionList } from './components/SessionList.js';
 import { PaneArea } from './components/PaneArea.js';
+import { SidePanel } from './components/SidePanel.js';
 import { controller, store, useAppState, THEME_CYCLE, StatusBadge } from './app-shared.js';
 import type { AppState } from './store.js';
 import { filterSessionList } from '../shared/metadata.js';
@@ -202,6 +203,7 @@ export function App(): React.ReactNode {
       <div className="body">
         <SessionList />
         <PaneArea />
+        <SidePanel />
       </div>
       <SettingsDialog
         open={settingsOpen}

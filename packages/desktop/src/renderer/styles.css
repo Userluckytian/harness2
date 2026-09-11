@@ -636,6 +636,185 @@ body,
 .sum-empty {
   color: var(--warn);
 }
+/* D3：右侧工作面板（计划 / 任务 / 审批） */
+.side-panel {
+  width: 300px;
+  flex: 0 0 300px;
+  display: flex;
+  flex-direction: column;
+  border-left: 1px solid var(--border);
+  background: var(--panel);
+  min-height: 0;
+}
+.side-tabs {
+  display: flex;
+  border-bottom: 1px solid var(--border);
+}
+.side-tab {
+  flex: 1;
+  padding: 6px 4px;
+  border: none;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+}
+.side-tab-active {
+  border-bottom: 2px solid var(--ok);
+  color: var(--fg);
+}
+.side-badge {
+  margin-left: 4px;
+  border-radius: 8px;
+  padding: 0 5px;
+  background: var(--warn);
+  color: white;
+  font-size: 0.8em;
+}
+.side-body {
+  flex: 1;
+  overflow-y: auto;
+  min-height: 0;
+}
+.side-foot {
+  border-top: 1px solid var(--border);
+  padding: 6px 8px;
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+.side-hint {
+  color: var(--muted);
+  font-size: 0.8em;
+}
+.panel {
+  padding: 8px;
+  font-size: 0.9em;
+}
+.panel-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 8px;
+  margin-bottom: 6px;
+  flex-wrap: wrap;
+}
+.panel-mode,
+.panel-foot,
+.panel-notice {
+  color: var(--muted);
+  font-size: 0.85em;
+}
+.panel-notice {
+  margin-top: 6px;
+  color: var(--warn);
+}
+.panel-empty {
+  padding: 12px 8px;
+  color: var(--muted);
+}
+.plan-steps {
+  margin: 6px 0;
+  padding-left: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.plan-step {
+  display: flex;
+  flex-direction: column;
+}
+.plan-step-completed .step-state {
+  color: var(--ok);
+}
+.plan-step-failed .step-state,
+.plan-step-cancelled .step-state {
+  color: var(--danger);
+}
+.step-evidence,
+.plan-goal-evidence,
+.plan-progress {
+  color: var(--muted);
+  font-size: 0.85em;
+}
+.mode-switch {
+  margin-top: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 0.85em;
+}
+.task-tree {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.task-row {
+  display: flex;
+  gap: 6px;
+  align-items: baseline;
+  flex-wrap: wrap;
+}
+.task-state-waiting-approval {
+  color: var(--warn);
+}
+.task-state-failed,
+.task-state-cancelled,
+.task-state-unknown {
+  color: var(--danger);
+}
+.task-state-completed {
+  color: var(--ok);
+}
+.task-bg,
+.task-orphan,
+.task-turn {
+  color: var(--muted);
+  font-size: 0.8em;
+}
+.task-orphan {
+  color: var(--warn);
+}
+.approval-group {
+  margin-bottom: 8px;
+  border-left: 2px solid var(--border);
+  padding-left: 8px;
+}
+.approval-group-head {
+  color: var(--muted);
+  font-size: 0.85em;
+}
+.approval-parent {
+  color: var(--warn);
+}
+.approval-card {
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 6px;
+  margin-top: 4px;
+}
+.approval-expired {
+  opacity: 0.6;
+}
+.approval-args {
+  margin-left: 6px;
+  word-break: break-all;
+}
+.approval-card-meta {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  color: var(--muted);
+  font-size: 0.8em;
+}
+.approval-actions {
+  display: flex;
+  gap: 6px;
+  margin-top: 4px;
+}
+.approval-note {
+  color: var(--warn);
+  font-size: 0.8em;
+}
 .composer {
   display: flex;
   gap: 8px;
