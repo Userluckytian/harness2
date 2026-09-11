@@ -7,8 +7,9 @@ import { TaskPanel } from '../features/plan/TaskPanel.js';
 import { ApprovalCenter } from '../features/plan/ApprovalCenter.js';
 import { ChangeReviewPanel } from '../features/workspace/ChangeReviewPanel.js';
 import { WorkspacePanel } from '../features/workspace/WorkspacePanel.js';
+import { EffectiveConfigPanel } from '../features/config/EffectiveConfigPanel.js';
 
-type PanelTab = 'plan' | 'tasks' | 'approvals' | 'changes' | 'workspace';
+type PanelTab = 'plan' | 'tasks' | 'approvals' | 'changes' | 'workspace' | 'config';
 
 const TAB_LABELS: Record<PanelTab, string> = {
   plan: '计划',
@@ -16,6 +17,7 @@ const TAB_LABELS: Record<PanelTab, string> = {
   approvals: '审批',
   changes: '变更',
   workspace: '工作区',
+  config: '配置',
 };
 
 export function SidePanel() {
@@ -46,6 +48,7 @@ export function SidePanel() {
         {tab === 'approvals' && <ApprovalCenter />}
         {tab === 'changes' && <ChangeReviewPanel sessionId={sessionId} />}
         {tab === 'workspace' && <WorkspacePanel sessionId={sessionId} />}
+        {tab === 'config' && <EffectiveConfigPanel sessionId={sessionId} />}
       </div>
       {sessionId !== null && (
         <div className="side-foot">
