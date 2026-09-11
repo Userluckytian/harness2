@@ -19,6 +19,9 @@
 > - **生效时间：** 2026-09-11（合入 main 并推送后）。并行两轨分支已从冻结提交建立：甲 `feat/notion-i1-tui`（只动 `packages/cli`）、乙 `feat/notion-i1-desktop`（只动 `packages/desktop`）。
 > - **解冻方式：** 只能由**编排者**在 main 上开独立小补丁窗口——新建 `fix/*` 分支 → 三平台 CI 全绿 → `--no-ff` 合入 main → 通知两轨各自 `git fetch && git merge origin/main`。两轨**不得**自行修改 core/gateway，也不得复制其逻辑绕过。
 > - **越界信号：** `packages/core/test/fixtures/api-surface-baseline.json` 变化（冻结后不应变化）。
+>
+> **阶段级代码审查遗留（2026-09-11，非阻塞 P2）：** 独立只读子代理审 `47d5d30..ef4c315` → ⚠️ 有条件通过（无 P0/P1）。① 镜像类型 `textOutcome` 可选 vs core 必填 → 已在 `API-STABILITY.md` 明示（关闭）；② 桌面 WS `?token=` 边界 → 已在 `API-STABILITY.md` 如实声明（关闭）；③ 飞书 listen 失败未 close → 复核为非缺陷（二次 start 成功、无句柄泄漏）；④ `ad12a08` 单父却用 `🔀`、⑤ 合入文案与计划原文略有出入 → 历史不可改，登记。
+> **A4/B3 拆分类审查（补阶段 15 欠账）：** ✅ 通过（无 P0/P1）；4 条设计建议（基类构造期虚拟派发、`export *` 通配、组件公共入口注释、命令级类型作用域）→ 登记为后续可选优化。
 
 | 日期 | 事项 | 状态 | 详情 |
 |------|------|------|------|
