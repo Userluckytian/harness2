@@ -23,6 +23,8 @@ import { RetryPanel, retryBudgetHasActivity, type RetryBudgetSnapshot } from './
 import { TaskPanel } from './panels/task-panel.js';
 import { decideTuiMode, detectTerminalCapabilities, hasModernTerminalMarker } from './terminal-capabilities.js';
 import { parseCommand, HELP_TEXT } from '../commands.js';
+import { runSharedCommand, type InkCommandIo } from './ink-commands.js';
+import { describeSteerResult } from '../steer.js';
 import { expandContextRefs, hasContextRefs } from '../context-ref.js';
 import {
   emptyTranscript,
@@ -192,16 +194,19 @@ function safeProject(dir: string | undefined): TranscriptState {
   }
 }
 
-function InkShell({
+export function InkShell({
   runtime,
   bootLines,
   dialog,
   onExit,
+  onTranscriptChange,
 }: {
   runtime: ChatRuntime;
   bootLines: string[];
   dialog: ReturnType<typeof createDialogController>;
   onExit: (reason: ExitReason) => void;
+  /** 可选观察缝：转录每次变化时回调（测试/诊断用；不影响渲染） */
+  onTranscriptChange?: (state: TranscriptState) => void;
 }): React.ReactElement {
   // T3：typed 转录（替代 string[] + Static）；会话切换时整体重投影
   const [transcript, setTranscript] = useState<TranscriptState>(() => initialTranscript(bootLines));
@@ -257,6 +262,17 @@ function InkShell({
   const onTranscriptEvent = React.useCallback((event: TranscriptEvent) => dispatch(event), [dispatch]);
   React.useEffect(() => () => schedulerRef.current?.dispose(), []);
 
+  // T5：steer 回帧 → 转录报告（accepted / stale(草稿已保留) / rejected）。
+  // 提交只代表入队；最终结果由 core loop 在安全 step 边界或收尾回帧。
+  React.useEffect(() => {
+    const unsubscribe = runtime.observeSteer((result) => {
+      const { line } = describeSteerResult(result);
+      liveSeqRef.current += 1;
+      dispatch({ type: 'system', id: `steer:${liveSeqRef.current}`, text: line });
+    });
+    return unsubscribe;
+  }, [runtime, dispatch]);
+
   /**
    * T4 输入优先：输入驱动的事件（用户回声/命令回显）期间挂起后台 flush 并立即 flushNow，
    * 保证按键回声即时可见；随后恢复后台批处理（流式事件继续按窗口合并）。
@@ -270,6 +286,11 @@ function InkShell({
   }
 
   const { live, handler, finalize, reset } = useTurnStream(onTranscriptEvent);
+
+  // 转录观察缝（测试/诊断）：转录变化时回调最新状态
+  React.useEffect(() => {
+    onTranscriptChange?.(transcript);
+  }, [transcript, onTranscriptChange]);
 
   const onViewportChange = React.useCallback(
     (info: { totalHeight: number; maxScroll: number; start: number; end: number; firstVisibleId?: string }) => {
@@ -395,18 +416,44 @@ function InkShell({
   }
 
   /**
-   * 会话切换统一处理：收集 switch/fork 的输出，重投影新会话转录（整体替换，不在旧 items 上追加），
-   * 清除展开/滚动状态，最后回放切换提示。
+   * T5 重投影：用 projectSession 从磁盘会话日志重建转录（整体替换）。
+   * /undo /redo 追加 rewind/marker 后调用，使被遮蔽的 user/assistant 条目消失（/redo 再出现）；
+   * 会话切换同理。清空展开/滚动状态，避免旧 id 上的交互残留。
    */
-  function applySessionChange(fn: (print: (t: string) => void) => void): void {
-    const lines: string[] = [];
-    fn((t) => lines.push(t));
-    schedulerRef.current?.flushNow(); // 先落定旧会话待处理事件，避免切换后混入
+  function reprojectTranscript(): void {
+    schedulerRef.current?.flushNow(); // 先落定待处理事件，避免重投影后混入
     setTranscript(safeProject(runtime.getCurrent()?.dir));
     setExpandedIds(new Set());
     applyFollow(true);
     applyAnchor(undefined);
     applyScroll(0);
+  }
+
+  /** T5：共享命令执行缝（委托 commands.ts 的 handleCommand） */
+  const commandIo: InkCommandIo = {
+    print: (t) => {
+      sendSystem(t);
+      schedulerRef.current?.flushNow(); // 命令输出立即可见（低频）
+    },
+    reproject: reprojectTranscript,
+    requestExit: () => {
+      exitingRef.current = true;
+      if (busyRef.current) {
+        // turn 进行中：先取消，等本轮收尾后由 finally 触发退出（对齐 legacy requestExit）
+        runtime.abortTurn();
+        return;
+      }
+      onExit('exit');
+    },
+  };
+
+  /**
+   * 会话切换统一处理（openSessions 选择路径）：收集 switch 输出，重投影新会话转录，再回放提示。
+   */
+  function applySessionChange(fn: (print: (t: string) => void) => void): void {
+    const lines: string[] = [];
+    fn((t) => lines.push(t));
+    reprojectTranscript();
     for (const l of lines) sendSystem(l);
     schedulerRef.current?.flushNow(); // T4 final flush：重投影后切换提示立即落定
   }
@@ -465,7 +512,13 @@ function InkShell({
     );
   }
 
-  function handleCommand(name: string, rest: string): void {
+  /**
+   * T5 命令分发：ink 本地 UI 命令（/mode /help /sessions /context /compact /reasoning /tasks）
+   * 保持原交互；其余（/undo /redo /new /resume /fork /exit /quit /? 与未知命令）**委托共享
+   * commands.ts 的 handleCommand**，用 ChatRuntime 构建真实 CommandContext，保证两路径语义一致。
+   */
+  function handleCommand(parsed: { name: string; rest: string }): void {
+    const { name, rest } = parsed;
     switch (name) {
       case '/mode':
         if (rest.length > 0) {
@@ -482,29 +535,18 @@ function InkShell({
         }
         return;
       case '/help':
+      case '/?':
+        // 帮助文本与 legacy 同源（commands.ts 的 HELP_TEXT），此处以浮层展示
         openHelp();
         return;
       case '/sessions':
-        openSessions();
-        return;
-      case '/new':
-        // 新建会话：重投影（新会话日志可能尚未落盘 → 空转录）
-        applySessionChange((print) => runtime.switchSession(null, { print }));
-        return;
-      case '/resume': {
-        const id = rest.split(/\s+/)[0] ?? '';
-        if (id.length === 0) {
-          sendSystem('error: 用法 /resume <id>（/sessions 查看 id）');
+        // 带关键字 → 共享搜索（文本输出）；无参 → 交互式选择列表
+        if (rest.length > 0) {
+          runSharedCommand(parsed, runtime, commandIo);
           return;
         }
-        applySessionChange((print) => runtime.switchSession(id, { print }));
+        openSessions();
         return;
-      }
-      case '/fork': {
-        const at = rest.length > 0 && Number.isInteger(Number(rest)) ? Number(rest) : undefined;
-        applySessionChange((print) => runtime.fork(at, { print }));
-        return;
-      }
       case '/context': {
         const current = runtime.getCurrent();
         const usage = current !== null ? getContextUsage(current.dir) : undefined;
@@ -537,17 +579,9 @@ function InkShell({
       case '/tasks':
         sendSystem('任务列表请使用 `harness2 cron list` 查看（REPL 只读展示将在后续版本提供）。');
         return;
-      case '/exit':
-        exitingRef.current = true;
-        if (busyRef.current) {
-          // turn 进行中：先取消，等本轮收尾后由 finally 触发退出（对齐 legacy requestExit）
-          runtime.abortTurn();
-          return;
-        }
-        onExit('exit');
-        return;
       default:
-        sendSystem(`error: 未实现命令 ${name}（/help 查看）`);
+        // /undo /redo（rewind 重投影）/new /resume /fork /exit /quit /? 与未知命令 → 共享实现
+        runSharedCommand(parsed, runtime, commandIo);
     }
   }
 
@@ -600,7 +634,7 @@ function InkShell({
     if (parsed !== null) {
       liveSeqRef.current += 1;
       dispatchInputNow({ type: 'system', id: `echo:${liveSeqRef.current}`, text: `> ${text}` });
-      handleCommand(parsed.name, parsed.rest);
+      handleCommand(parsed);
       if (!busyRef.current) drainQueue();
       return;
     }
@@ -678,6 +712,10 @@ function InkShell({
         onSend={submit}
         onExit={(reason) => onExit(reason ?? 'exit')}
         onAbort={abortCurrentTurn}
+        onSteer={(text) => {
+          const out = runtime.submitSteer(text);
+          return out.state === 'submitted' ? `${out.message}（草稿保留）` : out.message;
+        }}
         queuedCount={queueItems.length}
       />
     </Box>
