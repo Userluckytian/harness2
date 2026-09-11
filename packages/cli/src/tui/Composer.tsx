@@ -51,6 +51,12 @@ export interface ComposerProps {
   onExit: (reason?: ExitReason) => void;
   /** 忙时 Esc / Ctrl+C 触发：取消当前 turn */
   onAbort?: () => void;
+  /**
+   * T5：忙时 Ctrl+S 把当前草稿作为 steer 提交（控制输入，绑定当前 turnId）。
+   * 返回页脚提示文案；**草稿始终保留**（提交受理不等于最终 resolution：
+   * unknown/stale 必须保草稿，最终 accepted/stale/rejected 由上层订阅 observeSteer 报告）。
+   */
+  onSteer?: (text: string) => string;
   /** 上层 FIFO 队列长度（>0 时页脚提示） */
   queuedCount?: number;
 }
@@ -106,6 +112,7 @@ export function Composer({
   onSend,
   onExit,
   onAbort,
+  onSteer,
   queuedCount = 0,
 }: ComposerProps): React.ReactElement {
   const [draft, setDraft] = React.useState<InputState>(() => createInputState(''));
@@ -199,6 +206,15 @@ export function Composer({
       }
       if (key.ctrl && ch === 'd') {
         if (draft.value.trim().length === 0) onExit('eof');
+        return;
+      }
+      // T5：Ctrl+S = 把当前草稿作为 steer 提交（忙时控制输入）。草稿不在此清空：
+      // unknown/stale 必须保留；最终 resolution 由上层 observeSteer 报告。
+      if (key.ctrl && (ch === 's' || ch === 'S')) {
+        if (onSteer === undefined) return;
+        const steerText = expandChips(draft.value, chips);
+        if (steerText.trim().length === 0) return;
+        showHint(onSteer(steerText));
         return;
       }
       if (key.shift && key.return) {
@@ -333,7 +349,7 @@ export function Composer({
     <Box flexDirection="column" borderStyle="round" flexShrink={0}>
       {busy && (
         <Text color="gray">
-          Esc 停止当前 turn · Enter 排队
+          Esc 停止当前 turn · Enter 排队 · Ctrl+S steer（草稿保留）
           {queuedCount > 0 ? ` · 已排队 ${queuedCount} 条` : ''}
         </Text>
       )}

@@ -49,9 +49,11 @@ import {
   type SessionEventType,
   type SessionWriter,
   type ApprovalMode,
+  type SteerResult,
 } from '@harness2/core';
 import type { ChatOptions } from './legacy-chat.js';
 import { PLAN_MODE_SYSTEM_PREFIX } from './mode-alias.js';
+import { CliSteerSink, buildSteerRequest, makeSteerId, type SteerSubmitOutcome } from './steer.js';
 
 /** --provider mock 的内置演示脚本：两轮工具调用（write 文件 + read 验证） */
 export const MOCK_DEMO_SCRIPT: MockScript = [
@@ -136,6 +138,16 @@ export interface ChatRuntime {
   reasoning: () => boolean;
   setReasoning: (on: boolean) => boolean;
   noteCrash: (id?: string) => void;
+  /**
+   * T5：提交一条 steer（控制输入）。仅当已从首个 TurnStreamEvent 得知当前 turnId 时入队，
+   * 否则返回 `unknown` 并由调用方保留草稿（不猜测 turnId、不静默 abort/resend）。
+   * 入队仅为受理；最终 accepted/stale/rejected 由 loop 在安全 step 边界/收尾回帧（observeSteer）。
+   */
+  submitSteer: (text: string) => SteerSubmitOutcome;
+  /** T5：当前 turnId（首个 TurnStreamEvent 起可知；空闲或事件未到 → undefined） */
+  currentTurnId: () => string | undefined;
+  /** T5：订阅 steer 回帧（accepted / stale(draftKept) / rejected），返回退订函数 */
+  observeSteer: (fn: (result: SteerResult) => void) => () => void;
   finish: (hooks: { closeReadline?: () => void; destroyInput?: () => void }) => Promise<void>;
 }
 
@@ -161,6 +173,24 @@ export async function setupChatSession(options: ChatOptions, hooks: ChatSetupHoo
   // 会话与会话中止态：装配中途即可能被异步闭包（memory sink / 审批 ask）在运行期读取
   let current: ChatSession | null = null;
   let currentAbort: AbortController | null = null;
+
+  // T5：会话级 steer 控制通道。core loop 只在安全 step 边界 take()；CLI 持有 sink 做接收/去重，
+  // 并把回帧转发给 UI 观察者。steer 不写 session.log、不进投影正文。
+  const steerSink = new CliSteerSink();
+  const steerObservers = new Set<(result: SteerResult) => void>();
+  steerSink.observe({
+    onSteerResult: (result) => {
+      for (const fn of [...steerObservers]) {
+        try {
+          fn(result);
+        } catch {
+          // 观察者异常不影响内核收尾
+        }
+      }
+    },
+  });
+  let activeTurnId: string | undefined;
+  let steerSeq = 0;
 
   const skillsStore = new SkillStore(projectSkillsRoot(root), defaultSkillsRoot(options.home));
   tools.register(createSkillTool(skillsStore));
@@ -378,6 +408,7 @@ export async function setupChatSession(options: ChatOptions, hooks: ChatSetupHoo
     const session = current;
     const ac = new AbortController();
     currentAbort = ac;
+    activeTurnId = undefined; // T5：turn 起始清空；由首个 TurnStreamEvent 重新绑定
     // plan 模式：每条 user message 前追加系统前缀（文案两路径共用 mode-alias）
     if (currentMode === 'plan' && text.trim().length > 0) {
       text = `${PLAN_MODE_SYSTEM_PREFIX}\n${text}`;
@@ -409,18 +440,29 @@ export async function setupChatSession(options: ChatOptions, hooks: ChatSetupHoo
         userText: text,
         signal: ac.signal,
         snapshots,
+        // T5：steer 控制输入通道（loop 只在安全 step 边界消费；legacy 从不 push，行为不变）
+        steer: steerSink,
         onStream: (event) => {
+          activeTurnId = event.turnId; // 首个事件即绑定本 turn 的 turnId（供 submitSteer）
           if (event.type === 'text-delta') onStream({ type: 'text-delta', text: event.text, turnId: event.turnId });
           else if (event.type === 'tool-call') onStream({ type: 'tool-call', call: event.call, turnId: event.turnId });
           else if (event.type === 'reasoning-delta') {
             // reasoning 增量：默认不渲染（legacy 保持折叠）；开启后转给调用方（ink 展示）
             if (reasoningEnabled) onStream({ type: 'reasoning-delta', text: event.text, turnId: event.turnId });
-          } else onStream({ type: 'tool-result', callId: event.callId, ok: event.ok, error: event.error, turnId: event.turnId });
+          } else
+            onStream({
+              type: 'tool-result',
+              callId: event.callId,
+              ok: event.ok,
+              error: event.error,
+              turnId: event.turnId,
+            });
         },
       });
       return result;
     } finally {
       currentAbort = null;
+      activeTurnId = undefined; // turn 结束：之后的 steer 视为 unknown（保草稿），不挂到未来 turn
     }
   };
 
@@ -504,6 +546,48 @@ export async function setupChatSession(options: ChatOptions, hooks: ChatSetupHoo
       return reasoningEnabled;
     },
     noteCrash: (id?: string) => noteCrashSessionId(id),
+    submitSteer: (text: string): SteerSubmitOutcome => {
+      if (text.trim().length === 0) {
+        return {
+          state: 'rejected',
+          reason: '空白 steer 不提交',
+          draftKept: true,
+          message: '空白 steer 不提交（草稿保留）',
+        };
+      }
+      steerSeq += 1;
+      const req = buildSteerRequest(activeTurnId, makeSteerId(steerSeq), text);
+      if (req === null) {
+        return {
+          state: 'unknown',
+          reason: '当前没有可绑定的 turn（尚无 turnId）',
+          draftKept: true,
+          message: '尚无进行中的 turn：steer 未提交（草稿保留）',
+        };
+      }
+      if (!steerSink.push(req)) {
+        return {
+          state: 'rejected',
+          id: req.id,
+          reason: '重复的 steer id',
+          draftKept: true,
+          message: 'steer 被拒绝（重复 id；草稿保留）',
+        };
+      }
+      return {
+        state: 'submitted',
+        id: req.id,
+        turnId: req.expectedTurnId,
+        message: 'steer 已提交，将在安全 step 边界应用',
+      };
+    },
+    currentTurnId: () => activeTurnId,
+    observeSteer: (fn: (result: SteerResult) => void) => {
+      steerObservers.add(fn);
+      return () => {
+        steerObservers.delete(fn);
+      };
+    },
     finish,
   };
 }
