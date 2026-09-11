@@ -567,6 +567,75 @@ body,
 .queue-note {
   color: var(--muted);
 }
+/* D2：命令执行日志卡（真实 shell/cwd/输出窗口/exit code） */
+.cmd-log {
+  margin: 4px 0 6px 12px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 6px 8px;
+  background: var(--panel);
+  font-size: 0.85em;
+}
+.cmd-head {
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+  flex-wrap: wrap;
+}
+.cmd-source {
+  border-radius: 4px;
+  padding: 0 6px;
+  background: var(--composer-bg);
+  color: var(--muted);
+}
+.cmd-source-planned-only {
+  color: var(--warn);
+}
+.cmd-status-failed,
+.cmd-status-cancelled,
+.cmd-status-unknown {
+  color: var(--danger);
+}
+.cmd-status-not-executed {
+  color: var(--muted);
+}
+.cmd-command,
+.cmd-output-body {
+  margin: 4px 0;
+  padding: 6px;
+  border-radius: 4px;
+  background: var(--composer-bg);
+  white-space: pre-wrap;
+  word-break: break-all;
+  max-height: 260px;
+  overflow: auto;
+}
+.cmd-meta {
+  display: flex;
+  gap: 12px;
+  color: var(--muted);
+  flex-wrap: wrap;
+}
+.cmd-output-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  color: var(--muted);
+}
+.cmd-error pre {
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+.attempt-partial pre {
+  white-space: pre-wrap;
+  word-break: break-all;
+  max-height: 200px;
+  overflow: auto;
+}
+.sum-partial,
+.sum-empty {
+  color: var(--warn);
+}
 .composer {
   display: flex;
   gap: 8px;

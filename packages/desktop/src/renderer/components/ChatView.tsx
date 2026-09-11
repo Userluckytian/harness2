@@ -1,9 +1,11 @@
-// 消息流（B3-2 拆分产物；D1 起接 Composer 草稿/引用/可见队列）。
-// ChatItemView / ChatView（气泡、tool 行、diff 卡、审批条、输入框）。
+// 消息流（B3-2 拆分产物；D1 接 Composer 草稿/引用/可见队列；D2 接真实命令日志 + 稳定滚动）。
+// ChatItemView / ChatView（气泡、tool 行、命令日志、diff 卡、审批条、输入框）。
 import { useEffect, useRef } from 'react';
 import { displayToolName, type ChatItem } from '../chat-model.js';
 import { resolveFileRefs } from '../../shared/file-ref.js';
 import { autoHeightFor, composeQueueView, shouldSubmitOnKey } from '../features/composer/composer-model.js';
+import { CommandLog } from '../features/timeline/CommandLog.js';
+import { buildToolRow, isAtBottom, nextScrollTop } from '../features/timeline/execution-log.js';
 import { DiffCard } from './DiffCard.js';
 import { controller, store, targetPaneFor, useAppState } from '../app-shared.js';
 
@@ -69,6 +71,15 @@ export function ChatItemView({ item, sessionId }: { item: ChatItem; sessionId?: 
       // B5 diff 卡片：write/edit 成功且有快照序（seq = rewind_points.jsonl 条目键）时展示真实红绿 diff
       const showDiff = (item.tool === 'write' || item.tool === 'edit') && sessionId !== undefined;
       const targetFile = diffTargetFile(item.args);
+      // D2：有 S7 执行视图（真实 shell/cwd/exitCode/输出归属）时优先渲染命令日志卡
+      const view =
+        sessionId !== undefined
+          ? store.peekViews(sessionId)?.executionViews.find((v) => v.callId === item.callId)
+          : undefined;
+      const commandRow = view !== undefined ? buildToolRow(item, view) : undefined;
+      const showCommandLog =
+        commandRow !== undefined &&
+        (commandRow.tool === 'bash' || commandRow.outputRef.length > 0 || commandRow.status === 'cancelled');
       return (
         <div className={`tool-entry${item.result ? (item.result.ok ? 'tool-ok' : 'tool-fail') : 'tool-pending'}`}>
           <div className={`tool-row ${item.result ? (item.result.ok ? 'tool-ok' : 'tool-fail') : 'tool-pending'}`}>
@@ -92,11 +103,25 @@ export function ChatItemView({ item, sessionId }: { item: ChatItem; sessionId?: 
               onUndo={() => void controller.undoSession(sessionId)}
             />
           )}
+          {showCommandLog && commandRow !== undefined && (
+            <CommandLog row={commandRow} displayName={displayToolName(item.tool)} />
+          )}
         </div>
       );
     }
     case 'attempt':
-      return <div className="attempt-row">尝试失败：{item.error}</div>;
+      return (
+        <div className="attempt-row">
+          尝试失败：{item.error}
+          {/* P3-b：半截文本必须显式标注「未完成 / 已中断」，不得当作完整正文 */}
+          {item.text !== undefined && item.text.length > 0 && (
+            <details className="attempt-partial">
+              <summary>未完成 / 已中断的产出（{item.text.length} 字）</summary>
+              <pre>{item.text}</pre>
+            </details>
+          )}
+        </div>
+      );
     case 'streaming':
       return (
         <div className="bubble-assistant streaming">
@@ -125,6 +150,21 @@ export function ChatItemView({ item, sessionId }: { item: ChatItem; sessionId?: 
           {item.durationMs !== undefined && item.durationMs > 0 ? ` · ${(item.durationMs / 1000).toFixed(1)}s` : ''}]
           {item.error !== undefined && <span className="sum-err"> {item.error}</span>}
           {item.warning !== undefined && <span className="sum-warn"> {item.warning}</span>}
+          {/* P3-b：partial 必须标注未完成/已中断（半截文本不得当完整正文） */}
+          {item.textOutcome === 'partial' && (
+            <span className="sum-partial">
+              {' '}
+              未完成 / 已中断
+              {item.partialText !== undefined && item.partialText.length > 0 && (
+                <details className="attempt-partial">
+                  <summary>半截产出（{item.partialText.length} 字）</summary>
+                  <pre>{item.partialText}</pre>
+                </details>
+              )}
+            </span>
+          )}
+          {/* P3-a：empty 不得留空白气泡——只展示停因/错误与已执行工具行 */}
+          {item.textOutcome === 'empty' && <span className="sum-empty"> 无最终文本（见上方工具行/错误）</span>}
         </div>
       );
   }
@@ -137,11 +177,23 @@ export function ChatView({ streamId }: { streamId: string | null }) {
   // D1：草稿按会话隔离（store 持事实；切换会话各自保留），持久化经 controller 去抖落盘
   const draft = streamId !== null ? store.draftFor(streamId) : '';
   const scrollRef = useRef<HTMLDivElement>(null);
+  /** 渲染前是否贴底（决定新内容到达时是否跟随滚动） */
+  const wasAtBottomRef = useRef(true);
 
+  // D2 稳定滚动：仅当**之前**贴底时跟随到底；用户上滚阅读历史时不被新帧拽回底部。
+  // 内容变化前先记录贴底状态（effect 在 DOM 更新后运行，用 ref 保存的是上一轮的真实位置）。
   useEffect(() => {
     const el = scrollRef.current;
-    if (el) el.scrollTop = el.scrollHeight;
+    if (el === null) return;
+    const before = { scrollTop: el.scrollTop, scrollHeight: el.scrollHeight, clientHeight: el.clientHeight };
+    const target = nextScrollTop(before, { scrollHeight: el.scrollHeight }, wasAtBottomRef.current);
+    if (target !== null) el.scrollTop = target;
   }, [items, streamId]);
+
+  const onMessagesScroll = (): void => {
+    const el = scrollRef.current;
+    if (el !== null) wasAtBottomRef.current = isAtBottom(el);
+  };
 
   if (streamId === null) {
     return (
@@ -189,7 +241,7 @@ export function ChatView({ streamId }: { streamId: string | null }) {
 
   return (
     <div className="chat">
-      <div className="messages" ref={scrollRef}>
+      <div className="messages" ref={scrollRef} onScroll={onMessagesScroll}>
         {items.map((item, i) => (
           <ChatItemView key={item.callId ?? item.seq ?? `i${i}`} item={item} sessionId={streamId} />
         ))}

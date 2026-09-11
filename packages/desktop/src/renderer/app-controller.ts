@@ -84,7 +84,57 @@ export function createController(store: AppStore, api: Harness2Api): Controller 
       return;
     }
     store.applyFrame(frame);
+    // D2/D5：turn 收尾后刷新命令日志与变更审查（真实归属数据来自 S7 只读端点）
+    if (frame.type === 'turn-end') {
+      void loadExecutionViews(frame.sessionId);
+      void loadChangeReview(frame.sessionId);
+    }
     for (const listener of [...frameListeners]) listener(frame);
+  };
+
+  // —— D0–D5：S7 只读契约加载（失败写 errors 如实显示，不静默吞） ——
+  const loadRunConfig = async (id: string): Promise<void> => {
+    try {
+      store.setRunConfig(id, await api.runConfig(id));
+    } catch (e) {
+      store.setRunConfig(id, undefined, (e as Error).message);
+    }
+  };
+  const loadPlanState = async (id: string): Promise<void> => {
+    try {
+      store.setPlanState(id, await api.planState(id));
+    } catch (e) {
+      store.setPlanState(id, undefined, (e as Error).message);
+    }
+  };
+  const loadExecutionViews = async (id: string): Promise<void> => {
+    try {
+      store.setExecutionViews(id, await api.executionViews(id));
+    } catch (e) {
+      store.setExecutionViews(id, [], (e as Error).message);
+    }
+  };
+  const loadChangeReview = async (id: string): Promise<void> => {
+    try {
+      store.setChangeReview(id, await api.changeReview(id));
+    } catch (e) {
+      store.setChangeReview(id, undefined, (e as Error).message);
+    }
+  };
+  /** 切换/进入会话时拉齐四契约 */
+  const refreshAllViews = (id: string): void => {
+    void loadRunConfig(id);
+    void loadPlanState(id);
+    void loadExecutionViews(id);
+    void loadChangeReview(id);
+  };
+  /** D0：能力盘点（serve 就绪或切换会话时刷新；失败保持上次结果，不伪造「全部可用」） */
+  const loadCapabilities = async (id?: string): Promise<void> => {
+    try {
+      store.setCapabilities(await api.capabilities(id));
+    } catch {
+      // 探测失败：保持上次结果
+    }
   };
 
   const refreshSessions = async (): Promise<void> => {
@@ -116,6 +166,8 @@ export function createController(store: AppStore, api: Harness2Api): Controller 
     await subscribeSession(id);
     store.select(id);
     await replaySession(id); // 切换 = 全量重放（含 active 标记），随后增量按 seq 去重接入
+    // D0：切到该会话即拉齐只读契约（有效配置/计划/命令日志/变更审查）
+    if (store.getState().status === 'connected') refreshAllViews(id);
   };
 
   const persistLayout = async (): Promise<void> => {
@@ -140,7 +192,10 @@ export function createController(store: AppStore, api: Harness2Api): Controller 
     start(): () => void {
       const statusUnsub = api.onConnectionStatus((status, detail) => {
         store.applyStatus(status, detail);
-        if (status === 'connected') void refreshSessions();
+        if (status === 'connected') {
+          void refreshSessions();
+          void loadCapabilities(store.getState().selectedId ?? undefined);
+        }
       });
       const eventUnsub = api.onEvent((frame) => {
         dispatchFrame(frame);
@@ -151,7 +206,10 @@ export function createController(store: AppStore, api: Harness2Api): Controller 
         .getStatus()
         .then((s) => {
           store.applyStatus(s.status, s.detail);
-          if (s.status === 'connected') void refreshSessions();
+          if (s.status === 'connected') {
+            void refreshSessions();
+            void loadCapabilities();
+          }
         })
         .catch(() => {
           // 通道尚未就绪：等 onConnectionStatus 事件补齐
@@ -309,41 +367,11 @@ export function createController(store: AppStore, api: Harness2Api): Controller 
         return undefined;
       }
     },
-    async refreshRunConfig(id: string): Promise<void> {
-      try {
-        store.setRunConfig(id, await api.runConfig(id));
-      } catch (e) {
-        store.setRunConfig(id, undefined, (e as Error).message);
-      }
-    },
-    async refreshPlanState(id: string): Promise<void> {
-      try {
-        store.setPlanState(id, await api.planState(id));
-      } catch (e) {
-        store.setPlanState(id, undefined, (e as Error).message);
-      }
-    },
-    async refreshExecutionViews(id: string): Promise<void> {
-      try {
-        store.setExecutionViews(id, await api.executionViews(id));
-      } catch (e) {
-        store.setExecutionViews(id, [], (e as Error).message);
-      }
-    },
-    async refreshChangeReview(id: string): Promise<void> {
-      try {
-        store.setChangeReview(id, await api.changeReview(id));
-      } catch (e) {
-        store.setChangeReview(id, undefined, (e as Error).message);
-      }
-    },
-    async refreshCapabilities(id?: string): Promise<void> {
-      try {
-        store.setCapabilities(await api.capabilities(id));
-      } catch {
-        // 探测失败：保持上次结果（不伪造「全部可用」）
-      }
-    },
+    refreshRunConfig: loadRunConfig,
+    refreshPlanState: loadPlanState,
+    refreshExecutionViews: loadExecutionViews,
+    refreshChangeReview: loadChangeReview,
+    refreshCapabilities: loadCapabilities,
     async undoSession(id: string): Promise<void> {
       try {
         await api.undo(id);
