@@ -1,5 +1,7 @@
-// useTurnStream（T3）：把 runTurn 流式事件桥接为 typed transcript 事件，带稳定身份与 turnId。
+// useTurnStream（T3/T4）：把 runTurn 流式事件桥接为 typed transcript 事件，带稳定身份与 turnId。
 // - tool-call/tool-result 立即经 onTranscriptEvent 交给 shell 的 transcriptReducer（卡片落定后仍可展开）；
+// - T4 step 顺序保真：tool-call（或推理边界）到达前累积的正文先 flush 为该 step 的独立 assistant item
+//   （id 以 turnId+stepIndex 为作用域），再落工具项；后续文本另起一段——`解释→工具→解释` 不再塌成一块；
 // - text/reasoning 增量仍 50ms 节流合并进 live 快照（一次真正重绘，长流不抖动）；
 // - finalize(TurnResult) 依冻结的 textOutcome 生成 final|partial|empty 终态事件（缺省按 finalText/partialText 推断）。
 import { useCallback, useRef, useState } from 'react';
@@ -73,6 +75,7 @@ export function terminalEvent(result: TurnResult | undefined, live: TurnSnapshot
 export function useTurnStream(onTranscriptEvent: (event: TranscriptEvent) => void): UseTurnStream {
   const [live, setLive] = useState<TurnSnapshot>({ turnId: undefined, text: '', reasoning: '' });
   const bufferRef = useRef<TurnSnapshot>({ turnId: undefined, text: '', reasoning: '' });
+  const stepIndexRef = useRef(0);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const scheduledRef = useRef(false);
   const onEventRef = useRef(onTranscriptEvent);
@@ -96,6 +99,31 @@ export function useTurnStream(onTranscriptEvent: (event: TranscriptEvent) => voi
     }, FLUSH_MS);
   }, []);
 
+  /**
+   * 把当前累积正文 flush 为该 step 的独立 assistant item（有正文或有推理才发，避免空气泡）。
+   * 返回是否真的发出了 item；发出后清空文本缓冲、step 计数 +1、并同步 live 快照（避免与已落定项重复显示）。
+   */
+  const flushStep = useCallback((): boolean => {
+    const buf = bufferRef.current;
+    const hasText = buf.text.trim().length > 0;
+    const hasReasoning = buf.reasoning.trim().length > 0;
+    if (!hasText && !hasReasoning) return false;
+    const stepIndex = stepIndexRef.current;
+    stepIndexRef.current += 1;
+    onEventRef.current({
+      type: 'assistant/step',
+      ...(buf.turnId !== undefined ? { turnId: buf.turnId } : {}),
+      stepIndex,
+      text: hasText ? buf.text : '',
+      ...(hasReasoning ? { reasoning: buf.reasoning } : {}),
+    });
+    buf.text = '';
+    buf.reasoning = '';
+    clearTimer();
+    setLive({ ...buf });
+    return true;
+  }, [clearTimer]);
+
   const handler: TurnStreamHandler = useCallback(
     (event) => {
       const buf = bufferRef.current;
@@ -113,6 +141,8 @@ export function useTurnStream(onTranscriptEvent: (event: TranscriptEvent) => voi
       }
       if (event.type === 'tool-call') {
         buf.turnId = event.turnId;
+        // 顺序保真：先落本 step 正文，再落工具项（后续文本另起一段）
+        flushStep();
         onEventRef.current({
           type: 'tool/call',
           seq: 0,
@@ -134,7 +164,7 @@ export function useTurnStream(onTranscriptEvent: (event: TranscriptEvent) => voi
         turnId: event.turnId,
       });
     },
-    [scheduleFlush],
+    [scheduleFlush, flushStep],
   );
 
   const finalize = useCallback(
@@ -147,6 +177,7 @@ export function useTurnStream(onTranscriptEvent: (event: TranscriptEvent) => voi
 
   const reset = useCallback(() => {
     clearTimer();
+    stepIndexRef.current = 0;
     bufferRef.current = { turnId: undefined, text: '', reasoning: '' };
     setLive({ turnId: undefined, text: '', reasoning: '' });
   }, [clearTimer]);

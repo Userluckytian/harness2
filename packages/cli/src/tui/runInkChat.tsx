@@ -17,6 +17,10 @@ import { SelectList } from './SelectList.js';
 import { ConfirmDialog } from './ConfirmDialog.js';
 import { useTurnStream } from './useTurnStream.js';
 import { createShutdown, type ExitReason } from './shutdown.js';
+import { createUiScheduler, type UiScheduler } from './scheduler.js';
+import { QueuePanel, cancelQueueItem, type QueuePanelItem } from './panels/queue-panel.js';
+import { RetryPanel, retryBudgetHasActivity, type RetryBudgetSnapshot } from './panels/retry-panel.js';
+import { TaskPanel } from './panels/task-panel.js';
 import { decideTuiMode, detectTerminalCapabilities, hasModernTerminalMarker } from './terminal-capabilities.js';
 import { parseCommand, HELP_TEXT } from '../commands.js';
 import { expandContextRefs, hasContextRefs } from '../context-ref.js';
@@ -36,6 +40,7 @@ import {
   type ModeAlias,
 } from '../mode-alias.js';
 import { getContextUsage } from '@harness2/core';
+import type { TaskContract } from '@harness2/core';
 
 /** 现代终端检测：兼容旧导出，委托纯函数标记探测（WT_SESSION / TERM_PROGRAM / ConEmu / ANSICON / xterm 等） */
 export function isModernTerminal(env: NodeJS.ProcessEnv = process.env): boolean {
@@ -163,6 +168,12 @@ export async function runInkChat(options: ChatOptions = {}): Promise<void> {
 
 const ASK_CANCELLED = '\u0000ask-cancelled';
 
+/**
+ * T4 任务面板数据注入缝：in-process CLI 路径尚无 task-coordinator 数据源接入 ChatRuntime
+ * （已登记缺口）。此处传空列表 → 面板渲染 null，绝不伪造任务；接线完成后替换为真实 TaskContract[]。
+ */
+const EMPTY_TASKS: readonly TaskContract[] = [];
+
 function initialTranscript(bootLines: string[]): TranscriptState {
   let state = emptyTranscript();
   bootLines.forEach((text, i) => {
@@ -210,8 +221,12 @@ function InkShell({
   // T0：忙时 FIFO 排队（对齐 legacy-chat：忙碌中的输入不并发、当前 turn 收尾后立即执行下一条）
   const busyRef = useRef(false);
   const exitingRef = useRef(false);
-  const queueRef = useRef<string[]>([]);
-  const [queuedCount, setQueuedCount] = useState(0);
+  // T4：真实队列条目（id 稳定，供 queue-panel 的 Ctrl+X 取消定位）；queueRef 为真源、queueItems 为渲染镜像
+  const queueRef = useRef<QueuePanelItem[]>([]);
+  const queueSeqRef = useRef(0);
+  const [queueItems, setQueueItems] = useState<QueuePanelItem[]>([]);
+  // T4：turn 结束时的重试预算快照（冻结 RetryBudgetState：used/remaining/stopReason）；无活动不渲染
+  const [retryBudget, setRetryBudget] = useState<RetryBudgetSnapshot | undefined>(undefined);
   // 转录状态镜像（供键盘回调读取最新 items，不触发额外订阅）
   const transcriptRef = useRef(transcript);
   transcriptRef.current = transcript;
@@ -226,10 +241,33 @@ function InkShell({
   const cols = stdout.columns ?? 80;
   const SCROLL_PAGE = Math.max(1, Math.floor(rows / 2));
 
+  // T4：有界 UI 调度器——批量合并 transcript 事件（coalesce + maxBatch），输入驱动的 flushNow 保即时，
+  // turn 收尾/卸载时 final flush 且 dispose 清 timer（无残留 timer，满足 T0/T5 新鲜度）。
+  const schedulerRef = useRef<UiScheduler<TranscriptEvent> | null>(null);
+  if (schedulerRef.current === null) {
+    schedulerRef.current = createUiScheduler<TranscriptEvent>({
+      flushMs: 16,
+      maxBatch: 64,
+      onFlush: (batch) => setTranscript((s) => batch.reduce(transcriptReducer, s)),
+    });
+  }
   const dispatch = React.useCallback((event: TranscriptEvent) => {
-    setTranscript((s) => transcriptReducer(s, event));
+    schedulerRef.current?.push(event);
   }, []);
   const onTranscriptEvent = React.useCallback((event: TranscriptEvent) => dispatch(event), [dispatch]);
+  React.useEffect(() => () => schedulerRef.current?.dispose(), []);
+
+  /**
+   * T4 输入优先：输入驱动的事件（用户回声/命令回显）期间挂起后台 flush 并立即 flushNow，
+   * 保证按键回声即时可见；随后恢复后台批处理（流式事件继续按窗口合并）。
+   */
+  function dispatchInputNow(event: TranscriptEvent): void {
+    const sched = schedulerRef.current;
+    sched?.setInputPriority(true);
+    sched?.push(event);
+    sched?.flushNow();
+    sched?.setInputPriority(false);
+  }
 
   const { live, handler, finalize, reset } = useTurnStream(onTranscriptEvent);
 
@@ -363,12 +401,14 @@ function InkShell({
   function applySessionChange(fn: (print: (t: string) => void) => void): void {
     const lines: string[] = [];
     fn((t) => lines.push(t));
+    schedulerRef.current?.flushNow(); // 先落定旧会话待处理事件，避免切换后混入
     setTranscript(safeProject(runtime.getCurrent()?.dir));
     setExpandedIds(new Set());
     applyFollow(true);
     applyAnchor(undefined);
     applyScroll(0);
     for (const l of lines) sendSystem(l);
+    schedulerRef.current?.flushNow(); // T4 final flush：重投影后切换提示立即落定
   }
 
   function openModePicker(): void {
@@ -518,21 +558,38 @@ function InkShell({
     runtime.abortTurn();
   }
 
+  /** 队列真源 → 渲染镜像同步 */
+  function syncQueue(): void {
+    setQueueItems([...queueRef.current]);
+  }
+
+  /** T4：入队（id 稳定，供 queue-panel 取消定位） */
+  function enqueue(text: string): void {
+    queueSeqRef.current += 1;
+    queueRef.current.push({ id: `q:${queueSeqRef.current}`, text });
+    syncQueue();
+  }
+
+  /** T4：取消队列条目（queue-panel Ctrl+X → 队首；给 id 则精确移除）；仅影响未启动项 */
+  function cancelQueued(id?: string): void {
+    queueRef.current = cancelQueueItem(queueRef.current, id);
+    syncQueue();
+  }
+
   /** 取出一条排队输入并执行；exiting 后不再取（对齐 legacy 的 queue.shift 收尾逻辑） */
   function drainQueue(): void {
     if (exitingRef.current) return;
     const next = queueRef.current.shift();
     if (next === undefined) return;
-    setQueuedCount(queueRef.current.length);
-    void handleInput(next);
+    syncQueue();
+    void handleInput(next.text);
   }
 
   /** 忙时入队（不并发）；空闲时直接执行。命令与普通 turn 走同一入口（对齐 legacy）。 */
   function submit(text: string): void {
     if (text.trim().length === 0) return;
     if (busyRef.current) {
-      queueRef.current.push(text);
-      setQueuedCount(queueRef.current.length);
+      enqueue(text);
       return;
     }
     void handleInput(text);
@@ -542,7 +599,7 @@ function InkShell({
     const parsed = parseCommand(text);
     if (parsed !== null) {
       liveSeqRef.current += 1;
-      dispatch({ type: 'system', id: `echo:${liveSeqRef.current}`, text: `> ${text}` });
+      dispatchInputNow({ type: 'system', id: `echo:${liveSeqRef.current}`, text: `> ${text}` });
       handleCommand(parsed.name, parsed.rest);
       if (!busyRef.current) drainQueue();
       return;
@@ -555,8 +612,9 @@ function InkShell({
     busyRef.current = true;
     let result: TurnResult | undefined;
     setBusy(true);
+    setRetryBudget(undefined); // 新 turn 起清掉上一轮的重试面板
     liveSeqRef.current += 1;
-    dispatch({ type: 'user/message', seq: 0, id: `user:live:${liveSeqRef.current}`, text });
+    dispatchInputNow({ type: 'user/message', seq: 0, id: `user:live:${liveSeqRef.current}`, text });
     try {
       // @file/@dir 引用解析（发送前预处理；回显保持原始 text；无引用时直接用原文）
       let sendText = text;
@@ -569,6 +627,8 @@ function InkShell({
       const terminal = finalize(result);
       if (terminal !== null) dispatch(terminal);
       if (result !== undefined) {
+        // T4：暴露冻结的 RetryBudgetState（used/remaining/stopReason）给 retry-panel
+        setRetryBudget(result.retryBudget);
         liveSeqRef.current += 1;
         dispatch({ type: 'status', id: `status:${liveSeqRef.current}`, text: turnSummaryLine(result) });
       }
@@ -579,10 +639,16 @@ function InkShell({
       busyRef.current = false;
       setBusy(false);
       setReasoningExpanded(false);
+      schedulerRef.current?.flushNow(); // T4 final flush：终态/状态行立即落定，不留在窗口里
       if (exitingRef.current) onExit('exit');
       else drainQueue();
     }
   }
+
+  // T4：面板占用行需从 transcript 视口高度扣除，避免溢出。
+  const showRetry = retryBudget !== undefined && retryBudgetHasActivity(retryBudget);
+  const queueRows = queueItems.length > 0 ? 2 + Math.min(queueItems.length - 1, 3) : 0;
+  const panelRows = queueRows + (showRetry ? 2 : 0);
 
   return (
     <Box flexDirection="column" flexGrow={1}>
@@ -598,17 +664,21 @@ function InkShell({
         follow={follow}
         scrollTop={scrollTop}
         {...(anchorId !== undefined ? { anchorId } : {})}
-        height={Math.max(3, rows - 8)}
+        height={Math.max(3, rows - 8 - panelRows)}
         width={cols}
         onViewportChange={onViewportChange}
       />
+      {/* T4 面板：真实队列 / turn 结束后的重试预算 / 任务（数据源注入缝） */}
+      <QueuePanel items={queueItems} active={!overlayOpen} onCancel={(id) => cancelQueued(id)} />
+      <RetryPanel budget={showRetry ? retryBudget : undefined} active={!overlayOpen} onStop={abortCurrentTurn} />
+      <TaskPanel tasks={EMPTY_TASKS} />
       <Composer
         busy={busy}
         active={!overlayOpen}
         onSend={submit}
         onExit={(reason) => onExit(reason ?? 'exit')}
         onAbort={abortCurrentTurn}
-        queuedCount={queuedCount}
+        queuedCount={queueItems.length}
       />
     </Box>
   );

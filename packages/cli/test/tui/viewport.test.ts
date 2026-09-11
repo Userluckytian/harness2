@@ -95,6 +95,20 @@ describe('computeViewport：锚定', () => {
   });
 });
 
+describe('computeViewport：面板占用行时视口相应收缩', () => {
+  const items = [{ id: 'a' }, { id: 'b' }, { id: 'c' }, { id: 'd' }];
+  const heights = [3, 3, 3, 3];
+  const totalHeight = 12;
+
+  it('底部面板扣减 height 后，可见 item 数量减少（不溢出）', () => {
+    const full = computeViewport(items, { heights, totalHeight, height: 12, follow: false, scrollTop: 12 });
+    expect(full.end - full.start).toBe(4); // 无面板：全部可见
+    const withPanels = computeViewport(items, { heights, totalHeight, height: 4, follow: false, scrollTop: 12 });
+    expect(withPanels.end - withPanels.start).toBe(2); // 面板占 8 行 → 只剩 4 行视口
+    expect(withPanels.offset).toBeGreaterThanOrEqual(0);
+  });
+});
+
 describe('transcriptHeightCache', () => {
   it('set/get/total：缺失项按 0 计；total 按 ids 求和', () => {
     const cache = transcriptHeightCache();

@@ -73,6 +73,14 @@ export type TranscriptEvent =
       error?: string;
       turnId?: string;
     }
+  | {
+      /** T4：step 边界的完整正文（工具/推理分隔出的中间 assistant 段）；id = turnId+stepIndex 稳定 */
+      type: 'assistant/step';
+      turnId?: string;
+      stepIndex: number;
+      text: string;
+      reasoning?: string;
+    }
   | { type: 'turn-final'; turnId?: string; seq?: number; text: string; reasoning?: string }
   | { type: 'turn-partial'; turnId?: string; seq?: number; text: string; error?: string; stopReason?: string }
   | { type: 'turn-empty'; turnId?: string; seq?: number; error?: string; stopReason?: string }
@@ -192,6 +200,21 @@ export function transcriptReducer(state: TranscriptState, event: TranscriptEvent
         status: event.ok ? 'ok' : 'failed',
         ...(event.output !== undefined ? { output: event.output } : {}),
         ...(event.error !== undefined ? { error: event.error } : {}),
+      });
+    }
+    case 'assistant/step': {
+      // 工具/推理分隔出的中间正文段：稳定 id 以 turnId+stepIndex 为作用域（重放同一 turn 幂等）
+      const id =
+        event.turnId !== undefined && event.turnId.length > 0
+          ? `assistant:${event.turnId}:step:${event.stepIndex}`
+          : `assistant:step:${event.stepIndex}`;
+      return put(state, {
+        kind: 'assistant',
+        id,
+        seq: 0,
+        text: event.text,
+        outcome: 'final',
+        ...(event.reasoning !== undefined && event.reasoning.length > 0 ? { reasoning: event.reasoning } : {}),
       });
     }
     case 'turn-final':
