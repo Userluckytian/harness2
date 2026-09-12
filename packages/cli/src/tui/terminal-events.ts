@@ -199,8 +199,10 @@ export function attachTerminalEvents(
 ): TerminalEventBridge {
   // 解析器按开关二选一（结构同构：push/hasPending/flushPending，见 input-bridge.ts）；
   // 其余拦截/回注/挂起冲刷机制完全共用，保证两模式行为只差在解析职责本身。
+  // unified 模式保留适配器引用：dispose 时调用一次 flush() 兜底（防退出丢键）。
+  const unified = resolveParserMode(options.parser) === 'unified' ? createUnifiedEventParser() : null;
   const parser: Pick<TerminalEventParser, 'push' | 'hasPending' | 'flushPending'> =
-    resolveParserMode(options.parser) === 'legacy' ? new TerminalEventParser() : createUnifiedEventParser();
+    unified ?? new TerminalEventParser();
   const listeners = new Set<(event: TerminalEvent) => void>();
   let timer: ReturnType<typeof setTimeout> | null = null;
   let disposed = false;
@@ -283,6 +285,13 @@ export function attachTerminalEvents(
       if (disposed) return;
       disposed = true;
       if (timer !== null) clearTimeout(timer);
+      if (unified !== null) {
+        // 退出兜底（P1-1）：一次性冲刷统一解析器的残余挂起（未终结 paste 聚合 /
+        // 半包 ESC / 残缺 UTF-8），事件与回注字节在摘除监听前投递，防退出丢键。
+        const final = unified.flush();
+        for (const ev of final.events) notify(ev);
+        forwardToInk(final.forward);
+      }
       stdin.removeListener('readable', onReadable);
       if (options.enabled) {
         stdout.write('\x1b[?1006l\x1b[?1000l\x1b[?1004l');

@@ -305,6 +305,42 @@ describe('createUnifiedEventParser：统一解析器 → TerminalEvent / 回注�
       forward: '\x1b[200~abcdef\x1b[201~',
     });
   });
+
+  it('paste 聚合超过 pasteIdleTimeoutMs → flushPending 产出完整 bracketed paste（定时器不被空冲刷饿死）', () => {
+    let t = 1000;
+    const p = createUnifiedEventParser({ now: () => t, escTimeoutMs: 40, pasteIdleTimeoutMs: 200 });
+    expect(p.push('\x1b[200~abc')).toEqual({ events: [], forward: '' });
+    t += 60;
+    expect(p.flushPending()).toEqual({ events: [], forward: '' }); // 未达上限：不切碎
+    expect(p.hasPending()).toBe(true); // 空冲刷不累积饿死：paste 有超时上限，保持重排
+    t += 60;
+    expect(p.flushPending()).toEqual({ events: [], forward: '' });
+    expect(p.hasPending()).toBe(true);
+    t += 200; // 距最后 feed 累计 320ms ≥ 200ms
+    expect(p.flushPending()).toEqual({ events: [], forward: '\x1b[200~abc\x1b[201~' });
+    expect(p.hasPending()).toBe(false);
+  });
+
+  it('SS3 小写（rxvt）→ ink 等价 CSI 回注（ink 7.1.1 实测：\\x1b[1;5A=ctrl+up、\\x1b[H=home）', () => {
+    const { p } = makeParser();
+    expect(p.push('\x1bOa')).toEqual({ events: [], forward: '\x1b[1;5A' }); // ink 解析 up+ctrl
+    expect(p.push('\x1bOb')).toEqual({ events: [], forward: '\x1b[1;5B' }); // ink 解析 down+ctrl
+    expect(p.push('\x1bOh')).toEqual({ events: [], forward: '\x1b[H' }); // ink 解析 home
+    expect(p.push('\x1bOf')).toEqual({ events: [], forward: '\x1b[F' }); // ink 解析 end
+  });
+
+  it('Linux console / putty [[ 序列 → ink 等价回注（\\x1b[11~ / \\x1b[5~ 为 ink keyName 同键）', () => {
+    const { p } = makeParser();
+    expect(p.push('\x1b[[A')).toEqual({ events: [], forward: '\x1b[11~' }); // ink 解析 f1
+    expect(p.push('\x1b[[5~')).toEqual({ events: [], forward: '\x1b[5~' }); // ink 解析 pageup
+    expect(p.push('\x1b[[6~')).toEqual({ events: [], forward: '\x1b[6~' }); // ink 解析 pagedown
+  });
+
+  it('rxvt 7~ / 8~ → home / end 的 CSI 等价回注（ink keyName [7~/[H 同为 home）', () => {
+    const { p } = makeParser();
+    expect(p.push('\x1b[7~')).toEqual({ events: [], forward: '\x1b[H' });
+    expect(p.push('\x1b[8~')).toEqual({ events: [], forward: '\x1b[F' });
+  });
 });
 
 describe('attachTerminalEvents（unified 默认）：stdin 桥接', () => {
@@ -447,6 +483,22 @@ describe('attachTerminalEvents（unified 默认）：stdin 桥接', () => {
     await tick();
     expect(ink.read()).toBe('');
     bridge.dispose();
+  });
+
+  it('dispose 兜底 flush：未终结 paste 在退出时完整回注给 ink（防退出丢键，P1-1）', async () => {
+    const { stdin } = fakeStreams();
+    const bridge = attachTerminalEvents(
+      stdin as unknown as NodeJS.ReadStream,
+      new PassThrough() as unknown as NodeJS.WriteStream,
+      { enabled: false },
+    );
+    const ink = attachInkReader(stdin);
+    stdin.write('\x1b[200~abc'); // 终止符永不到达
+    await tick();
+    expect(ink.read()).toBe(''); // 聚合中不回注
+    bridge.dispose(); // 退出兜底：一次性冲刷
+    await tick(); // unshift 触发的 'readable' 异步到达 ink 消费者
+    expect(ink.read()).toBe('\x1b[200~abc\x1b[201~');
   });
 });
 

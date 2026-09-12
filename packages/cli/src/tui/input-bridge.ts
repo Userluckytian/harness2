@@ -21,9 +21,14 @@
 //   - 残缺鼠标/CSI 残片超时冲刷后按字面回注（与 legacy flushPending 逐字节一致）。
 //
 // flushIdle 接线：解析器不持有 timer（纯逻辑）；本适配器的 flushPending() 在挂起类型可
-// 空闲冲刷（ESC 开头）且空闲 ≥ escTimeoutMs 时调用 parser.flushIdle()。paste 聚合期间与
-// 残缺 UTF-8 半字节挂起期间（缓冲不以 ESC 开头）flushIdle 不会冲刷——连续两次空冲刷后
-// hasPending() 转 false，桥接定时器停止重排（避免 40ms 空转；下一次 feed 自动复位）。
+// 空闲冲刷（ESC 开头）且空闲 ≥ escTimeoutMs 时调用 parser.flushIdle()。paste 聚合期间
+// flushIdle 不会冲刷，但聚合有空闲上限（pasteIdleTimeoutMs，默认 1500ms）：超时后
+// flushPending 把已聚合内容作为完整 bracketed paste 回注（流损坏兜底）；聚合未超时期间
+// flushPending 的空冲刷不累积饿死定时器（见 flushPending 内 hasPendingPaste 分支），
+// 残缺 UTF-8 半字节挂起期间（缓冲不以 ESC 开头）连续两次空冲刷后 hasPending() 转 false，
+// 桥接定时器停止重排（避免 40ms 空转；下一次 feed 自动复位）。
+// flush()：无条件兜底冲刷（装配层 dispose 时调用一次，防退出丢键——未终结 paste /
+// 半包 ESC / 残缺 UTF-8 一次性产出回注）。
 import type { ParsedChunk, TerminalEvent } from './terminal-events.js';
 import { createInputParser, type InputParser, type InputParserOptions } from '../input/parser.js';
 import type { InputEvent, KeyEvent, KeyModifiers, PasteEvent } from '../input/types.js';
@@ -38,6 +43,8 @@ export interface UnifiedEventParser {
   hasPending(): boolean;
   /** 空闲超时冲刷（内部调 parser.flushIdle；未达阈值返回空且保持挂起） */
   flushPending(): ParsedChunk;
+  /** 无条件兜底冲刷（装配层 dispose 时调用一次：未终结 paste / 半包 ESC 一次性产出） */
+  flush(): ParsedChunk;
 }
 
 /** f5-f12 的 CSI ~ 编码号（f1-f4 用 11-14，与 ink keyName 表一致） */
@@ -161,15 +168,21 @@ function eventsToParsedChunk(events: readonly InputEvent[]): ParsedChunk {
 }
 
 /**
- * 统一解析器适配器：与 legacy TerminalEventParser 同构（push/hasPending/flushPending），
+ * 统一解析器适配器：与 legacy TerminalEventParser 同构（push/hasPending/flushPending/flush），
  * 供 attachTerminalEvents 按开关二选一。挂起判定：连续两次空冲刷后视为「非 ESC 挂起」
- * （paste 聚合 / 残缺 UTF-8 半字节——flushIdle 不会处理），hasPending 转 false 停止定时器
- * 重排；下一次 push 复位。ESC 挂起在空闲 ≥ escTimeoutMs 时必被冲刷（Esc 键语义）。
+ * （残缺 UTF-8 半字节等——flushIdle 不会处理），hasPending 转 false 停止定时器重排；
+ * 下一次 push 复位。paste 聚合例外（有空闲上限，空冲刷不累积，见 flushPending）。
+ * ESC 挂起在空闲 ≥ escTimeoutMs 时必被冲刷（Esc 键语义）；paste 聚合在空闲 ≥
+ * pasteIdleTimeoutMs 时产出完整 bracketed paste（流损坏兜底）。
  */
 export function createUnifiedEventParser(options: UnifiedEventParserOptions = {}): UnifiedEventParser {
   const escTimeoutMs = options.escTimeoutMs ?? 30; // < 桥接定时器 40ms：冲刷时机与 legacy 一致
   const now = options.now;
-  const parser: InputParser = createInputParser({ escTimeoutMs, ...(now !== undefined ? { now } : {}) });
+  const parser: InputParser = createInputParser({
+    escTimeoutMs,
+    ...(now !== undefined ? { now } : {}),
+    ...(options.pasteIdleTimeoutMs !== undefined ? { pasteIdleTimeoutMs: options.pasteIdleTimeoutMs } : {}),
+  });
   let emptyFlushes = 0;
   return {
     push(chunk: string): ParsedChunk {
@@ -182,11 +195,20 @@ export function createUnifiedEventParser(options: UnifiedEventParserOptions = {}
     flushPending(): ParsedChunk {
       const chunk = eventsToParsedChunk(parser.flushIdle(now !== undefined ? now() : undefined));
       if (chunk.events.length === 0 && chunk.forward.length === 0 && parser.pendingLength() > 0) {
-        emptyFlushes += 1; // 未达阈值或非 ESC 挂起：连续两次后停止重排（见文件头）
+        if (parser.hasPendingPaste()) {
+          // paste 聚合有空闲上限（pasteIdleTimeoutMs）：超时后 flushIdle 必产出，
+          // 空冲刷不累积饿死，保持桥接定时器重排直到超时产出。
+          emptyFlushes = 0;
+        } else {
+          emptyFlushes += 1; // 未达阈值或非 ESC 挂起：连续两次后停止重排（见文件头）
+        }
       } else {
         emptyFlushes = 0;
       }
       return chunk;
+    },
+    flush(): ParsedChunk {
+      return eventsToParsedChunk(parser.flush());
     },
   };
 }
