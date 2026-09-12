@@ -285,6 +285,104 @@ describe('parser：bracketed paste', () => {
   });
 });
 
+describe('parser：bracketed paste 空闲超时（终止符永不到达的流损坏兜底，P1-1）', () => {
+  it('200~ 后 201~ 缺失：默认 1500ms 空闲后 flushIdle 产出单个 PasteEvent', () => {
+    let t = 1000;
+    const p = createInputParser({ now: () => t, escTimeoutMs: 50 }); // pasteIdleTimeoutMs 缺省 1500
+    expect(p.feed(enc('\x1b[200~abc'))).toEqual([]);
+    t += 1499;
+    expect(p.flushIdle(t)).toEqual([]); // 未达上限：继续聚合、不产出
+    expect(p.pendingLength()).toBe(3);
+    t += 1; // 空闲累计 1500ms
+    const events = p.flushIdle(t);
+    expect(pasteOf(events).text).toBe('abc');
+    expect(p.pendingLength()).toBe(0);
+  });
+
+  it('pasteIdleTimeoutMs 可配置（缩短阈值按时产出）', () => {
+    let t = 1000;
+    const p = createInputParser({ now: () => t, escTimeoutMs: 50, pasteIdleTimeoutMs: 100 });
+    expect(p.feed(enc('\x1b[200~片段'))).toEqual([]);
+    t += 99;
+    expect(p.flushIdle(t)).toEqual([]);
+    t += 1;
+    expect(pasteOf(p.flushIdle(t)).text).toBe('片段');
+  });
+
+  it('超时产出后解析器可继续使用（后续按键正常解析）', () => {
+    let t = 1000;
+    const p = createInputParser({ now: () => t, pasteIdleTimeoutMs: 100 });
+    expect(p.feed(enc('\x1b[200~abc'))).toEqual([]);
+    t += 100;
+    expect(pasteOf(p.flushIdle(t)).text).toBe('abc');
+    expect(keyOf(p.feed(enc('x'))).key).toBe('x');
+  });
+
+  it('聚合中 201~ 正常到达仍走原路径（超时前不切碎，分片语义不变）', () => {
+    let t = 1000;
+    const p = createInputParser({ now: () => t, escTimeoutMs: 50, pasteIdleTimeoutMs: 1500 });
+    expect(p.feed(enc('\x1b[200~abc'))).toEqual([]);
+    t += 1499;
+    expect(p.flushIdle(t)).toEqual([]);
+    const events = p.feed(enc('\x1b[201~'));
+    expect(events.length).toBe(1);
+    expect(pasteOf(events).text).toBe('abc');
+  });
+});
+
+describe('parser：ink keyName 表补齐（rxvt / Linux console / putty / SS3 小写，P1-2）', () => {
+  it('rxvt Home/End：CSI 7~ / 8~', () => {
+    const p = createInputParser();
+    expect(keyOf(p.feed(enc('\x1b[7~'))).key).toBe('home');
+    expect(keyOf(p.feed(enc('\x1b[8~'))).key).toBe('end');
+  });
+
+  it('Linux console [[A..[[E → f1..f5（此前被误判为 final "[" 静默吞掉）', () => {
+    const p = createInputParser();
+    expect(keyOf(p.feed(enc('\x1b[[A'))).key).toBe('f1');
+    expect(keyOf(p.feed(enc('\x1b[[B'))).key).toBe('f2');
+    expect(keyOf(p.feed(enc('\x1b[[C'))).key).toBe('f3');
+    expect(keyOf(p.feed(enc('\x1b[[D'))).key).toBe('f4');
+    expect(keyOf(p.feed(enc('\x1b[[E'))).key).toBe('f5');
+  });
+
+  it('putty [[5~ / [[6~ → pageup / pagedown', () => {
+    const p = createInputParser();
+    expect(keyOf(p.feed(enc('\x1b[[5~'))).key).toBe('pageup');
+    expect(keyOf(p.feed(enc('\x1b[[6~'))).key).toBe('pagedown');
+  });
+
+  it('[[ 序列分片（\\x1b[[ 先到）：不误判，后半到达按 f 键产出', () => {
+    const p = createInputParser();
+    expect(p.feed(enc('\x1b[['))).toEqual([]);
+    expect(keyOf(p.feed(enc('A'))).key).toBe('f1');
+  });
+
+  it('SS3 小写方向（rxvt，ink isCtrlKey 口径）：Oa/Ob/Oc/Od → 方向键 + ctrl', () => {
+    const p = createInputParser();
+    const up = keyOf(p.feed(enc('\x1bOa')));
+    expect(up.key).toBe('up');
+    expect(up.modifiers.ctrl).toBe(true);
+    const down = keyOf(p.feed(enc('\x1bOb')));
+    expect(down.key).toBe('down');
+    expect(down.modifiers.ctrl).toBe(true);
+    const right = keyOf(p.feed(enc('\x1bOc')));
+    expect(right.key).toBe('right');
+    expect(right.modifiers.ctrl).toBe(true);
+    const left = keyOf(p.feed(enc('\x1bOd')));
+    expect(left.key).toBe('left');
+    expect(left.modifiers.ctrl).toBe(true);
+  });
+
+  it('SS3 小写 Oh/Of → home / end（大写 OH/OF 既有口径不受影响）', () => {
+    const p = createInputParser();
+    expect(keyOf(p.feed(enc('\x1bOh'))).key).toBe('home');
+    expect(keyOf(p.feed(enc('\x1bOf'))).key).toBe('end');
+    expect(keyOf(p.feed(enc('\x1bOH'))).key).toBe('home');
+    expect(keyOf(p.feed(enc('\x1bOF'))).key).toBe('end');
+  });
+});
+
 describe('parser：焦点 1004', () => {
   it('CSI I / CSI O → focus in / out', () => {
     const p = createInputParser();
