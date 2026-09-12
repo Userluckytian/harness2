@@ -3,6 +3,7 @@
 > **文档类型：** 程序级方案（**供实施同事执行**；编排者按 §8 独立检验）
 > **状态：** 方案就绪（2026-09-12 · v1） · **实施者：** 其他同事（可分阶段多人） · **检验者：** 编排者（AI 主会话，独立复跑证据）
 > **必读关联文档：**
+>
 > - **分阶段执行计划（施工单，实施人从这里开工）：** [`2026-09-12-terminal-grok-parity-execution.md`](./2026-09-12-terminal-grok-parity-execution.md)
 > - 对齐研究（grok 原版机制逐项 + 源码索引）：[`docs/research/2026-09-12-grok-tui-alignment.md`](../../research/2026-09-12-grok-tui-alignment.md)
 > - 进行中的 5 项修复阶段：`docs/ai-framework/plans/2026-09-12-phase-tui-ux-polish.md`
@@ -13,13 +14,13 @@
 
 ## 0. 一页速览
 
-| 问题 | 答案 |
-| ---- | ---- |
-| **做什么** | 把终端 TUI 的**交互语义与布局结构**对标 grok-build（grok CLI/TUI）：分层布局、贴底输入框、完整滚动/鼠标、内联下拉与审批卡片、模式循环、焦点门控通知、子代理块与视图、状态行/快捷键条 |
-| **不做什么** | ①改 `packages/core` / `packages/gateway`（契约冻结）②桌面端（`packages/desktop`）③逐像素照搬颜色/主题 ④引入 GPL/传染性许可的代码或依赖 |
-| **怎么做** | **P0 选型 spike**（渲染层四选一）→ **P1 输入与事件层** → **P2 渲染与布局层** → **P3 交互功能对齐** → **P4 打磨**。P0 与进行中阶段可并行（文件不冲突，见 §6） |
-| **怎么算完成** | 每阶段：先红后绿的用例 + 可复跑证据命令 + 编排者复跑通过 + 真机清单（§8.4）。**禁止「应该能过」** |
-| **从哪开始** | P0 spike（§4）：先出选型报告，同事与编排者共同评审后再开 P1 |
+| 问题           | 答案                                                                                                                                                                                 |
+| -------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| **做什么**     | 把终端 TUI 的**交互语义与布局结构**对标 grok-build（grok CLI/TUI）：分层布局、贴底输入框、完整滚动/鼠标、内联下拉与审批卡片、模式循环、焦点门控通知、子代理块与视图、状态行/快捷键条 |
+| **不做什么**   | ①改 `packages/core` / `packages/gateway`（契约冻结）②桌面端（`packages/desktop`）③逐像素照搬颜色/主题 ④引入 GPL/传染性许可的代码或依赖                                               |
+| **怎么做**     | **P0 选型 spike**（渲染层四选一）→ **P1 输入与事件层** → **P2 渲染与布局层** → **P3 交互功能对齐** → **P4 打磨**。P0 与进行中阶段可并行（文件不冲突，见 §6）                         |
+| **怎么算完成** | 每阶段：先红后绿的用例 + 可复跑证据命令 + 编排者复跑通过 + 真机清单（§8.4）。**禁止「应该能过」**                                                                                    |
+| **从哪开始**   | P0 spike（§4）：先出选型报告，同事与编排者共同评审后再开 P1                                                                                                                          |
 
 ---
 
@@ -67,18 +68,18 @@ packages/gateway  IM 网关（不在本方案范围）
 
 ### 2.3 已具备 / 缺口
 
-| 能力 | 现状 | 对标 grok |
-| ---- | ---- | --------- |
-| 转录虚拟化 + 跟随/锚定滚动 | ✅ 键盘（PageUp/PageDown/Ctrl+G） | 需补：Ctrl+U/D 半页、Tab 焦点、滚轮跨区域 |
-| 鼠标 | 🟡 SGR 滚轮 + 焦点（TUI-UX T2 落地） | 需补：点击聚焦、命中测试、滚动条拖动、悬停下拉改选 |
-| 布局 | 🟡 输入框锚底（T2 落地），状态栏在**顶部** | grok：状态行/快捷键条在**底部**，输入框贴底，scrollback 在上 |
-| 斜杠下拉 | 🟡 候选已移到输入框上方（T2/T5） | grok：prompt 锚定内联下拉 + 模糊匹配 + 最多 6 行 + 滚动 |
-| 审批 | 🟡 居中浮层（T3/T5 改为贴输入框上方） | grok：blocking card + Tab 走行 + 数字直选 + Esc 寄放焦点 |
-| 模式 | 🟡 `/mode` 选择器 + 文本提示 | grok：Shift+Tab 循环 + 输入框底边指示器 |
-| 通知 | ⬜ 无（TUI-UX T4 加 bel/osc9 + 失焦门控） | grok：5 种协议 + hooks + 标题栏 + `/doctor` 诊断 |
-| 子代理 | 🟡 工具卡 + 只读浮层（TUI-UX T1 落地） | grok：生命周期块（动画/着色/耗时）+ Enter 全屏实时视图 + 动词组折叠 |
-| 文本选择/复制/超链接/图片 | ⬜ 无 | grok 全有（自绘实现） |
-| 主题 | 🟡 Ink 有限样式 | grok：完整主题 + `/theme` |
+| 能力                       | 现状                                       | 对标 grok                                                           |
+| -------------------------- | ------------------------------------------ | ------------------------------------------------------------------- |
+| 转录虚拟化 + 跟随/锚定滚动 | ✅ 键盘（PageUp/PageDown/Ctrl+G）          | 需补：Ctrl+U/D 半页、Tab 焦点、滚轮跨区域                           |
+| 鼠标                       | 🟡 SGR 滚轮 + 焦点（TUI-UX T2 落地）       | 需补：点击聚焦、命中测试、滚动条拖动、悬停下拉改选                  |
+| 布局                       | 🟡 输入框锚底（T2 落地），状态栏在**顶部** | grok：状态行/快捷键条在**底部**，输入框贴底，scrollback 在上        |
+| 斜杠下拉                   | 🟡 候选已移到输入框上方（T2/T5）           | grok：prompt 锚定内联下拉 + 模糊匹配 + 最多 6 行 + 滚动             |
+| 审批                       | 🟡 居中浮层（T3/T5 改为贴输入框上方）      | grok：blocking card + Tab 走行 + 数字直选 + Esc 寄放焦点            |
+| 模式                       | 🟡 `/mode` 选择器 + 文本提示               | grok：Shift+Tab 循环 + 输入框底边指示器                             |
+| 通知                       | ⬜ 无（TUI-UX T4 加 bel/osc9 + 失焦门控）  | grok：5 种协议 + hooks + 标题栏 + `/doctor` 诊断                    |
+| 子代理                     | 🟡 工具卡 + 只读浮层（TUI-UX T1 落地）     | grok：生命周期块（动画/着色/耗时）+ Enter 全屏实时视图 + 动词组折叠 |
+| 文本选择/复制/超链接/图片  | ⬜ 无                                      | grok 全有（自绘实现）                                               |
+| 主题                       | 🟡 Ink 有限样式                            | grok：完整主题 + `/theme`                                           |
 
 ### 2.4 进行中的工作（不要重做）
 
@@ -90,19 +91,19 @@ packages/gateway  IM 网关（不在本方案范围）
 
 > 详细机制与源码引用见研究文档；下表是**验收时可观察的行为规格**。
 
-| 领域 | grok 行为 | 我们的目标（可验收） |
-| ---- | --------- | -------------------- |
-| 纵向布局 | 快捷键条（最底）→ 可选状态行 → 输入框（贴底，底边带模式/模型指示）→ scrollback（剩余空间） | 相同分层；输入框恒定贴底；弹层出现不顶起输入框；resize 不溢出 |
-| 滚动 | PageUp/PageDown、Ctrl+U/D 半页、Ctrl+K/J 单行；**prompt 聚焦时 PageUp/PageDown 仍滚动会话**；跟随/锚定/粘性 | 全部键位生效；鼠标滚轮在任意区域滚动转录（悬停下拉时移动下拉选择）；跟随状态下向上滚动自动脱开跟随 |
-| 鼠标 | 点击聚焦、pane 命中、滚动条拖动、双击选择、下拉开合 | 至少：滚轮 + 点击聚焦 + 下拉交互；选择/复制为 P4 可选 |
-| 斜杠菜单 | prompt 上方的内联下拉；模糊匹配；Tab/Enter 接受；最多 6 行 + 滚动条；悬停高亮 | 位置/交互一致；`/`后逐字过滤；←/→ 或 Tab 补全 |
-| 审批卡片 | blocking card：Tab/Shift+Tab 走行、数字直选、Ctrl+F 展开参数、Esc 寄放焦点到 scrollback（不回答）、Ctrl+C 取消、`Ctrl+O` 开 always-approve | 位置（输入框上方）与键位一致；Esc 行为一致 |
-| 模式 | Shift+Tab 循环 Normal→Plan→Auto→Always-approve；输入框底边指示；`/plan` `/auto` `/always-approve` 开关 | 循环键 + 指示器 + 三个开关命令；指示器内容含上下文占用（我方 StatusBar 迁移底部后合并） |
-| 通知 | `[ui.notifications]`：默认 `turn_complete`+`approval_required`、`condition=unfocused`、`idle_threshold_secs=3`、`method=auto|osc9|osc99|osc777|bel|none`；hooks 可挂系统通知；标题栏/进度 | 默认失焦才响；方法可选（至少 bel/osc9）；环境变量或设置面（core 冻结期间用 CLI 侧配置）；回合完成/需审批触发 |
-| 子代理 | 生命周期块（运行动画/完成着色/耗时）+ Enter 全屏子视图（实时路由）+ 动词组折叠 + dashboard 行 | 块（状态/耗时/成功失败）+ Enter/Ctrl+J 打开视图（P3 起支持实时增量；P1 仅只读磁盘） |
-| 状态行 | 可配置状态行（默认 `cwd/model/context`）+ 快捷键条（随状态变化） | 状态行合入底部；快捷键条按上下文显示，含当前可用键 |
-| 键位 | 见研究文档 §1-T2/附录；Tab 焦点切换、Esc 多级语义、Ctrl+C 先清草稿再取消、`Ctrl+P`/`?` 命令面板 | P1 产出《键位对照表》：逐条标明 grok 键位、我方现状、目标、差异理由 |
-| 块交互 | 折叠/展开（h/l、e/E、Ctrl+E）、复制（y/⇧Y）、全屏查看（Enter）、折叠组（group_tool_verbs） | P3/P4 按优先级逐步补齐；折叠组与复制优先 |
+| 领域     | grok 行为                                                                                                                                  | 我们的目标（可验收）                                                                               |
+| -------- | ------------------------------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------- |
+| 纵向布局 | 快捷键条（最底）→ 可选状态行 → 输入框（贴底，底边带模式/模型指示）→ scrollback（剩余空间）                                                 | 相同分层；输入框恒定贴底；弹层出现不顶起输入框；resize 不溢出                                      |
+| 滚动     | PageUp/PageDown、Ctrl+U/D 半页、Ctrl+K/J 单行；**prompt 聚焦时 PageUp/PageDown 仍滚动会话**；跟随/锚定/粘性                                | 全部键位生效；鼠标滚轮在任意区域滚动转录（悬停下拉时移动下拉选择）；跟随状态下向上滚动自动脱开跟随 |
+| 鼠标     | 点击聚焦、pane 命中、滚动条拖动、双击选择、下拉开合                                                                                        | 至少：滚轮 + 点击聚焦 + 下拉交互；选择/复制为 P4 可选                                              |
+| 斜杠菜单 | prompt 上方的内联下拉；模糊匹配；Tab/Enter 接受；最多 6 行 + 滚动条；悬停高亮                                                              | 位置/交互一致；`/`后逐字过滤；←/→ 或 Tab 补全                                                      |
+| 审批卡片 | blocking card：Tab/Shift+Tab 走行、数字直选、Ctrl+F 展开参数、Esc 寄放焦点到 scrollback（不回答）、Ctrl+C 取消、`Ctrl+O` 开 always-approve | 位置（输入框上方）与键位一致；Esc 行为一致                                                         |
+| 模式     | Shift+Tab 循环 Normal→Plan→Auto→Always-approve；输入框底边指示；`/plan` `/auto` `/always-approve` 开关                                     | 循环键 + 指示器 + 三个开关命令；指示器内容含上下文占用（我方 StatusBar 迁移底部后合并）            |
+| 通知     | `[ui.notifications]`：默认 `turn_complete`+`approval_required`、`condition=unfocused`、`idle_threshold_secs=3`、`method=auto               | osc9                                                                                               | osc99 | osc777 | bel | none`；hooks 可挂系统通知；标题栏/进度 | 默认失焦才响；方法可选（至少 bel/osc9）；环境变量或设置面（core 冻结期间用 CLI 侧配置）；回合完成/需审批触发 |
+| 子代理   | 生命周期块（运行动画/完成着色/耗时）+ Enter 全屏子视图（实时路由）+ 动词组折叠 + dashboard 行                                              | 块（状态/耗时/成功失败）+ Enter/Ctrl+J 打开视图（P3 起支持实时增量；P1 仅只读磁盘）                |
+| 状态行   | 可配置状态行（默认 `cwd/model/context`）+ 快捷键条（随状态变化）                                                                           | 状态行合入底部；快捷键条按上下文显示，含当前可用键                                                 |
+| 键位     | 见研究文档 §1-T2/附录；Tab 焦点切换、Esc 多级语义、Ctrl+C 先清草稿再取消、`Ctrl+P`/`?` 命令面板                                            | P1 产出《键位对照表》：逐条标明 grok 键位、我方现状、目标、差异理由                                |
+| 块交互   | 折叠/展开（h/l、e/E、Ctrl+E）、复制（y/⇧Y）、全屏查看（Enter）、折叠组（group_tool_verbs）                                                 | P3/P4 按优先级逐步补齐；折叠组与复制优先                                                           |
 
 ---
 
@@ -112,12 +113,12 @@ packages/gateway  IM 网关（不在本方案范围）
 
 ### 4.1 候选方案
 
-| 代号 | 方案 | 说明 | 优点 | 风险/代价 |
-| ---- | ---- | ---- | ---- | --------- |
-| **A** | Ink 渐进增强 | 保留 Ink，只做能做的 | 零新依赖、测试资产全保留 | 达不到 C 档（选择/图片/平滑/性能）；鼠标只能 hack |
-| **B** | Node 自绘最小渲染层 | 自研 cell buffer + 差量刷新 + 轻布局（或保留 React 做布局、换渲染后端） | 全可控、无原生依赖、npm/desktop bundle 友好 | 工程量大：宽字符、IME、选择、性能都要自研 |
-| **C** | OpenTUI（推荐候选） | `@opentui/core` + `@opentui/react`：Zig 核 + TS 绑定；flexbox；内建 mouse/scrollbox/input/select；图片/音效；OpenCode 生产验证 | 能力最接近 grok、React 心智可复用、社区活跃（MIT） | 原生依赖：需验证 Node ≥22 运行、Windows 预编译、npm 安装、与 desktop 内嵌 esbuild 单文件 bundle 的兼容；构建工具链（Bun/Zig）较重 |
-| **D** | Rust TUI（ratatui/crossterm） | 与 grok 同栈，经 core 的 serve（HTTP/WS）通信 | 保真/性能上限最高；可直接参考 grok 结构 | 引入第二种语言 + 打包链路 + IPC 协议面；双端维护成本高；组织成本先问编排者/用户 |
+| 代号  | 方案                          | 说明                                                                                                                           | 优点                                               | 风险/代价                                                                                                                         |
+| ----- | ----------------------------- | ------------------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
+| **A** | Ink 渐进增强                  | 保留 Ink，只做能做的                                                                                                           | 零新依赖、测试资产全保留                           | 达不到 C 档（选择/图片/平滑/性能）；鼠标只能 hack                                                                                 |
+| **B** | Node 自绘最小渲染层           | 自研 cell buffer + 差量刷新 + 轻布局（或保留 React 做布局、换渲染后端）                                                        | 全可控、无原生依赖、npm/desktop bundle 友好        | 工程量大：宽字符、IME、选择、性能都要自研                                                                                         |
+| **C** | OpenTUI（推荐候选）           | `@opentui/core` + `@opentui/react`：Zig 核 + TS 绑定；flexbox；内建 mouse/scrollbox/input/select；图片/音效；OpenCode 生产验证 | 能力最接近 grok、React 心智可复用、社区活跃（MIT） | 原生依赖：需验证 Node ≥22 运行、Windows 预编译、npm 安装、与 desktop 内嵌 esbuild 单文件 bundle 的兼容；构建工具链（Bun/Zig）较重 |
+| **D** | Rust TUI（ratatui/crossterm） | 与 grok 同栈，经 core 的 serve（HTTP/WS）通信                                                                                  | 保真/性能上限最高；可直接参考 grok 结构            | 引入第二种语言 + 打包链路 + IPC 协议面；双端维护成本高；组织成本先问编排者/用户                                                   |
 
 ### 4.2 Spike 验证清单与通过门槛（缺一不可）
 
@@ -146,11 +147,13 @@ packages/gateway  IM 网关（不在本方案范围）
 **目标：** 渲染引擎无关的统一输入模型 + 键位对照表。
 
 **交付物：**
+
 - `packages/cli/src/input/`：键/鼠标/焦点/粘贴事件的**统一解析与分发**（原始字节 → 语义事件；含 kitty/CSI-u、SS3、SGR 鼠标、bracketed paste、焦点 1004）。
 - `docs/` 内《终端键位对照表》（grok 键位 vs 现状 vs 目标 vs 差异理由）。
 - `HARNESS2_MOUSE` / `HARNESS2_NOTIFY` 等逃生开关的**统一开关约定**。
 
 **验收条件（命令 + 期望）：**
+
 1. `pnpm --filter harness2 exec vitest run test/input`（新目录）exit 0；解析用例必须喂**原始字节序列**（不得 mock 解析器内部）。
 2. 既有键盘回归：`pnpm --filter harness2 exec vitest run test/tui/keyboard.test.tsx` 全绿。
 3. 真机：IME 中文输入、粘贴、Ctrl+C/Esc 语义在 Windows Terminal 正常。
@@ -162,11 +165,13 @@ packages/gateway  IM 网关（不在本方案范围）
 **目标：** 新的渲染层 + 布局对齐 grok。
 
 **交付物：**
+
 - 渲染核心（自绘或 OpenTUI）：布局引擎（分层/弹性）、差量刷新、宽字符测量、resize、alternate screen 生命周期。
 - 迁移：`TranscriptView`（scrollback pane：跟随/锚定/粘性 + 滚动条）、`Composer`（贴底 + 底边指示）、`StatusBar` 迁底、`OverlayHost`/`Modal`（锚定输入框上方）、`panels`。
 - 视觉快照测试（字符网格断言）+ 性能基线脚本（10k 行合成转录）。
 
 **验收条件：**
+
 1. `pnpm --filter harness2 exec vitest run test/tui` exit 0（含新快照用例）。
 2. 性能：`node scripts/bench-tui.mjs`（新）在 10k 行下 ≥ 30fps / 输入延迟 < 30ms，输出原始数字。
 3. 真机：布局截图对比（对照 grok 截图）、resize、alt-screen 进出恢复。
@@ -178,6 +183,7 @@ packages/gateway  IM 网关（不在本方案范围）
 **目标：** 功能面对齐 grok（§3 表逐项）。
 
 **交付物：**
+
 - 斜杠/文件内联下拉（模糊匹配、Tab/Enter、滚动、悬停）。
 - 审批 blocking card（Tab 走行、数字直选、Ctrl+F 展开、Esc 寄放）。
 - 模式循环 + 指示器 + `/plan` `/auto` `/always-approve` 开关。
@@ -186,6 +192,7 @@ packages/gateway  IM 网关（不在本方案范围）
 - 状态行 + 快捷键条（随焦点/状态变化）；块折叠/展开；队列面板对齐。
 
 **验收条件：**
+
 1. 逐项行为对照表（本文件 §3 表 + grok 手册引用）勾选，每项附「命令 + 原始输出/截图路径」。
 2. `pnpm --filter harness2 exec vitest run test/tui` exit 0。
 3. 真机逐项操作录屏/截图。
@@ -204,14 +211,14 @@ packages/gateway  IM 网关（不在本方案范围）
 
 > 规则：触碰同一文件集合的两个工作流**不可并行**（见 `docs/ai-framework/plan-layering.md` §4）。
 
-| 工作流 | 触碰文件 | 可与谁并行 | 冲突（等谁） |
-| ------ | -------- | ---------- | ------------ |
-| **进行中** `feat/tui-ux-polish`（AI 子代理） | `packages/cli/src/tui/**`、`packages/cli/test/tui/**` | P0 spike（只写 docs + 独立目录） | — |
-| **P0 Spike（同事）** | `docs/research/**`、独立 demo 目录（`packages/tui-spike/` 或 `spike/`，**不并入主线**） | 进行中阶段 | 不碰 `packages/cli` |
-| **P1 输入层（同事）** | `packages/cli/src/input/**`（新）、`packages/cli/test/input/**`（新）、少量迁移点 | 无（等 TUI-UX 合并） | 等 `feat/tui-ux-polish` 合并 main |
-| **P2 渲染层** | `packages/cli/src/tui/**`、依赖/打包脚本 | 无 | 等 P1 |
-| **P3 功能对齐** | `packages/cli/src/tui/**` | 无 | 等 P2 |
-| **P4 打磨** | `packages/cli/src/tui/**` | 无 | 等 P3 |
+| 工作流                                       | 触碰文件                                                                                | 可与谁并行                       | 冲突（等谁）                      |
+| -------------------------------------------- | --------------------------------------------------------------------------------------- | -------------------------------- | --------------------------------- |
+| **进行中** `feat/tui-ux-polish`（AI 子代理） | `packages/cli/src/tui/**`、`packages/cli/test/tui/**`                                   | P0 spike（只写 docs + 独立目录） | —                                 |
+| **P0 Spike（同事）**                         | `docs/research/**`、独立 demo 目录（`packages/tui-spike/` 或 `spike/`，**不并入主线**） | 进行中阶段                       | 不碰 `packages/cli`               |
+| **P1 输入层（同事）**                        | `packages/cli/src/input/**`（新）、`packages/cli/test/input/**`（新）、少量迁移点       | 无（等 TUI-UX 合并）             | 等 `feat/tui-ux-polish` 合并 main |
+| **P2 渲染层**                                | `packages/cli/src/tui/**`、依赖/打包脚本                                                | 无                               | 等 P1                             |
+| **P3 功能对齐**                              | `packages/cli/src/tui/**`                                                               | 无                               | 等 P2                             |
+| **P4 打磨**                                  | `packages/cli/src/tui/**`                                                               | 无                               | 等 P3                             |
 
 **合并由编排者仲裁**，不现场解决冲突。
 
@@ -274,14 +281,14 @@ packages/gateway  IM 网关（不在本方案范围）
 
 ## 9. 风险与回退
 
-| 风险 | 影响 | 缓解 |
-| ---- | ---- | ---- |
-| P0 选型错误（如 OpenTUI 在 Node/Windows 不达标） | P2 返工 | 通过门槛缺一不可；spike 未过不得开 P2 |
-| 原生依赖破坏 desktop 单文件 bundle | 发布链路断 | P0 必检项；必要时为 desktop 保留旧链路并双轨 |
-| 范围蔓延（功能面大） | 交付延期 | §3 对照表收口；P3 逐项勾选验收 |
-| 交互回归（键位/IME/粘贴） | 用户不可用 | P1 先做事件层；每阶段真机回归清单 |
-| 性能退化 | 体验差 | 性能预算 + 基线脚本纳入验收 |
-| 同事上下文成本 | 返工 | 本文件 + 研究文档 + grok 手册路径；每阶段交接说明 |
+| 风险                                             | 影响       | 缓解                                              |
+| ------------------------------------------------ | ---------- | ------------------------------------------------- |
+| P0 选型错误（如 OpenTUI 在 Node/Windows 不达标） | P2 返工    | 通过门槛缺一不可；spike 未过不得开 P2             |
+| 原生依赖破坏 desktop 单文件 bundle               | 发布链路断 | P0 必检项；必要时为 desktop 保留旧链路并双轨      |
+| 范围蔓延（功能面大）                             | 交付延期   | §3 对照表收口；P3 逐项勾选验收                    |
+| 交互回归（键位/IME/粘贴）                        | 用户不可用 | P1 先做事件层；每阶段真机回归清单                 |
+| 性能退化                                         | 体验差     | 性能预算 + 基线脚本纳入验收                       |
+| 同事上下文成本                                   | 返工       | 本文件 + 研究文档 + grok 手册路径；每阶段交接说明 |
 
 ---
 
@@ -289,31 +296,31 @@ packages/gateway  IM 网关（不在本方案范围）
 
 ### A. grok 参考索引（速查）
 
-| 主题 | 路径（`D:\AI_Projects\refs\grok-build`） |
-| ---- | ---------------------------------------- |
-| 键盘/焦点/卡片契约 | `crates/codegen/xai-grok-pager/docs/user-guide/03-keyboard-shortcuts.md` |
-| 斜杠命令 | `…/docs/user-guide/04-slash-commands.md`、`…/src/views/slash_dropdown.rs`、`completion_dropdown.rs` |
-| 通知 | `…/docs/user-guide/05-configuration.md` §Notifications、`…/src/notifications/` |
-| 子代理 | `…/docs/user-guide/16-subagents.md`、`…/src/scrollback/blocks/subagent.rs`、`…/src/app/agent_view/render.rs`（`open_subagent_fullscreen`） |
-| 计划模式 | `…/docs/user-guide/19-plan-mode.md` |
-| 状态行 | `…/docs/user-guide/25-status-line.md` |
-| 鼠标 | `…/src/app/mouse.rs`、`…/src/scrollback/scrollback_pane.rs` |
-| 提示符组件（模式指示） | `…/src/views/prompt_widget/mod.rs` |
-| 下拉锚点 | `…/src/app/agent_view/render.rs`（`render_dropdown_chrome` 调用点） |
+| 主题                   | 路径（`D:\AI_Projects\refs\grok-build`）                                                                                                   |
+| ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
+| 键盘/焦点/卡片契约     | `crates/codegen/xai-grok-pager/docs/user-guide/03-keyboard-shortcuts.md`                                                                   |
+| 斜杠命令               | `…/docs/user-guide/04-slash-commands.md`、`…/src/views/slash_dropdown.rs`、`completion_dropdown.rs`                                        |
+| 通知                   | `…/docs/user-guide/05-configuration.md` §Notifications、`…/src/notifications/`                                                             |
+| 子代理                 | `…/docs/user-guide/16-subagents.md`、`…/src/scrollback/blocks/subagent.rs`、`…/src/app/agent_view/render.rs`（`open_subagent_fullscreen`） |
+| 计划模式               | `…/docs/user-guide/19-plan-mode.md`                                                                                                        |
+| 状态行                 | `…/docs/user-guide/25-status-line.md`                                                                                                      |
+| 鼠标                   | `…/src/app/mouse.rs`、`…/src/scrollback/scrollback_pane.rs`                                                                                |
+| 提示符组件（模式指示） | `…/src/views/prompt_widget/mod.rs`                                                                                                         |
+| 下拉锚点               | `…/src/app/agent_view/render.rs`（`render_dropdown_chrome` 调用点）                                                                        |
 
 ### B. 目标键位对照（节选，P1 需出完整表）
 
-| 键 | grok 行为 | 我方现状 | 目标 |
-| -- | --------- | -------- | ---- |
-| `Tab` / `Shift+Tab` | 焦点在 prompt/scrollback 间切换；卡片内走行 | ⬜ | P1 定义并实现 |
-| `PageUp` / `PageDown` | 滚动会话（prompt 聚焦也生效） | ✅ | 保持 |
-| `Ctrl+U` / `Ctrl+D` | 半页滚动 | ⬜ | P1 |
-| `Shift+Tab` | 模式循环（Normal→Plan→Auto→Always-approve） | ⬜ | P3 |
-| `Esc` | 多级：取消 turn / 清草稿（双按）/ rewind / 关浮层 | 🟡 部分（取消/关浮层） | P1 拉齐语义表 |
-| `Ctrl+C` | 有草稿先清、空则取消；再按升级退出 | 🟡 | P1 |
-| `Ctrl+O` | always-approve 开关（grok）/ 我方=展开工具卡 | ⚠️ 冲突 | P1 出映射与差异理由 |
-| `Ctrl+G` | grok=任务面板；我方=恢复跟随 | ⚠️ 冲突 | P1 出映射与差异理由 |
-| `Ctrl+J/K` | grok=单行滚动；我方=子会话视图（T1 定） | ⚠️ 冲突 | P1 出映射与差异理由 |
+| 键                    | grok 行为                                         | 我方现状               | 目标                |
+| --------------------- | ------------------------------------------------- | ---------------------- | ------------------- |
+| `Tab` / `Shift+Tab`   | 焦点在 prompt/scrollback 间切换；卡片内走行       | ⬜                     | P1 定义并实现       |
+| `PageUp` / `PageDown` | 滚动会话（prompt 聚焦也生效）                     | ✅                     | 保持                |
+| `Ctrl+U` / `Ctrl+D`   | 半页滚动                                          | ⬜                     | P1                  |
+| `Shift+Tab`           | 模式循环（Normal→Plan→Auto→Always-approve）       | ⬜                     | P3                  |
+| `Esc`                 | 多级：取消 turn / 清草稿（双按）/ rewind / 关浮层 | 🟡 部分（取消/关浮层） | P1 拉齐语义表       |
+| `Ctrl+C`              | 有草稿先清、空则取消；再按升级退出                | 🟡                     | P1                  |
+| `Ctrl+O`              | always-approve 开关（grok）/ 我方=展开工具卡      | ⚠️ 冲突                | P1 出映射与差异理由 |
+| `Ctrl+G`              | grok=任务面板；我方=恢复跟随                      | ⚠️ 冲突                | P1 出映射与差异理由 |
+| `Ctrl+J/K`            | grok=单行滚动；我方=子会话视图（T1 定）           | ⚠️ 冲突                | P1 出映射与差异理由 |
 
 ### C. 现有 TUI 文件清单（P0 后可能整体迁移）
 
