@@ -8,8 +8,8 @@
   },
   "scripts": {
     "build": "pnpm -r build",
-    "test": "pnpm -r build && pnpm -r test",
-    "typecheck": "pnpm -r typecheck",
+    "test": "pnpm -r build && pnpm -r --no-bail run test",
+    "typecheck": "pnpm -r --no-bail run typecheck",
     "lint": "eslint . && prettier --check .",
     "lint:fix": "eslint . --fix && prettier --write .",
     "format": "prettier --write .",

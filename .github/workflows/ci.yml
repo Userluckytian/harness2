@@ -43,18 +43,45 @@ jobs:
       # 全新 runner 上 dist 不存在，先 build 才能让 typecheck 解析到 dist/index.js。
       # （2026-09-07 审查发现的顺序缺陷：原顺序 install→typecheck→test 在干净环境必然 TS2307）
       - name: Build packages
+        id: build
         run: pnpm build
 
+      # --no-bail：多包类型错误一次报全，不在第一个包就中断
       - name: Typecheck
-        run: pnpm -r typecheck
+        if: ${{ !cancelled() && steps.build.outcome == 'success' }}
+        run: pnpm -r --no-bail run typecheck
 
       # B2：lint 为必过项（ESLint flat + prettier --check）。放在 build 之后：
       # projectService 需要解析各包 tsconfig，且 core 的 api-surface.test.ts 引用 dist/。
-      - name: Lint (ESLint + Prettier check)
-        run: pnpm lint
+      #
+      # 以下均拆成独立步骤（消除单点红掩盖：2026-09-11 CI #61 在 core 失败后，
+      # gateway/cli/desktop 三包当次根本没跑到，见 docs/issue-log/OPEN.md）。
+      # 条件只看 build 成败：build 红则后续全跳（无意义）；其余步骤互不遮蔽
+      # —— typecheck/lint 红不挡测试，某一包红不挡其余包；任一步红则整个 job 红。
+      - name: Lint (ESLint)
+        if: ${{ !cancelled() && steps.build.outcome == 'success' }}
+        run: pnpm exec eslint .
 
-      - name: Test
-        run: pnpm test
+      - name: Lint (Prettier check)
+        if: ${{ !cancelled() && steps.build.outcome == 'success' }}
+        run: pnpm exec prettier --check .
+
+      - name: Test core
+        if: ${{ !cancelled() && steps.build.outcome == 'success' }}
+        run: pnpm --filter @harness2/core test
+
+      - name: Test gateway
+        if: ${{ !cancelled() && steps.build.outcome == 'success' }}
+        run: pnpm --filter @harness2/gateway test
+
+      # cli 的包名就是 harness2（非 @harness2/cli），此处不能写成 scope 形式
+      - name: Test cli
+        if: ${{ !cancelled() && steps.build.outcome == 'success' }}
+        run: pnpm --filter harness2 test
+
+      - name: Test desktop
+        if: ${{ !cancelled() && steps.build.outcome == 'success' }}
+        run: pnpm --filter @harness2/desktop test
 
   # 桌面端构建矩阵（阶段 11 Task 3）：三平台各自构建 + artifact 上传（unsigned；
   # 构建失败即红）。GUI 测试不做（见 docs/issue-log/OPEN.md）；桌面单测为纯逻辑
