@@ -812,10 +812,10 @@ describe('斜杠命令（next 模式最小集）', () => {
     h.dispose();
   });
 
-  it('未知命令如实提示暂不支持', () => {
+  it('未知命令走共享「未知命令」文案（P3-C 全集接齐后不再有 next 层暂不支持分支）', () => {
     const { h } = makeHarness();
     h.feed('/frobnicate\r');
-    expect(linesOf(h).join('\n')).toContain('暂不支持');
+    expect(linesOf(h).join('\n')).toContain('未知命令 /frobnicate');
     h.dispose();
   });
 });

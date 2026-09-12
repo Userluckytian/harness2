@@ -32,14 +32,37 @@
 //   1004 焦点上报（parser 产出 focus 事件 → focused 标记，notifier 策略自然生效）均已接。
 //
 // next 模式暂缺项（对齐 Ink 的差距，诚实登记、不伪造）：
-//   1. 斜杠命令仅 /help /? /exit /quit /plan /auto /always-approve；/mode /sessions /undo
-//      /redo /new /resume /fork /context /compact /reasoning /tasks 未接（提示暂不支持，不静默吞掉）。
+//   1. 斜杠命令已全集接齐（P3-C）：ink 版有的命令在本层均有等价行为——共享命令（/undo /redo
+//      /new /resume /fork /exit /quit /sessions）委托 ink-commands.runSharedCommand（真实
+//      CommandContext + 磁盘重投影）；/help /? /mode /context /compact /reasoning /tasks
+//      本地实现（与 ink 同文案）；/plan /auto /always-approve 为 next 层 UI 模式命令。
+//      登记差异：/sessions 无参为转录文本列表（ink 为选择浮层，浮层化暂缺）；/mode 无参 =
+//      UI 模式循环一次（等价 Shift+Tab）、带参接受四态名（ink 为 core 审批模式别名 + 选择
+//      浮层，core 契约冻结不改）；未知命令走共享「未知命令」文案（不再有本层「暂不支持」分支）。
 //   2. 队列面板（Ctrl+X 取消排队条目）与 RetryPanel（重试预算展示）未接。
 //   3. 工具卡 output/子会话入口的磁盘补齐（enrichSubagentResults）未接：live 流不带 output，
 //      工具结果行只有状态无输出摘要；子会话只读浮层（Ctrl+J/K）未接。
 //   4. 工具卡/推理块仍为纯文本行近似（无边框/反色）；逐行前景色已落地（P3-A：
 //      projection fg → Scrollback 行对象 fg → drawScrollback 逐行绘制，单 fg 兜底保留）。
-//   5. 软折行视觉行内 ↑↓ 移动（Infinity 宽度逻辑行移动）、候选补全（matchCommands）未接。
+//   5. 软折行视觉行内 ↑↓ 移动（Infinity 宽度逻辑行移动）未接；候选补全已接（P3-C，见下）。
+//
+// P3-C 斜杠命令全集 + 模糊补全（2026-09-12，对齐 grok `/` 内联下拉 + ink matchCommands）：
+//   - 候选触发：draft 以 '/' 开头且不含空格/换行（= ink Composer 的 commandNameActive 语义）；
+//     逐字过滤实时重算（syncCandidates 在 invalidate 内，draft 变化必经 feed → invalidate）。
+//   - 过滤排序 filterCommands：前缀命中 > 子序列命中（isSubsequence），各自按字典序（ink 的
+//     matchCommands 是纯前缀，本层为其模糊超集；空输入 = 全部命令字典序）。
+//   - Tab / Enter 接受候选：草稿写回 `/cmd `（**含尾随空格**，即退出候选态；再按 Enter 才
+//     发送）。差异登记：grok 选中即执行、ink Enter 提交原草稿；本层采用任务规格的两段式
+//     （接受 → 可继续补参数 → 再 Enter 发送）。
+//   - 悬停/滚轮改选（grok panes.rs:958）：候选画在 composer 层顶部，命中测试
+//     composer.candidateItemAt（相对候选区顶行 → item 下标，含滚动窗口映射）；next 层在
+//     dispatcher 装 candidateMouseLayer（approval 与 composer 之间）：move 命中候选行改
+//     activeIndex、滚轮在候选行上 ±1 循环（候选区外滚轮照常滚转录）。真机悬停需 all-motion
+//     鼠标上报，本层补写 DECSET 1003（MOUSE_ALL_MOTION_ON，与 renderer MOUSE_ON 的
+//     1000;1002;1006 叠加；退出对称关闭）。
+//   - /undo /redo /new /resume /fork /sessions /exit 的重投影语义复用 runSharedCommand：
+//     rewind/会话切换后以 projectSession(dir) 整体重建转录（reprojectFromDisk；磁盘读取失败
+//     保底重投影内存转录，不伪造），并清空折叠覆盖集（对齐 ink 重投影清 expandedIds）。
 //
 // P3-A 键位（2026-09-12 keymap-parity 裁决落地，next 层）：
 //   - Tab = 输入框/滚动区双态焦点（候选可见时 Tab 仍是接受候选，dispatcher 候选优先）；
@@ -87,6 +110,8 @@ import {
   type TurnStreamHandler,
 } from '../../chat-setup.js';
 import { HELP_TEXT, parseCommand } from '../../commands.js';
+import { getContextUsage } from '@harness2/core';
+import { runSharedCommand, type InkCommandIo } from '../ink-commands.js';
 import { expandContextRefs, hasContextRefs } from '../../context-ref.js';
 import { createInputParser, type InputParser } from '../../input/parser.js';
 import { createInputDispatcher, type InputDispatcher, type InputLayer } from '../../input/dispatcher.js';
@@ -106,10 +131,12 @@ import { emptyTranscript, transcriptReducer, type TranscriptEvent, type Transcri
 import type { WriteTarget } from '../renderer/diff-presenter.js';
 import { ALT_SCREEN_EXIT, MOUSE_OFF, SHOW_CURSOR } from '../renderer/ansi.js';
 import { Screen } from '../renderer/screen.js';
-import { renderChat, resizeChat, type ChatScreenState } from './chat-screen.js';
+import { renderChat, resizeChat, layoutChat, type ChatScreenState } from './chat-screen.js';
 import { projectTranscript, type ProjectionLine } from './projection.js';
+import { projectSession } from '../transcript.js';
 import { Scrollback } from './scrollback.js';
 import { wrapTextByWidth, type OverlaySpec } from './overlay.js';
+import { candidateItemAt } from './composer.js';
 import {
   attachInput,
   createChatController,
@@ -133,6 +160,10 @@ const BRACKETED_PASTE_ON = '\x1b[?2004h'; // ansi.ts 无此常量（既有文件
 const BRACKETED_PASTE_OFF = '\x1b[?2004l';
 const FOCUS_REPORT_ON = '\x1b[?1004h'; // DECSET 1004 焦点上报（ansi.ts 无现成常量，同上自定义）
 const FOCUS_REPORT_OFF = '\x1b[?1004l';
+// DECSET 1003 全 motion 鼠标上报（真机悬停改选必需；renderer 的 MOUSE_ON 只有 1000;1002;1006
+// = 按钮/拖动 motion。本层补写开启、退出对称关闭；headless 测试直接喂 SGR 序列不受影响）
+const MOUSE_ALL_MOTION_ON = '\x1b[?1003h';
+const MOUSE_ALL_MOTION_OFF = '\x1b[?1003l';
 
 const SHORTCUTS: readonly string[] = ['Enter 发送', 'Shift+Enter 换行', 'Esc 停止', 'Ctrl+C 退出', 'PgUp/PgDn 滚动'];
 
@@ -148,6 +179,73 @@ const MODE_CYCLE: readonly UiMode[] = ['normal', 'plan', 'auto', 'always-approve
 
 /** plan 态提交消息时打进转录的声明提示（灰色 system 行） */
 const PLAN_MODE_NOTICE = '[plan mode] 下一条消息建议以规划为主：先探索并给出实现计划（UI 声明态：不改变审批/执行行为）';
+
+// —— P3-C 命令注册表（next 层命令全集；wiring = 行为来源，note = 与 ink 的差异登记）——
+
+/** 命令接线方式：local = 本层实现（与 ink 同文案/语义）；shared = 委托 ink-commands.runSharedCommand */
+export type NextCommandWiring = 'local' | 'shared';
+
+export interface NextCommandEntry {
+  /** 命令名（不含 '/'） */
+  name: string;
+  wiring: NextCommandWiring;
+  /** 与 ink 的差异登记（缺省 = 无差异） */
+  note?: string;
+}
+
+/**
+ * next 层斜杠命令注册表（P3-C 全集）。共享命令（/new /sessions /resume /fork /undo /redo
+ * /exit /quit 别名）委托 ink-commands.runSharedCommand（真实 CommandContext + 磁盘重投影）；
+ * 本地命令与 ink runInkChat.handleCommand 同文案。quit / ? 为共享实现的别名（不在候选表，
+ * 与 ink matchCommands 的候选口径一致——候选只含 COMMAND_REGISTRY 名 + next 扩展）。
+ */
+export const NEXT_COMMANDS: readonly NextCommandEntry[] = [
+  { name: 'new', wiring: 'shared' },
+  { name: 'sessions', wiring: 'shared', note: '无参 = 转录文本列表（ink 为选择浮层；浮层化登记暂缺）' },
+  { name: 'resume', wiring: 'shared' },
+  { name: 'fork', wiring: 'shared' },
+  { name: 'undo', wiring: 'shared' },
+  { name: 'redo', wiring: 'shared' },
+  { name: 'help', wiring: 'local' },
+  { name: 'exit', wiring: 'shared' },
+  {
+    name: 'mode',
+    wiring: 'local',
+    note: '无参 = UI 四态循环一次（等价 Shift+Tab）；带参接受四态名直接设置（ink 为 core 审批模式别名 + 选择浮层，core 契约冻结不改）',
+  },
+  { name: 'context', wiring: 'local' },
+  { name: 'compact', wiring: 'local', note: '自动压缩提示（与 ink 同文案，不静默）' },
+  { name: 'reasoning', wiring: 'local' },
+  { name: 'tasks', wiring: 'local', note: '只读提示（与 ink 同文案）：请用 harness2 cron list' },
+  { name: 'plan', wiring: 'local', note: 'next 层 UI 声明态（ink 无此命令）' },
+  { name: 'auto', wiring: 'local', note: 'next 层 UI 声明态（ink 无此命令）' },
+  { name: 'always-approve', wiring: 'local', note: 'next 层 always-approve 开关（ink 无此命令）' },
+];
+
+/** pattern 是否为 target 的子序列（空 pattern 恒真） */
+function isSubsequence(pattern: string, target: string): boolean {
+  if (pattern.length === 0) return true;
+  let i = 0;
+  for (const ch of target) {
+    if (ch === pattern[i]) i += 1;
+    if (i >= pattern.length) return true;
+  }
+  return false;
+}
+
+/**
+ * 模糊过滤候选（P3-C）：输入草稿（'/...'）→ 候选列表（带 '/' 前缀）。
+ * 前缀命中 > 子序列命中（isSubsequence），各自按字典序；空输入 = 全部命令字典序。
+ * ink 的 matchCommands 是纯前缀过滤，本层为其模糊超集（候选口径同源：注册表名 + next 扩展）。
+ */
+export function filterCommands(input: string): string[] {
+  const prefix = input.replace(/^\/+/, '').toLowerCase();
+  const names = NEXT_COMMANDS.map((c) => c.name).sort();
+  if (prefix.length === 0) return names.map((n) => `/${n}`);
+  const prefixHits = names.filter((n) => n.startsWith(prefix));
+  const subHits = names.filter((n) => !n.startsWith(prefix) && isSubsequence(prefix, n));
+  return [...prefixHits, ...subHits].map((n) => `/${n}`);
+}
 
 // —— 审批 gate（createDialogController 的非 React 等价，见文件头取舍说明）——
 
@@ -394,6 +492,8 @@ export function createNextChatHarness(runtime: ChatRuntime, deps: NextChatHarnes
   // 重复写无害）；关闭序列在 runNextChat 的 cleanup 随 screen.stop 一并写出。开启后
   // parser 产出 focus 事件 → dispatcher 兜底更新 focused → notifier 策略自然生效。
   deps.out.write(FOCUS_REPORT_ON);
+  // DECSET 1003 全 motion 鼠标上报（P3-C 悬停改选；与 screen.start 的 MOUSE_ON 叠加，幂等）
+  deps.out.write(MOUSE_ALL_MOTION_ON);
 
   // —— 状态 ——
   let transcript = emptyTranscript();
@@ -500,8 +600,43 @@ export function createNextChatHarness(runtime: ChatRuntime, deps: NextChatHarnes
   }
 
   function invalidate(): void {
+    syncCandidates();
     refreshChrome();
     renderChat(screen, state);
+  }
+
+  // —— 候选补全（P3-C：draft 以 '/' 开头且不含空格/换行 = ink commandNameActive 语义）——
+  // controller（冻结）接受候选/编辑后只改 state.draft/candidates.activeIndex，候选重算由本层
+  // 在 invalidate 内完成（draft 变化必经 feed → invalidate，天然逐字过滤）。
+  function syncCandidates(): void {
+    const draft = state.draft ?? '';
+    const active = draft.startsWith('/') && !draft.includes(' ') && !draft.includes('\n');
+    const prev = state.candidates;
+    if (!active) {
+      state.candidates = null;
+      return;
+    }
+    const items = filterCommands(draft);
+    if (items.length === 0) {
+      state.candidates = null;
+      return;
+    }
+    // 过滤结果不变（如纯 ↑↓ 导航）：保留 controller 改写的高亮；否则（增删字符）钳制旧高亮
+    const keep = prev !== null && prev.items.length === items.length && prev.items.every((it, i) => it === items[i]);
+    const activeIndex = keep
+      ? (prev?.activeIndex ?? 0)
+      : Math.min(Math.max(0, prev?.activeIndex ?? 0), items.length - 1);
+    state.candidates = { items, activeIndex };
+  }
+
+  /** 接受当前高亮候选：草稿写回 `/cmd `（含尾随空格 = 退出候选态；再 Enter 才发送） */
+  function acceptCandidate(): void {
+    const cands = state.candidates;
+    if (cands === null || cands.items.length === 0) return;
+    const chosen = cands.items[Math.min(cands.activeIndex, cands.items.length - 1)] ?? '';
+    if (!chosen.startsWith('/')) return;
+    state.draft = `${chosen} `;
+    state.cursor = state.draft.length;
   }
 
   // —— UI 调度器（T4 有界合并，对齐 InkShell 的 16ms/64 批）——
@@ -776,7 +911,7 @@ export function createNextChatHarness(runtime: ChatRuntime, deps: NextChatHarnes
     }
   }
 
-  // —— 命令（next 模式最小集，见文件头暂缺项）——
+  // —— 命令（P3-C 全集；共享命令委托 runSharedCommand，差异登记见文件头）——
   function handleUserText(text: string): void {
     const parsed = parseCommand(text);
     if (parsed !== null) {
@@ -793,15 +928,94 @@ export function createNextChatHarness(runtime: ChatRuntime, deps: NextChatHarnes
     void runTurnText(text);
   }
 
+  /**
+   * P3-C 重投影（对齐 ink reprojectTranscript）：/undo /redo 追加 rewind/marker、会话切换
+   * （/new /resume /fork）之后，用 projectSession 从磁盘会话日志整体重建转录（被遮蔽的
+   * user/assistant 条目消失、恢复时再现）。先落定待处理事件；清空折叠覆盖集（对齐 ink 清
+   * expandedIds，避免旧 item 下标残留）；磁盘读取失败保底重投影内存转录（不伪造）。
+   */
+  function reprojectFromDisk(): void {
+    flushUi();
+    collapsed = new Set<number>();
+    const current = runtime.getCurrent();
+    if (current !== null) {
+      try {
+        transcript = projectSession(current.dir);
+      } catch {
+        // 磁盘读取失败：保持内存转录（下方 reprojectAll 兜底刷新视图）
+      }
+    }
+    reprojectAll();
+  }
+
+  /** 共享命令执行缝（委托 ink-commands.runSharedCommand；print/reproject/requestExit 对齐 InkShell） */
+  const commandIo: InkCommandIo = {
+    print: (t) => sendSystem(t),
+    reproject: () => reprojectFromDisk(),
+    requestExit: () => requestExit('exit'),
+  };
+
   function handleCommand(parsed: { name: string; rest: string }): void {
     switch (parsed.name) {
       case '/help':
       case '/?':
         sendSystem(HELP_TEXT);
         return;
+      // —— 共享命令（P3-C）：/undo /redo（rewind 重投影）/new /resume /fork /sessions /exit
+      // /quit /? 与未知命令 → ink-commands.runSharedCommand（真实 CommandContext；未知命令
+      // 由共享 handleCommand 输出「未知命令」，不再有本层「暂不支持」分支）
       case '/exit':
       case '/quit':
         requestExit('exit');
+        return;
+      // —— 本地 UI 命令（与 ink runInkChat.handleCommand 同文案；差异登记见文件头）——
+      case '/mode': {
+        const arg = parsed.rest.trim().toLowerCase();
+        if (arg.length === 0) {
+          cycleMode(); // 无参 = 循环切换一次（等价 Shift+Tab；任务规格二选一取循环，登记差异）
+          showHint(`模式：${uiMode}${uiMode === 'plan' || uiMode === 'auto' ? '（声明态）' : ''}`);
+          return;
+        }
+        if ((MODE_CYCLE as readonly string[]).includes(arg)) {
+          setMode(arg as UiMode);
+          sendSystem(
+            `已切换模式: ${arg}${arg === 'plan' || arg === 'auto' ? '（UI 声明态：不改变审批/执行行为）' : ''}`,
+          );
+          return;
+        }
+        sendSystem(`error: 未知模式 ${parsed.rest}（可选: ${MODE_CYCLE.join(', ')}）`);
+        return;
+      }
+      case '/context': {
+        const current = runtime.getCurrent();
+        const usage = current !== null ? getContextUsage(current.dir) : undefined;
+        sendSystem(`上下文占用: ${usage === undefined ? '—（无活动会话）' : `${Math.round(usage * 100)}%`}`);
+        return;
+      }
+      case '/compact':
+        sendSystem('压缩将在下一次 turn 开始时自动检查并执行；若已超阈值会自动触发。');
+        return;
+      case '/reasoning': {
+        const arg = parsed.rest.trim().toLowerCase();
+        if (arg.length === 0) {
+          sendSystem(`推理展示: ${runtime.reasoning() ? '开启' : '关闭'}（/reasoning on|off）`);
+          return;
+        }
+        if (arg === 'on') {
+          runtime.setReasoning(true);
+          sendSystem('推理展示已开启（turn 内按 Ctrl+R 展开/收起折叠块）。');
+          return;
+        }
+        if (arg === 'off') {
+          runtime.setReasoning(false);
+          sendSystem('推理展示已关闭。');
+          return;
+        }
+        sendSystem(`error: 未知参数 ${parsed.rest}（用 on|off，或留空查看当前状态）`);
+        return;
+      }
+      case '/tasks':
+        sendSystem('任务列表请使用 `harness2 cron list` 查看（REPL 只读展示将在后续版本提供）。');
         return;
       // —— 模式命令（P3-B；plan/auto 声明态、always-approve toggle，见文件头语义）——
       case '/plan':
@@ -825,9 +1039,8 @@ export function createNextChatHarness(runtime: ChatRuntime, deps: NextChatHarnes
         return;
       }
       default:
-        sendSystem(
-          `next 渲染层暂不支持命令 ${parsed.name}（当前支持 /help /exit /quit /plan /auto /always-approve；其余请用缺省 ink 路径）`,
-        );
+        // /undo /redo /new /resume /fork /sessions（无参文本列表）与未知命令 → 共享实现
+        runSharedCommand(parsed, runtime, commandIo);
     }
   }
 
@@ -988,6 +1201,20 @@ export function createNextChatHarness(runtime: ChatRuntime, deps: NextChatHarnes
         retakeApproval();
         return 'consumed';
       }
+      // 候选可见时 Tab / Enter = 接受高亮候选（P3-C）：草稿写回 `/cmd `（含尾随空格即退出
+      // 候选态，再 Enter 才发送；grok 选中即执行、ink Enter 提交原草稿，差异登记见文件头）。
+      // extraKeyHandler 先于 controller 内置候选裁决调用，本层拦截后 controller 的
+      // 「Enter 提交高亮候选」不会触发。
+      if (
+        state.candidates !== null &&
+        state.candidates.items.length > 0 &&
+        !ev.modifiers.ctrl &&
+        !ev.modifiers.alt &&
+        ((ev.key === 'tab' && !ev.modifiers.shift) || (ev.key === 'enter' && !ev.modifiers.shift))
+      ) {
+        acceptCandidate();
+        return 'consumed';
+      }
       // Shift+Tab = 模式循环（composer 焦点语义；审批卡接管时 dispatcher 卡片层优先消费
       // 为反向走行，到不了这里；候选可见时模式循环仍生效——全局 chord 优先级高于候选）
       if (ev.key === 'tab' && ev.modifiers.shift && !ev.modifiers.ctrl && !ev.modifiers.alt) {
@@ -1038,8 +1265,41 @@ export function createNextChatHarness(runtime: ChatRuntime, deps: NextChatHarnes
     },
   });
 
+  // —— 候选鼠标层（P3-C 悬停/滚轮改选，grok panes.rs:958；位于 approval 与 composer 之间）——
+  // 候选画在 composer 层顶部（chat-screen layoutChat：composer.top 起的候选行），命中测试
+  // 用 composer.candidateItemAt（含滚动窗口映射）。move 命中候选行改选；滚轮在候选行上
+  // ±1 循环；候选区外的滚轮/移动不消费（composer 层照常滚动转录）。controller blur 期
+  // （审批卡接管）不抢事件（composer 层同 guard）。
+  const candidateMouseLayer: InputLayer = {
+    name: 'candidate-mouse',
+    handle: (event: InputEvent): boolean => {
+      if (event.type !== 'mouse' || !controller.isFocused()) return false;
+      const cands = state.candidates;
+      if (cands === null || cands.items.length === 0) return false;
+      const layout = layoutChat(screen.rows, screen.cols, state);
+      if (layout.candidateRows <= 0) return false;
+      const relRow = event.row - layout.composer.top;
+      if (relRow < 0 || relRow >= layout.candidateRows) return false;
+      if (event.kind === 'move') {
+        const idx = candidateItemAt(cands.items.length, cands.activeIndex, relRow);
+        if (idx !== null && idx !== cands.activeIndex) {
+          cands.activeIndex = idx;
+          invalidate();
+        }
+        return true;
+      }
+      if (event.kind === 'scroll') {
+        const n = cands.items.length;
+        cands.activeIndex = (cands.activeIndex + (event.button === 0 ? -1 : 1) + n) % n;
+        invalidate();
+        return true;
+      }
+      return false;
+    },
+  };
+
   const dispatcher: InputDispatcher = createInputDispatcher({
-    layers: [approvalLayer, createComposerLayer(controller)],
+    layers: [approvalLayer, candidateMouseLayer, createComposerLayer(controller)],
     fallback: (event) => {
       if (event.type === 'focus') {
         focused = event.direction === 'in';
@@ -1215,6 +1475,7 @@ export async function runNextChat(options: ChatOptions = {}): Promise<void> {
     screen,
     cleanup: async () => {
       screen.stop(); // 关鼠标上报 + 显示光标 + 退 alt-screen（幂等）
+      stdout.write(MOUSE_ALL_MOTION_OFF); // 关全 motion 鼠标上报（与 1003h 成对；重复写无害）
       stdout.write(FOCUS_REPORT_OFF); // 关焦点上报（与 1004h 成对；重复写无害）
       stdout.write(BRACKETED_PASTE_OFF);
       if (canRaw) {

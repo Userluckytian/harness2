@@ -248,10 +248,28 @@ function writeRowAt(buf: CellBuffer, y: number, x0: number, text: string, maxX: 
   }
 }
 
-/** 候选滚动窗口起始下标：窗口贴住 active，钳制在 [0, items.length - n] */
-function candidateWindowStart(itemCount: number, activeIndex: number, n: number): number {
+/** 候选滚动窗口起始下标：窗口贴住 active，钳制在 [0, items.length - n]（导出供命中测试复用） */
+export function candidateWindowStart(itemCount: number, activeIndex: number, n: number): number {
   if (itemCount <= n) return 0;
   return Math.min(Math.max(0, activeIndex - (n - 1)), itemCount - n);
+}
+
+/**
+ * 候选区命中测试（P3-C 悬停/滚轮改选用）：relRow 相对候选区顶行（0 基）→ 过滤结果 item 下标。
+ * 候选窗口随 activeIndex 滚动（candidateWindowStart），可见行 k 对应 items[windowStart + k]。
+ * 候选区顶行 = composer 层顶（chat-screen layoutChat 的 composer.top：候选画在层内顶部、
+ * 草稿区之上）。relRow 越界（<0 或 ≥ 可见行数）或 itemCount ≤ 0 返回 null。
+ * 供整帧装配层（next-shell 的鼠标层）把鼠标 move 行号映射回候选下标。
+ */
+export function candidateItemAt(
+  itemCount: number,
+  activeIndex: number,
+  relRow: number,
+  max: number = DEFAULT_MAX_CANDIDATES,
+): number | null {
+  const n = candidateRows(itemCount, max);
+  if (itemCount <= 0 || relRow < 0 || relRow >= n) return null;
+  return candidateWindowStart(itemCount, activeIndex, n) + Math.floor(relRow);
 }
 
 /**
