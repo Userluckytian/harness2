@@ -1,0 +1,157 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`字符网格快照（固定 rows/cols 整屏 rowText） > 快照①：默认帧（3 行草稿 + 光标 + 状态行 + 快捷键条） 1`] = `
+[
+  "Welcome to harness2                                                            │",
+  "                                                                               │",
+  "User: 你好                                                                     │",
+  "Assistant: 你好！有什么可以帮你？                                              │",
+  "                                                                               │",
+  "                                                                               │",
+  "                                                                               │",
+  "                                                                               │",
+  "                                                                               │",
+  "                                                                               │",
+  "                                                                               │",
+  "                                                                               │",
+  "                                                                               │",
+  "                                                                               │",
+  "                                                                               │",
+  "                                                                               │",
+  "                                                                               │",
+  "                                                                               │",
+  "first line                                                                      ",
+  "second line                                                                     ",
+  "third line                                                                      ",
+  "                                                                                ",
+  "plan · model-x · ctx 42%                                                        ",
+  "Enter Send · Shift+Tab Mode · Ctrl+C Quit                                       ",
+]
+`;
+
+exports[`字符网格快照（固定 rows/cols 整屏 rowText） > 快照②：候选列表（active 高亮行） 1`] = `
+[
+  "User: /mode                                                                    │",
+  "                                                                               │",
+  "                                                                               │",
+  "                                                                               │",
+  "                                                                               │",
+  "                                                                               │",
+  "                                                                               │",
+  "                                                                               │",
+  "                                                                               │",
+  "                                                                               │",
+  "                                                                               │",
+  "                                                                               │",
+  "                                                                               │",
+  "                                                                               │",
+  "                                                                               │",
+  "                                                                               │",
+  "                                                                               │",
+  "plan                                                                            ",
+  "auto-edit                                                                       ",
+  "read-only                                                                       ",
+  "full-access                                                                     ",
+  "> deploy                                                                        ",
+  "                                                                                ",
+  "Enter Send · Tab Next                                                           ",
+]
+`;
+
+exports[`字符网格快照（固定 rows/cols 整屏 rowText） > 快照③：单浮层（标题 + 分隔线 + 条目）锚定输入框上方 1`] = `
+[
+  "User: /model                                                                   │",
+  "                                                                               │",
+  "                                                                               │",
+  "                                                                               │",
+  "                                                                               │",
+  "                                                                               │",
+  "                                                                               │",
+  "                                                                               │",
+  "                                                                               │",
+  "                                                                               │",
+  "                                                                               │",
+  "                                                                               │",
+  "                                                                               │",
+  "                                                                               │",
+  "                                                                               │",
+  "                                                                               │",
+  " Select Model                                                                  │",
+  "────────────────────────────────────────────────────────────────────────────────",
+  "  grok-4-fast                                                                  │",
+  "❯ claude-x                                                                     │",
+  "  gpt-5-mini                                                                   │",
+  "hello                                                                           ",
+  "                                                                                ",
+  "Esc Close                                                                       ",
+]
+`;
+
+exports[`字符网格快照（固定 rows/cols 整屏 rowText） > 快照④：滚动脱离 follow（scrollTop 中部，thumb 非底部） 1`] = `
+[
+  "msg-29                                                                         │",
+  "msg-30                                                                         │",
+  "msg-31                                                                         │",
+  "msg-32                                                                         │",
+  "msg-33                                                                         │",
+  "msg-34                                                                         │",
+  "msg-35                                                                         │",
+  "msg-36                                                                         │",
+  "msg-37                                                                         │",
+  "msg-38                                                                         │",
+  "msg-39                                                                         █",
+  "msg-40                                                                         █",
+  "msg-41                                                                         █",
+  "msg-42                                                                         █",
+  "msg-43                                                                         █",
+  "msg-44                                                                         █",
+  "msg-45                                                                         █",
+  "msg-46                                                                         │",
+  "msg-47                                                                         │",
+  "msg-48                                                                         │",
+  "msg-49                                                                         │",
+  "                                                                                ",
+  "                                                                                ",
+  "Ctrl+C Quit                                                                     ",
+]
+`;
+
+exports[`字符网格快照（固定 rows/cols 整屏 rowText） > 快照⑤：CJK 长行断行 + 宽字符混排 1`] = `
+[
+  "中文输出是终端渲染的常见场景，宽字符占两列，断行时绝不能切半边，这一行足够长以 │",
+  "便触发软折行行为。                                                             │",
+  "mixed 中英混排 line with emoji 🚀 and CJK 字符。                               │",
+  "短行                                                                           │",
+  "                                                                               │",
+  "                                                                               │",
+  "                                                                               │",
+  "                                                                               │",
+  "                                                                               │",
+  "                                                                               │",
+  "                                                                               │",
+  "                                                                               │",
+  "                                                                               │",
+  "                                                                               │",
+  "                                                                               │",
+  "                                                                               │",
+  "                                                                               │",
+  "                                                                               │",
+  "                                                                               │",
+  "                                                                               │",
+  "输入一段中文草稿，长度超过八十列时会软折行，光标应落在正确的物理行上。再补一段确",
+  "保超过四十个汉字触发输入框内的软折行。                                          ",
+  "                                                                                ",
+  "Enter Send                                                                      ",
+]
+`;
+
+exports[`字符网格快照（固定 rows/cols 整屏 rowText） > 快照⑥：极端小屏（rows=6） 1`] = `
+[
+  "second line                            █",
+  "ab                                      ",
+  "cd                                      ",
+  "                                        ",
+  "PLAN                                    ",
+  "Ctrl+C Quit                             ",
+]
+`;
