@@ -4,7 +4,7 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { join } from 'node:path';
-import { IPC_EVENT, IPC_INVOKE, IPC_STATUS } from '../src/shared/protocol.js';
+import { IPC_EVENT, IPC_INVOKE, IPC_STATUS, IPC_STOP_ALL } from '../src/shared/protocol.js';
 
 function extractConstant(source: string, name: string): string | null {
   const m = new RegExp(`const ${name} = '([^']+)'`).exec(source);
@@ -18,6 +18,7 @@ describe('preload IPC 常量一致性', () => {
     expect(extractConstant(preloadSource, 'IPC_INVOKE')).toBe(IPC_INVOKE);
     expect(extractConstant(preloadSource, 'IPC_EVENT')).toBe(IPC_EVENT);
     expect(extractConstant(preloadSource, 'IPC_STATUS')).toBe(IPC_STATUS);
+    expect(extractConstant(preloadSource, 'IPC_STOP_ALL')).toBe(IPC_STOP_ALL);
   });
 
   it('preload 源码不允许 require 相对模块 / Node 内建（sandbox 红线）', () => {

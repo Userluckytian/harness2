@@ -22,6 +22,12 @@ export function emptyLive(): LiveDelta {
 
 export interface TurnEndInfo {
   stopReason: string;
+  /** P3 契约：终态文本展示判别（final/partial/empty；旧 serve 缺省 → 由正文推断） */
+  textOutcome?: 'final' | 'partial' | 'empty';
+  /** P3-a：完整最终正文（仅 textOutcome='final'） */
+  finalText?: string;
+  /** P3-b：半截 attempt 文本（仅 textOutcome='partial'；展示须标注未完成/已中断） */
+  partialText?: string;
   error?: string;
   warning?: string;
 }
@@ -50,6 +56,9 @@ export interface ChatItem {
   durationMs?: number;
   stopReason?: string;
   warning?: string;
+  /** P3：turn 终态文本判别 + 半截文本（partial 须标注「未完成/已中断」） */
+  textOutcome?: 'final' | 'partial' | 'empty';
+  partialText?: string;
 }
 
 /**
@@ -127,7 +136,14 @@ export function projectChatItems(
       }
       case 'assistant/attempt': {
         ensureTurnHeader(str(p['turnId']));
-        items.push({ kind: 'attempt', seq: e.seq, turnId: str(p['turnId']), error: str(p['error']) });
+        items.push({
+          kind: 'attempt',
+          seq: e.seq,
+          turnId: str(p['turnId']),
+          error: str(p['error']),
+          // P3-b：半截文本以 assistant/attempt 为日志权威（append-only），展示须标注未完成
+          ...(typeof p['text'] === 'string' && p['text'].length > 0 ? { text: p['text'] } : {}),
+        });
         break;
       }
       case 'tool/call': {
@@ -197,6 +213,8 @@ export function projectChatItems(
       ...(end !== undefined
         ? {
             stopReason: end.stopReason,
+            ...(end.textOutcome !== undefined ? { textOutcome: end.textOutcome } : {}),
+            ...(end.partialText !== undefined ? { partialText: end.partialText } : {}),
             ...(end.error !== undefined ? { error: end.error } : {}),
             ...(end.warning !== undefined ? { warning: end.warning } : {}),
           }

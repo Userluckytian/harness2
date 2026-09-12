@@ -3,11 +3,23 @@
 // 这里只与 127.0.0.1 的本地 serve 通信；WS 帧（含密钥三不约束的脱敏事件）原样转发。
 import { BrowserWindow, Notification, dialog, ipcMain, type IpcMainInvokeEvent } from 'electron';
 import { composeNotifyContent } from '../shared/notify.js';
-import type { ConnectionStatus, SessionSummaryShape, StatusDetail, WsFrame } from '../shared/protocol.js';
+import { buildCapabilityReport, classifyProbeResponse } from '../shared/capabilities.js';
+import type {
+  CapabilityIdShape,
+  CapabilityReportShape,
+  ConnectionStatus,
+  MessageReferenceShape,
+  SessionSummaryShape,
+  StatusDetail,
+  SubmitIntentShape,
+  WsClientOp,
+  WsFrame,
+} from '../shared/protocol.js';
 import { readLayout, writeLayout } from './layout-file.js';
 import type { ServeManager } from './serve-manager.js';
 import { readPreferences, writePreferences } from './preferences-file.js';
 import { readMetadata, writeMetadataPatch } from './metadata-file.js';
+import { readDrafts, writeDrafts } from './drafts-file.js';
 import { readAuthMasked, readSettingsConfig, updateAuth, updateSettingsConfig } from './config-file.js';
 import { getCrashReports, getDoctorReport } from './diagnostics.js';
 import { getContextUsageForSession } from './context-usage.js';
@@ -134,6 +146,8 @@ export interface BridgeDeps {
   sendEvent: (frame: WsFrame) => void;
   /** 渲染窗口推送（连接状态） */
   sendStatus: (status: ConnectionStatus, detail?: StatusDetail) => void;
+  /** D4：运行态上报（main 据此在关窗口前提示；关 UI ≠ 已停任务） */
+  setBusy?: (info: { busy: boolean; runningTurns: number; backgroundTasks: number }) => void;
 }
 
 export interface Bridge {
@@ -145,7 +159,15 @@ export interface Bridge {
   handleInvoke(_event: IpcMainInvokeEvent, req: unknown): Promise<unknown>;
 }
 
-export class InvokeError extends Error {}
+export class InvokeError extends Error {
+  /** HTTP 状态码（网络层失败/非 HTTP 错误时为 undefined） */
+  readonly status: number | undefined;
+  constructor(message: string, status?: number) {
+    super(message);
+    this.name = 'InvokeError';
+    this.status = status;
+  }
+}
 
 async function httpJsonRaw<T>(url: string, init?: RequestInit): Promise<T> {
   let res: Response;
@@ -160,14 +182,21 @@ async function httpJsonRaw<T>(url: string, init?: RequestInit): Promise<T> {
     try {
       body = JSON.parse(text);
     } catch {
-      throw new InvokeError(`服务响应不是 JSON（status ${res.status}）`);
+      throw new InvokeError(`服务响应不是 JSON（status ${res.status}）`, res.status);
     }
   }
   if (!res.ok) {
     const msg = (body as { error?: string } | null)?.error ?? `服务错误（status ${res.status}）`;
-    throw new InvokeError(msg);
+    throw new InvokeError(msg, res.status);
   }
   return body as T;
+}
+
+/** 取非空 sessionId（缺失 → 明确 InvokeError，不静默打空路径） */
+function requireSessionId(args: Record<string, unknown>): string {
+  const sid = args['sessionId'];
+  if (typeof sid !== 'string' || sid.length === 0) throw new InvokeError('缺少 sessionId');
+  return sid;
 }
 
 export function createBridge(deps: BridgeDeps): Bridge {
@@ -181,6 +210,49 @@ export function createBridge(deps: BridgeDeps): Bridge {
     const headers = new Headers(init?.headers);
     headers.set('x-harness2-token', token);
     return httpJsonRaw<T>(url, { ...init, headers });
+  };
+
+  /** 404 = 「无此数据/无此端点」→ null（供 planState 等可选端点；其余错误照常抛出） */
+  const httpJsonOptional = async <T>(url: string): Promise<T | null> => {
+    try {
+      return await httpJson<T>(url);
+    } catch (e) {
+      if (e instanceof InvokeError && e.status === 404) return null;
+      throw e;
+    }
+  };
+
+  /**
+   * 能力盘点（D0）：以**实测**为准——
+   *   - serve 就绪 = 当前连接状态 connected；
+   *   - S7 四个只读端点在给定会话上逐个 GET：404 且 error 以 `not found:` 开头 → 路由缺失（旧 serve）；
+   *     「会话暂无计划数据」等业务 404 → 路由存在（数据缺失，非能力缺失）。
+   * WS 交互 op（queue/steer/cancel/fork/resume）无法无副作用探测：冻结契约保证其存在，
+   * 就绪即视为可用；若旧 serve 缺失，调用时会收到明确 error 帧（不静默）。
+   */
+  const probeCapabilities = async (sessionId?: string): Promise<CapabilityReportShape> => {
+    const serveReady = deps.serve.status === 'connected';
+    const unsupported = new Set<CapabilityIdShape>();
+    if (serveReady && typeof sessionId === 'string' && sessionId.length > 0) {
+      const base = deps.serve.baseUrl;
+      const id = encodeURIComponent(sessionId);
+      const endpoints: Array<{ cap: CapabilityIdShape; path: string }> = [
+        { cap: 'run-config', path: `/api/sessions/${id}/run-config` },
+        { cap: 'plan-state', path: `/api/sessions/${id}/plan-state` },
+        { cap: 'execution-view', path: `/api/sessions/${id}/execution-view` },
+        { cap: 'change-review', path: `/api/sessions/${id}/change-review` },
+      ];
+      for (const ep of endpoints) {
+        try {
+          await httpJson<unknown>(`${base}${ep.path}`);
+        } catch (e) {
+          if (e instanceof InvokeError && classifyProbeResponse(ep.cap, e.status ?? 0, e.message)) {
+            unsupported.add(ep.cap);
+          }
+        }
+      }
+    }
+    return buildCapabilityReport({ serveReady, unsupportedEndpoints: unsupported });
   };
 
   let ws: WebSocket | null = null;
@@ -299,11 +371,11 @@ export function createBridge(deps: BridgeDeps): Bridge {
     }
   };
 
-  const wsSendOrThrow = (frame: unknown): void => {
+  const wsSendOrThrow = (op: WsClientOp): void => {
     if (ws === null || ws.readyState !== WebSocket.OPEN) {
       throw new InvokeError('与服务的事件通道未连接（等待 serve 就绪）');
     }
-    ws.send(JSON.stringify(frame));
+    ws.send(JSON.stringify(op));
   };
 
   const handleInvoke = async (_event: IpcMainInvokeEvent, req: unknown): Promise<unknown> => {
@@ -349,22 +421,116 @@ export function createBridge(deps: BridgeDeps): Bridge {
           body: '{}',
         });
       case 'subscribe':
-        wsSendOrThrow({ op: 'subscribe', sessionId: args['sessionId'] });
+        wsSendOrThrow({ op: 'subscribe', sessionId: requireSessionId(args) });
         return null;
       case 'unsubscribe':
-        wsSendOrThrow({ op: 'unsubscribe', sessionId: args['sessionId'] });
+        wsSendOrThrow({ op: 'unsubscribe', sessionId: requireSessionId(args) });
         return null;
       case 'sendMessage':
-        wsSendOrThrow({ op: 'user-message', sessionId: args['sessionId'], text: args['text'] });
+        wsSendOrThrow({
+          op: 'user-message',
+          sessionId: requireSessionId(args),
+          text: typeof args['text'] === 'string' ? args['text'] : '',
+        });
         return null;
       case 'abort':
-        wsSendOrThrow({ op: 'abort', sessionId: args['sessionId'] });
+        wsSendOrThrow({ op: 'abort', sessionId: requireSessionId(args) });
         return null;
       case 'respondApproval':
         wsSendOrThrow({
           op: 'approval-response',
-          requestId: args['requestId'],
+          requestId: typeof args['requestId'] === 'string' ? args['requestId'] : '',
           decision: args['decision'] === 'allow' ? 'allow' : 'deny',
+        });
+        return null;
+      // —— D0：S7 只读查询端点（GET，纯投影） ——
+      case 'runConfig': {
+        const sid = requireSessionId(args);
+        return httpJson(`${base}/api/sessions/${encodeURIComponent(sid)}/run-config`);
+      }
+      case 'planState': {
+        const sid = requireSessionId(args);
+        // 404 = 「会话暂无计划数据」（core 明确语义，非错误）→ null，UI 显示空态而非假计划
+        return httpJsonOptional(`${base}/api/sessions/${encodeURIComponent(sid)}/plan-state`);
+      }
+      case 'executionViews': {
+        const sid = requireSessionId(args);
+        const body = await httpJson<{ views: unknown[] }>(
+          `${base}/api/sessions/${encodeURIComponent(sid)}/execution-view`,
+        );
+        return body.views;
+      }
+      case 'changeReview': {
+        const sid = requireSessionId(args);
+        return httpJson(`${base}/api/sessions/${encodeURIComponent(sid)}/change-review`);
+      }
+      // —— D0：S3 交互 op（WS；结果经 ack 帧回传，不在此处等待） ——
+      case 'fork': {
+        const sid = requireSessionId(args);
+        const atSeq = args['atSeq'];
+        wsSendOrThrow({
+          op: 'fork',
+          sessionId: sid,
+          ...(typeof atSeq === 'number' && Number.isInteger(atSeq) && atSeq >= 0 ? { atSeq } : {}),
+        });
+        return null;
+      }
+      case 'submit': {
+        const sid = requireSessionId(args);
+        const clientMessageId = typeof args['clientMessageId'] === 'string' ? args['clientMessageId'] : '';
+        if (clientMessageId.length === 0) throw new InvokeError('submit 缺少 clientMessageId（幂等键）');
+        const rawText = typeof args['rawText'] === 'string' ? args['rawText'] : '';
+        const intent: SubmitIntentShape = args['intent'] === 'steer' ? 'steer' : 'queue';
+        const expectedTurnId = args['expectedTurnId'];
+        const references = Array.isArray(args['references'])
+          ? (args['references'] as MessageReferenceShape[])
+          : undefined;
+        wsSendOrThrow({
+          op: 'submit',
+          clientMessageId,
+          sessionId: sid,
+          rawText,
+          intent,
+          ...(references !== undefined ? { references } : {}),
+          ...(typeof expectedTurnId === 'string' && expectedTurnId.length > 0 ? { expectedTurnId } : {}),
+        });
+        return null;
+      }
+      case 'cancel': {
+        const requestId = typeof args['requestId'] === 'string' ? args['requestId'] : '';
+        const target = args['target'] as { kind?: unknown; id?: unknown } | undefined;
+        const kind = target?.kind === 'task' ? 'task' : 'turn';
+        const targetId = typeof target?.id === 'string' ? target.id : '';
+        if (requestId.length === 0 || targetId.length === 0) {
+          throw new InvokeError('cancel 需要 requestId 与非空 target.id');
+        }
+        const expectedId = args['expectedId'];
+        const generation = args['expectedTurnGeneration'];
+        wsSendOrThrow({
+          op: 'cancel',
+          requestId,
+          target: { kind, id: targetId },
+          ...(typeof expectedId === 'string' && expectedId.length > 0 ? { expectedId } : {}),
+          ...(typeof generation === 'number' && Number.isInteger(generation)
+            ? { expectedTurnGeneration: generation }
+            : {}),
+        });
+        return null;
+      }
+      case 'resumeSubscription': {
+        const sid = requireSessionId(args);
+        const lastSeq = typeof args['lastSeq'] === 'number' ? args['lastSeq'] : 0;
+        const epoch = typeof args['epoch'] === 'number' ? args['epoch'] : 0;
+        wsSendOrThrow({ op: 'resume-subscription', sessionId: sid, lastSeq, epoch });
+        return null;
+      }
+      case 'capabilities':
+        return probeCapabilities(typeof args['sessionId'] === 'string' ? args['sessionId'] : undefined);
+      case 'runtime:setBusy':
+        deps.setBusy?.({
+          busy: args['busy'] === true,
+          runningTurns: typeof args['runningTurns'] === 'number' ? args['runningTurns'] : 0,
+          backgroundTasks: typeof args['backgroundTasks'] === 'number' ? args['backgroundTasks'] : 0,
         });
         return null;
       case 'loadLayout':
@@ -400,6 +566,10 @@ export function createBridge(deps: BridgeDeps): Bridge {
           ...(typeof patch.deleted === 'boolean' ? { deleted: patch.deleted } : {}),
         });
       }
+      case 'drafts:get':
+        return readDrafts(deps.home);
+      case 'drafts:set':
+        return writeDrafts(deps.home, args['drafts']);
       case 'settings:getDoctorReport':
         return getDoctorReport(deps.home, deps.root);
       case 'settings:getCrashReports':

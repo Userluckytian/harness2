@@ -16,6 +16,7 @@ import {
 } from './components/CommandPalette.js';
 import { SessionList } from './components/SessionList.js';
 import { PaneArea } from './components/PaneArea.js';
+import { SidePanel } from './components/SidePanel.js';
 import { controller, store, useAppState, THEME_CYCLE, StatusBadge } from './app-shared.js';
 import type { AppState } from './store.js';
 import { filterSessionList } from '../shared/metadata.js';
@@ -53,10 +54,20 @@ export function App(): React.ReactNode {
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [theme, setTheme] = useState<SettingsTheme>('warmPaper');
   const [notifyDetails, setNotifyDetails] = useState<SettingsNotifyDetails>('minimal');
-  // controller 生命周期挂组件：启动事件订阅 + 布局加载（卸载时退订）
+  // controller 生命周期挂组件：启动事件订阅 + 布局/覆层/草稿加载（卸载时退订）
   useEffect(() => {
     void controller.initLayout();
-    return controller.start();
+    void controller.initMetadata();
+    void controller.initDrafts();
+    // D4：关窗口「请求停止并退出」→ 主进程要求取消全部运行中工作
+    const stopAllUnsub = window.harness2.onStopAll(() => {
+      void controller.stopAll();
+    });
+    const started = controller.start();
+    return () => {
+      stopAllUnsub();
+      started();
+    };
   }, []);
   // 主题/通知偏好：启动时读取并应用；设置页保存后 onPreferenceChange 即时同步（保存回调里更新各状态）
   useEffect(() => {
@@ -200,6 +211,7 @@ export function App(): React.ReactNode {
       <div className="body">
         <SessionList />
         <PaneArea />
+        <SidePanel />
       </div>
       <SettingsDialog
         open={settingsOpen}

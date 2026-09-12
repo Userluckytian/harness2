@@ -1,12 +1,13 @@
 // Electron 主进程入口：spawn serve → 桥接 IPC → 创建窗口（contextIsolation + preload）。
 // --smoke 冒烟模式：无头窗口 + mock 服务就绪 + 渲染端加载完成后向 stdout 打一行 JSON 并退出
 // （自动化冒烟；窗口交互/拖拽等 GUI 项仍需真机人工验收，见 docs/issue-log/OPEN.md）。
-import { app, BrowserWindow, Menu } from 'electron';
+import { app, BrowserWindow, Menu, dialog } from 'electron';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { homedir, tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createBridge, registerBridgeIpc, type Bridge } from './bridge.js';
 import { ServeManager } from './serve-manager.js';
+import { CLOSE_DIALOG_BUTTONS, closeDialogMessage, decideCloseAction } from '../shared/close-window.js';
 import type { ConnectionStatus, StatusDetail, WsFrame } from '../shared/protocol.js';
 
 const SMOKE = process.argv.includes('--smoke');
@@ -33,6 +34,8 @@ interface DesktopHandles {
 
 function startDesktop(opts: { show: boolean; provider: 'mock' | 'config'; home?: string }): DesktopHandles {
   const home = opts.home ?? homedir();
+  /** D4：渲染端上报的运行态（关窗口提示依据） */
+  const runtime = { busy: false, runningTurns: 0, backgroundTasks: 0 };
   let resolveReady!: (v: { port: number }) => void;
   let rejectReady!: (e: Error) => void;
   const ready = new Promise<{ port: number }>((resolve, reject) => {
@@ -65,7 +68,19 @@ function startDesktop(opts: { show: boolean; provider: 'mock' | 'config'; home?:
     },
   });
 
-  const bridge = createBridge({ serve, root: resolveRepoRoot(), home, sendEvent, sendStatus });
+  const bridge = createBridge({
+    serve,
+    root: resolveRepoRoot(),
+    home,
+    sendEvent,
+    sendStatus,
+    // D4：渲染端上报运行态 → 关窗口前提示（关 UI 不等于停任务）
+    setBusy: (info) => {
+      runtime.busy = info.busy;
+      runtime.runningTurns = info.runningTurns;
+      runtime.backgroundTasks = info.backgroundTasks;
+    },
+  });
   registerBridgeIpc(bridge);
 
   const win = new BrowserWindow({
@@ -97,6 +112,41 @@ function startDesktop(opts: { show: boolean; provider: 'mock' | 'config'; home?:
     }
   });
   void win.loadFile(join(__dirname, '..', '..', 'dist', 'renderer', 'index.html'));
+
+  // D4：关窗口 ≠ 已停止任务。有运行中工作时必须让用户显式选择（不得静默丢弃/假称已停）。
+  let stoppingForClose = false;
+  win.on('close', (event) => {
+    if (!runtime.busy || stoppingForClose) return;
+    event.preventDefault();
+    void dialog
+      .showMessageBox(win, {
+        type: 'warning',
+        title: '仍有任务在运行',
+        message: closeDialogMessage(runtime.runningTurns, runtime.backgroundTasks),
+        buttons: CLOSE_DIALOG_BUTTONS.map((b) => b.label),
+        defaultId: 0,
+        cancelId: 2,
+      })
+      .then(({ response }) => {
+        const choice = CLOSE_DIALOG_BUTTONS[response]?.choice ?? 'cancel';
+        const decision = decideCloseAction(runtime.busy, choice);
+        if (decision.action === 'stay-open') return;
+        if (decision.action === 'close-window-keep-serving' && choice === 'keep-running') {
+          // 「保持后台运行」= 最小化窗口（进程与 serve 继续；用户可从任务栏恢复，不设陷阱）
+          win.minimize();
+          return;
+        }
+        // 请求停止并退出：先让渲染端取消全部运行中工作，再关闭（如实：这是请求，不是保证已停）
+        stoppingForClose = true;
+        win.webContents.send('harness2:stop-all');
+        setTimeout(() => {
+          win.close();
+        }, 400);
+      })
+      .catch(() => {
+        // 弹窗失败：保守起见不关闭（避免静默丢弃运行中任务）
+      });
+  });
 
   serve
     .start()

@@ -522,6 +522,440 @@ body,
 .btn-deny {
   background: var(--danger);
 }
+/* D1：可见队列（排队/暂停/待确认/未确认）+ @引用 来源报告 */
+.queue-bar,
+.ref-report {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 6px 16px;
+  border-top: 1px solid var(--border);
+  font-size: 0.85em;
+}
+.ref-sources {
+  color: var(--muted);
+}
+.ref-skipped,
+.ref-missing {
+  color: var(--warn);
+}
+.queue-item {
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+}
+.queue-kind {
+  flex: 0 0 auto;
+  border-radius: 4px;
+  padding: 1px 6px;
+  background: var(--panel);
+  color: var(--muted);
+}
+.queue-item.queue-unconfirmed .queue-kind {
+  background: var(--danger);
+  color: white;
+}
+.queue-item.queue-paused .queue-kind {
+  background: var(--warn);
+}
+.queue-text {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.queue-note {
+  color: var(--muted);
+}
+/* D2：命令执行日志卡（真实 shell/cwd/输出窗口/exit code） */
+.cmd-log {
+  margin: 4px 0 6px 12px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 6px 8px;
+  background: var(--panel);
+  font-size: 0.85em;
+}
+.cmd-head {
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+  flex-wrap: wrap;
+}
+.cmd-source {
+  border-radius: 4px;
+  padding: 0 6px;
+  background: var(--composer-bg);
+  color: var(--muted);
+}
+.cmd-source-planned-only {
+  color: var(--warn);
+}
+.cmd-status-failed,
+.cmd-status-cancelled,
+.cmd-status-unknown {
+  color: var(--danger);
+}
+.cmd-status-not-executed {
+  color: var(--muted);
+}
+.cmd-command,
+.cmd-output-body {
+  margin: 4px 0;
+  padding: 6px;
+  border-radius: 4px;
+  background: var(--composer-bg);
+  white-space: pre-wrap;
+  word-break: break-all;
+  max-height: 260px;
+  overflow: auto;
+}
+.cmd-meta {
+  display: flex;
+  gap: 12px;
+  color: var(--muted);
+  flex-wrap: wrap;
+}
+.cmd-output-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  color: var(--muted);
+}
+.cmd-error pre {
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+.attempt-partial pre {
+  white-space: pre-wrap;
+  word-break: break-all;
+  max-height: 200px;
+  overflow: auto;
+}
+.sum-partial,
+.sum-empty {
+  color: var(--warn);
+}
+/* D3：右侧工作面板（计划 / 任务 / 审批） */
+.side-panel {
+  width: 300px;
+  flex: 0 0 300px;
+  display: flex;
+  flex-direction: column;
+  border-left: 1px solid var(--border);
+  background: var(--panel);
+  min-height: 0;
+}
+.side-tabs {
+  display: flex;
+  border-bottom: 1px solid var(--border);
+}
+.side-tab {
+  flex: 1;
+  padding: 6px 4px;
+  border: none;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+}
+.side-tab-active {
+  border-bottom: 2px solid var(--ok);
+  color: var(--fg);
+}
+.side-badge {
+  margin-left: 4px;
+  border-radius: 8px;
+  padding: 0 5px;
+  background: var(--warn);
+  color: white;
+  font-size: 0.8em;
+}
+.side-body {
+  flex: 1;
+  overflow-y: auto;
+  min-height: 0;
+}
+.side-foot {
+  border-top: 1px solid var(--border);
+  padding: 6px 8px;
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+.side-hint {
+  color: var(--muted);
+  font-size: 0.8em;
+}
+.panel {
+  padding: 8px;
+  font-size: 0.9em;
+}
+.panel-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 8px;
+  margin-bottom: 6px;
+  flex-wrap: wrap;
+}
+.panel-mode,
+.panel-foot,
+.panel-notice {
+  color: var(--muted);
+  font-size: 0.85em;
+}
+.panel-notice {
+  margin-top: 6px;
+  color: var(--warn);
+}
+.panel-empty {
+  padding: 12px 8px;
+  color: var(--muted);
+}
+.plan-steps {
+  margin: 6px 0;
+  padding-left: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.plan-step {
+  display: flex;
+  flex-direction: column;
+}
+.plan-step-completed .step-state {
+  color: var(--ok);
+}
+.plan-step-failed .step-state,
+.plan-step-cancelled .step-state {
+  color: var(--danger);
+}
+.step-evidence,
+.plan-goal-evidence,
+.plan-progress {
+  color: var(--muted);
+  font-size: 0.85em;
+}
+.mode-switch {
+  margin-top: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 0.85em;
+}
+.task-tree {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.task-row {
+  display: flex;
+  gap: 6px;
+  align-items: baseline;
+  flex-wrap: wrap;
+}
+.task-state-waiting-approval {
+  color: var(--warn);
+}
+.task-state-failed,
+.task-state-cancelled,
+.task-state-unknown {
+  color: var(--danger);
+}
+.task-state-completed {
+  color: var(--ok);
+}
+.task-bg,
+.task-orphan,
+.task-turn {
+  color: var(--muted);
+  font-size: 0.8em;
+}
+.task-orphan {
+  color: var(--warn);
+}
+.approval-group {
+  margin-bottom: 8px;
+  border-left: 2px solid var(--border);
+  padding-left: 8px;
+}
+.approval-group-head {
+  color: var(--muted);
+  font-size: 0.85em;
+}
+.approval-parent {
+  color: var(--warn);
+}
+.approval-card {
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 6px;
+  margin-top: 4px;
+}
+.approval-expired {
+  opacity: 0.6;
+}
+.approval-args {
+  margin-left: 6px;
+  word-break: break-all;
+}
+.approval-card-meta {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  color: var(--muted);
+  font-size: 0.8em;
+}
+.approval-actions {
+  display: flex;
+  gap: 6px;
+  margin-top: 4px;
+}
+.approval-note {
+  color: var(--warn);
+  font-size: 0.8em;
+}
+/* D5：变更审查 + 工作区 */
+.change-file {
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 6px;
+  margin-bottom: 6px;
+}
+.change-dirty {
+  border-color: var(--warn);
+}
+.change-head {
+  display: flex;
+  gap: 6px;
+  align-items: baseline;
+  flex-wrap: wrap;
+}
+.change-path {
+  flex: 1;
+  word-break: break-all;
+}
+.change-badge {
+  border-radius: 4px;
+  padding: 0 6px;
+  font-size: 0.8em;
+}
+.change-badge-dirty {
+  background: var(--warn);
+  color: white;
+}
+.change-badge-clean {
+  background: var(--composer-bg);
+  color: var(--muted);
+}
+.change-meta,
+.ws-cwd,
+.ws-list-head {
+  color: var(--muted);
+  font-size: 0.8em;
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.change-diff {
+  max-height: 220px;
+  overflow: auto;
+  margin-top: 4px;
+}
+.change-conflict {
+  border: 1px solid var(--danger);
+  border-radius: 6px;
+  padding: 6px;
+  margin-bottom: 6px;
+}
+.change-conflict-actions {
+  display: flex;
+  gap: 6px;
+  margin-top: 4px;
+}
+.ws-current {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  word-break: break-all;
+  margin-bottom: 6px;
+}
+.ws-item {
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+  word-break: break-all;
+}
+.ws-item-current {
+  color: var(--ok);
+}
+.ws-diff {
+  color: var(--warn);
+  font-size: 0.8em;
+}
+/* D6：有效配置 / 能力盘点 */
+.config-list {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 2px 8px;
+  margin: 4px 0 8px;
+}
+.config-list dt {
+  color: var(--muted);
+  white-space: nowrap;
+}
+.config-list dd {
+  margin: 0;
+  word-break: break-all;
+}
+.config-note {
+  color: var(--muted);
+}
+.config-tools {
+  font-family: monospace;
+  font-size: 0.85em;
+}
+.cap-head {
+  margin-top: 4px;
+}
+.cap-row {
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+  font-size: 0.85em;
+}
+.cap-row.cap-off .cap-state {
+  color: var(--danger);
+}
+.cap-reason {
+  color: var(--warn);
+  font-size: 0.85em;
+}
+/* D4：运行态行（断流/等待审批/取消结论如实呈现） */
+.runtime-row {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 4px 6px;
+  margin-bottom: 6px;
+  font-size: 0.85em;
+}
+.runtime-stalled .runtime-label,
+.runtime-unknown .runtime-label {
+  color: var(--danger);
+}
+.runtime-awaiting-approval .runtime-label {
+  color: var(--warn);
+}
+.runtime-running .runtime-label {
+  color: var(--ok);
+}
+.runtime-hint,
+.runtime-cancel {
+  color: var(--muted);
+}
 .composer {
   display: flex;
   gap: 8px;
