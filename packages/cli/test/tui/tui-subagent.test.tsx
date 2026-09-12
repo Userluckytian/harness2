@@ -6,7 +6,7 @@
 // - InkShell 集成：真实 mock provider 派发 subagent_start → 工具卡出现入口 → Ctrl+K/Ctrl+J 打开浮层 → Esc 关闭
 import { afterEach, describe, expect, it } from 'vitest';
 import React from 'react';
-import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { renderToString } from 'ink';
@@ -17,7 +17,6 @@ import {
   transcriptReducer,
   emptyTranscript,
   type TranscriptItem,
-  type TranscriptState,
 } from '../../src/tui/transcript.js';
 import { createDialogController, InkShell } from '../../src/tui/runInkChat.js';
 import { mountTui } from './harness.js';
@@ -41,7 +40,13 @@ function fixtureSessionDir(): string {
   const dir = mkdtempSync(join(tmpdir(), 'h2-subagent-fixture-'));
   const lines = [
     { v: 1, seq: 1, ts: '2026-01-01T00:00:00.000Z', type: 'session/header', payload: { sessionId: 'child-1' } },
-    { v: 1, seq: 2, ts: '2026-01-01T00:00:00.000Z', type: 'user/message', payload: { text: '子任务指令', turnId: 't1' } },
+    {
+      v: 1,
+      seq: 2,
+      ts: '2026-01-01T00:00:00.000Z',
+      type: 'user/message',
+      payload: { text: '子任务指令', turnId: 't1' },
+    },
     {
       v: 1,
       seq: 3,
@@ -55,15 +60,14 @@ function fixtureSessionDir(): string {
 }
 
 describe('T1 reducer：childSessionId 解析（不伪造）', () => {
-  const baseResult = {
-    type: 'tool/result',
-    callId: 'c1',
-    ok: true,
-    output: SUBAGENT_OUTPUT,
-  } as const;
-
   it('subagent_start + JSON output → 挂载 childSessionId', () => {
-    const state = transcriptReducer(emptyTranscript(), { type: 'tool/result', callId: 'c1', tool: 'subagent_start', ok: true, output: SUBAGENT_OUTPUT });
+    const state = transcriptReducer(emptyTranscript(), {
+      type: 'tool/result',
+      callId: 'c1',
+      tool: 'subagent_start',
+      ok: true,
+      output: SUBAGENT_OUTPUT,
+    });
     const item = state.items[0];
     expect(item).toBeDefined();
     if (item?.kind !== 'tool') throw new Error('expected tool item');
@@ -71,14 +75,26 @@ describe('T1 reducer：childSessionId 解析（不伪造）', () => {
   });
 
   it('subagent_continue + JSON output → 挂载 childSessionId', () => {
-    const state = transcriptReducer(emptyTranscript(), { type: 'tool/result', callId: 'c2', tool: 'subagent_continue', ok: true, output: SUBAGENT_OUTPUT });
+    const state = transcriptReducer(emptyTranscript(), {
+      type: 'tool/result',
+      callId: 'c2',
+      tool: 'subagent_continue',
+      ok: true,
+      output: SUBAGENT_OUTPUT,
+    });
     const item = state.items[0];
     if (item?.kind !== 'tool') throw new Error('expected tool item');
     expect(item.childSessionId).toBe('sub-c1');
   });
 
   it('非 subagent 工具即使 output 含 childSessionId 也不解析（不伪造）', () => {
-    const state = transcriptReducer(emptyTranscript(), { type: 'tool/result', callId: 'c3', tool: 'bash', ok: true, output: SUBAGENT_OUTPUT });
+    const state = transcriptReducer(emptyTranscript(), {
+      type: 'tool/result',
+      callId: 'c3',
+      tool: 'bash',
+      ok: true,
+      output: SUBAGENT_OUTPUT,
+    });
     const item = state.items[0];
     if (item?.kind !== 'tool') throw new Error('expected tool item');
     expect(item.childSessionId).toBeUndefined();
@@ -127,13 +143,17 @@ describe('T1 SubagentView：只读浮层内容', () => {
   });
 
   it('目录不存在（bad dir）→ 如实错误文案，不渲染空白', () => {
-    const out = renderToString(<SubagentView sessionId="nope" dir={join(tmpdir(), 'h2-does-not-exist-xyz')} width={60} height={20} />);
+    const out = renderToString(
+      <SubagentView sessionId="nope" dir={join(tmpdir(), 'h2-does-not-exist-xyz')} width={60} height={20} />,
+    );
     expect(out).toContain('无法读取子会话 nope');
     expect(out).toContain('session log not found');
   });
 
   it('未定位到目录（dir=undefined）→ 显示定位失败原因', () => {
-    const out = renderToString(<SubagentView sessionId="nope" dir={undefined} locateError="session not found: nope" width={60} height={20} />);
+    const out = renderToString(
+      <SubagentView sessionId="nope" dir={undefined} locateError="session not found: nope" width={60} height={20} />,
+    );
     expect(out).toContain('无法读取子会话 nope');
     expect(out).toContain('session not found: nope');
   });

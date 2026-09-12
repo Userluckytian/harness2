@@ -5,7 +5,7 @@
 // T3：历史由 typed TranscriptState 持有（TranscriptView 虚拟化渲染），会话切换重投影；
 //     工具/推理卡片在 turn 落定后仍可按稳定 id 展开（闭 H2）。
 import React, { useRef, useState } from 'react';
-import { render, useInput, useStdout, Box, Text, renderToString } from 'ink';
+import { render, useInput, useStdout, Box, Text } from 'ink';
 import { setupChatSession, type ChatRuntime, type TurnResult } from '../chat-setup.js';
 import type { ChatOptions } from '../legacy-chat.js';
 import { StatusBar } from './StatusBar.js';
@@ -287,7 +287,7 @@ export function InkShell({
 
   // T2：终端焦点状态（DECSET 1004；缺省视为聚焦——unfocused 策略下不响，保守处理）；
   // 供 T4 回合结束提醒判断。ref 同步副本供 runTurnText 收尾时读取（避免异步闭包拿旧值）。
-  const [terminalFocused, setTerminalFocused] = useState(true);
+  const [, setTerminalFocused] = useState(true);
   const terminalFocusedRef = useRef(true);
   // T4：提醒器（注入或按环境变量构造；稳定实例）
   const [turnNotifier] = useState<Notifier>(() => notifier ?? createNotifier(process.env, stderrSink()));
@@ -547,7 +547,15 @@ export function InkShell({
       label: MODE_ALIAS_LABEL[a],
     }));
     openOverlay(
-      <Modal title="切换模式（/mode）" hint="↑↓ 选择 · Enter 应用 · Esc 取消" onClose={() => { setOverlay(null); setOverlayRows(0); }} isActive>
+      <Modal
+        title="切换模式（/mode）"
+        hint="↑↓ 选择 · Enter 应用 · Esc 取消"
+        onClose={() => {
+          setOverlay(null);
+          setOverlayRows(0);
+        }}
+        isActive
+      >
         <SelectList
           options={options}
           selected={alias}
@@ -558,7 +566,10 @@ export function InkShell({
             setOverlay(null);
             setOverlayRows(0);
           }}
-          onCancel={() => { setOverlay(null); setOverlayRows(0); }}
+          onCancel={() => {
+            setOverlay(null);
+            setOverlayRows(0);
+          }}
         />
       </Modal>,
       MODAL_CHROME_ROWS + MODE_ALIAS_ORDER.length,
@@ -582,7 +593,15 @@ export function InkShell({
     const shown = sessions.slice(0, maxOptions);
     const hidden = sessions.length - shown.length;
     openOverlay(
-      <Modal title="会话（/sessions）" hint="↑↓ 浏览 · Enter 切换 · Esc 关闭" onClose={() => { setOverlay(null); setOverlayRows(0); }} isActive>
+      <Modal
+        title="会话（/sessions）"
+        hint="↑↓ 浏览 · Enter 切换 · Esc 关闭"
+        onClose={() => {
+          setOverlay(null);
+          setOverlayRows(0);
+        }}
+        isActive
+      >
         <SelectList
           options={shown.map((s) => ({ value: s.id, label: s.id }))}
           selected={current?.id ?? ''}
@@ -592,10 +611,15 @@ export function InkShell({
             setOverlay(null);
             setOverlayRows(0);
           }}
-          onCancel={() => { setOverlay(null); setOverlayRows(0); }}
+          onCancel={() => {
+            setOverlay(null);
+            setOverlayRows(0);
+          }}
         />
         <Box>
-          <Text color="gray">共 {sessions.length} 个会话{hidden > 0 ? `（列表截断，可用 /sessions <关键字> 搜索）` : ''}</Text>
+          <Text color="gray">
+            共 {sessions.length} 个会话{hidden > 0 ? `（列表截断，可用 /sessions <关键字> 搜索）` : ''}
+          </Text>
         </Box>
       </Modal>,
       MODAL_CHROME_ROWS + shown.length + 1 + (hidden > 0 ? 1 : 0),
@@ -631,7 +655,10 @@ export function InkShell({
       <Modal
         title={`子会话 ${childId}`}
         hint="只读 · Esc 关闭"
-        onClose={() => { setOverlay(null); setOverlayRows(0); }}
+        onClose={() => {
+          setOverlay(null);
+          setOverlayRows(0);
+        }}
         isActive
       >
         <SubagentView sessionId={childId} dir={dir} locateError={locateError} width={width} height={height} />
