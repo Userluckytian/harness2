@@ -152,6 +152,8 @@ export interface AppState {
   capabilities?: CapabilityReportShape;
   /** 取消三态 ack（requestId 全局唯一 → 全局表；UI 立即展示 stopping，unknown 不假报停止） */
   cancelAcks: Record<string, CancelAckStateShape>;
+  /** PD4：审批决定在途标记（requestId → true）；UI 据此禁用按钮防连点 */
+  respondingApprovals: Record<string, true>;
   /** 会话草稿（D1：sessionId → 原始输入；按会话隔离，A/B 项目不串） */
   drafts: DraftsMap;
 }
@@ -165,6 +167,7 @@ export function initialState(): AppState {
     layout: defaultLayout(),
     metadata: {},
     cancelAcks: {},
+    respondingApprovals: {},
     drafts: {},
   };
 }
@@ -801,6 +804,24 @@ export class AppStore {
       }
     }
     this.notify();
+  }
+
+  // —— PD4：审批决定在途反馈（防连点） ——
+
+  markApprovalResponding(requestId: string): void {
+    if (this.state.respondingApprovals[requestId] === true) return;
+    this.set({ respondingApprovals: { ...this.state.respondingApprovals, [requestId]: true } });
+  }
+
+  clearApprovalResponding(requestId: string): void {
+    if (this.state.respondingApprovals[requestId] !== true) return;
+    const next = { ...this.state.respondingApprovals };
+    delete next[requestId];
+    this.set({ respondingApprovals: next });
+  }
+
+  isApprovalResponding(requestId: string): boolean {
+    return this.state.respondingApprovals[requestId] === true;
   }
 }
 

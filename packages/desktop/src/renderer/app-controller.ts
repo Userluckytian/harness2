@@ -250,6 +250,8 @@ export function createController(store: AppStore, api: Harness2Api): Controller 
   /** PD1：redo 冲突基线 = 本端最近一次真 undo 恢复到的 per-file target（会话 → 文件/目标内容）。
    *  redo 成功后消费清除；应用重启或撤销来自其他端时无基线 → fail-closed（不猜、不静默重放）。 */
   const redoBaselines = new Map<string, Array<{ file: string; target: string | null }>>();
+  /** PD4：审批决定在途集合（requestId）——连点幂等 + UI 禁用依据 */
+  const respondingApprovals = new Set<string>();
   const rememberRedoBaseline = (id: string, res: UndoRedoResponseShape | undefined): void => {
     const files = (res?.results ?? []).flatMap((r) => r.files ?? []);
     if (files.length > 0) {
@@ -530,10 +532,19 @@ export function createController(store: AppStore, api: Harness2Api): Controller 
       }
     },
     async respondApproval(requestId: string, decision: 'allow' | 'deny'): Promise<void> {
+      // PD4：断线/慢网连点幂等 —— 同一决定在途时忽略后续点击（后端只收一次）；
+      // 提交失败（如断线）不移除审批卡片（服务端仍在等），如实报错供重试。
+      if (respondingApprovals.has(requestId)) return;
+      respondingApprovals.add(requestId);
+      store.markApprovalResponding(requestId);
       try {
         await api.respondApproval(requestId, decision);
+        store.removeApproval(requestId); // 确认送达才撤卡片
+      } catch (e) {
+        store.applyFrame({ type: 'error', error: `审批提交失败: ${(e as Error).message}（事项仍在待批，可重试）` });
       } finally {
-        store.removeApproval(requestId);
+        respondingApprovals.delete(requestId);
+        store.clearApprovalResponding(requestId);
       }
     },
     async initLayout(): Promise<void> {
