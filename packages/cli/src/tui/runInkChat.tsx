@@ -146,6 +146,8 @@ export async function runInkChat(options: ChatOptions = {}): Promise<void> {
     const useAlternateScreen = caps.altScreen && caps.bracketedPaste && Boolean(process.stdout.isTTY);
     // T2：SGR 鼠标 + 焦点事件桥。必须在 render() 之前挂接（prependListener 先于 ink 消费 stdin），
     // 使鼠标序列不流入 ink 的键位解析；HARNESS2_MOUSE=0 可关闭上报（保留解析）。退出时还原上报模式。
+    // T1-4：解析职责默认走统一解析器（src/input/parser.ts，经 input-bridge 适配回注）；
+    // HARNESS2_INPUT=legacy 可回退旧 TerminalEventParser 字节回注路径（见 terminal-events.ts 文件头）。
     const mouseEnabled = useAlternateScreen && process.env.HARNESS2_MOUSE !== '0';
     const terminalEvents = attachTerminalEvents(process.stdin, process.stdout, { enabled: mouseEnabled });
     // T4：回合结束提醒（HARNESS2_NOTIFY/HARNESS2_NOTIFY_METHOD；写 stderr 且仅 TTY）。

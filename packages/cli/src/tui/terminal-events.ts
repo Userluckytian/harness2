@@ -1,6 +1,17 @@
 // terminal-events.ts — SGR 鼠标上报（DECSET 1000/1006）+ 焦点事件（DECSET 1004）的原生解析与 stdin 桥接。
 // 零第三方依赖：直接用 ANSI 序列自行解析，不引 crossterm/readline 类包（计划红线：不新增运行时依赖）。
 //
+// ── 解析器开关（T1-4 输入路径迁移）─────────────────────────────────────────────
+// stdin 拦截/回注机制（'readable' 先于 ink、unshift 回注、40ms 挂起冲刷）不变，只有
+// 「字节 → 事件」的解析职责可切换：
+//   - 默认（HARNESS2_INPUT 未设置或非 'legacy'）：走统一解析器 src/input/parser.ts
+//     （经 input-bridge.ts 适配：MouseEvent/FocusEvent → wheel/focus 事件；KeyEvent/PasteEvent
+//     序列化回注，键盘/粘贴对 ink 逐字节等价——详见 input-bridge.ts 文件头）；
+//   - HARNESS2_INPUT=legacy：完全绕过统一解析器，走下方旧 TerminalEventParser 字节回注路径
+//     （迁移前行为，回退开关；AttachOptions.parser 可显式覆盖环境变量）。
+// 两种模式共用同一 attach 机制与 HARNESS2_MOUSE 上报开关语义（enabled 只控制 enable 序列
+// 的写入，解析能力始终保留）。
+//
 // 为什么必须拦截 stdin（而不是等 ink 解析）：
 //   ink 7 的 useInput 经 parse-keypress 解析输入；SGR 鼠标序列 `\x1b[<64;12;5M` 不被任何分支识别，
 //   会作为字面 input 流入 Composer 草稿（滚轮变乱码输入）。因此本模块在 ink 之前消费 stdin：
@@ -13,6 +24,7 @@
 // 环境变量 HARNESS2_MOUSE=0 可关闭上报（仍保留解析能力；计划 T2 降级条款的开关）。
 //
 // 只消费鼠标/焦点序列；PageUp/PageDown/Ctrl+G/Ctrl+O/Ctrl+R、Esc/Ctrl+C 等键盘字节一律原样回注。
+import { createUnifiedEventParser } from './input-bridge.js';
 
 export type TerminalEvent = { type: 'wheel'; up: boolean } | { type: 'focus'; focused: boolean };
 
@@ -160,6 +172,19 @@ export interface TerminalEventBridge {
 export interface AttachOptions {
   /** 是否向上报 SGR 鼠标 + 焦点事件（写 enable 序列）；false = 仅解析不启用（HARNESS2_MOUSE=0） */
   enabled: boolean;
+  /**
+   * 解析器选择：'unified' = 统一解析器（src/input/parser.ts，经 input-bridge 适配，默认）；
+   * 'legacy' = 旧 TerminalEventParser 字节回注路径。缺省读 HARNESS2_INPUT=legacy。
+   */
+  parser?: ParserMode;
+}
+
+export type ParserMode = 'unified' | 'legacy';
+
+/** 解析器模式裁决：显式 AttachOptions.parser 优先，其后 HARNESS2_INPUT=legacy 回退旧路径 */
+function resolveParserMode(explicit: ParserMode | undefined): ParserMode {
+  if (explicit !== undefined) return explicit;
+  return process.env.HARNESS2_INPUT === 'legacy' ? 'legacy' : 'unified';
 }
 
 /**
@@ -172,7 +197,10 @@ export function attachTerminalEvents(
   stdout: NodeJS.WriteStream,
   options: AttachOptions,
 ): TerminalEventBridge {
-  const parser = new TerminalEventParser();
+  // 解析器按开关二选一（结构同构：push/hasPending/flushPending，见 input-bridge.ts）；
+  // 其余拦截/回注/挂起冲刷机制完全共用，保证两模式行为只差在解析职责本身。
+  const parser: Pick<TerminalEventParser, 'push' | 'hasPending' | 'flushPending'> =
+    resolveParserMode(options.parser) === 'legacy' ? new TerminalEventParser() : createUnifiedEventParser();
   const listeners = new Set<(event: TerminalEvent) => void>();
   let timer: ReturnType<typeof setTimeout> | null = null;
   let disposed = false;
@@ -213,6 +241,9 @@ export function attachTerminalEvents(
           // unshift 会触发 'readable'（唤醒 ink 的读取监听；我们的监听随后会旁路转发）
         }
       }
+      // 统一解析器模式下 flushPending 可能因未达空闲阈值而空手而归（挂起仍在）：
+      // 再排一次；legacy 冲刷后 hasPending=false，此处为无操作（保持原行为）。
+      schedulePending();
     }, PENDING_FLUSH_MS);
   };
 
