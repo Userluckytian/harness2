@@ -32,8 +32,8 @@
 //   1004 焦点上报（parser 产出 focus 事件 → focused 标记，notifier 策略自然生效）均已接。
 //
 // next 模式暂缺项（对齐 Ink 的差距，诚实登记、不伪造）：
-//   1. 斜杠命令仅 /help /? /exit /quit；/mode /sessions /undo /redo /new /resume /fork
-//      /context /compact /reasoning /tasks 未接（提示暂不支持，不静默吞掉）。
+//   1. 斜杠命令仅 /help /? /exit /quit /plan /auto /always-approve；/mode /sessions /undo
+//      /redo /new /resume /fork /context /compact /reasoning /tasks 未接（提示暂不支持，不静默吞掉）。
 //   2. 队列面板（Ctrl+X 取消排队条目）与 RetryPanel（重试预算展示）未接。
 //   3. 工具卡 output/子会话入口的磁盘补齐（enrichSubagentResults）未接：live 流不带 output，
 //      工具结果行只有状态无输出摘要；子会话只读浮层（Ctrl+J/K）未接。
@@ -52,6 +52,31 @@
 //     gate.choose('a') 走 gate 的 resolve 路径，**不绕过 core 审批队列**（红线 6）；开关
 //     开启瞬间已挂起的审批不自动代答（当次仍手动回答）；底边指示器显示 'always-approve'。
 //     旧 Ctrl+O 折叠语义由 e/E/h/l 接管。
+//
+// P3-B 键位（2026-09-12 keymap-parity 裁决落地，next 层）：
+//   - 审批 blocking card 键位对齐 grok permission prompt：Tab/Shift+Tab 在选项间循环走行
+//     （↑↓ 保留）；1-3 数字直选；Enter 确认高亮项；Ctrl+F 展开/收起审批 query 全文（按
+//     显示宽度折行进 items，差异：chat-setup 的审批 query 只携带工具名文案、不含工具参数
+//     ——askApproval 契约冻结不可改，grok 是「展开完整参数」，此处展开的是全文案，参数级
+//     展开待 gate 契约扩展，差异已登记 keymap 文档）；Ctrl+C 取消（ASK_CANCELLED）；Ctrl+O
+//     always-approve（保留）。
+//   - Esc = 寄放焦点（grok permission prompt 语义）：关闭键盘接管但**不回答不关闭卡片**——
+//     overlay 保留显示、审批仍挂起（gate.pending() 非 null），controller.focus() 键盘回
+//     composer（照常编辑/提交）；寄放态 Tab 显式回卡重新接管；新 gate.ask / settle 均复位
+//     寄放态。寄放态下 Ctrl+C 走 composer 路径 → interrupt() → gate.cancel()（grok 同义）。
+//   - Shift+Tab = 模式循环 Normal→Plan→Auto→Always-approve→Normal（composer 焦点下生效；
+//     审批卡接管时 dispatcher 卡片层优先消费 Shift+Tab = 反向走行，层级天然区分；寄放态
+//     键盘在 composer，Shift+Tab 循环模式、Tab 回卡）。
+//   - 模式四态落地语义（红线 6：审批不得弱化，mode 不自动回答审批）：
+//     normal = 现状；plan / auto = **UI 声明态**——core 无 plan/auto 模式契约且冻结，仅底边
+//     指示 + 提交时转录打 [plan mode]/[auto mode] 灰色 system 提示行，**不改变任何审批/执行
+//     行为**（诚实实现，不伪造 core 能力；grok 的 auto=自动审批与红线 6 冲突，故不做「gate
+//     默认高亮 allow 项」，避免诱导一键放行）；always-approve = 与 Ctrl+O 共享同一状态
+//     （单态变量：开启时**新**审批经 gate.choose('a') 走 resolve 路径代答，红线 6 不绕过
+//     core 审批队列；挂起当次不代答；关闭回 normal）。
+//   - 斜杠命令 /plan /auto /always-approve 直接设置对应模式（/always-approve 为 toggle，
+//     grok 语义；/plan /auto 幂等设置）。
+//   - 底边指示顺序：模式（normal 省略）· scrollback 焦点 · 寄放提示 · 瞬时 hint。
 import type { ChatOptions } from '../../legacy-chat.js';
 import {
   ASK_CANCELLED,
@@ -84,6 +109,7 @@ import { Screen } from '../renderer/screen.js';
 import { renderChat, resizeChat, type ChatScreenState } from './chat-screen.js';
 import { projectTranscript, type ProjectionLine } from './projection.js';
 import { Scrollback } from './scrollback.js';
+import { wrapTextByWidth, type OverlaySpec } from './overlay.js';
 import {
   attachInput,
   createChatController,
@@ -112,6 +138,16 @@ const SHORTCUTS: readonly string[] = ['Enter 发送', 'Shift+Enter 换行', 'Esc
 
 const APPROVAL_ITEMS: readonly string[] = ['y 允许（本次）', 'a 总是允许（本会话）', 'n 拒绝'];
 const APPROVAL_ANSWERS: readonly string[] = ['y', 'a', 'n'];
+
+/**
+ * 模式四态（P3-B，grok Shift+Tab 循环序）：plan / auto 为 UI 声明态（core 无契约且冻结，
+ * 不改变审批/执行行为，红线 6）；always-approve 与 Ctrl+O 共享同一状态。
+ */
+export type UiMode = 'normal' | 'plan' | 'auto' | 'always-approve';
+const MODE_CYCLE: readonly UiMode[] = ['normal', 'plan', 'auto', 'always-approve'];
+
+/** plan 态提交消息时打进转录的声明提示（灰色 system 行） */
+const PLAN_MODE_NOTICE = '[plan mode] 下一条消息建议以规划为主：先探索并给出实现计划（UI 声明态：不改变审批/执行行为）';
 
 // —— 审批 gate（createDialogController 的非 React 等价，见文件头取舍说明）——
 
@@ -387,7 +423,9 @@ export function createNextChatHarness(runtime: ChatRuntime, deps: NextChatHarnes
   let focused = true; // DECSET 1004 焦点（缺省聚焦；unfocused 策略下不响，保守处理）
   const queue: string[] = [];
   let collapsed = new Set<number>(); // 折叠覆盖标记集（itemIndex 取反默认折叠态）
-  let alwaysApprove = false; // Ctrl+O always-approve 开关（UI 层代答，见文件头红线 6 说明）
+  // 模式四态（P3-B，见文件头语义说明）：plan/auto 为声明态不改行为；always-approve 与
+  // Ctrl+O 共享此单态变量（开启时新审批经 gate.choose('a') 代答，红线 6）。
+  let uiMode: UiMode = 'normal';
   let scrollbackFocus = false; // Tab 双态焦点：false = 输入框（默认），true = 滚动区（折叠键族生效）
 
   const contentCols = (): number => Math.max(1, screen.cols - 1);
@@ -451,10 +489,12 @@ export function createNextChatHarness(runtime: ChatRuntime, deps: NextChatHarnes
     if (busy) parts.push('⏺ 运行中…');
     if (queue.length > 0) parts.push(`已排队 ${queue.length}`);
     state.statusline = parts.join(' · ');
-    // 底边指示：always-approve（Ctrl+O 开关）/ scrollback（Tab 焦点）常驻，hint 瞬时叠加
+    // 底边指示（P3-B 顺序：模式 · 焦点 · 其他）：normal 省略模式名，scrollback（Tab 焦点）、
+    // 审批寄放提示常驻，hint 瞬时叠加
     const ind: string[] = [];
-    if (alwaysApprove) ind.push('always-approve');
+    if (uiMode !== 'normal') ind.push(uiMode);
     if (scrollbackFocus) ind.push('scrollback');
+    if (approvalParked) ind.push('审批待答（Tab 回卡）');
     if (hint !== null) ind.push(hint);
     state.indicators = ind;
   }
@@ -512,27 +552,66 @@ export function createNextChatHarness(runtime: ChatRuntime, deps: NextChatHarnes
     invalidate();
   }
 
-  // —— 审批 overlay ——
+  // —— 审批 overlay（P3-B blocking card：键盘接管 / 寄放两态 + Ctrl+F 全文展开）——
   let approvalActiveIndex = 0;
+  let approvalExpanded = false; // Ctrl+F 展开 query 全文（差异登记：query 无参数数据，见文件头）
+  let approvalParked = false; // Esc 寄放：卡片只显示不接管键盘，审批仍挂起
+  let approvalQueryRows = 0; // 展开态全文行数（显示高亮 = 行数 + 选项下标）
 
-  function openApproval(query: string): void {
+  /** 构建审批卡 spec：收起 = 标题承载 query（按宽裁剪）；展开 = query 全文折行进 items 前段 */
+  function buildApprovalSpec(): OverlaySpec {
+    const query = gate.pending() ?? '';
+    if (!approvalExpanded) {
+      approvalQueryRows = 0;
+      return { title: `Approval · ${query}`, items: APPROVAL_ITEMS, activeIndex: approvalActiveIndex };
+    }
+    // 全文行缩进两格与选项区分；展开宽度按内容区收敛（前缀 + 余量）
+    const qLines = wrapTextByWidth(query, Math.max(16, contentCols() - 6));
+    approvalQueryRows = qLines.length;
+    return {
+      title: 'Approval · 全文（Ctrl+F 收起）',
+      items: [...qLines.map((l) => `  ${l}`), ...APPROVAL_ITEMS],
+      activeIndex: approvalQueryRows + approvalActiveIndex,
+    };
+  }
+
+  function openApproval(_query: string): void {
     // 问题全文放标题行（drawOverlay 按宽裁剪）；选项固定 y/a/n——对齐 Ink ConfirmDialog 的
-    // 「问题 + 选择列表」语义（近似：无独立问题行，标题承载）
+    // 「问题 + 选择列表」语义（近似：无独立问题行，标题承载）。query 统一经 gate.pending()
+    // 取（buildApprovalSpec 的单一数据源，新提问挤占后 spec 以最新挂起为准）
     approvalActiveIndex = 0;
-    state.overlays = [{ title: `Approval · ${query}`, items: APPROVAL_ITEMS, activeIndex: 0 }];
+    approvalExpanded = false;
+    approvalParked = false;
+    state.overlays = [buildApprovalSpec()];
     controller.blur(); // overlay 互斥接管键盘（对齐 InkShell 的 overlayOpen 语义）
+    invalidate();
+  }
+
+  /** Esc 寄放：卡片保持显示、审批仍挂起，键盘交还 composer（grok park 语义，见文件头） */
+  function parkApproval(): void {
+    approvalParked = true;
+    controller.focus();
+    invalidate();
+  }
+
+  /** 寄放态显式回卡（Tab）：重新接管键盘 */
+  function retakeApproval(): void {
+    approvalParked = false;
+    controller.blur();
     invalidate();
   }
 
   function closeApproval(): void {
     state.overlays = [];
+    approvalParked = false;
+    approvalExpanded = false;
     controller.focus();
     invalidate();
   }
 
+  /** 重建审批卡 spec（走行/展开/收起/resize 后统一走此函数，activeIndex 以选项下标为源） */
   function syncApprovalOverlay(): void {
-    const overlay = state.overlays[0];
-    if (overlay !== undefined) state.overlays = [{ ...overlay, activeIndex: approvalActiveIndex }];
+    if (state.overlays.length > 0) state.overlays = [buildApprovalSpec()];
   }
 
   function chooseApproval(index: number): void {
@@ -541,10 +620,22 @@ export function createNextChatHarness(runtime: ChatRuntime, deps: NextChatHarnes
     gate.choose(answer as 'y' | 'a' | 'n');
   }
 
+  // —— 模式四态（P3-B；plan/auto 声明态不改行为，红线 6 见文件头）——
+  function setMode(mode: UiMode): void {
+    if (uiMode === mode) return; // 幂等（/plan /auto 重复设置保持）
+    uiMode = mode;
+    invalidate();
+  }
+
+  /** Shift+Tab 循环：Normal→Plan→Auto→Always-approve→Normal（grok 循环序） */
+  function cycleMode(): void {
+    const idx = MODE_CYCLE.indexOf(uiMode);
+    setMode(MODE_CYCLE[(idx + 1) % MODE_CYCLE.length] ?? 'normal');
+  }
+
   // —— Ctrl+O always-approve（UI 开关；开关态只影响**新**审批的代答，见文件头红线 6）——
   function toggleAlwaysApprove(): void {
-    alwaysApprove = !alwaysApprove;
-    invalidate();
+    setMode(uiMode === 'always-approve' ? 'normal' : 'always-approve');
   }
 
   const gate = deps.gate;
@@ -553,7 +644,7 @@ export function createNextChatHarness(runtime: ChatRuntime, deps: NextChatHarnes
       openApproval(query);
       // always-approve 开启时自动代答 'a'：经 gate.choose 走 resolve 路径（红线 6：
       // 不绕过 core 审批队列）；切换瞬间已挂起的审批不在此路径（onOpen 只对新 ask 触发）
-      if (alwaysApprove) gate.choose('a');
+      if (uiMode === 'always-approve') gate.choose('a');
     },
     onSettled: () => closeApproval(),
   });
@@ -689,6 +780,8 @@ export function createNextChatHarness(runtime: ChatRuntime, deps: NextChatHarnes
       handleCommand(parsed);
       return;
     }
+    // plan 声明态：提交消息时在转录打灰色提示行（不改执行，红线 6 见文件头）
+    if (uiMode === 'plan') sendSystem(PLAN_MODE_NOTICE);
     void runTurnText(text);
   }
 
@@ -702,8 +795,31 @@ export function createNextChatHarness(runtime: ChatRuntime, deps: NextChatHarnes
       case '/quit':
         requestExit('exit');
         return;
+      // —— 模式命令（P3-B；plan/auto 声明态、always-approve toggle，见文件头语义）——
+      case '/plan':
+        setMode('plan');
+        sendSystem('[plan mode] 已声明 plan 模式（UI 声明态：仅提示，不改变审批/执行行为；Shift+Tab 可切回）');
+        return;
+      case '/auto':
+        setMode('auto');
+        sendSystem(
+          '[auto mode] 已声明 auto 模式（UI 声明态：grok 的 auto=自动审批与红线 6 冲突，本层不自动放行，审批仍需人工回答）',
+        );
+        return;
+      case '/always-approve': {
+        const turningOn = uiMode !== 'always-approve';
+        setMode(turningOn ? 'always-approve' : 'normal');
+        sendSystem(
+          turningOn
+            ? '[always-approve] 已开启（开启后的新审批自动代答 a，经 gate resolve 路径；再跑 /always-approve 或 Ctrl+O 关闭）'
+            : '[always-approve] 已关闭（审批恢复人工回答）',
+        );
+        return;
+      }
       default:
-        sendSystem(`next 渲染层暂不支持命令 ${parsed.name}（当前支持 /help /exit /quit；其余请用缺省 ink 路径）`);
+        sendSystem(
+          `next 渲染层暂不支持命令 ${parsed.name}（当前支持 /help /exit /quit /plan /auto /always-approve；其余请用缺省 ink 路径）`,
+        );
     }
   }
 
@@ -767,10 +883,14 @@ export function createNextChatHarness(runtime: ChatRuntime, deps: NextChatHarnes
   }
 
   // —— 输入装配（parser → dispatcher（approval > composer）→ 兜底）——
+  // 审批卡键位（P3-B，grok permission prompt 契约，见文件头）：Tab/Shift+Tab 循环走行、
+  // 1-3 数字直选、Enter 确认、↑↓ 保留（grok 亦有）、Ctrl+F 展开全文、Esc 寄放（不回答
+  // 不关闭）、Ctrl+C 取消、Ctrl+O always-approve。寄放态（approvalParked）本层全放行：
+  // 键盘回 composer，Tab 由 extraKeyHandler 显式回卡。
   const approvalLayer: InputLayer = {
     name: 'approval',
     handle: (event: InputEvent): boolean => {
-      if (gate.pending() === null) return false;
+      if (gate.pending() === null || approvalParked) return false;
       if (event.type !== 'key') return false;
       const ev = event;
       const n = APPROVAL_ITEMS.length;
@@ -786,6 +906,13 @@ export function createNextChatHarness(runtime: ChatRuntime, deps: NextChatHarnes
         invalidate();
         return true;
       }
+      // Tab/Shift+Tab 在选项间循环走行（grok：never move focus out of the card）
+      if (ev.key === 'tab' && !ev.modifiers.ctrl && !ev.modifiers.alt) {
+        approvalActiveIndex = (approvalActiveIndex + (ev.modifiers.shift ? -1 : 1) + n) % n;
+        syncApprovalOverlay();
+        invalidate();
+        return true;
+      }
       if (ev.key === 'enter' && !ev.modifiers.ctrl && !ev.modifiers.alt && !ev.modifiers.shift) {
         chooseApproval(approvalActiveIndex);
         return true;
@@ -797,8 +924,17 @@ export function createNextChatHarness(runtime: ChatRuntime, deps: NextChatHarnes
           return true;
         }
       }
+      // Ctrl+F 展开/收起审批 query 全文（grok 为完整工具参数；我方 query 无参数数据，
+      // 展开全文案，差异已登记 keymap 文档）
+      if (ev.modifiers.ctrl && ev.key === 'f') {
+        approvalExpanded = !approvalExpanded;
+        syncApprovalOverlay();
+        invalidate();
+        return true;
+      }
+      // Esc = 寄放焦点：不回答不关闭（卡片保持显示、审批挂起，键盘回 composer）
       if (ev.key === 'escape') {
-        gate.cancel();
+        parkApproval();
         return true;
       }
       if (ev.modifiers.ctrl && ev.key === 'c') {
@@ -836,6 +972,19 @@ export function createNextChatHarness(runtime: ChatRuntime, deps: NextChatHarnes
       // Ctrl+O = always-approve 切换（keymap 裁决；旧折叠语义迁移 e/E/h/l，见文件头）
       if (ev.modifiers.ctrl && ev.key === 'o') {
         toggleAlwaysApprove();
+        return 'consumed';
+      }
+      // 寄放态 Tab = 显式回卡（grok：card parked → Tab hands keyboard back to the card；
+      // Shift+Tab 保持模式循环，见下方差异登记）
+      if (approvalParked && ev.key === 'tab' && !ev.modifiers.ctrl && !ev.modifiers.alt && !ev.modifiers.shift) {
+        retakeApproval();
+        return 'consumed';
+      }
+      // Shift+Tab = 模式循环（composer 焦点语义；审批卡接管时 dispatcher 卡片层优先消费
+      // 为反向走行，到不了这里；候选可见时模式循环仍生效——全局 chord 优先级高于候选）
+      if (ev.key === 'tab' && ev.modifiers.shift && !ev.modifiers.ctrl && !ev.modifiers.alt) {
+        cycleMode();
+        showHint(`模式：${uiMode}${uiMode === 'plan' || uiMode === 'auto' ? '（声明态）' : ''}`);
         return 'consumed';
       }
       // Tab = 输入框/滚动区双态焦点（keymap 裁决采纳）。候选可见时不在本层切换：
@@ -946,8 +1095,10 @@ export function createNextChatHarness(runtime: ChatRuntime, deps: NextChatHarnes
       const prevCols = screen.cols;
       resizeChat(screen, state, cols, rows);
       if (Math.max(1, cols) !== prevCols) {
-        // 宽度变化：截断/摘要行按新宽度重排——强制全量重投影（审查 P2；只调 rows 不重投影）
+        // 宽度变化：截断/摘要行按新宽度重投影（强制全量重投影；只调 rows 不重投影）
         reprojectAll();
+        // 审批卡展开态的全文折行按新宽度重排（收起态标题裁剪由 drawOverlay 逐帧处理，免重建）
+        syncApprovalOverlay();
       } else {
         invalidate();
       }

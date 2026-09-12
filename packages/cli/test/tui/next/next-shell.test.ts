@@ -893,14 +893,18 @@ describe('审批 overlay', () => {
     h.dispose();
   });
 
-  it('Esc 取消审批 → ASK_CANCELLED', async () => {
+  it('Esc = 寄放焦点：不回答不关闭（P3-B grok 语义；取消只走 Ctrl+C / cancelApproval）', async () => {
     let answer: string | undefined;
     const { h, gate } = makeHarness();
     const p = gate.ask('允许执行 write?').then((a) => {
       answer = a;
     });
     h.feed(ESC);
-    await vi.advanceTimersByTimeAsync(60); // 孤立 ESC 空闲超时后产出 Esc 键 → 审批取消
+    await vi.advanceTimersByTimeAsync(60); // 孤立 ESC 空闲超时后产出 Esc 键 → 寄放（不取消）
+    expect(answer).toBeUndefined(); // 未被回答
+    expect(h.pendingApproval()).toBe('允许执行 write?'); // 审批仍挂起
+    expect(h.state.overlays.length).toBe(1); // 卡片仍显示
+    h.cancelApproval(); // 显式取消仍是取消
     await p;
     expect(answer).toBe(ASK_CANCELLED);
     h.dispose();
@@ -1015,6 +1019,417 @@ describe('退出收敛', () => {
     const lenBefore = out.buffer.length;
     h.feed('more');
     expect(out.buffer.length).toBe(lenBefore);
+    h.dispose();
+  });
+});
+
+// =====================================================================
+// P3-B：审批 blocking card（grok 键位）+ 模式循环（Shift+Tab）+ /plan /auto
+// /always-approve + 底边模式指示。红线 6：审批不得弱化——mode/always-approve
+// 都只是审批 gate 的 UI 决策路径，最终仍经 gate resolve（'a'=allow-always），
+// plan/auto 为声明态绝不自动回答审批。
+// =====================================================================
+const SHIFT_TAB = '\x1b[Z'; // parser：CSI Z → tab + shift
+const CTRL_F = '\x06';
+
+// —— 审批 blocking card 键位（grok permission prompt 契约）——
+describe('P3-B 审批 blocking card：Tab/Shift+Tab 走行', () => {
+  it('Tab 正向循环走行（末项回绕首项）', () => {
+    const { h, gate } = makeHarness();
+    void gate.ask('允许执行 write?');
+    h.feed(TAB);
+    expect(h.state.overlays[0]?.activeIndex).toBe(1);
+    h.feed(TAB);
+    h.feed(TAB);
+    expect(h.state.overlays[0]?.activeIndex).toBe(0); // 2 → 回绕 0
+    h.cancelApproval();
+    h.dispose();
+  });
+
+  it('Shift+Tab 反向循环走行（首项回绕末项）', () => {
+    const { h, gate } = makeHarness();
+    void gate.ask('允许执行 write?');
+    h.feed(SHIFT_TAB);
+    expect(h.state.overlays[0]?.activeIndex).toBe(2); // 0 → 回绕末项
+    h.feed(SHIFT_TAB);
+    expect(h.state.overlays[0]?.activeIndex).toBe(1);
+    h.cancelApproval();
+    h.dispose();
+  });
+
+  it('数字直选 1/3 → resolve y/n（2 → a 由既有用例覆盖）', async () => {
+    let answer: string | null = null;
+    const { h, gate } = makeHarness();
+    const p = gate.ask('允许执行 write?').then((a) => {
+      answer = a;
+    });
+    h.feed('3');
+    await p;
+    expect(answer).toBe('n');
+    h.dispose();
+    const { h: h2, gate: gate2 } = makeHarness();
+    let answer2: string | null = null;
+    const p2 = gate2.ask('允许执行 write?').then((a) => {
+      answer2 = a;
+    });
+    h2.feed('1');
+    await p2;
+    expect(answer2).toBe('y');
+    h2.dispose();
+  });
+
+  it('Enter 确认走行后的高亮项（Tab 到第 2 项再 Enter → a）', async () => {
+    let answer: string | null = null;
+    const { h, gate } = makeHarness();
+    const p = gate.ask('允许执行 write?').then((a) => {
+      answer = a;
+    });
+    h.feed(TAB);
+    h.feed(ENTER);
+    await p;
+    expect(answer).toBe('a');
+    h.dispose();
+  });
+});
+
+describe('P3-B 审批 blocking card：Ctrl+F 参数全文展开', () => {
+  const LONG_QUERY =
+    '允许执行 write? [y]本次 [a]本会话总是（该工具后续所有调用不再询问） [n]拒绝 这是一段很长的说明文本用于验证展开折行';
+
+  it('Ctrl+F 展开：审批 query 全文按显示宽度折行进 items（收起态只有 3 个选项）', () => {
+    const { h, gate } = makeHarness();
+    void gate.ask(LONG_QUERY);
+    expect(h.state.overlays[0]?.items).toHaveLength(3); // 收起：仅选项
+    h.feed(CTRL_F);
+    const items = h.state.overlays[0]?.items ?? [];
+    expect(items.length).toBeGreaterThan(3); // 全文行 + 选项
+    const joined = items
+      .map((it) => (typeof it === 'string' ? it : it.label))
+      .join('\n')
+      .replace(/\s+/g, '');
+    expect(joined).toContain(LONG_QUERY.replace(/\s+/g, '')); // 全文可见（不被标题行裁剪）
+    h.cancelApproval();
+    h.dispose();
+  });
+
+  it('Ctrl+F 再按收起：恢复 3 选项结构', () => {
+    const { h, gate } = makeHarness();
+    void gate.ask(LONG_QUERY);
+    h.feed(CTRL_F);
+    h.feed(CTRL_F);
+    expect(h.state.overlays[0]?.items).toHaveLength(3);
+    h.cancelApproval();
+    h.dispose();
+  });
+
+  it('展开态 Tab 走行仍只在 3 个选项间循环（高亮只落在选项行）', () => {
+    const { h, gate } = makeHarness();
+    void gate.ask(LONG_QUERY);
+    h.feed(CTRL_F);
+    const items = h.state.overlays[0]?.items ?? [];
+    const queryRows = items.length - 3;
+    h.feed(TAB);
+    expect(h.state.overlays[0]?.activeIndex).toBe(queryRows + 1); // 显示高亮 = 全文行数 + 选项下标
+    h.feed(TAB);
+    h.feed(TAB);
+    expect(h.state.overlays[0]?.activeIndex).toBe(queryRows + 0); // 循环回第一选项
+    h.cancelApproval();
+    h.dispose();
+  });
+
+  it('展开态数字直选仍直接回答（不受全文行影响）', async () => {
+    let answer: string | null = null;
+    const { h, gate } = makeHarness();
+    const p = gate.ask(LONG_QUERY).then((a) => {
+      answer = a;
+    });
+    h.feed(CTRL_F);
+    h.feed('2');
+    await p;
+    expect(answer).toBe('a');
+    h.dispose();
+  });
+
+  it('resize 重建展开视图（新宽度重排全文行）', () => {
+    const { h, gate } = makeHarness();
+    void gate.ask(LONG_QUERY);
+    h.feed(CTRL_F);
+    const narrowCount = (h.state.overlays[0]?.items ?? []).length;
+    h.resize(40, 24);
+    const items = h.state.overlays[0]?.items ?? [];
+    expect(items.length - 3).toBeGreaterThanOrEqual(narrowCount - 3); // 变窄 → 全文行数不减
+    h.cancelApproval();
+    h.dispose();
+  });
+});
+
+describe('P3-B 审批 blocking card：Esc 寄放焦点', () => {
+  it('Esc 寄放：卡片仍显示、审批仍挂起、键盘回 composer（可输入草稿）', async () => {
+    const { h, gate } = makeHarness();
+    void gate.ask('允许执行 write?');
+    h.feed(ESC);
+    await vi.advanceTimersByTimeAsync(60); // 孤立 ESC 空闲超时 → Esc 键
+    expect(h.state.overlays.length).toBe(1); // 卡片保持显示
+    expect(h.pendingApproval()).toBe('允许执行 write?'); // 审批挂起
+    h.feed('x');
+    expect(h.state.draft).toBe('x'); // 键盘已回 composer
+    h.dispose();
+  });
+
+  it('寄放后 Tab 显式回卡：键盘重新被卡接管，数字直选可回答', async () => {
+    let answer: string | null = null;
+    const { h, gate } = makeHarness();
+    const p = gate.ask('允许执行 write?').then((a) => {
+      answer = a;
+    });
+    h.feed(ESC);
+    await vi.advanceTimersByTimeAsync(60);
+    h.feed('x'); // 寄放态打草稿
+    h.feed(TAB); // 回卡
+    h.feed('2'); // 数字直选落在卡上（不进草稿）
+    await p;
+    expect(answer).toBe('a');
+    expect(h.state.draft).toBe('x'); // '2' 未进草稿
+    expect(h.state.overlays.length).toBe(0); // 回答后卡片关闭
+    h.dispose();
+  });
+
+  it('寄放后审批仍可被编程回答（approve/cancelApproval 路径不受寄放影响）', async () => {
+    let answer: string | null = null;
+    const { h, gate } = makeHarness();
+    const p = gate.ask('允许执行 write?').then((a) => {
+      answer = a;
+    });
+    h.feed(ESC);
+    await vi.advanceTimersByTimeAsync(60);
+    h.approve('y');
+    await p;
+    expect(answer).toBe('y');
+    expect(h.state.overlays.length).toBe(0);
+    h.feed('a');
+    expect(h.state.draft).toBe('a'); // 关卡后键盘在 composer
+    h.dispose();
+  });
+
+  it('寄放后 Ctrl+C 取消审批 → ASK_CANCELLED（卡片内 Ctrl+C 语义）', async () => {
+    let answer: string | undefined;
+    const { h, gate } = makeHarness();
+    const p = gate.ask('允许执行 write?').then((a) => {
+      answer = a;
+    });
+    h.feed(ESC);
+    await vi.advanceTimersByTimeAsync(60);
+    h.feed(CTRL_C);
+    await p;
+    expect(answer).toBe(ASK_CANCELLED);
+    expect(h.state.overlays.length).toBe(0);
+    h.dispose();
+  });
+
+  it('寄放态指示器提示审批待答与回卡路径', async () => {
+    const { h, gate } = makeHarness();
+    void gate.ask('允许执行 write?');
+    h.feed(ESC);
+    await vi.advanceTimersByTimeAsync(60);
+    expect((h.state.indicators ?? []).join(' ')).toContain('审批待答');
+    expect((h.state.indicators ?? []).join(' ')).toContain('Tab');
+    h.dispose();
+  });
+
+  it('寄放后新审批（gate.ask）重新接管键盘并复位寄放态', async () => {
+    const { h, gate } = makeHarness();
+    void gate.ask('第一次?');
+    h.feed(ESC);
+    await vi.advanceTimersByTimeAsync(60);
+    expect(h.state.overlays.length).toBe(1); // 第一张卡寄放显示
+    void gate.ask('第二次?'); // 新提问挤占旧挂起
+    expect(h.state.overlays[0]?.title).toContain('第二次?');
+    h.feed('x');
+    expect(h.state.draft).toBe(''); // 键盘已被新卡接管（不下穿）
+    h.cancelApproval();
+    h.dispose();
+  });
+});
+
+// —— 模式循环（Shift+Tab 四态）——
+describe('P3-B 模式循环（Shift+Tab）', () => {
+  it('Normal→Plan→Auto→Always-approve→Normal 循环（底边指示）', () => {
+    const { h } = makeHarness();
+    const ind = (): string => (h.state.indicators ?? []).join(' ');
+    expect(ind()).not.toContain('plan');
+    h.feed(SHIFT_TAB);
+    expect(ind()).toContain('plan');
+    h.feed(SHIFT_TAB);
+    expect(ind()).toContain('auto');
+    h.feed(SHIFT_TAB);
+    expect(ind()).toContain('always-approve');
+    h.feed(SHIFT_TAB);
+    expect(ind()).not.toContain('plan');
+    expect(ind()).not.toContain('auto');
+    expect(ind()).not.toContain('always-approve');
+    h.dispose();
+  });
+
+  it('always-approve 态与 Ctrl+O 共享同一状态：循环到该态后新审批自动代答 a，切回 normal 恢复手动', async () => {
+    const { h, gate } = makeHarness();
+    h.feed(SHIFT_TAB);
+    h.feed(SHIFT_TAB);
+    h.feed(SHIFT_TAB); // → always-approve
+    const answer = await gate.ask('第一次?');
+    expect(answer).toBe('a'); // 经 gate.choose('a') resolve 路径（红线 6）
+    h.feed(SHIFT_TAB); // → normal
+    let manual: string | null = null;
+    const p = gate.ask('第二次?').then((a) => {
+      manual = a;
+    });
+    expect(h.pendingApproval()).toBe('第二次?'); // 不再代答
+    h.approve('y');
+    await p;
+    expect(manual).toBe('y');
+    h.dispose();
+  });
+
+  it('Ctrl+O 在非 normal 态切换：off 回 normal（开关与模式共享单态）', () => {
+    const { h } = makeHarness();
+    h.feed(SHIFT_TAB); // plan
+    h.feed(CTRL_O); // → always-approve
+    expect((h.state.indicators ?? []).join(' ')).toContain('always-approve');
+    expect((h.state.indicators ?? []).join(' ')).not.toContain('plan');
+    h.feed(CTRL_O); // → normal
+    expect((h.state.indicators ?? []).join(' ')).not.toContain('always-approve');
+    h.dispose();
+  });
+
+  it('审批卡焦点下 Shift+Tab = 反向走行而非模式切换（dispatcher 层级区分）', () => {
+    const { h, gate } = makeHarness();
+    void gate.ask('允许执行 write?');
+    h.feed(SHIFT_TAB);
+    expect(h.state.overlays[0]?.activeIndex).toBe(2); // 走行生效
+    expect((h.state.indicators ?? []).join(' ')).not.toContain('plan'); // 模式未变
+    h.cancelApproval();
+    h.dispose();
+  });
+
+  it('寄放态 Shift+Tab = 模式循环（键盘在 composer）', async () => {
+    const { h, gate } = makeHarness();
+    void gate.ask('允许执行 write?');
+    h.feed(ESC);
+    await vi.advanceTimersByTimeAsync(60); // 寄放
+    h.feed(SHIFT_TAB);
+    expect((h.state.indicators ?? []).join(' ')).toContain('plan'); // 模式已切
+    expect(h.state.overlays.length).toBe(1); // 卡片仍寄放显示
+    h.cancelApproval();
+    h.dispose();
+  });
+});
+
+// —— plan / auto 声明态（红线 6 负例）——
+describe('P3-B plan / auto 声明态（红线 6：审批不得自动放行）', () => {
+  it('plan 态提交消息：转录打 [plan mode] 提示行，turn 照常执行', async () => {
+    const { h } = makeHarness();
+    h.feed(SHIFT_TAB); // plan
+    h.submit('做功能');
+    await settle(h);
+    const all = linesOf(h).join('\n');
+    expect(all).toContain('[plan mode]');
+    expect(all).toContain('收到：做功能'); // turn 照常执行（声明态不改执行）
+    h.dispose();
+  });
+
+  it('plan 态审批仍需人工回答（不自动放行——红线 6 负例）', async () => {
+    let answer: string | null = null;
+    let resolved = false;
+    const { h, gate } = makeHarness();
+    h.feed(SHIFT_TAB); // plan
+    const p = gate.ask('允许执行 write?').then((a) => {
+      resolved = true;
+      answer = a;
+    });
+    await vi.advanceTimersByTimeAsync(120); // 给任何「自动代答」留出机会
+    expect(resolved).toBe(false); // 未被自动回答
+    expect(h.pendingApproval()).toBe('允许执行 write?');
+    expect(h.state.overlays.length).toBe(1);
+    h.approve('n');
+    await p;
+    expect(answer).toBe('n');
+    h.dispose();
+  });
+
+  it('auto 态为声明态：不代答、不改默认高亮（红线 6 负例）', async () => {
+    let answer: string | null = null;
+    const { h, gate } = makeHarness();
+    h.feed(SHIFT_TAB);
+    h.feed(SHIFT_TAB); // auto
+    const p = gate.ask('允许执行 write?').then((a) => {
+      answer = a;
+    });
+    await vi.advanceTimersByTimeAsync(120);
+    expect(answer).toBeNull(); // 未自动放行
+    expect(h.state.overlays[0]?.activeIndex).toBe(0); // 默认高亮未变（不诱导一键放行）
+    h.approve('y');
+    await p;
+    expect(answer).toBe('y');
+    h.dispose();
+  });
+});
+
+// —— 模式斜杠命令 ——
+describe('P3-B 模式斜杠命令（/plan /auto /always-approve）', () => {
+  it('/plan 设置 plan 态并落系统行', () => {
+    const { h } = makeHarness();
+    h.feed('/plan\r');
+    expect((h.state.indicators ?? []).join(' ')).toContain('plan');
+    expect(linesOf(h).join('\n')).toContain('plan');
+    h.dispose();
+  });
+
+  it('/auto 设置 auto 态（声明态说明落系统行）', () => {
+    const { h } = makeHarness();
+    h.feed('/auto\r');
+    expect((h.state.indicators ?? []).join(' ')).toContain('auto');
+    h.dispose();
+  });
+
+  it('/always-approve 开启；再跑一次关闭（toggle，grok 语义）', () => {
+    const { h } = makeHarness();
+    h.feed('/always-approve\r');
+    expect((h.state.indicators ?? []).join(' ')).toContain('always-approve');
+    h.feed('/always-approve\r');
+    expect((h.state.indicators ?? []).join(' ')).not.toContain('always-approve');
+    h.dispose();
+  });
+
+  it('/plan 幂等：已在 plan 态再跑保持 plan', () => {
+    const { h } = makeHarness();
+    h.feed('/plan\r');
+    h.feed('/plan\r');
+    expect((h.state.indicators ?? []).join(' ')).toContain('plan');
+    h.dispose();
+  });
+});
+
+// —— 底边模式指示 ——
+describe('P3-B 底边模式指示（模式 · 焦点 · 其他）', () => {
+  it('模式指示在焦点指示之前：plan + scrollback → [plan, scrollback]', () => {
+    const { h } = makeHarness();
+    h.feed('/plan\r');
+    h.feed(TAB); // scrollback 焦点
+    expect(h.state.indicators).toEqual(['plan', 'scrollback']);
+    h.dispose();
+  });
+
+  it('always-approve 与 scrollback 共存且顺序正确', () => {
+    const { h } = makeHarness();
+    h.feed('/always-approve\r');
+    h.feed(TAB);
+    expect(h.state.indicators).toEqual(['always-approve', 'scrollback']);
+    h.dispose();
+  });
+
+  it('normal 态不显示模式指示（缺省无模式）', () => {
+    const { h } = makeHarness();
+    h.feed(TAB);
+    expect(h.state.indicators).toEqual(['scrollback']);
     h.dispose();
   });
 });

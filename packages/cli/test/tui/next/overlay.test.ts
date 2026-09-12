@@ -16,6 +16,7 @@ import {
   overlayNaturalHeight,
   overlayStackLayout,
   renderOverlay,
+  wrapTextByWidth,
   type OverlaySpec,
 } from '../../../src/tui/next/overlay.js';
 import { displayWidth } from '../../../src/tui/renderer/cell-buffer.js';
@@ -486,5 +487,21 @@ describe('overlayStackLayout 多浮层堆叠', () => {
       expect(rect.top).toBeGreaterThanOrEqual(0);
       prevTop = rect.top;
     }
+  });
+});
+
+// —— P3-B：wrapTextByWidth（审批卡 Ctrl+F 全文折行用的纯函数）——
+describe('wrapTextByWidth', () => {
+  it('ASCII 按宽度贪心折行', () => {
+    expect(wrapTextByWidth('abcdefgh', 3)).toEqual(['abc', 'def', 'gh']);
+  });
+
+  it('宽字符（CJK）不切半：放不下整字换行', () => {
+    expect(wrapTextByWidth('中文中文', 3)).toEqual(['中', '文', '中', '文']); // 每行只装得下一个 2 宽字符
+  });
+
+  it('换行符强制断行；空串返回单个空行', () => {
+    expect(wrapTextByWidth('a\nb', 5)).toEqual(['a', 'b']);
+    expect(wrapTextByWidth('', 5)).toEqual(['']);
   });
 });
