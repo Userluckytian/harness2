@@ -935,9 +935,17 @@ export function createNextChatHarness(runtime: ChatRuntime, deps: NextChatHarnes
     invalidate();
   }
 
-  /** Esc 寄放：卡片保持显示、审批仍挂起，键盘交还 composer（grok park 语义，见文件头） */
+  /**
+   * Esc 寄放：卡片保持显示、审批仍挂起，键盘交还 composer（grok park 语义，见文件头）。
+   * P1-1：子视图/picker 打开时**不**交还 composer——键盘属于 subagentLayer（视图层接管），
+   * focus composer 会让输入进不绘制的草稿（隐形输入）；寄放态 approval 层放行，视图键照常。
+   */
   function parkApproval(): void {
     approvalParked = true;
+    if (subView !== null || subPicker !== null) {
+      invalidate();
+      return;
+    }
     controller.focus();
     invalidate();
   }
@@ -949,11 +957,29 @@ export function createNextChatHarness(runtime: ChatRuntime, deps: NextChatHarnes
     invalidate();
   }
 
+  /**
+   * 结算（选择/取消/挤占）关闭审批卡。P1-1 焦点感知（防「隐形输入进不绘制的草稿」）：
+   * - 子视图打开 → 不 focus composer，subagentLayer 继续接管（q/Esc 返回等视图键照常）；
+   * - picker 被审批挤占 → 恢复 picker 显示并保持其键盘接管（二选一取方案 a）：用户的选择
+   *   进度（activeIndex）保留、行为与「审批从未出现」一致、diff 最小；方案 b（取消 picker）
+   *   会无谓丢弃用户上下文，不取。挤占期间 subagentLayer 对 picker/视图让位（见其
+   *   approvalActive 处理），不会隐形改选；
+   * - 两者皆空 → 现状 focus composer。
+   */
   function closeApproval(): void {
     state.overlays = [];
     approvalParked = false;
     approvalExpanded = false;
     scrollbackFocus = false; // 结算回 composer 焦点（审查 P2-1：指示器与折叠键族同步复位）
+    if (subView !== null) {
+      invalidate();
+      return;
+    }
+    if (subPicker !== null) {
+      syncPickerOverlay(); // 恢复被 openApproval 覆盖的列表浮层（controller 保持 blur = picker 接管）
+      invalidate();
+      return;
+    }
     controller.focus();
     invalidate();
   }
@@ -1102,8 +1128,16 @@ export function createNextChatHarness(runtime: ChatRuntime, deps: NextChatHarnes
     } finally {
       bridge.reset();
       busy = false;
+      // P2-3：turn 收尾（正常/取消/异常一律走此 finally）清空运行中子代理表——残留条目
+      // （tool/result 因 abort/异常永不到达）会在下个 turn 给 spinner 续命
+      // （updateSpinner 的 shouldRun = busy && size>0），定时器空转、指示字符失真。
+      // subagentDurations 保留（已完成耗时属转录内容，重投影仍要显示）。
+      subagentStarts.clear();
       updateSpinner(); // P3-D：turn 结束（含取消/异常）→ 空闲停表
       scheduler.flushNow(); // final flush：终态/状态行立即落定
+      // P2-3：清表后强制全量重投影——中止前最后一次 flush 可能已把 spinner 帧字符烤进
+      // scrollback（pending 行此后不再变化），不重建则冻结帧残留
+      reprojectAll();
       invalidate();
       // 回合结束提醒（cancelled 不发；退出中不发；异常结束照发——对齐 InkShell）
       if (!shutdown.isShuttingDown()) {
@@ -1136,15 +1170,43 @@ export function createNextChatHarness(runtime: ChatRuntime, deps: NextChatHarnes
   }
 
   /**
+   * P2-1：会话切换（/fork /new /resume，经 reprojectFromDisk 的重投影路径）时清空子会话
+   * 瞬时状态：childSessions/childEvents/childTranscripts（onChildEvent 登记，属旧会话）、
+   * subagentStarts/subagentDurations（耗时/spinner，属旧会话的 turn 流）。/undo /redo 不换
+   * 会话，不清（rewind 后子会话入口仍在）。子会话**入口不从磁盘重建 childSessions 登记**：
+   * 重投影后的转录 item 自带 childSessionId（磁盘 result output），subagentCandidates 的
+   * 「转录 item ∪ 登记」并集已覆盖入口，描述经 subagentDescription(item) 取自磁盘 args——
+   * 入口可完整重建，登记不重建（如实注释，不伪造）。
+   */
+  function clearChildSessionState(): void {
+    childSessions.clear();
+    childEvents.clear();
+    childTranscripts.clear();
+    subagentStarts.clear();
+    subagentDurations.clear();
+    updateSpinner(); // 表清空 → 若 spinner 在转则停表
+    // 防御：切会话瞬间若子视图/picker 仍打开（正常输入路径不可达——视图接管键盘），如实关闭
+    if (subPicker !== null) closeSubPicker(true);
+    if (subView !== null) closeSubagentView();
+  }
+
+  /**
    * P3-C 重投影（对齐 ink reprojectTranscript）：/undo /redo 追加 rewind/marker、会话切换
    * （/new /resume /fork）之后，用 projectSession 从磁盘会话日志整体重建转录（被遮蔽的
    * user/assistant 条目消失、恢复时再现）。先落定待处理事件；清空折叠覆盖集（对齐 ink 清
    * expandedIds，避免旧 item 下标残留）；磁盘读取失败保底重投影内存转录（不伪造）。
+   * P2-1：检测到会话 id 变化时一并清空子会话瞬时状态（见 clearChildSessionState）。
    */
+  let reprojectSessionId: string | null = runtime.getCurrent()?.id ?? null;
   function reprojectFromDisk(): void {
     flushUi();
-    collapsed = new Set<number>();
     const current = runtime.getCurrent();
+    const currentId = current?.id ?? null;
+    if (currentId !== reprojectSessionId) {
+      clearChildSessionState();
+      reprojectSessionId = currentId;
+    }
+    collapsed = new Set<number>();
     if (current !== null) {
       try {
         transcript = projectSession(current.dir);
@@ -1552,10 +1614,15 @@ export function createNextChatHarness(runtime: ChatRuntime, deps: NextChatHarnes
   // —— P3-D 子视图/选择列表键盘层（位于 approval 与 composer 之间：审批仍最优先）——
   // 列表浮层：↑↓/j/k 走行、数字直选、Enter 打开、Esc/q 取消。
   // 视图态（controller 已 blur，composer 层不消费）：q/Esc 返回、↑↓ 单行、PgUp/PgDn 翻页、
-  // 滚轮 ±3；其余放行（审批期间 approval 层优先接管，视图保留在后）。
+  // 滚轮 ±3；**其余键一律消费**（P1-1 防御：视图打开时键盘完全被视图层接管——即使 composer
+  // 被异常复位焦点，输入也进不了不绘制的草稿）。
+  // 审批卡接管期（挂起且未寄放）本层整体让位：杜绝浮层/视图在审批卡下被隐形改选/关闭
+  // （如 j 隐形改选不可见 picker、q 隐形关视图）；结算后由 closeApproval 恢复相应状态。
+  const approvalActive = (): boolean => gate.pending() !== null && !approvalParked;
   const subagentLayer: InputLayer = {
     name: 'subagent-view',
     handle: (event: InputEvent): boolean => {
+      if (approvalActive()) return false;
       if (subPicker !== null) {
         const picker = subPicker; // 局部快照（闭包内 TS 收窄；closeSubPicker 会置空外层变量）
         if (event.type !== 'key') return false;
@@ -1591,11 +1658,11 @@ export function createNextChatHarness(runtime: ChatRuntime, deps: NextChatHarnes
           closeSubPicker(true);
           return true;
         }
-        return false;
+        return true; // P1-1 防御：picker 接管期未识别键一律消费（不透传 composer）
       }
       if (subView === null) return false;
       if (event.type === 'mouse') {
-        if (event.kind !== 'scroll') return false;
+        if (event.kind !== 'scroll') return true; // P1-1 防御：视图接管期鼠标事件不透传（滚轮除外，下方处理）
         const sb = state.subagentView?.scrollback;
         if (sb === undefined) return false;
         if (event.button === 0) sb.wheelUp();
@@ -1603,7 +1670,7 @@ export function createNextChatHarness(runtime: ChatRuntime, deps: NextChatHarnes
         invalidate();
         return true;
       }
-      if (event.type !== 'key') return false;
+      if (event.type !== 'key') return false; // focus 等系统事件放行（兜底 focused 标记需要）
       const ev = event;
       const sb = state.subagentView?.scrollback;
       if (sb === undefined) return false;
@@ -1631,7 +1698,7 @@ export function createNextChatHarness(runtime: ChatRuntime, deps: NextChatHarnes
         invalidate();
         return true;
       }
-      return false;
+      return true; // P1-1 防御：未识别键一律消费（杜绝「隐形输入进不绘制的草稿」）
     },
   };
 
