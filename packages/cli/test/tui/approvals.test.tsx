@@ -120,12 +120,7 @@ describe('T5 审批弹窗位置（InkShell 集成）', () => {
       await t.flush();
       dialog.open({
         render: (onClose) => (
-          <ConfirmDialog
-            question="允许执行 bash-1?"
-            isActive
-            onChoice={() => onClose()}
-            onCancel={onClose}
-          />
+          <ConfirmDialog question="允许执行 bash-1?" isActive onChoice={() => onClose()} onCancel={onClose} />
         ),
         resolve: () => undefined,
       });

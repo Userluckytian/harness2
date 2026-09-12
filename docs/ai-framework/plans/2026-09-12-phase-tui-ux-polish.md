@@ -27,29 +27,29 @@
 
 ## 阶段开头：上阶段遗留
 
-| 上阶段遗留项 | 来源 | 未通过原因 | 状态 |
-| ------------ | ---- | ---------- | ---- |
-| 无（2026-09-12 冒烟 A/B/C 组验证见当日日志；本阶段为新需求，不阻塞） | — | — | — |
+| 上阶段遗留项                                                         | 来源 | 未通过原因 | 状态 |
+| -------------------------------------------------------------------- | ---- | ---------- | ---- |
+| 无（2026-09-12 冒烟 A/B/C 组验证见当日日志；本阶段为新需求，不阻塞） | —    | —          | —    |
 
 ## 跳过项（因档位未做，非缺陷）
 
 | 跳过项 | 原因 | 待补做 |
 | ------ | ---- | ------ |
-| 无 | — | — |
+| 无     | —    | —      |
 
 ---
 
 ## File Structure（预期变更）
 
-| 文件 | 动作 | 职责 |
-| ---- | ---- | ---- |
-| `packages/cli/src/tui/runInkChat.tsx` | 修改 | 布局（T2/T3/T5）、子会话浮层入口（T1）、提醒接线（T4） |
-| `packages/cli/src/tui/Composer.tsx` | 修改 | 候选列表渲染到输入行上方（T5） |
-| `packages/cli/src/tui/OverlayHost.tsx` / `Modal.tsx` | 修改 | 浮层位置规则（T3/T5） |
-| `packages/cli/src/tui/transcript.ts` / `TranscriptView.tsx` | 修改 | 工具卡携带 `childSessionId` 与「子会话」入口（T1） |
-| `packages/cli/src/tui/terminal-events.ts` | **新建** | SGR 鼠标 + DECSET 1004 焦点序列解析（T2/T4） |
-| `packages/cli/src/tui/notify.ts` | **新建** | 提醒策略（always/unfocused/never + bel/osc9）（T4） |
-| `packages/cli/test/tui/*.test.tsx` | 新增/修改 | 各 Task 行为用例 |
+| 文件                                                        | 动作      | 职责                                                   |
+| ----------------------------------------------------------- | --------- | ------------------------------------------------------ |
+| `packages/cli/src/tui/runInkChat.tsx`                       | 修改      | 布局（T2/T3/T5）、子会话浮层入口（T1）、提醒接线（T4） |
+| `packages/cli/src/tui/Composer.tsx`                         | 修改      | 候选列表渲染到输入行上方（T5）                         |
+| `packages/cli/src/tui/OverlayHost.tsx` / `Modal.tsx`        | 修改      | 浮层位置规则（T3/T5）                                  |
+| `packages/cli/src/tui/transcript.ts` / `TranscriptView.tsx` | 修改      | 工具卡携带 `childSessionId` 与「子会话」入口（T1）     |
+| `packages/cli/src/tui/terminal-events.ts`                   | **新建**  | SGR 鼠标 + DECSET 1004 焦点序列解析（T2/T4）           |
+| `packages/cli/src/tui/notify.ts`                            | **新建**  | 提醒策略（always/unfocused/never + bel/osc9）（T4）    |
+| `packages/cli/test/tui/*.test.tsx`                          | 新增/修改 | 各 Task 行为用例                                       |
 
 ---
 
@@ -58,6 +58,7 @@
 **Files:** `transcript.ts`、`TranscriptView.tsx`、`runInkChat.tsx`、`test/tui/tui-transcript.test.tsx`、新用例文件
 
 **行为:**
+
 - 工具卡渲染时，若工具名 ∈ {`subagent_start`,`subagent_continue`} 且 `tool/result.output` 可解析出 `childSessionId`，卡片显示「子会话 <id>」入口提示（不伪造：解析不到就不显示）。
 - 键盘：`Ctrl+J` 打开当前选中工具卡（缺省 = 最近一张工具卡）的子会话只读浮层，内容 = 用既有 `projectSession()` 读子会话目录重投影的转录；`Esc` 关闭返回。子会话目录不存在/读取失败时显示如实错误文案。
 - 浮层内不提供任何输入/undo/审批操作（纯只读）。
@@ -73,6 +74,7 @@
 **Files:** 新建 `terminal-events.ts`、`runInkChat.tsx`、`test/tui/terminal-events.test.ts`、`test/tui/viewport.test.ts`（扩展）
 
 **行为:**
+
 - 布局：`StatusBar` 顶 / 转录区吃剩余高度 / 面板区 / `Composer` 恒定屏幕最低行；浮层与面板出现时**不顶起**输入框；`stdout.rows` 变化（resize）不溢出（现有 `rows-8` 魔数改为结构化约束）。
 - 鼠标：进入 alt-screen 时开启 SGR 鼠标上报（`\x1b[?1000h\x1b[?1006h`），退出时还原（`\x1b[?1006l\x1b[?1000l`）。滚轮上/下（`\x1b[<64;…M` / `\x1b[<65;…M`）映射既有 `scrollUp()/scrollDown()`（含锚定/恢复跟随语义）。
 - 焦点：同时开启 DECSET 1004（`\x1b[?1004h`），解析 `\x1b[I`（focus in）/`\x1b[O`（focus out）供 T4 使用；退出还原。
@@ -97,6 +99,7 @@
 **Files:** 新建 `notify.ts`、`runInkChat.tsx`、`test/tui/notify.test.ts`
 
 **行为:**
+
 - `runTurnText` 收尾（含 `final`/`partial`/`empty` 终态）后按策略发提醒；`HARNESS2_NOTIFY`：`never`=不发、`unfocused`（缺省）=仅终端失焦时发、`always`=总是发；`HARNESS2_NOTIFY_METHOD`：`bel`（`\x07`，缺省）/`osc9`（`\x1b]9;…\x07`）。
 - 非 TTY / legacy 路径不发（避免管道污染输出）；Ctrl+C 取消回合**不**发提醒（或按实现如发则报告说明）。
 - 不得影响既有退出还原（BEL/OSC 写 stderr，不破坏帧）。
@@ -121,38 +124,38 @@
 
 **审查方：** 独立只读子代理（非实现者），按 `CODE_REVIEW.md` 出 P0/P1/P2 报告。
 
-| 审查项 | 结论 | 问题清单 |
-| ------ | ---- | -------- |
-| 风格 | ⬜ | |
-| 测试完整性 | ⬜ | |
-| 依赖与架构红线（冻结区/新依赖） | ⬜ | |
-| 安全（转义序列注入、子会话路径读取） | ⬜ | |
-| 交互回归（键盘/粘贴/IME/legacy 路径） | ⬜ | |
+| 审查项                                | 结论 | 问题清单 |
+| ------------------------------------- | ---- | -------- |
+| 风格                                  | ⬜   |          |
+| 测试完整性                            | ⬜   |          |
+| 依赖与架构红线（冻结区/新依赖）       | ⬜   |          |
+| 安全（转义序列注入、子会话路径读取）  | ⬜   |          |
+| 交互回归（键盘/粘贴/IME/legacy 路径） | ⬜   |          |
 
 ---
 
 ## 验收标准总表
 
-| # | 标准 | 通过条件 | 验证责任人 |
-|---|------|----------|------------|
-| 1 | T1~T5 行为用例 | `pnpm --filter harness2 exec vitest run test/tui` exit 0，新增用例先红后绿 | 实现方 + 编排者复跑 |
-| 2 | cli 全量 | `pnpm --filter harness2 test` exit 0（基线 281 passed + 2 skipped，只增不减） | 编排者 |
-| 3 | 全量闸门 | `pnpm test` / `pnpm -r typecheck` / `pnpm lint` exit 0 | 编排者 |
-| 4 | 边界 | `git diff --name-only main..HEAD` 仅 `packages/cli/**` + docs；`api-surface-baseline.json` 零变化 | 编排者 |
-| 5 | 代码审查 | 结论 ✅ 或 ⚠️（问题已登记）；❌ 阻塞 | 独立子代理 |
-| 6 | 真机 | T1~T5 在 Windows Terminal 人工确认（滚动/响铃/浮层位置/候选位置/子会话入口） | 用户 |
-| 7 | 密钥 | 无新增凭据入 git | 编排者 |
+| #   | 标准           | 通过条件                                                                                          | 验证责任人          |
+| --- | -------------- | ------------------------------------------------------------------------------------------------- | ------------------- |
+| 1   | T1~T5 行为用例 | `pnpm --filter harness2 exec vitest run test/tui` exit 0，新增用例先红后绿                        | 实现方 + 编排者复跑 |
+| 2   | cli 全量       | `pnpm --filter harness2 test` exit 0（基线 281 passed + 2 skipped，只增不减）                     | 编排者              |
+| 3   | 全量闸门       | `pnpm test` / `pnpm -r typecheck` / `pnpm lint` exit 0                                            | 编排者              |
+| 4   | 边界           | `git diff --name-only main..HEAD` 仅 `packages/cli/**` + docs；`api-surface-baseline.json` 零变化 | 编排者              |
+| 5   | 代码审查       | 结论 ✅ 或 ⚠️（问题已登记）；❌ 阻塞                                                              | 独立子代理          |
+| 6   | 真机           | T1~T5 在 Windows Terminal 人工确认（滚动/响铃/浮层位置/候选位置/子会话入口）                      | 用户                |
+| 7   | 密钥           | 无新增凭据入 git                                                                                  | 编排者              |
 
 ---
 
 ## 风险与降级
 
-| 风险 | 缓解 |
-| ---- | ---- |
-| 鼠标上报与 Ink/IME 冲突 | T2 降级条款：保留布局修复，鼠标默认关闭，如实登记 |
-| 子会话大转录导致浮层卡顿 | 浮层复用 Transcript 虚拟化；只读、不订阅 |
-| 焦点事件在不支持终端缺失 | 缺省按「未失焦」保守处理（unfocused 策略下不响），提供 always |
-| 转义序列注入风险 | 提醒/鼠标序列只写固定 ANSI；子会话文本只经 Ink Text 渲染，不拼注释 |
+| 风险                     | 缓解                                                               |
+| ------------------------ | ------------------------------------------------------------------ |
+| 鼠标上报与 Ink/IME 冲突  | T2 降级条款：保留布局修复，鼠标默认关闭，如实登记                  |
+| 子会话大转录导致浮层卡顿 | 浮层复用 Transcript 虚拟化；只读、不订阅                           |
+| 焦点事件在不支持终端缺失 | 缺省按「未失焦」保守处理（unfocused 策略下不响），提供 always      |
+| 转义序列注入风险         | 提醒/鼠标序列只写固定 ANSI；子会话文本只经 Ink Text 渲染，不拼注释 |
 
 ---
 
@@ -165,6 +168,7 @@
 你是负责 **harness2** 的实现代理。请**完整执行**本阶段计划，不要只写方案；不要改冻结区（`packages/core`、`packages/gateway`）。
 
 ### 基线
+
 - 目录：`D:\AI_Projects\harness2`（bash: `/d/AI_Projects/harness2`）
 - 从 `main` 创建并切换：`git switch -c feat/tui-ux-polish`
 - 唯一实施计划：`docs/ai-framework/plans/2026-09-12-phase-tui-ux-polish.md`（先完整读）
@@ -172,15 +176,18 @@
 - 问题原文：`docs/issue-log/2026-09-12.md` §2
 
 ### 做
+
 按 Task 1→5 顺序执行；每 Task 先写/改用例（先红后绿），跑计划里的验证命令，然后 commit。
 
 ### 不做
+
 - 改 `packages/core` / `packages/gateway` / `packages/desktop`
 - 引入新运行时依赖；改 legacy（非 TTY）路径行为
 - `git push`；提交任何密钥
 - 鼠标滚轮若被证实与键盘/IME 冲突：按 T2 降级条款处理并如实登记，不许硬塞
 
 ### 工作方式
+
 1. 开工先 `git status`（工作树应干净）+ `pnpm --filter harness2 exec vitest run test/tui` 确认基线绿。
 2. 严格按 Task 顺序；证据优先，完成前重跑验证命令。
 3. 全部完成后自评验收表（第 1 项）并给出：分支名、提交列表、测试输出摘要、未决风险。

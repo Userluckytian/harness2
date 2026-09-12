@@ -160,20 +160,15 @@ describe('T3 审批确认框位置', () => {
     const tr = await createTestRuntime();
     running.push(tr);
     const dialog = createDialogController();
-    const t = mountTui(
-      <InkShell runtime={tr.runtime} bootLines={boot} dialog={dialog} onExit={() => undefined} />,
-      { columns: 100, rows: 30 },
-    );
+    const t = mountTui(<InkShell runtime={tr.runtime} bootLines={boot} dialog={dialog} onExit={() => undefined} />, {
+      columns: 100,
+      rows: 30,
+    });
     try {
       await t.flush();
       dialog.open({
         render: (onClose) => (
-          <ConfirmDialog
-            question="允许执行 bash-1?"
-            isActive
-            onChoice={() => onClose()}
-            onCancel={onClose}
-          />
+          <ConfirmDialog question="允许执行 bash-1?" isActive onChoice={() => onClose()} onCancel={onClose} />
         ),
         resolve: () => undefined,
       });

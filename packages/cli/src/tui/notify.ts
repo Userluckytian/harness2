@@ -54,10 +54,7 @@ export interface Notifier {
 }
 
 /** 按环境变量构造提醒器（sink 注入便于测试） */
-export function createNotifier(
-  env: Record<string, string | undefined>,
-  write: (s: string) => void,
-): Notifier {
+export function createNotifier(env: Record<string, string | undefined>, write: (s: string) => void): Notifier {
   const policy = resolveNotifyPolicy(env);
   const method = resolveNotifyMethod(env);
   return {

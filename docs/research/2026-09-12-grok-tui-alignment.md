@@ -79,13 +79,13 @@
 
 - 配置段 `[ui.notifications]`（`05-configuration.md:440-463`）：
 
-  | 键 | 默认 | 取值 |
-  |---|---|---|
-  | `method` | `auto` | `auto\|osc9\|osc99\|osc777\|bel\|none`（`bel` 即终端响铃） |
-  | `condition` | `unfocused` | `unfocused`（终端失焦才提醒）`\|always\|never` |
-  | `idle_threshold_secs` | `3` | 失焦满 N 秒才发 |
-  | `events` | `["turn_complete","approval_required"]` | 可选 `session_ready`、`task_complete`、`agent_error` |
-  | `title.items` | — | 终端标题栏内容 |
+  | 键                    | 默认                                    | 取值                                                       |
+  | --------------------- | --------------------------------------- | ---------------------------------------------------------- |
+  | `method`              | `auto`                                  | `auto\|osc9\|osc99\|osc777\|bel\|none`（`bel` 即终端响铃） |
+  | `condition`           | `unfocused`                             | `unfocused`（终端失焦才提醒）`\|always\|never`             |
+  | `idle_threshold_secs` | `3`                                     | 失焦满 N 秒才发                                            |
+  | `events`              | `["turn_complete","approval_required"]` | 可选 `session_ready`、`task_complete`、`agent_error`       |
+  | `title.items`         | —                                       | 终端标题栏内容                                             |
 
 - 实现在 `notifications/`（`config.rs` / `focus.rs` / `protocol.rs` / `hooks.rs` / `title.rs` / `sleep.rs` / `tmux.rs`）：**回合完成**与**需要审批**触发；焦点由终端 focus 事件跟踪；审批通知有批量去重；支持自定义 hook 命令（如 `terminal-notifier` 系统通知）；`/doctor` 会诊断通知与焦点问题。
 - 手册明确：「focus-gated by default, so they only fire when you're not looking at the terminal」。
@@ -118,23 +118,23 @@
 
 ### 2.1 两边的架构对照
 
-| 维度 | grok-build | harness2 | 可对齐性 |
-|---|---|---|---|
-| 语言/渲染 | Rust + ratatui + crossterm（自绘缓冲、逐帧） | TypeScript + Ink/React（行式渲染） | 布局/交互可对齐；**逐帧视觉细节受限** |
-| 内核/前端分层 | agent runtime（xai-grok-shell，ACP 面）+ pager（TUI） | `packages/core`（serve/HTTP+WS）+ `packages/cli`/`desktop` | **结构同构**，适配良好 |
-| scrollback | 独立 pane：选择/复制/搜索/超链接/图片/鼠标命中 | `TranscriptView` 虚拟化 viewport + 键盘滚动 | 滚动模型可对齐；选择/超链接/图片需自研 |
-| 子代理 | 块 + 全屏子视图 + 实时路由 + dashboard 行 | 工具卡（无视图/无实时） | 块 + 只读/实时视图可复刻 |
-| 通知 | 焦点门控 + 5 种协议 + hooks + 标题 | 无 | 可复刻（配置改 env 过渡） |
-| 鼠标 | 全量（点击聚焦、命中测试、滚轮、滚动条） | 无 | 滚轮/点击可复刻；文本选区需自研 |
-| 主题 | `theme/` + `/theme` 命令 | Ink 有限样式 | 部分对齐 |
+| 维度          | grok-build                                            | harness2                                                   | 可对齐性                               |
+| ------------- | ----------------------------------------------------- | ---------------------------------------------------------- | -------------------------------------- |
+| 语言/渲染     | Rust + ratatui + crossterm（自绘缓冲、逐帧）          | TypeScript + Ink/React（行式渲染）                         | 布局/交互可对齐；**逐帧视觉细节受限**  |
+| 内核/前端分层 | agent runtime（xai-grok-shell，ACP 面）+ pager（TUI） | `packages/core`（serve/HTTP+WS）+ `packages/cli`/`desktop` | **结构同构**，适配良好                 |
+| scrollback    | 独立 pane：选择/复制/搜索/超链接/图片/鼠标命中        | `TranscriptView` 虚拟化 viewport + 键盘滚动                | 滚动模型可对齐；选择/超链接/图片需自研 |
+| 子代理        | 块 + 全屏子视图 + 实时路由 + dashboard 行             | 工具卡（无视图/无实时）                                    | 块 + 只读/实时视图可复刻               |
+| 通知          | 焦点门控 + 5 种协议 + hooks + 标题                    | 无                                                         | 可复刻（配置改 env 过渡）              |
+| 鼠标          | 全量（点击聚焦、命中测试、滚轮、滚动条）              | 无                                                         | 滚轮/点击可复刻；文本选区需自研        |
+| 主题          | `theme/` + `/theme` 命令                              | Ink 有限样式                                               | 部分对齐                               |
 
 ### 2.2 差距清单（按复刻成本）
 
-| 级别 | 项目 | 说明 |
-|---|---|---|
-| 🟢 易 | 布局分层、输入框贴底、候选/审批锚点、模式指示、`Shift+Tab` 循环、通知（env 版）、子代理块与只读视图、状态行/快捷键条 | 与当前 5 项同一批可做 |
-| 🟡 中 | 滚轮跨区域、点击聚焦、子代理实时流、块折叠/展开组、时间线/搜索（已有部分）、逐帧 spinner | 需自研解析/状态桥接，但仍 CLI 内 |
-| 🔴 难/另立项 | 文本选择与复制、超链接点击、内联图片、全量 Vim 模式、ratatui 级自绘平滑 | Ink 限制；若要「逐像素复刻」= 换渲染引擎重写 TUI 层，不建议 |
+| 级别         | 项目                                                                                                                 | 说明                                                        |
+| ------------ | -------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------- |
+| 🟢 易        | 布局分层、输入框贴底、候选/审批锚点、模式指示、`Shift+Tab` 循环、通知（env 版）、子代理块与只读视图、状态行/快捷键条 | 与当前 5 项同一批可做                                       |
+| 🟡 中        | 滚轮跨区域、点击聚焦、子代理实时流、块折叠/展开组、时间线/搜索（已有部分）、逐帧 spinner                             | 需自研解析/状态桥接，但仍 CLI 内                            |
+| 🔴 难/另立项 | 文本选择与复制、超链接点击、内联图片、全量 Vim 模式、ratatui 级自绘平滑                                              | Ink 限制；若要「逐像素复刻」= 换渲染引擎重写 TUI 层，不建议 |
 
 ### 2.3 三档建议
 
@@ -151,14 +151,14 @@
 
 ## 3. 关键参考索引（给实现者）
 
-| 主题 | grok 路径 |
-|---|---|
-| 键盘/焦点/卡片契约 | `docs/user-guide/03-keyboard-shortcuts.md` |
-| 斜杠命令与菜单 | `docs/user-guide/04-slash-commands.md`、`src/views/slash_dropdown.rs`、`src/views/completion_dropdown.rs` |
-| 通知 | `docs/user-guide/05-configuration.md` §Notifications、`src/notifications/` |
-| 子代理 | `docs/user-guide/16-subagents.md`、`src/scrollback/blocks/subagent.rs`、`src/app/agent_view/render.rs:95`、`src/app/acp_handler/session_notification.rs` |
-| 计划模式 | `docs/user-guide/19-plan-mode.md`、`src/app/agent_view/mod.rs:1435` |
-| 状态行 | `docs/user-guide/25-status-line.md`、`src/views/status_line/` |
-| 鼠标 | `src/app/mouse.rs`、`src/scrollback/scrollback_pane.rs`、`docs/user-guide/21-terminal-support.md` |
-| 提示符组件 | `src/views/prompt_widget/mod.rs`（模式/模型指示、模式循环提示） |
-| 下拉渲染锚点 | `src/app/agent_view/render.rs:3292-3305`、`src/app/agent_view/mod.rs:2004 render_dropdown_chrome` |
+| 主题               | grok 路径                                                                                                                                                |
+| ------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 键盘/焦点/卡片契约 | `docs/user-guide/03-keyboard-shortcuts.md`                                                                                                               |
+| 斜杠命令与菜单     | `docs/user-guide/04-slash-commands.md`、`src/views/slash_dropdown.rs`、`src/views/completion_dropdown.rs`                                                |
+| 通知               | `docs/user-guide/05-configuration.md` §Notifications、`src/notifications/`                                                                               |
+| 子代理             | `docs/user-guide/16-subagents.md`、`src/scrollback/blocks/subagent.rs`、`src/app/agent_view/render.rs:95`、`src/app/acp_handler/session_notification.rs` |
+| 计划模式           | `docs/user-guide/19-plan-mode.md`、`src/app/agent_view/mod.rs:1435`                                                                                      |
+| 状态行             | `docs/user-guide/25-status-line.md`、`src/views/status_line/`                                                                                            |
+| 鼠标               | `src/app/mouse.rs`、`src/scrollback/scrollback_pane.rs`、`docs/user-guide/21-terminal-support.md`                                                        |
+| 提示符组件         | `src/views/prompt_widget/mod.rs`（模式/模型指示、模式循环提示）                                                                                          |
+| 下拉渲染锚点       | `src/app/agent_view/render.rs:3292-3305`、`src/app/agent_view/mod.rs:2004 render_dropdown_chrome`                                                        |

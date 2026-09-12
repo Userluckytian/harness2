@@ -18,13 +18,7 @@ export interface SubagentViewProps {
   height?: number;
 }
 
-export function SubagentView({
-  sessionId,
-  dir,
-  locateError,
-  width,
-  height,
-}: SubagentViewProps): ReactElement {
+export function SubagentView({ sessionId, dir, locateError, width, height }: SubagentViewProps): ReactElement {
   const content = useMemo(() => {
     if (dir === undefined) {
       return { kind: 'error' as const, message: locateError ?? '未定位到子会话目录' };
@@ -39,7 +33,9 @@ export function SubagentView({
   if (content.kind === 'error') {
     return (
       <Box flexDirection="column">
-        <Text color="red">无法读取子会话 {sessionId}: {content.message}</Text>
+        <Text color="red">
+          无法读取子会话 {sessionId}: {content.message}
+        </Text>
         <Text color="gray">（子会话目录不存在或日志尚未落盘；父会话日志仍在原处）</Text>
       </Box>
     );

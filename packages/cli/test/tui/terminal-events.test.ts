@@ -136,9 +136,13 @@ describe('attachTerminalEvents：stdin 桥接', () => {
     stdout.on('data', (c: Buffer) => {
       out += c.toString();
     });
-    const bridge = attachTerminalEvents(stdin as unknown as NodeJS.ReadStream, stdout as unknown as NodeJS.WriteStream, {
-      enabled: true,
-    });
+    const bridge = attachTerminalEvents(
+      stdin as unknown as NodeJS.ReadStream,
+      stdout as unknown as NodeJS.WriteStream,
+      {
+        enabled: true,
+      },
+    );
     expect(out).toBe('\x1b[?1000h\x1b[?1006h\x1b[?1004h');
     bridge.dispose();
     expect(out).toBe('\x1b[?1000h\x1b[?1006h\x1b[?1004h\x1b[?1006l\x1b[?1000l\x1b[?1004l');
@@ -150,9 +154,13 @@ describe('attachTerminalEvents：stdin 桥接', () => {
     stdout.on('data', (c: Buffer) => {
       out += c.toString();
     });
-    const bridge = attachTerminalEvents(stdin as unknown as NodeJS.ReadStream, stdout as unknown as NodeJS.WriteStream, {
-      enabled: false,
-    });
+    const bridge = attachTerminalEvents(
+      stdin as unknown as NodeJS.ReadStream,
+      stdout as unknown as NodeJS.WriteStream,
+      {
+        enabled: false,
+      },
+    );
     const events: TerminalEvent[] = [];
     bridge.subscribe((e) => events.push(e));
     stdin.write('\x1b[<64;1;1M');
@@ -190,9 +198,13 @@ describe('attachTerminalEvents：stdin 桥接', () => {
 
   it('subscribe 退订后不再收到事件', async () => {
     const { stdin, stdout } = fakeStreams();
-    const bridge = attachTerminalEvents(stdin as unknown as NodeJS.ReadStream, stdout as unknown as NodeJS.WriteStream, {
-      enabled: false,
-    });
+    const bridge = attachTerminalEvents(
+      stdin as unknown as NodeJS.ReadStream,
+      stdout as unknown as NodeJS.WriteStream,
+      {
+        enabled: false,
+      },
+    );
     const events: TerminalEvent[] = [];
     const unsub = bridge.subscribe((e) => events.push(e));
     stdin.write('\x1b[I');

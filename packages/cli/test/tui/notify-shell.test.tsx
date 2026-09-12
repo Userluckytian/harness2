@@ -41,7 +41,13 @@ describe('T4 回合结束提醒接线', () => {
     const { writes, write } = capture();
     const notifier = createNotifier({ HARNESS2_NOTIFY: 'always' }, write);
     const t = mountTui(
-      <InkShell runtime={tr.runtime} bootLines={[]} dialog={createDialogController()} onExit={() => undefined} notifier={notifier} />,
+      <InkShell
+        runtime={tr.runtime}
+        bootLines={[]}
+        dialog={createDialogController()}
+        onExit={() => undefined}
+        notifier={notifier}
+      />,
       { columns: 100, rows: 30 },
     );
     try {
@@ -58,7 +64,13 @@ describe('T4 回合结束提醒接线', () => {
     const { writes, write } = capture();
     const notifier = createNotifier({ HARNESS2_NOTIFY: 'never' }, write);
     const t = mountTui(
-      <InkShell runtime={tr.runtime} bootLines={[]} dialog={createDialogController()} onExit={() => undefined} notifier={notifier} />,
+      <InkShell
+        runtime={tr.runtime}
+        bootLines={[]}
+        dialog={createDialogController()}
+        onExit={() => undefined}
+        notifier={notifier}
+      />,
       { columns: 100, rows: 30 },
     );
     try {

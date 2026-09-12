@@ -29,7 +29,13 @@ async function mountShell(runtime: Awaited<ReturnType<typeof createTestRuntime>>
   const stdout = new PassThrough() as unknown as NodeJS.WriteStream;
   const bridge = attachTerminalEvents(stdin, stdout, { enabled: false });
   const t = mountTui(
-    <InkShell runtime={runtime.runtime} bootLines={boot} dialog={createDialogController()} onExit={() => undefined} terminalEvents={bridge} />,
+    <InkShell
+      runtime={runtime.runtime}
+      bootLines={boot}
+      dialog={createDialogController()}
+      onExit={() => undefined}
+      terminalEvents={bridge}
+    />,
     { columns: 100, rows: 30, stdin },
   );
   return { t, bridge, stdin };
