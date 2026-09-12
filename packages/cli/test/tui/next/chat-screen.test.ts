@@ -417,3 +417,37 @@ describe('字符网格快照（固定 rows/cols 整屏 rowText）', () => {
     expect(gridOf(screen)).toMatchSnapshot();
   });
 });
+
+describe('截断渲染路径钉死（审查 P2-1）', () => {
+  it('rows=8 + 超长草稿：composer 需求 8 行（7 草稿+1 提示）恰好占满全屏，其余层截断为 0', () => {
+    const { screen } = makeScreen(80, 8);
+    const state = makeState({
+      draft: 'l1\nl2\nl3\nl4\nl5\nl6\nl7',
+      statusline: 'status',
+      shortcuts: ['q quit'],
+    });
+    state.scrollback.append('hello world');
+    const L = layoutChat(8, 80, state);
+    // columnLayout 固定层按声明序：composer（需求 8）优先拿满，其后 statusline/shortcuts 截断
+    expect(L.composer).toEqual({ top: 0, height: 8 });
+    expect(L.statusline.height).toBe(0);
+    expect(L.shortcuts.height).toBe(0);
+    expect(L.scrollback.height).toBe(0);
+    renderChat(screen, state);
+    const text = gridOf(screen).join('\n');
+    expect(text).toContain('l7'); // 草稿完整可见
+    expect(text).not.toContain('status'); // 固定层被截断
+  });
+
+  it('rows=2 + 候选：退化屏不崩；drawComposer(top=0+候选 3 行)≥buf.rows 整体早退不画（候选优先于草稿的取舍，钉死）', () => {
+    const { screen } = makeScreen(80, 2);
+    const state = makeState({
+      draft: 'x',
+      candidates: { items: ['a', 'b', 'c'], activeIndex: 0 },
+      shortcuts: ['q quit'],
+    });
+    expect(() => renderChat(screen, state)).not.toThrow();
+    const text = gridOf(screen).join('\n');
+    expect(text).not.toContain('x');
+  });
+});

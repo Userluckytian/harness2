@@ -340,6 +340,7 @@ export interface ScrollbackRenderOptions {
  * 导出供整帧装配层（chat-screen 的 statusline/shortcuts 等层）复用同一裁剪语义。
  */
 export function writeRowClipped(buf: CellBuffer, y: number, text: string, maxCols: number, fg: number): void {
+  if (y < 0 || y >= buf.rows) return; // 越界守卫（导出给装配层用，防御性）
   let x = 0;
   for (const ch of text) {
     const w = charWidth(ch.codePointAt(0) ?? 0);
