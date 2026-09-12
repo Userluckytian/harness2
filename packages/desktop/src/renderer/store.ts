@@ -586,8 +586,13 @@ export class AppStore {
       if (frame.kind === 'tool') stream.live.toolCalls = [...stream.live.toolCalls, frame.call];
       else if (frame.kind === 'text') stream.live.text += frame.text;
       else stream.live.reasoning += frame.text;
+      // PD2：增量帧 = 服务端正在真实产出 → turn 确实在跑（重连快照无在途 attempt 的
+      // 首 token 延迟窗口由此自愈；不假报停止）
+      stream.running = true;
     } else if (frame.type === 'text-delta' || frame.type === 'reasoning-delta') {
       const kind = frame.type === 'text-delta' ? 'text' : 'reasoning';
+      // PD2：同上 —— 任何真实增量都证明 turn 在跑
+      stream.running = true;
       // 新 attempt（含首块 offset=0）开始时清空在途文本，避免上一 attempt 残留拼接
       if (stream.liveAttemptId !== frame.attemptId) {
         stream.liveAttemptId = frame.attemptId;
@@ -711,8 +716,9 @@ export class AppStore {
       ...(a.taskId !== undefined ? { taskId: a.taskId } : {}),
       ...(a.parentTaskId !== undefined ? { parentTaskId: a.parentTaskId } : {}),
     }));
-    // 在途 attempt 存在 → 会话确实仍在跑（不因客户端重连而假报停止）
-    stream.running = snap.activeAttempt !== undefined || stream.running;
+    // PD2：快照即权威 —— 有在途 attempt = 仍在跑（不因客户端断线假报停止）；
+    // 无在途 attempt（turn 已在断线窗口内跑完）= 如实落定，不留本地乐观 running（否则永久「运行中」）。
+    stream.running = snap.activeAttempt !== undefined;
   }
 
   /** 本地登记一次提交（乐观可见队列）；ack 到达前不计入确认态 */

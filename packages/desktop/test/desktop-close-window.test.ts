@@ -65,6 +65,14 @@ describe('controller.stopAll（请求停止全部，不假报已停）', () => {
       snapshot: {
         epoch: 1,
         replay: { fromSeq: 0, toSeq: 1 },
+        // PD2 语义收紧：运行中 turn 的权威快照必带在途 attempt（否则快照会如实落定 running=false）
+        activeAttempt: {
+          attemptId: 'a-t1',
+          turnId: 't1',
+          textChunkOffset: 0,
+          reasoningChunkOffset: 0,
+          status: 'running',
+        },
         tasks: [
           { taskId: 'task-run', background: true, state: 'running' },
           { taskId: 'task-done', background: true, state: 'completed' },
@@ -95,6 +103,13 @@ describe('controller.stopAll（请求停止全部，不假报已停）', () => {
       snapshot: {
         epoch: 1,
         replay: { fromSeq: 0, toSeq: 1 },
+        activeAttempt: {
+          attemptId: 'a-t1',
+          turnId: 't1',
+          textChunkOffset: 0,
+          reasoningChunkOffset: 0,
+          status: 'running',
+        },
         tasks: [{ taskId: 'bg1', background: true, state: 'running' }],
         pendingApprovals: [],
         queue: [],

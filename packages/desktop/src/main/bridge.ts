@@ -328,6 +328,9 @@ export function createBridge(deps: BridgeDeps): Bridge {
       const socket = new WebSocket(wsUrl);
       socket.addEventListener('open', () => {
         ws = socket;
+        // PD2：WS 建立/恢复必须让渲染端知道 —— 重连后渲染端据此重发订阅并拉权威快照
+        // （controller.resyncSubscriptions 挂在 onConnectionStatus('connected') 上）。
+        deps.sendStatus('connected');
       });
       socket.addEventListener('message', (ev) => {
         try {
@@ -341,6 +344,9 @@ export function createBridge(deps: BridgeDeps): Bridge {
         if (wsIntentionalClose) return;
         // 服务重启中：1s 后重试（重连成功前渲染端保持 reconnecting 角标）
         if (wsReconnectTimer === null && deps.serve.status !== 'offline') {
+          // PD2：非计划断开要如实告知渲染端（事件流已断，不能继续挂「已连接」假象），
+          // 也不得把运行中 turn 标成已停 —— reconnecting 角标 + 重连后恢复由渲染端处理。
+          deps.sendStatus('reconnecting', { error: '事件通道断开，正在重连' });
           wsReconnectTimer = setTimeout(() => {
             wsReconnectTimer = null;
             if (!wsIntentionalClose) connectWs();
