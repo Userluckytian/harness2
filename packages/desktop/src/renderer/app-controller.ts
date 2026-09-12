@@ -2,9 +2,15 @@
 // 纯逻辑（可注入假 api 单测）；React 组件只读 store + 调 controller 方法。
 // 切换会话流程（多会话切换不断流核心路径）：subscribe → /events 全量重放（store 判重）
 // → 后续增量由 WS 帧按 seq 去重追加；后台会话的帧持续缓冲进各自 SessionStream。
-import type { Harness2Api, MessageReferenceShape, SubmitIntentShape, WsFrame } from '../shared/protocol.js';
+import type {
+  Harness2Api,
+  MessageReferenceShape,
+  SubmitIntentShape,
+  UndoRedoResponseShape,
+  WsFrame,
+} from '../shared/protocol.js';
 import { newCancelRequestId, newClientMessageId } from '../shared/ids.js';
-import { decideUndo, summarizeUndoPreview } from './features/workspace/change-review-model.js';
+import { decideUndo, summarizeRedoConflict, summarizeUndoPreview } from './features/workspace/change-review-model.js';
 import type { ActiveEvent } from './chat-model.js';
 import type { AppStore } from './store.js';
 
@@ -41,6 +47,20 @@ export interface Controller {
     id: string,
     opts?: { n?: number; decision?: 'abort' | 'overwrite' },
   ): Promise<{ blocked: boolean; externallyModified: number } | undefined>;
+  /**
+   * PD1：redo 前冲突守卫（与 undoWithGuard 同口径；undo 语义零改动）。
+   * core serve `/redo` 无 dryRun 参数（冻结契约），基线取本端最近一次**真 undo** 响应的
+   * per-file target（= core redo 期望基准「最早 before」），对照 change-review 实时 current；
+   * 冲突阻止 + reason 供 UI 给可行动提示，显式 overwrite 才放行；无基线 fail-closed。
+   */
+  redoWithGuard(
+    id: string,
+    opts?: { decision?: 'abort' | 'overwrite' },
+  ): Promise<
+    | { blocked: false; externallyModified: number }
+    | { blocked: true; externallyModified: number; reason: 'conflict' | 'no-baseline' }
+    | undefined
+  >;
   respondApproval(requestId: string, decision: 'allow' | 'deny'): Promise<void>;
   /** D0：拉取 S7 只读契约（run-config / plan-state / execution-view / change-review） */
   refreshRunConfig(id: string): Promise<void>;
@@ -225,6 +245,19 @@ export function createController(store: AppStore, api: Harness2Api): Controller 
     const counts = store.runtimeCounts();
     const busy = counts.runningTurns > 0 || counts.backgroundTasks > 0 || store.anyPendingApprovals();
     void api.setBusy(busy, counts).catch(() => {});
+  };
+
+  /** PD1：redo 冲突基线 = 本端最近一次真 undo 恢复到的 per-file target（会话 → 文件/目标内容）。
+   *  redo 成功后消费清除；应用重启或撤销来自其他端时无基线 → fail-closed（不猜、不静默重放）。 */
+  const redoBaselines = new Map<string, Array<{ file: string; target: string | null }>>();
+  const rememberRedoBaseline = (id: string, res: UndoRedoResponseShape | undefined): void => {
+    const files = (res?.results ?? []).flatMap((r) => r.files ?? []);
+    if (files.length > 0) {
+      redoBaselines.set(
+        id,
+        files.map((f) => ({ file: f.file, target: f.target })),
+      );
+    }
   };
 
   const refreshSessions = async (): Promise<void> => {
@@ -445,13 +478,37 @@ export function createController(store: AppStore, api: Harness2Api): Controller 
           return { blocked: true, externallyModified: summary.externallyModified };
         }
         // 2) 用户显式决定后（或本就无冲突）才真正恢复
-        await api.undo(id, {
+        const applied = await api.undo(id, {
           ...(opts?.n !== undefined ? { n: opts.n } : {}),
         });
+        // PD1：真撤销的恢复目标就是 redo 的冲突基准（core redo 期望 = 最早 before，同此值）
+        rememberRedoBaseline(id, applied);
         await refreshSessions();
         return { blocked: false, externallyModified: summary.externallyModified };
       } catch (e) {
         store.applyFrame({ type: 'error', error: `撤销失败: ${(e as Error).message}` });
+        return undefined;
+      }
+    },
+    async redoWithGuard(id, opts) {
+      try {
+        // 1) 基线：本端最近一次真 undo 的恢复目标；没有 = 无法核实，fail-closed
+        const baseline = redoBaselines.get(id);
+        if (baseline === undefined) {
+          return { blocked: true, externallyModified: 0, reason: 'no-baseline' };
+        }
+        // 2) 对照实时磁盘视图比对（change-review 的 current 为 core 现读盘结果）
+        const conflicts = summarizeRedoConflict(await api.changeReview(id), baseline);
+        if (conflicts.externallyModified > 0 && opts?.decision !== 'overwrite') {
+          return { blocked: true, externallyModified: conflicts.externallyModified, reason: 'conflict' };
+        }
+        // 3) 放行重放；成功后该层 undo 已被消费，基线清除（再 redo 须有新的 undo）
+        await api.redo(id);
+        redoBaselines.delete(id);
+        await refreshSessions();
+        return { blocked: false, externallyModified: conflicts.externallyModified };
+      } catch (e) {
+        store.applyFrame({ type: 'error', error: `重做失败: ${(e as Error).message}` });
         return undefined;
       }
     },
@@ -462,7 +519,9 @@ export function createController(store: AppStore, api: Harness2Api): Controller 
     refreshCapabilities: loadCapabilities,
     async undoSession(id: string): Promise<void> {
       try {
-        await api.undo(id);
+        const applied = await api.undo(id);
+        // PD1：DiffCard 的旧撤销入口同样记录 redo 基线（与新守卫入口同口径）
+        rememberRedoBaseline(id, applied);
         // undo 后事件流会收到 rewind 标记（applyFrame 重折叠），无需手动刷新；
         // 仅确保会话列表元数据（mtime/条数）与磁盘一致（尽力而为）
         await refreshSessions();

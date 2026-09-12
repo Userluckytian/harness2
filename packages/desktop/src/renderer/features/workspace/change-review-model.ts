@@ -129,6 +129,27 @@ export function decideUndo(
   return { proceed: false, reason: 'blocked' };
 }
 
+/**
+ * PD1：redo 前冲突摘要（**不触发任何重放**）。
+ * 基线口径：本端最近一次**真 undo** 响应返回的 per-file `target`（= 该次 undo 实际恢复到的内容，
+ * 与 core change-review.ts 的 redo 期望基准「最早 before」同语义）。core serve `/redo` 无 dryRun
+ * 参数（冻结契约），桌面侧只能用 undo 响应 + change-review 实时 `current` 自行比对。
+ * 基线文件在变更集里查不到 = 无法核实 → 一并计为冲突（fail-closed，不静默放行）。
+ */
+export function summarizeRedoConflict(
+  set: ChangeSetShape | null | undefined,
+  baseline: ReadonlyArray<{ file: string; target: string | null }>,
+): { externallyModified: number; files: string[] } {
+  const currentByFile = new Map<string, string | null>();
+  for (const f of set?.files ?? []) currentByFile.set(normalizePath(f.file), f.current);
+  const files: string[] = [];
+  for (const b of baseline) {
+    const current = currentByFile.get(normalizePath(b.file));
+    if (current === undefined || current !== b.target) files.push(b.file);
+  }
+  return { externallyModified: files.length, files };
+}
+
 /** 工作区（会话根/cwd）展示模型：项目切换时展示「这次请求到底在哪个目录跑」 */
 export interface WorkspaceInfo {
   sessionId: string;

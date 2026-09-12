@@ -53,7 +53,7 @@ function FileEntry({ file, sessionId, onUndo }: { file: ChangedFileView; session
 export function ChangeReviewPanel({ sessionId }: { sessionId: string | null }) {
   useAppState();
   const [notice, setNotice] = useState<string | null>(null);
-  const [pendingOverwrite, setPendingOverwrite] = useState<{ count: number } | null>(null);
+  const [pendingOverwrite, setPendingOverwrite] = useState<{ count: number; kind: 'undo' | 'redo' } | null>(null);
   if (sessionId === null) return <div className="panel-empty">未选择会话</div>;
   const views = store.peekViews(sessionId);
   const view = buildChangeReviewView(views?.changeReview, views?.executionViews ?? []);
@@ -79,7 +79,7 @@ export function ChangeReviewPanel({ sessionId }: { sessionId: string | null }) {
     if (result === undefined) return;
     if (result.blocked) {
       // 外部改动：必须用户显式决定，绝不静默覆盖
-      setPendingOverwrite({ count: result.externallyModified });
+      setPendingOverwrite({ count: result.externallyModified, kind: 'undo' });
       setNotice(null);
       return;
     }
@@ -92,6 +92,35 @@ export function ChangeReviewPanel({ sessionId }: { sessionId: string | null }) {
     void controller.refreshChangeReview(sessionId);
   };
 
+  // PD1：redo 与 undo 同守卫口径 —— 冲突阻止 + 可行动提示，显式确认才重放。
+  const doRedo = async (decision?: 'abort' | 'overwrite'): Promise<void> => {
+    const result = await controller.redoWithGuard(sessionId, decision !== undefined ? { decision } : undefined);
+    if (result === undefined) return;
+    if (result.blocked) {
+      setNotice(
+        result.reason === 'no-baseline'
+          ? '无法安全重做：本端没有最近一次撤销的恢复基线（可能由其他端撤销，或应用重启后基线丢失）。可先在本面板撤销一次以重建基线'
+          : null,
+      );
+      if (result.reason === 'conflict') {
+        setPendingOverwrite({ count: result.externallyModified, kind: 'redo' });
+      }
+      return;
+    }
+    setPendingOverwrite(null);
+    setNotice(
+      result.externallyModified > 0
+        ? `已按你的确认覆盖 ${result.externallyModified} 个外部改动文件并重做`
+        : '已重做（无外部冲突）',
+    );
+    void controller.refreshChangeReview(sessionId);
+  };
+
+  const conflictLine =
+    pendingOverwrite?.kind === 'redo'
+      ? `检测到 ${pendingOverwrite.count} 个文件在撤销后被外部修改，重做会覆盖这些改动。`
+      : `检测到 ${pendingOverwrite?.count ?? 0} 个文件被外部修改，撤销会覆盖这些改动。`;
+
   return (
     <div className="panel change-panel">
       <div className="panel-head">
@@ -103,12 +132,20 @@ export function ChangeReviewPanel({ sessionId }: { sessionId: string | null }) {
       {view.files.length === 0 && <div className="panel-empty">本会话暂无可审查的文件变更</div>}
       {pendingOverwrite !== null && (
         <div className="change-conflict">
-          <div>检测到 {pendingOverwrite.count} 个文件被外部修改，撤销会覆盖这些改动。</div>
+          <div>{conflictLine}</div>
           <div className="change-conflict-actions">
-            <button type="button" className="btn-deny" onClick={() => void doUndo('abort')}>
+            <button
+              type="button"
+              className="btn-deny"
+              onClick={() => (pendingOverwrite.kind === 'redo' ? void doRedo('abort') : void doUndo('abort'))}
+            >
               取消（保留外部改动）
             </button>
-            <button type="button" className="btn-allow" onClick={() => void doUndo('overwrite')}>
+            <button
+              type="button"
+              className="btn-allow"
+              onClick={() => (pendingOverwrite.kind === 'redo' ? void doRedo('overwrite') : void doUndo('overwrite'))}
+            >
               确认覆盖
             </button>
           </div>
@@ -121,6 +158,9 @@ export function ChangeReviewPanel({ sessionId }: { sessionId: string | null }) {
         ))}
       </div>
       <div className="panel-foot">
+        <button type="button" onClick={() => void doRedo()}>
+          重做上次撤销
+        </button>
         <button type="button" onClick={() => void controller.refreshChangeReview(sessionId)}>
           刷新变更
         </button>
