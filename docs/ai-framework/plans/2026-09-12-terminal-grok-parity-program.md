@@ -3,6 +3,7 @@
 > **文档类型：** 程序级方案（**供实施同事执行**；编排者按 §8 独立检验）
 > **状态：** 方案就绪（2026-09-12 · v1） · **实施者：** 其他同事（可分阶段多人） · **检验者：** 编排者（AI 主会话，独立复跑证据）
 > **必读关联文档：**
+> - **分阶段执行计划（施工单，实施人从这里开工）：** [`2026-09-12-terminal-grok-parity-execution.md`](./2026-09-12-terminal-grok-parity-execution.md)
 > - 对齐研究（grok 原版机制逐项 + 源码索引）：[`docs/research/2026-09-12-grok-tui-alignment.md`](../../research/2026-09-12-grok-tui-alignment.md)
 > - 进行中的 5 项修复阶段：`docs/ai-framework/plans/2026-09-12-phase-tui-ux-polish.md`
 > - 工程规范：[`AGENTS.md`](../../../AGENTS.md)、[`coding-standards.md`](../../../coding-standards.md)、[`CODE_REVIEW.md`](../../../CODE_REVIEW.md)
@@ -136,6 +137,7 @@ packages/gateway  IM 网关（不在本方案范围）
 
 ## 5. 路线图（P1~P4）
 
+> 各阶段的**完整施工单**（任务清单/测试/审查/验收/出口条件）见配套执行计划 [`2026-09-12-terminal-grok-parity-execution.md`](./2026-09-12-terminal-grok-parity-execution.md)；本节只保留地图级摘要。
 > 每阶段独立分支、独立验收；**同一时间只有一个阶段改 `packages/cli/src/tui/**`**（见 §6）。
 > 人日为粗估（±50%），P0 结论后才可细化。
 
