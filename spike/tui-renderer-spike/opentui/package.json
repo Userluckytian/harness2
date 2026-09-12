@@ -1,0 +1,22 @@
+{
+  "name": "opentui-spike",
+  "private": true,
+  "type": "module",
+  "version": "0.0.0",
+  "description": "P0 TUI renderer spike - candidate C: OpenTUI (@opentui/core + @opentui/react)",
+  "scripts": {
+    "demo": "bun demo.tsx",
+    "bench": "bun bench.mjs",
+    "capabilities": "bun capabilities.mjs"
+  },
+  "dependencies": {
+    "@opentui/core": "^0.5.11",
+    "@opentui/react": "^0.5.11",
+    "react": "^19.3.0",
+    "ws": "^8.21.3"
+  },
+  "devDependencies": {
+    "bun": "^1.4.2",
+    "tsx": "^4.23.13"
+  }
+}
