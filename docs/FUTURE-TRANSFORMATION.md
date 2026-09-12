@@ -16,12 +16,12 @@
 
 ## 记录时点的现状快照（2026-09-12，仅供将来对照）
 
-| 方向 | 现状 |
-| ---- | ---- |
-| 插件式 / dsh 插件市场 | 已有自研插件总线 v1（`packages/core/src/plugins`）：manifest 声明式权限 + 装载审批（`plugins.allow`）+ 事件总线 + disposer；**同进程运行、无沙箱**（已如实声明）。无插件市场、无跨语言插件加载。 |
-| 多端 | 已有 `packages/core`（底座）+ `packages/cli`（终端 TUI）+ `packages/desktop`（Electron）+ `packages/gateway`（QQ/飞书 IM）。**无 `web` 包**（`docs/site` 是 docsify 文档站，不是应用端）。 |
-| agent 核心自研 | 已是自研：事件溯源 JSONL 会话内核、agent loop、工具系统、Provider 缝、记忆/压缩/子代理/cron/浏览器等均在 `packages/core`（1.7 万行量级）；参考过 opencode / grok / deepseek-harness / hermes 的调研，但无整体照搬。 |
-| 多设备 | CI 三平台（win/mac/linux）跑 test + desktop 打包矩阵；CLI 已做 Windows 可用性修复；桌面三平台产物走 CI（本地已验 win nsis，mac/linux 待远程/真机项见 OPEN.md）。 |
+| 方向                  | 现状                                                                                                                                                                                                                |
+| --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 插件式 / dsh 插件市场 | 已有自研插件总线 v1（`packages/core/src/plugins`）：manifest 声明式权限 + 装载审批（`plugins.allow`）+ 事件总线 + disposer；**同进程运行、无沙箱**（已如实声明）。无插件市场、无跨语言插件加载。                    |
+| 多端                  | 已有 `packages/core`（底座）+ `packages/cli`（终端 TUI）+ `packages/desktop`（Electron）+ `packages/gateway`（QQ/飞书 IM）。**无 `web` 包**（`docs/site` 是 docsify 文档站，不是应用端）。                          |
+| agent 核心自研        | 已是自研：事件溯源 JSONL 会话内核、agent loop、工具系统、Provider 缝、记忆/压缩/子代理/cron/浏览器等均在 `packages/core`（1.7 万行量级）；参考过 opencode / grok / deepseek-harness / hermes 的调研，但无整体照搬。 |
+| 多设备                | CI 三平台（win/mac/linux）跑 test + desktop 打包矩阵；CLI 已做 Windows 可用性修复；桌面三平台产物走 CI（本地已验 win nsis，mac/linux 待远程/真机项见 OPEN.md）。                                                    |
 
 ## 与当前架构的关系
 
