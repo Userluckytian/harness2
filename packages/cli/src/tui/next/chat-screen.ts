@@ -96,6 +96,87 @@ export function shortcutsText(shortcuts: readonly string[] | string): string {
   return typeof shortcuts === 'string' ? shortcuts : shortcuts.join(SHORTCUTS_SEPARATOR);
 }
 
+// —— P3-E 上下文化 chrome（纯函数，next-shell 装配层数据驱动调用）——
+
+/**
+ * 快捷键条四态（P3-E，对齐 grok shortcuts bar 随上下文变化的行为）。
+ * 互斥由单一 return 保证（优先级：审批接管 > 子视图 > busy > 空闲，与 dispatcher
+ * 层级一致）；寄放态（approvalParked）不算接管——键盘在 composer，走 idle 组。
+ */
+export interface ShortcutContext {
+  /** turn 运行中 */
+  busy: boolean;
+  /** FIFO 队列条数（只在 busy 态显示 Ctrl+X 段——队列只在忙时有意义） */
+  queueCount: number;
+  /** 审批卡接管键盘（挂起且未寄放） */
+  approvalActive: boolean;
+  /** 全屏子视图 / 子会话选择浮层打开 */
+  subviewOpen: boolean;
+}
+
+/** 快捷键条上下文 → 键位组（纯函数；busy 组队列段仅 queueCount>0 时出现） */
+export function shortcutsFor(ctx: ShortcutContext): readonly string[] {
+  if (ctx.approvalActive) return ['↑↓ 选择', 'Enter 确认', 'Ctrl+F 展开', 'Esc 寄放'];
+  if (ctx.subviewOpen) return ['q 返回', 'PgUp/PgDn 滚动'];
+  if (ctx.busy) {
+    const keys = ['Ctrl+C 取消'];
+    if (ctx.queueCount > 0) keys.push(`Ctrl+X 队列(${ctx.queueCount})`);
+    return keys;
+  }
+  return ['/ 命令', 'Tab 焦点', 'Ctrl+C 退出'];
+}
+
+/** cwd 短化：home 前缀替换为 ~（/home/me/proj → ~/proj；win 反斜杠同义）；非前缀原样 */
+export function shortenCwd(cwd: string, home: string): string {
+  if (home.length === 0 || cwd.length < home.length) return cwd;
+  const sep = cwd.includes('\\') || home.includes('\\') ? '\\' : '/';
+  const prefix = home.endsWith(sep) || home.endsWith('/') ? home : home + sep;
+  if (cwd === home) return '~';
+  if (cwd.startsWith(prefix)) return `~${sep}${cwd.slice(prefix.length)}`;
+  return cwd;
+}
+
+/** 上下文占用格式化：undefined = 未知（无活动会话/读取失败），显示 — 不伪造数值 */
+export function formatContextUsage(usage: number | undefined): string {
+  return usage === undefined ? '—' : `${Math.round(usage * 100)}%`;
+}
+
+/** 状态行上下文（P3-E：cwd · model · ctx% · 模式(非 normal) · 重试标记 · 运行中标记） */
+export interface StatusLineContext {
+  /** 装配期工作目录（原始路径，本函数内做 ~ 短化） */
+  cwd: string;
+  /** 用户主目录（~ 短化基准） */
+  home: string;
+  /** 模型名（= runtime.provider.name，写入 assistant/message.model 的同一标识） */
+  model: string;
+  /** 上下文占用 0..1（core getContextUsage；undefined = 未知 → ctx —） */
+  usage?: number;
+  /** UI 模式（四态；normal/缺省省略） */
+  mode?: string;
+  /** 上一 turn 的重试预算标记（used/max；无重试史省略） */
+  retry?: { used: number; max: number };
+  /** turn 运行中 */
+  busy?: boolean;
+}
+
+/** 状态行上下文 → 行文本（纯函数；段序固定：cwd · model · ctx · mode · retry · busy） */
+export function statusLineFor(ctx: StatusLineContext): string {
+  const parts = [shortenCwd(ctx.cwd, ctx.home), ctx.model, `ctx ${formatContextUsage(ctx.usage)}`];
+  if (ctx.mode !== undefined && ctx.mode !== 'normal') parts.push(ctx.mode);
+  if (ctx.retry !== undefined) parts.push(`重试 ${ctx.retry.used}/${ctx.retry.max}`);
+  if (ctx.busy === true) parts.push('⏺ 运行中…');
+  return parts.join(SHORTCUTS_SEPARATOR);
+}
+
+/** 队列面板条目预览列宽（对齐 ink queue-panel 的 PREVIEW_MAX=42） */
+export const QUEUE_PREVIEW_MAX = 42;
+
+/** 队列条目单行预览：折行合一 + 超长截断加省略号（仅展示用，不改队列原文） */
+export function queueEntryPreview(text: string, max: number = QUEUE_PREVIEW_MAX): string {
+  const oneLine = text.replace(/\s+/g, ' ').trim();
+  return oneLine.length <= max ? oneLine : `${oneLine.slice(0, max)}…`;
+}
+
 /**
  * 纵向分层（纯计算）：composer 高度 = 草稿物理行 + 候选行 + 1 提示行；
  * statusline 有则 1 行；shortcuts 固定 1 行；其余全给 scrollback（flex）。

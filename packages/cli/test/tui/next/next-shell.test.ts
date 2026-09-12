@@ -102,7 +102,13 @@ interface Fixture {
 
 function makeHarness(
   runtime: ChatRuntime = makeRuntime(),
-  opts: { env?: Record<string, string | undefined>; notifyWrite?: (s: string) => void; bootLines?: string[] } = {},
+  opts: {
+    env?: Record<string, string | undefined>;
+    notifyWrite?: (s: string) => void;
+    bootLines?: string[];
+    cwd?: string;
+    home?: string;
+  } = {},
 ): Fixture {
   const out = new FakeOut();
   const exitCodes: number[] = [];
@@ -113,6 +119,8 @@ function makeHarness(
     env: opts.env ?? {},
     gate,
     ...(opts.notifyWrite !== undefined ? { notifyWrite: opts.notifyWrite } : {}),
+    ...(opts.cwd !== undefined ? { cwd: opts.cwd } : {}),
+    ...(opts.home !== undefined ? { home: opts.home } : {}),
     exit: (code) => exitCodes.push(code),
   });
   return { h, out, exitCodes, gate, runtime };
@@ -164,10 +172,10 @@ describe('初始帧与 bootLines', () => {
     h.dispose();
   });
 
-  it('statusline 展示模式与 provider', () => {
-    const { h } = makeHarness();
-    expect(h.state.statusline).toContain('default');
-    expect(h.state.statusline).toContain('mock');
+  it('statusline 上下文化（P3-E）：cwd(~ 短化) · model · ctx 占用', () => {
+    const { h } = makeHarness(undefined, { cwd: '/tmp/harness2-next-test', home: '/tmp' });
+    // model = provider.name（写入 assistant/message.model 的同一标识）；无活动会话 → ctx —
+    expect(h.state.statusline).toBe('~/harness2-next-test · mock · ctx —');
     h.dispose();
   });
 });
