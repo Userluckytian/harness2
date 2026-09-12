@@ -5,7 +5,7 @@
 // T3：历史由 typed TranscriptState 持有（TranscriptView 虚拟化渲染），会话切换重投影；
 //     工具/推理卡片在 turn 落定后仍可按稳定 id 展开（闭 H2）。
 import React, { useRef, useState } from 'react';
-import { render, useInput, useStdout, Box, Text } from 'ink';
+import { render, useInput, useStdout, Box, Text, renderToString } from 'ink';
 import { setupChatSession, type ChatRuntime, type TurnResult } from '../chat-setup.js';
 import type { ChatOptions } from '../legacy-chat.js';
 import { StatusBar } from './StatusBar.js';
@@ -36,6 +36,7 @@ import {
   type TranscriptState,
 } from './transcript.js';
 import { turnSummaryLine } from '../render.js';
+import { attachTerminalEvents, type TerminalEventBridge } from './terminal-events.js';
 import {
   CORE_MODE_TO_ALIAS,
   MODE_ALIAS_ORDER,
@@ -142,11 +143,16 @@ export async function runInkChat(options: ChatOptions = {}): Promise<void> {
     // 非 TTY / dumb / CI / 能力缺失时 runChat 已降级 legacy，此处再以 stdout TTY 兜底。
     const caps = detectTerminalCapabilities(process.env, process.platform, Boolean(process.stdin.isTTY));
     const useAlternateScreen = caps.altScreen && caps.bracketedPaste && Boolean(process.stdout.isTTY);
+    // T2：SGR 鼠标 + 焦点事件桥。必须在 render() 之前挂接（prependListener 先于 ink 消费 stdin），
+    // 使鼠标序列不流入 ink 的键位解析；HARNESS2_MOUSE=0 可关闭上报（保留解析）。退出时还原上报模式。
+    const mouseEnabled = useAlternateScreen && process.env.HARNESS2_MOUSE !== '0';
+    const terminalEvents = attachTerminalEvents(process.stdin, process.stdout, { enabled: mouseEnabled });
     // T0 幂等退出：finish 只执行一次（ink unmount + runtime.finish），随后写 process.exitCode
     // 并放开等待；不再用 setInterval 轮询 stdin.destroyed（会遗留 timer）。
     const shutdown = createShutdown({
       finish: async () => {
         app?.unmount();
+        terminalEvents.dispose();
         await runtime.finish({
           destroyInput: () => process.stdin.destroy(),
         });
@@ -161,6 +167,7 @@ export async function runInkChat(options: ChatOptions = {}): Promise<void> {
         runtime={runtime}
         bootLines={bootLines}
         dialog={dialog}
+        terminalEvents={terminalEvents}
         onExit={(reason: ExitReason) => {
           shutdown.request(reason);
         }}
@@ -175,6 +182,15 @@ export async function runInkChat(options: ChatOptions = {}): Promise<void> {
 }
 
 const ASK_CANCELLED = '\u0000ask-cancelled';
+
+/**
+ * T3：Modal 外框固定占用行数（border 2 + paddingY 2 + 标题 1 + marginBottom 1 + 提示 1 + marginTop 1）。
+ * 各浮层内容行数由调用方按内容精确计算（避免 renderToString 测高对 viewport 类内容低估，
+ * 也避免 ink maxHeight 裁剪的逐行渲染缺陷），保证浮层高度与预留一致、不覆盖输入框。
+ */
+const MODAL_CHROME_ROWS = 8;
+/** 确认框：内容 = 问题 1 + 选择列表（margin 1 + 3 项） */
+const CONFIRM_OVERLAY_ROWS = MODAL_CHROME_ROWS + 1 + 1 + 3;
 
 /**
  * T4 任务面板数据注入缝：in-process CLI 路径尚无 task-coordinator 数据源接入 ChatRuntime
@@ -206,6 +222,7 @@ export function InkShell({
   dialog,
   onExit,
   onTranscriptChange,
+  terminalEvents,
 }: {
   runtime: ChatRuntime;
   bootLines: string[];
@@ -213,6 +230,8 @@ export function InkShell({
   onExit: (reason: ExitReason) => void;
   /** 可选观察缝：转录每次变化时回调（测试/诊断用；不影响渲染） */
   onTranscriptChange?: (state: TranscriptState) => void;
+  /** T2：stdin 鼠标/焦点事件桥（runInkChat 在 render 前挂接；测试可用伪 TTY stdin 构造） */
+  terminalEvents?: TerminalEventBridge;
 }): React.ReactElement {
   // T3：typed 转录（替代 string[] + Static）；会话切换时整体重投影
   const [transcript, setTranscript] = useState<TranscriptState>(() => initialTranscript(bootLines));
@@ -225,10 +244,17 @@ export function InkShell({
   const [follow, setFollow] = useState(true);
   const [scrollTop, setScrollTop] = useState(0);
   const [anchorId, setAnchorId] = useState<string | undefined>(undefined);
-  // T5/T6：单一浮层宿主。命令与审批都经 overlay 呈现；存在即互斥接管键盘。
+  // T5：单一浮层宿主。命令与审批都经 overlay 呈现；存在即互斥接管键盘。
   const [overlay, setOverlay] = useState<React.ReactNode>(null);
+  // T3：浮层占用行数（按内容确定性计算；预留一致 → 不覆盖输入框）
+  const [overlayRows, setOverlayRows] = useState(0);
   const closeOverlayRef = useRef<() => void>(() => undefined);
   const overlayOpen = overlay !== null;
+  /** 统一开浮层入口：记录内容与占用行数 */
+  function openOverlay(node: React.ReactNode, rows: number): void {
+    setOverlay(node);
+    setOverlayRows(rows);
+  }
   // T0：忙时 FIFO 排队（对齐 legacy-chat：忙碌中的输入不并发、当前 turn 收尾后立即执行下一条）
   const busyRef = useRef(false);
   const exitingRef = useRef(false);
@@ -251,6 +277,23 @@ export function InkShell({
   const rows = stdout.rows ?? 24;
   const cols = stdout.columns ?? 80;
   const SCROLL_PAGE = Math.max(1, Math.floor(rows / 2));
+
+  // T2：终端焦点状态（DECSET 1004；缺省视为聚焦——unfocused 策略下不响，保守处理）；
+  // 供 T4 回合结束提醒判断。
+  const [terminalFocused, setTerminalFocused] = useState(true);
+  const wheelHandlerRef = useRef<{ up: () => void; down: () => void }>({ up: () => undefined, down: () => undefined });
+  wheelHandlerRef.current = { up: scrollUp, down: scrollDown };
+  React.useEffect(() => {
+    if (terminalEvents === undefined) return;
+    return terminalEvents.subscribe((event) => {
+      if (event.type === 'wheel') {
+        if (event.up) wheelHandlerRef.current.up();
+        else wheelHandlerRef.current.down();
+      } else if (event.type === 'focus') {
+        setTerminalFocused(event.focused);
+      }
+    });
+  }, [terminalEvents]);
 
   // T4：有界 UI 调度器——批量合并 transcript 事件（coalesce + maxBatch），输入驱动的 flushNow 保即时，
   // turn 收尾/卸载时 final flush 且 dispose 清 timer（无残留 timer，满足 T0/T5 新鲜度）。
@@ -330,13 +373,16 @@ export function InkShell({
       req.resolve();
       dialog.clear();
       setOverlay(null);
+      setOverlayRows(0);
     };
-    setOverlay(
+    openOverlay(
       req.render(() => {
         req.resolve();
         dialog.clear();
         setOverlay(null);
+        setOverlayRows(0);
       }),
+      CONFIRM_OVERLAY_ROWS,
     );
   }, [dialog, reqTick]);
 
@@ -489,8 +535,8 @@ export function InkShell({
       value: a,
       label: MODE_ALIAS_LABEL[a],
     }));
-    setOverlay(
-      <Modal title="切换模式（/mode）" hint="↑↓ 选择 · Enter 应用 · Esc 取消" onClose={() => setOverlay(null)} isActive>
+    openOverlay(
+      <Modal title="切换模式（/mode）" hint="↑↓ 选择 · Enter 应用 · Esc 取消" onClose={() => { setOverlay(null); setOverlayRows(0); }} isActive>
         <SelectList
           options={options}
           selected={alias}
@@ -499,40 +545,49 @@ export function InkShell({
             runtime.setMode(MODE_ALIAS_TO_CORE[value as ModeAlias]);
             sendSystem(`已切换模式: ${value}（当前 ${runtime.mode()}）`);
             setOverlay(null);
+            setOverlayRows(0);
           }}
-          onCancel={() => setOverlay(null)}
+          onCancel={() => { setOverlay(null); setOverlayRows(0); }}
         />
       </Modal>,
+      MODAL_CHROME_ROWS + MODE_ALIAS_ORDER.length,
     );
   }
 
+  /**
+   * /help：帮助文本较长（约 24 行），浮层放不下也不适合截断；直接进转录（可滚动、与 legacy 打印行为一致），
+   * 同时避免挤占浮层预算（T3 位置规则只约束短弹层）。
+   */
   function openHelp(): void {
-    setOverlay(
-      <Modal title="帮助（/help）" hint="Esc 关闭" onClose={() => setOverlay(null)} isActive>
-        <Text>{HELP_TEXT}</Text>
-      </Modal>,
-    );
+    sendSystem(HELP_TEXT);
   }
 
   function openSessions(): void {
     const current = runtime.getCurrent();
     const sessions = runtime.sessionManager.list(runtime.root);
-    setOverlay(
-      <Modal title="会话（/sessions）" hint="↑↓ 浏览 · Enter 切换 · Esc 关闭" onClose={() => setOverlay(null)} isActive>
+    // 会话列表可能很长：按浮层预算截断显示（不把输入框挤出屏幕；其余可见于 /sessions <关键字> 搜索）
+    const budget = Math.max(0, rows - statusRows - panelRows - composerHeight - 3);
+    const maxOptions = Math.max(3, budget - MODAL_CHROME_ROWS - 2);
+    const shown = sessions.slice(0, maxOptions);
+    const hidden = sessions.length - shown.length;
+    openOverlay(
+      <Modal title="会话（/sessions）" hint="↑↓ 浏览 · Enter 切换 · Esc 关闭" onClose={() => { setOverlay(null); setOverlayRows(0); }} isActive>
         <SelectList
-          options={sessions.map((s) => ({ value: s.id, label: s.id }))}
+          options={shown.map((s) => ({ value: s.id, label: s.id }))}
           selected={current?.id ?? ''}
           isActive
           onSelect={(id: string) => {
             applySessionChange((print) => runtime.switchSession(id, { print }));
             setOverlay(null);
+            setOverlayRows(0);
           }}
-          onCancel={() => setOverlay(null)}
+          onCancel={() => { setOverlay(null); setOverlayRows(0); }}
         />
         <Box>
-          <Text color="gray">共 {sessions.length} 个会话</Text>
+          <Text color="gray">共 {sessions.length} 个会话{hidden > 0 ? `（列表截断，可用 /sessions <关键字> 搜索）` : ''}</Text>
         </Box>
       </Modal>,
+      MODAL_CHROME_ROWS + shown.length + 1 + (hidden > 0 ? 1 : 0),
     );
   }
 
@@ -558,16 +613,19 @@ export function InkShell({
       locateError = (e as Error)?.message ?? String(e);
     }
     const width = Math.min(Math.max(cols - 8, 36), 72);
-    const height = Math.max(4, rows - 10);
-    setOverlay(
+    // 子会话转录区高度受浮层预算约束（Modal 外框 MODAL_CHROME_ROWS 行），避免把输入框挤出屏幕
+    const budget = Math.max(0, rows - statusRows - panelRows - composerHeight - 3);
+    const height = Math.max(4, Math.min(rows - 10, budget - MODAL_CHROME_ROWS));
+    openOverlay(
       <Modal
         title={`子会话 ${childId}`}
         hint="只读 · Esc 关闭"
-        onClose={() => setOverlay(null)}
+        onClose={() => { setOverlay(null); setOverlayRows(0); }}
         isActive
       >
         <SubagentView sessionId={childId} dir={dir} locateError={locateError} width={width} height={height} />
       </Modal>,
+      MODAL_CHROME_ROWS + height,
     );
   }
 
@@ -773,13 +831,21 @@ export function InkShell({
 
   // T4：面板占用行需从 transcript 视口高度扣除，避免溢出。
   const showRetry = retryBudget !== undefined && retryBudgetHasActivity(retryBudget);
-  const queueRows = queueItems.length > 0 ? 2 + Math.min(queueItems.length - 1, 3) : 0;
-  const panelRows = queueRows + (showRetry ? 2 : 0);
+  // 结构化高度（实测）：StatusBar 单线边框=3；QueuePanel 圆边框=2+表头1+预览+隐藏行；RetryPanel=3；
+  // Composer 高度由组件上报（onHeightChange）；浮层行数由 openOverlay 按内容确定性记录（T3）。
+  const statusRows = 3;
+  const queueRows =
+    queueItems.length > 0 ? 3 + Math.min(queueItems.length - 1, 3) + (queueItems.length - 1 > 3 ? 1 : 0) : 0;
+  const retryRows = showRetry ? 3 : 0;
+  const panelRows = queueRows + retryRows;
+  // T2：Composer 恒定锚底（高度上报，替代 rows-8 魔数）
+  const [composerHeight, setComposerHeight] = useState(4);
+  // T3：浮层行数（openOverlay 记录；0 = 无浮层）——转录让出等量行，输入框不被顶起
+  const transcriptHeight = Math.max(3, rows - statusRows - panelRows - composerHeight - overlayRows);
 
   return (
     <Box flexDirection="column" flexGrow={1}>
       <StatusBar runtime={runtime} />
-      {overlayOpen ? <OverlayHost>{overlay}</OverlayHost> : null}
       <Transcript
         items={transcript.items}
         liveText={live.text}
@@ -790,7 +856,7 @@ export function InkShell({
         follow={follow}
         scrollTop={scrollTop}
         {...(anchorId !== undefined ? { anchorId } : {})}
-        height={Math.max(3, rows - 8 - panelRows)}
+        height={transcriptHeight}
         width={cols}
         onViewportChange={onViewportChange}
       />
@@ -798,6 +864,8 @@ export function InkShell({
       <QueuePanel items={queueItems} active={!overlayOpen} onCancel={(id) => cancelQueued(id)} />
       <RetryPanel budget={showRetry ? retryBudget : undefined} active={!overlayOpen} onStop={abortCurrentTurn} />
       <TaskPanel tasks={EMPTY_TASKS} />
+      {/* T3：浮层渲染在输入框上方（转录让出等量行，输入框不被顶起） */}
+      {overlayOpen ? <OverlayHost height={overlayRows}>{overlay}</OverlayHost> : null}
       <Composer
         busy={busy}
         active={!overlayOpen}
@@ -809,6 +877,7 @@ export function InkShell({
           return out.state === 'submitted' ? `${out.message}（草稿保留）` : out.message;
         }}
         queuedCount={queueItems.length}
+        onHeightChange={setComposerHeight}
       />
     </Box>
   );

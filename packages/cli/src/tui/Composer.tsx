@@ -59,6 +59,11 @@ export interface ComposerProps {
   onSteer?: (text: string) => string;
   /** 上层 FIFO 队列长度（>0 时页脚提示） */
   queuedCount?: number;
+  /**
+   * T2：结构化高度上报（边框+忙提示+草稿行+页脚+候选区），供上层扣减转录视口高度，
+   * 使 Composer 恒定锚在屏幕最低行（替代 rows-8 魔数）。
+   */
+  onHeightChange?: (height: number) => void;
 }
 
 interface Cell {
@@ -114,6 +119,7 @@ export function Composer({
   onAbort,
   onSteer,
   queuedCount = 0,
+  onHeightChange,
 }: ComposerProps): React.ReactElement {
   const [draft, setDraft] = React.useState<InputState>(() => createInputState(''));
   const [candidateIndex, setCandidateIndex] = React.useState(0);
@@ -158,6 +164,18 @@ export function Composer({
   const candidates = commandNameActive ? matchCommands(draft.value) : [];
   // 防越界：候选变化后 clamp 高亮索引
   const safeCandidateIndex = candidates.length === 0 ? 0 : Math.min(candidateIndex, candidates.length - 1);
+
+  // T2：结构化高度（边框 2 + 忙提示 1 + 瞬时提示 1 + 草稿行 + 页脚 1 + 候选区(candidates+2)）
+  const height =
+    2 +
+    (busy ? 1 : 0) +
+    (hint !== null ? 1 : 0) +
+    layout.rows.length +
+    1 +
+    (candidates.length > 0 ? candidates.length + 2 : 0);
+  React.useEffect(() => {
+    onHeightChange?.(height);
+  }, [height, onHeightChange]);
 
   useInput(
     (ch, key) => {
@@ -347,6 +365,20 @@ export function Composer({
 
   return (
     <Box flexDirection="column" borderStyle="round" flexShrink={0}>
+      {/* T5：斜杠候选渲染在输入行上方（输入框锚底后候选应在其上方） */}
+      {candidates.length > 0 && (
+        <Box flexDirection="column">
+          {candidates.map((c, i) => (
+            <Box key={c} minWidth={1}>
+              <Text color={i === safeCandidateIndex ? 'cyan' : undefined}>
+                {i === safeCandidateIndex ? '› ' : '  '}
+                {c}
+              </Text>
+            </Box>
+          ))}
+          <Text color="gray">↑↓ 切换 · Tab 补全 · Enter 发送当前内容</Text>
+        </Box>
+      )}
       {busy && (
         <Text color="gray">
           Esc 停止当前 turn · Enter 排队 · Ctrl+S steer（草稿保留）
@@ -359,19 +391,6 @@ export function Composer({
         <Box flexDirection="column">{rows.map((rowText, i) => renderRow(rowText, i))}</Box>
       </Box>
       <Text color="gray">Enter 发送 · Shift+Enter 换行（终端不支持时行尾 \ 回车）</Text>
-      {candidates.length > 0 && (
-        <Box flexDirection="column" marginTop={1}>
-          {candidates.map((c, i) => (
-            <Box key={c} minWidth={1}>
-              <Text color={i === safeCandidateIndex ? 'cyan' : undefined}>
-                {i === safeCandidateIndex ? '› ' : '  '}
-                {c}
-              </Text>
-            </Box>
-          ))}
-          <Text color="gray">↑↓ 切换 · Tab 补全 · Enter 发送当前内容</Text>
-        </Box>
-      )}
     </Box>
   );
 }
