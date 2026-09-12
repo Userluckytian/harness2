@@ -125,7 +125,10 @@ describe('T5 ink /undo /redo：rewind 后重投影', () => {
       t.write('/help');
       await t.flush();
       t.write('\r');
-      await t.flush();
+      // 计时抖动加固：单次 flush 在满负载机器上可能抢不到 /help 浮层落帧的那一拍
+      // （本机 pnpm -r test 满载实测偶发假红，隔离复跑 3/3 绿、同 sha 的 CI 亦绿），
+      // 改屏障式等待真正渲染到位再做同源断言。
+      await waitFor(() => t.output().includes('/undo') && t.output().includes('/redo'), t.flush, 15000);
       expect(t.output()).toContain('/undo');
       expect(t.output()).toContain('/redo');
     } finally {
