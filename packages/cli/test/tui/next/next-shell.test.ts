@@ -15,6 +15,7 @@ import {
   type ApprovalGate,
   type NextChatHarness,
 } from '../../../src/tui/next/next-shell.js';
+import { FG } from '../../../src/tui/next/projection.js';
 
 const ASK_CANCELLED = '\u0000ask-cancelled';
 
@@ -326,34 +327,217 @@ describe('转录流式投影到 scrollback', () => {
   });
 });
 
-// —— 折叠（Ctrl+O）——
-describe('Ctrl+O 折叠切换', () => {
-  it('展开最近工具卡（write 的 diff 块出现，行数增加）', async () => {
+// —— 折叠键族（P3-A：Tab 滚动区焦点 + e/E/h/l；旧 Ctrl+O 折叠语义迁移至此）——
+const TAB = '\t';
+
+/** 产出 write 工具（可展开 diff）的 runtime */
+function foldRuntime(): ChatRuntime {
+  return makeRuntime({
+    runUserTurn: async (_text, onStream) => {
+      onStream({
+        type: 'tool-call',
+        call: {
+          id: 'cf',
+          name: 'write',
+          arguments: JSON.stringify({ file_path: 'a.txt', content: 'one\ntwo' }),
+        },
+        turnId: 't1',
+      });
+      onStream({ type: 'tool-result', callId: 'cf', ok: true, turnId: 't1' });
+      return result('done');
+    },
+  });
+}
+
+async function submitFoldTurn(h: NextChatHarness): Promise<void> {
+  h.submit('写');
+  await settle(h);
+}
+
+describe('Tab 滚动区焦点（双态，keymap 裁决采纳）', () => {
+  it('Tab 切换焦点：指示器出现/消失', () => {
+    const { h } = makeHarness();
+    expect((h.state.indicators ?? []).join(' ')).not.toContain('scrollback');
+    h.feed(TAB);
+    expect((h.state.indicators ?? []).join(' ')).toContain('scrollback');
+    h.feed(TAB);
+    expect((h.state.indicators ?? []).join(' ')).not.toContain('scrollback');
+    h.dispose();
+  });
+});
+
+describe('折叠键族（e/E/h/l，仅滚动区焦点下生效）', () => {
+  it('e = 展开全部块：write diff 与推理块都展开', async () => {
     const { h } = makeHarness(
       makeRuntime({
         runUserTurn: async (_text, onStream) => {
+          onStream({ type: 'reasoning-delta', text: '想一步\n想二步', turnId: 't1' });
+          await vi.advanceTimersByTimeAsync(60); // live flush 落 assistant/step（含 reasoning）
           onStream({
             type: 'tool-call',
             call: {
-              id: 'c3',
+              id: 'cf',
               name: 'write',
               arguments: JSON.stringify({ file_path: 'a.txt', content: 'one\ntwo' }),
             },
             turnId: 't1',
           });
-          onStream({ type: 'tool-result', callId: 'c3', ok: true, turnId: 't1' });
+          onStream({ type: 'tool-result', callId: 'cf', ok: true, turnId: 't1' });
           return result('done');
         },
       }),
     );
-    h.submit('写');
-    await settle(h);
-    const before = linesOf(h).length;
-    h.feed(CTRL_O);
-    const after = linesOf(h).length;
-    expect(after).toBeGreaterThan(before);
+    await submitFoldTurn(h);
+    const baseline = linesOf(h).join('\n');
+    expect(baseline).toContain('▸ 思考…'); // 推理默认折叠
+    expect(baseline).not.toContain('+ one'); // diff 默认折叠
+    h.feed(TAB);
+    h.feed('e');
+    const expanded = linesOf(h).join('\n');
+    expect(expanded).toContain('+ one'); // diff 展开
+    expect(expanded).toContain('│ 想一步'); // 推理展开
+    h.dispose();
+  });
+
+  it('E = 折叠全部块：展开态回到默认折叠（行数回落基线）', async () => {
+    const { h } = makeHarness(foldRuntime());
+    await submitFoldTurn(h);
+    const baseline = linesOf(h).length;
+    h.feed(TAB);
+    h.feed('e');
+    expect(linesOf(h).length).toBeGreaterThan(baseline);
+    h.feed('E');
+    expect(linesOf(h).length).toBe(baseline);
+    expect(linesOf(h).join('\n')).not.toContain('+ one');
+    h.dispose();
+  });
+
+  it('l = 展开最近一次工具/推理块（对齐旧 Ctrl+O 的定位策略）', async () => {
+    const { h } = makeHarness(foldRuntime());
+    await submitFoldTurn(h);
+    expect(linesOf(h).join('\n')).not.toContain('+ one');
+    h.feed(TAB);
+    h.feed('l');
     expect(linesOf(h).join('\n')).toContain('+ one');
     h.dispose();
+  });
+
+  it('h = 折叠最近块：l 展开后一键收回', async () => {
+    const { h } = makeHarness(foldRuntime());
+    await submitFoldTurn(h);
+    h.feed(TAB);
+    h.feed('l');
+    expect(linesOf(h).join('\n')).toContain('+ one');
+    h.feed('h');
+    expect(linesOf(h).join('\n')).not.toContain('+ one');
+    h.dispose();
+  });
+
+  it('非滚动区焦点：e/h/l 照常进草稿不触发折叠；焦点下其余字母自动回到输入框', async () => {
+    const { h } = makeHarness(foldRuntime());
+    await submitFoldTurn(h);
+    h.feed('he'); // 非焦点：逐字母插入草稿，不触发折叠
+    expect(h.state.draft).toBe('he');
+    expect(linesOf(h).join('\n')).not.toContain('+ one');
+    h.feed(ESC);
+    await vi.advanceTimersByTimeAsync(120); // 孤立 ESC 空闲超时（≥50ms，跨 idle 周期相位）→ Esc 清草稿
+    expect(h.state.draft).toBe('');
+    h.feed(TAB); // 进入滚动区焦点
+    h.feed('x'); // 其余字母键：自动回到输入框（grok simple 语义）并照常插入
+    expect(h.state.draft).toBe('x');
+    expect((h.state.indicators ?? []).join(' ')).not.toContain('scrollback'); // 焦点已回
+    h.dispose();
+  });
+});
+
+// —— Ctrl+O always-approve（keymap 裁决迁移；UI 开关经 gate resolve 代答 'a'，红线 6）——
+describe('Ctrl+O always-approve 切换', () => {
+  it('开启：指示器出现；其后审批自动代答 a（gate resolve 路径，overlay 不残留）', async () => {
+    const { h, gate } = makeHarness();
+    h.feed(CTRL_O);
+    expect((h.state.indicators ?? []).join(' ')).toContain('always-approve');
+    const answer = await gate.ask('允许执行 write?');
+    expect(answer).toBe('a');
+    expect(h.pendingApproval()).toBeNull();
+    expect(h.state.overlays.length).toBe(0);
+    h.feed(CTRL_O); // 再按关闭
+    expect((h.state.indicators ?? []).join(' ')).not.toContain('always-approve');
+    h.dispose();
+  });
+
+  it('关闭（缺省）：审批正常等待，手动回答生效', async () => {
+    const { h, gate } = makeHarness();
+    let answer: string | null = null;
+    const p = gate.ask('允许执行 write?').then((a) => {
+      answer = a;
+    });
+    expect(h.pendingApproval()).toBe('允许执行 write?'); // 挂起等待（未自动代答）
+    expect(answer).toBeNull();
+    h.approve('y');
+    await p;
+    expect(answer).toBe('y');
+    h.dispose();
+  });
+
+  it('挂起审批时切换：当次不自动代答、overlay 保留；下一次审批才自动 a', async () => {
+    const { h, gate } = makeHarness();
+    let first: string | null = null;
+    const p1 = gate.ask('第一次?').then((a) => {
+      first = a;
+    });
+    expect(h.pendingApproval()).toBe('第一次?');
+    h.feed(CTRL_O); // 审批卡接管键盘：Ctrl+O 切换开关（grok 卡片键位）
+    expect((h.state.indicators ?? []).join(' ')).toContain('always-approve');
+    expect(h.pendingApproval()).toBe('第一次?'); // 当次不受影响
+    expect(first).toBeNull(); // 未被自动代答
+    expect(h.state.overlays.length).toBe(1); // overlay 保留等待手动回答
+    h.approve('y');
+    await p1;
+    expect(first).toBe('y');
+    const second = await gate.ask('第二次?'); // 开关已开 → 新审批自动代答
+    expect(second).toBe('a');
+    h.dispose();
+  });
+
+  it('Ctrl+O 不再折叠工具卡（旧语义已迁移到 e/E/h/l）', async () => {
+    const { h } = makeHarness(foldRuntime());
+    await submitFoldTurn(h);
+    const before = linesOf(h).length;
+    h.feed(CTRL_O);
+    expect(linesOf(h).length).toBe(before); // 行数不变（不再展开 diff）
+    h.dispose();
+  });
+});
+
+// —— 投影 fg → scrollback 物理 fg（P3-A 配色落地集成）——
+describe('投影 fg 落进 scrollback 物理行', () => {
+  it('ok 工具调用行绿色', async () => {
+    const { h } = makeHarness(foldRuntime());
+    await submitFoldTurn(h);
+    const win = h.state.scrollback.visibleWindow(24);
+    const call = win.rows.find((r) => r.text.startsWith('⏺ write('));
+    expect(call?.fg).toBe(FG.green);
+  });
+
+  it('失败工具调用行红色', async () => {
+    const { h } = makeHarness(
+      makeRuntime({
+        runUserTurn: async (_text, onStream) => {
+          onStream({
+            type: 'tool-call',
+            call: { id: 'cx', name: 'bash', arguments: '{"command":"nope"}' },
+            turnId: 't1',
+          });
+          onStream({ type: 'tool-result', callId: 'cx', ok: false, error: '命令不存在', turnId: 't1' });
+          return result('', { stopReason: 'error', textOutcome: 'empty', finalText: undefined });
+        },
+      }),
+    );
+    h.submit('跑');
+    await settle(h);
+    const win = h.state.scrollback.visibleWindow(24);
+    const row = win.rows.find((r) => r.text.startsWith('⏺ bash('));
+    expect(row?.fg).toBe(FG.red);
   });
 });
 

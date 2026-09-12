@@ -37,9 +37,21 @@
 //   2. 队列面板（Ctrl+X 取消排队条目）与 RetryPanel（重试预算展示）未接。
 //   3. 工具卡 output/子会话入口的磁盘补齐（enrichSubagentResults）未接：live 流不带 output，
 //      工具结果行只有状态无输出摘要；子会话只读浮层（Ctrl+J/K）未接。
-//   4. scrollback 绘制为单一前景色（drawScrollback 仅支持单 fg），projection 的逐行配色
-//      （用户/工具/错误行着色）不落地；工具/推理卡为纯文本行近似（无边框/反色）。
+//   4. 工具卡/推理块仍为纯文本行近似（无边框/反色）；逐行前景色已落地（P3-A：
+//      projection fg → Scrollback 行对象 fg → drawScrollback 逐行绘制，单 fg 兜底保留）。
 //   5. 软折行视觉行内 ↑↓ 移动（Infinity 宽度逻辑行移动）、候选补全（matchCommands）未接。
+//
+// P3-A 键位（2026-09-12 keymap-parity 裁决落地，next 层）：
+//   - Tab = 输入框/滚动区双态焦点（候选可见时 Tab 仍是接受候选，dispatcher 候选优先）；
+//     滚动区焦点下 h/l/e/E 生效（块折叠键族），其余字母键自动回到输入框照常插入
+//     （grok simple 模式语义）；指示器显示 'scrollback'。
+//   - e = 展开全部块 / E = 折叠全部块（collapsed 覆盖集全量重置：e = 收录全部可折叠
+//     item 下标，E = 清空集）；h/l = 折叠/展开最近一次工具/推理 item（next 无块光标，
+//     取最近可折叠 item，对齐旧 Ctrl+O 定位策略；grok 是选中块导航，差异登记 keymap 文档）。
+//   - Ctrl+O = always-approve 切换（grok YOLO）：UI 开关自动代答 'a'——新审批 ask 时经
+//     gate.choose('a') 走 gate 的 resolve 路径，**不绕过 core 审批队列**（红线 6）；开关
+//     开启瞬间已挂起的审批不自动代答（当次仍手动回答）；底边指示器显示 'always-approve'。
+//     旧 Ctrl+O 折叠语义由 e/E/h/l 接管。
 import type { ChatOptions } from '../../legacy-chat.js';
 import {
   ASK_CANCELLED,
@@ -70,7 +82,7 @@ import type { WriteTarget } from '../renderer/diff-presenter.js';
 import { ALT_SCREEN_EXIT, MOUSE_OFF, SHOW_CURSOR } from '../renderer/ansi.js';
 import { Screen } from '../renderer/screen.js';
 import { renderChat, resizeChat, type ChatScreenState } from './chat-screen.js';
-import { projectTranscript, toggleCollapse, type ProjectionLine } from './projection.js';
+import { projectTranscript, type ProjectionLine } from './projection.js';
 import { Scrollback } from './scrollback.js';
 import {
   attachInput,
@@ -375,6 +387,8 @@ export function createNextChatHarness(runtime: ChatRuntime, deps: NextChatHarnes
   let focused = true; // DECSET 1004 焦点（缺省聚焦；unfocused 策略下不响，保守处理）
   const queue: string[] = [];
   let collapsed = new Set<number>(); // 折叠覆盖标记集（itemIndex 取反默认折叠态）
+  let alwaysApprove = false; // Ctrl+O always-approve 开关（UI 层代答，见文件头红线 6 说明）
+  let scrollbackFocus = false; // Tab 双态焦点：false = 输入框（默认），true = 滚动区（折叠键族生效）
 
   const contentCols = (): number => Math.max(1, screen.cols - 1);
 
@@ -388,10 +402,8 @@ export function createNextChatHarness(runtime: ChatRuntime, deps: NextChatHarnes
 
   function rebuildScrollback(lines: readonly ProjectionLine[]): void {
     const old = state.scrollback;
-    const sb = new Scrollback(
-      lines.map((l) => l.text),
-      contentCols(),
-    );
+    // 行对象直传（text + fg）：projection 的逐行配色随行进入 scrollback（P3-A 配色落地）
+    const sb = new Scrollback(lines, contentCols());
     if (!old.follow) {
       // anchor 模式尽力保留视口：绝对 scrollTop 平移（新 maxScroll 钳制；取舍：重建即丢
       // wrap 缓存，anchor 语义以物理行数近似保持）
@@ -416,7 +428,7 @@ export function createNextChatHarness(runtime: ChatRuntime, deps: NextChatHarnes
     if (appendable && items.length === syncedItems.length && lines.length === syncedLineCount) return; // 无变化
     if (appendable) {
       const added = lines.slice(syncedLineCount);
-      if (added.length > 0) state.scrollback.appendLines(added.map((l) => l.text));
+      if (added.length > 0) state.scrollback.appendLines(added); // ProjectionLine 直传（text + fg）
     } else {
       rebuildScrollback(lines);
     }
@@ -439,7 +451,12 @@ export function createNextChatHarness(runtime: ChatRuntime, deps: NextChatHarnes
     if (busy) parts.push('⏺ 运行中…');
     if (queue.length > 0) parts.push(`已排队 ${queue.length}`);
     state.statusline = parts.join(' · ');
-    state.indicators = hint !== null ? [hint] : [];
+    // 底边指示：always-approve（Ctrl+O 开关）/ scrollback（Tab 焦点）常驻，hint 瞬时叠加
+    const ind: string[] = [];
+    if (alwaysApprove) ind.push('always-approve');
+    if (scrollbackFocus) ind.push('scrollback');
+    if (hint !== null) ind.push(hint);
+    state.indicators = ind;
   }
 
   function invalidate(): void {
@@ -524,9 +541,20 @@ export function createNextChatHarness(runtime: ChatRuntime, deps: NextChatHarnes
     gate.choose(answer as 'y' | 'a' | 'n');
   }
 
+  // —— Ctrl+O always-approve（UI 开关；开关态只影响**新**审批的代答，见文件头红线 6）——
+  function toggleAlwaysApprove(): void {
+    alwaysApprove = !alwaysApprove;
+    invalidate();
+  }
+
   const gate = deps.gate;
   gate.bind?.({
-    onOpen: (query) => openApproval(query),
+    onOpen: (query) => {
+      openApproval(query);
+      // always-approve 开启时自动代答 'a'：经 gate.choose 走 resolve 路径（红线 6：
+      // 不绕过 core 审批队列）；切换瞬间已挂起的审批不在此路径（onOpen 只对新 ask 触发）
+      if (alwaysApprove) gate.choose('a');
+    },
     onSettled: () => closeApproval(),
   });
 
@@ -696,17 +724,45 @@ export function createNextChatHarness(runtime: ChatRuntime, deps: NextChatHarnes
     );
   }
 
-  // —— 折叠（Ctrl+O：展开/收起最近一张工具卡，对齐 InkShell.toggleLastTool）——
-  function toggleLastTool(): void {
-    let last = -1;
+  // —— 折叠键族（P3-A，keymap 裁决：旧 Ctrl+O 折叠语义迁移至 e/E/h/l）——
+  // collapsed 覆盖集语义（见 projection.ts）：在集 = 与该 item 默认折叠态取反；
+  // 工具/推理 item 的默认态都是折叠 → 全量展开 = 收录全部可折叠下标，全量折叠 = 清空集。
+  function isCollapsibleItem(item: TranscriptItem | undefined): boolean {
+    return item !== undefined && (item.kind === 'tool' || (item.kind === 'assistant' && item.reasoning !== undefined));
+  }
+
+  /** 最近一次工具/推理 item 下标（next 无块光标，h/l 取最近可折叠 item，对齐旧 Ctrl+O 定位） */
+  function lastCollapsibleIndex(): number {
     for (let i = transcript.items.length - 1; i >= 0; i -= 1) {
-      if (transcript.items[i]?.kind === 'tool') {
-        last = i;
-        break;
-      }
+      if (isCollapsibleItem(transcript.items[i])) return i;
     }
-    if (last < 0) return;
-    collapsed = toggleCollapse(last, collapsed);
+    return -1;
+  }
+
+  /** e：展开全部块（覆盖集 = 全部可折叠 item 下标 + 全量重投影） */
+  function expandAllBlocks(): void {
+    const next = new Set<number>();
+    transcript.items.forEach((item, i) => {
+      if (isCollapsibleItem(item)) next.add(i);
+    });
+    collapsed = next;
+    reprojectAll();
+  }
+
+  /** E：折叠全部块（覆盖集清空 = 纯默认态，全量重投影） */
+  function collapseAllBlocks(): void {
+    collapsed = new Set<number>();
+    reprojectAll();
+  }
+
+  /** h/l：折叠（false）/ 展开（true）最近一次工具/推理块 */
+  function setNearestBlockExpanded(expand: boolean): void {
+    const idx = lastCollapsibleIndex();
+    if (idx < 0) return;
+    const next = new Set(collapsed);
+    if (expand) next.add(idx);
+    else next.delete(idx);
+    collapsed = next;
     reprojectAll();
   }
 
@@ -749,6 +805,11 @@ export function createNextChatHarness(runtime: ChatRuntime, deps: NextChatHarnes
         gate.cancel();
         return true;
       }
+      // Ctrl+O 在审批卡上切换 always-approve（grok 卡片键位）：只动开关，**不代答当次**
+      if (ev.modifiers.ctrl && ev.key === 'o') {
+        toggleAlwaysApprove();
+        return true;
+      }
       return false;
     },
   };
@@ -772,9 +833,49 @@ export function createNextChatHarness(runtime: ChatRuntime, deps: NextChatHarnes
         state.cursor = 0;
         return 'consumed';
       }
+      // Ctrl+O = always-approve 切换（keymap 裁决；旧折叠语义迁移 e/E/h/l，见文件头）
       if (ev.modifiers.ctrl && ev.key === 'o') {
-        toggleLastTool();
+        toggleAlwaysApprove();
         return 'consumed';
+      }
+      // Tab = 输入框/滚动区双态焦点（keymap 裁决采纳）。候选可见时不在本层切换：
+      // 条件短路返回 'ignored'，Tab 落到 controller 内置裁决 = 接受候选（优先级保持）
+      if (
+        ev.key === 'tab' &&
+        !ev.modifiers.ctrl &&
+        !ev.modifiers.alt &&
+        !ev.modifiers.shift &&
+        state.candidates === null
+      ) {
+        scrollbackFocus = !scrollbackFocus;
+        invalidate();
+        return 'consumed';
+      }
+      // 滚动区焦点下的块折叠键族（仅无 Ctrl/Alt 修饰；grok 为选中块导航，此处 h/l 取
+      // 最近工具/推理 item，差异已登记 keymap 文档）
+      if (scrollbackFocus && !ev.modifiers.ctrl && !ev.modifiers.alt) {
+        if (ev.key === 'e') {
+          expandAllBlocks();
+          return 'consumed';
+        }
+        if (ev.key === 'E') {
+          collapseAllBlocks();
+          return 'consumed';
+        }
+        if (ev.key === 'h') {
+          setNearestBlockExpanded(false);
+          return 'consumed';
+        }
+        if (ev.key === 'l') {
+          setNearestBlockExpanded(true);
+          return 'consumed';
+        }
+        if (ev.text !== undefined && ev.text.length > 0) {
+          // 其余字母键自动回到输入框（grok simple 模式语义），字符照常走内置插入
+          scrollbackFocus = false;
+          invalidate();
+          return 'ignored';
+        }
       }
       return 'ignored';
     },

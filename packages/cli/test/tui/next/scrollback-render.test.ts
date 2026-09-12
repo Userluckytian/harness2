@@ -7,6 +7,7 @@
 import { performance } from 'node:perf_hooks';
 import { describe, expect, it } from 'vitest';
 import { renderScrollback, Scrollback } from '../../../src/tui/next/scrollback.js';
+import { FG } from '../../../src/tui/next/projection.js';
 import { Screen } from '../../../src/tui/renderer/screen.js';
 import { generateLines } from './helpers/generate-transcript.js';
 
@@ -210,6 +211,59 @@ describe('renderScrollback 组合渲染', () => {
     expect(out.text).toContain('\x1b[1;1H'); // CUP 0,0
     expect(out.text).toContain('alpha');
     expect(out.text).toContain('beta');
+  });
+});
+
+describe('drawScrollback 逐行前景色（P3-A 配色落地）', () => {
+  function makeScreen(): { screen: Screen; out: MemOut } {
+    const out = new MemOut();
+    const screen = new Screen(out, 80, 24);
+    screen.start();
+    out.clear();
+    return { screen, out };
+  }
+
+  it('行 fg 渲染进 cell buffer：绿色行各字符格 fg = FG.green', () => {
+    const { screen } = makeScreen();
+    const sb = new Scrollback([{ text: 'green text', fg: FG.green }], 79);
+    renderScrollback(screen, sb);
+    const buf = screen.buffer;
+    expect(buf.chars[0]).toBe('g');
+    expect(buf.fg[0]).toBe(FG.green);
+    expect(buf.fg[5]).toBe(FG.green); // 行中字符格
+  });
+
+  it('无 fg 行回退 opts.fg（缺省 0 = 终端默认色）', () => {
+    const { screen } = makeScreen();
+    const sb = new Scrollback(['plain'], 79);
+    renderScrollback(screen, sb);
+    expect(screen.buffer.fg[0]).toBe(0);
+    const sb2 = new Scrollback(['plain'], 79);
+    renderScrollback(screen, sb2, { fg: FG.gray });
+    expect(screen.buffer.fg[0]).toBe(FG.gray);
+  });
+
+  it('混排：相邻行各自生效（红行 fg 与缺省行 fg 互不串色）', () => {
+    const { screen } = makeScreen();
+    const sb = new Scrollback([{ text: 'bad', fg: FG.red }, 'ok-default'], 79);
+    renderScrollback(screen, sb);
+    const buf = screen.buffer;
+    expect(buf.chars[0]).toBe('b');
+    expect(buf.fg[0]).toBe(FG.red);
+    expect(buf.fg[2]).toBe(FG.red);
+    expect(buf.chars[80]).toBe('o'); // 第二行
+    expect(buf.fg[80]).toBe(0);
+  });
+
+  it('CJK 宽字符行：续列格 fg 同为行 fg（不出现半截变色）', () => {
+    const { screen } = makeScreen();
+    const sb = new Scrollback([{ text: '中文', fg: FG.yellow }], 79);
+    renderScrollback(screen, sb);
+    const buf = screen.buffer;
+    expect(buf.chars[0]).toBe('中');
+    expect(buf.fg[0]).toBe(FG.yellow);
+    expect(buf.fg[1]).toBe(FG.yellow); // 续列格
+    expect(buf.fg[2]).toBe(FG.yellow); // 第二个宽字符
   });
 });
 

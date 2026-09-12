@@ -301,6 +301,44 @@ describe('Scrollback 前缀和与 cols 变化', () => {
   });
 });
 
+describe('Scrollback 行级前景色（P3-A 配色落地）', () => {
+  it('构造函数接受行对象：visibleWindow 物理行携带 fg；字符串行 fg 缺省', () => {
+    const sb = new Scrollback([{ text: 'green-line', fg: 0x3fb950 }, 'plain'], 80);
+    const win = sb.visibleWindow(10);
+    expect(win.rows[0]?.text).toBe('green-line');
+    expect(win.rows[0]?.fg).toBe(0x3fb950);
+    expect(win.rows[1]?.text).toBe('plain');
+    expect(win.rows[1]?.fg).toBeUndefined();
+  });
+
+  it('append 行对象/字符串：fg 随行存储，字符串行保持缺省', () => {
+    const sb = new Scrollback([], 80);
+    sb.append({ text: 'red', fg: 0xf85149 });
+    sb.append('default');
+    const win = sb.visibleWindow(10);
+    expect(win.rows[0]?.fg).toBe(0xf85149);
+    expect(win.rows[1]?.fg).toBeUndefined();
+  });
+
+  it('appendLines 行对象批量：逐行 fg 保留（字符串行缺省）', () => {
+    const sb = new Scrollback([], 80);
+    sb.appendLines([{ text: 'a', fg: 0x8b949e }, 'b', { text: 'c', fg: 0xd29922 }]);
+    const win = sb.visibleWindow(10);
+    expect(win.rows.slice(0, 3).map((r) => r.fg)).toEqual([0x8b949e, undefined, 0xd29922]);
+  });
+
+  it('物理断行分段继承逻辑行 fg（wrap 多段同色）', () => {
+    const sb = new Scrollback([{ text: 'x'.repeat(200), fg: 0xd29922 }], 80);
+    const win = sb.visibleWindow(10);
+    const segs = win.rows.slice(0, 3);
+    expect(segs).toHaveLength(3);
+    for (const r of segs) {
+      expect(r.text?.length).toBeGreaterThan(0);
+      expect(r.fg).toBe(0xd29922);
+    }
+  });
+});
+
 describe('scrollbarInfo 滚动条几何', () => {
   it('内容不足一屏：不可见（visible=false）', () => {
     const info = scrollbarInfo(10, 24, 0);

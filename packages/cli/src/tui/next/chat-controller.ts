@@ -60,8 +60,9 @@ export interface ChatControllerOptions {
   /** Ctrl+C 回调：本层每次按键都上报，双击退出窗口由装配层实现 */
   onInterrupt?: () => void;
   /**
-   * P3 扩展位：先于内置裁决调用的额外键处理（grok 特有键：模式循环 Ctrl+O、
-   * 任务面板改绑等）。返回 'consumed' 短路内置处理，'ignored' 继续内置裁决。
+   * P3 扩展位：先于内置裁决调用的额外键处理（grok 特有键：always-approve 切换 Ctrl+O、
+   * Tab 焦点切换、块折叠键族等，见 next-shell.ts 装配）。返回 'consumed' 短路内置处理，
+   * 'ignored' 继续内置裁决。
    */
   extraKeyHandler?: (ev: KeyEvent) => 'consumed' | 'ignored';
 }
