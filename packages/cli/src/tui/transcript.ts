@@ -9,7 +9,7 @@
 //   assistant/attempt 有正文 → partial（渲染须标「未完成 / 已中断」+ stopReason/error）
 //   失败且无正文 → empty（只渲染 stopReason/error 与已执行工具行，禁止空白气泡）
 //   finalText 与 partialText 互斥，textOutcome 是唯一判别。
-import { computeProjection, loadSession, type AnySessionEvent } from '@harness2/core';
+import { computeProjection, loadSession, SUBAGENT_TOOL_NAMES, type AnySessionEvent } from '@harness2/core';
 import { summarizeArgs } from '../render.js';
 import { displayWidth } from './input.js';
 
@@ -29,6 +29,8 @@ export type TranscriptItem =
       status: 'pending' | 'ok' | 'failed';
       output?: string;
       error?: string;
+      /** T1：subagent_start/subagent_continue 的结果 JSON 中可解析出的子会话 id（解析不到就不存在） */
+      childSessionId?: string;
     }
   | { kind: 'system'; id: string; text: string }
   | { kind: 'status'; id: string; text: string };
@@ -137,6 +139,29 @@ function put(state: TranscriptState, item: TranscriptItem): TranscriptState {
   return stateWith(items);
 }
 
+/** subagent 工具名判定（与 core SUBAGENT_TOOL_NAMES 同源，避免 CLI 侧硬编码漂移） */
+export function isSubagentTool(tool: string | undefined): boolean {
+  return tool !== undefined && SUBAGENT_TOOL_NAMES.includes(tool as never);
+}
+
+/**
+ * T1：从 subagent 工具结果 output（JSON）解析子会话 id。
+ * 只认 subagent 工具 + 可解析且非空的字符串；其余（错误文案/其他工具）一律 undefined，绝不伪造。
+ */
+export function childSessionIdFromToolResult(tool: string | undefined, output: string | undefined): string | undefined {
+  if (!isSubagentTool(tool) || output === undefined || output.trim().length === 0) return undefined;
+  try {
+    const parsed: unknown = JSON.parse(output);
+    if (typeof parsed === 'object' && parsed !== null) {
+      const id = (parsed as Record<string, unknown>).childSessionId;
+      if (typeof id === 'string' && id.trim().length > 0) return id;
+    }
+  } catch {
+    // 非 JSON 输出（真实 error 文案等）→ 不显示入口
+  }
+  return undefined;
+}
+
 function toolArgsString(args: string | undefined): string | undefined {
   return args === undefined || args.length === 0 ? undefined : args;
 }
@@ -219,12 +244,16 @@ export function transcriptReducer(state: TranscriptState, event: TranscriptEvent
               summary: event.error ?? '',
               status: 'pending',
             };
+      const tool = event.tool ?? base.tool;
+      const output = event.output;
+      const childSessionId = childSessionIdFromToolResult(tool, output);
       return put(state, {
         ...base,
-        tool: event.tool ?? base.tool,
+        tool,
         status: event.ok ? 'ok' : 'failed',
-        ...(event.output !== undefined ? { output: event.output } : {}),
+        ...(output !== undefined ? { output } : {}),
         ...(event.error !== undefined ? { error: event.error } : {}),
+        ...(childSessionId !== undefined ? { childSessionId } : {}),
       });
     }
     case 'assistant/step': {

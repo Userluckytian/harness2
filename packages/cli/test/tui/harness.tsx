@@ -33,9 +33,13 @@ export interface MountedTui {
   flush: () => Promise<void>;
 }
 
-/** 挂载 node 到虚拟 TTY；返回按键注入与输出读取助手。 */
-export function mountTui(node: React.ReactElement, opts?: { columns?: number; rows?: number }): MountedTui {
-  const stdin = fakeStdin();
+/** 挂载 node 到虚拟 TTY；返回按键注入与输出读取助手。opts.stdin 可传入预构造的伪 stdin
+ * （T2 鼠标测试需在 mount 前先 attach terminal-events 桥，保证其 'readable' 监听先于 ink 注册）。 */
+export function mountTui(
+  node: React.ReactElement,
+  opts?: { columns?: number; rows?: number; stdin?: NodeJS.ReadStream },
+): MountedTui {
+  const stdin = opts?.stdin ?? fakeStdin();
   const stdout = fakeStdout(opts?.columns ?? 80, opts?.rows ?? 24);
   let buf = '';
   stdout.on('data', (chunk: Buffer | string) => {

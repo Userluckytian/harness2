@@ -152,4 +152,54 @@ describe('Composer（T0 忙时草稿/取消/退出）', () => {
       t.unmount();
     }
   });
+
+  it('T5 输入 / 时候选列表渲染在输入行上方（候选 → 提示符 → 页脚）', async () => {
+    const t = mountTui(<Composer active onSend={() => undefined} onExit={() => undefined} />);
+    try {
+      t.write('/');
+      await t.flush();
+      const out = t.output();
+      const candIdx = out.indexOf('/mode'); // 候选列表成员（首帧即有）
+      const promptIdx = out.lastIndexOf('> /'); // 输入提示行
+      const footerIdx = out.lastIndexOf('Enter 发送');
+      expect(candIdx).toBeGreaterThanOrEqual(0);
+      expect(promptIdx).toBeGreaterThan(candIdx); // 候选在输入行之前
+      expect(footerIdx).toBeGreaterThan(promptIdx); // 页脚在输入行之后（候选不在下方）
+    } finally {
+      t.unmount();
+    }
+  });
+
+  it('T5 继续输入过滤候选：候选仍在输入行上方且列表收窄', async () => {
+    const t = mountTui(<Composer active onSend={() => undefined} onExit={() => undefined} />);
+    try {
+      t.write('/m');
+      await t.flush();
+      const out = t.output();
+      const candIdx = out.lastIndexOf('/mode');
+      const promptIdx = out.lastIndexOf('> /m');
+      expect(promptIdx).toBeGreaterThan(candIdx);
+      expect(out.lastIndexOf('/sessions')).toBeLessThan(0); // 过滤后不再出现（全部命令列表已排除）
+    } finally {
+      t.unmount();
+    }
+  });
+
+  it('T5 候选出现时结构化高度随之增长（上层据此让出转录行，输入框不被挤出屏幕）', async () => {
+    const heights: number[] = [];
+    const t = mountTui(
+      <Composer active onSend={() => undefined} onExit={() => undefined} onHeightChange={(h) => heights.push(h)} />,
+    );
+    try {
+      await t.flush();
+      const base = heights[heights.length - 1] ?? 0;
+      t.write('/');
+      await t.flush();
+      const withCandidates = heights[heights.length - 1] ?? 0;
+      expect(withCandidates).toBeGreaterThan(base); // 候选区高度计入上报
+      expect(withCandidates - base).toBeGreaterThanOrEqual(3); // 候选 2 行 + 提示 1 行
+    } finally {
+      t.unmount();
+    }
+  });
 });
