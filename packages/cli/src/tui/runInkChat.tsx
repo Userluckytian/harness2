@@ -4,6 +4,8 @@
 // 装配与 legacy 共用 setupChatSession（禁止两套装配）；渲染走 React state 桥接。
 // T3：历史由 typed TranscriptState 持有（TranscriptView 虚拟化渲染），会话切换重投影；
 //     工具/推理卡片在 turn 落定后仍可按稳定 id 展开（闭 H2）。
+// W3：HARNESS2_RENDERER=next 时改走 next 渲染层（src/tui/next/next-shell.ts 的 runNextChat，
+//     Screen + 统一输入层整帧装配）；开关默认关闭，未设置时本文件路径一行不变。
 import React, { useRef, useState } from 'react';
 import { render, useInput, useStdout, Box, Text } from 'ink';
 import { setupChatSession, type ChatRuntime, type TurnResult } from '../chat-setup.js';
@@ -38,6 +40,7 @@ import {
 import { turnSummaryLine } from '../render.js';
 import { attachTerminalEvents, type TerminalEventBridge } from './terminal-events.js';
 import { createNotifier, stderrSink, type Notifier } from './notify.js';
+import { runNextChat, shouldUseNextRenderer } from './next/next-shell.js';
 import {
   CORE_MODE_TO_ALIAS,
   MODE_ALIAS_ORDER,
@@ -114,6 +117,10 @@ export function createDialogController(): {
 
 /** 等待由组件内完成（temporary shell promise 由 ink 的 unmount 结束） */
 export async function runInkChat(options: ChatOptions = {}): Promise<void> {
+  // W3：next 渲染层开关（默认关闭）——显式 HARNESS2_RENDERER=next 才改道，其余路径不动
+  if (shouldUseNextRenderer(process.env)) {
+    return runNextChat(options);
+  }
   const bootLines: string[] = [];
   const dialog = createDialogController();
   const runtime = await setupChatSession(options, {
