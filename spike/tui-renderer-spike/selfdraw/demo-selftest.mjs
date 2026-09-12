@@ -167,21 +167,27 @@ const t1 = sb.lines.length;
 ck('追加行后 lines=10001', sb.lines.length === 10001);
 // 5) 差量性：滚动帧字节量远小于全帧
 ck('渲染总字节数有限（差量生效，<200KB）', out.bytes < 200_000);
-// 6) CJK 断行不切半边：wrapLine 输出每行宽度 <= cols 且宽字符完整
+// 6) CJK 断行不切半边：wrapLine 输出每行宽度 <= cols 且字符零丢失零改动
 const cjkLine = '渲染层选型需要实测数据支撑，不能只看社区口碑。终端本质是字符网格，宽字符占两列，断行时不能切开。';
 const wrapped = (await import('./scrollback.mjs')).wrapLine(cjkLine, 20);
 let wrapOk = true;
 for (const w of wrapped) {
   if (displayWidth(w) > 20) wrapOk = false;
-  if (w.endsWith('\uD83C') || /[\u4e00-\u9fff]$/.test(w) === false) {
-    /* 宽字符结尾合法 */
-  }
+  if (/[\uD800-\uDBFF]$/.test(w) && !/[\uDC00-\uDFFF]$/.test(w)) wrapOk = false; // 孤立代理项=切断
 }
-ck('CJK 断行：每物理行宽度≤cols 且行数>1', wrapOk && wrapped.length > 1);
-// 7) 宽字符续列完整：writeText 后 rowText 还原文本宽度一致
+ck(
+  'CJK 断行：每物理行宽度≤cols、无孤立代理项、拼接还原原文、行数>1',
+  wrapOk && wrapped.join('') === cjkLine && wrapped.length > 1,
+);
+// 7) 宽字符续列完整：writeText 后宽字符原样落格、续列以空格占位、可视宽度铺满整行
 const buf2 = new CellBuffer(20, 1);
-buf2.writeText(0, cjkLine.slice(0, 10));
-ck('cell buffer 行宽计算一致', displayWidth(buf2.rowText(0)) <= 20);
+const wide = '中中中文';
+buf2.writeText(0, wide);
+const rowText2 = buf2.rowText(0);
+ck(
+  'cell buffer 行宽计算一致',
+  rowText2.startsWith(wide) && /^ *$/.test(rowText2.slice(wide.length)) && displayWidth(rowText2) === 20,
+);
 
 renderer.stop();
 let fail = 0;
@@ -190,5 +196,12 @@ for (const [name, ok] of checks) {
   if (!ok) fail += 1;
 }
 console.log(`frames=${frames} stdoutBytes=${out.bytes} writes=${out.writes} lines=${t1}`);
+const tail = out.all.slice(-64);
+const restoreOk =
+  tail.includes('\x1b[?1049l') &&
+  tail.includes('\x1b[?25h') &&
+  tail.includes('\x1b[?1000l') &&
+  tail.includes('\x1b[?1006l');
+ck('退出恢复序列完整（退 alt-screen/显光标/关鼠标）', restoreOk);
 console.log(`恢复序列尾部: ${JSON.stringify(out.all.slice(-32))}`);
 process.exit(fail === 0 ? 0 : 1);

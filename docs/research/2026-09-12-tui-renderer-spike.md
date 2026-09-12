@@ -12,11 +12,11 @@
 **推荐方案 B（Node 自研最小渲染层，业务层保留 React 可选）**；**回退方案 A（继续 Ink，现链路保留为回退开关）**。
 
 - **A（Ink）未过性能门槛**：虚拟化滚动 p95 **44.79ms > 33ms**（30fps 节流硬顶 `ink.js` maxFps??30），且鼠标协议零支持（只能靠 stdin 拦截 hack）、无文本选择/图片能力、默认每帧整帧重写——达不到 C 档复刻目标，但作为回退链路保留。
-- **B（自研）全部指标通过**：滚动 p95 **0.086ms**（≈380 倍余量）、回显 p95 0.084ms、CJK 断行自检通过、纯 TS 零原生依赖、esbuild 单文件 bundle 实测 8.2KB 成功。代价是生产化工程量（估 16~26 人日，落在 P2+P3 预算内）。
+- **B（自研）headless 指标全部通过（真机项见 §6，P2 开工前确认）**：滚动 p95 **0.086ms**（≈380 倍余量）、回显 p95 0.084ms、CJK 断行自检通过、纯 TS 零原生依赖、esbuild 单文件 bundle 实测 8.2KB 成功。代价是生产化工程量（估 16~26 人日，落在 P2+P3 预算内）。
 - **C（OpenTUI）未过平台门槛**：**Node 22 不可运行**（原生 FFI 需 `node:ffi`（Node≥26）或 `bun:ffi`；engines=`node>=26.4.0, bun>=1.3.0`，实测 Node 22.23.1 报 `Failed to initialize OpenTUI render library`）。Bun 1.4.2 下其余全达标（滚动 p95 17.99ms、MIT、20MB、Windows 预编译 DLL 免编译）——**仅当需求方接受捆绑 Bun 运行时或升 Node≥26 才可复活**。
 - **D（Rust）性能与许可达标，组织成本最高**：p95 0.204ms、ratatui/crossterm 均 MIT；但引入第二语言 + 三平台交叉编译产物分发 + 新 IPC 协议面。按总览 §4 定位，除非 B 生产化受阻，否则不选。
 
-> 按 §7.3 边界：本阶段零改动 `packages/**`；`git diff --name-only main..HEAD` 全部落在 `spike/**` 与 `docs/research/**`。
+> 按 §7.3 边界：本阶段零改动 `packages/**`；`git diff --name-only main..HEAD` 全部落在 `docs/**` 与 `spike/**`（其中 `docs/ai-framework/plans/…program.md` 仅为 main 遗留格式问题的 Prettier 修复提交 f1c4c11）。
 
 ---
 
@@ -32,7 +32,7 @@
 | CJK/resize/退出恢复（×2）                 | 4（生态内建）   | 4（自研已验证基础） | 5（原生测量）               | 5（unicode-width 内建） |
 | 许可宽松（×2）                            | 5（MIT）        | 5（零依赖）         | 5（MIT）                    | 5（MIT）                |
 | 工程成本（P2~P3 预算内）（×2）            | 5（≈0）         | 3（16~26 人日）     | 3（迁移+运行时改造）        | 1（双语言+IPC）         |
-| **加权合计（满分 95）**                   | **63**          | **88**              | **73**                      | **70**                  |
+| **加权合计（满分 95）**                   | **66**          | **89**              | **68**                      | **72**                  |
 
 ---
 
@@ -116,7 +116,7 @@ desktop 现链路（已核实）：`dist:win/mac/linux` → `pnpm --filter harne
 | ④ CJK/resize/退出恢复                   | ✅（生态内建）                        | ✅（自检通过，resize 待真机）             | ✅（原生，resize 待真机） | ✅（框架内建，待真机） |
 | ⑤ 宽松许可                              | ✅ MIT                                | ✅ 零依赖                                 | ✅ MIT                    | ✅ MIT                 |
 
-**缺一不可口径下的结论：A②不达标、C①不达标 → 出局；B、D 达标。** 结合组织成本与「结构同构（core serve + TS 前端）」现状，**推荐 B**。
+**缺一不可口径下的结论：A②不达标、C①不达标 → 出局；B、D 为「headless 项全过 + 真机项挂账」（真机项见 §6，P2 开工前确认）。** 结合组织成本与「结构同构（core serve + TS 前端）」现状，**推荐 B**。
 
 ---
 
