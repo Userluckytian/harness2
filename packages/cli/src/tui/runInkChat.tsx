@@ -37,6 +37,7 @@ import {
 } from './transcript.js';
 import { turnSummaryLine } from '../render.js';
 import { attachTerminalEvents, type TerminalEventBridge } from './terminal-events.js';
+import { createNotifier, stderrSink, type Notifier } from './notify.js';
 import {
   CORE_MODE_TO_ALIAS,
   MODE_ALIAS_ORDER,
@@ -147,6 +148,8 @@ export async function runInkChat(options: ChatOptions = {}): Promise<void> {
     // 使鼠标序列不流入 ink 的键位解析；HARNESS2_MOUSE=0 可关闭上报（保留解析）。退出时还原上报模式。
     const mouseEnabled = useAlternateScreen && process.env.HARNESS2_MOUSE !== '0';
     const terminalEvents = attachTerminalEvents(process.stdin, process.stdout, { enabled: mouseEnabled });
+    // T4：回合结束提醒（HARNESS2_NOTIFY/HARNESS2_NOTIFY_METHOD；写 stderr 且仅 TTY）。
+    const notifier = createNotifier(process.env, stderrSink());
     // T0 幂等退出：finish 只执行一次（ink unmount + runtime.finish），随后写 process.exitCode
     // 并放开等待；不再用 setInterval 轮询 stdin.destroyed（会遗留 timer）。
     const shutdown = createShutdown({
@@ -168,6 +171,7 @@ export async function runInkChat(options: ChatOptions = {}): Promise<void> {
         bootLines={bootLines}
         dialog={dialog}
         terminalEvents={terminalEvents}
+        notifier={notifier}
         onExit={(reason: ExitReason) => {
           shutdown.request(reason);
         }}
@@ -223,6 +227,7 @@ export function InkShell({
   onExit,
   onTranscriptChange,
   terminalEvents,
+  notifier,
 }: {
   runtime: ChatRuntime;
   bootLines: string[];
@@ -232,6 +237,8 @@ export function InkShell({
   onTranscriptChange?: (state: TranscriptState) => void;
   /** T2：stdin 鼠标/焦点事件桥（runInkChat 在 render 前挂接；测试可用伪 TTY stdin 构造） */
   terminalEvents?: TerminalEventBridge;
+  /** T4：回合结束提醒器（runInkChat 注入；测试可传 capture sink 版本；缺省按环境变量构造） */
+  notifier?: Notifier;
 }): React.ReactElement {
   // T3：typed 转录（替代 string[] + Static）；会话切换时整体重投影
   const [transcript, setTranscript] = useState<TranscriptState>(() => initialTranscript(bootLines));
@@ -279,8 +286,11 @@ export function InkShell({
   const SCROLL_PAGE = Math.max(1, Math.floor(rows / 2));
 
   // T2：终端焦点状态（DECSET 1004；缺省视为聚焦——unfocused 策略下不响，保守处理）；
-  // 供 T4 回合结束提醒判断。
+  // 供 T4 回合结束提醒判断。ref 同步副本供 runTurnText 收尾时读取（避免异步闭包拿旧值）。
   const [terminalFocused, setTerminalFocused] = useState(true);
+  const terminalFocusedRef = useRef(true);
+  // T4：提醒器（注入或按环境变量构造；稳定实例）
+  const [turnNotifier] = useState<Notifier>(() => notifier ?? createNotifier(process.env, stderrSink()));
   const wheelHandlerRef = useRef<{ up: () => void; down: () => void }>({ up: () => undefined, down: () => undefined });
   wheelHandlerRef.current = { up: scrollUp, down: scrollDown };
   React.useEffect(() => {
@@ -290,6 +300,7 @@ export function InkShell({
         if (event.up) wheelHandlerRef.current.up();
         else wheelHandlerRef.current.down();
       } else if (event.type === 'focus') {
+        terminalFocusedRef.current = event.focused;
         setTerminalFocused(event.focused);
       }
     });
@@ -824,6 +835,14 @@ export function InkShell({
       setBusy(false);
       setReasoningExpanded(false);
       schedulerRef.current?.flushNow(); // T4 final flush：终态/状态行立即落定，不留在窗口里
+      // T4：回合结束提醒（含 final/partial/empty 终态；Ctrl+C 取消不发；/exit 退出中不发）。
+      // 焦点读 ref（避免异步闭包拿旧值）；异常结束（result undefined）也算回合结束，照发。
+      if (!exitingRef.current) {
+        turnNotifier.onTurnComplete({
+          focused: terminalFocusedRef.current,
+          cancelled: result?.stopReason === 'cancelled',
+        });
+      }
       if (exitingRef.current) onExit('exit');
       else drainQueue();
     }
