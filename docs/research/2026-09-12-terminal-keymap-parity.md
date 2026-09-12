@@ -8,8 +8,8 @@
 ## 阅读说明
 
 - 「我方现状」以 P1 时点（feat/tui-p1-input 分支）的 ink TUI 实现为准；Composer 的键位处理见 `Composer.tsx` useInput，全局滚动/展开见 `runInkChat.tsx` useInput。
-- 「目标」指 P1 之后各阶段（P2 渲染层、P3 交互装配）对本键位的采纳意向；未定项标「待编排者确认」。
-- 已知冲突（Ctrl+O、Ctrl+G、Ctrl+J/K）**必须**经编排者裁决后方可改动现有绑定。
+- 「目标」指 P1 之后各阶段（P2 渲染层、P3 交互装配）对本键位的采纳意向；未定项标「待编排者确认」。**2026-09-12 更新：冲突项已全部裁决（按 grok 语义，见文末冲突项清单）。**
+- 已知冲突（Ctrl+O、Ctrl+G、Ctrl+J/K、Ctrl+D、Shift+Tab）已于 2026-09-12 由需求方裁决：按 grok 语义采纳（见文末冲突项清单）；现有绑定改动在 P3 装配落地。
 
 ## 导航（scrollback 聚焦）
 
@@ -119,13 +119,15 @@
 
 ---
 
-## 冲突项清单（必须由编排者裁决）
+## 冲突项清单（已裁决：2026-09-12 需求方拍板「按 grok 语义采纳」）
 
-1. **Ctrl+O**：grok = 切换 always-approve（YOLO）模式；我方 = 展开/收起最近工具卡（runInkChat.tsx toggleLastTool，T3 起已文档化）。**待编排者确认**。
-2. **Ctrl+G**：grok = 任务面板开关（全 TUI）/ 外部编辑器编辑草稿（minimal）；我方 = 回到末尾并恢复跟随（resumeFollow，T3 起已文档化）。**待编排者确认**。
-3. **Ctrl+J / Ctrl+K**：grok = scrollback 上/下滚动一行；我方无绑定（统一解析器把 `\n`(0x0A) 按 Ctrl+J 产出——raw mode 下 Enter 发 `\r`，正常不冲突，但个别 Windows 终端 Enter 发 `\n` 的场景需要在装配层闸门判断）。**待编排者确认**。
-4. **Ctrl+D**（次级）：grok 全局 quit（VSCode 系唯一 quit 键）/ 半页下滚（`Ctrl+D` scroll half page）；我方 Ctrl+D = 退出。若采纳「半页下滚」则退出键需要重排。**待编排者确认**。
-5. **Shift+Tab**（次级）：grok 在 prompt 聚焦时是「模式循环」（Normal→Plan→Auto→Always-approve），在阻塞卡片时是「卡片行走查」；我方均未绑定，P3 装配时需按 dispatcher 层级消解（卡片层优先）。**待编排者确认**。
+> 裁决口径：冲突键一律采纳 grok 行为；我方既有绑定相应重排（P1 只登记语义，重排落地在 P3 装配阶段，实现时如有真机问题再上报）。下表正文中遗留的「待编排者确认」字样一律按本节结论读。
+
+1. **Ctrl+O**：✅ 采纳 grok = 切换 always-approve 模式；我方「展开/收起最近工具卡」迁移到其他键（P3 装配时定，候选沿用 grok 块交互 `Enter`/`Ctrl+F` 语义）。
+2. **Ctrl+G**：✅ 采纳 grok = 任务面板开关；我方「回到末尾并恢复跟随」迁移（P3 定新键，候选 grok 的 `End`/`G`）。
+3. **Ctrl+J / Ctrl+K**：✅ 采纳 grok = scrollback 下/上滚动一行；Windows 个别终端 Enter 发 `\n` 的场景在装配层闸门判断（Enter 判定优先 `\r` 与 kitty 编码，见 parser 设计取舍）。
+4. **Ctrl+D**：✅ 采纳 grok = 半页下滚；退出路径保留既有 Ctrl+C 双击升级语义，不再依赖 Ctrl+D。
+5. **Shift+Tab**：✅ 采纳 grok = prompt 聚焦时模式循环（Normal→Plan→Auto→Always-approve），阻塞卡片层 Shift+Tab = 卡片行走查（dispatcher 卡片层优先，与 grok 一致）。
 
 ## 逃生开关约定
 
