@@ -1,45 +1,174 @@
-// Composer：常驻底部多行输入框（受控 value + cursor，不依赖第三方 textarea）。
-// 按键：可打印字符插入光标位；Backspace/Delete 删除；左右键移光标；Enter 发送（清空，
-// 触发 onSend）；Shift+Enter 或行尾 \ 续行不发送；上下键在本会话已发送历史回溯/前进
-// （仅本会话，不跨会话持久化）；Ctrl+C 两次退出；空 buffer 时 Ctrl+D 退出。
-// 退出逻辑经 onExit 回调上交（复用 existing 退出语义）。
+// Composer：常驻底部多行输入框（受控 InputState + 视觉光标 + 软折行渲染）。
+// T0 行为原样保留：忙时仍可编辑草稿、Enter 交上层排队/执行、Esc 停止当前 turn、
+// Ctrl+C 退出协议、Ctrl+D 空草稿退出、queuedCount 页脚、空闲 Ctrl+C 提示只进局部 state。
+// T1 新增：输入内核迁到 input.ts（grapheme/软折行/词移动/Home End/历史往返），
+// 视觉光标按显示列渲染，软折行多行渲染，Shift+Enter 换行并给出行尾 \ 的终端替代键提示。
+// T2 新增：usePaste 接管 bracketed paste（与 useInput 分离通道，粘贴不会伪装成提交）。
+//   短单行 → inline 原子插入；多行/超大 → chip 占位标签（草稿只显示标签）；> 1MB → 拒绝并页脚提示。
+//   提交时把 chip 占位标签展开回**完整原文**（绝不截断）；内嵌换行绝不触发提交，粘贴 /exit 也不会自动执行命令。
+//
+// 词移动按键（已实测 ink 7.1.1 parse-keypress 的解析结果）：
+//   '\x1b[1;5D'（Ctrl+Left）→ key.leftArrow=true, key.ctrl=true
+//   '\x1b[1;3D'（Alt+Left） → key.leftArrow=true, key.meta=true
+// 两者都能被区分，故同时支持 Ctrl 与 Alt(meta)+方向键做词移动。
+//
+// IME 诚实说明：ink 7 的 useInput 只有按键流，没有 OS IME composition 事件通道，
+// 无法观测真实组合中文本。这里保留 input.ts 的 composing/canSubmit 挂点并用其拦截 Enter，
+// 但**不伪造** composition 行为；真机 IME 组合仍需手工签收（见计划「残留手工验收清单」）。
 import React from 'react';
-import { useInput, Box, Text } from 'ink';
+import { useInput, usePaste, useStdout, Box, Text } from 'ink';
 import { matchCommands } from '../command-registry.js';
+import { createCtrlCGuard, type ExitReason } from './shutdown.js';
+import { classifyPaste, renderChipLabel, type PasteChip } from './paste.js';
+import {
+  canSubmit,
+  createHistoryState,
+  createInputState,
+  graphemeBoundaries,
+  historyNext,
+  historyPrev,
+  historyPush,
+  layoutInput,
+  moveVertical,
+  reduceInput,
+  selectionRange,
+  type InputState,
+} from './input.js';
+
+const CTRL_C_WINDOW_MS = 2000;
+/** 边框 2 列 + 提示符 "> " 2 列 */
+const CHROME_WIDTH = 4;
+const FALLBACK_COLUMNS = 80;
 
 export interface ComposerProps {
-  /** 双行视觉提示当前输入多行状态 */
+  /** 双行视觉提示当前输入多行状态；true 时仍可编辑草稿 */
   busy?: boolean;
   /** 输入焦点（浮层打开时 false，卸载非激活键盘监听实现互斥） */
   active?: boolean;
-  /** Enter 发送（携带清空后的内容；由调用方决定语义） */
+  /** Enter 发送（携带清空后的内容；由调用方决定语义，忙时由上层排队） */
   onSend: (text: string) => void;
-  /** Ctrl+C 两次 / 空 buffer 时 Ctrl+D 的上交退出钩子 */
-  onExit: () => void;
+  /** Ctrl+C 两次 / 空 buffer 时 Ctrl+D 的上交退出钩子（reason 供退出码区分） */
+  onExit: (reason?: ExitReason) => void;
+  /** 忙时 Esc / Ctrl+C 触发：取消当前 turn */
+  onAbort?: () => void;
+  /**
+   * T5：忙时 Ctrl+S 把当前草稿作为 steer 提交（控制输入，绑定当前 turnId）。
+   * 返回页脚提示文案；**草稿始终保留**（提交受理不等于最终 resolution：
+   * unknown/stale 必须保草稿，最终 accepted/stale/rejected 由上层订阅 observeSteer 报告）。
+   */
+  onSteer?: (text: string) => string;
+  /** 上层 FIFO 队列长度（>0 时页脚提示） */
+  queuedCount?: number;
 }
 
-export function Composer({ busy = false, active = true, onSend, onExit }: ComposerProps): React.ReactElement {
-  const [value, setValue] = React.useState('');
-  const [cursor, setCursor] = React.useState(0);
+interface Cell {
+  text: string;
+  start: number;
+  end: number;
+  active: boolean;
+}
+
+/** 把一行按 grapheme 拆成可高亮单元（选区/光标均用反显）。 */
+function rowCells(rowText: string, localCursor: number | null, selStart: number | null, selEnd: number | null): Cell[] {
+  const boundaries = graphemeBoundaries(rowText);
+  const cells: Cell[] = [];
+  for (let i = 1; i < boundaries.length; i += 1) {
+    const start = boundaries[i - 1] ?? 0;
+    const end = boundaries[i] ?? rowText.length;
+    const selected = selStart !== null && selEnd !== null && selEnd > selStart && start >= selStart && end <= selEnd;
+    const cursor = localCursor !== null && localCursor === start && localCursor < rowText.length;
+    cells.push({ text: rowText.slice(start, end), start, end, active: selected || cursor });
+  }
+  if (localCursor !== null && localCursor === rowText.length) {
+    // 行尾光标：占位一个反显空格单元
+    cells.push({ text: ' ', start: rowText.length, end: rowText.length, active: true });
+  }
+  return cells;
+}
+
+/** 合并相邻同态单元，减少 Text 节点。 */
+function groupCells(cells: Cell[]): { text: string; active: boolean }[] {
+  const groups: { text: string; active: boolean }[] = [];
+  for (const cell of cells) {
+    const last = groups[groups.length - 1];
+    if (last !== undefined && last.active === cell.active) last.text += cell.text;
+    else groups.push({ text: cell.text, active: cell.active });
+  }
+  return groups;
+}
+
+/** 提交前把 draft 里的 chip 占位标签展开回完整原文（绝不截断；标签不存在则原样保留）。 */
+function expandChips(value: string, chips: PasteChip[]): string {
+  let out = value;
+  for (const chip of chips) {
+    out = out.split(renderChipLabel(chip)).join(chip.text);
+  }
+  return out;
+}
+
+export function Composer({
+  busy = false,
+  active = true,
+  onSend,
+  onExit,
+  onAbort,
+  onSteer,
+  queuedCount = 0,
+}: ComposerProps): React.ReactElement {
+  const [draft, setDraft] = React.useState<InputState>(() => createInputState(''));
   const [candidateIndex, setCandidateIndex] = React.useState(0);
-  const historyRef = React.useRef<string[]>([]);
-  const historyIdxRef = React.useRef(-1);
-  const lastCtrlCAtRef = React.useRef(0);
+  // 瞬时页脚提示（Ctrl+C 协议 / 粘贴拒绝等）：局部 state，**绝不写入 draft**。
+  const [hint, setHint] = React.useState<string | null>(null);
+  // 粘贴 chip（多行/超大）：draft 只放占位标签，提交时展开为完整原文。
+  const [chips, setChips] = React.useState<PasteChip[]>([]);
+  const chipSeqRef = React.useRef(0);
+  const historyRef = React.useRef(createHistoryState());
+  const ctrlCGuardRef = React.useRef(createCtrlCGuard({ windowMs: CTRL_C_WINDOW_MS }));
+  const hintTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
+  const { stdout } = useStdout();
+  const inputWidth = Math.max(1, (stdout.columns ?? FALLBACK_COLUMNS) - CHROME_WIDTH);
+
+  const layout = layoutInput(draft, inputWidth);
+
+  const clearHint = (): void => {
+    if (hintTimerRef.current !== null) {
+      clearTimeout(hintTimerRef.current);
+      hintTimerRef.current = null;
+    }
+    setHint(null);
+  };
+  const showHint = (msg: string): void => {
+    clearHint();
+    setHint(msg);
+    hintTimerRef.current = setTimeout(() => {
+      hintTimerRef.current = null;
+      setHint(null);
+    }, CTRL_C_WINDOW_MS);
+  };
+  // 卸载清理提示定时器（退出后无遗留 timer）
+  React.useEffect(
+    () => () => {
+      if (hintTimerRef.current !== null) clearTimeout(hintTimerRef.current);
+    },
+    [],
+  );
 
   // 命令名阶段：value 以 / 开头且不含空格/换行（输入单个命令名，未进入参数）
-  const commandNameActive = value.startsWith('/') && !value.includes(' ') && !value.includes('\n');
-  const candidates = commandNameActive ? matchCommands(value) : [];
+  const commandNameActive = draft.value.startsWith('/') && !draft.value.includes(' ') && !draft.value.includes('\n');
+  const candidates = commandNameActive ? matchCommands(draft.value) : [];
   // 防越界：候选变化后 clamp 高亮索引
   const safeCandidateIndex = candidates.length === 0 ? 0 : Math.min(candidateIndex, candidates.length - 1);
 
-  const insertAt = (text: string, pos: number, insert: string): string => text.slice(0, pos) + insert + text.slice(pos);
-  const removeAt = (text: string, pos: number, count: number): string => text.slice(0, pos) + text.slice(pos + count);
-
   useInput(
-    (input, key) => {
-      if (busy) return; // turn 期间不响应输入（发送后清空，缓冲由上层策略处理）
+    (ch, key) => {
+      const isCtrlC = Boolean(key.ctrl && ch === 'c');
+      // 任何非 Ctrl+C 按键都视为退出协议中断：重置窗口并清掉提示
+      if (!isCtrlC) {
+        ctrlCGuardRef.current.reset();
+        if (hint !== null) clearHint();
+      }
 
-      // —— 命令名阶段：↑↓ 切候选、Tab 补全候选（不发送）；其余按键照常（含字符输入） ——
+      // —— 命令名阶段：↑↓ 切候选、Tab 补全候选（不发送）；其余按键照常 ——
       if (candidates.length > 0) {
         if (key.upArrow) {
           setCandidateIndex((i) => (i - 1 + candidates.length) % candidates.length);
@@ -52,8 +181,7 @@ export function Composer({ busy = false, active = true, onSend, onExit }: Compos
         if (key.tab) {
           const chosen = candidates[safeCandidateIndex];
           if (chosen !== undefined) {
-            setValue(chosen);
-            setCursor(chosen.length);
+            setDraft((d) => reduceInput(d, { type: 'setValue', value: chosen }));
             setCandidateIndex(0);
           }
           return;
@@ -61,118 +189,176 @@ export function Composer({ busy = false, active = true, onSend, onExit }: Compos
         // 其余按键落到普通输入流（Enter 触发 onSend 等）
       }
 
-      if (key.ctrl && input === 'c') {
-        const now = Date.now();
-        if (now - lastCtrlCAtRef.current < 2000) {
-          onExit();
+      if (isCtrlC) {
+        const verdict = ctrlCGuardRef.current.press({ busy });
+        if (verdict === 'cancel') {
+          clearHint();
+          onAbort?.();
           return;
         }
-        lastCtrlCAtRef.current = now;
-        setValue((v) => v + '（再按一次 Ctrl+C 退出）');
-        setCursor((c) => c + 1);
+        if (verdict === 'confirm') {
+          clearHint();
+          onExit('sigint');
+          return;
+        }
+        showHint('（再按一次 Ctrl+C 退出）');
         return;
       }
-      if (key.ctrl && input === 'd') {
-        if (value.trim().length === 0) onExit();
+      if (key.ctrl && ch === 'd') {
+        if (draft.value.trim().length === 0) onExit('eof');
+        return;
+      }
+      // T5：Ctrl+S = 把当前草稿作为 steer 提交（忙时控制输入）。草稿不在此清空：
+      // unknown/stale 必须保留；最终 resolution 由上层 observeSteer 报告。
+      if (key.ctrl && (ch === 's' || ch === 'S')) {
+        if (onSteer === undefined) return;
+        const steerText = expandChips(draft.value, chips);
+        if (steerText.trim().length === 0) return;
+        showHint(onSteer(steerText));
         return;
       }
       if (key.shift && key.return) {
-        // Shift+Enter 续行（不发送）
-        setValue((v) => {
-          const next = insertAt(v, cursor, '\n');
-          setCursor((c) => c + 1);
-          return next;
-        });
+        // Shift+Enter 换行（ink 将 '\x1b[13;2u' 解析为 shift+return）
+        setDraft((d) => reduceInput(d, { type: 'insert', text: '\n' }));
         return;
       }
       if (key.return) {
-        const text = value;
+        const text = draft.value;
         if (text.trim().length === 0) return;
+        // IME 组合未提交时不发送（composing 目前恒为空，见文件头「IME 诚实说明」）
+        if (!canSubmit(draft)) return;
         if (text.trimEnd().endsWith('\\')) {
-          // 行尾 \ 续行（不发送，去掉该反斜杠后换行）
-          setValue((v) => {
-            const trimmed = v.trimEnd().slice(0, -1);
-            const next = trimmed + '\n';
-            setCursor(next.length);
-            return next;
-          });
+          // 行尾 \ 续行（终端无法区分 Shift+Enter 时的替代键）：去掉该反斜杠后换行
+          setDraft(createInputState(`${text.trimEnd().slice(0, -1)}\n`));
           return;
         }
-        setValue('');
-        setCursor(0);
-        historyRef.current.push(text);
-        historyIdxRef.current = -1;
-        onSend(text);
+        const expanded = expandChips(text, chips);
+        historyRef.current = historyPush(historyRef.current, expanded);
+        setDraft(createInputState(''));
+        setChips([]);
+        setCandidateIndex(0);
+        // chip 占位标签展开回完整原文（内嵌换行不会在此前被当作提交键）
+        onSend(expanded);
         return;
       }
-      if (key.upArrow) {
-        const hist = historyRef.current;
-        if (hist.length === 0) return;
-        const idx = historyIdxRef.current < 0 ? hist.length - 1 : Math.max(0, historyIdxRef.current - 1);
-        historyIdxRef.current = idx;
-        setValue(hist[idx] ?? '');
-        setCursor((hist[idx] ?? '').length);
+      if (key.home) {
+        setDraft((d) => reduceInput(d, { type: 'move', dir: 'lineStart' }));
         return;
       }
-      if (key.downArrow) {
-        const hist = historyRef.current;
-        if (hist.length === 0 || historyIdxRef.current < 0) return;
-        const idx = historyIdxRef.current + 1;
-        if (idx >= hist.length) {
-          setValue('');
-          setCursor(0);
-          historyIdxRef.current = -1;
+      if (key.end) {
+        setDraft((d) => reduceInput(d, { type: 'move', dir: 'lineEnd' }));
+        return;
+      }
+      if (key.upArrow || key.downArrow) {
+        const dir = key.upArrow ? 'up' : 'down';
+        const rowCount = layout.rows.length;
+        const insideMultiRow = rowCount > 1 && (dir === 'up' ? layout.cursorRow > 0 : layout.cursorRow < rowCount - 1);
+        if (insideMultiRow) {
+          // 跨软折行视觉行移动
+          setDraft((d) => moveVertical(d, inputWidth, dir));
           return;
         }
-        historyIdxRef.current = idx;
-        setValue(hist[idx] ?? '');
-        setCursor((hist[idx] ?? '').length);
+        // 到达输入框视觉边界：交给历史（走到头会恢复原 draft 与 selection）
+        const result = dir === 'up' ? historyPrev(historyRef.current, draft) : historyNext(historyRef.current, draft);
+        historyRef.current = result.history;
+        if (result.next !== null) setDraft(result.next);
         return;
       }
-      if (key.leftArrow) {
-        setCursor((c) => Math.max(0, c - 1));
-        return;
-      }
-      if (key.rightArrow) {
-        setCursor((c) => Math.min(value.length, c + 1));
+      if (key.leftArrow || key.rightArrow) {
+        const word = Boolean(key.ctrl || key.meta);
+        const dir = key.leftArrow ? (word ? 'wordLeft' : 'left') : word ? 'wordRight' : 'right';
+        setDraft((d) => reduceInput(d, key.shift ? { type: 'select', dir } : { type: 'move', dir }));
         return;
       }
       if (key.backspace) {
-        if (cursor === 0) return;
-        setValue((v) => removeAt(v, cursor - 1, 1));
-        setCursor((c) => c - 1);
+        setDraft((d) => reduceInput(d, { type: 'backspace' }));
         return;
       }
       if (key.delete) {
-        if (cursor >= value.length) return;
-        setValue((v) => removeAt(v, cursor, 1));
+        setDraft((d) => reduceInput(d, { type: 'delete' }));
         return;
       }
       if (key.escape) {
-        setValue('');
-        setCursor(0);
+        if (busy) {
+          // 忙时 Esc：停止当前 turn（不清草稿）
+          onAbort?.();
+          return;
+        }
+        setDraft(createInputState(''));
+        setChips([]);
         return;
       }
-      if (input !== undefined && input !== '' && !key.ctrl && !key.meta) {
-        setValue((v) => {
-          const next = insertAt(v, cursor, input);
-          setCursor((c) => c + input.length);
-          return next;
-        });
+      if (ch !== undefined && ch !== '' && !key.ctrl && !key.meta) {
+        setDraft((d) => reduceInput(d, { type: 'insert', text: ch }));
       }
     },
-    { isActive: active && !busy },
+    { isActive: active },
   );
 
-  const visualValue = value.replace(/\n/g, '¶\n');
+  // T2：粘贴走 usePaste 独立通道（bracketed paste）——粘贴内容绝不进入 useInput，故内嵌换行/回车不会触发提交。
+  // 短单行 → inline 原子插入；多行/超大 → chip；超 1MB → 拒绝并页脚提示（提示只在局部 state）。
+  usePaste(
+    (raw) => {
+      const result = classifyPaste(raw, chipSeqRef.current + 1);
+      if (result.kind === 'inline') {
+        setDraft((d) => reduceInput(d, { type: 'paste', text: result.text }));
+        return;
+      }
+      if (result.kind === 'rejected') {
+        showHint(`粘贴被拒绝：${result.reason}`);
+        return;
+      }
+      chipSeqRef.current += 1;
+      setChips((cs) => [...cs, result.chip]);
+      setDraft((d) => reduceInput(d, { type: 'paste', text: renderChipLabel(result.chip) }));
+    },
+    { isActive: active },
+  );
+
+  const selection = selectionRange(draft);
+  const rows = layout.rows;
+
+  const renderRow = (rowText: string, rowIndex: number): React.ReactNode => {
+    const rowStart = layout.rowStarts[rowIndex] ?? 0;
+    const rowEnd = layout.rowEnds[rowIndex] ?? rowStart + rowText.length;
+    const hard = layout.rowHard[rowIndex] ?? false;
+    const isCursorRow = rowIndex === layout.cursorRow;
+    const localCursor = isCursorRow ? draft.cursor - rowStart : null;
+    const selStart = selection === null ? null : Math.max(selection.start, rowStart) - rowStart;
+    const selEnd = selection === null ? null : Math.min(selection.end, rowEnd) - rowStart;
+    const hasSelection = selStart !== null && selEnd !== null && selEnd > selStart;
+    const marker = hard ? '¶' : '';
+    // 无选区且非光标行：整行单个 Text，保证行尾标记与正文连续（既有测试断言 'a¶'）
+    if (localCursor === null && !hasSelection) {
+      return <Text key={`r${rowIndex}`}>{rowText + marker}</Text>;
+    }
+    const groups = groupCells(rowCells(rowText, localCursor, selStart, selEnd));
+    return (
+      <Text key={`r${rowIndex}`}>
+        {groups.map((g, gi) => (
+          <Text key={`c${gi}`} inverse={g.active || undefined}>
+            {g.text}
+          </Text>
+        ))}
+        {hard && <Text color="gray">¶</Text>}
+      </Text>
+    );
+  };
 
   return (
     <Box flexDirection="column" borderStyle="round" flexShrink={0}>
-      {busy && <Text color="gray">忙碌中…（等待当前 turn 完成）</Text>}
+      {busy && (
+        <Text color="gray">
+          Esc 停止当前 turn · Enter 排队 · Ctrl+S steer（草稿保留）
+          {queuedCount > 0 ? ` · 已排队 ${queuedCount} 条` : ''}
+        </Text>
+      )}
+      {hint !== null && <Text color="gray">{hint}</Text>}
       <Box flexDirection="row">
         <Text color="green">&gt; </Text>
-        <Text>{visualValue}</Text>
+        <Box flexDirection="column">{rows.map((rowText, i) => renderRow(rowText, i))}</Box>
       </Box>
+      <Text color="gray">Enter 发送 · Shift+Enter 换行（终端不支持时行尾 \ 回车）</Text>
       {candidates.length > 0 && (
         <Box flexDirection="column" marginTop={1}>
           {candidates.map((c, i) => (

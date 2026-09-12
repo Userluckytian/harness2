@@ -1,20 +1,39 @@
 // ink 全屏 TUI 入口：现代终端下启用，piped/CI/逃生舱仍走 legacy。
-// 门控（T0 决策）：isTTY && !(HARNESS2_NO_TUI || --no-tui) && (HARNESS2_TUI=1 || 现代终端 || 默认全量)。
+// 门控（T2）：委托 terminal-capabilities.ts 的纯决策 —— 显式覆盖（HARNESS2_NO_TUI / --no-tui / HARNESS2_TUI）
+// 优先，其后 非 TTY → legacy，Windows 走四场景闸门（现代终端标记才默认 ink），非 Windows TTY → ink。
 // 装配与 legacy 共用 setupChatSession（禁止两套装配）；渲染走 React state 桥接。
+// T3：历史由 typed TranscriptState 持有（TranscriptView 虚拟化渲染），会话切换重投影；
+//     工具/推理卡片在 turn 落定后仍可按稳定 id 展开（闭 H2）。
 import React, { useRef, useState } from 'react';
-import { render, useApp, useInput, Box, Text } from 'ink';
+import { render, useInput, useStdout, Box, Text } from 'ink';
 import { setupChatSession, type ChatRuntime, type TurnResult } from '../chat-setup.js';
 import type { ChatOptions } from '../legacy-chat.js';
 import { StatusBar } from './StatusBar.js';
 import { Composer } from './Composer.js';
-import { Transcript } from './Transcript.js';
+import { Transcript } from './TranscriptView.js';
 import { OverlayHost } from './OverlayHost.js';
 import { Modal } from './Modal.js';
 import { SelectList } from './SelectList.js';
 import { ConfirmDialog } from './ConfirmDialog.js';
-import { useTurnStream, type TurnSnapshot } from './useTurnStream.js';
+import { useTurnStream } from './useTurnStream.js';
+import { bindShutdownSignals, createShutdown, type ExitReason } from './shutdown.js';
+import { createUiScheduler, type UiScheduler } from './scheduler.js';
+import { QueuePanel, cancelQueueItem, type QueuePanelItem } from './panels/queue-panel.js';
+import { RetryPanel, retryBudgetHasActivity, type RetryBudgetSnapshot } from './panels/retry-panel.js';
+import { TaskPanel } from './panels/task-panel.js';
+import { decideTuiMode, detectTerminalCapabilities, hasModernTerminalMarker } from './terminal-capabilities.js';
 import { parseCommand, HELP_TEXT } from '../commands.js';
+import { runSharedCommand, type InkCommandIo } from './ink-commands.js';
+import { describeSteerResult } from '../steer.js';
 import { expandContextRefs, hasContextRefs } from '../context-ref.js';
+import {
+  emptyTranscript,
+  projectSession,
+  transcriptReducer,
+  type TranscriptEvent,
+  type TranscriptState,
+} from './transcript.js';
+import { turnSummaryLine } from '../render.js';
 import {
   CORE_MODE_TO_ALIAS,
   MODE_ALIAS_ORDER,
@@ -23,19 +42,31 @@ import {
   type ModeAlias,
 } from '../mode-alias.js';
 import { getContextUsage } from '@harness2/core';
+import type { TaskContract } from '@harness2/core';
 
-/** 现代终端检测：Windows Terminal（WT_SESSION）或 VS Code 终端（TERM_PROGRAM=vscode） */
+/** 现代终端检测：兼容旧导出，委托纯函数标记探测（WT_SESSION / TERM_PROGRAM / ConEmu / ANSICON / xterm 等） */
 export function isModernTerminal(env: NodeJS.ProcessEnv = process.env): boolean {
-  return Boolean(env.WT_SESSION) || env.TERM_PROGRAM === 'vscode';
+  return hasModernTerminalMarker(env);
 }
 
-/** T0 决策：默认所有 TTY 都尝试 ink；现代终端检测通过或 HARNESS2_TUI=1 强制开启 */
-export function shouldUseInk(argv: string[] = process.argv, env: NodeJS.ProcessEnv = process.env): boolean {
-  if (env.HARNESS2_NO_TUI === '1') return false;
-  if (argv.includes('--no-tui')) return false;
-  if (!process.stdin.isTTY) return false;
-  if (env.HARNESS2_TUI === '1' || isModernTerminal(env)) return true;
-  return true; // T0 决策：默认全量启用 TTY → ink
+/**
+ * T2 门控：基于 terminal-capabilities.ts 的纯决策。
+ * 显式覆盖优先：HARNESS2_NO_TUI=1 / --no-tui（禁）> HARNESS2_TUI=1（启用）；
+ * 其后非 TTY → legacy；Windows 四场景闸门；非 Windows TTY → ink。
+ */
+export function shouldUseInk(
+  argv: string[] = process.argv,
+  env: NodeJS.ProcessEnv = process.env,
+  isTTY: boolean = Boolean(process.stdin.isTTY),
+  platform: NodeJS.Platform = process.platform,
+): boolean {
+  const caps = detectTerminalCapabilities(env, platform, isTTY);
+  return (
+    decideTuiMode(caps, {
+      forceNoTui: env.HARNESS2_NO_TUI === '1' || argv.includes('--no-tui'),
+      forceTui: env.HARNESS2_TUI === '1',
+    }).mode === 'ink'
+  );
 }
 
 /** 浮层请求：render(node, resolve) 由 InkShell 挂载；resolve 关闭浮层 */
@@ -104,45 +135,176 @@ export async function runInkChat(options: ChatOptions = {}): Promise<void> {
   });
 
   await new Promise<void>((resolve) => {
-    const app = render(<InkShell runtime={runtime} bootLines={bootLines} dialog={dialog} onExit={resolve} />, {
-      exitOnCtrlC: false,
-    });
-    const timer = setInterval(() => {
-      if (process.stdin.destroyed) {
-        clearInterval(timer);
-        app.unmount();
+    let app: ReturnType<typeof render> | null = null;
+    // T2：能力齐备时才启用 alternate screen（交互模式下的全屏视口 + 退出还原）。
+    // 非 TTY / dumb / CI / 能力缺失时 runChat 已降级 legacy，此处再以 stdout TTY 兜底。
+    const caps = detectTerminalCapabilities(process.env, process.platform, Boolean(process.stdin.isTTY));
+    const useAlternateScreen = caps.altScreen && caps.bracketedPaste && Boolean(process.stdout.isTTY);
+    // T0 幂等退出：finish 只执行一次（ink unmount + runtime.finish），随后写 process.exitCode
+    // 并放开等待；不再用 setInterval 轮询 stdin.destroyed（会遗留 timer）。
+    const shutdown = createShutdown({
+      finish: async () => {
+        app?.unmount();
+        await runtime.finish({
+          destroyInput: () => process.stdin.destroy(),
+        });
+      },
+      exit: (code) => {
+        process.exitCode = code; // 不 abrupt process.exit，让 ink 拆屏与锁释放完成
         resolve();
-      }
-    }, 200);
+      },
+    });
+    app = render(
+      <InkShell
+        runtime={runtime}
+        bootLines={bootLines}
+        dialog={dialog}
+        onExit={(reason: ExitReason) => {
+          shutdown.request(reason);
+        }}
+      />,
+      { exitOnCtrlC: false, alternateScreen: useAlternateScreen },
+    );
+    // 审查 P2：SIGTERM（kill）/SIGHUP（终端关闭）复用同一条幂等退出路径——
+    // 外部终止时锁释放/拆屏还原/awaitDone 收敛不再悬挂；退出收敛后解绑监听。
+    const detachSignals = bindShutdownSignals((reason) => shutdown.request(reason));
+    void shutdown.awaitDone().then(detachSignals);
   });
 }
 
 const ASK_CANCELLED = '\u0000ask-cancelled';
 
-function InkShell({
+/**
+ * T4 任务面板数据注入缝：in-process CLI 路径尚无 task-coordinator 数据源接入 ChatRuntime
+ * （已登记缺口）。此处传空列表 → 面板渲染 null，绝不伪造任务；接线完成后替换为真实 TaskContract[]。
+ */
+const EMPTY_TASKS: readonly TaskContract[] = [];
+
+function initialTranscript(bootLines: string[]): TranscriptState {
+  let state = emptyTranscript();
+  bootLines.forEach((text, i) => {
+    state = transcriptReducer(state, { type: 'system', id: `boot:${i}`, text });
+  });
+  return state;
+}
+
+function safeProject(dir: string | undefined): TranscriptState {
+  if (dir === undefined) return emptyTranscript();
+  try {
+    return projectSession(dir);
+  } catch {
+    // 新会话日志尚未落盘 / 读取失败：退化为空转录（不阻塞会话切换）
+    return emptyTranscript();
+  }
+}
+
+export function InkShell({
   runtime,
   bootLines,
   dialog,
+  onExit,
+  onTranscriptChange,
 }: {
   runtime: ChatRuntime;
   bootLines: string[];
   dialog: ReturnType<typeof createDialogController>;
-  onExit: () => void;
+  onExit: (reason: ExitReason) => void;
+  /** 可选观察缝：转录每次变化时回调（测试/诊断用；不影响渲染） */
+  onTranscriptChange?: (state: TranscriptState) => void;
 }): React.ReactElement {
-  const { exit } = useApp();
-  const [settled, setSettled] = useState<string[]>(bootLines);
+  // T3：typed 转录（替代 string[] + Static）；会话切换时整体重投影
+  const [transcript, setTranscript] = useState<TranscriptState>(() => initialTranscript(bootLines));
   const [busy, setBusy] = useState(false);
-  // T8：推理折叠块展开态（turn 内按 r 切换；busy 期间由 InkShell 层 useInput 接管）
+  // T8：推理折叠块展开态（turn 内 Ctrl+R 切换；忙时 Composer 接管普通字符输入，故用带修饰键快捷键）
   const [reasoningExpanded, setReasoningExpanded] = useState(false);
+  // T3：已展开卡片 id 集合（shell 持有；turn 落定后仍有效 → H2）
+  const [expandedIds, setExpandedIds] = useState<ReadonlySet<string>>(() => new Set());
+  // T3：follow/anchor 滚动（PageUp/PageDown 滚动；Ctrl+G 回到末尾跟随）
+  const [follow, setFollow] = useState(true);
+  const [scrollTop, setScrollTop] = useState(0);
+  const [anchorId, setAnchorId] = useState<string | undefined>(undefined);
   // T5/T6：单一浮层宿主。命令与审批都经 overlay 呈现；存在即互斥接管键盘。
   const [overlay, setOverlay] = useState<React.ReactNode>(null);
   const closeOverlayRef = useRef<() => void>(() => undefined);
   const overlayOpen = overlay !== null;
+  // T0：忙时 FIFO 排队（对齐 legacy-chat：忙碌中的输入不并发、当前 turn 收尾后立即执行下一条）
+  const busyRef = useRef(false);
+  const exitingRef = useRef(false);
+  // T4：真实队列条目（id 稳定，供 queue-panel 的 Ctrl+X 取消定位）；queueRef 为真源、queueItems 为渲染镜像
+  const queueRef = useRef<QueuePanelItem[]>([]);
+  const queueSeqRef = useRef(0);
+  const [queueItems, setQueueItems] = useState<QueuePanelItem[]>([]);
+  // T4：turn 结束时的重试预算快照（冻结 RetryBudgetState：used/remaining/stopReason）；无活动不渲染
+  const [retryBudget, setRetryBudget] = useState<RetryBudgetSnapshot | undefined>(undefined);
+  // 转录状态镜像（供键盘回调读取最新 items，不触发额外订阅）
+  const transcriptRef = useRef(transcript);
+  transcriptRef.current = transcript;
+  // 滚动 source of truth（ref 供 key handler 读取；state 仅驱动渲染）
+  const followRef = useRef(true);
+  const scrollRef = useRef(0);
+  const anchorRef = useRef<string | undefined>(undefined);
+  const liveSeqRef = useRef(0);
+  const viewportRef = useRef<{ maxScroll: number; firstVisibleId?: string }>({ maxScroll: 0 });
+  const { stdout } = useStdout();
+  const rows = stdout.rows ?? 24;
+  const cols = stdout.columns ?? 80;
+  const SCROLL_PAGE = Math.max(1, Math.floor(rows / 2));
 
-  const { live, handler, commit, reset } = useTurnStream((snapshot: TurnSnapshot) => {
-    const text = snapshot.text.trim();
-    if (text.length > 0) setSettled((l) => [...l, text]);
-  });
+  // T4：有界 UI 调度器——批量合并 transcript 事件（coalesce + maxBatch），输入驱动的 flushNow 保即时，
+  // turn 收尾/卸载时 final flush 且 dispose 清 timer（无残留 timer，满足 T0/T5 新鲜度）。
+  const schedulerRef = useRef<UiScheduler<TranscriptEvent> | null>(null);
+  if (schedulerRef.current === null) {
+    schedulerRef.current = createUiScheduler<TranscriptEvent>({
+      flushMs: 16,
+      maxBatch: 64,
+      onFlush: (batch) => setTranscript((s) => batch.reduce(transcriptReducer, s)),
+    });
+  }
+  const dispatch = React.useCallback((event: TranscriptEvent) => {
+    schedulerRef.current?.push(event);
+  }, []);
+  const onTranscriptEvent = React.useCallback((event: TranscriptEvent) => dispatch(event), [dispatch]);
+  React.useEffect(() => () => schedulerRef.current?.dispose(), []);
+
+  // T5：steer 回帧 → 转录报告（accepted / stale(草稿已保留) / rejected）。
+  // 提交只代表入队；最终结果由 core loop 在安全 step 边界或收尾回帧。
+  React.useEffect(() => {
+    const unsubscribe = runtime.observeSteer((result) => {
+      const { line } = describeSteerResult(result);
+      liveSeqRef.current += 1;
+      dispatch({ type: 'system', id: `steer:${liveSeqRef.current}`, text: line });
+    });
+    return unsubscribe;
+  }, [runtime, dispatch]);
+
+  /**
+   * T4 输入优先：输入驱动的事件（用户回声/命令回显）期间挂起后台 flush 并立即 flushNow，
+   * 保证按键回声即时可见；随后恢复后台批处理（流式事件继续按窗口合并）。
+   */
+  function dispatchInputNow(event: TranscriptEvent): void {
+    const sched = schedulerRef.current;
+    sched?.setInputPriority(true);
+    sched?.push(event);
+    sched?.flushNow();
+    sched?.setInputPriority(false);
+  }
+
+  const { live, handler, finalize, reset } = useTurnStream(onTranscriptEvent);
+
+  // 转录观察缝（测试/诊断）：转录变化时回调最新状态
+  React.useEffect(() => {
+    onTranscriptChange?.(transcript);
+  }, [transcript, onTranscriptChange]);
+
+  const onViewportChange = React.useCallback(
+    (info: { totalHeight: number; maxScroll: number; start: number; end: number; firstVisibleId?: string }) => {
+      viewportRef.current = {
+        maxScroll: info.maxScroll,
+        ...(info.firstVisibleId !== undefined ? { firstVisibleId: info.firstVisibleId } : {}),
+      };
+    },
+    [],
+  );
 
   // 同步 dialog controller 里的挂起请求（审批弹窗）到 overlay。
   // dialog 是外置稳定对象（open 只改闭包），须经订阅计数驱动 effect 重跑（审查 P0 修复）
@@ -166,17 +328,141 @@ function InkShell({
     );
   }, [dialog, reqTick]);
 
-  // T8：busy 期间按 r 展开/收起当前 turn 的推理折叠块（Composer 此时不接管，互不冲突）
+  function applyFollow(value: boolean): void {
+    followRef.current = value;
+    setFollow(value);
+  }
+  function applyScroll(value: number): void {
+    scrollRef.current = value;
+    setScrollTop(value);
+  }
+  function applyAnchor(id: string | undefined): void {
+    anchorRef.current = id;
+    setAnchorId(id);
+  }
+
+  /** PageUp：从贴尾切到锚定（保留当前首个可见 item），再向上滚动一屏 */
+  function scrollUp(): void {
+    if (followRef.current) {
+      const first = viewportRef.current.firstVisibleId;
+      applyAnchor(first);
+      applyScroll(Math.max(0, viewportRef.current.maxScroll - SCROLL_PAGE));
+      applyFollow(false);
+      return;
+    }
+    applyScroll(Math.max(0, scrollRef.current - SCROLL_PAGE));
+  }
+
+  /** PageDown：向下滚动；到底后自动恢复跟随 */
+  function scrollDown(): void {
+    if (followRef.current) return;
+    const next = Math.min(viewportRef.current.maxScroll, scrollRef.current + SCROLL_PAGE);
+    if (next >= viewportRef.current.maxScroll) {
+      resumeFollow();
+      return;
+    }
+    applyScroll(next);
+  }
+
+  /** Ctrl+G：回到末尾并恢复跟随（文档化快捷键） */
+  function resumeFollow(): void {
+    applyFollow(true);
+    applyAnchor(undefined);
+    applyScroll(0);
+  }
+
+  /** Ctrl+O：展开/收起最近一张工具卡（落定后仍可操作 = H2） */
+  function toggleLastTool(): void {
+    setExpandedIds((prev) => {
+      const last = [...transcriptRef.current.items].reverse().find((i) => i.kind === 'tool');
+      if (last === undefined) return prev;
+      const next = new Set(prev);
+      if (next.has(last.id)) next.delete(last.id);
+      else next.add(last.id);
+      return next;
+    });
+  }
+
+  // T3 滚动/展开快捷键（与 Composer 不冲突：PageUp/PageDown/Ctrl+G/Ctrl+O 输入框不消费）
   useInput(
     (input, key) => {
-      // 推理折叠展开快捷键：busy 期间按 r（enter/空格等由 Composer 处理）
-      if (input.toLowerCase() === 'r' && !key.ctrl && !key.meta) setReasoningExpanded((v) => !v);
+      if (key.pageUp) {
+        scrollUp();
+        return;
+      }
+      if (key.pageDown) {
+        scrollDown();
+        return;
+      }
+      if (key.ctrl && input.toLowerCase() === 'g') {
+        resumeFollow();
+        return;
+      }
+      if (key.ctrl && input.toLowerCase() === 'o') {
+        toggleLastTool();
+      }
+    },
+    { isActive: !overlayOpen },
+  );
+
+  // T8：busy 期间 Ctrl+R 展开/收起当前 turn 的推理折叠块。
+  // T0 起 Composer 忙时也接管普通字符输入，故推理快捷键改为 Ctrl+R，避免与草稿输入冲突。
+  useInput(
+    (input, key) => {
+      if (key.ctrl && input.toLowerCase() === 'r') setReasoningExpanded((v) => !v);
     },
     { isActive: busy && !overlayOpen },
   );
 
   function sendSystem(line: string): void {
-    setSettled((l) => [...l, line]);
+    liveSeqRef.current += 1;
+    dispatch({ type: 'system', id: `sys:${liveSeqRef.current}`, text: line });
+  }
+
+  /**
+   * T5 重投影：用 projectSession 从磁盘会话日志重建转录（整体替换）。
+   * /undo /redo 追加 rewind/marker 后调用，使被遮蔽的 user/assistant 条目消失（/redo 再出现）；
+   * 会话切换同理。清空展开/滚动状态，避免旧 id 上的交互残留。
+   */
+  function reprojectTranscript(): void {
+    schedulerRef.current?.flushNow(); // 先落定待处理事件，避免重投影后混入
+    setTranscript(safeProject(runtime.getCurrent()?.dir));
+    setExpandedIds(new Set());
+    // 重投影会整体替换转录（/undo /redo /new /resume /fork、会话切换）：上一轮的冻结重试面板
+    // 已不属于新转录，必须清掉，否则旧 turn 的 retry 面板会残留在新会话视图上。
+    setRetryBudget(undefined);
+    applyFollow(true);
+    applyAnchor(undefined);
+    applyScroll(0);
+  }
+
+  /** T5：共享命令执行缝（委托 commands.ts 的 handleCommand） */
+  const commandIo: InkCommandIo = {
+    print: (t) => {
+      sendSystem(t);
+      schedulerRef.current?.flushNow(); // 命令输出立即可见（低频）
+    },
+    reproject: reprojectTranscript,
+    requestExit: () => {
+      exitingRef.current = true;
+      if (busyRef.current) {
+        // turn 进行中：先取消，等本轮收尾后由 finally 触发退出（对齐 legacy requestExit）
+        runtime.abortTurn();
+        return;
+      }
+      onExit('exit');
+    },
+  };
+
+  /**
+   * 会话切换统一处理（openSessions 选择路径）：收集 switch 输出，重投影新会话转录，再回放提示。
+   */
+  function applySessionChange(fn: (print: (t: string) => void) => void): void {
+    const lines: string[] = [];
+    fn((t) => lines.push(t));
+    reprojectTranscript();
+    for (const l of lines) sendSystem(l);
+    schedulerRef.current?.flushNow(); // T4 final flush：重投影后切换提示立即落定
   }
 
   function openModePicker(): void {
@@ -221,7 +507,7 @@ function InkShell({
           selected={current?.id ?? ''}
           isActive
           onSelect={(id: string) => {
-            runtime.switchSession(id, { print: sendSystem });
+            applySessionChange((print) => runtime.switchSession(id, { print }));
             setOverlay(null);
           }}
           onCancel={() => setOverlay(null)}
@@ -233,7 +519,13 @@ function InkShell({
     );
   }
 
-  function handleCommand(name: string, rest: string): void {
+  /**
+   * T5 命令分发：ink 本地 UI 命令（/mode /help /sessions /context /compact /reasoning /tasks）
+   * 保持原交互；其余（/undo /redo /new /resume /fork /exit /quit /? 与未知命令）**委托共享
+   * commands.ts 的 handleCommand**，用 ChatRuntime 构建真实 CommandContext，保证两路径语义一致。
+   */
+  function handleCommand(parsed: { name: string; rest: string }): void {
+    const { name, rest } = parsed;
     switch (name) {
       case '/mode':
         if (rest.length > 0) {
@@ -250,9 +542,16 @@ function InkShell({
         }
         return;
       case '/help':
+      case '/?':
+        // 帮助文本与 legacy 同源（commands.ts 的 HELP_TEXT），此处以浮层展示
         openHelp();
         return;
       case '/sessions':
+        // 带关键字 → 共享搜索（文本输出）；无参 → 交互式选择列表
+        if (rest.length > 0) {
+          runSharedCommand(parsed, runtime, commandIo);
+          return;
+        }
         openSessions();
         return;
       case '/context': {
@@ -272,7 +571,7 @@ function InkShell({
         }
         if (arg === 'on') {
           runtime.setReasoning(true);
-          sendSystem('推理展示已开启（turn 内按 r 展开/收起折叠块）。');
+          sendSystem('推理展示已开启（turn 内按 Ctrl+R 展开/收起折叠块）。');
           return;
         }
         if (arg === 'off') {
@@ -287,26 +586,76 @@ function InkShell({
       case '/tasks':
         sendSystem('任务列表请使用 `harness2 cron list` 查看（REPL 只读展示将在后续版本提供）。');
         return;
-      case '/exit':
-        exit(0);
-        return;
       default:
-        sendSystem(`error: 未实现命令 ${name}（/help 查看）`);
+        // /undo /redo（rewind 重投影）/new /resume /fork /exit /quit /? 与未知命令 → 共享实现
+        runSharedCommand(parsed, runtime, commandIo);
     }
   }
 
-  async function submit(text: string): Promise<void> {
-    if (text.trim().length === 0 || busy) return;
-    const parsed = parseCommand(text);
-    if (parsed !== null) {
-      setSettled((l) => [...l, `> ${text}`]);
-      handleCommand(parsed.name, parsed.rest);
+  /** T0：取消当前 turn（Esc/Ctrl+C 忙时触发；abort 后 stopReason=cancelled，部分文本照常落定） */
+  function abortCurrentTurn(): void {
+    if (!busyRef.current) return;
+    sendSystem('^C（正在取消当前 turn…）');
+    runtime.abortTurn();
+  }
+
+  /** 队列真源 → 渲染镜像同步 */
+  function syncQueue(): void {
+    setQueueItems([...queueRef.current]);
+  }
+
+  /** T4：入队（id 稳定，供 queue-panel 取消定位） */
+  function enqueue(text: string): void {
+    queueSeqRef.current += 1;
+    queueRef.current.push({ id: `q:${queueSeqRef.current}`, text });
+    syncQueue();
+  }
+
+  /** T4：取消队列条目（queue-panel Ctrl+X → 队首；给 id 则精确移除）；仅影响未启动项 */
+  function cancelQueued(id?: string): void {
+    queueRef.current = cancelQueueItem(queueRef.current, id);
+    syncQueue();
+  }
+
+  /** 取出一条排队输入并执行；exiting 后不再取（对齐 legacy 的 queue.shift 收尾逻辑） */
+  function drainQueue(): void {
+    if (exitingRef.current) return;
+    const next = queueRef.current.shift();
+    if (next === undefined) return;
+    syncQueue();
+    void handleInput(next.text);
+  }
+
+  /** 忙时入队（不并发）；空闲时直接执行。命令与普通 turn 走同一入口（对齐 legacy）。 */
+  function submit(text: string): void {
+    if (text.trim().length === 0) return;
+    if (busyRef.current) {
+      enqueue(text);
       return;
     }
+    void handleInput(text);
+  }
+
+  async function handleInput(text: string): Promise<void> {
+    const parsed = parseCommand(text);
+    if (parsed !== null) {
+      liveSeqRef.current += 1;
+      dispatchInputNow({ type: 'system', id: `echo:${liveSeqRef.current}`, text: `> ${text}` });
+      handleCommand(parsed);
+      if (!busyRef.current) drainQueue();
+      return;
+    }
+    await runTurnText(text);
+  }
+
+  async function runTurnText(text: string): Promise<void> {
     reset();
+    busyRef.current = true;
     let result: TurnResult | undefined;
     setBusy(true);
-    setSettled((l) => [...l, `> ${text}`]);
+    setRetryBudget(undefined); // 新 turn 起清掉上一轮的重试面板
+    liveSeqRef.current += 1;
+    dispatchInputNow({ type: 'user/message', seq: 0, id: `user:live:${liveSeqRef.current}`, text });
     try {
       // @file/@dir 引用解析（发送前预处理；回显保持原始 text；无引用时直接用原文）
       let sendText = text;
@@ -315,35 +664,67 @@ function InkShell({
         if (ref.hasRefs && ref.header.length > 0) sendText = `${ref.header}\n\n${text}`;
       }
       result = await runtime.runUserTurn(sendText, handler);
-      commit();
+      // 终态（final/partial/empty）由 TurnResult.textOutcome 决定，工具卡已在流式期落定
+      const terminal = finalize(result);
+      if (terminal !== null) dispatch(terminal);
       if (result !== undefined) {
-        // turn 摘要（对齐 legacy 的 [end_turn ...] 行）
-        const parts = [`[${result.stopReason}`, `steps ${result.steps}`, `toolCalls ${result.toolCalls}`];
-        if (result.error !== undefined) parts.push(`error: ${result.error}`);
-        if (result.warning !== undefined) parts.push(`warning: ${result.warning}`);
-        setSettled((l) => [...l, parts.join(' · ') + ']']);
+        // T4：暴露冻结的 RetryBudgetState（used/remaining/stopReason）给 retry-panel
+        setRetryBudget(result.retryBudget);
+        liveSeqRef.current += 1;
+        dispatch({ type: 'status', id: `status:${liveSeqRef.current}`, text: turnSummaryLine(result) });
       }
     } catch (e) {
-      setSettled((l) => [...l, `error: ${(e as Error)?.message ?? String(e)}`]);
+      sendSystem(`error: ${(e as Error)?.message ?? String(e)}`);
     } finally {
+      reset();
+      busyRef.current = false;
       setBusy(false);
       setReasoningExpanded(false);
+      schedulerRef.current?.flushNow(); // T4 final flush：终态/状态行立即落定，不留在窗口里
+      if (exitingRef.current) onExit('exit');
+      else drainQueue();
     }
   }
+
+  // T4：面板占用行需从 transcript 视口高度扣除，避免溢出。
+  const showRetry = retryBudget !== undefined && retryBudgetHasActivity(retryBudget);
+  const queueRows = queueItems.length > 0 ? 2 + Math.min(queueItems.length - 1, 3) : 0;
+  const panelRows = queueRows + (showRetry ? 2 : 0);
 
   return (
     <Box flexDirection="column" flexGrow={1}>
       <StatusBar runtime={runtime} />
       {overlayOpen ? <OverlayHost>{overlay}</OverlayHost> : null}
       <Transcript
-        settled={settled}
+        items={transcript.items}
         liveText={live.text}
-        liveTools={live.tools}
-        reasoningText={live.reasoning}
+        liveReasoning={live.reasoning}
         busy={busy}
         reasoningExpanded={reasoningExpanded}
+        expandedIds={expandedIds}
+        follow={follow}
+        scrollTop={scrollTop}
+        {...(anchorId !== undefined ? { anchorId } : {})}
+        height={Math.max(3, rows - 8 - panelRows)}
+        width={cols}
+        onViewportChange={onViewportChange}
       />
-      <Composer busy={busy} active={!overlayOpen} onSend={(t) => void submit(t)} onExit={() => exit(0)} />
+      {/* T4 面板：真实队列 / turn 结束后的重试预算 / 任务（数据源注入缝） */}
+      <QueuePanel items={queueItems} active={!overlayOpen} onCancel={(id) => cancelQueued(id)} />
+      <RetryPanel budget={showRetry ? retryBudget : undefined} active={!overlayOpen} onStop={abortCurrentTurn} />
+      <TaskPanel tasks={EMPTY_TASKS} />
+      <Composer
+        busy={busy}
+        active={!overlayOpen}
+        onSend={submit}
+        onExit={(reason) => onExit(reason ?? 'exit')}
+        onAbort={abortCurrentTurn}
+        onSteer={(text) => {
+          const out = runtime.submitSteer(text);
+          return out.state === 'submitted' ? `${out.message}（草稿保留）` : out.message;
+        }}
+        queuedCount={queueItems.length}
+      />
     </Box>
   );
 }
