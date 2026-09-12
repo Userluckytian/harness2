@@ -31,11 +31,24 @@ import type { Screen } from '../renderer/screen.js';
 import { DEFAULT_ACTIVE_FG, candidateRows, drawComposer, measureComposer } from './composer.js';
 import { drawOverlay, overlayNaturalHeight, overlayStackLayout, type OverlaySpec } from './overlay.js';
 import { drawScrollback, writeRowClipped, type Scrollback } from './scrollback.js';
+import { FG } from './projection.js';
 
 /** 候选列表状态（画在 composer 层顶部，activeIndex 高亮 + 滚动窗口） */
 export interface ChatCandidates {
   items: readonly string[];
   activeIndex: number;
+}
+
+/**
+ * P3-D：全屏子代理视图态（非 null = 视图接管整帧）。子会话转录由接线层（next-shell）
+ * 用独立 Scrollback 承载（磁盘重放 + onChildEvent 实时追加），本层只负责画：
+ * scrollback 区画子会话内容、composer 层只画一行提示（草稿/候选/指示不画）。
+ */
+export interface SubagentViewState {
+  /** 子会话转录滚动区（cols 契约与主 scrollback 一致：内容区宽 = 屏宽 - 1） */
+  scrollback: Scrollback;
+  /** composer 层提示行（q/Esc 返回 + 滚动键位 + 子会话标识） */
+  hint: string;
 }
 
 /** Chat 整帧状态（renderChat 只接受状态、画出结果；按键处理不在本库） */
@@ -56,6 +69,11 @@ export interface ChatScreenState {
   shortcuts: readonly string[] | string;
   /** 底边指示（画在 composer 层底行右侧，' · ' 连接右对齐） */
   indicators?: readonly string[];
+  /**
+   * P3-D：全屏子代理视图（非 null = 视图态）。布局上 composer 层收为 1 行提示行
+   * （草稿/候选不画），scrollback 区改画子会话内容；statusline/shortcuts 保持。
+   */
+  subagentView?: SubagentViewState | null;
 }
 
 /** 各层矩形 + 分层中间量（导出供测试断言） */
@@ -86,9 +104,11 @@ export function shortcutsText(shortcuts: readonly string[] | string): string {
 export function layoutChat(rows: number, cols: number, state: ChatScreenState): ChatLayout {
   const totalRows = Math.max(0, Math.floor(rows));
   const totalCols = Math.max(1, Math.floor(cols));
-  const draft = state.draft ?? '';
-  const draftRows = measureComposer(draft, totalCols, state.cursor).rows;
-  const candRows = state.candidates === null ? 0 : candidateRows(state.candidates.items.length);
+  // P3-D：视图态 composer 收为 1 行提示行（草稿/候选不参与测量——draftRows 强制 0，
+  // 否则 measureComposer 的空草稿仍占 1 行会把提示行顶高）
+  const subview = state.subagentView ?? null;
+  const draftRows = subview !== null ? 0 : measureComposer(state.draft ?? '', totalCols, state.cursor).rows;
+  const candRows = subview !== null || state.candidates === null ? 0 : candidateRows(state.candidates.items.length);
   const hasStatusline = typeof state.statusline === 'string' && state.statusline.length > 0;
   const rects = columnLayout({
     total: totalRows,
@@ -118,14 +138,20 @@ export function layoutChat(rows: number, cols: number, state: ChatScreenState): 
 
 function drawScrollbackLayer(buf: CellBuffer, state: ChatScreenState, layer: LayerRect): void {
   if (layer.height <= 0) return; // 镜像 renderScrollback：零高度不渲染、不污染 viewportRows
-  // width/fg/滚动条字符均用 drawScrollback 缺省值（= 原 chat-screen 复刻的常量：
-  // width=buf.cols、内容区 = width-1、轨道 '│' / thumb '█'、fg 0）
-  drawScrollback(buf, state.scrollback, { top: layer.top, height: layer.height });
+  // P3-D：视图态改画子会话 scrollback（独立实例，主转录不动）；其余同主转录（滚动条/宽/fg 缺省）
+  const sb = state.subagentView?.scrollback ?? state.scrollback;
+  drawScrollback(buf, sb, { top: layer.top, height: layer.height });
 }
 
 function drawComposerLayer(buf: CellBuffer, state: ChatScreenState, layout: ChatLayout): void {
   const { top, height } = layout.composer;
   if (height <= 0 || top >= buf.rows) return; // 镜像 renderComposer：越界/零高度不渲染
+  // P3-D：视图态 composer 层只画一行提示（灰；草稿/候选/指示不画——子会话视图无输入）
+  const subview = state.subagentView;
+  if (subview) {
+    writeRowClipped(buf, top, subview.hint, buf.cols, FG.gray);
+    return;
+  }
   // composer 层内自上而下 = 候选行（层顶）→ 草稿行 → 提示行（层底，恒保留）。
   // drawComposer 语义：候选画在草稿区上方（底部锚定）、指示画在草稿区底行。
   // 映射：草稿区 top = 层顶 + 候选行数，height = 草稿可用行（draftCap）+ 提示行，

@@ -46,6 +46,18 @@ export interface ProjectOptions {
    * 不传或空集 = 纯默认态（推理折叠、工具多行输出折叠、diff 折叠）。
    */
   collapsed?: ReadonlySet<number>;
+  /**
+   * P3-D：子代理耗时表（callId → 秒）。数据由 UI 层（next-shell）在 turn 事件流上计时——
+   * subagent tool/call 到 tool/result 的间隔，含审批等待/调度延迟，为**近似值**（非 core
+   * runTurn 的 durationMs）。命中才显示 `完成（43s）` / `失败（43s）`（对齐 grok
+   * "Subagent completed in 43s"；无命中不显示，不伪造）。
+   */
+  durations?: ReadonlyMap<string, number>;
+  /**
+   * P3-D：运行中子代理行的 spinner 指示字符（next-shell 150ms 循环传入当前帧）。
+   * 不传 = 保持 `⏺` 前缀；只替换运行中（pending）子代理行的前缀，完成/失败行与普通工具行不变。
+   */
+  spinner?: string;
 }
 
 // --- 小工具 ---
@@ -107,12 +119,22 @@ function toolSummaryOf(item: ToolItem): string {
   return '';
 }
 
-/** 子代理描述：args.description（缺省 prompt/task 首个字符串），退化用 summary */
-function subagentDescription(item: ToolItem): string {
+/** 子代理描述：args.description（缺省 prompt/task 首个字符串），退化用 summary（导出供接线层列表复用） */
+export function subagentDescription(item: ToolItem): string {
   const args = parseJsonObject(item.args);
   const desc = firstString(args.description, args.prompt, args.task);
   if (desc !== undefined) return oneLine(desc);
   return item.summary;
+}
+
+/**
+ * P3-D 耗时文案：秒 → `43s` / `1m35s`（对齐 grok "completed in 43s" 的耗时后缀）。
+ * 数据为 UI 层近似计时（见 ProjectOptions.durations 注）。
+ */
+export function formatSubagentDuration(seconds: number): string {
+  const s = Math.max(0, Math.floor(seconds));
+  if (s < 60) return `${s}s`;
+  return `${Math.floor(s / 60)}m${String(s % 60).padStart(2, '0')}s`;
 }
 
 /** partial/empty 的原因行（对齐 TranscriptView 的 reasonLine） */
@@ -225,17 +247,30 @@ function projectTool(
   expanded: boolean,
   cols: number | undefined,
   out: ProjectionLine[],
+  opts: Pick<ProjectOptions, 'durations' | 'spinner'> = {},
 ): void {
   const isSub = isSubagentTool(item.tool);
   const statusFg = item.status === 'pending' ? FG.yellow : item.status === 'ok' ? FG.green : FG.red;
   if (isSub) {
-    const state = item.status === 'pending' ? '运行中' : item.status === 'ok' ? '完成' : '失败';
-    out.push({
-      text: clipLine(`⏺ Subagent "${subagentDescription(item)}" ${state}`, cols),
-      lineIndex,
-      kind: 'subagent',
-      fg: statusFg,
-    });
+    // P3-D：耗时命中才追加（UI 层近似计时，无命中不伪造）；运行中行用 spinner 前缀
+    const duration = opts.durations?.get(item.callId);
+    const durationSuffix = duration !== undefined ? `（${formatSubagentDuration(duration)}）` : '';
+    if (item.status === 'pending') {
+      out.push({
+        text: clipLine(`${opts.spinner ?? '⏺'} Subagent "${subagentDescription(item)}" 运行中`, cols),
+        lineIndex,
+        kind: 'subagent',
+        fg: statusFg,
+      });
+    } else {
+      const state = item.status === 'ok' ? '完成' : '失败';
+      out.push({
+        text: clipLine(`⏺ Subagent "${subagentDescription(item)}" ${state}${durationSuffix}`, cols),
+        lineIndex,
+        kind: 'subagent',
+        fg: statusFg,
+      });
+    }
   } else {
     out.push({
       text: clipLine(`⏺ ${item.tool}(${toolSummaryOf(item)})`, cols),
@@ -345,7 +380,7 @@ export function projectTranscript(items: readonly TranscriptItem[], opts: Projec
         break;
       }
       case 'tool':
-        projectTool(item, i, expanded, cols, out);
+        projectTool(item, i, expanded, cols, out, opts);
         break;
       case 'system':
       case 'status':

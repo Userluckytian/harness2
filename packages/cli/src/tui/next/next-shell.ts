@@ -40,11 +40,28 @@
 //      UI 模式循环一次（等价 Shift+Tab）、带参接受四态名（ink 为 core 审批模式别名 + 选择
 //      浮层，core 契约冻结不改）；未知命令走共享「未知命令」文案（不再有本层「暂不支持」分支）。
 //   2. 队列面板（Ctrl+X 取消排队条目）与 RetryPanel（重试预算展示）未接。
-//   3. 工具卡 output/子会话入口的磁盘补齐（enrichSubagentResults）未接：live 流不带 output，
-//      工具结果行只有状态无输出摘要；子会话只读浮层（Ctrl+J/K）未接。
+//   3. 工具卡 output 的磁盘补齐（enrichSubagentResults）未接：live 流 tool/result 不带 output，
+//      工具结果行只有状态无输出摘要；live 工具卡也不显示 childSessionId 入口（StreamEvent 契约
+//      所限）——子会话候选改由 onChildEvent 登记补齐（见 P3-D），磁盘重投影后转录 item 自带。
 //   4. 工具卡/推理块仍为纯文本行近似（无边框/反色）；逐行前景色已落地（P3-A：
 //      projection fg → Scrollback 行对象 fg → drawScrollback 逐行绘制，单 fg 兜底保留）。
 //   5. 软折行视觉行内 ↑↓ 移动（Infinity 宽度逻辑行移动）未接；候选补全已接（P3-C，见下）。
+//
+// P3-D 子代理块（耗时/动画）+ 全屏子视图（2026-09-12，对齐 grok 16-subagents）：
+//   - 耗时：subagent tool/call → tool/result 的 turn 事件流间隔（UI 层近似计时——含审批
+//     等待/调度延迟，非 core runTurn durationMs，如实登记）；投影文案 `完成（43s）`（对齐
+//     grok "Subagent completed in 43s"）；<1s 视为即时完成不显示（0s 噪音）；无记录不伪造。
+//   - 运行动画：busy 且存在运行中子代理块（subagentStarts 非空）时 150ms setInterval 循环
+//     invalidation（braille spinner SPINNER_FRAMES，next-shell 持有帧序并传入投影，只替换
+//     运行中子代理行前缀）；空闲/无运行中块停表；spinner tick 走 reprojectAll 全量重建
+//     （items 引用不变时 syncProjection 会早退）。
+//   - 全屏子视图：滚动区焦点 `v` 打开（键位裁决与差异登记见 keymap 文档冲突项 6；grok 为
+//     选中块 Enter/Ctrl+F）。0 个子会话 = 瞬时提示；1 个 = 直开；多个 = overlay 列表选择
+//     （↑↓/j/k/数字/Enter，Esc/q 取消）。视图 = 独立 Scrollback（projectSession 磁盘重放
+//     ∪ onChildEvent 事件，seq id 幂等合并）+ composer 层降为 1 行「q/Esc 返回」提示行
+//     （chat-screen.subagentView 态：草稿/候选/指示不画）；运行中的子会话经 SubagentHooks
+//     .onChildEvent 实时追加进该视图（setupChatSession 装配层传参 → runNextChat sink 延迟
+//     转发 → harness；core 零改动）。视图内 ↑↓ 单行 / PgUp/PgDn 翻页 / 滚轮 ±3。
 //
 // P3-C 斜杠命令全集 + 模糊补全（2026-09-12，对齐 grok `/` 内联下拉 + ink matchCommands）：
 //   - 候选触发：draft 以 '/' 开头且不含空格/换行（= ink Composer 的 commandNameActive 语义）；
@@ -110,7 +127,7 @@ import {
   type TurnStreamHandler,
 } from '../../chat-setup.js';
 import { HELP_TEXT, parseCommand } from '../../commands.js';
-import { getContextUsage } from '@harness2/core';
+import { getContextUsage, type AnySessionEvent } from '@harness2/core';
 import { runSharedCommand, type InkCommandIo } from '../ink-commands.js';
 import { expandContextRefs, hasContextRefs } from '../../context-ref.js';
 import { createInputParser, type InputParser } from '../../input/parser.js';
@@ -127,13 +144,21 @@ import {
   type ShutdownController,
 } from '../shutdown.js';
 import { createNotifier, stderrSink, type Notifier } from '../notify.js';
-import { emptyTranscript, transcriptReducer, type TranscriptEvent, type TranscriptItem } from '../transcript.js';
+import {
+  emptyTranscript,
+  isSubagentTool,
+  projectSession,
+  sessionEventToTranscript,
+  transcriptReducer,
+  type TranscriptEvent,
+  type TranscriptItem,
+  type TranscriptState,
+} from '../transcript.js';
 import type { WriteTarget } from '../renderer/diff-presenter.js';
 import { ALT_SCREEN_EXIT, MOUSE_OFF, SHOW_CURSOR } from '../renderer/ansi.js';
 import { Screen } from '../renderer/screen.js';
 import { renderChat, resizeChat, layoutChat, type ChatScreenState } from './chat-screen.js';
-import { projectTranscript, type ProjectionLine } from './projection.js';
-import { projectSession } from '../transcript.js';
+import { projectTranscript, subagentDescription, type ProjectionLine } from './projection.js';
 import { Scrollback } from './scrollback.js';
 import { wrapTextByWidth, type OverlaySpec } from './overlay.js';
 import { candidateItemAt } from './composer.js';
@@ -166,6 +191,20 @@ const MOUSE_ALL_MOTION_ON = '\x1b[?1003h';
 const MOUSE_ALL_MOTION_OFF = '\x1b[?1003l';
 
 const SHORTCUTS: readonly string[] = ['Enter 发送', 'Shift+Enter 换行', 'Esc 停止', 'Ctrl+C 退出', 'PgUp/PgDn 滚动'];
+
+// —— P3-D 子代理块（耗时/动画）与全屏子视图 ——
+/** spinner 帧序（braille 圆点，grok 运行中块动画同类字符族） */
+export const SPINNER_FRAMES: readonly string[] = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
+/** spinner 推进周期（ms） */
+export const SPINNER_INTERVAL_MS = 150;
+/**
+ * P3-D 键位裁决（差异登记 keymap 文档）：滚动区焦点下 `v` 打开子代理全屏视图（多子代理 =
+ * 列表选择）。grok 是「选中块 + Enter/Ctrl+F」——本层无块光标，且 Enter 在滚动区焦点保留
+ * 提交语义（肌肉记忆不迁移），故取独立字母键 v（view）。
+ */
+export const SUBAGENT_VIEW_KEY = 'v';
+/** 视图态 composer 层提示行 */
+const SUBVIEW_HINT = 'q/Esc 返回 · ↑↓/PgUp/PgDn/滚轮 滚动';
 
 const APPROVAL_ITEMS: readonly string[] = ['y 允许（本次）', 'a 总是允许（本会话）', 'n 拒绝'];
 const APPROVAL_ANSWERS: readonly string[] = ['y', 'a', 'n'];
@@ -429,6 +468,14 @@ function createTurnStreamBridge(onEvent: (event: TranscriptEvent) => void): Turn
 
 // —— 装配层依赖（测试注入缝；runNextChat 传真终端）——
 
+/**
+ * P3-D：子会话事件缝（SubagentHooks.onChildEvent 的接收端）。runNextChat 用一个可变 sink
+ * 桥接 setupChatSession（装配期先于 harness 创建，故经 set 延迟注册 handler）。
+ */
+export interface SubagentEventSink {
+  set(handler: (sessionId: string, event: AnySessionEvent) => void): void;
+}
+
 export interface NextChatHarnessDeps {
   /** 渲染输出（Screen 的 WriteTarget；columns/rows 提供初始尺寸） */
   out: WriteTarget & { columns?: number; rows?: number };
@@ -446,6 +493,8 @@ export interface NextChatHarnessDeps {
   exit?: (code: number) => void;
   /** 外部已 start 的 Screen（runNextChat 自管启动序列时传入；缺省内部创建并 start） */
   screen?: Screen;
+  /** P3-D：子会话事件缝（缺省不接——无实时追加，视图只走磁盘重放/内存累积降级） */
+  subagentEventSink?: SubagentEventSink;
 }
 
 export interface NextChatHarness {
@@ -471,6 +520,8 @@ export interface NextChatHarness {
   pendingApproval(): string | null;
   /** scrollback 逻辑行快照（测试断言用；wrap 段拼回 = 原逻辑行） */
   logicalLines(): string[];
+  /** P3-D：子视图逻辑行快照（null = 视图未打开） */
+  subagentViewLines(): string[] | null;
   isBusy(): boolean;
   queueSnapshot(): readonly string[];
   awaitDone(): Promise<number>;
@@ -528,6 +579,22 @@ export function createNextChatHarness(runtime: ChatRuntime, deps: NextChatHarnes
   let uiMode: UiMode = 'normal';
   let scrollbackFocus = false; // Tab 双态焦点：false = 输入框（默认），true = 滚动区（折叠键族生效）
 
+  // —— P3-D 子代理块（耗时/动画）与全屏子视图状态 ——
+  // 耗时为 UI 层近似计时：subagent tool/call → tool/result 的 turn 事件流间隔（含审批等待/
+  // 调度延迟，非 core runTurn durationMs），如实登记差异；<1s 视为即时完成不显示（0s 噪音）。
+  const subagentStarts = new Map<string, number>(); // callId → Date.now()（运行中）
+  const subagentDurations = new Map<string, number>(); // callId → 秒（完成/失败后保留，重投影用）
+  let spinnerFrame = 0;
+  let spinnerTimer: ReturnType<typeof setInterval> | null = null;
+  // 子会话登记（onChildEvent 桥；childId → 描述 = 子会话首条 user/message 文本）。
+  // live 流的 tool/result 不带 output（StreamEvent 契约），childSessionId 不能从父转录解析——
+  // 视图候选以本登记 + 转录 item（磁盘重投影后）并集为准。
+  const childSessions = new Map<string, string | undefined>();
+  const childEvents = new Map<string, AnySessionEvent[]>(); // onChildEvent 原始事件（打开视图时与磁盘合并）
+  const childTranscripts = new Map<string, TranscriptState>(); // 增量累积（视图实时追加用）
+  let subView: { childId: string } | null = null; // 非 null = 全屏子视图
+  let subPicker: { items: string[]; targets: string[]; activeIndex: number } | null = null; // 多子代理选择
+
   const contentCols = (): number => Math.max(1, screen.cols - 1);
 
   // —— 投影同步（增量追加 / 全量重建，见文件头取舍） ——
@@ -535,7 +602,13 @@ export function createNextChatHarness(runtime: ChatRuntime, deps: NextChatHarnes
   let syncedLineCount = 0;
 
   function projectLines(): ProjectionLine[] {
-    return projectTranscript(transcript.items, { cols: contentCols(), collapsed });
+    return projectTranscript(transcript.items, {
+      cols: contentCols(),
+      collapsed,
+      // P3-D：耗时命中才随行显示；spinner 仅在动画定时器活动时传当前帧
+      ...(subagentDurations.size > 0 ? { durations: subagentDurations } : {}),
+      ...(spinnerTimer !== null ? { spinner: SPINNER_FRAMES[spinnerFrame % SPINNER_FRAMES.length] } : {}),
+    });
   }
 
   function rebuildScrollback(lines: readonly ProjectionLine[]): void {
@@ -580,6 +653,139 @@ export function createNextChatHarness(runtime: ChatRuntime, deps: NextChatHarnes
     rebuildScrollback(lines);
     syncedItems = [...transcript.items];
     syncedLineCount = lines.length;
+    invalidate();
+  }
+
+  // —— P3-D 运行动画：busy 且存在运行中子代理块时 150ms 循环 invalidation ——
+  // spinner 改变的只是运行中子代理行的前缀字符（items 引用不变，syncProjection 的
+  // 「无变化」早退会跳过）→ tick 走 reprojectAll 全量重建（150ms 周期，帧开销可忽略）。
+  function updateSpinner(): void {
+    const shouldRun = busy && subagentStarts.size > 0;
+    if (shouldRun && spinnerTimer === null) {
+      spinnerFrame = 0;
+      spinnerTimer = setInterval(() => {
+        spinnerFrame += 1;
+        reprojectAll();
+      }, SPINNER_INTERVAL_MS);
+    } else if (!shouldRun && spinnerTimer !== null) {
+      clearInterval(spinnerTimer);
+      spinnerTimer = null;
+    }
+  }
+
+  // —— P3-D 全屏子视图（滚动区焦点 v 打开；q/Esc 返回；键位差异登记 keymap 文档）——
+
+  /** 子会话候选：转录 item（有 childSessionId，磁盘重投影后才有）∪ onChildEvent 登记，保序去重 */
+  function subagentCandidates(): Array<{ childId: string; desc: string }> {
+    const out: Array<{ childId: string; desc: string }> = [];
+    const seen = new Set<string>();
+    for (const item of transcript.items) {
+      if (item.kind === 'tool' && isSubagentTool(item.tool) && item.childSessionId !== undefined) {
+        seen.add(item.childSessionId);
+        out.push({ childId: item.childSessionId, desc: subagentDescription(item) });
+      }
+    }
+    for (const [childId, desc] of childSessions) {
+      if (!seen.has(childId)) out.push({ childId, desc: desc ?? childId });
+    }
+    return out;
+  }
+
+  function syncPickerOverlay(): void {
+    if (subPicker === null) return;
+    state.overlays = [
+      { title: '选择子会话', items: subPicker.items, activeIndex: subPicker.activeIndex, showNumbers: true },
+    ];
+  }
+
+  /** v 入口：0 个 = 瞬时提示；1 个 = 直开；多个 = 列表选择浮层 */
+  function openSubagentPicker(): void {
+    const subs = subagentCandidates();
+    if (subs.length === 0) {
+      showHint('（无可打开的子会话）');
+      return;
+    }
+    if (subs.length === 1) {
+      openSubagentView(subs[0]!.childId);
+      return;
+    }
+    subPicker = {
+      items: subs.map((s, i) => `${i + 1}. ${s.desc}（${s.childId}）`),
+      targets: subs.map((s) => s.childId),
+      activeIndex: 0,
+    };
+    controller.blur(); // 列表接管键盘
+    syncPickerOverlay();
+    invalidate();
+  }
+
+  function closeSubPicker(cancel: boolean): void {
+    const picker = subPicker;
+    subPicker = null;
+    state.overlays = [];
+    controller.focus();
+    if (!cancel && picker !== null) {
+      openSubagentView(picker.targets[picker.activeIndex] ?? picker.targets[0]!);
+      return;
+    }
+    invalidate();
+  }
+
+  /** 子会话不可读时的如实降级：错误行进转录（绝不伪造内容） */
+  function childTranscriptError(childId: string, message: string): TranscriptState {
+    return transcriptReducer(emptyTranscript(), {
+      type: 'system',
+      id: `subview-err:${childId}`,
+      text: `无法读取子会话 ${childId}: ${message}（子会话目录不存在或日志尚未落盘）`,
+    });
+  }
+
+  function openSubagentView(childId: string): void {
+    // 重建子转录 = 磁盘重放（权威，含落盘全量）∪ onChildEvent 事件（运行中/磁盘缺失兜底）。
+    // 事件按 seq 派生 id（sessionEventToTranscript），与磁盘同源事件 put() 幂等去重。
+    childTranscripts.set(childId, loadChildTranscript(childId));
+    subView = { childId };
+    controller.blur(); // 视图接管键盘（composer 不画，无输入）
+    rebuildSubview();
+    invalidate();
+  }
+
+  /** 磁盘重放 + live 事件合并（locate 失败/无目录时降级 live 事件；两者皆空 = 如实错误行） */
+  function loadChildTranscript(childId: string): TranscriptState {
+    let located = false;
+    let dirError: string | undefined;
+    let ts = emptyTranscript();
+    try {
+      const dir = runtime.sessionManager.locate(childId);
+      if (dir !== undefined) {
+        ts = projectSession(dir);
+        located = true;
+      }
+    } catch (e) {
+      dirError = (e as Error)?.message ?? String(e);
+    }
+    for (const ev of childEvents.get(childId) ?? []) {
+      const te = sessionEventToTranscript(ev);
+      if (te !== null) ts = transcriptReducer(ts, te);
+    }
+    if (ts.items.length === 0) {
+      return childTranscriptError(childId, dirError ?? (located ? '日志为空' : '未定位到子会话目录'));
+    }
+    return ts;
+  }
+
+  /** 子视图重建（打开/实时追加/子转录更新时）：子转录 → 投影 → 独立 Scrollback */
+  function rebuildSubview(): void {
+    if (subView === null) return;
+    const ts = childTranscripts.get(subView.childId) ?? emptyTranscript();
+    const sb = new Scrollback(projectTranscript(ts.items, { cols: contentCols() }), contentCols());
+    state.subagentView = { scrollback: sb, hint: `子会话 ${subView.childId} · ${SUBVIEW_HINT}` };
+  }
+
+  function closeSubagentView(): void {
+    subView = null;
+    state.subagentView = null;
+    controller.focus();
     invalidate();
   }
 
@@ -896,6 +1102,7 @@ export function createNextChatHarness(runtime: ChatRuntime, deps: NextChatHarnes
     } finally {
       bridge.reset();
       busy = false;
+      updateSpinner(); // P3-D：turn 结束（含取消/异常）→ 空闲停表
       scheduler.flushNow(); // final flush：终态/状态行立即落定
       invalidate();
       // 回合结束提醒（cancelled 不发；退出中不发；异常结束照发——对齐 InkShell）
@@ -1048,7 +1255,46 @@ export function createNextChatHarness(runtime: ChatRuntime, deps: NextChatHarnes
   let lastStep: { turnId: string | undefined; text: string } | null = null;
   const bridge = createTurnStreamBridge((event) => {
     if (event.type === 'assistant/step') lastStep = { turnId: event.turnId, text: event.text };
+    // P3-D 耗时（UI 层近似计时，见状态区注释）：subagent tool/call 起表，tool/result 结算
+    if (event.type === 'tool/call' && isSubagentTool(event.tool)) {
+      subagentStarts.set(event.callId, Date.now());
+      updateSpinner();
+    } else if (event.type === 'tool/result' && subagentStarts.has(event.callId)) {
+      const startedAt = subagentStarts.get(event.callId) ?? Date.now();
+      subagentStarts.delete(event.callId);
+      const seconds = Math.round((Date.now() - startedAt) / 1000);
+      if (seconds >= 1) subagentDurations.set(event.callId, seconds); // <1s 即时完成不显示
+      updateSpinner();
+    }
     dispatch(event);
+  });
+
+  // —— P3-D：onChildEvent 桥（SubagentHooks → 子会话登记 + 视图实时追加）——
+  // runNextChat 在 setupChatSession 装配期注入 SubagentHooks（core 导出面，core 零改动），
+  // 事件经 sink 延迟注册到本 handler；writer 先落盘后回调（core 侧保证）。
+  deps.subagentEventSink?.set((sessionId, event) => {
+    if (!childSessions.has(sessionId)) childSessions.set(sessionId, undefined);
+    if (event.type === 'user/message') {
+      const text = event.payload.text;
+      if (typeof text === 'string' && text.length > 0 && childSessions.get(sessionId) === undefined) {
+        childSessions.set(sessionId, text.split('\n')[0]?.trim() || undefined);
+      }
+    }
+    let list = childEvents.get(sessionId);
+    if (list === undefined) {
+      list = [];
+      childEvents.set(sessionId, list);
+    }
+    list.push(event);
+    const te = sessionEventToTranscript(event);
+    if (te !== null) {
+      const prev = childTranscripts.get(sessionId) ?? emptyTranscript();
+      childTranscripts.set(sessionId, transcriptReducer(prev, te));
+    }
+    if (subView !== null && subView.childId === sessionId) {
+      rebuildSubview(); // 实时追加：视图打开中 → 独立 Scrollback 全量重建（子会话行数有限）
+      invalidate();
+    }
   });
 
   /** turn-final 与末段 step 文本重复时跳过（避免同正文显示两份，见 bridge 差异说明） */
@@ -1254,6 +1500,11 @@ export function createNextChatHarness(runtime: ChatRuntime, deps: NextChatHarnes
           setNearestBlockExpanded(true);
           return 'consumed';
         }
+        // P3-D 键位裁决：v = 打开子代理全屏视图（0 提示 / 1 直开 / 多选列表；差异登记 keymap）
+        if (ev.key === SUBAGENT_VIEW_KEY) {
+          openSubagentPicker();
+          return 'consumed';
+        }
         if (ev.text !== undefined && ev.text.length > 0) {
           // 其余字母键自动回到输入框（grok simple 模式语义），字符照常走内置插入
           scrollbackFocus = false;
@@ -1298,8 +1549,94 @@ export function createNextChatHarness(runtime: ChatRuntime, deps: NextChatHarnes
     },
   };
 
+  // —— P3-D 子视图/选择列表键盘层（位于 approval 与 composer 之间：审批仍最优先）——
+  // 列表浮层：↑↓/j/k 走行、数字直选、Enter 打开、Esc/q 取消。
+  // 视图态（controller 已 blur，composer 层不消费）：q/Esc 返回、↑↓ 单行、PgUp/PgDn 翻页、
+  // 滚轮 ±3；其余放行（审批期间 approval 层优先接管，视图保留在后）。
+  const subagentLayer: InputLayer = {
+    name: 'subagent-view',
+    handle: (event: InputEvent): boolean => {
+      if (subPicker !== null) {
+        const picker = subPicker; // 局部快照（闭包内 TS 收窄；closeSubPicker 会置空外层变量）
+        if (event.type !== 'key') return false;
+        const ev = event;
+        const n = picker.items.length;
+        const move = (delta: number): void => {
+          picker.activeIndex = (picker.activeIndex + delta + n) % n;
+          subPicker = picker;
+          syncPickerOverlay();
+          invalidate();
+        };
+        if (ev.key === 'up' || (ev.key === 'k' && !ev.modifiers.ctrl && !ev.modifiers.alt)) {
+          move(-1);
+          return true;
+        }
+        if (ev.key === 'down' || (ev.key === 'j' && !ev.modifiers.ctrl && !ev.modifiers.alt)) {
+          move(1);
+          return true;
+        }
+        if (!ev.modifiers.ctrl && !ev.modifiers.alt && /^[1-9]$/.test(ev.key)) {
+          const idx = Number(ev.key) - 1;
+          if (idx < n) {
+            picker.activeIndex = idx;
+            closeSubPicker(false);
+            return true;
+          }
+        }
+        if (ev.key === 'enter' && !ev.modifiers.ctrl && !ev.modifiers.alt && !ev.modifiers.shift) {
+          closeSubPicker(false);
+          return true;
+        }
+        if (ev.key === 'escape' || ev.key === 'q') {
+          closeSubPicker(true);
+          return true;
+        }
+        return false;
+      }
+      if (subView === null) return false;
+      if (event.type === 'mouse') {
+        if (event.kind !== 'scroll') return false;
+        const sb = state.subagentView?.scrollback;
+        if (sb === undefined) return false;
+        if (event.button === 0) sb.wheelUp();
+        else sb.wheelDown();
+        invalidate();
+        return true;
+      }
+      if (event.type !== 'key') return false;
+      const ev = event;
+      const sb = state.subagentView?.scrollback;
+      if (sb === undefined) return false;
+      if ((ev.key === 'q' || ev.key === 'escape') && !ev.modifiers.ctrl && !ev.modifiers.alt) {
+        closeSubagentView();
+        return true;
+      }
+      if (ev.key === 'up') {
+        sb.scrollBy(-1);
+        invalidate();
+        return true;
+      }
+      if (ev.key === 'down') {
+        sb.scrollBy(1);
+        invalidate();
+        return true;
+      }
+      if (ev.key === 'pageup') {
+        sb.pageUp();
+        invalidate();
+        return true;
+      }
+      if (ev.key === 'pagedown') {
+        sb.pageDown();
+        invalidate();
+        return true;
+      }
+      return false;
+    },
+  };
+
   const dispatcher: InputDispatcher = createInputDispatcher({
-    layers: [approvalLayer, candidateMouseLayer, createComposerLayer(controller)],
+    layers: [approvalLayer, subagentLayer, candidateMouseLayer, createComposerLayer(controller)],
     fallback: (event) => {
       if (event.type === 'focus') {
         focused = event.direction === 'in';
@@ -1332,6 +1669,10 @@ export function createNextChatHarness(runtime: ChatRuntime, deps: NextChatHarnes
     clearInterval(idleTimer);
     scheduler.dispose();
     bridge.dispose();
+    if (spinnerTimer !== null) {
+      clearInterval(spinnerTimer);
+      spinnerTimer = null;
+    }
     if (hintTimer !== null) {
       clearTimeout(hintTimer);
       hintTimer = null;
@@ -1385,6 +1726,13 @@ export function createNextChatHarness(runtime: ChatRuntime, deps: NextChatHarnes
       const sb = state.scrollback;
       const out: string[] = [];
       for (let i = 0; i < sb.lineCount; i += 1) out.push(sb.rowOf(i).join(''));
+      return out;
+    },
+    subagentViewLines() {
+      const sv = state.subagentView;
+      if (!sv) return null;
+      const out: string[] = [];
+      for (let i = 0; i < sv.scrollback.lineCount; i += 1) out.push(sv.scrollback.rowOf(i).join(''));
       return out;
     },
     isBusy: () => busy,
@@ -1446,10 +1794,16 @@ export function bindEmergencyExitRestore(
 export async function runNextChat(options: ChatOptions = {}): Promise<void> {
   const bootLines: string[] = [];
   const gate = createApprovalGate();
+  // P3-D：SubagentHooks 接线缝（装配期先于 harness 创建 → 可变 sink 延迟转发）。
+  // core 的 SubagentHooks 为导出契约，此处仅装配层传参（core/冻结区零改动）。
+  const childEventSink: { handler: ((sessionId: string, event: AnySessionEvent) => void) | null } = { handler: null };
   const runtime = await setupChatSession(options, {
     line: (t) => bootLines.push(t),
     // 审批弹窗：经 gate 打开 overlay，选择后 resolve；挤占/取消 resolve 为 ASK_CANCELLED
     askApproval: (query) => gate.ask(query),
+    subagentHooks: {
+      onChildEvent: (sessionId, event) => childEventSink.handler?.(sessionId, event),
+    },
   });
 
   const stdout = process.stdout as NodeJS.WriteStream & { columns?: number; rows?: number };
@@ -1473,6 +1827,11 @@ export async function runNextChat(options: ChatOptions = {}): Promise<void> {
     env,
     gate,
     screen,
+    subagentEventSink: {
+      set: (fn) => {
+        childEventSink.handler = fn;
+      },
+    },
     cleanup: async () => {
       screen.stop(); // 关鼠标上报 + 显示光标 + 退 alt-screen（幂等）
       stdout.write(MOUSE_ALL_MOTION_OFF); // 关全 motion 鼠标上报（与 1003h 成对；重复写无害）
