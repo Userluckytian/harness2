@@ -74,6 +74,7 @@ function makeFakeApi(notifyDetails: 'minimal' | 'full' = 'minimal') {
     getContextUsage: vi.fn(async () => ({ usage: 0.5, label: '50%' })),
     getSnapshotForCall: vi.fn(async () => ({ ok: false, error: 'x' })),
     readFileForRef: vi.fn(async () => ({ ok: false, error: 'x' })),
+    listDir: vi.fn(async () => ({ ok: true as const, path: '', entries: [], truncated: false })),
     runConfig: vi.fn(async () => ({ redacted: true }) as never),
     planState: vi.fn(async () => null),
     executionViews: vi.fn(async () => []),

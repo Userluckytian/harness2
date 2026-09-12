@@ -49,6 +49,7 @@ const api: Harness2Api = {
   getSnapshotForCall: (sessionId: string, seq: number) =>
     ipcRenderer.invoke(IPC_INVOKE, { cmd: 'getSnapshotForCall', sessionId, seq }),
   readFileForRef: (path: string, cwd: string) => ipcRenderer.invoke(IPC_INVOKE, { cmd: 'readFileForRef', path, cwd }),
+  listDir: (relativePath: string) => ipcRenderer.invoke(IPC_INVOKE, { cmd: 'listDir', relativePath }),
   notify: (title: string, body: string, sessionId?: string) =>
     ipcRenderer.invoke(IPC_INVOKE, { cmd: 'notify', title, body, sessionId }),
   metadataGet: () => ipcRenderer.invoke(IPC_INVOKE, { cmd: 'metadata:get' }),

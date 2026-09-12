@@ -73,6 +73,7 @@ function makeFakeApi() {
     getContextUsage: vi.fn(async () => ({ usage: 0.5, label: '50%' })),
     getSnapshotForCall: vi.fn(async () => ({ ok: false, error: '未找到对应快照' })),
     readFileForRef: vi.fn(async () => ({ ok: false, error: '未找到' })),
+    listDir: vi.fn(async () => ({ ok: true as const, path: '', entries: [], truncated: false })),
     // —— D0：S7 只读查询 + S3 交互 op + 能力盘点（默认最小可用实现） ——
     runConfig: vi.fn(async () => ({ redacted: true }) as never),
     planState: vi.fn(async () => null),

@@ -85,6 +85,7 @@ function makeFakeApi(): Harness2Api {
     getContextUsage: vi.fn(async () => ({ usage: 0.45, label: '45%' })),
     getSnapshotForCall: vi.fn(async () => ({ ok: false, error: '未找到对应快照' })),
     readFileForRef: vi.fn(async () => ({ ok: false, error: '未找到' })),
+    listDir: vi.fn(async () => ({ ok: true as const, path: '', entries: [], truncated: false })),
     runConfig: vi.fn(async () => ({ redacted: true }) as never),
     planState: vi.fn(async () => null),
     executionViews: vi.fn(async () => []),

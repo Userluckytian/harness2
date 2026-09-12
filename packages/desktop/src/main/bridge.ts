@@ -22,6 +22,7 @@ import { readMetadata, writeMetadataPatch } from './metadata-file.js';
 import { readDrafts, writeDrafts } from './drafts-file.js';
 import { readAuthMasked, readSettingsConfig, updateAuth, updateSettingsConfig } from './config-file.js';
 import { getCrashReports, getDoctorReport } from './diagnostics.js';
+import { listWorkspaceDir } from './workspace-fs.js';
 import { getContextUsageForSession } from './context-usage.js';
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { execFile as execFileCb } from 'node:child_process';
@@ -600,6 +601,12 @@ export function createBridge(deps: BridgeDeps): Bridge {
         const entry = readSnapshotEntry(sid, seq, deps.home);
         if (entry === null) return { ok: false, error: '未找到对应快照' };
         return { ok: true, entry };
+      }
+      case 'listDir': {
+        // PD7：工作区只读列目录 —— 根恒为主进程持有的 serve --root，渲染端只传相对路径；
+        // realpath 边界校验（符号链接/junction 越界拒绝）在 workspace-fs 内实现。
+        const rel = typeof args['relativePath'] === 'string' ? args['relativePath'] : '';
+        return listWorkspaceDir(deps.root, rel);
       }
       case 'readFileForRef':
         return readFileForRefMain(

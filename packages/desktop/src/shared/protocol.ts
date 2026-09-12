@@ -561,6 +561,7 @@ export type InvokeCommand =
   | { cmd: 'getContextUsage'; sessionId: string }
   | { cmd: 'getSnapshotForCall'; sessionId: string; seq: number }
   | { cmd: 'readFileForRef'; path: string; cwd: string }
+  | { cmd: 'listDir'; relativePath: string }
   | { cmd: 'notify'; title: string; body: string; sessionId?: string }
   | { cmd: 'metadata:get' }
   | { cmd: 'metadata:set'; id: string; patch: { title?: string; archived?: boolean; deleted?: boolean } }
@@ -639,6 +640,16 @@ export interface Harness2Api {
     path: string,
     cwd: string,
   ): Promise<{ ok: boolean; content?: string; truncated?: boolean; error?: string }>;
+  /** PD7：工作区只读列目录（根 = 主进程持有的 serve --root；仅相对路径；realpath 边界校验） */
+  listDir(relativePath: string): Promise<
+    | {
+        ok: true;
+        path: string;
+        entries: Array<{ name: string; kind: 'dir' | 'file' | 'symlink' | 'other' }>;
+        truncated: boolean;
+      }
+    | { ok: false; error: string }
+  >;
   /** 任务完成系统通知（主进程 Electron Notification） */
   notify(title: string, body: string, sessionId?: string): Promise<void>;
   /** 读会话展示态覆层整体（~/.harness2/desktop-metadata.json；损坏回退空映射） */
