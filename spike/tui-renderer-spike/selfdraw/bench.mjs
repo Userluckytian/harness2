@@ -22,7 +22,11 @@ const VIEWPORT = ROWS - 1; // 底部 1 行输入
 class NullStdout extends Writable {
   bytes = 0;
   writes = 0;
-  _write(chunk, _e, cb) { this.bytes += chunk.length; this.writes += 1; cb(); }
+  _write(chunk, _e, cb) {
+    this.bytes += chunk.length;
+    this.writes += 1;
+    cb();
+  }
 }
 
 function stats(a) {
@@ -109,7 +113,6 @@ function doWheelFrame(n) {
 {
   sb.goToBottom();
   const times = [];
-  let bytes = 0;
   // 预热 50 帧
   for (let i = 0; i < 50; i += 1) doWheelFrame(i % 2 === 0 ? -3 : 3);
   for (let i = 0; i < 2000; i += 1) {
@@ -123,10 +126,10 @@ function doWheelFrame(n) {
 
 // ---- 5) 整页翻页差量帧 ×2000 ----
 {
-  stdout.bytes = 0; stdout.writes = 0;
+  stdout.bytes = 0;
+  stdout.writes = 0;
   sb.goToBottom();
   const times = [];
-  const dir = () => (Math.floor(sb.scrollTopRow / VIEWPORT) % 2 === 0 ? -VIEWPORT : VIEWPORT);
   for (let i = 0; i < 50; i += 1) doWheelFrame(i % 2 === 0 ? -VIEWPORT : VIEWPORT);
   for (let i = 0; i < 2000; i += 1) {
     const t0 = performance.now();

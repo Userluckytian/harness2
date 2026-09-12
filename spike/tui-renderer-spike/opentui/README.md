@@ -22,10 +22,10 @@ npx bun hello.tsx          # 最小 hello-world
 
 ## 文件
 
-| 文件 | 用途 |
-| --- | --- |
-| `hello.tsx` | 最小全屏 app（scrollbox + input），烟雾测试（`SPIKE_AUTO_EXIT_MS` 环境变量可自动退出） |
-| `demo.tsx` | 10k 行转录 + 滚轮 + 输入框（真机交互验证） |
-| `bench.mjs` | headless 基准：初始渲染/滚动帧耗/输入回显/RSS（`SPIKE_SCROLL_FRAMES` 可调帧数） |
-| `capabilities.mjs` | CJK 宽度原生测量 + 鼠标/选择/剪贴板/图片 API 存在性 |
-| `results.md` | 全部原始数据 + 结论 |
+| 文件               | 用途                                                                                   |
+| ------------------ | -------------------------------------------------------------------------------------- |
+| `hello.tsx`        | 最小全屏 app（scrollbox + input），烟雾测试（`SPIKE_AUTO_EXIT_MS` 环境变量可自动退出） |
+| `demo.tsx`         | 10k 行转录 + 滚轮 + 输入框（真机交互验证）                                             |
+| `bench.mjs`        | headless 基准：初始渲染/滚动帧耗/输入回显/RSS（`SPIKE_SCROLL_FRAMES` 可调帧数）        |
+| `capabilities.mjs` | CJK 宽度原生测量 + 鼠标/选择/剪贴板/图片 API 存在性                                    |
+| `results.md`       | 全部原始数据 + 结论                                                                    |

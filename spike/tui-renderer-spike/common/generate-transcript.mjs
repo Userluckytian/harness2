@@ -13,7 +13,10 @@ function mulberry32(seed) {
   };
 }
 
-const ASCII_WORDS = 'the renderer scrolls transcript buffer diff cell grid frame budget latency throughput virtualization viewport anchor sticky follow momentum inertia flicker tear resize alternate screen cursor report sequence grade compile bundle package install license native binding'.split(' ');
+const ASCII_WORDS =
+  'the renderer scrolls transcript buffer diff cell grid frame budget latency throughput virtualization viewport anchor sticky follow momentum inertia flicker tear resize alternate screen cursor report sequence grade compile bundle package install license native binding'.split(
+    ' ',
+  );
 const CJK_SENTENCES = [
   '渲染层选型需要实测数据支撑，不能只看社区口碑。',
   '终端本质是字符网格，宽字符占两列，断行时不能切开。',

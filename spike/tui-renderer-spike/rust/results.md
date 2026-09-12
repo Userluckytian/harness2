@@ -5,14 +5,14 @@
 
 ## 1. 构建与工具链成本
 
-| 项 | 值 | 来源 |
-| --- | --- | --- |
-| 依赖锁定 | 182 个包（ratatui 0.30.2 + crossterm 0.29.0 及传递依赖） | `cargo add ratatui crossterm` 输出 |
-| 网络成本 | crates.io 下载两次因「transfer too slow」中断，第 3 次（加大 `CARGO_HTTP_TIMEOUT=120 CARGO_NET_RETRY=10`）成功 | 会话原始日志 |
-| 编译时间（增量后成功一次全量） | 29.12s（`Finished release profile`） | 见 §4 命令记录 |
-| 二进制体积 | 2,317,344 bytes（≈2.2MB，release，未 strip） | `ls -la target/release/tui-spike-d.exe` |
-| target 目录 | 150MB（中间产物，不入 git） | `du -sh target` |
-| 许可 | ratatui MIT、crossterm MIT；182 包中非宽松仅 `terminfo: WTFPL`（同为宽松许可，非传染）；`cargo metadata` 逐包核查 | 同上 |
+| 项                             | 值                                                                                                                | 来源                                    |
+| ------------------------------ | ----------------------------------------------------------------------------------------------------------------- | --------------------------------------- |
+| 依赖锁定                       | 182 个包（ratatui 0.30.2 + crossterm 0.29.0 及传递依赖）                                                          | `cargo add ratatui crossterm` 输出      |
+| 网络成本                       | crates.io 下载两次因「transfer too slow」中断，第 3 次（加大 `CARGO_HTTP_TIMEOUT=120 CARGO_NET_RETRY=10`）成功    | 会话原始日志                            |
+| 编译时间（增量后成功一次全量） | 29.12s（`Finished release profile`）                                                                              | 见 §4 命令记录                          |
+| 二进制体积                     | 2,317,344 bytes（≈2.2MB，release，未 strip）                                                                      | `ls -la target/release/tui-spike-d.exe` |
+| target 目录                    | 150MB（中间产物，不入 git）                                                                                       | `du -sh target`                         |
+| 许可                           | ratatui MIT、crossterm MIT；182 包中非宽松仅 `terminfo: WTFPL`（同为宽松许可，非传染）；`cargo metadata` 逐包核查 | 同上                                    |
 
 ## 2. headless 压测（`--bench`，TestBackend 120x40）
 
@@ -49,10 +49,10 @@ CARGO_NET_RETRY=10 CARGO_HTTP_TIMEOUT=120 cargo build --release
 
 ## 5. 门槛判定（总览 §4.2）
 
-| 门槛 | 判定 | 说明 |
-| --- | --- | --- |
-| Node≥22 可运行 | ❌（不适用） | 根本不走 Node 运行时；换来的等价问题是「Rust 工具链 + 三平台编译产物分发」 |
-| 性能 | ✅ | p95 0.204ms |
-| 打包 | ⚠️ | 需为 desktop 增加分发 Rust 二进制的 extraResources 通道 + CI 三平台交叉编译 |
-| 体验底线 | ✅（代码级）/ 待真机 | 宽字符/alt-screen/鼠标由框架内建保证；真机观感待确认 |
-| 许可 | ✅ | MIT（ratatui/crossterm），依赖链无传染性许可 |
+| 门槛           | 判定                 | 说明                                                                        |
+| -------------- | -------------------- | --------------------------------------------------------------------------- |
+| Node≥22 可运行 | ❌（不适用）         | 根本不走 Node 运行时；换来的等价问题是「Rust 工具链 + 三平台编译产物分发」  |
+| 性能           | ✅                   | p95 0.204ms                                                                 |
+| 打包           | ⚠️                   | 需为 desktop 增加分发 Rust 二进制的 extraResources 通道 + CI 三平台交叉编译 |
+| 体验底线       | ✅（代码级）/ 待真机 | 宽字符/alt-screen/鼠标由框架内建保证；真机观感待确认                        |
+| 许可           | ✅                   | MIT（ratatui/crossterm），依赖链无传染性许可                                |

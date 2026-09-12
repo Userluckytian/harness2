@@ -41,14 +41,14 @@ node demo.mjs             # 真机 demo（需真终端，人工复跑）
 
 ### 指标对齐统一协议
 
-| 指标 | 数值 | 门槛 | 判定 |
-| --- | --- | --- | --- |
-| 冷启动（spawn→import→首帧，含 node bootstrap） | **524ms**（wall），其中 import ink 270ms、首帧 write 151ms | — | 记录值 |
-| 10k 初始渲染（虚拟化，现产思路） | **46ms** 到首帧（React 渲染 14ms） | — | 通过 |
-| 10k 初始渲染（非虚拟化） | **2373ms**，RSS **550MB**，首帧输出 1.6MB | — | 不可用（启动与内存双重超支） |
-| 滚动帧耗（2000 步 × 3 行） | avg **26.2ms** / **p95 44.7ms**（rerender CPU p95 仅 11.2ms） | p95<33ms | **不达标** |
-| 输入回显延迟（120 样本） | p50 **33.5ms** / p95 **34.5ms** | <30ms | **不达标（边缘）** |
-| 常驻 RSS | 虚拟化初始 **89MB**；滚动 2000 步后 **202MB**；echo 后 97MB | — | 记录值（滚动后增长 ~110MB） |
+| 指标                                           | 数值                                                          | 门槛     | 判定                         |
+| ---------------------------------------------- | ------------------------------------------------------------- | -------- | ---------------------------- |
+| 冷启动（spawn→import→首帧，含 node bootstrap） | **524ms**（wall），其中 import ink 270ms、首帧 write 151ms    | —        | 记录值                       |
+| 10k 初始渲染（虚拟化，现产思路）               | **46ms** 到首帧（React 渲染 14ms）                            | —        | 通过                         |
+| 10k 初始渲染（非虚拟化）                       | **2373ms**，RSS **550MB**，首帧输出 1.6MB                     | —        | 不可用（启动与内存双重超支） |
+| 滚动帧耗（2000 步 × 3 行）                     | avg **26.2ms** / **p95 44.7ms**（rerender CPU p95 仅 11.2ms） | p95<33ms | **不达标**                   |
+| 输入回显延迟（120 样本）                       | p50 **33.5ms** / p95 **34.5ms**                               | <30ms    | **不达标（边缘）**           |
+| 常驻 RSS                                       | 虚拟化初始 **89MB**；滚动 2000 步后 **202MB**；echo 后 97MB   | —        | 记录值（滚动后增长 ~110MB）  |
 
 ### 口径与方法（如实写明）
 
@@ -63,19 +63,19 @@ node demo.mjs             # 真机 demo（需真终端，人工复跑）
 
 依据：ink@7.1.1 源码（`node_modules/ink/build/`，行号对应本目录安装版本）+ 本目录实验（`demo-selftest.mjs`）。
 
-| 能力 | 结论 | 依据 / 实验 |
-| --- | --- | --- |
-| **文本选择与复制** | **部分可用（默认模式）**：非 alt-screen 下输出留在正常 scrollback，终端原生选择可用；但每次重渲对变化区域「擦除+重写」，正在选择的内容被抹掉即选择丢失。alt-screen 模式下无 scrollback，选择复制基本不可用。无程序化选择 API | `log-update.js` `createStandard.render`：`eraseLines(previousLineCount) + str` 整帧重写；`ink.js` `setAlternateScreen`（`options.alternateScreen`） |
-| **鼠标点击命中/拖动** | **不支持**：ink 输入层无任何鼠标解析；命中测试需自算 yoga 布局坐标，无 hit-test API。点击/拖拽事件即使自建桥接到应用层，也要自己做「坐标→组件」映射 | `grep mouse\|1000\|1006\|wheel` 于 `input-parser.js`/`parse-keypress.js`/`App.js` 均无结果；实验：`demo-selftest.mjs` 证明 `useInput` 收到 `[<64;10;5M` 字面文本（ESC 被吞）；packages/cli `parseSgrMouse` 点击/拖拽返回 null |
-| **SGR 鼠标协议支持方式** | **必须自建 stdin 拦截桥**：在 `render()` 之前对 stdin 注册 `'readable'`（依赖注册顺序先于 ink 读取），剥出鼠标序列、其余字节 `unshift()` 回流。这是 hack，不是 ink 提供的能力；ink 7 无官方 mouse API | 本目录 `demo.mjs` `attachWheelBridge`（packages/cli `terminal-events.ts` 同思路）；实验证据同上 |
-| **平滑/逐帧滚动** | **硬天花板：默认 30fps**。`maxFps ?? 30` → 33ms 节流周期，滚动帧率被锁死且两次落写间隔 ≥33ms；实测 flush p95 44.7ms 超 33ms 门槛。可调 `maxFps` 但代价见 §2 | `ink.js` 构造器：`const maxFps = options.maxFps ?? 30; throttle(this.onRender, renderThrottleMs, {leading, trailing})` |
-| **内联图片** | **不支持（无内置）**：可向 stdout 手写 iTerm2/kitty OSC 序列，但 ink 把屏幕当「文本行集合」管理（按行擦除/重写），图片不占行高，任何重绘都会破坏图片区域。未做真终端图片实验，此条为源码推断 | `log-update.js` 行级管理模型；`render.d.ts` 无任何 image 选项 |
-| **CJK 宽字符** | **内置支持（良好）**：`string-width` 测量对齐、`wrap-ansi` + `widest-line` 折行，yoga 布局用同一测量。emoji 由 string-width 处理 | `output.js:173`（stringWidth 对齐）、`ink.js:11`/`wrap-text.js:1`/`measure-text.js:1`（wrap-ansi/widest-line） |
-| **全屏重绘行为** | **默认每帧整帧重写**（光标回退 + eraseLines(n) + 全部行 + 同步序列）。setState → 重渲 → 整帧字符串重建 → 整帧 write。可选 `incrementalRendering: true`（默认 false）做**行级** diff（跳过相同行），仍无 cell 级粒度 | `log-update.js` `createStandard`（整帧）vs `createIncremental`（行级 diff）；`render.js:17` `incrementalRendering: false` |
-| **alt-screen 进出恢复** | **ink 7 内置** `options.alternateScreen`，进出与恢复由 ink 管理（本仓库现状未启用） | `render.js:19`、`ink.js:256,699` |
-| **resize** | **内置**：监听 stdout `'resize'`，宽度变小时 clear + 全量重绘 | `ink.js` `resized()` |
-| **异常退出恢复** | **尽力而为**：signal-exit 注册 unmount（SIGINT/SIGHUP/exit 时清屏恢复）；SIGKILL/硬崩溃无法恢复（任何方案相同） | `ink.js` 构造器 `signalExit(this.unmount)` |
-| **键盘输入/粘贴/焦点** | 内置：useInput（parse-keypress）、bracketed paste、focus 事件（DECSET 1004）、kitty keyboard 协议探测（7.1 新增） | `input-parser.js`、`App.js`、`kitty-keyboard.js` |
+| 能力                     | 结论                                                                                                                                                                                                                         | 依据 / 实验                                                                                                                                                                                                                   |
+| ------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **文本选择与复制**       | **部分可用（默认模式）**：非 alt-screen 下输出留在正常 scrollback，终端原生选择可用；但每次重渲对变化区域「擦除+重写」，正在选择的内容被抹掉即选择丢失。alt-screen 模式下无 scrollback，选择复制基本不可用。无程序化选择 API | `log-update.js` `createStandard.render`：`eraseLines(previousLineCount) + str` 整帧重写；`ink.js` `setAlternateScreen`（`options.alternateScreen`）                                                                           |
+| **鼠标点击命中/拖动**    | **不支持**：ink 输入层无任何鼠标解析；命中测试需自算 yoga 布局坐标，无 hit-test API。点击/拖拽事件即使自建桥接到应用层，也要自己做「坐标→组件」映射                                                                          | `grep mouse\|1000\|1006\|wheel` 于 `input-parser.js`/`parse-keypress.js`/`App.js` 均无结果；实验：`demo-selftest.mjs` 证明 `useInput` 收到 `[<64;10;5M` 字面文本（ESC 被吞）；packages/cli `parseSgrMouse` 点击/拖拽返回 null |
+| **SGR 鼠标协议支持方式** | **必须自建 stdin 拦截桥**：在 `render()` 之前对 stdin 注册 `'readable'`（依赖注册顺序先于 ink 读取），剥出鼠标序列、其余字节 `unshift()` 回流。这是 hack，不是 ink 提供的能力；ink 7 无官方 mouse API                        | 本目录 `demo.mjs` `attachWheelBridge`（packages/cli `terminal-events.ts` 同思路）；实验证据同上                                                                                                                               |
+| **平滑/逐帧滚动**        | **硬天花板：默认 30fps**。`maxFps ?? 30` → 33ms 节流周期，滚动帧率被锁死且两次落写间隔 ≥33ms；实测 flush p95 44.7ms 超 33ms 门槛。可调 `maxFps` 但代价见 §2                                                                  | `ink.js` 构造器：`const maxFps = options.maxFps ?? 30; throttle(this.onRender, renderThrottleMs, {leading, trailing})`                                                                                                        |
+| **内联图片**             | **不支持（无内置）**：可向 stdout 手写 iTerm2/kitty OSC 序列，但 ink 把屏幕当「文本行集合」管理（按行擦除/重写），图片不占行高，任何重绘都会破坏图片区域。未做真终端图片实验，此条为源码推断                                 | `log-update.js` 行级管理模型；`render.d.ts` 无任何 image 选项                                                                                                                                                                 |
+| **CJK 宽字符**           | **内置支持（良好）**：`string-width` 测量对齐、`wrap-ansi` + `widest-line` 折行，yoga 布局用同一测量。emoji 由 string-width 处理                                                                                             | `output.js:173`（stringWidth 对齐）、`ink.js:11`/`wrap-text.js:1`/`measure-text.js:1`（wrap-ansi/widest-line）                                                                                                                |
+| **全屏重绘行为**         | **默认每帧整帧重写**（光标回退 + eraseLines(n) + 全部行 + 同步序列）。setState → 重渲 → 整帧字符串重建 → 整帧 write。可选 `incrementalRendering: true`（默认 false）做**行级** diff（跳过相同行），仍无 cell 级粒度          | `log-update.js` `createStandard`（整帧）vs `createIncremental`（行级 diff）；`render.js:17` `incrementalRendering: false`                                                                                                     |
+| **alt-screen 进出恢复**  | **ink 7 内置** `options.alternateScreen`，进出与恢复由 ink 管理（本仓库现状未启用）                                                                                                                                          | `render.js:19`、`ink.js:256,699`                                                                                                                                                                                              |
+| **resize**               | **内置**：监听 stdout `'resize'`，宽度变小时 clear + 全量重绘                                                                                                                                                                | `ink.js` `resized()`                                                                                                                                                                                                          |
+| **异常退出恢复**         | **尽力而为**：signal-exit 注册 unmount（SIGINT/SIGHUP/exit 时清屏恢复）；SIGKILL/硬崩溃无法恢复（任何方案相同）                                                                                                              | `ink.js` 构造器 `signalExit(this.unmount)`                                                                                                                                                                                    |
+| **键盘输入/粘贴/焦点**   | 内置：useInput（parse-keypress）、bracketed paste、focus 事件（DECSET 1004）、kitty keyboard 协议探测（7.1 新增）                                                                                                            | `input-parser.js`、`App.js`、`kitty-keyboard.js`                                                                                                                                                                              |
 
 ### 关键实验记录：鼠标序列在 useInput 中的行为
 

@@ -11,17 +11,31 @@ class NullStdout extends Writable {
   writes = 0;
   bytes = 0;
   all = '';
-  _write(chunk, _e, cb) { this.writes += 1; this.bytes += chunk.length; this.all += chunk.toString(); cb(); }
+  _write(chunk, _e, cb) {
+    this.writes += 1;
+    this.bytes += chunk.length;
+    this.all += chunk.toString();
+    cb();
+  }
 }
 class FakeStdin {
   listeners = new Set();
   buf = '';
-  on(ev, fn) { if (ev === 'readable') this.listeners.add(fn); }
-  read() { const c = this.buf; this.buf = ''; return c === '' ? null : c; }
+  on(ev, fn) {
+    if (ev === 'readable') this.listeners.add(fn);
+  }
+  read() {
+    const c = this.buf;
+    this.buf = '';
+    return c === '' ? null : c;
+  }
   setRawMode() {}
   setEncoding() {}
   isTTY = false;
-  emit(s) { this.buf = s; for (const fn of this.listeners) fn(); }
+  emit(s) {
+    this.buf = s;
+    for (const fn of this.listeners) fn();
+  }
 }
 
 const cols = 80;
@@ -48,7 +62,11 @@ function paint() {
   const mode = sb.follow ? 'FOLLOW' : `row ${sb.scrollTopRow + 1}/${sb.totalRows}`;
   back.writeText(rows - 1, `input> ${draft}_ [${mode}]`);
 }
-function frame() { paint(); renderer.present(back); frames += 1; }
+function frame() {
+  paint();
+  renderer.present(back);
+  frames += 1;
+}
 
 function onChunk() {
   const chunk = stdin.read();
@@ -58,27 +76,63 @@ function onChunk() {
     const mouse = ansiBuf.match(/^\x1b\[<(\d+);\d+;\d+([Mm])/);
     if (mouse) {
       ansiBuf = ansiBuf.slice(mouse[0].length);
-      if (mouse[2] === 'M' && mouse[1] === '64') { sb.follow = false; sb.scroll(-3); frame(); }
-      else if (mouse[2] === 'M' && mouse[1] === '65') { sb.scroll(3); frame(); }
+      if (mouse[2] === 'M' && mouse[1] === '64') {
+        sb.follow = false;
+        sb.scroll(-3);
+        frame();
+      } else if (mouse[2] === 'M' && mouse[1] === '65') {
+        sb.scroll(3);
+        frame();
+      }
       continue;
     }
     const csi = ansiBuf.match(/^\x1b\[[0-9;]*[A-Za-z~]/);
     if (csi) {
       const seq = csi[0];
       ansiBuf = ansiBuf.slice(seq.length);
-      if (seq === '\x1b[A') { sb.follow = false; sb.scroll(-1); frame(); }
-      else if (seq === '\x1b[B') { sb.follow = false; sb.scroll(1); frame(); }
-      else if (seq === '\x1b[5~') { sb.pageUp(); frame(); }
-      else if (seq === '\x1b[6~') { sb.pageDown(); frame(); }
+      if (seq === '\x1b[A') {
+        sb.follow = false;
+        sb.scroll(-1);
+        frame();
+      } else if (seq === '\x1b[B') {
+        sb.follow = false;
+        sb.scroll(1);
+        frame();
+      } else if (seq === '\x1b[5~') {
+        sb.pageUp();
+        frame();
+      } else if (seq === '\x1b[6~') {
+        sb.pageDown();
+        frame();
+      }
       continue;
     }
     if (ansiBuf.length === 0) break;
     const ch = ansiBuf[0];
     ansiBuf = ansiBuf.slice(1);
-    if (ch === '\r' || ch === '\n') { sb.append(`> ${draft || '(empty)'}`); draft = ''; sb.follow = true; frame(); continue; }
-    if (ch === 'j') { sb.scroll(1); frame(); continue; } // vim：j=下滚
-    if (ch === 'k') { sb.follow = false; sb.scroll(-1); frame(); continue; } // k=上滚
-    if (ch === '\x7f') { draft = draft.slice(0, -1); frame(); continue; }
+    if (ch === '\r' || ch === '\n') {
+      sb.append(`> ${draft || '(empty)'}`);
+      draft = '';
+      sb.follow = true;
+      frame();
+      continue;
+    }
+    if (ch === 'j') {
+      sb.scroll(1);
+      frame();
+      continue;
+    } // vim：j=下滚
+    if (ch === 'k') {
+      sb.follow = false;
+      sb.scroll(-1);
+      frame();
+      continue;
+    } // k=上滚
+    if (ch === '\x7f') {
+      draft = draft.slice(0, -1);
+      frame();
+      continue;
+    }
     draft += ch;
     frame();
   }
@@ -98,7 +152,9 @@ stdin.emit('k'); // 上滚
 
 // 校验
 const checks = [];
-function ck(name, ok) { checks.push([name, ok]); }
+function ck(name, ok) {
+  checks.push([name, ok]);
+}
 
 // 1) 帧数：每个输入事件一帧
 ck('每个输入事件触发一帧（frames>=9）', frames >= 9);
@@ -117,7 +173,9 @@ const wrapped = (await import('./scrollback.mjs')).wrapLine(cjkLine, 20);
 let wrapOk = true;
 for (const w of wrapped) {
   if (displayWidth(w) > 20) wrapOk = false;
-  if (w.endsWith('\uD83C') || /[\u4e00-\u9fff]$/.test(w) === false) { /* 宽字符结尾合法 */ }
+  if (w.endsWith('\uD83C') || /[\u4e00-\u9fff]$/.test(w) === false) {
+    /* 宽字符结尾合法 */
+  }
 }
 ck('CJK 断行：每物理行宽度≤cols 且行数>1', wrapOk && wrapped.length > 1);
 // 7) 宽字符续列完整：writeText 后 rowText 还原文本宽度一致
@@ -127,7 +185,10 @@ ck('cell buffer 行宽计算一致', displayWidth(buf2.rowText(0)) <= 20);
 
 renderer.stop();
 let fail = 0;
-for (const [name, ok] of checks) { console.log(`${ok ? 'PASS' : 'FAIL'} ${name}`); if (!ok) fail += 1; }
+for (const [name, ok] of checks) {
+  console.log(`${ok ? 'PASS' : 'FAIL'} ${name}`);
+  if (!ok) fail += 1;
+}
 console.log(`frames=${frames} stdoutBytes=${out.bytes} writes=${out.writes} lines=${t1}`);
 console.log(`恢复序列尾部: ${JSON.stringify(out.all.slice(-32))}`);
 process.exit(fail === 0 ? 0 : 1);

@@ -14,7 +14,7 @@ export function wrapLine(text, cols) {
   const out = [];
   let cur = '';
   let curW = 0;
-  let pendingWide = null; // 放不下的宽字符，带到下一行
+  let _pendingWide = null; // 放不下的宽字符，带到下一行
   for (const ch of text) {
     const w = charWidth(ch.codePointAt(0));
     if (w === 0) {
@@ -108,17 +108,33 @@ export class Scrollback {
     }
   }
 
-  wheelUp() { this.follow = false; this.scroll(-3); }
-  wheelDown() { this.scroll(3); }
-  pageUp() { this.follow = false; this.scroll(-this.viewportRows); }
-  pageDown() { this.scroll(this.viewportRows); }
-  goToTop() { this.follow = false; this.scrollTopRow = 0; }
-  goToBottom() { this.follow = true; this.scrollTopRow = this.maxScrollRow; }
+  wheelUp() {
+    this.follow = false;
+    this.scroll(-3);
+  }
+  wheelDown() {
+    this.scroll(3);
+  }
+  pageUp() {
+    this.follow = false;
+    this.scroll(-this.viewportRows);
+  }
+  pageDown() {
+    this.scroll(this.viewportRows);
+  }
+  goToTop() {
+    this.follow = false;
+    this.scrollTopRow = 0;
+  }
+  goToBottom() {
+    this.follow = true;
+    this.scrollTopRow = this.maxScrollRow;
+  }
 
   append(text) {
     this.lines.push(text);
     // 前缀和：新行追加（保持已构建前缀有效）
-    const last = this.prefix[this.built] ?? 0;
+    const _last = this.prefix[this.built] ?? 0;
     const rows = this.rowOf(this.lines.length - 1).length;
     // built 可能小于 lines.length-1（旧行前缀未构建）；确保前面先补齐
     if (this.built < this.lines.length - 1) {
@@ -143,7 +159,10 @@ export class Scrollback {
       const mid = (lo + hi) >> 1;
       this._ensurePrefix(mid + 1);
       if (this.prefix[mid + 1] <= start) lo = mid + 1;
-      else { lineIdx = mid; hi = mid - 1; }
+      else {
+        lineIdx = mid;
+        hi = mid - 1;
+      }
     }
     let skip = start - this.prefix[lineIdx];
     let need = viewportRows;
@@ -156,7 +175,10 @@ export class Scrollback {
       skip = 0;
       lineIdx += 1;
     }
-    while (need > 0) { out.push({ text: '', lineIndex: -1 }); need -= 1; }
+    while (need > 0) {
+      out.push({ text: '', lineIndex: -1 });
+      need -= 1;
+    }
     return out;
   }
 }

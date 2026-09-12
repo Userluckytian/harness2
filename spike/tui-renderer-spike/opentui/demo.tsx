@@ -2,10 +2,10 @@
 // 10k 行转录（common/generate-transcript.mjs, seed 42）渲染进 scrollbox，底部输入框，鼠标滚轮滚动。
 // 运行：bun demo.tsx   （Node 22 不可运行，见 results.md）
 // 退出：ctrl-c（exitOnCtrlC）或 q
-import { useState, useRef, useEffect } from "react";
-import { createCliRenderer } from "@opentui/core";
-import { createRoot, useKeyboard, useOnResize } from "@opentui/react";
-import { generateLines } from "../common/generate-transcript.mjs";
+import { useState, useRef, useEffect } from 'react';
+import { createCliRenderer } from '@opentui/core';
+import { createRoot, useKeyboard } from '@opentui/react';
+import { generateLines } from '../common/generate-transcript.mjs';
 
 const LINES = generateLines(10000, 42);
 
@@ -16,7 +16,7 @@ function App() {
   useEffect(() => {
     const timer = setInterval(() => {
       const sb = scrollRef.current;
-      const r = (globalThis).__spike_renderer;
+      const r = globalThis.__spike_renderer;
       setStatus({
         top: sb ? Math.round(sb.scrollTop) : -1,
         fps: r ? Math.round(r.getStats().fps) : 0,
@@ -28,26 +28,26 @@ function App() {
   }, []);
 
   useKeyboard((key) => {
-    if (key.name === "q") {
+    if (key.name === 'q') {
       process.exit(0);
     }
   });
 
   return (
-    <box style={{ flexDirection: "column", flexGrow: 1, padding: 1 }}>
+    <box style={{ flexDirection: 'column', flexGrow: 1, padding: 1 }}>
       <scrollbox
         ref={scrollRef}
         flexGrow={1}
         scrollY
         focusable
         title={`demo-10k-lines  top=${status.top}  fps=${status.fps}  ${status.w}x${status.h}`}
-        scrollbarOptions={{ visible: true, trackOptions: { backgroundColor: "#222" } }}
+        scrollbarOptions={{ visible: true, trackOptions: { backgroundColor: '#222' } }}
       >
         {LINES.map((line, i) => (
           <text key={i}>{`${String(i + 1).padStart(5)} | ${line}`}</text>
         ))}
       </scrollbox>
-      <box style={{ flexDirection: "row", flexShrink: 0 }}>
+      <box style={{ flexDirection: 'row', flexShrink: 0 }}>
         <text content="> " fg="#888" />
         <input flexGrow={1} placeholder="type here; wheel scrolls transcript; q quits" focused />
       </box>

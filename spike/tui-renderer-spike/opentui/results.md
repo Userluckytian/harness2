@@ -137,6 +137,7 @@ exit code: 0
 ```
 
 stdout 原始字节中确认的关键序列（headless 也能正常驱动终端初始化）：
+
 - 进入 alt-screen：`ESC[?1049h`
 - 开启鼠标：`ESC[?1000h ESC[?1002h ESC[?1003h ESC[?1006h`（SGR mouse 编码）
 - 终端能力探测：CSI 6n 光标上报、Kitty keyboard 协议查询、iTerm2 图片能力查询（均带超时降级）
@@ -155,6 +156,7 @@ exit code: 124（timeout 到点杀死，进程稳定运行 10s，正常渲染输
 ## 4. 性能测量（headless，bun bench.mjs，120x40 画布）
 
 方法（`bench.mjs`，自动化）：
+
 - `createCliRenderer({ stdin/stdout: 假终端(丢弃输出), width:120, height:40, targetFps:60, gatherStats:true })`；
 - React 树 = scrollbox(10k 行，内容来自 `common/generate-transcript.mjs` 的 `generateLines(10000, 42)`) + 底部 input；
 - 初始渲染耗时 = `createRoot().render()` 调用 → 前 3 帧稳定；
@@ -164,18 +166,19 @@ exit code: 124（timeout 到点杀死，进程稳定运行 10s，正常渲染输
 
 原始数据（3 次独立运行）：
 
-| 指标 | Run 1 | Run 2 | Run 3 |
-| --- | --- | --- | --- |
-| renderer 创建 | 5.4ms | — | — |
-| **10k 行初始渲染** | 249.4ms | 252.7ms | 266.3ms |
-| 滚动帧耗 avg | 17.25ms | 17.19ms | 17.27ms |
-| 滚动帧耗 p95 | **17.95ms** | 17.89ms | 17.95ms |
-| 滚动帧耗 p99 / max | 18.81 / 19.25ms | 18.00 / 18.55ms | 18.53 / 18.97ms |
-| 输入回显延迟 avg（帧粒度） | 17.24ms | 17.34ms | 17.28ms |
-| RSS | 259.8MB | 242.9MB | 244.6MB |
-| renderer 内部统计 averageFrameTime | 3.30ms | 3.34ms | 3.44ms |
+| 指标                               | Run 1           | Run 2           | Run 3           |
+| ---------------------------------- | --------------- | --------------- | --------------- |
+| renderer 创建                      | 5.4ms           | —               | —               |
+| **10k 行初始渲染**                 | 249.4ms         | 252.7ms         | 266.3ms         |
+| 滚动帧耗 avg                       | 17.25ms         | 17.19ms         | 17.27ms         |
+| 滚动帧耗 p95                       | **17.95ms**     | 17.89ms         | 17.95ms         |
+| 滚动帧耗 p99 / max                 | 18.81 / 19.25ms | 18.00 / 18.55ms | 18.53 / 18.97ms |
+| 输入回显延迟 avg（帧粒度）         | 17.24ms         | 17.34ms         | 17.28ms         |
+| RSS                                | 259.8MB         | 242.9MB         | 244.6MB         |
+| renderer 内部统计 averageFrameTime | 3.30ms          | 3.34ms          | 3.44ms          |
 
 解读：
+
 - 滚动帧间隔 p95 ≈ 18ms 是 **60fps 帧步进（16.7ms）+ 每帧实际工作 ≈ 3.3ms** 的结果；真实渲染负载远低于 33ms 门槛。renderer 自带 `gatherStats: true` + `getStats()`（fps/frameCount/frameTimes/averageFrameTime），已用于交叉验证。
 - 输入回显 17ms 为帧对齐测量下限，满足 <30ms。
 - 初始渲染 10k 行 ≈ 250ms（一次性成本）。
@@ -199,8 +202,29 @@ exit code: 124（timeout 到点杀死，进程稳定运行 10s，正常渲染输
   "api": {
     "rendererUseMouse": "setter/getter 存在",
     "selection": { "getSelection": true, "startSelection": true, "clearSelection": true },
-    "clipboard": { "exportedStatuses": ["NativeClipboardCancelStatus","NativeClipboardCopyStatus","NativeClipboardDestroyStatus","NativeClipboardOperationStatus","NativeClipboardShutdownStatus","NativeClipboardStartStatus"] },
-    "image": { "NativeImage": "function", "kittyTransport": "string", "ImageRenderable": ["ImageError","ImageLoadError","ImageRenderable","NativeImage","NativeImagePool","imageInfo","resolveImageRenderProtocol"] }
+    "clipboard": {
+      "exportedStatuses": [
+        "NativeClipboardCancelStatus",
+        "NativeClipboardCopyStatus",
+        "NativeClipboardDestroyStatus",
+        "NativeClipboardOperationStatus",
+        "NativeClipboardShutdownStatus",
+        "NativeClipboardStartStatus"
+      ]
+    },
+    "image": {
+      "NativeImage": "function",
+      "kittyTransport": "string",
+      "ImageRenderable": [
+        "ImageError",
+        "ImageLoadError",
+        "ImageRenderable",
+        "NativeImage",
+        "NativeImagePool",
+        "imageInfo",
+        "resolveImageRenderProtocol"
+      ]
+    }
   }
 }
 ```
@@ -226,13 +250,13 @@ exit code: 124（timeout 到点杀死，进程稳定运行 10s，正常渲染输
 
 ## 6. 通过门槛逐条判定表
 
-| 门槛 | 定义 | 结果 | 判定 |
-| --- | --- | --- | --- |
-| 平台 | Node ≥22 可运行 | Node 22 实测失败（无 `node:ffi`，engines 要求 node≥26.4/bun≥1.3；旧版也仅 bun:ffi）；Bun 1.4.2 + Win x64 实测可运行 | **未过**（仅 Bun/Node26+ 路线可用） |
-| 性能 | 10k 行滚动 p95 帧耗 < 33ms | p95 = 17.95ms（帧间隔口径；内部统计 averageFrameTime ≈ 3.3ms），3 次复跑稳定 | **通过**（Bun 下） |
-| 打包 | npm 可装 | npm i 成功（20 包，3s，仅 EBADENGINE 警告），Win x64 预编译 DLL 自动落盘 | **通过** |
-| 体验底线 | 输入回显 < 30ms；alt-screen/退出清理 | 回显 ≈17ms（帧粒度）；destroy() 实测恢复 alt-screen/鼠标/光标/括号粘贴序列完整 | **通过**（headless 口径；真机观感待验） |
-| 许可 | 宽松许可 | core/react 均 MIT；依赖链全 MIT；DLL 内第三方（libwebp/lcms2/ghostty/stb/wuffs）随包附 LICENSE，无 GPL | **通过** |
+| 门槛     | 定义                                 | 结果                                                                                                                | 判定                                    |
+| -------- | ------------------------------------ | ------------------------------------------------------------------------------------------------------------------- | --------------------------------------- |
+| 平台     | Node ≥22 可运行                      | Node 22 实测失败（无 `node:ffi`，engines 要求 node≥26.4/bun≥1.3；旧版也仅 bun:ffi）；Bun 1.4.2 + Win x64 实测可运行 | **未过**（仅 Bun/Node26+ 路线可用）     |
+| 性能     | 10k 行滚动 p95 帧耗 < 33ms           | p95 = 17.95ms（帧间隔口径；内部统计 averageFrameTime ≈ 3.3ms），3 次复跑稳定                                        | **通过**（Bun 下）                      |
+| 打包     | npm 可装                             | npm i 成功（20 包，3s，仅 EBADENGINE 警告），Win x64 预编译 DLL 自动落盘                                            | **通过**                                |
+| 体验底线 | 输入回显 < 30ms；alt-screen/退出清理 | 回显 ≈17ms（帧粒度）；destroy() 实测恢复 alt-screen/鼠标/光标/括号粘贴序列完整                                      | **通过**（headless 口径；真机观感待验） |
+| 许可     | 宽松许可                             | core/react 均 MIT；依赖链全 MIT；DLL 内第三方（libwebp/lcms2/ghostty/stb/wuffs）随包附 LICENSE，无 GPL              | **通过**                                |
 
 **总判定：4/5 通过；唯一硬伤 = Node 22 不可运行（需 Bun ≥1.3 或 Node ≥26）。**
 

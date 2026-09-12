@@ -35,8 +35,14 @@ function attachWheelBridge(stdin, stdout, onWheel) {
     }
   };
   const handler = () => {
-    if (bypass) { bypass = false; return; }
-    if (timer !== null) { clearTimeout(timer); timer = null; }
+    if (bypass) {
+      bypass = false;
+      return;
+    }
+    if (timer !== null) {
+      clearTimeout(timer);
+      timer = null;
+    }
     let got = false;
     for (;;) {
       const chunk = stdin.read();
@@ -95,8 +101,17 @@ function App({ wheel }) {
   const maxScroll = Math.max(0, all - viewportH);
   const clamp = useCallback((v) => Math.max(0, Math.min(maxScroll, v)), [maxScroll]);
 
-  function step(n) { setFollow(false); setScrollTop((s) => clamp(Math.min(s, maxScroll) + n)); }
-  function doWheel(n) { setScrollTop((s) => { const ns = clamp(Math.min(s, maxScroll) + n); setFollow(ns >= maxScroll); return ns; }); }
+  function step(n) {
+    setFollow(false);
+    setScrollTop((s) => clamp(Math.min(s, maxScroll) + n));
+  }
+  function doWheel(n) {
+    setScrollTop((s) => {
+      const ns = clamp(Math.min(s, maxScroll) + n);
+      setFollow(ns >= maxScroll);
+      return ns;
+    });
+  }
   wheel.current = doWheel;
 
   useInput((input, key) => {
@@ -107,16 +122,28 @@ function App({ wheel }) {
     if (key.downArrow) return step(1);
     if (key.pageUp) return step(-viewportH);
     if (key.pageDown) return step(viewportH);
-    if (key.home) { setFollow(false); setScrollTop(0); return; }
-    if (key.end) { setFollow(true); return; }
+    if (key.home) {
+      setFollow(false);
+      setScrollTop(0);
+      return;
+    }
+    if (key.end) {
+      setFollow(true);
+      return;
+    }
     if (key.return) {
       setAppended((a) => [...a, `> ${draft || '(empty)'}`]);
       setDraft('');
       setFollow(true);
       return;
     }
-    if (key.backspace || key.delete) { setDraft((d) => d.slice(0, -1)); return; }
-    if (input === 'q' && draft === '') { process.exit(0); }
+    if (key.backspace || key.delete) {
+      setDraft((d) => d.slice(0, -1));
+      return;
+    }
+    if (input === 'q' && draft === '') {
+      process.exit(0);
+    }
     if (!key.ctrl && input && !input.startsWith('\x1b')) setDraft((d) => d + input);
   });
 
@@ -127,15 +154,27 @@ function App({ wheel }) {
   for (let i = start; i < end; i += 1) slice.push(i < LINES.length ? LINES[i] : appended[i - LINES.length]);
   const shown = slice.slice(Math.max(0, st - start), Math.max(0, st - start) + viewportH);
 
-  return h(Box, { flexDirection: 'column', width: columns },
-    h(Box, { flexDirection: 'column', height: viewportH },
-      ...shown.map((line, i) => h(Text, { key: st + i, wrap: 'truncate' }, line))),
-    h(Box, null,
+  return h(
+    Box,
+    { flexDirection: 'column', width: columns },
+    h(
+      Box,
+      { flexDirection: 'column', height: viewportH },
+      ...shown.map((line, i) => h(Text, { key: st + i, wrap: 'truncate' }, line)),
+    ),
+    h(
+      Box,
+      null,
       h(Text, { color: 'cyan' }, 'input> '),
       h(Text, null, `${draft}_`),
-      h(Text, { color: 'gray' },
+      h(
+        Text,
+        { color: 'gray' },
         `  [j/k arrows PgUp/PgDn scroll | wheel | Enter send | q quit] `,
-        follow ? 'FOLLOW' : `line ${st + 1}/${all}`)));
+        follow ? 'FOLLOW' : `line ${st + 1}/${all}`,
+      ),
+    ),
+  );
 }
 
 const wheel = { current: () => {} };

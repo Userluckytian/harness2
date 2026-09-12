@@ -141,7 +141,7 @@ export class Renderer {
   }
 
   /** 直接写一行文本（输入行等简单场景：定位+整行重写+清除行尾） */
-  writeLine(y, text, fg = 0) {
+  writeLine(y, text, _fg = 0) {
     const out = [CUP(0, y), text, `${ESC}[K`];
     this.curX = -1; // 行尾位置不确定，强制下帧重新定位
     this.stdout.write(out.join(''));
@@ -157,6 +157,8 @@ export class Renderer {
       process.removeListener('SIGHUP', this._onSignal);
       process.removeListener('SIGTERM', this._onSignal);
       process.removeListener('exit', this._onExit);
-    } catch { /* exit 阶段移除失败不影响恢复 */ }
+    } catch {
+      /* exit 阶段移除失败不影响恢复 */
+    }
   }
 }

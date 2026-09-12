@@ -65,9 +65,12 @@ if (mode === 'cold') {
   result.importInkMs = +(performance.now() - t0).toFixed(1);
   const tRender = performance.now();
   const inst = inkMod.render(
-    React.createElement('ink-box', { style: { flexDirection: 'column', width: 100 } },
+    React.createElement(
+      'ink-box',
+      { style: { flexDirection: 'column', width: 100 } },
       React.createElement('ink-text', {}, lines[0]),
-      React.createElement('ink-text', {}, 'input> _')),
+      React.createElement('ink-text', {}, 'input> _'),
+    ),
     { stdout: out, stdin: new FakeStdin(), exitOnCtrlC: false, patchConsole: false, interactive: true },
   );
   await new Promise((r) => setTimeout(r, 120)); // 等 30fps 节流后的首帧落写
@@ -78,9 +81,10 @@ if (mode === 'cold') {
 
 if (mode === 'init-10k' || mode === 'init-vp') {
   const inkMod = await import('ink');
-  const el = mode === 'init-10k'
-    ? React.createElement(FullTranscript)
-    : React.createElement(VirtualTranscript, { scrollTop: 10000 - VIEWPORT_H });
+  const el =
+    mode === 'init-10k'
+      ? React.createElement(FullTranscript)
+      : React.createElement(VirtualTranscript, { scrollTop: 10000 - VIEWPORT_H });
   let renderTimeMs = -1;
   const t0 = performance.now();
   const inst = inkMod.render(el, {
@@ -89,7 +93,9 @@ if (mode === 'init-10k' || mode === 'init-vp') {
     exitOnCtrlC: false,
     patchConsole: false,
     interactive: true,
-    onRender: (info) => { renderTimeMs = info.renderTime; },
+    onRender: (info) => {
+      renderTimeMs = info.renderTime;
+    },
   });
   // 等节流后的帧真正落写（最多 5s）
   const tWait0 = performance.now();
@@ -104,14 +110,16 @@ if (mode === 'init-10k' || mode === 'init-vp') {
 if (mode === 'scroll') {
   const inkMod = await import('ink');
   let scrollTop = 5000; // 从中部开始滚
-  let renderTimeMs = -1;
+  let _renderTimeMs = -1;
   const inst = inkMod.render(React.createElement(VirtualTranscript, { scrollTop }), {
     stdout: out,
     stdin: new FakeStdin(),
     exitOnCtrlC: false,
     patchConsole: false,
     interactive: true,
-    onRender: (info) => { renderTimeMs = info.renderTime; },
+    onRender: (info) => {
+      _renderTimeMs = info.renderTime;
+    },
   });
   await settle();
   const lat = [];
@@ -125,7 +133,10 @@ if (mode === 'scroll') {
     cpu.push(performance.now() - tReact0);
     const ok = await waitForWrite(writeMark);
     lat.push(performance.now() - t0);
-    if (!ok) { result.flushTimeoutAtStep = i; break; }
+    if (!ok) {
+      result.flushTimeoutAtStep = i;
+      break;
+    }
   }
   await settle();
   inst.unmount();
@@ -139,17 +150,26 @@ if (mode === 'scroll') {
 
 if (mode === 'echo') {
   const inkMod = await import('ink');
-  const { Box, Text, useInput } = inkMod;
+  const { useInput } = inkMod;
   function EchoApp() {
     const [buf, setBuf] = React.useState('');
-    useInput((data) => { setBuf((b) => b + data); });
-    return React.createElement('ink-box', { style: { flexDirection: 'column', width: 100 } },
+    useInput((data) => {
+      setBuf((b) => b + data);
+    });
+    return React.createElement(
+      'ink-box',
+      { style: { flexDirection: 'column', width: 100 } },
       React.createElement('ink-text', {}, 'transcript placeholder line'),
-      React.createElement('ink-text', {}, `input> ${buf}_`));
+      React.createElement('ink-text', {}, `input> ${buf}_`),
+    );
   }
   const stdin = new FakeStdin();
   inkMod.render(React.createElement(EchoApp), {
-    stdout: out, stdin, exitOnCtrlC: false, patchConsole: false, interactive: true,
+    stdout: out,
+    stdin,
+    exitOnCtrlC: false,
+    patchConsole: false,
+    interactive: true,
   });
   await settle();
   const lat = [];
@@ -160,7 +180,10 @@ if (mode === 'echo') {
     stdin.emitInput(ch);
     const ok = await waitForWrite(writeMark);
     lat.push(performance.now() - t0);
-    if (!ok) { result.flushTimeout = true; break; }
+    if (!ok) {
+      result.flushTimeout = true;
+      break;
+    }
   }
   result.samples = lat.length;
   result.echoLatency = stats(lat);

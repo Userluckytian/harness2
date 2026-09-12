@@ -5,12 +5,12 @@
 
 ## 候选
 
-| 代号 | 方案 | 目录 |
-| ---- | ---- | ---- |
-| A | Ink 渐进增强（现有栈） | `ink/` |
-| B | Node 自研最小渲染层（cell buffer + 差量刷新） | `selfdraw/` |
-| C | OpenTUI（`@opentui/core` + `@opentui/react`） | `opentui/` |
-| D | Rust ratatui + crossterm（与 grok 同栈） | `rust/` |
+| 代号 | 方案                                          | 目录        |
+| ---- | --------------------------------------------- | ----------- |
+| A    | Ink 渐进增强（现有栈）                        | `ink/`      |
+| B    | Node 自研最小渲染层（cell buffer + 差量刷新） | `selfdraw/` |
+| C    | OpenTUI（`@opentui/core` + `@opentui/react`） | `opentui/`  |
+| D    | Rust ratatui + crossterm（与 grok 同栈）      | `rust/`     |
 
 ## 统一测试协议
 

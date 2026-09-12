@@ -79,8 +79,16 @@ const decoder = new StringDecoder('utf8');
 let ansiBuf = '';
 
 function exit(code) {
-  try { renderer.stop(); } catch { /* 已恢复 */ }
-  try { process.stdin.setRawMode(false); } catch { /* 非 TTY */ }
+  try {
+    renderer.stop();
+  } catch {
+    /* 已恢复 */
+  }
+  try {
+    process.stdin.setRawMode(false);
+  } catch {
+    /* 非 TTY */
+  }
   process.exit(code);
 }
 
@@ -92,27 +100,55 @@ function onStdinChunk() {
     const mouse = ansiBuf.match(/^\x1b\[<(\d+);\d+;\d+([Mm])/);
     if (mouse) {
       ansiBuf = ansiBuf.slice(mouse[0].length);
-      if (mouse[2] === 'M' && mouse[1] === '64') { sb.follow = false; sb.scroll(-3); frame(); }
-      else if (mouse[2] === 'M' && mouse[1] === '65') { sb.scroll(3); frame(); }
+      if (mouse[2] === 'M' && mouse[1] === '64') {
+        sb.follow = false;
+        sb.scroll(-3);
+        frame();
+      } else if (mouse[2] === 'M' && mouse[1] === '65') {
+        sb.scroll(3);
+        frame();
+      }
       continue;
     }
     const csi = ansiBuf.match(/^\x1b\[[0-9;]*[A-Za-z~]/);
     if (csi) {
       const seq = csi[0];
       ansiBuf = ansiBuf.slice(seq.length);
-      if (seq === '\x1b[A') { sb.follow = false; sb.scroll(-1); frame(); }
-      else if (seq === '\x1b[B') { sb.follow = false; sb.scroll(1); frame(); }
-      else if (seq === '\x1b[5~') { sb.follow = false; sb.pageUp(); frame(); }
-      else if (seq === '\x1b[6~') { sb.pageDown(); frame(); }
-      else if (seq === '\x1b[H' || seq === '\x1b[1~') { sb.goToTop(); frame(); }
-      else if (seq === '\x1b[F' || seq === '\x1b[4~') { sb.goToBottom(); frame(); }
+      if (seq === '\x1b[A') {
+        sb.follow = false;
+        sb.scroll(-1);
+        frame();
+      } else if (seq === '\x1b[B') {
+        sb.follow = false;
+        sb.scroll(1);
+        frame();
+      } else if (seq === '\x1b[5~') {
+        sb.follow = false;
+        sb.pageUp();
+        frame();
+      } else if (seq === '\x1b[6~') {
+        sb.pageDown();
+        frame();
+      } else if (seq === '\x1b[H' || seq === '\x1b[1~') {
+        sb.goToTop();
+        frame();
+      } else if (seq === '\x1b[F' || seq === '\x1b[4~') {
+        sb.goToBottom();
+        frame();
+      }
       continue;
     }
     if (ansiBuf.length === 0) break;
     const ch = ansiBuf[0];
     ansiBuf = ansiBuf.slice(1);
-    if (ch === '\x03') { exit(0); return; } // Ctrl+C（raw mode 字节，显式恢复）
-    if (ch === 'q' && draft === '') { exit(0); return; }
+    if (ch === '\x03') {
+      exit(0);
+      return;
+    } // Ctrl+C（raw mode 字节，显式恢复）
+    if (ch === 'q' && draft === '') {
+      exit(0);
+      return;
+    }
     if (ch === '\r' || ch === '\n') {
       sb.append(`> ${draft || '(empty)'}`);
       draft = '';
@@ -120,12 +156,36 @@ function onStdinChunk() {
       frame();
       continue;
     }
-    if (ch === '\x7f' || ch === '\b') { draft = draft.slice(0, -1); frame(); continue; }
-    if (ch === 'j') { sb.scroll(1); frame(); continue; } // vim：j=下滚
-    if (ch === 'k') { sb.follow = false; sb.scroll(-1); frame(); continue; } // k=上滚
-    if (ch === 'g') { sb.goToTop(); frame(); continue; }
-    if (ch === 'G') { sb.goToBottom(); frame(); continue; }
-    if (ch === '\x1b') { ansiBuf = ''; continue; } // 孤立 ESC：丢弃
+    if (ch === '\x7f' || ch === '\b') {
+      draft = draft.slice(0, -1);
+      frame();
+      continue;
+    }
+    if (ch === 'j') {
+      sb.scroll(1);
+      frame();
+      continue;
+    } // vim：j=下滚
+    if (ch === 'k') {
+      sb.follow = false;
+      sb.scroll(-1);
+      frame();
+      continue;
+    } // k=上滚
+    if (ch === 'g') {
+      sb.goToTop();
+      frame();
+      continue;
+    }
+    if (ch === 'G') {
+      sb.goToBottom();
+      frame();
+      continue;
+    }
+    if (ch === '\x1b') {
+      ansiBuf = '';
+      continue;
+    } // 孤立 ESC：丢弃
     draft += ch; // 普通字符回显（含 CJK）
     frame();
   }

@@ -37,7 +37,12 @@ for (const [label, mode, timeout] of phases) {
     results.push({ mode, label, wallSpawnMs: wall, ...data });
     console.log(`[ok] ${label}: ${m[1]}`);
   } else {
-    results.push({ mode, label, error: `no RESULT_JSON (exit=${r.status}, signal=${r.signal}, wall=${wall}ms)`, raw: outText.slice(-2000) });
+    results.push({
+      mode,
+      label,
+      error: `no RESULT_JSON (exit=${r.status}, signal=${r.signal}, wall=${wall}ms)`,
+      raw: outText.slice(-2000),
+    });
     console.error(`[fail] ${label}: exit=${r.status} signal=${r.signal} wall=${wall}ms`);
     console.error(outText.slice(-2000));
   }
@@ -45,8 +50,14 @@ for (const [label, mode, timeout] of phases) {
 
 console.log('\n=== 汇总 ===');
 for (const r of results) {
-  if (r.skipped) { console.log(`${r.mode}: SKIPPED`); continue; }
-  if (r.error) { console.log(`${r.mode}: ERROR`); continue; }
+  if (r.skipped) {
+    console.log(`${r.mode}: SKIPPED`);
+    continue;
+  }
+  if (r.error) {
+    console.log(`${r.mode}: ERROR`);
+    continue;
+  }
   console.log(JSON.stringify(r));
 }
 console.log('\n原始 JSON 已逐行打印于上方；汇总亦写入 stdout，可重定向留档。');
