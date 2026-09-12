@@ -563,7 +563,12 @@ export function createNextChatHarness(runtime: ChatRuntime, deps: NextChatHarnes
     const query = gate.pending() ?? '';
     if (!approvalExpanded) {
       approvalQueryRows = 0;
-      return { title: `Approval · ${query}`, items: APPROVAL_ITEMS, activeIndex: approvalActiveIndex };
+      return {
+        title: `Approval · ${query}`,
+        items: APPROVAL_ITEMS,
+        activeIndex: approvalActiveIndex,
+        showNumbers: true,
+      };
     }
     // 全文行缩进两格与选项区分；展开宽度按内容区收敛（前缀 + 余量）
     const qLines = wrapTextByWidth(query, Math.max(16, contentCols() - 6));
@@ -572,6 +577,7 @@ export function createNextChatHarness(runtime: ChatRuntime, deps: NextChatHarnes
       title: 'Approval · 全文（Ctrl+F 收起）',
       items: [...qLines.map((l) => `  ${l}`), ...APPROVAL_ITEMS],
       activeIndex: approvalQueryRows + approvalActiveIndex,
+      showNumbers: true,
     };
   }
 
@@ -582,6 +588,7 @@ export function createNextChatHarness(runtime: ChatRuntime, deps: NextChatHarnes
     approvalActiveIndex = 0;
     approvalExpanded = false;
     approvalParked = false;
+    scrollbackFocus = false; // 审批接管时焦点语义回输入框（避免结算后指示器/折叠键族残留滚动区态）
     state.overlays = [buildApprovalSpec()];
     controller.blur(); // overlay 互斥接管键盘（对齐 InkShell 的 overlayOpen 语义）
     invalidate();
@@ -605,6 +612,7 @@ export function createNextChatHarness(runtime: ChatRuntime, deps: NextChatHarnes
     state.overlays = [];
     approvalParked = false;
     approvalExpanded = false;
+    scrollbackFocus = false; // 结算回 composer 焦点（审查 P2-1：指示器与折叠键族同步复位）
     controller.focus();
     invalidate();
   }

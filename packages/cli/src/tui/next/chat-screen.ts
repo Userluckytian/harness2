@@ -156,7 +156,7 @@ function drawOverlays(buf: CellBuffer, state: ChatScreenState, layout: ChatLayou
     const rect = rects[i];
     const spec = state.overlays[i];
     if (rect == null || spec === undefined) continue;
-    drawOverlay(buf, spec, rect, { width: cols, activeFg: DEFAULT_ACTIVE_FG });
+    drawOverlay(buf, spec, rect, { width: cols, activeFg: DEFAULT_ACTIVE_FG, showNumbers: spec.showNumbers === true });
   }
 }
 

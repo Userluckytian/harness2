@@ -1433,3 +1433,30 @@ describe('P3-B 底边模式指示（模式 · 焦点 · 其他）', () => {
     h.dispose();
   });
 });
+
+// —— 审查 P2 补强：数字序号视觉提示 + 审批结算焦点复位 ——
+describe('审批卡数字序号与焦点复位', () => {
+  it('审批挂起时 spec 带 showNumbers（数字直选的视觉提示，审查 P2-3）', async () => {
+    const { h, gate } = makeHarness();
+    const p = gate.ask('允许执行 write?');
+    expect(h.pendingApproval()).toBe('允许执行 write?');
+    expect(h.state.overlays[0]?.showNumbers).toBe(true);
+    h.approve('n');
+    await p;
+    h.dispose();
+  });
+
+  it('审批结算后滚动区焦点指示复位（审查 P2-1：scrollbackFocus 不残留）', async () => {
+    const { h, gate } = makeHarness();
+    h.feed(TAB); // 先切到滚动区焦点
+    expect((h.state.indicators ?? []).join(' ')).toContain('scrollback');
+    const p = gate.ask('允许执行 write?'); // 卡弹出（openApproval 复位焦点语义）
+    await vi.advanceTimersByTimeAsync(80);
+    h.approve('y'); // 结算（closeApproval 回 composer 焦点）
+    await p;
+    await vi.advanceTimersByTimeAsync(80);
+    h.flushUi();
+    expect((h.state.indicators ?? []).join(' ')).not.toContain('scrollback');
+    h.dispose();
+  });
+});

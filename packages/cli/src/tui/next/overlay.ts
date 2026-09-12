@@ -96,6 +96,8 @@ export interface OverlaySpec {
   items: ReadonlyArray<string | OverlayItem>;
   /** 高亮条目下标（越界/缺省 = 无高亮） */
   activeIndex?: number;
+  /** 数字直选序号标记（前 9 项渲染 ` n.`；审批卡等支持数字直选的浮层置 true） */
+  showNumbers?: boolean;
 }
 
 export interface OverlayDrawOptions {
@@ -282,7 +284,7 @@ export function drawOverlay(
     const isActive = gi === active;
     const rowFg = isActive ? activeFg : fg;
     let row: string;
-    if (opts.showNumbers === true && gi < 9) {
+    if ((opts.showNumbers === true || spec.showNumbers === true) && gi < 9) {
       // 右侧数字直选序号：` n.` 预留 3 列贴内容区右缘；标签给序号让位
       const marker = ` ${gi + 1}.`;
       const markerWidth = displayWidth(marker);
