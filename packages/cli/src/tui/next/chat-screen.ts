@@ -7,15 +7,12 @@
 // 高度让位纯计算复用 renderer/layout.ts 的 columnLayout；浮层定位复用 next/overlay.ts 的
 // overlayStackLayout（锚定 composerTop 之上）；内容宽度判定复用 cell-buffer 的 charWidth。
 //
-// 接口缺口（如实登记，见任务交接）：next/scrollback.ts 的 renderScrollback 与 next/composer.ts
-// 的 renderComposer 均内部自带 screen.render（整帧清空 back buffer 后 diff），**没有导出
-// 接受 CellBuffer 的 draw 级 API**，无法与同帧其他层组合（串行调用会让后一帧把前一帧擦掉）。
-// 因此本文件在单次 screen.render 回调内用两库导出的**纯逻辑 API**（Scrollback.visibleWindow /
-// scrollbarInfo / measureComposer / candidateRows / wrapLine）自行绘制 scrollback 与 composer
-// 层；绘制语义与 renderScrollback/renderComposer 逐条对齐（写入裁剪、光标续列钳制、候选
-// 滚动窗口、指示器超宽左截断 + … 前缀），并由本文件快照钉死。drawOverlay 是例外——它本就
-// 接受 CellBuffer，直接复用。建议后续任务给 scrollback.ts / composer.ts 各补一个
-// drawXxx(buf, ...) 导出，把本文件的绘制部分替换为对它们的调用以消除重复。
+// 接口缺口（已收敛，见任务交接）：next/scrollback.ts 与 next/composer.ts 现已导出接受
+// CellBuffer 的 draw 级 API（drawScrollback / drawComposer，纯 buffer 绘制、无 screen.render），
+// 本文件在单次 screen.render 回调内直接调用它们装配整帧，不再复刻两库的绘制逻辑。
+// composer 层映射：drawComposer 的候选画在草稿区上方、指示画在草稿区底行——把草稿区
+// top 设为「层顶 + 候选行数」、height 设为「草稿可用行 + 提示行」，候选与指示恰好分别
+// 落进层顶候选行与层底提示行。drawOverlay 本就接受 CellBuffer，直接复用。
 //
 // 设计取舍（钉死）：
 // - composer 层内部自上而下 = 候选行（顶部）→ 草稿行 → 提示行（底行 1 行，恒保留；
@@ -25,15 +22,15 @@
 // - statusline 与 shortcuts 均左对齐（测试钉死）；shortcuts 数组以 ' · ' 连接。
 // - statusline 为 undefined 或空串视为无该层（height 0）。
 // - renderChat 每帧防御性同步 sb.cols = cols - 1（滚动条恒占最右列；与 resizeChat 同一契约）。
-// - 极端小屏 composer 层被 columnLayout 截断时：候选优先、草稿以光标行贴底滚动兜底
-//   （与 renderComposer 同语义），提示行占层底行（与草稿重叠时后画获胜）。
-import { charWidth, displayWidth } from '../renderer/cell-buffer.js';
+// - 极端小屏 composer 层被 columnLayout 截断时：候选优先、草稿按 drawComposer 的
+//   贴底滚动兜底（offset = clamp(cursorRow - height + 1)，与 renderComposer 同语义），
+//   提示行占层底行（与草稿重叠时后画获胜）。
 import type { CellBuffer } from '../renderer/cell-buffer.js';
 import { columnLayout, type LayerRect } from '../renderer/layout.js';
 import type { Screen } from '../renderer/screen.js';
-import { DEFAULT_ACTIVE_FG, DEFAULT_CURSOR_FG, candidateRows, measureComposer } from './composer.js';
+import { DEFAULT_ACTIVE_FG, candidateRows, drawComposer, measureComposer } from './composer.js';
 import { drawOverlay, overlayNaturalHeight, overlayStackLayout, type OverlaySpec } from './overlay.js';
-import { scrollbarInfo, wrapLine, type Scrollback } from './scrollback.js';
+import { drawScrollback, writeRowClipped, type Scrollback } from './scrollback.js';
 
 /** 候选列表状态（画在 composer 层顶部，activeIndex 高亮 + 滚动窗口） */
 export interface ChatCandidates {
@@ -117,143 +114,35 @@ export function layoutChat(rows: number, cols: number, state: ChatScreenState): 
   };
 }
 
-// --- 绘制基元（与 scrollback.ts / composer.ts 内部同语义；见文件头接口缺口说明） ---
+// --- 各层绘制（均在单次 screen.render 回调内调用；绘制体复用两库的 draw 级 API） ---
 
-/** 从 x=0 写一行并按 maxCols 裁剪（宽字符放不下整字丢弃、零宽跳过） */
-function writeRowClipped(buf: CellBuffer, y: number, text: string, maxCols: number, fg: number): void {
-  if (y < 0 || y >= buf.rows) return;
-  let x = 0;
-  for (const ch of text) {
-    const w = charWidth(ch.codePointAt(0) ?? 0);
-    if (w === 0) continue;
-    if (x + w > maxCols) break;
-    buf.setCell(x, y, ch, w, fg);
-    x += w;
-  }
+function drawScrollbackLayer(buf: CellBuffer, state: ChatScreenState, layer: LayerRect): void {
+  if (layer.height <= 0) return; // 镜像 renderScrollback：零高度不渲染、不污染 viewportRows
+  // width/fg/滚动条字符均用 drawScrollback 缺省值（= 原 chat-screen 复刻的常量：
+  // width=buf.cols、内容区 = width-1、轨道 '│' / thumb '█'、fg 0）
+  drawScrollback(buf, state.scrollback, { top: layer.top, height: layer.height });
 }
 
-/** 从 x0 起写一行文本（右边界 maxX） */
-function writeRowAt(buf: CellBuffer, y: number, x0: number, text: string, maxX: number, fg: number): void {
-  if (y < 0 || y >= buf.rows) return;
-  let x = Math.max(0, Math.floor(x0));
-  for (const ch of text) {
-    const w = charWidth(ch.codePointAt(0) ?? 0);
-    if (w === 0) continue;
-    if (x + w > maxX) break;
-    buf.setCell(x, y, ch, w, fg);
-    x += w;
-  }
-}
-
-/** 指示器右对齐适配：超宽时从左丢弃码点 + '…' 前缀（与 composer.ts fitIndicator 同语义） */
-function fitRight(text: string, cols: number): string {
-  if (cols <= 0) return '';
-  if (displayWidth(text) <= cols) return text;
-  const chars = [...text];
-  const reserve = cols >= 2 ? 1 : 0;
-  const target = cols - reserve;
-  let out = '';
-  let w = 0;
-  for (let i = chars.length - 1; i >= 0; i -= 1) {
-    const ch = chars[i] ?? '';
-    const cw = charWidth(ch.codePointAt(0) ?? 0);
-    if (w + cw > target) break;
-    out = ch + out;
-    w += cw;
-  }
-  return reserve ? `…${out}` : out;
-}
-
-/** 候选滚动窗口起始下标：窗口贴住 active（与 composer.ts candidateWindowStart 同语义） */
-function candidateWindowStart(itemCount: number, windowRows: number, activeIndex: number): number {
-  if (itemCount <= windowRows) return 0;
-  return Math.min(Math.max(0, activeIndex - (windowRows - 1)), itemCount - windowRows);
-}
-
-/** 草稿 '\n' 分逻辑行（与 composer.ts splitLogicalLines 同语义：'ab\n' → ['ab', '']） */
-function splitDraftLines(draft: string): string[] {
-  const lines: string[] = [];
-  let s = 0;
-  for (;;) {
-    const nl = draft.indexOf('\n', s);
-    if (nl === -1) {
-      lines.push(draft.slice(s));
-      return lines;
-    }
-    lines.push(draft.slice(s, nl));
-    s = nl + 1;
-  }
-}
-
-// --- 各层绘制（均在单次 screen.render 回调内调用） ---
-
-function drawScrollbackLayer(buf: CellBuffer, state: ChatScreenState, layer: LayerRect, contentCols: number): void {
-  const { top, height } = layer;
-  if (height <= 0 || top >= buf.rows) return; // 镜像 renderScrollback：越界/零高度不渲染、不污染 viewportRows
-  const sb = state.scrollback;
-  const win = sb.visibleWindow(height);
-  for (let i = 0; i < win.rows.length; i += 1) {
-    const row = win.rows[i];
-    if (row === undefined) continue;
-    writeRowClipped(buf, top + i, row.text, contentCols, 0);
-  }
-  const bar = scrollbarInfo(win.totalRows, win.viewportRows, win.scrollTop);
-  const x = buf.cols - 1;
-  for (let y = 0; y < win.viewportRows; y += 1) {
-    const isThumb = bar.visible && y >= bar.thumbTop && y < bar.thumbTop + bar.thumbHeight;
-    buf.setCell(x, top + y, isThumb ? '█' : '│', 1, 0);
-  }
-}
-
-function drawComposerLayer(buf: CellBuffer, state: ChatScreenState, layout: ChatLayout, cols: number): void {
+function drawComposerLayer(buf: CellBuffer, state: ChatScreenState, layout: ChatLayout): void {
   const { top, height } = layout.composer;
-  if (height <= 0 || top >= buf.rows) return;
-  const layerBottom = Math.min(top + height, buf.rows); // 排他
-  let y = top;
-
-  // 1) 候选列表：层顶部，active 高亮 + 滚动窗口
-  const cand = state.candidates;
-  if (cand !== null && layout.candidateRows > 0) {
-    const start = candidateWindowStart(cand.items.length, layout.candidateRows, cand.activeIndex);
-    for (let k = 0; k < layout.candidateRows && y < layerBottom; k += 1, y += 1) {
-      const item = cand.items[start + k] ?? '';
-      const isActive = start + k === cand.activeIndex;
-      writeRowClipped(buf, y, item, cols, isActive ? DEFAULT_ACTIVE_FG : 0);
-    }
-  }
-
-  // 2) 草稿物理行（wrapLine 与 composer 断行同语义；截断时以光标行贴底滚动兜底）
-  const draftCap = Math.max(0, layerBottom - y - 1); // 预留层底提示行
-  const segments: string[] = [];
-  for (const line of splitDraftLines(state.draft ?? '')) {
-    for (const seg of wrapLine(line, cols)) segments.push(seg);
-  }
-  const m = measureComposer(state.draft ?? '', cols, state.cursor);
-  const offset = Math.min(Math.max(0, m.cursorRow - draftCap + 1), Math.max(0, segments.length - draftCap));
-  const draftTop = y;
-  for (let i = 0; i < draftCap && i < segments.length; i += 1) {
-    writeRowClipped(buf, draftTop + i, segments[offset + i] ?? '', cols, 0);
-  }
-
-  // 3) 光标高亮格（与 composer.ts 同逻辑：续列钳回首列；无反色位，fg 高亮近似）
-  const cy = draftTop + m.cursorRow - offset;
-  if (cy >= draftTop && cy < draftTop + draftCap && cy < buf.rows) {
-    let x = Math.min(m.cursorCol, cols - 1);
-    const idx = cy * buf.cols + x;
-    if ((buf.widths[idx] ?? 0) === 0 && (buf.chars[idx] ?? '') === '') x = Math.max(0, x - 1);
-    const idx2 = cy * buf.cols + x;
-    const ch = buf.chars[idx2] ?? ' ';
-    const w = (buf.widths[idx2] ?? 0) === 2 ? 2 : 1;
-    buf.setCell(x, cy, ch === '' ? ' ' : ch, w, DEFAULT_CURSOR_FG);
-  }
-
-  // 4) 提示行：层底行，indicators ' · ' 连接右对齐（无指示器留空；与草稿重叠时后画获胜）
-  const hintY = top + height - 1;
-  const indicators = state.indicators ?? [];
-  if (indicators.length > 0 && hintY < buf.rows) {
-    const fitted = fitRight(indicators.join(SHORTCUTS_SEPARATOR), cols);
-    if (fitted.length > 0) writeRowAt(buf, hintY, cols - displayWidth(fitted), fitted, cols, 0);
-  }
+  if (height <= 0 || top >= buf.rows) return; // 镜像 renderComposer：越界/零高度不渲染
+  // composer 层内自上而下 = 候选行（层顶）→ 草稿行 → 提示行（层底，恒保留）。
+  // drawComposer 语义：候选画在草稿区上方（底部锚定）、指示画在草稿区底行。
+  // 映射：草稿区 top = 层顶 + 候选行数，height = 草稿可用行（draftCap）+ 提示行，
+  // 候选/指示即分别落进层顶候选行与层底提示行；颜色等取 drawComposer 缺省值
+  // （= 原 chat-screen 复刻常量：光标/active 候选 DEFAULT_*_FG，其余 0）。
+  const draftTop = top + layout.candidateRows;
+  const draftCap = Math.max(0, Math.min(top + height, buf.rows) - draftTop - 1); // 预留层底提示行
+  drawComposer(
+    buf,
+    { draft: state.draft ?? '', cursor: state.cursor },
+    {
+      top: draftTop,
+      height: draftCap + 1,
+      candidates: state.candidates,
+      indicators: state.indicators,
+    },
+  );
 }
 
 function drawOverlays(buf: CellBuffer, state: ChatScreenState, layout: ChatLayout, cols: number): void {
@@ -283,8 +172,8 @@ export function renderChat(screen: Screen, state: ChatScreenState): number {
   if (state.scrollback.cols !== contentCols) state.scrollback.setCols(contentCols);
   return screen.render((buf) => {
     const layout = layoutChat(screen.rows, cols, state);
-    drawScrollbackLayer(buf, state, layout.scrollback, contentCols);
-    drawComposerLayer(buf, state, layout, cols);
+    drawScrollbackLayer(buf, state, layout.scrollback);
+    drawComposerLayer(buf, state, layout);
     if (layout.statusline.height > 0) {
       writeRowClipped(buf, layout.statusline.top, state.statusline ?? '', cols, 0);
     }

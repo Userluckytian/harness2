@@ -5,10 +5,10 @@
 //   状态、画出结果）。行为参考只读的 Ink 版 `src/tui/Composer.tsx`。
 // - 测量 measureComposer：多行草稿（\n 硬换行）+ 各行宽字符断行后的物理行数 + 光标
 //   所在物理行/列——layout 层据此给 scrollback 扣高度（高度让位）。
-// - 渲染 renderComposer：把草稿物理行画在给定 top/height 区域（草稿超出区域时以光标行
-//   贴底滚动兜底，正常情况 layout 会给足 measureComposer().rows）；可选候选列表画在输入
-//   区上方（最多 maxCandidates=6 行 + 滚动窗口 + active 高亮）；底边指示画在区域底行
-//   右侧（模式 / model / 上下文占用等，右对齐、超宽左截断 + … 前缀）。
+// - 渲染分两级：drawComposer（纯 buffer 绘制，接受 CellBuffer，草稿 + 光标 + 可选候选 +
+//   底边指示，可与其他层在同一次 screen.render 回调内组合）与 renderComposer（薄壳 =
+//   screen.render(buf => drawComposer(...))，经 diff-presenter 产生差量帧）。
+//   整帧装配（chat-screen）应使用 drawComposer。
 // - 宽度判定复用 renderer/cell-buffer.ts 的 charWidth/displayWidth；断行语义与
 //   next/scrollback.ts 的 wrapLine 一致（宽字符整体移行绝不切半边、行首放不下不产生
 //   空前导行、cols≤0 按 1 列兜底），但额外记录每段的码元偏移用于光标映射，故独立实现。
@@ -254,8 +254,11 @@ function candidateWindowStart(itemCount: number, activeIndex: number, n: number)
   return Math.min(Math.max(0, activeIndex - (n - 1)), itemCount - n);
 }
 
-/** 指示器右对齐适配：超宽时从左丢弃码点 + '…' 前缀，保证显示宽 ≤ cols */
-function fitIndicator(text: string, cols: number): string {
+/**
+ * 指示器右对齐适配：超宽时从左丢弃码点 + '…' 前缀，保证显示宽 ≤ cols。
+ * 导出供整帧装配层（chat-screen）等外部复用同一截断语义。
+ */
+export function fitIndicator(text: string, cols: number): string {
   if (cols <= 0) return '';
   if (displayWidth(text) <= cols) return text;
   const chars = [...text];
@@ -274,14 +277,17 @@ function fitIndicator(text: string, cols: number): string {
 }
 
 /**
- * 组合渲染：把 Composer（草稿 + 光标 + 可选候选 + 底边指示）写入 screen 的 cell buffer，
- * 经 Screen.render 走 diff-presenter 产生差量帧。返回本次写入字节数（无差异为 0）。
+ * 纯 buffer 绘制：把 Composer（草稿 + 光标 + 可选候选 + 底边指示）写入给定 cell buffer。
+ * renderComposer 的绘制体（不做 screen.render，可与同帧其他层组合绘制）。
  * 草稿物理行超出 height 时以光标行贴底滚动（兜底；正常情况 layout 给足 measure 行数）。
- * 越界（top ≥ screen.rows 或高度不足 1）返回 0。
+ * 候选列表画在输入区上方（底部锚定 = top-1，越出屏顶裁剪）；底边指示画在区域底行右侧
+ * （右对齐、超宽左截断 + … 前缀）；光标续列钳制首列（最近修复语义，原样保留）。
+ * 越界（top ≥ buf.rows 或高度不足 1）直接返回、不绘制。
+ * opts 尺寸缺省相对 buf：top/height 都缺省 = 贴底 1 行；width = buf.cols。
  */
-export function renderComposer(screen: Screen, state: ComposerState, opts: ComposerRenderOptions = {}): number {
-  if (opts.top !== undefined && Math.floor(opts.top) >= screen.rows) return 0;
-  const width = Math.max(1, Math.min(Math.floor(opts.width ?? screen.cols), screen.cols));
+export function drawComposer(buf: CellBuffer, state: ComposerState, opts: ComposerRenderOptions = {}): void {
+  if (opts.top !== undefined && Math.floor(opts.top) >= buf.rows) return;
+  const width = Math.max(1, Math.min(Math.floor(opts.width ?? buf.cols), buf.cols));
   const draft = state.draft ?? '';
   const layout = layoutDraft(draft, width);
   const cursor = Math.min(Math.max(0, Math.floor(state.cursor ?? draft.length)), draft.length);
@@ -293,16 +299,16 @@ export function renderComposer(screen: Screen, state: ComposerState, opts: Compo
   let height: number;
   if (opts.top === undefined && opts.height === undefined) {
     height = 1;
-    top = screen.rows - 1;
+    top = buf.rows - 1;
   } else if (opts.top === undefined) {
-    height = Math.max(1, Math.min(Math.floor(opts.height ?? 1), screen.rows));
-    top = screen.rows - height;
+    height = Math.max(1, Math.min(Math.floor(opts.height ?? 1), buf.rows));
+    top = buf.rows - height;
   } else {
     top = Math.max(0, Math.floor(opts.top));
-    if (top >= screen.rows) return 0;
-    height = Math.max(1, Math.min(Math.floor(opts.height ?? screen.rows - top), screen.rows - top));
+    if (top >= buf.rows) return;
+    height = Math.max(1, Math.min(Math.floor(opts.height ?? buf.rows - top), buf.rows - top));
   }
-  if (height < 1) return 0;
+  if (height < 1) return;
 
   // 滚动兜底：草稿超区域时以光标行贴底（offset = clamp(cursorRow - height + 1)）
   const offset = Math.min(Math.max(0, loc.segIndex - height + 1), Math.max(0, totalRows - height));
@@ -319,45 +325,54 @@ export function renderComposer(screen: Screen, state: ComposerState, opts: Compo
   const candCount = candidateRows(items.length, maxCand);
   const indicators = opts.indicators ?? [];
 
-  return screen.render((buf) => {
-    // 草稿物理行
-    for (let i = 0; i < height; i += 1) {
-      const seg = layout.segments[offset + i];
-      if (seg === undefined) break;
-      writeRowAt(buf, top + i, 0, seg.text, width, fg);
+  // 草稿物理行
+  for (let i = 0; i < height; i += 1) {
+    const seg = layout.segments[offset + i];
+    if (seg === undefined) break;
+    writeRowAt(buf, top + i, 0, seg.text, width, fg);
+  }
+  // 候选列表：输入区上方，底部锚定（最后一行 = top-1），越出屏顶裁剪
+  if (candCount > 0) {
+    const startIdx = candidateWindowStart(items.length, activeIndex, candCount);
+    for (let k = 0; k < candCount; k += 1) {
+      const y = top - candCount + k;
+      if (y < 0) continue;
+      const item = items[startIdx + k] ?? '';
+      const isActive = startIdx + k === activeIndex;
+      writeRowAt(buf, y, 0, item, width, isActive ? candActiveFg : candFg);
     }
-    // 候选列表：输入区上方，底部锚定（最后一行 = top-1），越出屏顶裁剪
-    if (candCount > 0) {
-      const startIdx = candidateWindowStart(items.length, activeIndex, candCount);
-      for (let k = 0; k < candCount; k += 1) {
-        const y = top - candCount + k;
-        if (y < 0) continue;
-        const item = items[startIdx + k] ?? '';
-        const isActive = startIdx + k === activeIndex;
-        writeRowAt(buf, y, 0, item, width, isActive ? candActiveFg : candFg);
-      }
+  }
+  // 底边指示：区域底行右侧右对齐；与草稿重叠时后画获胜
+  if (indicators.length > 0) {
+    const fitted = fitIndicator(indicators.join(' · '), width);
+    if (fitted.length > 0) {
+      const y = top + height - 1;
+      writeRowAt(buf, y, width - displayWidth(fitted), fitted, width, indFg);
     }
-    // 底边指示：区域底行右侧右对齐；与草稿重叠时后画获胜
-    if (indicators.length > 0) {
-      const fitted = fitIndicator(indicators.join(' · '), width);
-      if (fitted.length > 0) {
-        const y = top + height - 1;
-        writeRowAt(buf, y, width - displayWidth(fitted), fitted, width, indFg);
-      }
+  }
+  // 光标高亮格：逻辑光标经断行映射后的物理位置
+  if (drawCursor && loc.segIndex >= offset && loc.segIndex < offset + height) {
+    const y = top + loc.segIndex - offset;
+    let x = Math.min(loc.col, width - 1); // 行满且光标在行尾：钳制高亮最后一列
+    const idx = y * buf.cols + x;
+    if (buf.widths[idx] === 0 && (buf.chars[idx] ?? '') === '') {
+      // 钳制列恰为宽字符续列：改高亮其首列，避免半宽空格破坏首列/续列配对
+      x = Math.max(0, x - 1);
     }
-    // 光标高亮格：逻辑光标经断行映射后的物理位置
-    if (drawCursor && loc.segIndex >= offset && loc.segIndex < offset + height) {
-      const y = top + loc.segIndex - offset;
-      let x = Math.min(loc.col, width - 1); // 行满且光标在行尾：钳制高亮最后一列
-      const idx = y * buf.cols + x;
-      if (buf.widths[idx] === 0 && (buf.chars[idx] ?? '') === '') {
-        // 钳制列恰为宽字符续列：改高亮其首列，避免半宽空格破坏首列/续列配对
-        x = Math.max(0, x - 1);
-      }
-      const idx2 = y * buf.cols + x;
-      const ch = buf.chars[idx2] ?? ' ';
-      const w = buf.widths[idx2] === 2 ? 2 : 1;
-      buf.setCell(x, y, ch === '' ? ' ' : ch, w, cursorFg);
-    }
-  });
+    const idx2 = y * buf.cols + x;
+    const ch = buf.chars[idx2] ?? ' ';
+    const w = buf.widths[idx2] === 2 ? 2 : 1;
+    buf.setCell(x, y, ch === '' ? ' ' : ch, w, cursorFg);
+  }
+}
+
+/**
+ * 组合渲染：drawComposer 的 Screen 便利入口——screen.render(buf => drawComposer(...))，
+ * 经 diff-presenter 产生差量帧。返回本次写入字节数（无差异为 0）。
+ * 越界（top ≥ screen.rows）在 screen.render 之外早退返回 0（不清 back buffer、零输出）。
+ * 整帧装配应改用 drawComposer（同一次 render 回调内与其他层组合）。
+ */
+export function renderComposer(screen: Screen, state: ComposerState, opts: ComposerRenderOptions = {}): number {
+  if (opts.top !== undefined && Math.floor(opts.top) >= screen.rows) return 0;
+  return screen.render((buf) => drawComposer(buf, state, opts));
 }

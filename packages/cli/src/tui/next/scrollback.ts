@@ -11,8 +11,9 @@
 // - 业务数据投影（transcript item → 文本行）不在本文件：T2-4/T2-5 接线时由调用方把
 //   TranscriptItem 渲染成文本行喂给 append/appendLines（复用 transcript.ts 的
 //   reducer/viewport 思路，原文件零改动）。
-// - 组合渲染 renderScrollback：visibleWindow 写入 Screen 的 cell buffer + 右侧滚动条
-//   轨道列，经 Screen.render 走 diff-presenter 产生差量帧。
+// - 绘制分两级：drawScrollback（纯 buffer 绘制，接受 CellBuffer，可与其他层在同一次
+//   screen.render 回调内组合）与 renderScrollback（薄壳 = screen.render(buf => drawScrollback)，
+//   经 diff-presenter 产生差量帧）。整帧装配（chat-screen）应使用 drawScrollback。
 //
 // 数据结构：每行断行结果按 lineIndex 惰性缓存（Map），prefix[i] = 前 i 个逻辑行的物理
 // 行总数（惰性增长，append 增量扩展不重算）——与 spike scrollback 同思路。
@@ -334,10 +335,11 @@ export interface ScrollbackRenderOptions {
 }
 
 /**
- * 把滚动内容宽字符行整体丢弃、零宽字符跳过（与 CellBuffer.writeText 同语义），
- * 但以 maxCols 为右边界——宽字符不会溢出进滚动条列。
+ * 从 x=0 写一行并按 maxCols 裁剪：宽字符放不下整字丢弃、零宽字符跳过
+ * （与 CellBuffer.writeText 同语义，但以 maxCols 为右边界——宽字符不会溢出进滚动条列）。
+ * 导出供整帧装配层（chat-screen 的 statusline/shortcuts 等层）复用同一裁剪语义。
  */
-function writeRowClipped(buf: CellBuffer, y: number, text: string, maxCols: number, fg: number): void {
+export function writeRowClipped(buf: CellBuffer, y: number, text: string, maxCols: number, fg: number): void {
   let x = 0;
   for (const ch of text) {
     const w = charWidth(ch.codePointAt(0) ?? 0);
@@ -349,17 +351,19 @@ function writeRowClipped(buf: CellBuffer, y: number, text: string, maxCols: numb
 }
 
 /**
- * 组合渲染：把 scrollback 可见窗口写入 screen 的 cell buffer（右侧滚动条轨道列），
- * 经 Screen.render 走 diff-presenter 产生差量帧。返回本次写入字节数（无差异为 0）。
+ * 纯 buffer 绘制：把 scrollback 可见窗口写入给定 cell buffer（右侧滚动条轨道列）。
+ * renderScrollback 的绘制体（不做 screen.render，可与同帧其他层组合绘制）。
+ * opts 尺寸缺省相对 buf：top=0、height=buf.rows-top、width=buf.cols。
+ * 越界（top ≥ buf.rows）直接返回，不调用 visibleWindow（不把 viewportRows 状态污染成 1）。
  * 注意调用方保持 sb.cols === 内容区宽度（width - (scrollbar ? 1 : 0)）。
  * 已知近似：cols=1 的极端窄内容区下，宽字符物理行显示宽 2 超出 cols，writeRowClipped
  * 会整字丢弃 → 1 列宽度下 CJK 不可见（wrapLine 不做宽度 1 降级）。实际终端内容宽远大于 1。
  */
-export function renderScrollback(screen: Screen, sb: Scrollback, opts: ScrollbackRenderOptions = {}): number {
+export function drawScrollback(buf: CellBuffer, sb: Scrollback, opts: ScrollbackRenderOptions = {}): void {
   const top = Math.max(0, Math.floor(opts.top ?? 0));
-  if (top >= screen.rows) return 0; // 越界锚位：不渲染，也不把 viewportRows 状态污染成 1
-  const height = Math.max(1, Math.min(Math.floor(opts.height ?? screen.rows - top), screen.rows - top));
-  const width = Math.max(1, Math.min(Math.floor(opts.width ?? screen.cols), screen.cols));
+  if (top >= buf.rows) return; // 越界锚位：不渲染，也不把 viewportRows 状态污染成 1
+  const height = Math.max(1, Math.min(Math.floor(opts.height ?? buf.rows - top), buf.rows - top));
+  const width = Math.max(1, Math.min(Math.floor(opts.width ?? buf.cols), buf.cols));
   const useScrollbar = opts.scrollbar ?? true;
   const trackChar = opts.trackChar ?? '│';
   const thumbChar = opts.thumbChar ?? '█';
@@ -367,20 +371,30 @@ export function renderScrollback(screen: Screen, sb: Scrollback, opts: Scrollbac
   const sbFg = opts.scrollbarFg ?? 0;
   const contentCols = useScrollbar ? width - 1 : width;
 
-  return screen.render((buf) => {
-    const win = sb.visibleWindow(height);
-    for (let i = 0; i < win.rows.length; i += 1) {
-      const row = win.rows[i];
-      if (row === undefined) continue;
-      writeRowClipped(buf, top + i, row.text, contentCols, fg);
+  const win = sb.visibleWindow(height);
+  for (let i = 0; i < win.rows.length; i += 1) {
+    const row = win.rows[i];
+    if (row === undefined) continue;
+    writeRowClipped(buf, top + i, row.text, contentCols, fg);
+  }
+  if (useScrollbar) {
+    const bar = scrollbarInfo(win.totalRows, win.viewportRows, win.scrollTop);
+    const x = width - 1;
+    for (let y = 0; y < win.viewportRows; y += 1) {
+      const isThumb = bar.visible && y >= bar.thumbTop && y < bar.thumbTop + bar.thumbHeight;
+      buf.setCell(x, top + y, isThumb ? thumbChar : trackChar, 1, sbFg);
     }
-    if (useScrollbar) {
-      const bar = scrollbarInfo(win.totalRows, win.viewportRows, win.scrollTop);
-      const x = width - 1;
-      for (let y = 0; y < win.viewportRows; y += 1) {
-        const isThumb = bar.visible && y >= bar.thumbTop && y < bar.thumbTop + bar.thumbHeight;
-        buf.setCell(x, top + y, isThumb ? thumbChar : trackChar, 1, sbFg);
-      }
-    }
-  });
+  }
+}
+
+/**
+ * 组合渲染：drawScrollback 的 Screen 便利入口——screen.render(buf => drawScrollback(...))，
+ * 经 diff-presenter 产生差量帧。返回本次写入字节数（无差异为 0）。
+ * 越界（top ≥ screen.rows）在 screen.render 之外早退返回 0（不清 back buffer、零输出）。
+ * 整帧装配应改用 drawScrollback（同一次 render 回调内与其他层组合）。
+ */
+export function renderScrollback(screen: Screen, sb: Scrollback, opts: ScrollbackRenderOptions = {}): number {
+  const top = Math.max(0, Math.floor(opts.top ?? 0));
+  if (top >= screen.rows) return 0;
+  return screen.render((buf) => drawScrollback(buf, sb, opts));
 }
