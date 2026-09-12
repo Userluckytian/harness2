@@ -348,10 +348,15 @@ export function renderComposer(screen: Screen, state: ComposerState, opts: Compo
     // 光标高亮格：逻辑光标经断行映射后的物理位置
     if (drawCursor && loc.segIndex >= offset && loc.segIndex < offset + height) {
       const y = top + loc.segIndex - offset;
-      const x = Math.min(loc.col, width - 1); // 行满且光标在行尾：钳制高亮最后一列
+      let x = Math.min(loc.col, width - 1); // 行满且光标在行尾：钳制高亮最后一列
       const idx = y * buf.cols + x;
-      const ch = buf.chars[idx] ?? ' ';
-      const w = buf.widths[idx] === 2 ? 2 : 1;
+      if (buf.widths[idx] === 0 && (buf.chars[idx] ?? '') === '') {
+        // 钳制列恰为宽字符续列：改高亮其首列，避免半宽空格破坏首列/续列配对
+        x = Math.max(0, x - 1);
+      }
+      const idx2 = y * buf.cols + x;
+      const ch = buf.chars[idx2] ?? ' ';
+      const w = buf.widths[idx2] === 2 ? 2 : 1;
       buf.setCell(x, y, ch === '' ? ' ' : ch, w, cursorFg);
     }
   });

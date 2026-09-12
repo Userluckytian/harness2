@@ -106,6 +106,7 @@ export interface OverlayDrawOptions {
   /** 非高亮行前景色（24bit RGB，0 = 默认色） */
   fg?: number;
   /** 高亮行前景色（近似反色：CellBuffer 无 bg/reverse 通道） */
+  /** 高亮项前景色；缺省回落 fg——调用方传 fg 时通常应同时传 activeFg，否则 active 行仅靠前缀区分 */
   activeFg?: number;
   /** 高亮项前缀（默认 '❯ '；降级可用 '> '），非高亮项以等宽空格对齐 */
   activePrefix?: string;
