@@ -352,9 +352,12 @@ function writeRowClipped(buf: CellBuffer, y: number, text: string, maxCols: numb
  * 组合渲染：把 scrollback 可见窗口写入 screen 的 cell buffer（右侧滚动条轨道列），
  * 经 Screen.render 走 diff-presenter 产生差量帧。返回本次写入字节数（无差异为 0）。
  * 注意调用方保持 sb.cols === 内容区宽度（width - (scrollbar ? 1 : 0)）。
+ * 已知近似：cols=1 的极端窄内容区下，宽字符物理行显示宽 2 超出 cols，writeRowClipped
+ * 会整字丢弃 → 1 列宽度下 CJK 不可见（wrapLine 不做宽度 1 降级）。实际终端内容宽远大于 1。
  */
 export function renderScrollback(screen: Screen, sb: Scrollback, opts: ScrollbackRenderOptions = {}): number {
   const top = Math.max(0, Math.floor(opts.top ?? 0));
+  if (top >= screen.rows) return 0; // 越界锚位：不渲染，也不把 viewportRows 状态污染成 1
   const height = Math.max(1, Math.min(Math.floor(opts.height ?? screen.rows - top), screen.rows - top));
   const width = Math.max(1, Math.min(Math.floor(opts.width ?? screen.cols), screen.cols));
   const useScrollbar = opts.scrollbar ?? true;
