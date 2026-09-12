@@ -66,7 +66,7 @@ describe('PD5：updateSettingsConfig 写路径加固', () => {
     const home = tmpHome();
     const corrupted = '{ "roles": { "main": { '; // 截断的 JSONC
     writeGlobalConfig(home, corrupted);
-    const res = updateSettingsConfig(home, { approval: { mode: 'plan' } });
+    const res = updateSettingsConfig(home, home, { approval: { mode: 'plan' } });
     expect(res.ok).toBe(false);
     expect(res.error).toContain('无法解析');
     expect(readFileSync(globalConfigPath(home), 'utf8')).toBe(corrupted); // 原文未动（含注释/半截内容不丢）
@@ -75,7 +75,7 @@ describe('PD5：updateSettingsConfig 写路径加固', () => {
   it('非法值拒绝（parseConfig 校验）：approval.mode 非法不落盘', () => {
     const home = tmpHome();
     writeGlobalConfig(home, BASE_CONFIG);
-    const res = updateSettingsConfig(home, { approval: { mode: 'bogus' } });
+    const res = updateSettingsConfig(home, home, { approval: { mode: 'bogus' } });
     expect(res.ok).toBe(false);
     expect(res.error).toContain('approval.mode');
     const onDisk = JSON.parse(readFileSync(globalConfigPath(home), 'utf8')) as { approval: { mode: string } };
@@ -86,7 +86,7 @@ describe('PD5：updateSettingsConfig 写路径加固', () => {
     const home = tmpHome();
     writeGlobalConfig(home, BASE_CONFIG);
     const path = globalConfigPath(home);
-    const res = updateSettingsConfig(home, { approval: { mode: 'plan' } });
+    const res = updateSettingsConfig(home, home, { approval: { mode: 'plan' } });
     expect(res.ok).toBe(true);
     expect(renameMock).toHaveBeenCalledTimes(1);
     expect(renameMock.mock.calls[0]?.[0]).toBe(`${path}.tmp`); // 临时文件与目标同目录（同卷才原子）
@@ -101,7 +101,7 @@ describe('PD5：updateSettingsConfig 写路径加固', () => {
     renameMock.mockImplementationOnce(() => {
       throw Object.assign(new Error('EBUSY: resource busy'), { code: 'EBUSY' });
     });
-    const res = updateSettingsConfig(home, { approval: { mode: 'plan' } });
+    const res = updateSettingsConfig(home, home, { approval: { mode: 'plan' } });
     expect(res.ok).toBe(true);
     expect(existsSync(`${globalConfigPath(home)}.tmp`)).toBe(false);
     expect(
@@ -114,7 +114,7 @@ describe('PD5：写入生效可追溯（真实 serve 装配新配置）', () => 
   it('写下的模型/审批模式被新 serve 的会话真实装载（「新会话/重启生效」有据）', async () => {
     const home = tmpHome();
     writeGlobalConfig(home, BASE_CONFIG);
-    const res = updateSettingsConfig(home, {
+    const res = updateSettingsConfig(home, home, {
       approval: { mode: 'plan' },
       roles: { main: { channel: 'local-oai', model: 'new-pickle' } },
       providers: { 'local-oai': { models: { 'new-pickle': { contextWindow: 100000, maxOutputTokens: 4096 } } } },

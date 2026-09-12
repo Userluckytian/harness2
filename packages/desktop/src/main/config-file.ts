@@ -177,9 +177,11 @@ export function readSettingsConfig(home: string, root: string): SettingsConfigSh
  * settings:updateConfig：白名单 patch 深合并进全局 config.json，先 parseConfig 校验后写回。
  * - 顶层 key 必须在白名单内；含密钥字段名（apiKey/appSecret/...）直接拒绝。
  * - 写全局（项目配置存在时合并后以项目为准，UI 已标注写全局）。
+ * - PD6：回读合并视图与 settings:getConfig 同口径，以 deps.root 为项目根（跨 root 不串）。
  */
 export function updateSettingsConfig(
   home: string,
+  root: string,
   patch: Record<string, unknown>,
 ): { ok: boolean; config?: SettingsConfigShape; warnings?: string[]; error?: string } {
   if (typeof patch !== 'object' || patch === null || Array.isArray(patch)) {
@@ -229,7 +231,7 @@ export function updateSettingsConfig(
   } catch (e) {
     return { ok: false, error: `config.json 写入失败: ${redactSecrets((e as Error).message)}` };
   }
-  return { ok: true, config: readSettingsConfig(home, process.cwd()), warnings: result.warnings };
+  return { ok: true, config: readSettingsConfig(home, root), warnings: result.warnings };
 }
 
 /** settings:getAuthMasked：auth.json 渠道/网关掩码视图（永不回显明文） */

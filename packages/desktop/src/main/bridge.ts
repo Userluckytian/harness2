@@ -548,7 +548,7 @@ export function createBridge(deps: BridgeDeps): Bridge {
       case 'settings:getConfig':
         return readSettingsConfig(deps.home, deps.root);
       case 'settings:updateConfig':
-        return updateSettingsConfig(deps.home, (args['patch'] as Record<string, unknown>) ?? {});
+        return updateSettingsConfig(deps.home, deps.root, (args['patch'] as Record<string, unknown>) ?? {});
       case 'settings:getAuthMasked':
         return readAuthMasked(deps.home);
       case 'settings:updateAuth':
