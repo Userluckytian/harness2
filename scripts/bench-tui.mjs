@@ -241,7 +241,7 @@ R.rssAfterInitMB = +(process.memoryUsage().rss / 1048576).toFixed(1);
 // 5) 输入回显帧（键入字符 → draft → 差量帧）×200
 {
   let scrollTop = Math.max(0, physicalRows.length - VIEWPORT);
-  let draft = '';
+  let draft;
   const times = [];
   for (let i = 0; i < 20; i += 1) {
     fillFrame(scrollTop, 'x'.repeat(i % 8));
