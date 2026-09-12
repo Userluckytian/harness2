@@ -5,23 +5,28 @@
 //  - 可打印字符（UTF-8 多字节流式解码，跨 feed 不撕裂中文）；
 //  - 控制键：\r=Enter、\t=Tab、\x7f=Backspace、0x01-0x1A=Ctrl+字母（\n=Ctrl+J，
 //    与 kitty/legacy「裸 0x0A 即 Ctrl+J」口径一致；raw mode 下 Enter 实际发 \r）；
-//  - CSI 转义：方向键 A~D、Home/End（H/F 与 1~/4~）、Delete/Insert（3~/2~）、
-//    PageUp/PageDown（5~/6~）、F1-F12（P..S 与 11~..24~）、Shift+Tab（Z）；
-//  - SS3（ESC O 前缀）功能键：OA-OD 方向、OP-S F1-F4；
+//  - CSI 转义：方向键 A~D、Home/End（H/F 与 1~/4~/7~/8~）、Delete/Insert（3~/2~）、
+//    PageUp/PageDown（5~/6~ 与 putty 的 [[5~/[[6~）、F1-F12（P..S 与 11~..24~）、
+//    Shift+Tab（Z）、Linux console [[A..[[E → f1..f5；
+//  - SS3（ESC O 前缀）功能键：OA-OD 方向、OP-S F1-F4、小写 Oa-Oe（ctrl+方向/clear，
+//    ink isCtrlKey 口径）与 Oh/Of（home/end）；
 //  - kitty CSI-u（CSI code[:shifted][:base];mods[:event] u），含 press/repeat/release；
 //  - SGR 鼠标（CSI < b;x;y M/m）：含滚轮（bit6）、修饰位（shift=4/alt=8/ctrl=16）、
 //    motion（bit5）；坐标减一归一为 0 基；
 //  - legacy X10 鼠标（ESC[M + 3 原始字节）：字节按裸值解码，绝不经过 UTF-8；
 //  - bracketed paste（CSI 200~ / 201~）：内容原样聚合为单个 PasteEvent（不做 CRLF
-//    归一——归一属于 paste.ts 的职责，保持解析层与策略层分离）；
+//    归一——归一属于 paste.ts 的职责，保持解析层与策略层分离）；终止符 201~ 永不到达
+//    （流损坏）时，聚合空闲超过 pasteIdleTimeoutMs（默认 1500ms）由 flushIdle 把已聚合
+//    内容作为单个 PasteEvent 兜底产出；
 //  - 焦点 1004（CSI I / CSI O）。
 //
 // 分片容错与 ESC 超时语义（设计取舍）：
 //  - feed() 只输出**已完整**的序列；半包留在内部缓冲等下一次 feed（flush 前）。
 //  - 解析器本身**不持有 timer**（保持纯逻辑、可确定性单测）。孤立 ESC 的「按 Esc 键」
 //    语义由调用方驱动：
-//      · flushIdle(now)：仅当缓冲以 ESC 开头且 now - lastFeedAt >= escTimeoutMs 时
-//        才冲刷（TUI 主循环在输入空闲时调用即可，等价于传统 ESC 超时 50ms 方案）；
+//      · flushIdle(now)：paste 聚合空闲 >= pasteIdleTimeoutMs 时把聚合内容产出为
+//        PasteEvent；或缓冲以 ESC 开头且 now - lastFeedAt >= escTimeoutMs 时冲刷
+//        （TUI 主循环在输入空闲时调用即可，等价于传统 ESC 超时 50ms 方案）；
 //      · flush(now?)：无条件强制冲刷（退出/暂停时兜底），保证不静默吞字节。
 //  - flush 的降级策略：孤立/半包 ESC → 产出 Esc 键事件；残余字节按普通文本解码
 //    （UTF-8 残缺半字节 → U+FFFD）。宁可产出可解释的事件，绝不静默丢弃。
@@ -37,6 +42,12 @@ export interface InputParserOptions {
   now?: () => number;
   /** 孤立 ESC 视为 Esc 键的空闲阈值（毫秒）；默认 50 */
   escTimeoutMs?: number;
+  /**
+   * bracketed paste 聚合空闲上限（毫秒）；默认 1500。终止符 201~ 永不到达（流损坏）时，
+   * 超过该空闲时长后 flushIdle 把已聚合内容作为单个 PasteEvent 产出（终端发了 200~ 就是
+   * 想粘这个内容，只是流断了——比按字面逐字节回注更接近用户意图）。
+   */
+  pasteIdleTimeoutMs?: number;
 }
 
 export interface InputParser {
@@ -44,10 +55,16 @@ export interface InputParser {
   feed(bytes: Uint8Array | string): InputEvent[];
   /** 无条件强制冲刷内部缓冲（退出/暂停兜底；含未闭合 paste、孤立 ESC、残缺 UTF-8） */
   flush(now?: number): InputEvent[];
-  /** ESC 空闲超时冲刷：缓冲以 ESC 开头且空闲 >= escTimeoutMs 时才冲刷，否则返回 [] */
+  /**
+   * 空闲超时冲刷：paste 聚合空闲 >= pasteIdleTimeoutMs 时把已聚合内容作为单个
+   * PasteEvent 产出（流损坏兜底）；或缓冲以 ESC 开头且空闲 >= escTimeoutMs 时按
+   * Esc 键冲刷。未达阈值返回 []。
+   */
   flushIdle(now?: number): InputEvent[];
   /** 当前缓冲字节数（含 paste 聚合内容；诊断用） */
   pendingLength(): number;
+  /** 是否处于 bracketed paste 聚合中（桥接层保活定时器直到 pasteIdleTimeoutMs） */
+  hasPendingPaste(): boolean;
   /** 丢弃全部缓冲状态（会话重置用） */
   reset(): void;
 }
@@ -95,6 +112,8 @@ const TILDE_KEYS: Record<number, string> = {
   4: 'end',
   5: 'pageup',
   6: 'pagedown',
+  7: 'home', // rxvt
+  8: 'end', // rxvt（ink keyName 表同款：'[7~': 'home'、'[8~': 'end'）
   11: 'f1',
   12: 'f2',
   13: 'f3',
@@ -128,6 +147,7 @@ function kittyKeyOf(codepoint: number): { key: string; text?: string } | null {
 export function createInputParser(options: InputParserOptions = {}): InputParser {
   const now = options.now ?? (() => Date.now());
   const escTimeoutMs = options.escTimeoutMs ?? 50;
+  const pasteIdleTimeoutMs = options.pasteIdleTimeoutMs ?? 1500;
 
   let buf: number[] = []; // 待解析原始字节（半包缓存）
   let pasteBuf: number[] | null = null; // bracketed paste 聚合中
@@ -197,6 +217,7 @@ export function createInputParser(options: InputParserOptions = {}): InputParser
     if (b2 === undefined) return 'incomplete';
     if (b2 === 0x3c) return trySgrMouse(events); // '<'
     if (b2 === 0x4d) return tryX10Mouse(events); // 'M'
+    if (b2 === 0x5b) return tryCsiDoubleBracket(events); // '['（Linux console / putty）
     // 通用 CSI：参数 0x30-0x3F、中间字节 0x20-0x2F、final 0x40-0x7E
     for (let i = 2; i < buf.length; i += 1) {
       const c = buf[i];
@@ -216,6 +237,31 @@ export function createInputParser(options: InputParserOptions = {}): InputParser
       }
     }
     return 'incomplete';
+  }
+
+  /**
+   * CSI [[ 前缀（Linux console / putty，ink keyName 表同款）：
+   * \x1b[[A..[[E → f1..f5、\x1b[[5~/[[6~ → pageup/pagedown。
+   * 不走通用 CSI 解析（'[' 本身落在 final 字节区，通用路径会把 [[A 吞成未知 final）。
+   */
+  function tryCsiDoubleBracket(events: InputEvent[]): EscapeResult {
+    const c = buf[3];
+    if (c === undefined) return 'incomplete'; // \x1b[[ 半包，等后续字节
+    const fn = { 0x41: 'f1', 0x42: 'f2', 0x43: 'f3', 0x44: 'f4', 0x45: 'f5' }[c];
+    if (fn !== undefined) {
+      consume(4);
+      events.push(keyEvent(fn, noModifiers()));
+      return 'consumed';
+    }
+    if ((c === 0x35 || c === 0x36) && buf[4] === 0x7e) {
+      consume(5);
+      events.push(keyEvent(c === 0x35 ? 'pageup' : 'pagedown', noModifiers()));
+      return 'consumed';
+    }
+    // 未识别的 [[ 序列：按孤立 Esc 降级，其余字节按文本解析（与未知 final 口径一致）
+    events.push(escKeyEvent());
+    consume(1);
+    return 'consumed';
   }
 
   function trySgrMouse(events: InputEvent[]): EscapeResult {
@@ -296,6 +342,16 @@ export function createInputParser(options: InputParserOptions = {}): InputParser
       events.push(keyEvent(fn, mods));
       return;
     }
+    // SS3 小写 final（rxvt；ink keyName 表 Oa-De 属 isCtrlKey → ctrl 修饰，实测 7.1.1 一致）
+    const ctrlKey = { a: 'up', b: 'down', c: 'right', d: 'left', e: 'clear' }[final];
+    if (ctrlKey !== undefined) {
+      events.push(keyEvent(ctrlKey, { shift: false, alt: false, ctrl: true }));
+      return;
+    }
+    // SS3 小写 Oh/Of → home/end（ink 表为 OH/OF 大写；部分终端发小写形式，
+    // 桥接层把 home/end 改写为 CSI 等价 \x1b[H / \x1b[F，ink 两形式同键）
+    if (final === 'h') return void events.push(keyEvent('home', noModifiers()));
+    if (final === 'f') return void events.push(keyEvent('end', noModifiers()));
     // 未识别的 SS3 final：序列已完整，静默吞掉（终端私有序列，不产垃圾事件）
   }
 
@@ -485,6 +541,17 @@ export function createInputParser(options: InputParserOptions = {}): InputParser
 
     flushIdle(nowArg) {
       const t = nowArg ?? now();
+      if (pasteBuf !== null) {
+        // paste 聚合空闲超过上限：终止符 201~ 永不到达（流损坏），把已聚合内容作为
+        // 单个 PasteEvent 产出（未超时则保持聚合，分片到达不被切碎）。
+        if (t - lastFeedAt < pasteIdleTimeoutMs) return [];
+        for (const b of buf) pasteBuf.push(b); // 防御性并入（process() 保证聚合期 buf 恒空）
+        buf = [];
+        const pb = pasteBuf;
+        pasteBuf = null;
+        const text = newDecoder().decode(Uint8Array.from(pb));
+        return [{ type: 'paste', text, consumed: false }];
+      }
       const first = buf[0];
       if (first === 0x1b && t - lastFeedAt >= escTimeoutMs) return parser.flush();
       return [];
@@ -492,6 +559,10 @@ export function createInputParser(options: InputParserOptions = {}): InputParser
 
     pendingLength() {
       return buf.length + (pasteBuf !== null ? pasteBuf.length : 0);
+    },
+
+    hasPendingPaste() {
+      return pasteBuf !== null;
     },
 
     reset() {
