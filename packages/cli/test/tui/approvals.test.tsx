@@ -93,3 +93,58 @@ describe('一个 turn 内两次顺序审批', () => {
     }
   });
 });
+
+// T5：审批弹窗在真实 InkShell（含 Composer）中渲染在输入框上方（复用 T3 位置规则）。
+import { afterEach } from 'vitest';
+import { InkShell } from '../../src/tui/runInkChat.js';
+import { createTestRuntime, waitFor, type TestRuntime } from './shell-runtime.js';
+
+const shellRuntimes: TestRuntime[] = [];
+afterEach(async () => {
+  while (shellRuntimes.length > 0) {
+    const r = shellRuntimes.pop();
+    await r?.cleanup();
+  }
+});
+
+describe('T5 审批弹窗位置（InkShell 集成）', () => {
+  it('ConfirmDialog 渲染在输入行上方，Esc 拒绝并关闭', async () => {
+    const tr = await createTestRuntime();
+    shellRuntimes.push(tr);
+    const dialog = createDialogController();
+    const t = mountTui(
+      <InkShell runtime={tr.runtime} bootLines={['历史行 0']} dialog={dialog} onExit={() => undefined} />,
+      { columns: 100, rows: 30 },
+    );
+    try {
+      await t.flush();
+      dialog.open({
+        render: (onClose) => (
+          <ConfirmDialog
+            question="允许执行 bash-1?"
+            isActive
+            onChoice={() => onClose()}
+            onCancel={onClose}
+          />
+        ),
+        resolve: () => undefined,
+      });
+      await waitFor(() => t.output().lastIndexOf('需要审批') > 0, t.flush);
+      const out = t.output();
+      // 弹窗标题与问题都在 Composer 输入行（'> '）之前（同一最后一帧内比较）
+      expect(out.lastIndexOf('需要审批')).toBeGreaterThan(out.lastIndexOf('历史行'));
+      expect(out.lastIndexOf('允许执行 bash-1?')).toBeGreaterThan(out.lastIndexOf('历史行'));
+      expect(out.lastIndexOf('> ')).toBeGreaterThan(out.lastIndexOf('允许执行 bash-1?'));
+      expect(out.lastIndexOf('Enter 发送')).toBeGreaterThan(out.lastIndexOf('> '));
+      // Esc = 拒绝并关闭（最后一帧中弹窗消失）
+      t.write('\x1b');
+      const before = t.output().length;
+      await waitFor(() => t.output().length > before, t.flush);
+      const tail = t.output().slice(t.output().lastIndexOf('历史行'));
+      expect(tail).not.toContain('需要审批');
+      expect(tail).toContain('Enter 发送');
+    } finally {
+      t.unmount();
+    }
+  });
+});
