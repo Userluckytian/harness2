@@ -86,6 +86,11 @@ function ToolCard({
         <Text>{item.tool}</Text>
         <Text color="gray"> ({item.summary})</Text>
       </Box>
+      {/* T1：subagent 结果解析出子会话 id → 只读入口提示（解析不到不显示）
+       * 键位说明：Ctrl+K 在所有终端可用（0x0B）；Ctrl+J 需终端走 kitty CSI-u 协议（0x0A 与 Enter 同字节） */}
+      {item.childSessionId !== undefined && (
+        <Text color="gray"> ↳ 子会话 {item.childSessionId}（Ctrl+J/K 查看）</Text>
+      )}
       {/* 失败原因始终可见（真实 error，不只藏在展开态） */}
       {item.error !== undefined && item.error.length > 0 && <Text color="red"> ↳ {item.error}</Text>}
       {expanded && item.tool === 'edit' && (

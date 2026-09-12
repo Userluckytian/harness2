@@ -15,6 +15,7 @@ import { OverlayHost } from './OverlayHost.js';
 import { Modal } from './Modal.js';
 import { SelectList } from './SelectList.js';
 import { ConfirmDialog } from './ConfirmDialog.js';
+import { SubagentView } from './SubagentView.js';
 import { useTurnStream } from './useTurnStream.js';
 import { bindShutdownSignals, createShutdown, type ExitReason } from './shutdown.js';
 import { createUiScheduler, type UiScheduler } from './scheduler.js';
@@ -30,6 +31,7 @@ import {
   emptyTranscript,
   projectSession,
   transcriptReducer,
+  isSubagentTool,
   type TranscriptEvent,
   type TranscriptState,
 } from './transcript.js';
@@ -263,7 +265,17 @@ export function InkShell({
   const dispatch = React.useCallback((event: TranscriptEvent) => {
     schedulerRef.current?.push(event);
   }, []);
-  const onTranscriptEvent = React.useCallback((event: TranscriptEvent) => dispatch(event), [dispatch]);
+  // T1：当前 turn 内出现的 subagent 工具 callId（live 流不含 output，turn 收尾后从磁盘补齐）
+  const subagentCallIdsRef = useRef<Set<string>>(new Set());
+  const onTranscriptEvent = React.useCallback(
+    (event: TranscriptEvent) => {
+      if (event.type === 'tool/call' && isSubagentTool(event.tool)) {
+        subagentCallIdsRef.current.add(event.callId);
+      }
+      dispatch(event);
+    },
+    [dispatch],
+  );
   React.useEffect(() => () => schedulerRef.current?.dispose(), []);
 
   // T5：steer 回帧 → 转录报告（accepted / stale(草稿已保留) / rejected）。
@@ -401,6 +413,11 @@ export function InkShell({
       if (key.ctrl && input.toLowerCase() === 'o') {
         toggleLastTool();
       }
+      // T1：Ctrl+J（kitty CSI-u 终端）/ Ctrl+K（所有终端可用）打开最近子会话工具卡的只读浮层
+      if (key.ctrl && (input.toLowerCase() === 'j' || input.toLowerCase() === 'k')) {
+        openLastSubagent();
+        return;
+      }
     },
     { isActive: !overlayOpen },
   );
@@ -517,6 +534,70 @@ export function InkShell({
         </Box>
       </Modal>,
     );
+  }
+
+  /** T1：打开最近一张带子会话入口的工具卡的只读浮层（缺省 = 最近一张） */
+  function openLastSubagent(): void {
+    const last = [...transcriptRef.current.items]
+      .reverse()
+      .find((i) => i.kind === 'tool' && i.childSessionId !== undefined);
+    if (last === undefined || last.kind !== 'tool' || last.childSessionId === undefined) return;
+    openSubagent(last.childSessionId);
+  }
+
+  /**
+   * T1：子会话只读浮层。目录定位/读取失败时如实显示错误文案（不伪造）。
+   * 复用 Modal（Esc 关闭，isActive 接管键盘）+ Transcript（只读、虚拟化）。
+   */
+  function openSubagent(childId: string): void {
+    let dir: string | undefined;
+    let locateError: string | undefined;
+    try {
+      dir = runtime.sessionManager.locate(childId, { cwd: runtime.root });
+    } catch (e) {
+      locateError = (e as Error)?.message ?? String(e);
+    }
+    const width = Math.min(Math.max(cols - 8, 36), 72);
+    const height = Math.max(4, rows - 10);
+    setOverlay(
+      <Modal
+        title={`子会话 ${childId}`}
+        hint="只读 · Esc 关闭"
+        onClose={() => setOverlay(null)}
+        isActive
+      >
+        <SubagentView sessionId={childId} dir={dir} locateError={locateError} width={width} height={height} />
+      </Modal>,
+    );
+  }
+
+  /**
+   * T1：turn 收尾后把 subagent 工具的 output/childSessionId 从磁盘补齐到转录（live 流不含 output）。
+   * 只读 projectSession 重投影当前会话日志，按 callId 原地合并（reducer 幂等）；读取失败保持现状。
+   */
+  function enrichSubagentResults(): void {
+    const ids = subagentCallIdsRef.current;
+    if (ids.size === 0) return;
+    const current = runtime.getCurrent();
+    if (current === null) return;
+    let state: TranscriptState;
+    try {
+      state = projectSession(current.dir);
+    } catch {
+      return; // 磁盘读取失败：保持现状（入口不显示，下次重投影自然补齐）
+    }
+    for (const item of state.items) {
+      if (item.kind !== 'tool' || item.output === undefined || !ids.has(item.callId)) continue;
+      dispatch({
+        type: 'tool/result',
+        callId: item.callId,
+        tool: item.tool,
+        ok: item.status === 'ok',
+        ...(item.output !== undefined ? { output: item.output } : {}),
+        ...(item.error !== undefined ? { error: item.error } : {}),
+      });
+    }
+    subagentCallIdsRef.current.clear();
   }
 
   /**
@@ -651,6 +732,8 @@ export function InkShell({
   async function runTurnText(text: string): Promise<void> {
     reset();
     busyRef.current = true;
+    // T1：新 turn 起重置子会话 callId 追踪（上一轮的补齐已完成）
+    subagentCallIdsRef.current.clear();
     let result: TurnResult | undefined;
     setBusy(true);
     setRetryBudget(undefined); // 新 turn 起清掉上一轮的重试面板
@@ -672,6 +755,8 @@ export function InkShell({
         setRetryBudget(result.retryBudget);
         liveSeqRef.current += 1;
         dispatch({ type: 'status', id: `status:${liveSeqRef.current}`, text: turnSummaryLine(result) });
+        // T1：live 流不含 tool output（core 契约）；从磁盘补齐 subagent 结果，使工具卡出现「子会话」入口
+        enrichSubagentResults();
       }
     } catch (e) {
       sendSystem(`error: ${(e as Error)?.message ?? String(e)}`);
