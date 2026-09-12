@@ -7,8 +7,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { SteerResult, TurnResult } from '@harness2/core';
 import type { ChatRuntime } from '../../../src/chat-setup.js';
 import {
+  bindEmergencyExitRestore,
   createApprovalGate,
   createNextChatHarness,
+  emergencyTerminalRestore,
   shouldUseNextRenderer,
   type ApprovalGate,
   type NextChatHarness,
@@ -248,6 +250,28 @@ describe('转录流式投影到 scrollback', () => {
     h.dispose();
   });
 
+  it('同 step 二次增长：原地替换不残留旧行（增量投影回归防护）', async () => {
+    const { h } = makeHarness(
+      makeRuntime({
+        runUserTurn: async (_text, onStream) => {
+          onStream({ type: 'text-delta', text: '第一截', turnId: 't1' });
+          await vi.advanceTimersByTimeAsync(60); // 第一次 live flush：step（t1, step0）text='第一截'
+          onStream({ type: 'text-delta', text: '第二截', turnId: 't1' });
+          await vi.advanceTimersByTimeAsync(60); // 第二次 live flush：同 turnId+stepIndex 增长替换
+          return result('第一截第二截');
+        },
+      }),
+    );
+    h.submit('问');
+    await settle(h);
+    const lines = linesOf(h);
+    // 完整文本只出现一份；第一次 flush 的旧截不得滞留为独立行
+    expect(lines.filter((l) => l === '第一截第二截')).toHaveLength(1);
+    expect(lines).not.toContain('第一截');
+    expect(lines).not.toContain('第二截');
+    h.dispose();
+  });
+
   it('tool-call/tool-result 投影为工具行（pending → ok 摘要）', async () => {
     const { h } = makeHarness(
       makeRuntime({
@@ -420,6 +444,31 @@ describe('Ctrl+C 双击退出协议', () => {
   });
 });
 
+// —— Ctrl+D 语义（keymap 裁决：半页下滚，不再是空草稿退出）——
+describe('Ctrl+D 语义（keymap 裁决）', () => {
+  const CTRL_D = '\x04';
+
+  it('空草稿 Ctrl+D 不退出，走半页下滚（退出只走 Ctrl+C 双击与 /exit）', async () => {
+    const boot = Array.from({ length: 60 }, (_, i) => `历史行 ${i}`);
+    const { h, exitCodes } = makeHarness(undefined, { bootLines: boot });
+    h.feed(WHEEL_UP); // 脱开 follow，便于观察滚动位移
+    const before = h.state.scrollback.scrollTopRow;
+    h.feed(CTRL_D);
+    expect(exitCodes).toEqual([]); // 不退出
+    expect(h.state.scrollback.scrollTopRow).toBeGreaterThan(before); // 半页下滚生效
+    h.dispose();
+  });
+
+  it('非空草稿 Ctrl+D 同样不退出、不动草稿', async () => {
+    const { h, exitCodes } = makeHarness();
+    h.feed('草稿中');
+    h.feed(CTRL_D);
+    expect(exitCodes).toEqual([]);
+    expect(h.state.draft).toBe('草稿中');
+    h.dispose();
+  });
+});
+
 // —— Esc 语义 ——
 describe('Esc 语义', () => {
   it('忙时 Esc 取消当前 turn', async () => {
@@ -507,6 +556,41 @@ describe('终端 resize', () => {
     h.resize(60, 20);
     expect(h.state.scrollback.cols).toBe(59);
     expect(linesOf(h)).toContain('一');
+    h.dispose();
+  });
+
+  it('宽度变化触发全量重投影：截断行按新宽度重排（行宽自洽），加宽后恢复全文', async () => {
+    const { displayWidth } = await import('../../../src/tui/input.js');
+    const longPath = 'a'.repeat(200);
+    const { h } = makeHarness(
+      makeRuntime({
+        runUserTurn: async (_text, onStream) => {
+          onStream({
+            type: 'tool-call',
+            call: { id: 'cw', name: 'write', arguments: JSON.stringify({ file_path: longPath }) },
+            turnId: 't1',
+          });
+          onStream({ type: 'tool-result', callId: 'cw', ok: true, turnId: 't1' });
+          return result('done');
+        },
+      }),
+    );
+    h.submit('写长文件');
+    await settle(h);
+    const fullLine = `⏺ write(${longPath})`;
+    // 初始 cols=100 → 内容区 99：投影截断 ≤99 宽
+    const initial = linesOf(h).find((l) => l.startsWith('⏺ write('));
+    expect(initial).toBeDefined();
+    expect(displayWidth(initial ?? '')).toBeLessThanOrEqual(99);
+    // 窄化到 40 → 内容区 39：重投影后调用行按新宽度重排（旧 99 宽截断不得滞留）
+    h.resize(40, 20);
+    const narrowed = linesOf(h).find((l) => l.startsWith('⏺ write('));
+    expect(narrowed).toBeDefined();
+    expect(displayWidth(narrowed ?? '')).toBeLessThanOrEqual(39);
+    expect(narrowed?.endsWith('…')).toBe(true);
+    // 加宽到 300 → 内容区 299：全文恢复（不再截断）
+    h.resize(300, 30);
+    expect(linesOf(h)).toContain(fullLine);
     h.dispose();
   });
 });
@@ -644,6 +728,94 @@ describe('审批 overlay', () => {
     h.feed('x');
     expect(h.state.draft).toBe('');
     h.cancelApproval();
+    h.dispose();
+  });
+});
+
+// —— 进程退出兜底（审查 P1）——
+describe('process exit 兜底还原终端', () => {
+  class FakeRawStdin {
+    rawMode: boolean | null = null;
+    setRawMode(mode: boolean): void {
+      this.rawMode = mode;
+    }
+  }
+
+  it('emergencyTerminalRestore 同步写出 MOUSE_OFF + SHOW_CURSOR + ALT_SCREEN_EXIT 并复位 raw mode', () => {
+    const out = new FakeOut();
+    const stdin = new FakeRawStdin();
+    emergencyTerminalRestore(out, stdin);
+    expect(out.buffer).toContain('\x1b[?1000;1002;1006l'); // MOUSE_OFF
+    expect(out.buffer).toContain('\x1b[?25h'); // SHOW_CURSOR
+    expect(out.buffer).toContain('\x1b[?1049l'); // ALT_SCREEN_EXIT
+    expect(stdin.rawMode).toBe(false);
+  });
+
+  it('流已销毁（write/setRawMode 抛错）与未注入 stdin 时兜底不抛错（幂等无副作用）', () => {
+    const out = new FakeOut();
+    expect(() => emergencyTerminalRestore(out, undefined)).not.toThrow();
+    const brokenOut = {
+      write(): number {
+        throw new Error('EPIPE');
+      },
+    };
+    const brokenStdin = {
+      setRawMode(): void {
+        throw new Error('stream destroyed');
+      },
+    };
+    expect(() => emergencyTerminalRestore(brokenOut, brokenStdin)).not.toThrow();
+  });
+
+  it('bindEmergencyExitRestore 注册 exit 监听 → 触发即兜底写出；解绑后监听移除、不再写出', () => {
+    const out = new FakeOut();
+    const stdin = new FakeRawStdin();
+    const listeners = new Map<string | symbol, () => void>();
+    const fakeProc = {
+      on: (name: string | symbol, fn: () => void) => {
+        listeners.set(name, fn);
+        return fakeProc;
+      },
+      off: (name: string | symbol, fn: () => void) => {
+        if (listeners.get(name) === fn) listeners.delete(name);
+        return fakeProc;
+      },
+    } as unknown as Pick<NodeJS.Process, 'on' | 'off'>;
+    const detach = bindEmergencyExitRestore(out, stdin, fakeProc);
+    expect([...listeners.keys()].map(String)).toEqual(['exit']);
+    const before = out.buffer.length;
+    listeners.get('exit')?.();
+    expect(out.buffer.length).toBeGreaterThan(before);
+    expect(out.buffer).toContain('\x1b[?1049l');
+    expect(stdin.rawMode).toBe(false);
+    // 解绑：监听移除（exit 触发时不再有兜底回调可执行）
+    detach();
+    expect(listeners.has('exit')).toBe(false);
+  });
+});
+
+// —— DECSET 1004 焦点上报 ——
+describe('DECSET 1004 焦点上报', () => {
+  it('创建即写出 1004h 开启序列（screen.start 后装配层补写）', () => {
+    const { h, out } = makeHarness();
+    expect(out.buffer).toContain('\x1b[?1004h');
+    h.dispose();
+  });
+
+  it('focus out → 失焦发提醒；focus in → 恢复静默（unfocused 缺省策略，1004 开启后事件自然生效）', async () => {
+    const bells: string[] = [];
+    const { h } = makeHarness(undefined, { notifyWrite: (s) => bells.push(s) });
+    h.submit('聚焦回合'); // 初始聚焦 → unfocused 策略不发
+    await settle(h);
+    expect(bells).not.toContain('\x07');
+    h.feed('\x1b[O'); // focus out（parser 产出 FocusEvent → dispatcher 兜底 focused=false）
+    h.submit('失焦回合');
+    await settle(h);
+    expect(bells).toContain('\x07');
+    h.feed('\x1b[I'); // focus in
+    h.submit('再聚焦回合');
+    await settle(h);
+    expect(bells).toHaveLength(1); // 只有失焦那一回合发过
     h.dispose();
   });
 });

@@ -22,10 +22,14 @@
 //   未复用 runInkChat 的 createDialogController：其 DialogRequest.render 是 React 节点，
 //   与 next 渲染不兼容，且会引入 ink/react 依赖与模块环；gate 为其非 React 等价复刻。
 // - Ctrl+C：createCtrlCGuard（忙时取消 / 空闲 2s 窗口双击退出，退出码 130）——对齐 Composer。
+//   Ctrl+D：按 2026-09-12 keymap 裁决 = 半页下滚（chat-controller 内置消费），**不退出**——
+//   退出只走 Ctrl+C 双击与 /exit（Ink Composer 的空草稿 Ctrl+D 退出语义不带入 next 层）。
 // - 退出：createShutdown + bindShutdownSignals（SIGTERM/SIGHUP 同一幂等路径）；raw mode 由
 //   本层管理（screen.start 后 setRawMode(true)，退出还原）；SIGINT 不绑定（Ctrl+C 走键盘
-//   协议，raw mode 下内核不投递 SIGINT，与 Ink 行为一致）。
-// - notifier / steer 观察 / resize（screen.resize + resizeChat）均已接。
+//   协议，raw mode 下内核不投递 SIGINT，与 Ink 行为一致）。另有 process 'exit' 兜底还原
+//   （bindEmergencyExitRestore：exit 回调内只能同步写，见函数注释）。
+// - notifier / steer 观察 / resize（screen.resize + resizeChat + 强制全量重投影）/ DECSET
+//   1004 焦点上报（parser 产出 focus 事件 → focused 标记，notifier 策略自然生效）均已接。
 //
 // next 模式暂缺项（对齐 Ink 的差距，诚实登记、不伪造）：
 //   1. 斜杠命令仅 /help /? /exit /quit；/mode /sessions /undo /redo /new /resume /fork
@@ -63,6 +67,7 @@ import {
 import { createNotifier, stderrSink, type Notifier } from '../notify.js';
 import { emptyTranscript, transcriptReducer, type TranscriptEvent, type TranscriptItem } from '../transcript.js';
 import type { WriteTarget } from '../renderer/diff-presenter.js';
+import { ALT_SCREEN_EXIT, MOUSE_OFF, SHOW_CURSOR } from '../renderer/ansi.js';
 import { Screen } from '../renderer/screen.js';
 import { renderChat, resizeChat, type ChatScreenState } from './chat-screen.js';
 import { projectTranscript, toggleCollapse, type ProjectionLine } from './projection.js';
@@ -88,6 +93,8 @@ const IDLE_FLUSH_MS = 50; // chat-controller 文件头建议的空闲冲刷周�
 const HINT_CLEAR_MS = 2000; // Composer 瞬时提示展示时长
 const BRACKETED_PASTE_ON = '\x1b[?2004h'; // ansi.ts 无此常量（既有文件只读），本层自定义
 const BRACKETED_PASTE_OFF = '\x1b[?2004l';
+const FOCUS_REPORT_ON = '\x1b[?1004h'; // DECSET 1004 焦点上报（ansi.ts 无现成常量，同上自定义）
+const FOCUS_REPORT_OFF = '\x1b[?1004l';
 
 const SHORTCUTS: readonly string[] = ['Enter 发送', 'Shift+Enter 换行', 'Esc 停止', 'Ctrl+C 退出', 'PgUp/PgDn 滚动'];
 
@@ -334,6 +341,11 @@ export function createNextChatHarness(runtime: ChatRuntime, deps: NextChatHarnes
       s.start({ mouse: env.HARNESS2_MOUSE !== '0' });
       return s;
     })();
+
+  // DECSET 1004 焦点上报（审查 P2）：与 screen.start 同一写出目标补写开启序列（幂等，
+  // 重复写无害）；关闭序列在 runNextChat 的 cleanup 随 screen.stop 一并写出。开启后
+  // parser 产出 focus 事件 → dispatcher 兜底更新 focused → notifier 策略自然生效。
+  deps.out.write(FOCUS_REPORT_ON);
 
   // —— 状态 ——
   let transcript = emptyTranscript();
@@ -749,10 +761,8 @@ export function createNextChatHarness(runtime: ChatRuntime, deps: NextChatHarnes
       // 其余任意按键重置退出协议（对齐 Composer：非 Ctrl+C 按键清窗口与提示）
       ctrlCGuard.reset();
       clearHint();
-      if (ev.modifiers.ctrl && ev.key === 'd' && state.draft.trim().length === 0) {
-        requestExit('eof'); // Ctrl+D 空草稿退出（对齐 Composer）
-        return 'consumed';
-      }
+      // Ctrl+D 不在此拦截：keymap 裁决 = 半页下滚，由 chat-controller 内置消费（半页滚动
+      // 与退出语义不冲突——退出只走 Ctrl+C 双击与 /exit，见文件头裁决说明）
       if (ev.key === 'escape') {
         if (busy) {
           abortCurrentTurn(); // 忙时 Esc：停止当前 turn（不清草稿，对齐 Composer）
@@ -832,8 +842,14 @@ export function createNextChatHarness(runtime: ChatRuntime, deps: NextChatHarnes
     flushIdle,
     flushUi,
     resize(cols, rows) {
+      const prevCols = screen.cols;
       resizeChat(screen, state, cols, rows);
-      invalidate();
+      if (Math.max(1, cols) !== prevCols) {
+        // 宽度变化：截断/摘要行按新宽度重排——强制全量重投影（审查 P2；只调 rows 不重投影）
+        reprojectAll();
+      } else {
+        invalidate();
+      }
     },
     submit,
     interrupt,
@@ -863,10 +879,49 @@ export function createNextChatHarness(runtime: ChatRuntime, deps: NextChatHarnes
 // —— 真机装配（HARNESS2_RENDERER=next 分支入口；由 runInkChat.tsx 调用）——
 
 /**
+ * 进程退出兜底还原（审查 P1）：同步写出关鼠标上报 + 显示光标 + 退 alt-screen 到 stdout，
+ * 并尝试复位 stdin raw mode。序列天然幂等——正常退出路径 screen.stop 已还原过，重复写无害。
+ * 只能在 process 'exit' 回调内同步调用（异步操作不执行）；流已销毁时吞错，绝不阻塞退出。
+ */
+export function emergencyTerminalRestore(
+  out: Pick<WriteTarget, 'write'>,
+  stdin: { setRawMode?: (mode: boolean) => void } | undefined,
+): void {
+  try {
+    out.write(MOUSE_OFF + SHOW_CURSOR + ALT_SCREEN_EXIT);
+  } catch {
+    // 流已销毁：兜底写出失败不阻塞退出
+  }
+  try {
+    stdin?.setRawMode?.(false);
+  } catch {
+    // 流已销毁：还原失败不阻塞退出
+  }
+}
+
+/**
+ * 挂 process 'exit' 监听兜底还原终端：异常退出（未捕获异常、异步还原路径被跳过等）下，
+ * 进程退出前同步恢复终端状态。返回解绑函数（shutdown 收敛后调用；proc 可注入供
+ * headless 测试验证注册/解绑与兜底写出序列）。
+ */
+export function bindEmergencyExitRestore(
+  out: Pick<WriteTarget, 'write'>,
+  stdin: { setRawMode?: (mode: boolean) => void } | undefined,
+  proc: Pick<NodeJS.Process, 'on' | 'off'> = process,
+): () => void {
+  const onExit = (): void => emergencyTerminalRestore(out, stdin);
+  proc.on('exit', onExit);
+  return () => {
+    proc.off('exit', onExit);
+  };
+}
+
+/**
  * next 渲染层的 chat 入口：setupChatSession（与 legacy/ink 共用）→ Screen 全屏帧循环。
- * 终端生命周期：进 alt-screen（Screen.start，含鼠标上报）→ bracketed paste 开启 →
- * stdin raw mode；退出经 createShutdown.finish 统一还原（拆屏 / paste 关闭 / raw mode
- * 还原 / runtime.finish），SIGTERM/SIGHUP 走 bindShutdownSignals 同一幂等路径。
+ * 终端生命周期：进 alt-screen（Screen.start，含鼠标上报）→ DECSET 1004 焦点上报 →
+ * bracketed paste 开启 → stdin raw mode；退出经 createShutdown.finish 统一还原（拆屏 /
+ * 焦点上报关闭 / paste 关闭 / raw mode 还原 / runtime.finish），SIGTERM/SIGHUP 走
+ * bindShutdownSignals 同一幂等路径；process 'exit' 另有同步兜底（bindEmergencyExitRestore）。
  */
 export async function runNextChat(options: ChatOptions = {}): Promise<void> {
   const bootLines: string[] = [];
@@ -885,8 +940,12 @@ export async function runNextChat(options: ChatOptions = {}): Promise<void> {
 
   const screen = new Screen(stdout, Math.max(1, stdout.columns ?? 80), Math.max(1, stdout.rows ?? 24));
   screen.start({ mouse: mouseEnabled });
+  // DECSET 1004 由 createNextChatHarness 装配时补写（本函数传入的正是同一 stdout，单次写出）
   stdout.write(BRACKETED_PASTE_ON); // ink usePaste 由 ink 自动开启；next 路径自行开关（parser 只负责解析）
   if (canRaw) stdin.setRawMode(true);
+
+  // 审查 P1：进程退出兜底（'exit' 回调内同步还原终端；正常路径已还原，序列幂等无副作用）
+  const detachExitRestore = bindEmergencyExitRestore(stdout, canRaw ? stdin : undefined);
 
   const harness = createNextChatHarness(runtime, {
     out: stdout,
@@ -896,6 +955,7 @@ export async function runNextChat(options: ChatOptions = {}): Promise<void> {
     screen,
     cleanup: async () => {
       screen.stop(); // 关鼠标上报 + 显示光标 + 退 alt-screen（幂等）
+      stdout.write(FOCUS_REPORT_OFF); // 关焦点上报（与 1004h 成对；重复写无害）
       stdout.write(BRACKETED_PASTE_OFF);
       if (canRaw) {
         try {
@@ -925,6 +985,7 @@ export async function runNextChat(options: ChatOptions = {}): Promise<void> {
 
   await harness.awaitDone();
   detachSignals();
+  detachExitRestore(); // 正常收敛后解绑 exit 兜底监听（无残留监听；异常路径由兜底已覆盖）
   stdout.off('resize', onResize);
   stdin.off('data', onData);
 }

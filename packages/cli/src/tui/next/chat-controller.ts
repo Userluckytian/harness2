@@ -24,6 +24,8 @@
 //   Enter 接受并提交（grok 口径，见差异说明）；PageUp / PageDown → scrollback 翻页；
 //   Ctrl+U / Ctrl+D → 半页上 / 下滚（keymap 裁决采纳 grok，Ctrl+D 不再是退出）；
 //   Ctrl+G → 跟随回底；Ctrl+C → onInterrupt（**每次**上报，双击窗口逻辑留给装配层）。
+//   Ctrl+D 显式裁决（2026-09-12 审查 P2-3）：恒为半页下滚，**不做**空草稿退出（Ink
+//   Composer 的 EOF 退出语义不带入 next 层）；next 模式退出只走 Ctrl+C 双击与 /exit。
 //
 // 粘贴语义（对齐现有 Ink usePaste 通道）：bracketed paste 的文本 CRLF（含裸 CR）归一为
 // LF 后在光标处插入，多行合法；**粘贴路径绝不调用 onSubmit**（内嵌 \r 不触发提交，
