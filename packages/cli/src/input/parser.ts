@@ -25,6 +25,9 @@
 //      · flush(now?)：无条件强制冲刷（退出/暂停时兜底），保证不静默吞字节。
 //  - flush 的降级策略：孤立/半包 ESC → 产出 Esc 键事件；残余字节按普通文本解码
 //    （UTF-8 残缺半字节 → U+FFFD）。宁可产出可解释的事件，绝不静默丢弃。
+//  - 例外（有意为之）：**结构合法但参数非法/语义未知的序列**（如 SGR 参数 NaN、
+//    未识别的 CSI final 字节）按垃圾输入静默消费不产出事件——它们不是「待解析
+//    的字节」而是「解析不了的噪声」，产出伪事件反而污染输入流。
 //  - TextDecoder 是 WHATWG 标准接口（Node 18+/浏览器均内建），不算 DOM/Node 特有 API。
 import { modifiersFromBits, noModifiers } from './types.js';
 import type { FocusEvent, InputEvent, KeyEvent, MouseEvent, PasteEvent } from './types.js';
@@ -458,7 +461,9 @@ export function createInputParser(options: InputParserOptions = {}): InputParser
     return events;
   }
 
-  return {
+  // 先赋给具名常量再返回：flushIdle 等内部方法经 parser.flush() 互调，
+  // 不依赖 this（调用方解构 const { flushIdle } = parser 也不会 TypeError）。
+  const parser: InputParser = {
     feed(bytes) {
       const chunk = typeof bytes === 'string' ? encoder.encode(bytes) : bytes;
       lastFeedAt = now();
@@ -481,7 +486,7 @@ export function createInputParser(options: InputParserOptions = {}): InputParser
     flushIdle(nowArg) {
       const t = nowArg ?? now();
       const first = buf[0];
-      if (first === 0x1b && t - lastFeedAt >= escTimeoutMs) return this.flush();
+      if (first === 0x1b && t - lastFeedAt >= escTimeoutMs) return parser.flush();
       return [];
     },
 
@@ -496,4 +501,5 @@ export function createInputParser(options: InputParserOptions = {}): InputParser
       lastFeedAt = now();
     },
   };
+  return parser;
 }
