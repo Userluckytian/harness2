@@ -43,7 +43,7 @@
 4. `docs/ROADMAP.md` —— 26 项功能清单 + 架构决策 D1–D6 + 明确不做
 5. `architecture.md` —— 技术栈与核心不变量（阶段 3 起：含 Provider 缝 / Agent loop / 工具系统 / 配置体系小节）
 6. `docs/API-STABILITY.md` —— API 稳定承诺（semver 政策 + 导出面快照更新流程）
-7. `docs/MIGRATION.md` —— 迁移指南（0.6→1.0 零迁移 + 演进索引）· `docs/RELEASE-CHECKLIST.md` —— 发布回归汇总（发布动作清单在 ③）
+7. `docs/MIGRATION.md` —— 迁移指南（0.6→1.0 零迁移 + 演进索引）· `docs/RELEASE-CHECKLIST.md` —— 发布回归汇总（发布动作清单在 ③）· `docs/SMOKE-TEST.md` —— **冒烟测试手册**（三种启动入口 + 36 条手工用例 + 期望结果；命令面取自 `--help` 实测与源码）
 8. `docs/ai-framework/plans/` —— 阶段计划（每份含零上下文交接提示词）。**当前阶段 15 四件套**：`2026-09-09-phase-quality-closeout.md`（唯一计划：背景/执行顺序/12 任务/全局约束）、`…-closeout-acceptance.md`（验收与证据登记表，进度以它为准）、`…-closeout-review-brief.md`（专职审查者任务书）、`…-closeout-executor.md`（执行者提示词）。**阶段 I1（已完成）的双轨计划**：`2026-09-08-phase-aggressive-cli-interaction.md`（甲/终端轨）、`2026-09-08-phase-aggressive-desktop-interaction.md`（乙/桌面轨）、`2026-09-11-phase-foundation-patch.md`（地基补丁 P，独立第三人执行）——三份均含并行边界表与零上下文交接提示词
 9. `docs/diary/YYYY-MM-DD.md` —— 每日日志（发版 release note 素材）
 10. `docs/issue-log/` —— 问题日志（README 约定 + OPEN.md 未关闭索引）
