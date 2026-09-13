@@ -168,6 +168,14 @@ harness2/
 
 **退出闸门**：G-01～G-20 全部 ✅ 或有归存；`refs-grok-build.md` 状态列已回填。
 
+**执行记录（2026-09-13，编排者四段跑毕）**：
+
+- ① 开发：两棒并行（`tui/render/` 渲染模式层 96 例、`tui/input/` 输入焦点层 150 例，目录独占零交集）+ 一棒串行接线（Esc 全语义切 37949780 新规格、fullscreen 八区域接 RegionLayoutManager、/minimal /fullscreen 注册、core 配置加性 `ui`/`scrollback` 段、快照 522→524、catalog 13→15 条）。修复棒闭环审查 P1-1（Ctrl+S stash 语义对齐上游 StashPrompt，数据不丢）与 P2-2（寄放审批卡裸 Esc 整体吞掉）。
+- ② 测试：覆盖矩阵 20/20（G-16 负向锁死）；11 例补口（G-02 会话/草稿不丢、G-03 门控、G-12 Alt+V、G-19 穿越等）；9 条旧断言按新规格迁移（②逐条裁决检验力不弱 + G 依据，③抽查复核；唯一附带缺口「候选钳位分支」已用新用例闭环）。
+- ③ 审查：规格回源抽查 7 条全部与上游 37949780 一致（含 G-17 800ms 边界、G-19 宽限常量、G-03 清单）；假入口扫描通过（三数据面板真隐藏、/minimal 降级指引诚实、rewind picker 走 /undo 真管线）；判定「需修后合入」→ 修复棒闭环后可合入。
+- ④ 验证（编排者亲跑）：`pnpm -r build` 0 错 · typecheck 0 · eslint **0 error / 46 warning** · prettier 全绿 · 全量 **2653 passed + 5 skipped**（core 928+2 · gateway 40 · desktop 344+1 · cli 1341+2）；真机 smoke：legacy 默认路径实跑正常（help 15 条、模式命令诚实拒绝「仅 next 渲染层提供」）；**piped stdin 非 TTY，next 渲染层按设计不启用 → /fullscreen /minimal 往返与 Esc 真机语义归档真机清单（OPEN.md）**；next 路径行为由 p2c-wiring 15 例 + 接线测试覆盖。
+- 状态归存：G-04/G-08/G-10/G-13 ✅、G-14/G-15/G-17/G-18/G-19/G-20 ✅、G-16 ➖（维持）、**G-01/G-02/G-03/G-05/G-06/G-07/G-09/G-11/G-12 🟡 下放 P3/P7**（minimal 基座、folds/block-ops/shell-mode 接线、turn 导航、vim prompt 侧、图片真机透传——明细见 refs 状态列与下一条目）。
+
 ## P3 CLI 命令面 + 阻塞卡片 + 队列/转向 + 状态行（3–4 天）
 
 **依据**：G-21～G-49、G-50～G-90。
@@ -314,3 +322,4 @@ harness2/
 | 2026-09-13 | 编排会话（Notion AI） | 创建：P0～P9 十阶段，含并行窗口、目录独占表、四段子代理模式、反半成品硬规则、全局闸门、决策点 H-47                                                                                            |
 | 2026-09-13 | 编排会话（本轮）      | P0 完成：三仓基线刷新（grok `37949780` / deepseek `c291e7961a` / hermes `79445a4` 未拉取待补）；refs 重分析 G-91～G-95、D-73～D-86、H-20 修正、三份文档补模板锚点；hermes 补拉登记 OPEN.md    |
 | 2026-09-13 | 编排会话（本轮）      | P1 完成：命令注册表下沉 core（11 条业务 + describeCapabilities，导出面加性 499→522）、cli 三入口统一分发（`case '/` 清零）、20+75 条新测试、全量 2397+5；CI 加固与 lint 两条并入窗口；H-70 🟡 |
+| 2026-09-13 | 编排会话（本轮）      | P2 完成：渲染模式层+输入焦点层（G-01~~G-20，246 例）+接线（Esc 新规格/fullscreen 八区域/15 命令）；审查回源 7 条一致；G-04/08/10/13、G-14~~20 ✅，9 条 🟡 下放 P3/P7；全量 2653+5             |
