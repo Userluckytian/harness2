@@ -49,5 +49,6 @@ export * from './plugins/bus.js';
 export * from './mcp/client.js';
 export * from './doctor/index.js';
 export * from './doctor/crash.js';
+export * from './commands/index.js';
 
 export { CORE_VERSION } from './version.js';

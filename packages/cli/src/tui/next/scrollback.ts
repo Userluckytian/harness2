@@ -120,7 +120,7 @@ const TRAILING_PUNCT = new Set([
   ']',
   '}',
   '>',
-  '\"',
+  '"',
   "'",
   '`',
 ]);

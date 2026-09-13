@@ -32,13 +32,15 @@
 //   1004 焦点上报（parser 产出 focus 事件 → focused 标记，notifier 策略自然生效）均已接。
 //
 // next 模式暂缺项（对齐 Ink 的差距，诚实登记、不伪造）：
-//   1. 斜杠命令已全集接齐（P3-C）：ink 版有的命令在本层均有等价行为——共享命令（/undo /redo
-//      /new /resume /fork /exit /quit /sessions）委托 ink-commands.runSharedCommand（真实
-//      CommandContext + 磁盘重投影）；/help /? /mode /context /compact /reasoning /tasks
-//      本地实现（与 ink 同文案）；/plan /auto /always-approve 为 next 层 UI 模式命令。
+//   1. 斜杠命令已全集接齐（P3-C；P1-Dev-2 起为表驱动分发）：core 命令（/help /? /exit /quit
+//      /new /resume /fork /undo /redo /sessions /context /compact /tasks 与未知命令）统一经
+//      ink-commands.runSharedCommand → core runCoreCommand（与 legacy/ink 同一份 core 实现，
+//      磁盘重投影语义不变）；shellOnly 的 /reasoning 走 shell-commands 分发器（三壳同一份
+//      实现）；/mode 以 shell-commands override 注册本壳 UI 四态语义；/plan /auto
+//      /always-approve /theme /search 为 next 层本地命令表。
 //      登记差异：/sessions 无参为转录文本列表（ink 为选择浮层，浮层化暂缺）；/mode 无参 =
-//      UI 模式循环一次（等价 Shift+Tab）、带参接受四态名（ink 为 core 审批模式别名 + 选择
-//      浮层，core 契约冻结不改）；未知命令走共享「未知命令」文案（不再有本层「暂不支持」分支）。
+//      UI 模式循环一次（等价 Shift+Tab）、带参接受四态名（ink/legacy 为 core 审批模式别名，
+//      core 契约冻结不改）；未知命令走共享「未知命令」文案。
 //   2. 队列面板（Ctrl+X 取消排队条目）与重试信息已接齐（P3-E）——差异登记：
 //      队列面板 = 浮层列表（Queue · N 项 + 高亮走行），Ctrl+X/x 取消高亮项（ink 只取消队首）、
 //      q/Esc 关闭、取消回报「已取消排队」system 行（ink 无回报行）；重试信息 = 转录 system 行
@@ -172,9 +174,9 @@ import {
   type TurnResult,
   type TurnStreamHandler,
 } from '../../chat-setup.js';
-import { HELP_TEXT, parseCommand } from '../../commands.js';
-import { getContextUsage, type AnySessionEvent } from '@harness2/core';
+import { getContextUsage, parseCoreCommand, type AnySessionEvent, type ParsedCoreCommand } from '@harness2/core';
 import { runSharedCommand, type InkCommandIo } from '../ink-commands.js';
+import { createShellCommandDispatcher } from '../../shell-commands.js';
 import { expandContextRefs, hasContextRefs } from '../../context-ref.js';
 import { createInputParser, type InputParser } from '../../input/parser.js';
 import { createInputDispatcher, type InputDispatcher, type InputLayer } from '../../input/dispatcher.js';
@@ -320,29 +322,34 @@ export interface NextCommandEntry {
 }
 
 /**
- * next 层斜杠命令注册表（P3-C 全集）。共享命令（/new /sessions /resume /fork /undo /redo
- * /exit /quit 别名）委托 ink-commands.runSharedCommand（真实 CommandContext + 磁盘重投影）；
- * 本地命令与 ink runInkChat.handleCommand 同文案。quit / ? 为共享实现的别名（不在候选表，
- * 与 ink matchCommands 的候选口径一致——候选只含 COMMAND_REGISTRY 名 + next 扩展）。
+ * next 层斜杠命令注册表（P3-C 全集；P1-Dev-2 起路由改为：core 命令统一经
+ * ink-commands.runSharedCommand → core runCoreCommand，壳只持 shellOnly/本地命令）。
+ * wiring：shared = 共享实现（core runCoreCommand 或壳侧 shell-commands 表）；local = next
+ * 层本地实现（UI 命令与 UI 四态 /mode）。quit / ? 为共享实现的别名（不在候选表，与 ink
+ * matchCommands 的候选口径一致——候选只含命令名 + next 扩展）。
  */
 export const NEXT_COMMANDS: readonly NextCommandEntry[] = [
   { name: 'new', wiring: 'shared' },
-  { name: 'sessions', wiring: 'shared', note: '无参 = 转录文本列表（ink 为选择浮层；浮层化登记暂缺）' },
+  { name: 'sessions', wiring: 'shared', note: '无参 = 转录文本列表（ink 为选择浮层，浮层化登记暂缺）' },
   { name: 'resume', wiring: 'shared' },
   { name: 'fork', wiring: 'shared' },
   { name: 'undo', wiring: 'shared' },
   { name: 'redo', wiring: 'shared' },
-  { name: 'help', wiring: 'local' },
+  { name: 'help', wiring: 'shared', note: 'core runCoreCommand（与 ink/legacy 同一份 core 实现）' },
   { name: 'exit', wiring: 'shared' },
   {
     name: 'mode',
     wiring: 'local',
-    note: '无参 = UI 四态循环一次（等价 Shift+Tab）；带参接受四态名直接设置（ink 为 core 审批模式别名 + 选择浮层，core 契约冻结不改）',
+    note: 'UI 四态声明态（P3-B）：无参 = 循环一次（等价 Shift+Tab）、带参接受四态名——经 shell-commands dispatcher override 注册（core 的 mode 为审批模式别名，core 契约冻结不改）',
   },
-  { name: 'context', wiring: 'local' },
-  { name: 'compact', wiring: 'local', note: '自动压缩提示（与 ink 同文案，不静默）' },
-  { name: 'reasoning', wiring: 'local' },
-  { name: 'tasks', wiring: 'local', note: '只读提示（与 ink 同文案）：请用 harness2 cron list' },
+  {
+    name: 'context',
+    wiring: 'shared',
+    note: 'core runCoreCommand（contextUsage 缝取 runtime 既有口径，输出与改造前逐字一致）',
+  },
+  { name: 'compact', wiring: 'shared', note: 'core runCoreCommand 降级文案（runtime 无手动压缩句柄，如实不注入）' },
+  { name: 'reasoning', wiring: 'shared', note: '壳侧 shell-commands 表（三壳同一份实现，legacy 基准文案）' },
+  { name: 'tasks', wiring: 'shared', note: 'core runCoreCommand 降级文案（runtime 无 cron 存储句柄，如实不注入）' },
   { name: 'plan', wiring: 'local', note: 'next 层 UI 声明态（ink 无此命令）' },
   { name: 'auto', wiring: 'local', note: 'next 层 UI 声明态（ink 无此命令）' },
   { name: 'always-approve', wiring: 'local', note: 'next 层 always-approve 开关（ink 无此命令）' },
@@ -1555,9 +1562,62 @@ export function createNextChatHarness(runtime: ChatRuntime, deps: NextChatHarnes
     sendSystem(`已切换主题: ${next.name}（会话内存级，不持久化）`);
   }
 
-  // —— 命令（P3-C 全集；共享命令委托 runSharedCommand，差异登记见文件头）——
+  // —— 命令（P3-C 全集；P1-Dev-2 起表驱动分发，壳内无 switch/case 命令名）——
+
+  /**
+   * next 层本地命令表（仅本壳 UI 命令；core 命令不经此表——分发顺序见 handleCommand）。
+   * /mode 走 shell-commands 分发器的 override（见下），不在此表。
+   */
+  const nextLocalCommands: Readonly<Record<string, (rest: string) => void>> = {
+    // plan 声明态：直接设置对应 UI 模式（幂等；不改审批/执行行为，红线 6 见文件头）
+    plan: () => {
+      setMode('plan');
+      sendSystem('[plan mode] 已声明 plan 模式（UI 声明态：仅提示，不改变审批/执行行为；Shift+Tab 可切回）');
+    },
+    auto: () => {
+      setMode('auto');
+      sendSystem(
+        '[auto mode] 已声明 auto 模式（UI 声明态：grok 的 auto=自动审批与红线 6 冲突，本层不自动放行，审批仍需人工回答）',
+      );
+    },
+    'always-approve': () => {
+      const turningOn = uiMode !== 'always-approve';
+      setMode(turningOn ? 'always-approve' : 'normal');
+      sendSystem(
+        turningOn
+          ? '[always-approve] 已开启（开启后的新审批自动代答 a，经 gate resolve 路径；再跑 /always-approve 或 Ctrl+O 关闭）'
+          : '[always-approve] 已关闭（审批恢复人工回答）',
+      );
+    },
+    theme: (rest) => runThemeCommand(rest.trim().toLowerCase()),
+    search: (rest) => runSearchCommand(rest.trim()),
+  };
+
+  /**
+   * 壳侧 ShellCommand 分发器（shell-commands.ts 的表 + 本壳 override）。
+   * 差异裁决（登记）：core 的 /mode 是审批模式别名（legacy/ink 语义）；next 的 /mode 是
+   * UI 四态声明态（P3-B，测试锁定循环/四态语义，红线 6 不改审批行为）——以 override
+   * 注册本壳变体，而非在壳里另写一份分发。
+   */
+  const dispatchShellCommand = createShellCommandDispatcher({
+    mode: (ctx, rest) => {
+      const arg = rest.trim().toLowerCase();
+      if (arg.length === 0) {
+        cycleMode(); // 无参 = 循环切换一次（等价 Shift+Tab；任务规格二选一取循环，登记差异）
+        showHint(`模式：${uiMode}${uiMode === 'plan' || uiMode === 'auto' ? '（声明态）' : ''}`);
+        return;
+      }
+      if ((MODE_CYCLE as readonly string[]).includes(arg)) {
+        setMode(arg as UiMode);
+        ctx.print(`已切换模式: ${arg}${arg === 'plan' || arg === 'auto' ? '（UI 声明态：不改变审批/执行行为）' : ''}`);
+        return;
+      }
+      ctx.print(`error: 未知模式 ${rest}（可选: ${MODE_CYCLE.join(', ')}）`);
+    },
+  });
+
   function handleUserText(text: string): void {
-    const parsed = parseCommand(text);
+    const parsed = parseCoreCommand(text);
     if (parsed !== null) {
       sysSeq += 1;
       scheduler.setInputPriority(true);
@@ -1627,100 +1687,25 @@ export function createNextChatHarness(runtime: ChatRuntime, deps: NextChatHarnes
     requestExit: () => requestExit('exit'),
   };
 
-  function handleCommand(parsed: { name: string; rest: string }): void {
-    switch (parsed.name) {
-      case '/help':
-      case '/?':
-        sendSystem(HELP_TEXT);
-        return;
-      // —— 共享命令（P3-C）：/undo /redo（rewind 重投影）/new /resume /fork /sessions /exit
-      // /quit /? 与未知命令 → ink-commands.runSharedCommand（真实 CommandContext；未知命令
-      // 由共享 handleCommand 输出「未知命令」，不再有本层「暂不支持」分支）
-      case '/exit':
-      case '/quit':
-        requestExit('exit');
-        return;
-      // —— 本地 UI 命令（与 ink runInkChat.handleCommand 同文案；差异登记见文件头）——
-      case '/mode': {
-        const arg = parsed.rest.trim().toLowerCase();
-        if (arg.length === 0) {
-          cycleMode(); // 无参 = 循环切换一次（等价 Shift+Tab；任务规格二选一取循环，登记差异）
-          showHint(`模式：${uiMode}${uiMode === 'plan' || uiMode === 'auto' ? '（声明态）' : ''}`);
-          return;
-        }
-        if ((MODE_CYCLE as readonly string[]).includes(arg)) {
-          setMode(arg as UiMode);
-          sendSystem(
-            `已切换模式: ${arg}${arg === 'plan' || arg === 'auto' ? '（UI 声明态：不改变审批/执行行为）' : ''}`,
-          );
-          return;
-        }
-        sendSystem(`error: 未知模式 ${parsed.rest}（可选: ${MODE_CYCLE.join(', ')}）`);
-        return;
-      }
-      case '/context': {
-        const current = runtime.getCurrent();
-        const usage = current !== null ? getContextUsage(current.dir) : undefined;
-        sendSystem(`上下文占用: ${usage === undefined ? '—（无活动会话）' : `${Math.round(usage * 100)}%`}`);
-        return;
-      }
-      case '/compact':
-        sendSystem('压缩将在下一次 turn 开始时自动检查并执行；若已超阈值会自动触发。');
-        return;
-      case '/reasoning': {
-        const arg = parsed.rest.trim().toLowerCase();
-        if (arg.length === 0) {
-          sendSystem(`推理展示: ${runtime.reasoning() ? '开启' : '关闭'}（/reasoning on|off）`);
-          return;
-        }
-        if (arg === 'on') {
-          runtime.setReasoning(true);
-          sendSystem('推理展示已开启（turn 内按 Ctrl+R 展开/收起折叠块）。');
-          return;
-        }
-        if (arg === 'off') {
-          runtime.setReasoning(false);
-          sendSystem('推理展示已关闭。');
-          return;
-        }
-        sendSystem(`error: 未知参数 ${parsed.rest}（用 on|off，或留空查看当前状态）`);
-        return;
-      }
-      case '/tasks':
-        sendSystem('任务列表请使用 `harness2 cron list` 查看（REPL 只读展示将在后续版本提供）。');
-        return;
-      // —— 模式命令（P3-B；plan/auto 声明态、always-approve toggle，见文件头语义）——
-      case '/plan':
-        setMode('plan');
-        sendSystem('[plan mode] 已声明 plan 模式（UI 声明态：仅提示，不改变审批/执行行为；Shift+Tab 可切回）');
-        return;
-      case '/auto':
-        setMode('auto');
-        sendSystem(
-          '[auto mode] 已声明 auto 模式（UI 声明态：grok 的 auto=自动审批与红线 6 冲突，本层不自动放行，审批仍需人工回答）',
-        );
-        return;
-      case '/always-approve': {
-        const turningOn = uiMode !== 'always-approve';
-        setMode(turningOn ? 'always-approve' : 'normal');
-        sendSystem(
-          turningOn
-            ? '[always-approve] 已开启（开启后的新审批自动代答 a，经 gate resolve 路径；再跑 /always-approve 或 Ctrl+O 关闭）'
-            : '[always-approve] 已关闭（审批恢复人工回答）',
-        );
-        return;
-      }
-      // —— P4-2 主题与搜索 ——
-      case '/theme':
-        runThemeCommand(parsed.rest.trim().toLowerCase());
-        return;
-      case '/search':
-        runSearchCommand(parsed.rest.trim());
-        return;
-      default:
-        // /undo /redo /new /resume /fork /sessions（无参文本列表）与未知命令 → 共享实现
-        runSharedCommand(parsed, runtime, commandIo);
+  /**
+   * 命令分发（表驱动）：① next 本地 UI 命令表（plan/auto/always-approve/theme/search）；
+   * ② shellOnly 命令（mode/reasoning）→ shell-commands 分发器（mode = 本壳 UI 四态 override，
+   * reasoning = 三壳同一份实现）；③ 其余（/help /? /exit /quit /new /resume /fork /undo
+   * /redo /sessions /context /compact /tasks 与未知命令）→ ink-commands.runSharedCommand →
+   * core runCoreCommand（与 legacy/ink 同一份 core 实现；/undo /redo /new /resume /fork 的
+   * 重投影语义经 runSharedCommand 保持不变）。
+   */
+  function handleCommand(parsed: ParsedCoreCommand): void {
+    const word = parsed.id ?? parsed.raw.replace(/^\//, '');
+    const local = nextLocalCommands[word];
+    if (local !== undefined) {
+      local(parsed.rest);
+      return;
     }
+    if (parsed.id !== null && dispatchShellCommand(parsed.id, parsed.rest, { print: sendSystem, runtime })) {
+      return;
+    }
+    runSharedCommand({ name: parsed.raw, rest: parsed.rest }, runtime, commandIo);
   }
 
   // —— turn 流桥与终态去重 ——
