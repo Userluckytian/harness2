@@ -11,10 +11,15 @@ import { loadSession } from '../src/session/reader.js';
 import { ToolRegistry } from '../src/tools/registry.js';
 import { SessionWriter } from '../src/session/writer.js';
 import {
+  SKILL_FILE_NAME,
   SKILLS_MAX,
   SkillStore,
+  agentsGlobalSkillsRoot,
+  agentsProjectSkillsRoot,
   assembleSkillsSystemBlock,
+  defaultSkillsRoot,
   parseSkillFrontmatter,
+  projectSkillsRoot,
   type SkillEntry,
 } from '../src/skills/store.js';
 import { createSkillTool } from '../src/skills/tool.js';
@@ -263,5 +268,133 @@ describe('loop system 注入', () => {
     await runTurn(w, { provider, tools: new ToolRegistry(), cwd: dir, userText: '二', skills });
     w.close();
     expect(provider.requests[1]?.system).toContain('- late: 后来加的');
+  });
+});
+
+describe('文件夹型技能与 .agents 兜底目录（解冻窗口 B 方案）', () => {
+  it('文件夹型技能：<dir>/<name>/SKILL.md 被发现，name 取 frontmatter（与文件夹名无关），load 取全文', () => {
+    const project = tmpDir();
+    mkdirSync(join(project, 'folder-name'), { recursive: true });
+    writeFileSync(
+      join(project, 'folder-name', SKILL_FILE_NAME),
+      '---\nname: real-name\ndescription: 文件夹型描述\n---\n\n文件夹正文\n',
+      'utf8',
+    );
+    const store = new SkillStore(project, undefined);
+    const scan = store.scan();
+    expect(scan.skills.map((s) => [s.name, s.source])).toEqual([['real-name', 'project']]);
+    expect(scan.warnings).toHaveLength(0);
+    expect(scan.skills[0]!.file).toContain(join('folder-name', SKILL_FILE_NAME));
+    expect(store.load('real-name')!.content).toContain('文件夹正文');
+    expect(store.load('folder-name')).toBeUndefined(); // 文件夹名不是技能名
+  });
+
+  it('文件夹型坏形态：无 SKILL.md 的文件夹静默忽略；SKILL.md 缺 description → 跳过 + 告警', () => {
+    const project = tmpDir();
+    mkdirSync(join(project, 'no-skill'), { recursive: true }); // 没有 SKILL.md
+    mkdirSync(join(project, 'bad-folder'), { recursive: true });
+    writeFileSync(join(project, 'bad-folder', SKILL_FILE_NAME), '---\nname: bad-folder\n---\n缺 description', 'utf8');
+    writeSkill(project, 'good.md', 'good', '好文件');
+    const scan = new SkillStore(project, undefined).scan();
+    expect(scan.skills.map((s) => s.name)).toEqual(['good']);
+    expect(scan.warnings).toHaveLength(1);
+    expect(scan.warnings[0]).toContain('bad-folder');
+    expect(scan.warnings[0]).toContain(SKILL_FILE_NAME);
+  });
+
+  it('扩展字段容忍：allowed-tools / license / metadata 等忽略不报错（含列表与嵌套键）', () => {
+    const raw = [
+      '---',
+      'name: extra',
+      'description: 描述',
+      'allowed-tools:',
+      '  - Bash(firecrawl *)',
+      'license: MIT',
+      'metadata:',
+      '  author: claudekit',
+      '---',
+      '',
+      '正文',
+    ].join('\n');
+    expect(parseSkillFrontmatter(raw)).toEqual({ name: 'extra', description: '描述' });
+    const project = tmpDir();
+    mkdirSync(join(project, 'extra'), { recursive: true });
+    writeFileSync(join(project, 'extra', SKILL_FILE_NAME), raw, 'utf8');
+    const scan = new SkillStore(project, undefined).scan();
+    expect(scan.skills).toHaveLength(1);
+    expect(scan.skills[0]!.name).toBe('extra');
+    expect(scan.warnings).toHaveLength(0);
+  });
+
+  it('真实技能格式：块标量 description（`|` 字面 / `>` 折叠）并入续行', () => {
+    expect(
+      parseSkillFrontmatter(
+        '---\nname: firecrawl\ndescription: |\n  第一行\n  第二行 https://x\nallowed-tools:\n  - Bash(firecrawl *)\n---\n',
+      ),
+    ).toEqual({ name: 'firecrawl', description: '第一行\n第二行 https://x' });
+    expect(
+      parseSkillFrontmatter('---\nname: ai-framework\ndescription: >\n  安装到当前项目\n  以及其切片\n---\n'),
+    ).toEqual({ name: 'ai-framework', description: '安装到当前项目 以及其切片' });
+  });
+
+  it('四目录优先级：同层 harness2 自有目录优先于 .agents；项目层覆盖全局层（含跨层）', () => {
+    const root = tmpDir();
+    const home = tmpDir();
+    const store = new SkillStore(projectSkillsRoot(root), defaultSkillsRoot(home), {
+      agentsProjectDir: agentsProjectSkillsRoot(root),
+      agentsGlobalDir: agentsGlobalSkillsRoot(home),
+    });
+    // 全局 .agents 兜底：只在兜底目录出现的技能
+    writeSkill(join(home, '.agents', 'skills'), 'only-global.md', 'only-global', '全局兜底');
+    // 同层同名：项目/全局各自的 .harness2 优先于 .agents
+    writeSkill(join(root, '.harness2', 'skills'), 'x.md', 'dup', '项目 harness2 版');
+    writeSkill(join(root, '.agents', 'skills'), 'x.md', 'dup', '项目 agents 版');
+    writeSkill(join(home, '.harness2', 'skills'), 'y.md', 'dup-global', '全局 harness2 版');
+    writeSkill(join(home, '.agents', 'skills'), 'y.md', 'dup-global', '全局 agents 版');
+    // 跨层同名：项目 .agents 也覆盖全局 .harness2（项目层优先级与目录无关）
+    writeSkill(join(home, '.harness2', 'skills'), 'z.md', 'cross', '全局 harness2 版');
+    writeSkill(join(root, '.agents', 'skills'), 'z.md', 'cross', '项目 agents 版');
+    const scan = store.scan();
+    const byName = new Map(scan.skills.map((s) => [s.name, s]));
+    expect(byName.get('only-global')!.source).toBe('global');
+    expect(byName.get('dup')!.description).toBe('项目 harness2 版');
+    expect(byName.get('dup-global')!.description).toBe('全局 harness2 版');
+    expect(byName.get('cross')!.description).toBe('项目 agents 版');
+    // 告警：同层不同目录同名（.harness2 优先）→「优先目录覆盖兜底目录」×2
+    const prio = scan.warnings.filter((w) => w.includes('优先目录覆盖兜底目录'));
+    expect(prio).toHaveLength(2);
+    expect(prio.some((w) => w.includes('dup'))).toBe(true);
+    expect(prio.some((w) => w.includes('dup-global'))).toBe(true);
+    for (const w of prio) expect(w).toContain('.agents'); // 被丢弃的是兜底目录文件
+    // 跨层覆盖告警保持原有文案
+    expect(scan.warnings.some((w) => w.includes('项目级 "cross" 覆盖全局同名'))).toBe(true);
+  });
+
+  it('标准布局自动推导（项目级）：projectSkillsRoot 布局自动补扫 <root>/.agents/skills', () => {
+    const root = tmpDir();
+    writeSkill(join(root, '.agents', 'skills'), 'a.md', 'auto-agents', '自动发现的兜底');
+    const store = new SkillStore(projectSkillsRoot(root), undefined); // 未注入兜底目录
+    const scan = store.scan();
+    expect(scan.skills.map((s) => [s.name, s.source])).toEqual([['auto-agents', 'project']]);
+    expect(scan.warnings).toHaveLength(0);
+  });
+
+  it('上限 50 同样作用于文件夹型技能（超出按名称排序截断 + 告警）', () => {
+    const project = tmpDir();
+    for (let i = 0; i < SKILLS_MAX + 2; i++) {
+      const dir = join(project, `d${String(i).padStart(2, '0')}`);
+      mkdirSync(dir, { recursive: true });
+      writeFileSync(
+        join(dir, SKILL_FILE_NAME),
+        `---\nname: d${String(i).padStart(2, '0')}\ndescription: 描述 ${i}\n---\n`,
+        'utf8',
+      );
+    }
+    const scan = new SkillStore(project, undefined).scan();
+    expect(scan.skills).toHaveLength(SKILLS_MAX);
+    expect(scan.skills.map((s) => s.name).sort()).toEqual(
+      Array.from({ length: SKILLS_MAX }, (_, i) => `d${String(i).padStart(2, '0')}`).sort(),
+    );
+    expect(scan.warnings.some((w) => w.includes(`超出上限 ${SKILLS_MAX}`))).toBe(true);
   });
 });
