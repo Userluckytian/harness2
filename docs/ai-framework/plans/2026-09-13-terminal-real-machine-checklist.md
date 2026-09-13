@@ -1,7 +1,7 @@
 # 真机验收清单（终端 grok 复刻 P1~P4 + 桌面 D-P2）
 
 > **执行人：** 需求方（人工真机） · **记录方式：** 在下表逐项填 ✅/❌ + 现象/截图路径
-> **被测代码：** `main` = `66cc7b2`（已推送） · **测试目录：** `D:\AI_Projects\harness2-main`（main 检出，依赖已就绪）
+> **被测代码：** `main` = `235cc5c`（已推送） · **测试目录：** `D:\AI_Projects\harness2`（主目录，main 检出，依赖/electron/构建已就绪）
 > **目的：** 决定 `HARNESS2_RENDERER=next` 是否切换为默认；确认桌面补丁的用户可见行为
 
 ---
@@ -9,7 +9,7 @@
 ## 0. 准备（一次，约 1 分钟）
 
 ```powershell
-cd D:\AI_Projects\harness2-main
+cd D:\AI_Projects\harness2
 pnpm build
 node packages/cli/dist/index.js config check
 ```
@@ -61,7 +61,7 @@ node packages/cli/dist/index.js chat
 ## C. 桌面端（D-P2 补丁，逐项打勾）
 
 ```powershell
-cd D:\AI_Projects\harness2-main
+cd D:\AI_Projects\harness2
 pnpm --filter @harness2/desktop dev
 ```
 
