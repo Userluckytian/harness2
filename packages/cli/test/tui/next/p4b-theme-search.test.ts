@@ -199,6 +199,11 @@ describe('P4-2 theme 注册表', () => {
     expect(d.fg.selection).toBe(SELECTION_FG);
     expect(d.fg.cursor).toBe(DEFAULT_CURSOR_FG);
     expect(d.fg.active).toBe(DEFAULT_ACTIVE_FG);
+    // 字面锚（审查 P2-1）：FG/SELECTION_FG 已由 DARK_THEME 派生，别名断言抗不住
+    // 「整套色板协同替换」的漂移——钉 3 个代表字面量锁定零变化契约
+    expect(d.fg.toolOk).toBe(0x3fb950);
+    expect(d.fg.toolFailed).toBe(0xf85149);
+    expect(d.fg.selection).toBe(0x22d3ee);
     expect(d.fg.searchHit).toBeDefined(); // 新增槽（新能力，无现状对齐对象）
   });
 
