@@ -57,7 +57,7 @@ function startDesktop(opts: { show: boolean; provider: 'mock' | 'config'; home?:
   const serve = new ServeManager({
     cliEntry: resolveCliEntry(),
     root: resolveRepoRoot(),
-    ...(opts.home !== undefined ? { home: opts.home } : {}),
+    home, // home = opts.home ?? homedir()（上方已计算）：dev 启动也有 home，serve.lock token 可读、健康检查可过
     provider: opts.provider,
     onStatus: (status, detail) => {
       if (status === 'connected' && detail?.port !== undefined) {
