@@ -37,6 +37,7 @@
 import { charWidth, displayWidth } from '../renderer/cell-buffer.js';
 import type { CellBuffer } from '../renderer/cell-buffer.js';
 import { Screen } from '../renderer/screen.js';
+import { DARK_THEME, type Theme } from './theme.js';
 
 /** 选择坐标点：row = 绝对物理行号，col = 显示列（0 基） */
 export interface SelectionPoint {
@@ -52,8 +53,12 @@ export interface SelectionRange {
   endCol: number;
 }
 
-/** 选中高亮前景色（P4-1 fg 换色方案：亮青，深底终端下的选中近似反色） */
-export const SELECTION_FG = 0x22d3ee;
+/**
+ * 选中高亮前景色（P4-1 fg 换色方案：亮青，深底终端下的选中近似反色）。
+ * P4-2：保留为 dark 主题 `fg.selection` 的同值常量（既有测试断言沿用）；绘制时优先取
+ * opts.theme 的 selection 槽（缺省 dark = 本值，零变化）。
+ */
+export const SELECTION_FG = DARK_THEME.fg.selection;
 
 /** URL 区段：[startCol, endCol) 显示列区间 + 区段原文（即 href） */
 export interface LinkSegment {
@@ -288,6 +293,16 @@ export class Scrollback {
       this.wrapCache.set(lineIndex, rows);
     }
     return rows;
+  }
+
+  /**
+   * 第 i 逻辑行的行对象快照（text + fg；越界 = undefined）。P4-2 新增：装配层/测试读取
+   * 行级前景色（搜索高亮/主题断言）用——lines 数组私有，此前只能经 visibleWindow 读
+   * （会污染 viewportRows 状态）。
+   */
+  lineAt(lineIndex: number): ScrollbackLine | undefined {
+    const l = this.lines[lineIndex];
+    return l !== undefined ? { text: l.text, fg: l.fg } : undefined;
   }
 
   /** 逻辑行 i 的起始物理行号 */
@@ -588,6 +603,8 @@ export interface ScrollbackRenderOptions {
   env?: NodeJS.ProcessEnv;
   /** 滚动条前景色（默认 0） */
   scrollbarFg?: number;
+  /** P4-2：主题（选中高亮 fg 取 fg.selection；缺省 dark = SELECTION_FG，零变化） */
+  theme?: Theme;
 }
 
 /**
@@ -630,6 +647,7 @@ export function drawScrollback(buf: CellBuffer, sb: Scrollback, opts: Scrollback
   // P4-1 开关（=0 完全旁路 URL 检测/标记）：优先用调用方注入的 env（与 presenter 单源，审查 P2-3）
   const linksOn = (opts.env ?? process.env).HARNESS2_OSC8 !== '0';
   const sel = sb.selectionRange(); // P4-1 选择高亮（fg 换色；无选择 = null 零影响）
+  const selFg = (opts.theme ?? DARK_THEME).fg.selection; // P4-2：选中高亮 fg 从主题取（缺省 dark 零变化）
 
   const win = sb.visibleWindow(height);
   for (let i = 0; i < win.rows.length; i += 1) {
@@ -639,7 +657,7 @@ export function drawScrollback(buf: CellBuffer, sb: Scrollback, opts: Scrollback
     writeRowClipped(buf, top + i, row.text, contentCols, row.fg ?? fg);
     const absRow = win.scrollTop + i;
     if (linksOn && row.lineIndex >= 0) markLinkSegments(buf, top + i, row.text, contentCols);
-    if (sel !== null) applySelectionHighlight(buf, top + i, absRow, sel, contentCols);
+    if (sel !== null) applySelectionHighlight(buf, top + i, absRow, sel, contentCols, selFg);
   }
   if (useScrollbar) {
     const bar = scrollbarInfo(win.totalRows, win.viewportRows, win.scrollTop);
@@ -667,13 +685,14 @@ function markLinkSegments(buf: CellBuffer, y: number, text: string, maxCols: num
   }
 }
 
-/** 选择高亮（fg 换色）：选中格置 SELECTION_FG；纯空白格写为半宽空格高亮（避免 w0 空格差量畸变） */
+/** 选择高亮（fg 换色）：选中格置 selFg（主题 selection 槽）；纯空白格写为半宽空格高亮（避免 w0 空格差量畸变） */
 function applySelectionHighlight(
   buf: CellBuffer,
   y: number,
   absRow: number,
   sel: SelectionRange,
   maxCols: number,
+  selFg: number,
 ): void {
   if (absRow < sel.startRow || absRow > sel.endRow) return;
   let colStart: number;
@@ -697,8 +716,8 @@ function applySelectionHighlight(
     const idx = y * buf.cols + x;
     const ch = buf.chars[idx] ?? ' ';
     const w = buf.widths[idx] ?? 0;
-    if (ch === ' ' && w === 0) buf.setCell(x, y, ' ', 1, SELECTION_FG);
-    else buf.setCell(x, y, ch, w as 0 | 1 | 2, SELECTION_FG); // 保 char/width/linkId，仅换 fg
+    if (ch === ' ' && w === 0) buf.setCell(x, y, ' ', 1, selFg);
+    else buf.setCell(x, y, ch, w as 0 | 1 | 2, selFg); // 保 char/width/linkId，仅换 fg
   }
 }
 

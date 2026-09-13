@@ -28,10 +28,10 @@
 import type { CellBuffer } from '../renderer/cell-buffer.js';
 import { columnLayout, type LayerRect } from '../renderer/layout.js';
 import type { Screen } from '../renderer/screen.js';
-import { DEFAULT_ACTIVE_FG, candidateRows, drawComposer, measureComposer } from './composer.js';
+import { candidateRows, drawComposer, measureComposer } from './composer.js';
 import { drawOverlay, overlayNaturalHeight, overlayStackLayout, type OverlaySpec } from './overlay.js';
 import { drawScrollback, writeRowClipped, type Scrollback } from './scrollback.js';
-import { FG } from './projection.js';
+import { DEFAULT_THEME, type Theme } from './theme.js';
 
 /** 候选列表状态（画在 composer 层顶部，activeIndex 高亮 + 滚动窗口） */
 export interface ChatCandidates {
@@ -76,6 +76,11 @@ export interface ChatScreenState {
   subagentView?: SubagentViewState | null;
   /** 环境变量源（OSC8 开关判定单源；缺省 process.env，装配层传 deps.env） */
   env?: NodeJS.ProcessEnv;
+  /**
+   * P4-2：主题（光标格/active 候选/浮层高亮/子视图提示/滚动区选中高亮从主题取）。
+   * 缺省 = dark（= 旧常量值，零变化契约）；由装配层（next-shell）在 /theme 切换时更新。
+   */
+  theme?: Theme;
 }
 
 /** 各层矩形 + 分层中间量（导出供测试断言） */
@@ -159,6 +164,11 @@ export interface StatusLineContext {
   retry?: { used: number; max: number };
   /** turn 运行中 */
   busy?: boolean;
+  /**
+   * P4-2：busy 且无运行中子代理时的 spinner 帧字符（装配层 150ms 传入当前帧）。
+   * 传入 = 替换「⏺ 运行中…」的 ⏺ 前缀；缺省保持 ⏺（既有调用零变化）。
+   */
+  spinnerFrame?: string;
 }
 
 /** 状态行上下文 → 行文本（纯函数；段序固定：cwd · model · ctx · mode · retry · busy） */
@@ -166,7 +176,7 @@ export function statusLineFor(ctx: StatusLineContext): string {
   const parts = [shortenCwd(ctx.cwd, ctx.home), ctx.model, `ctx ${formatContextUsage(ctx.usage)}`];
   if (ctx.mode !== undefined && ctx.mode !== 'normal') parts.push(ctx.mode);
   if (ctx.retry !== undefined) parts.push(`重试 ${ctx.retry.used}/${ctx.retry.max}`);
-  if (ctx.busy === true) parts.push('⏺ 运行中…');
+  if (ctx.busy === true) parts.push(`${ctx.spinnerFrame ?? '⏺'} 运行中…`);
   return parts.join(SHORTCUTS_SEPARATOR);
 }
 
@@ -226,6 +236,8 @@ function drawScrollbackLayer(buf: CellBuffer, state: ChatScreenState, layer: Lay
   drawScrollback(buf, sb, {
     top: layer.top,
     height: layer.height,
+    // P4-2：主题进滚动区（选中高亮 fg.selection；缺省 dark = 旧 SELECTION_FG，零变化）
+    theme: state.theme,
     ...(state.env !== undefined ? { env: state.env } : {}), // OSC8 开关单源（审查 P2-3）
   });
 }
@@ -233,17 +245,19 @@ function drawScrollbackLayer(buf: CellBuffer, state: ChatScreenState, layer: Lay
 function drawComposerLayer(buf: CellBuffer, state: ChatScreenState, layout: ChatLayout): void {
   const { top, height } = layout.composer;
   if (height <= 0 || top >= buf.rows) return; // 镜像 renderComposer：越界/零高度不渲染
+  // P4-2：主题（缺省 dark = 旧常量值，零变化契约）
+  const theme = state.theme ?? DEFAULT_THEME;
   // P3-D：视图态 composer 层只画一行提示（灰；草稿/候选/指示不画——子会话视图无输入）
   const subview = state.subagentView;
   if (subview) {
-    writeRowClipped(buf, top, subview.hint, buf.cols, FG.gray);
+    writeRowClipped(buf, top, subview.hint, buf.cols, theme.fg.system);
     return;
   }
   // composer 层内自上而下 = 候选行（层顶）→ 草稿行 → 提示行（层底，恒保留）。
   // drawComposer 语义：候选画在草稿区上方（底部锚定）、指示画在草稿区底行。
   // 映射：草稿区 top = 层顶 + 候选行数，height = 草稿可用行（draftCap）+ 提示行，
-  // 候选/指示即分别落进层顶候选行与层底提示行；颜色等取 drawComposer 缺省值
-  // （= 原 chat-screen 复刻常量：光标/active 候选 DEFAULT_*_FG，其余 0）。
+  // 候选/指示即分别落进层顶候选行与层底提示行；光标/active 候选色从主题取
+  // （P4-2；dark = 原 chat-screen 复刻常量 DEFAULT_*_FG，其余 0）。
   const draftTop = top + layout.candidateRows;
   const draftCap = Math.max(0, Math.min(top + height, buf.rows) - draftTop - 1); // 预留层底提示行
   drawComposer(
@@ -254,12 +268,15 @@ function drawComposerLayer(buf: CellBuffer, state: ChatScreenState, layout: Chat
       height: draftCap + 1,
       candidates: state.candidates,
       indicators: state.indicators,
+      cursorFg: theme.fg.cursor,
+      candidateActiveFg: theme.fg.active,
     },
   );
 }
 
 function drawOverlays(buf: CellBuffer, state: ChatScreenState, layout: ChatLayout, cols: number): void {
   if (state.overlays.length === 0) return;
+  const theme = state.theme ?? DEFAULT_THEME; // P4-2：浮层高亮从主题取（缺省 dark 零变化）
   const rects = overlayStackLayout({
     screenRows: buf.rows,
     composerTop: layout.composer.top,
@@ -269,7 +286,7 @@ function drawOverlays(buf: CellBuffer, state: ChatScreenState, layout: ChatLayou
     const rect = rects[i];
     const spec = state.overlays[i];
     if (rect == null || spec === undefined) continue;
-    drawOverlay(buf, spec, rect, { width: cols, activeFg: DEFAULT_ACTIVE_FG, showNumbers: spec.showNumbers === true });
+    drawOverlay(buf, spec, rect, { width: cols, activeFg: theme.fg.active, showNumbers: spec.showNumbers === true });
   }
 }
 

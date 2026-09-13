@@ -192,8 +192,8 @@ describe('模糊过滤 filterCommands', () => {
     expect(filterCommands('/re')).toEqual(['/reasoning', '/redo', '/resume', '/always-approve']);
   });
 
-  it('纯子序列命中（/he → /help）', () => {
-    expect(filterCommands('/he')).toEqual(['/help']);
+  it('纯子序列命中（/he → /help + /theme；P4-2 新增 /theme 子序列命中）', () => {
+    expect(filterCommands('/he')).toEqual(['/help', '/theme']);
   });
 
   it('大小写不敏感（/UN → /undo）', () => {
@@ -251,9 +251,9 @@ describe('逐字过滤与候选状态', () => {
     h.feed(ARROW_DOWN);
     h.flushUi();
     expect(h.state.candidates?.activeIndex).toBe(3);
-    typeText(h, 'c'); // '/c' → 候选缩到 2 条
-    expect(h.state.candidates?.items).toEqual(['/compact', '/context']);
-    expect(h.state.candidates?.activeIndex).toBe(1);
+    typeText(h, 'c'); // '/c' → 候选缩到 3 条（P4-2 新增 /search 为 'c' 的子序列命中）
+    expect(h.state.candidates?.items).toEqual(['/compact', '/context', '/search']);
+    expect(h.state.candidates?.activeIndex).toBe(2);
   });
 
   it('候选可见时 ↑↓ 循环改选（内置行为与重算共存）', () => {

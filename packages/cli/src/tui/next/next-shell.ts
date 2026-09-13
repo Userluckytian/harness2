@@ -140,6 +140,28 @@
 //     diff-presenter 按连续 run 包裹（见 renderer/osc.ts 兼容面注释）；软折行切断的
 //     URL 尾段不标（不给错误 href）。开关：HARNESS2_SELECT=0 关选择复制、
 //     HARNESS2_OSC8=0 关超链接（均默认开启，=0 完全旁路）。
+//
+// P4-2 主题系统 + /theme + /search + busy 状态行 spinner（2026-09-13，P4 收口包）：
+//   - 主题：next/theme.ts 命名色板（dark = 现状默认色逐值对齐，切换往返 dark 视觉零变化；
+//     light = 深字浅底自定合理值，bg 假定浅色仅登记口径——cell-buffer 无 bg 通道）。
+//     投影/滚动区选中高亮/composer 光标与 active 候选/浮层高亮/子视图提示色全部从主题取；
+//     next-shell 持有 theme 状态（state.theme 下发 chat-screen），/theme 切换走 reprojectAll
+//     全量重投影（行级 fg 烤进行对象）。会话内存级不持久化（grok 写 config.toml + 5 主题 +
+//     auto 系统外观 + picker，差异如实登记）。theme.ts 预留 spinner fg 槽：状态行/composer
+//     为单 fg 整行绘制，未逐段接线（不伪造已生效）。
+//   - /theme：无参 = 列出可用并提示当前；带名 = 切换（大小写不敏感，grok 同语义）；未知名报错。
+//   - /search（简版，任务规格裁决）：/search <文本> 从当前视口底之后找首个命中逻辑行 →
+//     anchor 定位到视口顶（底部钳制）+ 命中行整行高亮（主题 searchHit，行级单 fg 无行内分段）
+//     + system 行「N 处命中（第 k 处）」；再次同查询/无参 = 跳下一处（末尾回卷）；clear 清高亮；
+//     命中判定大小写不敏感、中文按子串；命中计数排除搜索回显与状态行（防自匹配放大 N）；
+//     高亮保留到下次搜索或 clear（无定时清除）；折叠/换主题重投影后按文本重算仍正确；
+//     不作用于子视图。差异登记：grok 为 /find 交互式搜索栏（Esc-steal、n/N 语义），
+//     本层不做 / 交互输入框（评估后取简：composer 焦点态/输入框接线工作量大、收益低）。
+//   - busy 状态行 spinner：updateSpinner 启动条件扩展为 busy 即运转——无运行中子代理时
+//     tick 只刷 chrome，状态行「⏺ 运行中…」的 ⏺ 换 SPINNER_FRAMES 当前帧（150ms，复用
+//     P3-D 帧集与定时器）；有运行中子代理时行级动画接管（P3-D 语义不回退），状态行保持 ⏺；
+//     空闲停表。行为变化（任务规格要求）：busy 无子代理时状态行不再静止显示 ⏺，
+//     p3e-chrome 对应断言已同步。
 import { homedir } from 'node:os';
 import type { ChatOptions } from '../../legacy-chat.js';
 import {
@@ -194,6 +216,7 @@ import {
 import { projectTranscript, subagentDescription, type ProjectionLine } from './projection.js';
 import { Scrollback, type SelectionPoint } from './scrollback.js';
 import { wrapTextByWidth, type OverlaySpec } from './overlay.js';
+import { DEFAULT_THEME, getTheme, themeNames, type Theme } from './theme.js';
 import { candidateItemAt } from './composer.js';
 import {
   attachInput,
@@ -323,6 +346,16 @@ export const NEXT_COMMANDS: readonly NextCommandEntry[] = [
   { name: 'plan', wiring: 'local', note: 'next 层 UI 声明态（ink 无此命令）' },
   { name: 'auto', wiring: 'local', note: 'next 层 UI 声明态（ink 无此命令）' },
   { name: 'always-approve', wiring: 'local', note: 'next 层 always-approve 开关（ink 无此命令）' },
+  {
+    name: 'theme',
+    wiring: 'local',
+    note: 'next 层主题切换 dark|light（P4-2）：无参列出可用并提示当前，未知名报错；会话内存级不持久化（grok 为 picker + config.toml 持久化 + auto 系统外观，差异登记）',
+  },
+  {
+    name: 'search',
+    wiring: 'local',
+    note: '滚动区文本搜索（P4-2 简版）：/search <文本> 命中定位+高亮，无参重复上次，clear 清高亮；不做 / 交互输入框（grok 为 /find 交互式搜索栏，差异登记）',
+  },
 ];
 
 /** pattern 是否为 target 的子序列（空 pattern 恒真） */
@@ -588,6 +621,8 @@ export interface NextChatHarness {
   pendingApproval(): string | null;
   /** scrollback 逻辑行快照（测试断言用；wrap 段拼回 = 原逻辑行） */
   logicalLines(): string[];
+  /** P4-2：逻辑行前景色（undefined = 默认色；主题/搜索高亮断言用） */
+  logicalLineFg(index: number): number | undefined;
   /** P4-1：当前选中文本（无选择 = 空串；测试断言用） */
   selectedText(): string;
   /** P4-1：是否存在非零宽选择（测试断言用） */
@@ -626,6 +661,10 @@ export function createNextChatHarness(runtime: ChatRuntime, deps: NextChatHarnes
   bootLines.forEach((text, i) => {
     transcript = transcriptReducer(transcript, { type: 'system', id: `boot:${i}`, text });
   });
+  // —— P4-2 主题与搜索状态（会话内存级，不持久化——如实登记，grok 写 config.toml）——
+  // 注意：state 字面量引用 theme，须先于其声明（dark = 现状默认色，零变化契约）。
+  let theme: Theme = DEFAULT_THEME;
+  let searchState: { query: string; lastHit: number } | null = null; // null = 无活动搜索/高亮
   const state: ChatScreenState = {
     env: deps.env,
     scrollback: new Scrollback([], Math.max(1, screen.cols - 1)),
@@ -636,6 +675,7 @@ export function createNextChatHarness(runtime: ChatRuntime, deps: NextChatHarnes
     shortcuts: SHORTCUTS,
     statusline: '',
     indicators: [],
+    theme,
   };
 
   let busy = false;
@@ -699,12 +739,37 @@ export function createNextChatHarness(runtime: ChatRuntime, deps: NextChatHarnes
   let syncedLineCount = 0;
 
   function projectLines(): ProjectionLine[] {
-    return projectTranscript(transcript.items, {
+    const lines = projectTranscript(transcript.items, {
       cols: contentCols(),
       collapsed,
+      theme, // P4-2：主题色板（缺省 dark；/theme 切换走 reprojectAll 全量重投影）
       // P3-D：耗时命中才随行显示；spinner 仅在动画定时器活动时传当前帧
       ...(subagentDurations.size > 0 ? { durations: subagentDurations } : {}),
       ...(spinnerTimer !== null ? { spinner: SPINNER_FRAMES[spinnerFrame % SPINNER_FRAMES.length] } : {}),
+    });
+    return applySearchHighlight(lines);
+  }
+
+  // —— P4-2 搜索高亮（post-pass）——
+  // 命中判定 = 逻辑行文本大小写不敏感子串（中文按子串）；命中行整行 fg 换主题 searchHit
+  // （next 行级单 fg 约束，无行内分段高亮）。自身回显/状态行排除（避免命中计数被自匹配放大）。
+  // 高亮保留到下次搜索或 /search clear（无定时清除，任务规格）；每次重投影按当前文本重算，
+  // 折叠/换主题/spinner 重建后仍正确，新追加的流式行命中同样着色。
+  const SEARCH_STATUS_PREFIX = '搜索 "';
+  const SEARCH_ECHO_PREFIX = '> /search';
+
+  function isSearchNoise(text: string): boolean {
+    return text.startsWith(SEARCH_STATUS_PREFIX) || text.startsWith(SEARCH_ECHO_PREFIX);
+  }
+
+  function applySearchHighlight(lines: ProjectionLine[]): ProjectionLine[] {
+    if (searchState === null) return lines;
+    const q = searchState.query.toLowerCase();
+    if (q.length === 0) return lines;
+    return lines.map((l) => {
+      if (isSearchNoise(l.text)) return l;
+      if (l.text.toLowerCase().includes(q)) return { ...l, fg: theme.fg.searchHit };
+      return l;
     });
   }
 
@@ -753,16 +818,20 @@ export function createNextChatHarness(runtime: ChatRuntime, deps: NextChatHarnes
     invalidate();
   }
 
-  // —— P3-D 运行动画：busy 且存在运行中子代理块时 150ms 循环 invalidation ——
-  // spinner 改变的只是运行中子代理行的前缀字符（items 引用不变，syncProjection 的
-  // 「无变化」早退会跳过）→ tick 走 reprojectAll 全量重建（150ms 周期，帧开销可忽略）。
+  // —— P3-D 运行动画 + P4-2 状态行 spinner：busy 时 150ms 循环（目标二选一/共存分发）——
+  // 启动条件（P4-2 扩展）：原为 busy 且存在运行中子代理块（行级 spinner 改运行中子代理行
+  // 前缀，items 引用不变 → tick 走 reprojectAll 全量重建）；现扩展为 busy 即运转——
+  // busy 且**无**运行中子代理时，tick 只刷 chrome（invalidate），把状态行「⏺ 运行中…」的
+  // ⏺ 换成 SPINNER_FRAMES 当前帧（scrollback 无变化，免全量重建）；空闲停表。
   function updateSpinner(): void {
-    const shouldRun = busy && subagentStarts.size > 0;
+    const shouldRun = busy;
     if (shouldRun && spinnerTimer === null) {
       spinnerFrame = 0;
       spinnerTimer = setInterval(() => {
         spinnerFrame += 1;
-        reprojectAll();
+        if (subagentStarts.size > 0)
+          reprojectAll(); // 行级 spinner（P3-D 语义不回退）
+        else invalidate(); // 状态行 spinner（P4-2）
       }, SPINNER_INTERVAL_MS);
     } else if (!shouldRun && spinnerTimer !== null) {
       clearInterval(spinnerTimer);
@@ -875,7 +944,8 @@ export function createNextChatHarness(runtime: ChatRuntime, deps: NextChatHarnes
   function rebuildSubview(): void {
     if (subView === null) return;
     const ts = childTranscripts.get(subView.childId) ?? emptyTranscript();
-    const sb = new Scrollback(projectTranscript(ts.items, { cols: contentCols() }), contentCols());
+    // P4-2：子视图行级 fg 与主转录同源（同一主题）；搜索高亮不作用于子视图（主转录专属）
+    const sb = new Scrollback(projectTranscript(ts.items, { cols: contentCols(), theme }), contentCols());
     state.subagentView = { scrollback: sb, hint: `子会话 ${subView.childId} · ${SUBVIEW_HINT}` };
   }
 
@@ -905,6 +975,12 @@ export function createNextChatHarness(runtime: ChatRuntime, deps: NextChatHarnes
    */
   function refreshChrome(): void {
     const usage = currentUsage();
+    // P4-2：busy 且无运行中子代理时，状态行「⏺ 运行中…」的 ⏺ 用 spinner 帧动画
+    // （复用 P3-D 帧集与定时器；有运行中子代理 = 行级动画接管，状态行保持 ⏺ 静止）
+    const spinFrame =
+      busy && subagentStarts.size === 0 && spinnerTimer !== null
+        ? SPINNER_FRAMES[spinnerFrame % SPINNER_FRAMES.length]
+        : undefined;
     state.statusline = statusLineFor({
       cwd,
       home,
@@ -913,6 +989,7 @@ export function createNextChatHarness(runtime: ChatRuntime, deps: NextChatHarnes
       ...(uiMode !== 'normal' ? { mode: uiMode } : {}),
       ...(lastRetry !== null ? { retry: lastRetry } : {}),
       ...(busy ? { busy: true } : {}),
+      ...(spinFrame !== undefined ? { spinnerFrame: spinFrame } : {}),
     });
     state.shortcuts = shortcutsFor({
       busy,
@@ -1327,6 +1404,7 @@ export function createNextChatHarness(runtime: ChatRuntime, deps: NextChatHarnes
     bridge.reset();
     busy = true;
     lastRetry = null; // P3-E：新 turn 清上一 turn 的重试标记（状态行不残留旧值）
+    updateSpinner(); // P4-2：turn 开始即启动 spinner 定时器（无运行中子代理时驱动状态行帧动画）
     userSeq += 1;
     // 输入优先：user 回显立即落定（对齐 InkShell dispatchInputNow）
     scheduler.setInputPriority(true);
@@ -1383,6 +1461,98 @@ export function createNextChatHarness(runtime: ChatRuntime, deps: NextChatHarnes
         drainQueue();
       }
     }
+  }
+
+  // —— P4-2 搜索（/search 简版：命令行式，无 / 交互输入框——评估后取简，差异登记见文件头）——
+  // 行为：从当前视口底物理行**之后**找第一个命中逻辑行（无 = 回卷首个）；再次同查询 = 上一
+  // 命中行之后的第一处（末尾回卷）。命中行 anchor 定位到视口顶（底部钳制）+ 整行高亮
+  // （主题 searchHit）。命中计数排除搜索回显（'> /search'）与状态行（'搜索 "'），防自匹配
+  // 放大 N。大小写不敏感；中文按子串；无高亮清除定时器（保留到下次搜索或 clear，任务规格）。
+  const SEARCH_USAGE = '用法: /search <文本>（无参数 = 重复上次搜索；/search clear 清除高亮）';
+
+  function computeHits(query: string): number[] {
+    const sb = state.scrollback;
+    const q = query.toLowerCase();
+    const hits: number[] = [];
+    for (let i = 0; i < sb.lineCount; i += 1) {
+      const text = sb.rowOf(i).join('');
+      if (isSearchNoise(text)) continue;
+      if (text.toLowerCase().includes(q)) hits.push(i);
+    }
+    return hits;
+  }
+
+  function runSearch(query: string, repeat: boolean): void {
+    const hits = computeHits(query);
+    if (hits.length === 0) {
+      searchState = { query, lastHit: -1 }; // 记忆查询（无参重试同词）；未命中 = 高亮清空（属「下次搜索」）
+      reprojectAll(); // 清掉上一轮高亮（若有）
+      sendSystem(`搜索 "${query}"：未找到`);
+      return;
+    }
+    const prev = searchState;
+    let target: number;
+    if (repeat && prev !== null && prev.lastHit >= 0) {
+      target = hits.find((h) => h > prev.lastHit) ?? hits[0]!; // 循环
+    } else {
+      // 首搜：从当前视口底物理行之后向下找；无（含贴底跟随态）→ 回卷首个
+      const layout = layoutChat(screen.rows, screen.cols, state);
+      const win = state.scrollback.visibleWindow(Math.max(1, layout.scrollback.height));
+      const bottomRow = win.scrollTop + win.viewportRows - 1;
+      target = hits.find((h) => state.scrollback.lineStart(h) > bottomRow) ?? hits[0]!;
+    }
+    searchState = { query, lastHit: target };
+    reprojectAll(); // 命中行高亮（fg 变化需全量重投影；anchor 尽力保留）
+    // 注意：reprojectAll 会整体替换 state.scrollback（rebuildScrollback）——定位必须作用于
+    // 重建后的新实例，不能用重建前捕获的旧引用（否则跳转落在孤儿实例上，视口不动）。
+    const sb = state.scrollback;
+    sb.goToTop();
+    sb.scrollBy(sb.lineStart(target)); // 命中行定位到视口顶（钳制到底部时仍可见）
+    const ordinal = hits.indexOf(target) + 1;
+    sendSystem(`搜索 "${query}"：${hits.length} 处命中（第 ${ordinal} 处）`);
+  }
+
+  function runSearchCommand(arg: string): void {
+    if (arg.length === 0) {
+      if (searchState !== null) {
+        runSearch(searchState.query, true); // 无参 = 重复上次查询（跳下一处）
+        return;
+      }
+      sendSystem(SEARCH_USAGE);
+      return;
+    }
+    if (arg.toLowerCase() === 'clear') {
+      searchState = null;
+      reprojectAll(); // 清高亮
+      sendSystem('搜索高亮已清除');
+      return;
+    }
+    const repeat = searchState !== null && searchState.query === arg;
+    runSearch(arg, repeat);
+  }
+
+  // —— P4-2 主题切换（/theme）：会话内存级，不持久化（grok 写 config.toml，差异登记）——
+  function runThemeCommand(arg: string): void {
+    if (arg.length === 0) {
+      const list = themeNames()
+        .map((n) => (n === theme.name ? `${n}（当前）` : n))
+        .join(' · ');
+      sendSystem(`主题: ${list} — 用法 /theme ${themeNames().join('|')}`);
+      return;
+    }
+    const next = getTheme(arg);
+    if (next === undefined) {
+      sendSystem(`error: 未知主题 ${arg}（可用: ${themeNames().join(', ')}）`);
+      return;
+    }
+    if (next.name === theme.name) {
+      sendSystem(`主题已是 ${theme.name}（可用: ${themeNames().join(', ')}）`);
+      return;
+    }
+    theme = next;
+    state.theme = next;
+    reprojectAll(); // 行级 fg 烤进 scrollback 行对象：切主题必须全量重投影（anchor 尽力保留）
+    sendSystem(`已切换主题: ${next.name}（会话内存级，不持久化）`);
   }
 
   // —— 命令（P3-C 全集；共享命令委托 runSharedCommand，差异登记见文件头）——
@@ -1540,6 +1710,13 @@ export function createNextChatHarness(runtime: ChatRuntime, deps: NextChatHarnes
         );
         return;
       }
+      // —— P4-2 主题与搜索 ——
+      case '/theme':
+        runThemeCommand(parsed.rest.trim().toLowerCase());
+        return;
+      case '/search':
+        runSearchCommand(parsed.rest.trim());
+        return;
       default:
         // /undo /redo /new /resume /fork /sessions（无参文本列表）与未知命令 → 共享实现
         runSharedCommand(parsed, runtime, commandIo);
@@ -2140,6 +2317,9 @@ export function createNextChatHarness(runtime: ChatRuntime, deps: NextChatHarnes
       const out: string[] = [];
       for (let i = 0; i < sb.lineCount; i += 1) out.push(sb.rowOf(i).join(''));
       return out;
+    },
+    logicalLineFg(index) {
+      return state.scrollback.lineAt(index)?.fg;
     },
     selectedText: () => state.scrollback.getSelectedText(),
     hasSelection: () => state.scrollback.hasSelection,
