@@ -151,6 +151,7 @@ export class TerminalEventParser {
 
 /** 解析一条完整 SGR 鼠标序列；非滚轮事件返回 null（点击/拖拽 YAGNI：消费掉，不进 ink） */
 export function parseSgrMouse(seq: string): TerminalEvent | null {
+  // eslint-disable-next-line no-control-regex -- ANSI CSI 首字节，本就是控制字符，属有意使用
   const m = /^\x1b\[<(\d+);\d+;\d+([Mm])$/.exec(seq);
   if (m === null) return null; // 畸形序列：静默消费（理论不出现；若出现也避免污染输入）
   if (m[2] === 'm') return null; // 释放事件：滚动已在按下时处理
@@ -254,7 +255,7 @@ export function attachTerminalEvents(
     if (chunk === null || chunk === undefined) return;
     const text = typeof chunk === 'string' ? chunk : (chunk as Buffer).toString('utf8');
     let events: TerminalEvent[] = [];
-    let forward = '';
+    let forward: string; // 两分支（bypass / parse）都会赋值后才读取
     if (bypassNextRead) {
       bypassNextRead = false;
       forward = text;
