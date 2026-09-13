@@ -1,4 +1,4 @@
-// describeCapabilities 结构测试：命令数=13、shellOnly 标记、modes 非空、工具表、审批策略摘要。
+// describeCapabilities 结构测试：命令数=15（P2-C 加性 minimal/fullscreen）、shellOnly 标记、modes 非空、工具表、审批策略摘要。
 import { describe, expect, it } from 'vitest';
 import { DEFAULT_SAFE_TOOLS } from '../../src/approval/policy.js';
 import { describeCapabilities } from '../../src/commands/capabilities.js';
@@ -6,9 +6,9 @@ import { APPROVAL_MODES } from '../../src/config/schema.js';
 import { builtinTools } from '../../src/tools/predefined/index.js';
 
 describe('describeCapabilities', () => {
-  it('commands = 全部 13 条元数据（id/summary/argsSpec 与注册表一致）', () => {
+  it('commands = 全部 15 条元数据（id/summary/argsSpec 与注册表一致）', () => {
     const caps = describeCapabilities();
-    expect(caps.commands.length).toBe(13);
+    expect(caps.commands.length).toBe(15);
     expect(caps.commands.map((c) => c.id)).toEqual([
       'new',
       'sessions',
@@ -22,17 +22,22 @@ describe('describeCapabilities', () => {
       'context',
       'compact',
       'reasoning',
+      'minimal',
+      'fullscreen',
       'tasks',
     ]);
     expect(caps.commands.find((c) => c.id === 'resume')?.summary).toBe('恢复指定会话（/resume <id>）');
     expect(caps.commands.find((c) => c.id === 'undo')?.argsSpec).toBe('[n] [--dry-run]');
   });
 
-  it('mode/reasoning 带 shellOnly 标记，其余 11 条不带（core 实现）', () => {
+  it('mode/reasoning/minimal/fullscreen 带 shellOnly 标记，其余 11 条不带（core 实现）', () => {
     const caps = describeCapabilities();
     for (const c of caps.commands) {
-      if (c.id === 'mode' || c.id === 'reasoning') expect(c.shellOnly).toBe(true);
-      else expect(c.shellOnly).toBeUndefined();
+      if (c.id === 'mode' || c.id === 'reasoning' || c.id === 'minimal' || c.id === 'fullscreen') {
+        expect(c.shellOnly).toBe(true);
+      } else {
+        expect(c.shellOnly).toBeUndefined();
+      }
     }
   });
 

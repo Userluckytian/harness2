@@ -4,9 +4,9 @@ import { HELP_TEXT } from '../../src/commands/index.js';
 import { execCommand, makeRecordingCtx } from './helpers.js';
 
 describe('HELP_TEXT', () => {
-  it('命令清单 13 行（/id 左对齐 12 列 + 中文 summary）', () => {
+  it('命令清单 15 行（/id 左对齐 12 列 + 中文 summary；P2-C 加性 minimal/fullscreen）', () => {
     const commandLines = HELP_TEXT.split('\n').filter((l) => l.startsWith('  /'));
-    expect(commandLines.length).toBe(13);
+    expect(commandLines.length).toBe(15);
     expect(commandLines[0]).toBe(`  ${'/new'.padEnd(12)}新建会话`);
     expect(commandLines).toContain(`  ${'/sessions'.padEnd(12)}列出当前目录的会话（可选关键字全文搜索）`);
     expect(commandLines).toContain(`  ${'/undo'.padEnd(12)}撤销最近 n 个用户 turn（/undo [n] [--dry-run]）`);

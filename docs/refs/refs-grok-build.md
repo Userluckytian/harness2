@@ -81,36 +81,36 @@ Rust 工作区，产物二进制 `xai-grok-pager`，官方以 `grok` 名称分�
 
 | ID   | 条目         | 行为要点                                                                                                                                                                 | 等级 | 状态 |
 | ---- | ------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ---- | ---- |
-| G-01 | 双渲染模式   | `fullscreen`（默认，接管屏幕）与 `minimal`（原生 scrollback，不接管屏幕）两套完整 UI                                                                                     | 必刻 | ⬜   |
-| G-02 | 进程内切模式 | `/minimal` / `/fullscreen`（`/full`）当场切换不重启；配置 `[ui] screen_mode`；`GROK_SCREEN_MODE_SWITCH=exec` 改为重执行                                                  | 必刻 | ⬜   |
-| G-03 | 模式限定命令 | 仅 fullscreen：`/find` `/jump` `/timeline` `/theme` `/tutorial` `/dashboard`；仅 minimal：`/expand`；`/workflow runs` 在 minimal 降级为纯文本                            | 必刻 | ⬜   |
-| G-04 | 布局区域清单 | scrollback（主区）· prompt（输入）· status line（可选）· shortcuts bar（焦点提示）· queue pane · todos pane · tasks pane · overlay modal（命令面板/模型/会话/扩展/设置） | 必刻 | ⬜   |
-| G-05 | 块折叠与视图 | `h`/`l`（或 `←`/`→`）折叠展开·`e` 切折叠·`Shift+E` 全展·`Ctrl+E` thinking 块·`r` 原始 markdown；`[scrollback.scroll] respect_manual_folds` 控制自动折叠是否覆盖手动折叠  | 必刻 | ⬜   |
-| G-06 | 块内容操作   | `y` 复制正文·`Shift+Y` 复制含元数据·`Enter` / `Ctrl+F` 全屏查看器                                                                                                        | 必刻 | ⬜   |
+| G-01 | 双渲染模式   | `fullscreen`（默认，接管屏幕）与 `minimal`（原生 scrollback，不接管屏幕）两套完整 UI                                                                                     | 必刻 | 🟡   |
+| G-02 | 进程内切模式 | `/minimal` / `/fullscreen`（`/full`）当场切换不重启；配置 `[ui] screen_mode`；`GROK_SCREEN_MODE_SWITCH=exec` 改为重执行                                                  | 必刻 | 🟡   |
+| G-03 | 模式限定命令 | 仅 fullscreen：`/find` `/jump` `/timeline` `/theme` `/tutorial` `/dashboard`；仅 minimal：`/expand`；`/workflow runs` 在 minimal 降级为纯文本                            | 必刻 | 🟡   |
+| G-04 | 布局区域清单 | scrollback（主区）· prompt（输入）· status line（可选）· shortcuts bar（焦点提示）· queue pane · todos pane · tasks pane · overlay modal（命令面板/模型/会话/扩展/设置） | 必刻 | ✅   |
+| G-05 | 块折叠与视图 | `h`/`l`（或 `←`/`→`）折叠展开·`e` 切折叠·`Shift+E` 全展·`Ctrl+E` thinking 块·`r` 原始 markdown；`[scrollback.scroll] respect_manual_folds` 控制自动折叠是否覆盖手动折叠  | 必刻 | 🟡   |
+| G-06 | 块内容操作   | `y` 复制正文·`Shift+Y` 复制含元数据·`Enter` / `Ctrl+F` 全屏查看器                                                                                                        | 必刻 | 🟡   |
 
 ## G-2x 输入与焦点模型
 
 | ID   | 条目         | 行为要点                                                                                                                                                                                                  | 等级 | 状态 |
 | ---- | ------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---- | ---- |
-| G-07 | 两种输入模式 | `simple`（默认）与 `vim`（`[ui].vim_mode` 或 `/vim-mode`）；两套键位表并行存在                                                                                                                            | 必刻 | ⬜   |
-| G-08 | 焦点环       | `Tab` 在 prompt / scrollback 间切换；simple 下 `Space` 亦可，vim 下 `i` 回输入；**`Esc` 不是焦点键**                                                                                                      | 必刻 | ⬜   |
-| G-09 | 导航键位     | `j`/`k` ↔ `↓`/`↑`·`Shift+L`/`Shift+H` ↔ `Shift+→`/`Shift+←`（按 turn）·`Shift+J`/`Shift+K` 跳视口顶上/下方 turn（与 timeline 箭头同目标；2026-09-13 修正：原稿写「按助手回复」已失真）·`g`/`Shift+G` 首尾 | 必刻 | ⬜   |
-| G-10 | 滚动粒度     | `Ctrl+K`/`Ctrl+J` 行滚动·`PageUp`/`PageDown` 整页·`Ctrl+U`/`Ctrl+D` 半页                                                                                                                                  | 必刻 | ⬜   |
-| G-11 | Shell 模式   | 行首 `!` 进入 shell 模式直接执行命令                                                                                                                                                                      | 必刻 | ⬜   |
-| G-12 | 图片粘贴     | Windows 用 **`Alt+V`**（`Ctrl+V` 被终端占）；Linux 区分 PRIMARY / CLIPBOARD，`Shift+Insert` 走 PRIMARY；拖拽亦可                                                                                          | 必刻 | ⬜   |
-| G-13 | 终端能力依赖 | WezTerm 需 `enable_kitty_keyboard = true` 才能收到全量和弦；终端族差异在 `21-terminal-support.md`                                                                                                         | 必刻 | ⬜   |
+| G-07 | 两种输入模式 | `simple`（默认）与 `vim`（`[ui].vim_mode` 或 `/vim-mode`）；两套键位表并行存在                                                                                                                            | 必刻 | 🟡   |
+| G-08 | 焦点环       | `Tab` 在 prompt / scrollback 间切换；simple 下 `Space` 亦可，vim 下 `i` 回输入；**`Esc` 不是焦点键**                                                                                                      | 必刻 | ✅   |
+| G-09 | 导航键位     | `j`/`k` ↔ `↓`/`↑`·`Shift+L`/`Shift+H` ↔ `Shift+→`/`Shift+←`（按 turn）·`Shift+J`/`Shift+K` 跳视口顶上/下方 turn（与 timeline 箭头同目标；2026-09-13 修正：原稿写「按助手回复」已失真）·`g`/`Shift+G` 首尾 | 必刻 | 🟡   |
+| G-10 | 滚动粒度     | `Ctrl+K`/`Ctrl+J` 行滚动·`PageUp`/`PageDown` 整页·`Ctrl+U`/`Ctrl+D` 半页                                                                                                                                  | 必刻 | ✅   |
+| G-11 | Shell 模式   | 行首 `!` 进入 shell 模式直接执行命令                                                                                                                                                                      | 必刻 | 🟡   |
+| G-12 | 图片粘贴     | Windows 用 **`Alt+V`**（`Ctrl+V` 被终端占）；Linux 区分 PRIMARY / CLIPBOARD，`Shift+Insert` 走 PRIMARY；拖拽亦可                                                                                          | 必刻 | 🟡   |
+| G-13 | 终端能力依赖 | WezTerm 需 `enable_kitty_keyboard = true` 才能收到全量和弦；终端族差异在 `21-terminal-support.md`                                                                                                         | 必刻 | ✅   |
 
 ## G-3x Esc 语义状态表（最易做成半成品的一块，逐行复刻）
 
-| ID   | 场景                         | 行为                                                                                                                                                                                                                                   | 等级 | 状态 |
-| ---- | ---------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---- | ---- |
-| G-14 | 回合运行中（一切模式/窗格）  | `Esc` **永不取消回合**：显示 `Press Ctrl+C to cancel the turn` 提示（fullscreen 走 toast；minimal 无 toast 槽，写一条滚动区系统行，每用户回合最多一条去重），草稿原样保留；取消统一走 `Ctrl+C`（2026-09-13 修正：上游已废除 Esc 取消） | 必刻 | ⬜   |
-| G-15 | 正在取消中（TurnCancelling） | `Esc` 无声吞掉（连提示也不给，避免误导）；`Ctrl+C` 在此状态升级为退出（2026-09-13 修正：原稿的「fullscreen+vim 特例 no-op」已推广为全模式统一行为）                                                                                    | 必刻 | ⬜   |
-| G-16 | 正在取消中重发取消           | **➖ 已移除**：上游删除了「再按 `Esc` 重发取消（硬中断）」路径——Esc 在取消中是纯 no-op（见 G-15），重试/升级职责全归 `Ctrl+C`；`StopCancelled.cancelTrigger` 也不再发送 `esc`（仅 `ctrl_c`/`mouse`/`dashboard_stop`）                  | 必刻 | ➖   |
-| G-17 | 空闲 + 草稿非空              | **800ms 内双击 `Esc`** 清空草稿并 stash；`Ctrl+S` / `Alt+S` 恢复                                                                                                                                                                       | 必刻 | ⬜   |
-| G-18 | 空闲 + 草稿为空 + 有历史消息 | 双击 `Esc` 打开 rewind picker（两窗格皆可武装；清草稿仍限 prompt 窗格）                                                                                                                                                                | 必刻 | ⬜   |
-| G-19 | mid-turn Esc 宽限期          | 回合中每按一次 `Esc` 即把 rewind 武装压制 deadline 推到 **now+1000ms**（`ESC_CANCEL_REWIND_GRACE`）：Esc 连打穿越回合结束（取消或自然完成）也不会误开 rewind picker（2026-09-13 修正：触发方由「取消后」改为「mid-turn Esc」）         | 必刻 | ⬜   |
-| G-20 | 阻塞卡片打开时               | `Esc` 逐级退出卡片，退到最后把焦点 park 到 scrollback 并给提示                                                                                                                                                                         | 必刻 | ⬜   |
+| ID   | 场景                         | 行为                                                                                                                                                                                                                                                                                                                                                           | 等级 | 状态 |
+| ---- | ---------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---- | ---- |
+| G-14 | 回合运行中（一切模式/窗格）  | `Esc` **永不取消回合**：显示 `Press Ctrl+C to cancel the turn` 提示（fullscreen 走 toast；minimal 无 toast 槽，写一条滚动区系统行，每用户回合最多一条去重），草稿原样保留；取消统一走 `Ctrl+C`（2026-09-13 修正：上游已废除 Esc 取消）。保真度备注：上游实际渲染 `Ctrl+c`（键位显示模块把 CONTROL+c 归一为大写 C、小写 c），harness2 文案用 `Ctrl+C`，语义同源 | 必刻 | ✅   |
+| G-15 | 正在取消中（TurnCancelling） | `Esc` 无声吞掉（连提示也不给，避免误导）；`Ctrl+C` 在此状态升级为退出（2026-09-13 修正：原稿的「fullscreen+vim 特例 no-op」已推广为全模式统一行为）                                                                                                                                                                                                            | 必刻 | ✅   |
+| G-16 | 正在取消中重发取消           | **➖ 已移除**：上游删除了「再按 `Esc` 重发取消（硬中断）」路径——Esc 在取消中是纯 no-op（见 G-15），重试/升级职责全归 `Ctrl+C`；`StopCancelled.cancelTrigger` 也不再发送 `esc`（仅 `ctrl_c`/`mouse`/`dashboard_stop`）                                                                                                                                          | 必刻 | ➖   |
+| G-17 | 空闲 + 草稿非空              | **800ms 内双击 `Esc`** 清空草稿并 stash；`Ctrl+S` / `Alt+S` 恢复                                                                                                                                                                                                                                                                                               | 必刻 | ✅   |
+| G-18 | 空闲 + 草稿为空 + 有历史消息 | 双击 `Esc` 打开 rewind picker（两窗格皆可武装；清草稿仍限 prompt 窗格）                                                                                                                                                                                                                                                                                        | 必刻 | ✅   |
+| G-19 | mid-turn Esc 宽限期          | 回合中每按一次 `Esc` 即把 rewind 武装压制 deadline 推到 **now+1000ms**（`ESC_CANCEL_REWIND_GRACE`）：Esc 连打穿越回合结束（取消或自然完成）也不会误开 rewind picker（2026-09-13 修正：触发方由「取消后」改为「mid-turn Esc」）                                                                                                                                 | 必刻 | ✅   |
+| G-20 | 阻塞卡片打开时               | `Esc` 逐级退出卡片，退到最后把焦点 park 到 scrollback 并给提示                                                                                                                                                                                                                                                                                                 | 必刻 | ✅   |
 
 ## G-4x 阻塞卡片（四件套）
 
@@ -240,16 +240,16 @@ Rust 工作区，产物二进制 `xai-grok-pager`，官方以 `grok` 名称分�
 
 ## 与 harness2 当前实现的差距
 
-| 维度       | harness2 现状（`packages/cli`）                                                                                                   | 目标                               |
-| ---------- | --------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------- |
-| 渲染模式   | 单一 Ink 全屏，无 minimal 模式                                                                                                    | G-01～G-03 双模式                  |
-| 斜杠命令   | 13 条（`/new` `/sessions` `/resume` `/fork` `/undo` `/redo` `/help` `/exit` `/mode` `/context` `/compact` `/reasoning` `/tasks`） | G-54～G-90（数十条，含分组与别名） |
-| 命令发现   | 前缀补全，无 palette、无 badge、无模糊匹配                                                                                        | G-31、G-50～G-53                   |
-| 焦点与 Esc | 无焦点环、无双击 Esc 语义、无 stash                                                                                               | G-07～G-08、G-14～G-20             |
-| 阻塞卡片   | 无统一卡片层与优先级                                                                                                              | G-21～G-25                         |
-| 队列/转向  | 有 steer 内核，但无队列面板、无 send-now 和弦                                                                                     | G-26～G-30                         |
-| 状态行     | 无                                                                                                                                | G-42～G-49                         |
-| 主题       | 无主题系统                                                                                                                        | G-84、G-92                         |
+| 维度       | harness2 现状（`packages/cli`）                                                                                                                                     | 目标                               |
+| ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------- |
+| 渲染模式   | 单一 Ink 全屏，无 minimal 模式                                                                                                                                      | G-01～G-03 双模式                  |
+| 斜杠命令   | 13 条（`/new` `/sessions` `/resume` `/fork` `/undo` `/redo` `/help` `/exit` `/mode` `/context` `/compact` `/reasoning` `/tasks`）                                   | G-54～G-90（数十条，含分组与别名） |
+| 命令发现   | 前缀补全，无 palette、无 badge、无模糊匹配                                                                                                                          | G-31、G-50～G-53                   |
+| 焦点与 Esc | 2026-09-13 P2 已接线：焦点环、Esc 新规格（永不取消/双击 stash/宽限/rewind picker）、Ctrl+S stash（对齐上游 StashPrompt）；历史：无焦点环、无双击 Esc 语义、无 stash | G-07～G-08、G-14～G-20             |
+| 阻塞卡片   | 无统一卡片层与优先级                                                                                                                                                | G-21～G-25                         |
+| 队列/转向  | 有 steer 内核，但无队列面板、无 send-now 和弦                                                                                                                       | G-26～G-30                         |
+| 状态行     | 无                                                                                                                                                                  | G-42～G-49                         |
+| 主题       | 无主题系统                                                                                                                                                          | G-84、G-92                         |
 
 ## 不采纳清单
 

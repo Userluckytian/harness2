@@ -24,6 +24,7 @@ const ENTER = '\r';
 const ESC = '\x1b';
 const CTRL_C = '\x03';
 const CTRL_O = '\x0f';
+const CTRL_S = '\x13'; // P2-C：G-17 stash 恢复（keymaps 'draft.stash-toggle' 主和弦）
 const SHIFT_ENTER = '\x1b[13;2u'; // kitty CSI-u：Shift+Enter
 const WHEEL_UP = '\x1b[<64;10;5M'; // SGR 滚轮上
 const ARROW_UP = '\x1b[A';
@@ -447,8 +448,12 @@ describe('折叠键族（e/E/h/l，仅滚动区焦点下生效）', () => {
     h.feed('he'); // 非焦点：逐字母插入草稿，不触发折叠
     expect(h.state.draft).toBe('he');
     expect(linesOf(h).join('\n')).not.toContain('+ one');
+    // P2-C G-17：空闲 Esc 改 800ms 双击窗——第一击静默武装、双击清空+stash
     h.feed(ESC);
-    await vi.advanceTimersByTimeAsync(120); // 孤立 ESC 空闲超时（≥50ms，跨 idle 周期相位）→ Esc 清草稿
+    await vi.advanceTimersByTimeAsync(120); // 孤立 ESC 空闲超时（≥50ms，跨 idle 周期相位）→ 第一击武装
+    expect(h.state.draft).toBe('he'); // 单击不清稿（旧语义废止）
+    h.feed(ESC);
+    await vi.advanceTimersByTimeAsync(120); // 双击第二击（<800ms）→ clear-stash
     expect(h.state.draft).toBe('');
     h.feed(TAB); // 进入滚动区焦点
     h.feed('x'); // 其余字母键：自动回到输入框（grok simple 语义）并照常插入
@@ -661,9 +666,9 @@ describe('Ctrl+D 语义（keymap 裁决）', () => {
   });
 });
 
-// —— Esc 语义 ——
-describe('Esc 语义', () => {
-  it('忙时 Esc 取消当前 turn', async () => {
+// —— Esc 语义（P2-C：G-14～G-20 新规格）——
+describe('Esc 语义（P2-C 新规格）', () => {
+  it('G-14 忙时 Esc 永不取消：逐字提示 + 不 abort；取消改走 Ctrl+C（G-38）', async () => {
     let aborted = 0;
     let release!: () => void;
     const blocker = new Promise<void>((r) => {
@@ -684,19 +689,32 @@ describe('Esc 语义', () => {
     await vi.advanceTimersByTimeAsync(0);
     h.feed(ESC);
     await vi.advanceTimersByTimeAsync(60); // 孤立 ESC 空闲超时（50ms）后 parser 才产出 Esc 键
+    expect(aborted).toBe(0); // 旧「Esc 停止」废止：回合中 Esc 永不取消
+    expect((h.state.indicators ?? []).join(' ')).toContain('Press Ctrl+C to cancel the turn'); // 逐字提示
+    h.feed(ESC);
+    await vi.advanceTimersByTimeAsync(60);
+    expect(aborted).toBe(0); // 连按仍不取消（每回合一条提示的去重不影响状态）
+    h.feed(CTRL_C); // G-38：取消统一走 Ctrl+C
+    await vi.advanceTimersByTimeAsync(60);
     expect(aborted).toBe(1);
     release();
     await settle(h);
     h.dispose();
   });
 
-  it('空闲 Esc 清空草稿', async () => {
+  it('G-17 空闲双击 Esc（800ms 内）清空草稿并 stash；Ctrl+S 恢复、单击不清稿', async () => {
     const { h } = makeHarness();
     h.feed('abc');
     expect(h.state.draft).toBe('abc');
     h.feed(ESC);
-    await vi.advanceTimersByTimeAsync(60); // 孤立 ESC 空闲超时（50ms）后 parser 才产出 Esc 键
+    await vi.advanceTimersByTimeAsync(60); // 孤立 ESC 空闲超时（50ms）后 parser 才产出 Esc 键 → 第一击武装
+    expect(h.state.draft).toBe('abc'); // 单击不清稿（旧语义废止）
+    h.feed(ESC);
+    await vi.advanceTimersByTimeAsync(200); // 双击第二击（parser 孤立 ESC 兜底 ≈2 个 idle 周期；<800ms 窗内）→ clear-stash
     expect(h.state.draft).toBe('');
+    h.feed(CTRL_S); // G-17 恢复通道：Ctrl+S pop stash
+    await vi.advanceTimersByTimeAsync(0);
+    expect(h.state.draft).toBe('abc');
     h.dispose();
   });
 });

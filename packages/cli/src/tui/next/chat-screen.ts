@@ -4,8 +4,11 @@
 // 多浮层栈装配进**一次** screen.render 回调，经 diff-presenter 产生单帧差量输出。
 // 分层（自下而上，grok 语义）：shortcuts bar（固定 1 行）/ statusline（可选 1 行）/
 // composer（自适应 = 草稿物理行 + 候选行 + 1 提示行）/ scrollback（其余全部）。
-// 高度让位纯计算复用 renderer/layout.ts 的 columnLayout；浮层定位复用 next/overlay.ts 的
-// overlayStackLayout（锚定 composerTop 之上）；内容宽度判定复用 cell-buffer 的 charWidth。
+// P2-C 收敛：高度让位改由 render/regions 的 allocateRegions（G-04 八区域模型）确定性分配，
+// 绘制经 RegionLayoutManager 按区域预算驱动本文件的 draw 级复用（drawScrollback /
+// drawComposer / writeRowClipped / drawOverlay）；数据面板（queue/todos/tasks）无数据源
+// 缺省隐藏。小屏退化语义差异（scrollback 最低保 1 行 vs 旧 composer 先截断）见 layoutChat
+// 注释与 P2-C 报告登记。内容宽度判定复用 cell-buffer 的 charWidth。
 //
 // 接口缺口（已收敛，见任务交接）：next/scrollback.ts 与 next/composer.ts 现已导出接受
 // CellBuffer 的 draw 级 API（drawScrollback / drawComposer，纯 buffer 绘制、无 screen.render），
@@ -26,8 +29,15 @@
 //   贴底滚动兜底（offset = clamp(cursorRow - height + 1)，与 renderComposer 同语义），
 //   提示行占层底行（与草稿重叠时后画获胜）。
 import type { CellBuffer } from '../renderer/cell-buffer.js';
-import { columnLayout, type LayerRect } from '../renderer/layout.js';
+import type { LayerRect } from '../renderer/layout.js';
 import type { Screen } from '../renderer/screen.js';
+import {
+  allocateRegions,
+  RegionLayoutManager,
+  type RegionId,
+  type RegionInput,
+  type RegionLayout,
+} from '../render/regions.js';
 import { candidateRows, drawComposer, measureComposer } from './composer.js';
 import { drawOverlay, overlayNaturalHeight, overlayStackLayout, type OverlaySpec } from './overlay.js';
 import { drawScrollback, writeRowClipped, type Scrollback } from './scrollback.js';
@@ -190,40 +200,77 @@ export function queueEntryPreview(text: string, max: number = QUEUE_PREVIEW_MAX)
 }
 
 /**
- * 纵向分层（纯计算）：composer 高度 = 草稿物理行 + 候选行 + 1 提示行；
- * statusline 有则 1 行；shortcuts 固定 1 行；其余全给 scrollback（flex）。
- * 极端小屏按 columnLayout 确定性退化：composer（先）→ statusline → shortcuts 依次截断。
+ * 纵向分层（P2-C 收敛到 G-04 八区域模型）：布局不再走 renderer/layout.columnLayout，
+ * 改由 render/regions 的 allocateRegions 确定性分配——
+ * - 固定区簇贴屏幕底部（底→顶）：shortcutsBar(1) → statusLine(可选 1) →
+ *   prompt(草稿物理行 + 候选行 + 1 提示行)；scrollback 占顶部剩余全部（最低保 1 行）。
+ * - queuePane/todosPane/tasksPane 本阶段无数据源 → 不提供输入 → 自动隐藏（不造假内容）。
+ * - overlayModal：有浮层时作为顶层区域参与分配（锚定固定区簇之上、钳到屏幕顶），绘制时
+ *   区域内仍用 overlayStackLayout 复刻栈语义（多浮层自下而上堆叠）。
+ * 收敛登记（差异取舍）：极端小屏退化序与旧 columnLayout 不同——本模型 scrollback 最低
+ * 保 1 行（转录可见优先），prompt 先降到 minHeight(1) 再归零；旧 columnLayout 是 composer
+ * 先截断、scrollback 可为 0。按 regions.ts「接线批二选一收敛」裁决取区域模型（G-04 为准），
+ * 受影响的旧小屏断言已随收敛更新（P2-C 报告逐条登记）。
  */
 export function layoutChat(rows: number, cols: number, state: ChatScreenState): ChatLayout {
   const totalRows = Math.max(0, Math.floor(rows));
   const totalCols = Math.max(1, Math.floor(cols));
+  const chat = measureChatLayers(state, totalCols);
+  const inputs = buildRegionInputs(state, chat);
+  const region = allocateRegions(totalRows, inputs);
+  return mapRegionLayout(region, chat);
+}
+
+/** 分层中间量（layoutChat 与 renderChat 共用，保证两处输入恒一致） */
+interface ChatLayerMeasure {
+  /** 草稿物理行数（measureComposer.rows） */
+  draftRows: number;
+  /** 候选可见行数（candidateRows，0 = 无候选） */
+  candidateRows: number;
+  /** statusline 是否有内容（决定 statusLine 区域可见性） */
+  hasStatusline: boolean;
+}
+
+function measureChatLayers(state: ChatScreenState, cols: number): ChatLayerMeasure {
   // P3-D：视图态 composer 收为 1 行提示行（草稿/候选不参与测量——draftRows 强制 0，
   // 否则 measureComposer 的空草稿仍占 1 行会把提示行顶高）
   const subview = state.subagentView ?? null;
-  const draftRows = subview !== null ? 0 : measureComposer(state.draft ?? '', totalCols, state.cursor).rows;
+  const draftRows = subview !== null ? 0 : measureComposer(state.draft ?? '', cols, state.cursor).rows;
   const candRows = subview !== null || state.candidates === null ? 0 : candidateRows(state.candidates.items.length);
   const hasStatusline = typeof state.statusline === 'string' && state.statusline.length > 0;
-  const rects = columnLayout({
-    total: totalRows,
-    layers: [
-      { flex: 1 }, // scrollback：剩余全给
-      { size: draftRows + candRows + 1 }, // composer（含提示行）
-      ...(hasStatusline ? [{ size: 1 }] : []),
-      { size: 1 }, // shortcuts bar
-    ],
-  });
-  const composer = rects[1] ?? { top: 0, height: 0 };
-  const statusline: LayerRect = hasStatusline
-    ? (rects[2] ?? { top: 0, height: 0 })
-    : { top: composer.top + composer.height, height: 0 };
-  const shortcuts = hasStatusline ? (rects[3] ?? { top: 0, height: 0 }) : (rects[2] ?? { top: 0, height: 0 });
+  return { draftRows, candidateRows: candRows, hasStatusline };
+}
+
+/** ChatScreenState → 八区域布局输入（五个接线区域；数据面板缺省隐藏，不造假内容） */
+function buildRegionInputs(state: ChatScreenState, chat: ChatLayerMeasure): ReadonlyMap<RegionId, RegionInput> {
+  const inputs = new Map<RegionId, RegionInput>();
+  inputs.set('scrollback', {}); // 主区：显式输入即恒可见，拿剩余高度
+  inputs.set('prompt', { naturalHeight: chat.draftRows + chat.candidateRows + 1 }); // 含提示行
+  inputs.set('statusLine', { naturalHeight: 1, visible: chat.hasStatusline });
+  inputs.set('shortcutsBar', { naturalHeight: 1 });
+  if (state.overlays.length > 0) {
+    const natural = state.overlays.reduce((sum, spec) => sum + overlayNaturalHeight(spec), 0);
+    inputs.set('overlayModal', { naturalHeight: natural });
+  }
+  return inputs;
+}
+
+/** 区域分配结果 → ChatLayout 各层矩形（id 一一对应；statusLine 缺省位次映射保持旧契约） */
+function mapRegionLayout(region: RegionLayout, chat: ChatLayerMeasure): ChatLayout {
+  const allocOf = (id: RegionId): { top: number; height: number } => {
+    const a = region.regions.find((r) => r.id === id);
+    return { top: a?.top ?? 0, height: a?.height ?? 0 };
+  };
+  const composer = allocOf('prompt');
+  const statusline = chat.hasStatusline ? allocOf('statusLine') : { top: composer.top + composer.height, height: 0 };
+  const shortcuts = allocOf('shortcutsBar');
   return {
-    scrollback: rects[0] ?? { top: 0, height: 0 },
+    scrollback: allocOf('scrollback'),
     composer,
     statusline,
     shortcuts,
-    draftRows,
-    candidateRows: candRows,
+    draftRows: chat.draftRows,
+    candidateRows: chat.candidateRows,
   };
 }
 
@@ -274,12 +321,15 @@ function drawComposerLayer(buf: CellBuffer, state: ChatScreenState, layout: Chat
   );
 }
 
-function drawOverlays(buf: CellBuffer, state: ChatScreenState, layout: ChatLayout, cols: number): void {
+function drawOverlaysInRegion(buf: CellBuffer, state: ChatScreenState, cols: number, layout: ChatLayout): void {
   if (state.overlays.length === 0) return;
   const theme = state.theme ?? DEFAULT_THEME; // P4-2：浮层高亮从主题取（缺省 dark 零变化）
+  // 区域模型下 overlayModal 的可用空间 = 固定区簇之上（clusterTop），即 prompt 顶行
+  // （本阶段数据面板隐藏，簇顶 == composer.top）；栈布局在区域内复刻（多浮层自下而上）。
+  const composerTop = layout.composer.top;
   const rects = overlayStackLayout({
-    screenRows: buf.rows,
-    composerTop: layout.composer.top,
+    screenRows: composerTop,
+    composerTop,
     overlays: state.overlays.map((spec) => ({ height: overlayNaturalHeight(spec) })),
   });
   for (let i = 0; i < rects.length; i += 1) {
@@ -291,8 +341,12 @@ function drawOverlays(buf: CellBuffer, state: ChatScreenState, layout: ChatLayou
 }
 
 /**
- * 整帧呈现：一次 screen.render 回调内画完全部层（scrollback 含滚动条 → composer 层
- * （候选/草稿/光标/提示行）→ statusline → shortcuts → 多浮层栈），diff-presenter 差量输出。
+ * 整帧呈现（P2-C 区域接线）：布局由 allocateRegions 确定性给出（与 layoutChat 同一输入
+ * → 同一分配），绘制经 RegionLayoutManager 按区域预算驱动现有 draw 级 API
+ * （drawScrollback / drawComposer / writeRowClipped / drawOverlay）——八区域中
+ * scrollback/prompt/statusLine/shortcutsBar/overlayModal 已接线，
+ * queuePane/todosPane/tasksPane 无数据源缺省隐藏（不造假内容）。
+ * 一次 screen.render 回调内画完全部区域，diff-presenter 差量输出。
  * 返回本次写入字节数（无差异为 0；未 start 返回 0）。
  */
 export function renderChat(screen: Screen, state: ChatScreenState): number {
@@ -300,17 +354,40 @@ export function renderChat(screen: Screen, state: ChatScreenState): number {
   // scrollback cols 契约：内容区宽 = 屏宽 - 1 滚动条列（与 resizeChat 同一契约，防御性同步）
   const contentCols = Math.max(1, cols - 1);
   if (state.scrollback.cols !== contentCols) state.scrollback.setCols(contentCols);
+  const chat = measureChatLayers(state, cols);
+  const region = allocateRegions(screen.rows, buildRegionInputs(state, chat));
+  const layout = mapRegionLayout(region, chat);
+
+  const manager = new RegionLayoutManager();
+  manager.setInput('scrollback', {
+    render: ({ buf }) => {
+      drawScrollbackLayer(buf, state, layout.scrollback);
+    },
+  });
+  manager.setInput('prompt', {
+    render: ({ buf }) => {
+      drawComposerLayer(buf, state, layout);
+    },
+  });
+  manager.setInput('statusLine', {
+    render: ({ buf, top }) => {
+      writeRowClipped(buf, top, state.statusline ?? '', cols, 0);
+    },
+  });
+  manager.setInput('shortcutsBar', {
+    render: ({ buf, top }) => {
+      writeRowClipped(buf, top, shortcutsText(state.shortcuts), cols, 0);
+    },
+  });
+  if (state.overlays.length > 0) {
+    manager.setInput('overlayModal', {
+      render: ({ buf }) => {
+        drawOverlaysInRegion(buf, state, cols, layout);
+      },
+    });
+  }
   return screen.render((buf) => {
-    const layout = layoutChat(screen.rows, cols, state);
-    drawScrollbackLayer(buf, state, layout.scrollback);
-    drawComposerLayer(buf, state, layout);
-    if (layout.statusline.height > 0) {
-      writeRowClipped(buf, layout.statusline.top, state.statusline ?? '', cols, 0);
-    }
-    if (layout.shortcuts.height > 0) {
-      writeRowClipped(buf, layout.shortcuts.top, shortcutsText(state.shortcuts), cols, 0);
-    }
-    drawOverlays(buf, state, layout, cols);
+    manager.render(buf, region);
   });
 }
 

@@ -291,6 +291,69 @@ describe('schema 校验', () => {
     const def = parseConfig(base);
     expect(def.config?.subagent).toEqual({ maxDepth: 1, maxTurns: 25 });
   });
+
+  it('ui 段（P2-C 加性）：screen_mode 两值；未配置不透出；未知子键告警；非法值致命', () => {
+    const base = {
+      providers: { a: { protocol: 'openai', baseUrl: 'https://x' } },
+      roles: { main: { channel: 'a', model: 'm' } },
+    };
+    // 未配置：段不出现在结果里（加性可选段）
+    const none = parseConfig(base);
+    expect(none.config).not.toBeNull();
+    expect(none.config?.ui).toBeUndefined();
+    expect(none.warnings.filter((w) => w.includes('ui'))).toHaveLength(0);
+    // 合法值透出
+    const minimal = parseConfig({ ...base, ui: { screen_mode: 'minimal' } });
+    expect(minimal.config?.ui).toEqual({ screen_mode: 'minimal' });
+    const fullscreen = parseConfig({ ...base, ui: { screen_mode: 'fullscreen' } });
+    expect(fullscreen.config?.ui).toEqual({ screen_mode: 'fullscreen' });
+    // 空对象段 = 已配置但无字段（缺省语义由壳层裁定）
+    const empty = parseConfig({ ...base, ui: {} });
+    expect(empty.config?.ui).toEqual({});
+    expect(empty.errors).toEqual([]);
+    // 非法值 → 致命错误（走现有 config 报错通道）
+    const badValue = parseConfig({ ...base, ui: { screen_mode: 'cozy' } });
+    expect(badValue.config).toBeNull();
+    expect(badValue.errors.join('\n')).toContain('ui.screen_mode 必须是 fullscreen | minimal');
+    const badType = parseConfig({ ...base, ui: { screen_mode: 42 } });
+    expect(badType.config).toBeNull();
+    // 非对象段 → 致命错误；未知子键 → 告警
+    const badSection = parseConfig({ ...base, ui: 'fullscreen' });
+    expect(badSection.config).toBeNull();
+    expect(badSection.errors.join('\n')).toContain('config.ui 必须是对象');
+    const unknownKey = parseConfig({ ...base, ui: { screen_mode: 'minimal', vim_mode: true } });
+    expect(unknownKey.config).not.toBeNull();
+    expect(unknownKey.warnings.filter((w) => w.includes('ui'))).toHaveLength(1);
+  });
+
+  it('scrollback 段（P2-C 加性）：scroll.respect_manual_folds 布尔；嵌套未知键告警；非法致命', () => {
+    const base = {
+      providers: { a: { protocol: 'openai', baseUrl: 'https://x' } },
+      roles: { main: { channel: 'a', model: 'm' } },
+    };
+    // 未配置不透出
+    const none = parseConfig(base);
+    expect(none.config?.scrollback).toBeUndefined();
+    // 合法值透出（false = 自动折叠可覆盖手动折叠；true = 尊重手动折叠，缺省同义）
+    const off = parseConfig({ ...base, scrollback: { scroll: { respect_manual_folds: false } } });
+    expect(off.config?.scrollback).toEqual({ scroll: { respect_manual_folds: false } });
+    const on = parseConfig({ ...base, scrollback: { scroll: { respect_manual_folds: true } } });
+    expect(on.config?.scrollback).toEqual({ scroll: { respect_manual_folds: true } });
+    // 非布尔 → 致命；嵌套未知键 → 告警
+    const badType = parseConfig({ ...base, scrollback: { scroll: { respect_manual_folds: 'yes' } } });
+    expect(badType.config).toBeNull();
+    expect(badType.errors.join('\n')).toContain('scrollback.scroll.respect_manual_folds 必须是布尔值');
+    const unknownKey = parseConfig({ ...base, scrollback: { scroll: { respect_manual_folds: true, extra: 1 } } });
+    expect(unknownKey.config).not.toBeNull();
+    expect(unknownKey.warnings.filter((w) => w.includes('scrollback.scroll'))).toHaveLength(1);
+    // 非对象嵌套 → 致命
+    const badScroll = parseConfig({ ...base, scrollback: { scroll: true } });
+    expect(badScroll.config).toBeNull();
+    expect(badScroll.errors.join('\n')).toContain('scrollback.scroll 必须是对象');
+    const badSection = parseConfig({ ...base, scrollback: 7 });
+    expect(badSection.config).toBeNull();
+    expect(badSection.errors.join('\n')).toContain('config.scrollback 必须是对象');
+  });
 });
 
 describe('错误消息不回显密钥内容', () => {
