@@ -210,12 +210,12 @@ function wire(api: Harness2Api): { store: AppStore; controller: ReturnType<typeo
 
 describe('PD3 / F6：任务面板并行与写互斥观察（真实 serve，观察而非复刻）', () => {
   it('场景 A：readonly K=2 真实重叠 + 第三个排队 + 单任务停止不误伤', async () => {
-    const childProvider = new MockProvider([
-      { textChunks: ['子甲…完成'], chunkDelayMs: 300 },
-      { textChunks: ['子乙…完成'], chunkDelayMs: 300 },
-      { textChunks: ['子丙…完成'], chunkDelayMs: 300 },
-      { textChunks: ['补位回执'], chunkDelayMs: 50 },
-    ]);
+    // 子任务时长 ≈ chunkDelay×chunks ≈ 1.9s：K=2 重叠窗口必须远宽于 CI 采样节拍（快照往返 + 轮询）
+    const slowChild = (tag: string): { textChunks: string[]; chunkDelayMs: number } => ({
+      textChunks: [`${tag}1`, `${tag}2`, `${tag}3`, `${tag}4`, `${tag}5`, `${tag}6`],
+      chunkDelayMs: 300,
+    });
+    const childProvider = new MockProvider([slowChild('子甲'), slowChild('子乙'), slowChild('子丙'), { textChunks: ['补位回执'] }]);
     const { bridge, frames, api, emitConnected } = await setup(
       new MockProvider([
         {
@@ -256,13 +256,24 @@ describe('PD3 / F6：任务面板并行与写互斥观察（真实 serve，观�
       if (sawK2Overlap) break;
       await sleep(150);
     }
-    expect(sawK2Overlap).toBe(true); // 并发观察：两只读真实重叠
+    if (!sawK2Overlap) {
+      throw new Error(`K=2 重叠窗口未观测到（最后快照: ${JSON.stringify(tasks.map((t) => [t.taskId, t.state]))}）`);
+    }
     expect(tasks.length).toBe(3);
     void sawThirdQueued;
 
-    // 停止行为：取消其中一个运行中任务 → 只发一个目标；其余任务照常完成（不误伤兄弟）
-    const runningId = (store.peekStream(id)?.tasks ?? []).find((t) => t.state === 'running')!.taskId;
-    await controller.cancelTask(runningId);
+    // 停止行为：取消其中一个运行中任务 → 只发一个目标；其余任务照常完成（不误伤兄弟）。
+    // 快照到取消之间任务可能恰好完成：轮询等到确有运行中任务再取消。
+    let runningId: string | undefined;
+    const cancelDeadline = Date.now() + 20000;
+    while (Date.now() < cancelDeadline) {
+      runningId = (store.peekStream(id)?.tasks ?? []).find((t) => t.state === 'running')?.taskId;
+      if (runningId !== undefined) break;
+      await controller.resumeSession(id);
+      await sleep(120);
+    }
+    expect(runningId).toBeDefined(); // 子任务时长秒级，此处必有运行中任务
+    await controller.cancelTask(runningId!);
     await waitFor(() => frames.some((f) => f.type === 'cancel-ack'), 'cancel-ack');
     const acks = frames.filter((f) => f.type === 'cancel-ack');
     expect(acks).toHaveLength(1);
@@ -287,11 +298,11 @@ describe('PD3 / F6：任务面板并行与写互斥观察（真实 serve，观�
   }, 60000);
 
   it('场景 B：write 互斥可观察 —— 同一时刻至多一个写任务在跑，第二个排队等锁', async () => {
-    const childProvider = new MockProvider([
-      { textChunks: ['写任务一…完成'], chunkDelayMs: 300 },
-      { textChunks: ['写任务二…完成'], chunkDelayMs: 300 },
-      { textChunks: ['补位回执'], chunkDelayMs: 50 },
-    ]);
+    const slowWriteChild = (tag: string): { textChunks: string[]; chunkDelayMs: number } => ({
+      textChunks: [`${tag}1`, `${tag}2`, `${tag}3`, `${tag}4`, `${tag}5`, `${tag}6`],
+      chunkDelayMs: 300,
+    });
+    const childProvider = new MockProvider([slowWriteChild('写任务一'), slowWriteChild('写任务二'), { textChunks: ['补位回执'] }]);
     const { bridge, frames, api, emitConnected } = await setup(
       new MockProvider([
         {
@@ -333,7 +344,9 @@ describe('PD3 / F6：任务面板并行与写互斥观察（真实 serve，观�
       await sleep(120);
     }
     expect(samples).toBeGreaterThan(0);
-    expect(sawMutexSample).toBe(true); // 写互斥在观察面可见：一跑一排队
+    if (!sawMutexSample) {
+      throw new Error(`写互斥样本未观测到（samples=${samples}）`);
+    }
     expect(everTwoRunning).toBe(false); // 任何采样点都未见两个写任务并行
     bridge.disconnectWs();
     void api;

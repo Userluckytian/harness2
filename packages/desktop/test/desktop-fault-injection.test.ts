@@ -319,14 +319,14 @@ describe('PD2 / F7：中途强断 WS（真实 serve + 代理层故障注入）',
     expect(JSON.stringify(lastText)).toContain('丁');
     bridge.disconnectWs();
     await proxy.close();
-  }, 45000);
+  }, 90000);
 
   it('断点=工具执行中：重连后事件流恢复（turn-end 真实到达），运行中不假报停止', async () => {
     const { bridge, frames, api, proxy, emitConnected } = await setup(
       new MockProvider([
         {
           toolCalls: [
-            { id: 'c-slow', name: 'bash', arguments: JSON.stringify({ command: 'node -e "setTimeout(()=>{},2500)"' }) },
+            { id: 'c-slow', name: 'bash', arguments: JSON.stringify({ command: 'node -e "setTimeout(()=>{},4000)"' }) },
           ],
         },
         { textChunks: ['完成'] },
@@ -344,7 +344,7 @@ describe('PD2 / F7：中途强断 WS（真实 serve + 代理层故障注入）',
     await waitFor(() => frames.some((f) => f.type === 'event' && f.event.type === 'tool/call'), 'tool/call 事件镜像');
 
     const resumesBefore = frames.filter((f) => f.type === 'resume-snapshot').length;
-    // —— 故障注入：工具还在服务端执行（2.5s）——
+    // —— 故障注入：工具还在服务端执行（4s，CI 慢机上重连+resume 仍有余量）——
     proxy.sever();
     expect(store.peekStream(id)?.running).toBe(true);
     await waitFor(() => store.getState().status === 'reconnecting', 'reconnecting');
@@ -363,7 +363,7 @@ describe('PD2 / F7：中途强断 WS（真实 serve + 代理层故障注入）',
     bridge.disconnectWs();
     await proxy.close();
     void api;
-  }, 45000);
+  }, 90000);
 
   it('断点=审批等待中：重连后权威快照补齐待批，决定仍可提交并生效（拒绝不执行）', async () => {
     const { bridge, frames, api, proxy, emitConnected } = await setup(
@@ -408,5 +408,5 @@ describe('PD2 / F7：中途强断 WS（真实 serve + 代理层故障注入）',
     expect(existsSync(join(cwd, 'never-fi.txt'))).toBe(false);
     bridge.disconnectWs();
     await proxy.close();
-  }, 45000);
+  }, 90000);
 });
