@@ -20,3 +20,6 @@ packages/core/fixtures/**
 
 # 本机留痕（每日 issue-log 不入库），避免 pnpm lint 因本地笔记误红
 docs/issue-log/
+
+# P0 选型实验证据（spike/）：一次性 demo 与原始数据，不参与格式化门禁
+spike/

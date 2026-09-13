@@ -1,0 +1,14 @@
+{
+  "name": "tui-spike-ink",
+  "private": true,
+  "type": "module",
+  "description": "P0 spike 方案A：Ink 基线基准与能力边界（独立安装，与 packages/cli 同主版本 ink@7 react@19）",
+  "scripts": {
+    "bench": "node bench.mjs",
+    "demo": "node demo.mjs"
+  },
+  "dependencies": {
+    "ink": "^7.1.1",
+    "react": "^19.3.0"
+  }
+}
