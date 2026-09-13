@@ -117,6 +117,8 @@ harness2/
 
 四段留痕：①三个开发子代理（目录独占）+ 三个修复子代理（模板锚点、H-20 修正、H-70 状态符号、更新记录措辞）②测试自检（基线表逐字相等 ✅、更新记录口径 ✅、编号连续性 G ✅ / D·H 缺号为首版分段预留非本次引入、prettier ✅）③只读审查（抽查 15 条回源全部属实；发现 H-20 与源码冲突已修）④编排者重跑 `pnpm exec prettier --check .` 全绿并核实本节基线三行。
 
+**CI 加固窗口（2026-09-13，并入 P0）**：推送后发现 main 遗留红——上一会话 P3/P4 新增 TUI 测试首次上 CI（run #94/#95），四个用例在 2 核 runner 抖动失败（性能报警阈值按开发机标定 ×2、Windows EBUSY 清理竞争、waitFor 饿死）；同代码 run #93 全绿 + 本机 windows 两轮全绿证明无产品回归。按四段子流程修复（测试子代理加固 + 只读审查「可提交，无 P0/P1」+ 编排者重跑）：chat-controller 单键阈值 1→4ms、scrollback-render 10k wrap 200→700ms（均带本机/CI 实测数据注释，报警语义=抓数量级退化，符合阶段 11 墙钟约定）；`test/tui/shell-runtime.ts` rmSync 加 EBUSY/EPERM/ENOTEMPTY 退避重试、waitFor 默认超时 8s→20s 加退避让出；overlay-position 补发 Esc 自愈（**单次 Esc 语义覆盖见 `test/tui/approvals.test.tsx:111`，未削弱**；chat-controller 另加 `timeout: 20000` 使断言先于 vitest 超时报出实测值）。生产代码（`packages/cli/src/**`）零改动。本机全量 1107 passed + 2 skipped 复绿。
+
 ## P1 内核下沉（core 吸走命令、会话、模式）—— **串行，2–3 天**
 
 **目的**：壳不得再拥有业务语义。依据 H-70（斜杠命令两层分层）与 D-01～D-04（壳只组装）。

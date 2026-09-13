@@ -546,13 +546,24 @@ describe('attachInput 与 dispatcher 集成', () => {
 
 // —— 性能（宽松防 flaky）——
 describe('性能', () => {
-  it('单键处理平均 < 1ms（2000 次插入，草稿持续增长）', () => {
+  // 时序敏感测试写法约定（docs/HANDOFF.md §7）：墙钟断言必须给足余量并注释依据。
+  // 本断言是**报警级**（抓数量级退化，不是绝对性能达标线），阈值按实测重标定（P0-CI 加固窗口）：
+  // - 本机（win，空载）3 轮实测 avg：0.2397 / 0.2227 / 0.2373 ms（≈0.24ms）
+  // - CI 2 核 runner（windows，几十个 vitest worker 分摊 CPU）实测：1.2823575 ms（≈本机 5.3 倍）
+  //   ——旧阈值 1ms 即 CI 连红，属按开发机标定、违背上述约定的误报。
+  // - 新阈值 4ms ≈ CI 实测的 3.1 倍、本机实测的 ~16 倍：
+  //   正常实现单键摊还 O(草稿长度)（JS 字符串拼接的 O(n) 拷贝，已含在基线里）。报警要抓的是
+  //   「单键成本再乘一个数量级」的算法退化——如每键对整条草稿重测宽字符宽度、每键全量 re-wrap
+  //   scrollback、或草稿改成 O(n²) 重建，任何一种都会把 avg 推过 4ms 必红；而 CI 负载抖动实测
+  //   只到 1.28ms，距 4ms 有 3 倍余量，不再误报。
+  // 显式 timeout=20s：即使退化到阈值 4ms（循环 8s），也让断言自身报出实测值而非 vitest 超时。
+  it('单键处理平均 < 4ms（2000 次插入，草稿持续增长）', { timeout: 20000 }, () => {
     const h = makeHarness();
     const ev = keyEvent('a', 'a');
     const start = performance.now();
     for (let i = 0; i < 2000; i += 1) h.ctrl.handleKey(ev);
     const avgMs = (performance.now() - start) / 2000;
-    expect(avgMs).toBeLessThan(1);
+    expect(avgMs).toBeLessThan(4);
     expect(h.state.draft.length).toBe(2000);
   });
 });

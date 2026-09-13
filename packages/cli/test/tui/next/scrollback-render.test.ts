@@ -268,14 +268,24 @@ describe('drawScrollback 逐行前景色（P3-A 配色落地）', () => {
 });
 
 describe('scrollback 性能冒烟（宽松阈值防 flaky）', () => {
-  it('10k 行初始 wrap < 200ms（预算 50ms，此为报警级断言）', () => {
+  // 时序敏感测试写法约定（docs/HANDOFF.md §7）：墙钟断言必须给足余量并注释依据。
+  // 本断言是**报警级**（抓数量级退化，不是绝对性能达标线），阈值按实测重标定（P0-CI 加固窗口）：
+  // - 本机（win，空载）3 轮实测：50.94 / 47.80 / 75.12 ms（≈48–75ms）
+  // - CI 2 核 runner（ubuntu）实测：212.51 ms（≈本机 2.8–4.4 倍）
+  //   ——旧阈值 200ms 即 CI 红，属按开发机标定、违背上述约定的误报。
+  // - 新阈值 700ms ≈ CI 实测的 3.3 倍、本机实测的 ~9–14 倍：
+  //   正常实现为 O(总字符数) 单遍 wrap + 增量前缀和（ensurePrefix 只追加不重算）。报警要抓的是
+  //   数量级级算法退化——如前缀和改成每行全量重算（10k 行 O(n²)，慢数百倍）、wrapLine 改逐字素
+  //   Intl 分段或逐字符正则（慢 ≥10 倍，CI 上即 500ms+）、或每行触发全量重渲染——任何一种都会
+  //   撞穿 700ms 必红；而 CI 负载抖动实测只到 212ms，距 700ms 有 3.3 倍余量，不再误报。
+  it('10k 行初始 wrap < 700ms（预算 50ms，此为报警级断言）', () => {
     const lines = generateLines(10000, 42);
     const sb = new Scrollback(lines, 80);
     const t0 = performance.now();
     const total = sb.totalRows; // 强制全量 wrap + 前缀和
     const ms = performance.now() - t0;
     expect(total).toBeGreaterThan(10000); // 长行断行后总物理行更多
-    expect(ms).toBeLessThan(200);
+    expect(ms).toBeLessThan(700);
   });
 
   it('确定性生成器：同 seed 输出一致', () => {
