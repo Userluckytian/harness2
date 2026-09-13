@@ -48,6 +48,8 @@
 9. `docs/diary/YYYY-MM-DD.md` —— 每日日志（发版 release note 素材）
 10. `docs/issue-log/` —— 问题日志（README 约定 + OPEN.md 未关闭索引）
 11. `docs/research/2026-09-06-reference-analysis.md` —— 四参考项目实证调研
+12. **`docs/refs/README.md`** —— 参考项目分析**强制规范**（改上层壳前必读；含开工六步流程、文档模板、编号与复刻等级、过期判定）。三份基线文档：`docs/refs/refs-grok-build.md`（CLI 交互完全复刻，G-01～G-90）、`docs/refs/refs-deepseek-harness.md`（桌面壳/对话页/会话列表/模型配置/轨迹参考，D-01～D-72）、`docs/refs/refs-hermes-agent.md`（功能完整性对标，H-01～H-70）
+13. `docs/ai-framework/plans/2026-09-13-phase-shell-replication.md` —— **当前主线计划**：内核下沉 core + 三壳复刻（P0～P9，含四段子代理模式、并行窗口与目录独占表、反半成品硬规则、零上下文开工提示）
 
 ## 4. 如何继续开发（标准循环）
 

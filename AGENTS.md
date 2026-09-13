@@ -4,10 +4,11 @@
 
 ## 两套互补能力
 
-| 能力               | 用途                                        | 入口                                      |
-| ------------------ | ------------------------------------------- | ----------------------------------------- |
-| **阶段化计划驱动** | 跨会话：定阶段 → 计划 → 交接执行 → 独立验收 | `docs/ai-framework/phased-plan-driven.md` |
-| **提交前审查**     | 单次 diff：风格 / 测试 / 依赖               | `CODE_REVIEW.md`、`/review`               |
+| 能力                 | 用途                                                | 入口                                      |
+| -------------------- | --------------------------------------------------- | ----------------------------------------- |
+| **阶段化计划驱动**   | 跨会话：定阶段 → 计划 → 交接执行 → 独立验收         | `docs/ai-framework/phased-plan-driven.md` |
+| **提交前审查**       | 单次 diff：风格 / 测试 / 依赖                       | `CODE_REVIEW.md`、`/review`               |
+| **参考项目复刻规范** | 上层壳（cli / desktop / web）的交互、样式、布局依据 | `docs/refs/README.md`                     |
 
 详细阶段工作流见：`docs/ai-framework/phased-plan-driven.md`。  
 空白计划骨架：`docs/ai-framework/phase-plan.template.md`。  
@@ -21,6 +22,7 @@
 4. **Git 提交**见下文规范；默认不 push。
 5. 编码约定见 `coding-standards.md`（若存在）。
 6. **按天问题日志**：处理任何问题/需求时，同步维护 `docs/issue-log/YYYY-MM-DD.md`（描述 / 分析 / 修改结果 / 状态）；修复后更新状态为「已关闭」并附验证证据；未关闭项次日自动带过。**开工先读 `docs/issue-log/OPEN.md`（开放事项索引，只读它即可掌握全部未完成项，无需翻历史日志）**，再按需读对应日期文件。约定详见 `docs/issue-log/README.md`。
+7. **参考项目先行分析（强制，无论谁来做）**：动手改动上层壳（`packages/cli`、`packages/desktop`、未来的 `packages/web`）之前，**必须先读 `docs/refs/README.md` 并按其 §2 六步流程执行**：拉取 `D:/AI_Projects/refs/{grok-build,deepseek-harness,hermes-agent}` 最新代码 → 判断 `docs/refs/refs-*.md` 是否过期 → 重新分析并补充/更新文档 → 再依据文档实施。**禁止凭记忆或凭想象设计交互**；文档里没有的交互条目，先补条目再写代码。CLI 交互以 `refs-grok-build.md` 为准（完全复刻），桌面壳以 `refs-deepseek-harness.md` 为准（参考），功能完整性以 `refs-hermes-agent.md` 为准（补齐）。
 
 ## 工作模式（2026-09-06 用户确认，长期有效）
 
