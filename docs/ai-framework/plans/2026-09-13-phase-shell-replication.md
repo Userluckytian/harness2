@@ -141,6 +141,14 @@ harness2/
 
 **退出闸门**：`packages/cli` 不再包含命令业务实现（`grep -r "case '/" packages/cli/src` 无命中）；1469 基线不降。
 
+**执行记录（2026-09-13，编排者四段跑毕）**：
+
+- ① 开发（两棒串行）：Dev-1 core 侧——新建 `packages/core/src/commands/`（CoreCommand/CoreCommandContext/parseCoreCommand/runCoreCommand/describeCapabilities），13 条命令注册，**11 条业务进 core**（help/exit/new/resume/sessions/fork/undo/redo/context/compact/tasks），mode/reasoning 为 `shellOnly` 元数据（壳实现，不画饼）；导出面快照加性 23 条（实测 499→522，审查修正口径）。Dev-2 cli 侧——`command-registry.ts` 改 core 派生聚合、`commands.ts` 改薄 facade、`shell-commands.ts` 新建壳分发表（mode/reasoning，表驱动）、三处内联实现（legacy-chat if 链 / runInkChat switch / next-shell switch）全部收敛；`case '/` 在 `packages/cli/src` **0 命中**。
+- ② 测试：core `test/commands/` 10 文件 75 用例（含真实分叉字节级零改动、undo 三层、大写归一、HELP 全枚举）；cli `command-routing.test.ts` 20 用例（shellOnly 拦截/未知命令/三入口一致性）。既有 cli 测试零断言改动全绿。
+- ③ 审查（只读）：**可合入，0 P0 / 0 P1 / 3 P2**——P2-1 ink/next 文案统一到 legacy 基准属第三类用户可见变化（已登记：`/reasoning on` 文案与 `/mode` 带参文案/解析面统一）；P2-2 两处 `void` Promise 防御（当前不可达，留待三壳接 compact 缝时补 `.catch`）；P2-3 基线计数口径修正为 499→522。next-shell `/mode` UI 四态保留为注册型呈现差异（不触审批状态，红线 6 不弱化）。
+- ④ 验证（编排者亲跑）：`pnpm -r build` 0 错 · typecheck 0 · eslint **0 error / 46 warning**（49→46：3 条为上批 P3/P4 遗留，本批 lint 窗口行为保持消除；legacy-chat `no-unsafe-finally` 留 P9）· prettier 全绿 · 全量 **2397 passed + 5 skipped（196 files）**（core 926+2 · gateway 40 · desktop 344+1 · cli 1127+2，1469 基线不降反升）；真机 `harness2 chat --provider mock` 实跑 `/help` `/context` `/mode` 文案与改造前逐字一致，exit 0。
+- H-70 状态 ⬜→🟡（refs-hermes-agent.md 同批回填：core 半边已落，桌面/web 接线待 P5/P6/P8）。
+
 > **授权重写**：若现有 `packages/cli/src/tui` 结构承载不了 G-01～G-49 的交互模型（双渲染模式、焦点环、阻塞卡片层），**授权整体重写 `packages/cli/src/tui`**，不必向下兼容旧渲染层；但命令语义测试与会话文件格式（`session.v1.jsonl`）**不得破坏**。
 
 ## P2 CLI 骨架：双渲染模式 + 输入/焦点/Esc 语义（3 天）
@@ -301,7 +309,8 @@ harness2/
 
 ## 8. 本计划的修订记录
 
-| 日期       | 修订人                | 内容                                                                                                                                                                                       |
-| ---------- | --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| 2026-09-13 | 编排会话（Notion AI） | 创建：P0～P9 十阶段，含并行窗口、目录独占表、四段子代理模式、反半成品硬规则、全局闸门、决策点 H-47                                                                                         |
-| 2026-09-13 | 编排会话（本轮）      | P0 完成：三仓基线刷新（grok `37949780` / deepseek `c291e7961a` / hermes `79445a4` 未拉取待补）；refs 重分析 G-91～G-95、D-73～D-86、H-20 修正、三份文档补模板锚点；hermes 补拉登记 OPEN.md |
+| 日期       | 修订人                | 内容                                                                                                                                                                                          |
+| ---------- | --------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 2026-09-13 | 编排会话（Notion AI） | 创建：P0～P9 十阶段，含并行窗口、目录独占表、四段子代理模式、反半成品硬规则、全局闸门、决策点 H-47                                                                                            |
+| 2026-09-13 | 编排会话（本轮）      | P0 完成：三仓基线刷新（grok `37949780` / deepseek `c291e7961a` / hermes `79445a4` 未拉取待补）；refs 重分析 G-91～G-95、D-73～D-86、H-20 修正、三份文档补模板锚点；hermes 补拉登记 OPEN.md    |
+| 2026-09-13 | 编排会话（本轮）      | P1 完成：命令注册表下沉 core（11 条业务 + describeCapabilities，导出面加性 499→522）、cli 三入口统一分发（`case '/` 清零）、20+75 条新测试、全量 2397+5；CI 加固与 lint 两条并入窗口；H-70 🟡 |
