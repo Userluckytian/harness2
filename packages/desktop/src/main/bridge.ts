@@ -22,6 +22,7 @@ import { readMetadata, writeMetadataPatch } from './metadata-file.js';
 import { readDrafts, writeDrafts } from './drafts-file.js';
 import { readAuthMasked, readSettingsConfig, updateAuth, updateSettingsConfig } from './config-file.js';
 import { getCrashReports, getDoctorReport } from './diagnostics.js';
+import { listWorkspaceDir } from './workspace-fs.js';
 import { getContextUsageForSession } from './context-usage.js';
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { execFile as execFileCb } from 'node:child_process';
@@ -328,6 +329,9 @@ export function createBridge(deps: BridgeDeps): Bridge {
       const socket = new WebSocket(wsUrl);
       socket.addEventListener('open', () => {
         ws = socket;
+        // PD2：WS 建立/恢复必须让渲染端知道 —— 重连后渲染端据此重发订阅并拉权威快照
+        // （controller.resyncSubscriptions 挂在 onConnectionStatus('connected') 上）。
+        deps.sendStatus('connected');
       });
       socket.addEventListener('message', (ev) => {
         try {
@@ -341,6 +345,9 @@ export function createBridge(deps: BridgeDeps): Bridge {
         if (wsIntentionalClose) return;
         // 服务重启中：1s 后重试（重连成功前渲染端保持 reconnecting 角标）
         if (wsReconnectTimer === null && deps.serve.status !== 'offline') {
+          // PD2：非计划断开要如实告知渲染端（事件流已断，不能继续挂「已连接」假象），
+          // 也不得把运行中 turn 标成已停 —— reconnecting 角标 + 重连后恢复由渲染端处理。
+          deps.sendStatus('reconnecting', { error: '事件通道断开，正在重连' });
           wsReconnectTimer = setTimeout(() => {
             wsReconnectTimer = null;
             if (!wsIntentionalClose) connectWs();
@@ -542,7 +549,7 @@ export function createBridge(deps: BridgeDeps): Bridge {
       case 'settings:getConfig':
         return readSettingsConfig(deps.home, deps.root);
       case 'settings:updateConfig':
-        return updateSettingsConfig(deps.home, (args['patch'] as Record<string, unknown>) ?? {});
+        return updateSettingsConfig(deps.home, deps.root, (args['patch'] as Record<string, unknown>) ?? {});
       case 'settings:getAuthMasked':
         return readAuthMasked(deps.home);
       case 'settings:updateAuth':
@@ -594,6 +601,12 @@ export function createBridge(deps: BridgeDeps): Bridge {
         const entry = readSnapshotEntry(sid, seq, deps.home);
         if (entry === null) return { ok: false, error: '未找到对应快照' };
         return { ok: true, entry };
+      }
+      case 'listDir': {
+        // PD7：工作区只读列目录 —— 根恒为主进程持有的 serve --root，渲染端只传相对路径；
+        // realpath 边界校验（符号链接/junction 越界拒绝）在 workspace-fs 内实现。
+        const rel = typeof args['relativePath'] === 'string' ? args['relativePath'] : '';
+        return listWorkspaceDir(deps.root, rel);
       }
       case 'readFileForRef':
         return readFileForRefMain(

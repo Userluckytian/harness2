@@ -69,7 +69,7 @@ describe('settings:getConfig 契约', () => {
 describe('settings:updateConfig 契约', () => {
   it('白名单 patch 深合并进全局 config.json 并回读生效', () => {
     const home = tempHome();
-    const res = updateSettingsConfig(home, {
+    const res = updateSettingsConfig(home, home, {
       approval: { mode: 'bypass' },
       browser: { maxConcurrent: 4 },
     });
@@ -86,21 +86,21 @@ describe('settings:updateConfig 契约', () => {
 
   it('白名单外顶层 key 拒绝且不落盘', () => {
     const home = tempHome();
-    const res = updateSettingsConfig(home, { telemetry: { enabled: true } });
+    const res = updateSettingsConfig(home, home, { telemetry: { enabled: true } });
     expect(res.ok).toBe(false);
     expect(res.error).toContain('不允许的配置字段');
   });
 
   it('密钥类字段名拒绝（apiKey/appSecret 走 auth.json）', () => {
     const home = tempHome();
-    const res = updateSettingsConfig(home, { providers: { a: { apiKey: 'x' } } });
+    const res = updateSettingsConfig(home, home, { providers: { a: { apiKey: 'x' } } });
     expect(res.ok).toBe(false);
     expect(res.error).toContain('不允许写入密钥');
   });
 
   it('plan 审批模式已被内核支持（终端轨道 T1 新增第四态，桌面合并后同样接受）', () => {
     const home = tempHome();
-    const res = updateSettingsConfig(home, { approval: { mode: 'plan' } });
+    const res = updateSettingsConfig(home, home, { approval: { mode: 'plan' } });
     expect(res.ok).toBe(true);
     const raw = JSON.parse(readFileSync(join(home, '.harness2', 'config.json'), 'utf8')) as {
       approval?: { mode?: string };

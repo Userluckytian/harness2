@@ -72,20 +72,26 @@ export function ApprovalCenter() {
                 <div className="approval-note">已过期（服务端会拒收迟到决策）</div>
               ) : (
                 <div className="approval-actions">
-                  <button
-                    type="button"
-                    className="btn-allow"
-                    onClick={() => void controller.respondApproval(c.requestId, 'allow')}
-                  >
-                    允许
-                  </button>
-                  <button
-                    type="button"
-                    className="btn-deny"
-                    onClick={() => void controller.respondApproval(c.requestId, 'deny')}
-                  >
-                    拒绝（不执行）
-                  </button>
+                  {store.isApprovalResponding(c.requestId) ? (
+                    <span className="approval-note">提交中…（防重复提交）</span>
+                  ) : (
+                    <>
+                      <button
+                        type="button"
+                        className="btn-allow"
+                        onClick={() => void controller.respondApproval(c.requestId, 'allow')}
+                      >
+                        允许
+                      </button>
+                      <button
+                        type="button"
+                        className="btn-deny"
+                        onClick={() => void controller.respondApproval(c.requestId, 'deny')}
+                      >
+                        拒绝（不执行）
+                      </button>
+                    </>
+                  )}
                 </div>
               )}
             </div>

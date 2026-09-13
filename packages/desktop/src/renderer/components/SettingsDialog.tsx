@@ -153,7 +153,24 @@ function AppearanceSection({
   );
 }
 
-function ProvidersSection({ cfg }: { cfg: SettingsConfigShape; onSave: () => Promise<void> }) {
+function ProvidersSection({
+  cfg,
+  onSave,
+}: {
+  cfg: SettingsConfigShape;
+  onSave: (patch: Record<string, unknown>) => Promise<void>;
+}) {
+  // PD5：主模型改写入口（roles.main → 全局 config.json 白名单深合并）。生效范围如实标注：
+  // 运行中会话的 effective run-config 是创建期快照，新会话/重启 serve 后生效。
+  const mainRole = cfg.roles['main'] ?? { channel: '', model: '' };
+  const [mainChannel, setMainChannel] = useState(mainRole.channel);
+  const [mainModel, setMainModel] = useState(mainRole.model);
+  const [mainFeedback, setMainFeedback] = useState<string | null>(null);
+  const applyMain = (): void => {
+    void onSave({ roles: { main: { channel: mainChannel, model: mainModel } } })
+      .then(() => setMainFeedback('已写入全局配置；运行中会话不变，新会话/重启后生效'))
+      .catch((e: Error) => setMainFeedback(e.message));
+  };
   return (
     <Section title="模型与角色" desc="channel 列表与 roles 映射（config.json 同一份，与 CLI 共用）">
       <div className="settings-table">
@@ -178,8 +195,30 @@ function ProvidersSection({ cfg }: { cfg: SettingsConfigShape; onSave: () => Pro
           </div>
         ))}
       </div>
+      <div className="settings-table">
+        <div className="settings-table-row">
+          <span className="row-key">main（主模型）</span>
+          <input
+            className="settings-input mono"
+            value={mainChannel}
+            placeholder="channel（如 local-oai）"
+            onChange={(e) => setMainChannel(e.target.value)}
+          />
+          <input
+            className="settings-input mono"
+            value={mainModel}
+            placeholder="model（须在该 channel 的 models 内）"
+            onChange={(e) => setMainModel(e.target.value)}
+          />
+          <button type="button" className="btn-primary" onClick={applyMain}>
+            保存主模型
+          </button>
+        </div>
+      </div>
+      {mainFeedback !== null && <p className="settings-feedback">{mainFeedback}</p>}
       <p className="settings-note">
-        增删 provider / 调整 roles 当前请在 CLI 配置文件中进行（reasoning effort 由模型侧控制）。
+        模型改动写入**全局** config.json（与 CLI 共用同一份；密钥仍只进 auth.json，写前校验、原子落盘）。
+        运行中会话的生效配置不变，新会话/重启 serve 后生效；增删 provider 仍请在 CLI 配置文件中进行。
       </p>
       {cfg.sources.global === false && cfg.sources.project === false && (
         <p className="settings-warn">尚未找到任何配置文件（~/.harness2/config.json）</p>
@@ -741,7 +780,7 @@ export function SettingsDialog({
     () => ({
       general: prefs !== null ? <GeneralSection key="g" prefs={prefs} onSave={savePrefs} /> : <LoadingPane />,
       appearance: prefs !== null ? <AppearanceSection key="a" prefs={prefs} onSave={savePrefs} /> : <LoadingPane />,
-      providers: cfg !== null ? <ProvidersSection key="p" cfg={cfg} onSave={async () => {}} /> : <LoadingPane />,
+      providers: cfg !== null ? <ProvidersSection key="p" cfg={cfg} onSave={saveCfg} /> : <LoadingPane />,
       approval: cfg !== null ? <ApprovalSection key="ap" cfg={cfg} onSave={saveCfg} /> : <LoadingPane />,
       memory: cfg !== null ? <MemorySection key="m" cfg={cfg} onSave={saveCfg} /> : <LoadingPane />,
       browser: cfg !== null ? <BrowserSection key="b" cfg={cfg} onSave={saveCfg} /> : <LoadingPane />,
