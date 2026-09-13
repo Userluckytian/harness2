@@ -1,29 +1,55 @@
 // Skills 商店（阶段 10 Task 2，对照 dsh/hermes 的按需注入 skill 思想最小子集）：
 //   - 只做文本指令型 skill：markdown + YAML 简表 frontmatter（name/description 必填），
-//     无可执行脚本（Global Constraints 边界）；
-//   - 两级目录：项目级 <cwd>/.harness2/skills/ 优先于全局 ~/.harness2/skills/
-//     （同名项目覆盖 + 告警）；上限 50；坏文件跳过 + 告警；
+//     无可执行脚本（Global Constraints 边界）；frontmatter 中其它字段（allowed-tools、
+//     license、metadata 等）一律忽略不报错；description 支持块标量（| / >）续行；
+//   - 目录模型（解冻窗口 B 方案，用户确认必备）：
+//       · 单文件型  <dir>/<name>.md            —— 原能力
+//       · 文件夹型  <dir>/<name>/SKILL.md       —— 新增（技能名取 frontmatter 的 name）
+//     · 项目级：<root>/.harness2/skills（优先）→ <root>/.agents/skills（兜底）
+//     · 全局级：<数据根>/skills（优先）→ ~/.agents/skills（兜底；.agents 固定挂在用户
+//       主目录下，与 --home 数据根解耦）
+//     · 优先级：项目级覆盖全局级（同名覆盖 + 告警）；同层内 harness2 自有目录优先于
+//       .agents 兜底目录（先扫描者保留 + 告警）；上限 50；坏文件跳过 + 告警；
 //   - 列表每 turn 从磁盘重读（项目文件可中途新增/修改），注入侧只取名称+描述；
 //     全文经 skill 工具按需加载（load 同样现读磁盘）。
 // 隐私边界：skill 内容是用户自己放进仓库/主目录的指令文本，不脱敏、不上传。
-import { existsSync, readdirSync, readFileSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync, type Dirent } from 'node:fs';
 import { homedir } from 'node:os';
-import { join } from 'node:path';
+import { basename, dirname, join } from 'node:path';
 
 /** 项目/全局 skills 目录名（.harness2/skills） */
 export const SKILLS_DIR_NAME = 'skills';
 
+/** 文件夹型技能的入口文件名（<dir>/<name>/SKILL.md） */
+export const SKILL_FILE_NAME = 'SKILL.md';
+
 /** skill 数量上限（Global Constraints：超过按名称排序截断 + 告警） */
 export const SKILLS_MAX = 50;
 
+/** harness2 自有数据目录名（.harness2） */
+const HARNESS2_DIR = '.harness2';
+
+/** 用户主目录下的第三方技能目录名（.agents；与数据根解耦） */
+const AGENTS_DIR = '.agents';
+
 /** 项目级 skills 目录（相对 cwd；.harness2/skills） */
 export function projectSkillsRoot(cwd?: string): string {
-  return join(cwd ?? process.cwd(), '.harness2', SKILLS_DIR_NAME);
+  return join(cwd ?? process.cwd(), HARNESS2_DIR, SKILLS_DIR_NAME);
 }
 
-/** 全局 skills 目录（~/.harness2/skills） */
+/** 项目级 .agents skills 兜底目录（<cwd>/.agents/skills） */
+export function agentsProjectSkillsRoot(cwd?: string): string {
+  return join(cwd ?? process.cwd(), AGENTS_DIR, SKILLS_DIR_NAME);
+}
+
+/** 全局 skills 目录（~/.harness2/skills；--home 覆盖数据根） */
 export function defaultSkillsRoot(home?: string): string {
-  return join(home ?? homedir(), '.harness2', SKILLS_DIR_NAME);
+  return join(home ?? homedir(), HARNESS2_DIR, SKILLS_DIR_NAME);
+}
+
+/** 全局 .agents skills 兜底目录（固定挂在用户主目录下，与数据根无关；~/.agents/skills） */
+export function agentsGlobalSkillsRoot(home?: string): string {
+  return join(home ?? homedir(), AGENTS_DIR, SKILLS_DIR_NAME);
 }
 
 export interface SkillEntry {
@@ -31,7 +57,7 @@ export interface SkillEntry {
   description: string;
   /** 全文原文（含 frontmatter；skill 工具按需加载的就是它） */
   content: string;
-  /** 来源文件绝对路径 */
+  /** 来源文件绝对路径（单文件型 = *.md；文件夹型 = <name>/SKILL.md） */
   file: string;
   /** 来源层级（同名时 project 覆盖 global） */
   source: 'project' | 'global';
@@ -47,7 +73,8 @@ export interface SkillScanResult {
 /**
  * 解析 markdown frontmatter（YAML 简表）：首行 `---` 起、独立 `---` 行止，
  * 逐行 `key: value`（value 去引号）；缺 name/description、name 含空白 → null（坏文件）。
- * 未知键忽略；正文原样保留。
+ * 未知键忽略；description 支持块标量（`|` 字面 / `>` 折叠）续行（真实 skill 常见格式）。
+ * 正文原样保留。
  */
 export function parseSkillFrontmatter(raw: string): { name: string; description: string } | null {
   const lines = raw.replace(/^\uFEFF/, '').split(/\r?\n/);
@@ -61,7 +88,29 @@ export function parseSkillFrontmatter(raw: string): { name: string; description:
   }
   if (closeIndex === -1) return null; // frontmatter 未闭合
   const fields = new Map<string, string>();
+  // 块标量收集状态（description: | / > 的续行直到首个非缩进行）
+  let blockKey: string | undefined;
+  let blockKind: '|' | '>' | undefined;
+  let blockIndent = -1;
+  const blockLines: string[] = [];
+  const flushBlock = (): void => {
+    if (blockKey !== undefined && blockKind !== undefined && blockLines.length > 0) {
+      fields.set(blockKey, blockKind === '|' ? blockLines.join('\n') : blockLines.join(' '));
+    }
+    blockKey = undefined;
+    blockKind = undefined;
+    blockIndent = -1;
+    blockLines.length = 0;
+  };
   for (const line of lines.slice(1, closeIndex)) {
+    if (blockKey !== undefined) {
+      const m = /^(\s*)(.*)$/.exec(line);
+      if (m !== null && m[1]!.length > blockIndent && m[2]!.length > 0) {
+        blockLines.push(m[2]!); // 剥掉首行缩进后并入（块内缩进差异不深究）
+        continue;
+      }
+      flushBlock();
+    }
     const trimmed = line.trim();
     if (trimmed.length === 0) continue;
     const sep = trimmed.indexOf(':');
@@ -71,8 +120,16 @@ export function parseSkillFrontmatter(raw: string): { name: string; description:
     if ((value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'"))) {
       value = value.slice(1, -1);
     }
-    if (key.length > 0 && !fields.has(key)) fields.set(key, value);
+    if (key.length > 0 && !fields.has(key)) {
+      fields.set(key, value);
+      if (value === '|' || value === '>' || value === '|-' || value === '>-') {
+        blockKey = key;
+        blockKind = value[0] as '|' | '>';
+        blockIndent = /^\s*/.exec(line)?.[0].length ?? 0;
+      }
+    }
   }
+  flushBlock();
   const name = fields.get('name') ?? '';
   const description = fields.get('description') ?? '';
   if (name.length === 0 || /\s/.test(name)) return null;
@@ -93,22 +150,32 @@ function parseSkillFile(file: string, source: 'project' | 'global'): SkillEntry 
   return { name: fm.name, description: fm.description, content: raw, file, source };
 }
 
-/** 扫描单层目录内的 *.md 文件（目录不存在/未配置 = 空；坏文件跳过并告警） */
+/**
+ * 扫描单层目录：单文件型 `*.md` + 文件夹型 `<name>/SKILL.md`
+ * （目录不存在/未配置 = 空；无 SKILL.md 的文件夹与其它非技能文件一样静默忽略；
+ * 坏文件跳过并告警）。按目录项名称排序保证扫描顺序确定。
+ */
 function scanLevel(dir: string | undefined, source: 'project' | 'global', warnings: string[]): SkillEntry[] {
   if (dir === undefined || !existsSync(dir)) return [];
-  let files: string[];
+  let dirents: Dirent[];
   try {
-    files = readdirSync(dir, { withFileTypes: true })
-      .filter((e) => e.isFile() && e.name.endsWith('.md'))
-      .map((e) => e.name)
-      .sort(); // 排序保证扫描顺序确定
+    dirents = readdirSync(dir, { withFileTypes: true }).sort((a, b) =>
+      a.name < b.name ? -1 : a.name > b.name ? 1 : 0,
+    );
   } catch (e) {
     warnings.push(`skills: ${source} 目录不可读，已跳过: ${(e as Error).message}`);
     return [];
   }
   const entries: SkillEntry[] = [];
-  for (const name of files) {
-    const file = join(dir, name);
+  for (const d of dirents) {
+    let file: string | undefined;
+    if (d.isFile() && d.name.endsWith('.md')) {
+      file = join(dir, d.name);
+    } else if (d.isDirectory()) {
+      const skillFile = join(dir, d.name, SKILL_FILE_NAME);
+      if (existsSync(skillFile)) file = skillFile;
+    }
+    if (file === undefined) continue;
     const entry = parseSkillFile(file, source);
     if (entry === null) {
       warnings.push(`skills: 跳过无效文件 ${file}（需要 markdown frontmatter：name 与 description 必填）`);
@@ -119,33 +186,78 @@ function scanLevel(dir: string | undefined, source: 'project' | 'global', warnin
   return entries;
 }
 
+/** 标准技能目录布局判定：<X>/.harness2/skills（项目/全局两级共用同一布局） */
+function isStandardSkillsLayout(dir: string | undefined): boolean {
+  return dir !== undefined && basename(dir) === SKILLS_DIR_NAME && basename(dirname(dir)) === HARNESS2_DIR;
+}
+
+/** 项目级 .agents 兜底目录推导：<root>/.agents/skills（仅标准布局时自动附带） */
+function deriveAgentsProjectDir(projectDir: string | undefined): string | undefined {
+  if (projectDir === undefined || !isStandardSkillsLayout(projectDir)) return undefined;
+  return join(dirname(dirname(projectDir)), AGENTS_DIR, SKILLS_DIR_NAME);
+}
+
+/** 全局 .agents 兜底目录推导：固定挂在用户主目录下（与数据根解耦，--home 不改变它） */
+function deriveAgentsGlobalDir(globalDir: string | undefined): string | undefined {
+  if (globalDir === undefined || !isStandardSkillsLayout(globalDir)) return undefined;
+  return join(homedir(), AGENTS_DIR, SKILLS_DIR_NAME);
+}
+
+export interface SkillStoreOptions {
+  /** 项目级 .agents 兜底目录；缺省时若 projectDir 为标准 `<root>/.harness2/skills` 布局则自动推导 */
+  agentsProjectDir?: string;
+  /** 全局 .agents 兜底目录（固定挂在用户主目录下，与数据根解耦）；缺省 = `~/.agents/skills`（标准布局时生效） */
+  agentsGlobalDir?: string;
+}
+
 /**
  * Skills 商店：scan()/load() 每次从磁盘重读（不缓存——列表每 turn 刷新的语义在此收口）。
  * projectDir/globalDir 传 undefined 表示跳过该层级（测试可只扫一级）。
+ * 每层可带 .agents 兜底目录（见 SkillStoreOptions）：显式注入优先；缺省仅对标准
+ * `.harness2/skills` 布局自动推导，任意自定义目录不附带（避免误扫无关路径）。
  */
 export class SkillStore {
+  private readonly agentsProjectDir: string | undefined;
+  private readonly agentsGlobalDir: string | undefined;
+
   constructor(
     private readonly projectDir?: string,
     private readonly globalDir?: string,
-  ) {}
+    options: SkillStoreOptions = {},
+  ) {
+    this.agentsProjectDir = options.agentsProjectDir ?? deriveAgentsProjectDir(this.projectDir);
+    this.agentsGlobalDir = options.agentsGlobalDir ?? deriveAgentsGlobalDir(this.globalDir);
+  }
 
-  /** 两级扫描 + 合并（project 同名覆盖 global + 告警）+ 上限截断；不抛错（错误转告警） */
+  /** 两层扫描 + 合并（project 同名覆盖 global + 告警）+ 上限截断；不抛错（错误转告警） */
   scan(): SkillScanResult {
     const warnings: string[] = [];
-    const global = scanLevel(this.globalDir, 'global', warnings);
-    const project = scanLevel(this.projectDir, 'project', warnings);
+    // 层内扫描顺序：harness2 自有目录优先 → .agents 兜底目录（同层不同目录同名 →
+    // 保留先扫描者 + 告警）；层级本身被跳过（传 undefined）时兜底目录一并跳过
+    const global = (this.globalDir === undefined ? [] : [this.globalDir, this.agentsGlobalDir]).flatMap((d) =>
+      scanLevel(d, 'global', warnings),
+    );
+    const project = (this.projectDir === undefined ? [] : [this.projectDir, this.agentsProjectDir]).flatMap((d) =>
+      scanLevel(d, 'project', warnings),
+    );
     const byName = new Map<string, SkillEntry>();
     // 同源重名（审查 P2-2）与跨级覆盖分开：层内两个文件 frontmatter 同名 → 保留
-    // 先文件（scanLevel 按文件名排序，结果确定）+ 单独告警指明被丢弃路径；跨级才是
+    // 先文件（scanLevel 按名称排序，结果确定）+ 单独告警指明被丢弃路径；跨级才是
     // 「项目级覆盖全局同名」（此前层内重名误用覆盖文案且先文件被静默丢弃）
     const putLevel = (entries: readonly SkillEntry[], level: 'project' | 'global'): void => {
+      const label = level === 'project' ? '项目' : '全局';
       for (const entry of entries) {
         const existing = byName.get(entry.name);
         if (existing !== undefined) {
           if (existing.source === entry.source) {
-            warnings.push(
-              `skills: ${level === 'project' ? '项目' : '全局'}层内重名 "${entry.name}"，丢弃 ${entry.file}（保留 ${existing.file}）`,
-            );
+            if (dirname(existing.file) === dirname(entry.file)) {
+              warnings.push(`skills: ${label}层内重名 "${entry.name}"，丢弃 ${entry.file}（保留 ${existing.file}）`);
+            } else {
+              // 同层不同目录（.harness2 自有目录先扫 → 优先；.agents 兜底被覆盖）
+              warnings.push(
+                `skills: ${label}层同名 "${entry.name}"：优先目录覆盖兜底目录，丢弃 ${entry.file}（保留 ${existing.file}）`,
+              );
+            }
             continue;
           }
           warnings.push(`skills: 项目级 "${entry.name}" 覆盖全局同名（${entry.file}）`);
