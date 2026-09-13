@@ -24,6 +24,12 @@ function writeSkill(dir: string, fileName: string, name: string, description: st
   writeFileSync(join(dir, fileName), `---\nname: ${name}\ndescription: ${description}\n---\n\n正文\n`, 'utf8');
 }
 
+/** 隔离 homedir()：技能兜底目录 ~/.agents/skills 固定挂用户主目录（与 --home 解耦），
+ *  测试须把子进程的 USERPROFILE/HOME 一并指向临时目录，否则真机技能会污染断言。 */
+function isolatedEnv(home: string): NodeJS.ProcessEnv {
+  return { ...process.env, USERPROFILE: home, HOME: home };
+}
+
 describe('harness2 skill list', () => {
   it('列出项目级 + 全局 skills（[project]/[global] 来源标注）', () => {
     const root = tmpDir();
@@ -32,6 +38,7 @@ describe('harness2 skill list', () => {
     writeSkill(join(home, '.harness2', 'skills'), 'commit.md', 'commit', '提交话术');
     const out = execFileSync('node', [cliEntry, 'skill', 'list', '--root', root, '--home', home], {
       encoding: 'utf8',
+      env: isolatedEnv(home),
     });
     expect(out).toContain('commit  [global]  提交话术');
     expect(out).toContain('deploy  [project]  部署话术');
@@ -44,6 +51,7 @@ describe('harness2 skill list', () => {
     writeSkill(join(home, '.harness2', 'skills'), 'dup.md', 'dup', '全局版');
     const r = spawnSync('node', [cliEntry, 'skill', 'list', '--root', root, '--home', home], {
       encoding: 'utf8',
+      env: isolatedEnv(home),
     });
     expect(r.status).toBe(0);
     expect(r.stdout).toContain('dup  [project]  项目版');
@@ -52,8 +60,10 @@ describe('harness2 skill list', () => {
   });
 
   it('无 skills：空列表提示', () => {
-    const out = execFileSync('node', [cliEntry, 'skill', 'list', '--root', tmpDir(), '--home', tmpDir()], {
+    const home = tmpDir();
+    const out = execFileSync('node', [cliEntry, 'skill', 'list', '--root', tmpDir(), '--home', home], {
       encoding: 'utf8',
+      env: isolatedEnv(home),
     });
     expect(out).toContain('（无 skill');
   });
