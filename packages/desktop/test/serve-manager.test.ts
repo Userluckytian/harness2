@@ -2,12 +2,23 @@
 //   纯函数：端口行解析 / 退避序列 / 重启决策 / 锁文件读取 / pid 存活
 //   ServeManager：真实子进程 start（spawn -e 假 serve：打印端口 JSON + 起 HTTP 健康端点）、
 //   stop 优雅退出、意外退出自动重启（退避可调小）、按锁文件采纳既有实例。
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { spawn, type ChildProcess } from 'node:child_process';
 import { EventEmitter } from 'node:events';
 import { createServer, type Server } from 'node:http';
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
+
+// P2 home 缺省回落：mock node:os.homedir（serve-manager 构造期回落读它），
+// 其余 node:os 成员走真实实现（tmpdir 等不受影响）。
+const osMock = vi.hoisted(() => ({ homedir: null as (() => string) | null }));
+vi.mock('node:os', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('node:os')>();
+  return {
+    ...actual,
+    homedir: () => (osMock.homedir !== null ? osMock.homedir() : actual.homedir()),
+  };
+});
 import { join } from 'node:path';
 import {
   ServeManager,
@@ -31,6 +42,7 @@ function tmpDir(prefix = 'h2-desktop-'): string {
   return d;
 }
 afterEach(async () => {
+  osMock.homedir = null;
   for (const c of children.splice(0)) c.kill();
   for (const s of servers.splice(0)) {
     await new Promise<void>((resolve) => s.close(() => resolve()));
@@ -393,6 +405,38 @@ describe('ServeManager（真实子进程）', () => {
     } finally {
       delete process.env['FAKE_TOKEN'];
       delete process.env['FAKE_HOME'];
+    }
+  }, 15000);
+
+  it('P2 home 缺省回落 homedir()：不传 home 也能从锁读 token 通过严格健康检查，spawn 自带 --home（真机 P1 根因）', async () => {
+    const fakeHome = tmpDir();
+    // 构造期 homedir() 回落 → 指到临时目录；不注入 home 选项，复现 dev 启动路径调用形态
+    osMock.homedir = () => fakeHome;
+    const capturedArgs: string[][] = [];
+    process.env['FAKE_TOKEN'] = 'tok-fallback';
+    process.env['FAKE_HOME'] = fakeHome;
+    try {
+      const mgr = makeManager({
+        healthTimeoutMs: 3000,
+        spawnImpl: ((file: string, args: string[], opts: Record<string, unknown>) => {
+          capturedArgs.push(args);
+          return spawn(file, ['-e', FAKE_SERVE_SCRIPT], opts as never);
+        }) as unknown as SpawnImpl,
+      });
+      const { port, adopted } = await mgr.start();
+      expect(adopted).toBe(false);
+      expect(port).toBeGreaterThan(0);
+      // 回落 home 的锁 token 被读到 → 严格鉴权健康检查通过
+      expect(mgr.authToken).toBe('tok-fallback');
+      const args = capturedArgs[0] ?? [];
+      const homeIdx = args.indexOf('--home');
+      expect(homeIdx).toBeGreaterThan(-1);
+      expect(args[homeIdx + 1]).toBe(fakeHome);
+      await mgr.stop();
+    } finally {
+      delete process.env['FAKE_TOKEN'];
+      delete process.env['FAKE_HOME'];
+      osMock.homedir = null;
     }
   }, 15000);
 });

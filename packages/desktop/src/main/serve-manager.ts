@@ -9,6 +9,7 @@
 // 纯函数（端口行解析/退避/重启决策/锁文件读取）拆出以便单测。
 import { spawn, type ChildProcess } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';
+import { homedir } from 'node:os';
 import { join } from 'node:path';
 import type { ConnectionStatus, StatusDetail } from '../shared/protocol.js';
 
@@ -173,11 +174,17 @@ export class ServeManager {
   /** P2：本实例/采纳实例的一次性 token（从 serve.lock 读；渲染端不出网，仅主进程用于 HTTP/WS 鉴权） */
   private token: string | null = null;
 
+  /** 归一化 home：构造期把 home 缺省回落为 homedir()（P1 加固）——
+   *  「采纳既有实例 / 读锁 token / spawn --home」在任何调用方都成立（dev 启动此前漏传 home） */
+  private readonly home: string;
+
   status: ServeManagerStatus = 'offline';
   /** 最近一次状态详情（供 getStatus 主动查询；port/error/attemptsLeft） */
   private statusDetail: StatusDetail | undefined;
 
-  constructor(private readonly options: ServeManagerOptions) {}
+  constructor(private readonly options: ServeManagerOptions) {
+    this.home = options.home ?? homedir();
+  }
 
   /** 当前状态 + 详情（渲染端启动时经 getStatus 主动查询，避免只靠可能错过的 onStatus 事件） */
   getStatus(): { status: ServeManagerStatus; detail?: StatusDetail } {
@@ -205,8 +212,7 @@ export class ServeManager {
 
   /** 从 serve.lock 重读 token（每次健康检查重读：兼容锁文件晚于 stdout 端口行的极短竞态） */
   private tokenFromLock(): string | undefined {
-    if (this.options.home === undefined) return undefined;
-    return readServeLock(this.options.home)?.token;
+    return readServeLock(this.home)?.token;
   }
 
   private setStatus(status: ServeManagerStatus, detail?: StatusDetail): void {
@@ -227,8 +233,8 @@ export class ServeManager {
     this.token = null;
     this.setStatus('connecting');
     // 端口锁被既有实例持有 → 采纳（避免与 CLI serve 双实例互踢）
-    if ((this.options.adoptExisting ?? true) && this.options.home !== undefined) {
-      const lock = readServeLock(this.options.home);
+    if (this.options.adoptExisting ?? true) {
+      const lock = readServeLock(this.home);
       if (lock && isPidAlive(lock.pid)) {
         try {
           await waitForHealth(lock.port, 3000, fetch, 200, () => lock.token);
@@ -253,7 +259,8 @@ export class ServeManager {
       '0',
       ...(this.options.provider === 'mock' ? ['--provider', 'mock'] : []),
       ...(this.options.root !== undefined ? ['--root', this.options.root] : []),
-      ...(this.options.home !== undefined ? ['--home', this.options.home] : []),
+      '--home',
+      this.home,
     ];
   }
 
