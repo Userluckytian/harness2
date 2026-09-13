@@ -47,6 +47,8 @@ module.exports = tseslint.config(
       '**/coverage/**',
       // 本机临时目录（.gitignore 的 .tmp-*/；A0 起用于各类一次性脚本，不入库）
       '**/.tmp-*/**',
+      // P0 选型实验证据目录（spike/）：一次性 demo 与原始数据，不参与 lint
+      '**/spike/**',
       // 基线快照与 fixture：格式化/自动修复会污染 api-surface.test.ts 的比对基准（B2 红线 1）
       'packages/core/test/fixtures/**',
       'packages/core/fixtures/**',
