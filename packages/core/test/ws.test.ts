@@ -8,6 +8,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
   MemoryStore,
+  SkillStore,
   startServe,
   MockProvider,
   type MockScript,
@@ -329,7 +330,8 @@ describe('serve 记忆装配（审查 P1-1 防回归）', () => {
       { operation: 'add', target: 'memory', text: '项目使用 pnpm monorepo' },
       { operation: 'add', target: 'user', text: '用户偏好简体中文' },
     ]);
-    // 注入假 store + 记录 requests 的 mock provider（nudgeInterval 拉高：本例不触发复盘）
+    // 注入假 store + 记录 requests 的 mock provider（nudgeInterval 拉高：本例不触发复盘）；
+    // skills 显式注入空 store：本用例只关心 memory 装配，不受真机 ~/.agents/skills 默认扫描影响
     const provider = new MockProvider([{ textChunks: ['回复。'] }]);
     const handle = await startServe({
       requireToken: false,
@@ -337,6 +339,7 @@ describe('serve 记忆装配（审查 P1-1 防回归）', () => {
       home: tmpDir('h2-ws-home-'),
       root: tmpDir('h2-ws-root-'),
       provider,
+      skills: new SkillStore(undefined, undefined),
       memory: { store, mode: 'auto', nudgeInterval: 999, reviewProvider: provider },
     });
     handles.push(handle);
