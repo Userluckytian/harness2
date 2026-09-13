@@ -215,7 +215,12 @@ describe('PD3 / F6：任务面板并行与写互斥观察（真实 serve，观�
       textChunks: [`${tag}1`, `${tag}2`, `${tag}3`, `${tag}4`, `${tag}5`, `${tag}6`],
       chunkDelayMs: 300,
     });
-    const childProvider = new MockProvider([slowChild('子甲'), slowChild('子乙'), slowChild('子丙'), { textChunks: ['补位回执'] }]);
+    const childProvider = new MockProvider([
+      slowChild('子甲'),
+      slowChild('子乙'),
+      slowChild('子丙'),
+      { textChunks: ['补位回执'] },
+    ]);
     const { bridge, frames, api, emitConnected } = await setup(
       new MockProvider([
         {
@@ -302,7 +307,11 @@ describe('PD3 / F6：任务面板并行与写互斥观察（真实 serve，观�
       textChunks: [`${tag}1`, `${tag}2`, `${tag}3`, `${tag}4`, `${tag}5`, `${tag}6`],
       chunkDelayMs: 300,
     });
-    const childProvider = new MockProvider([slowWriteChild('写任务一'), slowWriteChild('写任务二'), { textChunks: ['补位回执'] }]);
+    const childProvider = new MockProvider([
+      slowWriteChild('写任务一'),
+      slowWriteChild('写任务二'),
+      { textChunks: ['补位回执'] },
+    ]);
     const { bridge, frames, api, emitConnected } = await setup(
       new MockProvider([
         {
