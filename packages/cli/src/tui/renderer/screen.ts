@@ -35,6 +35,11 @@ export class Screen {
     return this._started;
   }
 
+  /** P4-1：OSC8 超链接开关透传（DiffPresenter；装配层按 deps.env 的 HARNESS2_OSC8 驱动） */
+  setOsc8Enabled(enabled: boolean): void {
+    this.presenter.osc8Enabled = enabled;
+  }
+
   /** 进入 TUI 模式：进 alt-screen + 隐藏光标 +（可选）开鼠标上报 + SGR 复位。幂等。 */
   start(options: ScreenStartOptions = {}): void {
     if (this._started || this._stopped) return;

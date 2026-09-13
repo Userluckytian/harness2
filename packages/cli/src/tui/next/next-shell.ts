@@ -125,6 +125,21 @@
 //   - 斜杠命令 /plan /auto /always-approve 直接设置对应模式（/always-approve 为 toggle，
 //     grok 语义；/plan /auto 幂等设置）。
 //   - 底边指示顺序：模式（normal 省略）· scrollback 焦点 · 寄放提示 · 瞬时 hint。
+//
+// P4-1 选择与复制（OSC52）+ 超链接（OSC8）（2026-09-12）：
+//   - 鼠标拖选：滚动区矩形内左键 down → move 扩展 → up 完成（方向无关、跨行、宽字符
+//     按首列整字）；单击（无移动）= 清除选择。焦点无关（scrollback 焦点/非焦点均可）；
+//     approval/queue/subagent/候选层在先，既有点击语义零变化；滚轮放行照常滚动。
+//     已知简化：拖选中滚轮不更新选择；子视图/picker 打开时鼠标被 subagentLayer 接管，
+//     选择仅作用于主转录（如实登记）。
+//   - 复制（OSC52）：Ctrl+C 有选择时优先复制（写 `\x1b]52;c;<base64>\x1b\\` 到 stdout、
+//     清选择、hint「已复制 N 字符」），无选择走既有 guard 协议（优先级不打扰）；Esc 清
+//     选择（先于 busy abort/清草稿）；y（滚动区焦点）同样复制。Windows Terminal 1.17+
+//     支持 OSC52，老终端忽略序列（无害）。
+//   - 超链接（OSC8）：scrollback 绘制时检测 `https?://` 非空白区段标 linkId，
+//     diff-presenter 按连续 run 包裹（见 renderer/osc.ts 兼容面注释）；软折行切断的
+//     URL 尾段不标（不给错误 href）。开关：HARNESS2_SELECT=0 关选择复制、
+//     HARNESS2_OSC8=0 关超链接（均默认开启，=0 完全旁路）。
 import { homedir } from 'node:os';
 import type { ChatOptions } from '../../legacy-chat.js';
 import {
@@ -165,6 +180,7 @@ import {
 } from '../transcript.js';
 import type { WriteTarget } from '../renderer/diff-presenter.js';
 import { ALT_SCREEN_EXIT, MOUSE_OFF, SHOW_CURSOR } from '../renderer/ansi.js';
+import { osc52Copy } from '../renderer/osc.js';
 import { Screen } from '../renderer/screen.js';
 import {
   renderChat,
@@ -176,7 +192,7 @@ import {
   type ChatScreenState,
 } from './chat-screen.js';
 import { projectTranscript, subagentDescription, type ProjectionLine } from './projection.js';
-import { Scrollback } from './scrollback.js';
+import { Scrollback, type SelectionPoint } from './scrollback.js';
 import { wrapTextByWidth, type OverlaySpec } from './overlay.js';
 import { candidateItemAt } from './composer.js';
 import {
@@ -191,6 +207,11 @@ import { terminalEvent } from '../useTurnStream.js';
 /** next 渲染开关（runInkChat 入口分支用；默认关闭 → legacy ink 不变） */
 export function shouldUseNextRenderer(env: Record<string, string | undefined>): boolean {
   return env.HARNESS2_RENDERER === 'next';
+}
+
+/** P4-1 选择开关：HARNESS2_SELECT=0 时鼠标拖选/键盘复制完全旁路（默认开启） */
+export function selectionEnabledForEnv(env: Record<string, string | undefined>): boolean {
+  return env.HARNESS2_SELECT !== '0';
 }
 
 // —— 常量（对齐既有装配的口径）——
@@ -567,6 +588,10 @@ export interface NextChatHarness {
   pendingApproval(): string | null;
   /** scrollback 逻辑行快照（测试断言用；wrap 段拼回 = 原逻辑行） */
   logicalLines(): string[];
+  /** P4-1：当前选中文本（无选择 = 空串；测试断言用） */
+  selectedText(): string;
+  /** P4-1：是否存在非零宽选择（测试断言用） */
+  hasSelection(): boolean;
   /** P3-D：子视图逻辑行快照（null = 视图未打开） */
   subagentViewLines(): string[] | null;
   isBusy(): boolean;
@@ -590,6 +615,8 @@ export function createNextChatHarness(runtime: ChatRuntime, deps: NextChatHarnes
   // 重复写无害）；关闭序列在 runNextChat 的 cleanup 随 screen.stop 一并写出。开启后
   // parser 产出 focus 事件 → dispatcher 兜底更新 focused → notifier 策略自然生效。
   deps.out.write(FOCUS_REPORT_ON);
+  // P4-1：OSC8 开关随 deps.env 驱动（headless 测试注入；真机 process.env 同值）
+  screen.setOsc8Enabled(env.HARNESS2_OSC8 !== '0');
   // DECSET 1003 全 motion 鼠标上报（P3-C 悬停改选；与 screen.start 的 MOUSE_ON 叠加，幂等）
   deps.out.write(MOUSE_ALL_MOTION_ON);
 
@@ -625,6 +652,15 @@ export function createNextChatHarness(runtime: ChatRuntime, deps: NextChatHarnes
   // Ctrl+O 共享此单态变量（开启时新审批经 gate.choose('a') 代答，红线 6）。
   let uiMode: UiMode = 'normal';
   let scrollbackFocus = false; // Tab 双态焦点：false = 输入框（默认），true = 滚动区（折叠键族生效）
+
+  // —— P4-1 选择与复制（OSC52）状态 ——
+  // 开关：HARNESS2_SELECT=0 完全旁路（鼠标不进选择态、Ctrl+C/y 不复制）。选择几何
+  // （anchor/head）挂在 state.scrollback 上（本层只驱动）；子视图/picker 打开时鼠标
+  // 被 subagentLayer 整体接管，选择仅作用于主转录（如实登记，不做子视图内选择）。
+  const selectEnabled = selectionEnabledForEnv(env);
+  let selDragging = false; // 鼠标左键拖选进行中（down 于滚动区 → move 扩展 → up 结束）
+  let selMoved = false; // down 后是否发生过位置变化（up 时区分拖选与单击清除）
+  let selDownPt: SelectionPoint | null = null; // 本次拖选起点（move 位移检测基准）
 
   // —— P3-D 子代理块（耗时/动画）与全屏子视图状态 ——
   // 耗时为 UI 层近似计时：subagent tool/call → tool/result 的 turn 事件流间隔（含审批等待/
@@ -979,6 +1015,32 @@ export function createNextChatHarness(runtime: ChatRuntime, deps: NextChatHarnes
       invalidate();
     }, HINT_CLEAR_MS);
     invalidate();
+  }
+
+  // —— P4-1 选择与复制（OSC52）——
+  /**
+   * 有选择时复制到系统剪贴板（OSC52 写 stdout，Buffer base64 编码），清选择并提示
+   * 「已复制 N 字符」。无选择返回 false（Ctrl+C 落回 guard 协议，优先级不打扰既有语义）。
+   */
+  function copySelectionToClipboard(): boolean {
+    if (!selectEnabled) return false;
+    const sb = state.scrollback;
+    if (!sb.hasSelection) return false;
+    const text = sb.getSelectedText();
+    deps.out.write(osc52Copy(text));
+    sb.clearSelection();
+    showHint(`已复制 ${text.length} 字符`);
+    return true;
+  }
+
+  /** 鼠标事件 → 选择坐标点（滚动区矩形内换算绝对物理行；行/列钳制） */
+  function selectionPointFromMouse(mouseCol: number, mouseRow: number): SelectionPoint {
+    const sb = state.scrollback;
+    const rect = layoutChat(screen.rows, screen.cols, state).scrollback;
+    const win = sb.visibleWindow(rect.height); // 与 drawScrollback 同参：scrollTop 幂等
+    const relRow = mouseRow - rect.top;
+    const absRow = Math.min(Math.max(0, win.scrollTop + relRow), Math.max(0, sb.totalRows - 1));
+    return { row: absRow, col: Math.min(Math.max(0, mouseCol), contentCols() - 1) };
   }
 
   // —— 审批 overlay（P3-B blocking card：键盘接管 / 寄放两态 + Ctrl+F 全文展开）——
@@ -1652,13 +1714,23 @@ export function createNextChatHarness(runtime: ChatRuntime, deps: NextChatHarnes
     onSubmit: (text) => submit(text),
     onInterrupt: () => interrupt(),
     extraKeyHandler: (ev) => {
-      if (ev.modifiers.ctrl && ev.key === 'c') return 'ignored'; // 让内置 onInterrupt（guard 协议）处理
+      // Ctrl+C 有选择时优先复制（P4-1：OSC52 + 清选择 + hint），无选择走 guard 协议
+      if (ev.modifiers.ctrl && ev.key === 'c') {
+        if (copySelectionToClipboard()) return 'consumed';
+        return 'ignored'; // 让内置 onInterrupt（guard 协议）处理
+      }
       // 其余任意按键重置退出协议（对齐 Composer：非 Ctrl+C 按键清窗口与提示）
       ctrlCGuard.reset();
       clearHint();
       // Ctrl+D 不在此拦截：keymap 裁决 = 半页下滚，由 chat-controller 内置消费（半页滚动
       // 与退出语义不冲突——退出只走 Ctrl+C 双击与 /exit，见文件头裁决说明）
       if (ev.key === 'escape') {
+        // P4-1：有选择先清选择（Esc 清除选择语义），不停止 turn、不清草稿
+        if (selectEnabled && state.scrollback.hasSelection) {
+          state.scrollback.clearSelection();
+          invalidate();
+          return 'consumed';
+        }
         if (busy) {
           abortCurrentTurn(); // 忙时 Esc：停止当前 turn（不清草稿，对齐 Composer）
           return 'consumed';
@@ -1742,6 +1814,10 @@ export function createNextChatHarness(runtime: ChatRuntime, deps: NextChatHarnes
           openSubagentPicker();
           return 'consumed';
         }
+        // P4-1：y = 复制选中文本（有选择才消费；无选择落入下方字母键回输入框语义）
+        if (ev.key === 'y' && copySelectionToClipboard()) {
+          return 'consumed';
+        }
         if (ev.text !== undefined && ev.text.length > 0) {
           // 其余字母键自动回到输入框（grok simple 模式语义），字符照常走内置插入
           scrollbackFocus = false;
@@ -1783,6 +1859,53 @@ export function createNextChatHarness(runtime: ChatRuntime, deps: NextChatHarnes
         return true;
       }
       return false;
+    },
+  };
+
+  // —— P4-1 选择鼠标层（拖选转录文本；位于候选层之后、composer 层之前）——
+  // 优先级契约（不破坏既有点击语义）：approval/queue/subagent 层在先（接管期本层自然
+  // 收不到/让位）；候选区 move/scroll 由 candidateMouseLayer 在先消费；本层只消费滚动区
+  // 矩形内的 down/move/up（拖选），滚轮放行（composer 层照常滚转录）；滚动区外的
+  // down（候选区/状态行/快捷键条/composer）一律不消费——既有点击语义零变化。
+  // 焦点无关（scrollback 焦点或非焦点均可拖选，keymap 裁决）。滚轮拖选中的滚动不更新
+  // 选择（wheel 不经本层，已知简化）。
+  const selectionMouseLayer: InputLayer = {
+    name: 'selection-mouse',
+    handle: (event: InputEvent): boolean => {
+      if (!selectEnabled || event.type !== 'mouse') return false;
+      if (approvalActive()) return false; // 审批卡接管期让位（寄放态也不拖选，避免误触）
+      if (event.kind === 'scroll') return false; // 滚轮照常（composer 层滚转录）
+      const rect = layoutChat(screen.rows, screen.cols, state).scrollback;
+      const relRow = event.row - rect.top;
+      const inContent =
+        rect.height > 0 && relRow >= 0 && relRow < rect.height && event.col >= 0 && event.col < contentCols();
+      if (event.kind === 'down') {
+        if (event.button !== 0 || !inContent) return false; // 右/中键与非滚动区不启动选择
+        selDragging = true;
+        selMoved = false;
+        selDownPt = selectionPointFromMouse(event.col, event.row);
+        state.scrollback.beginSelection(selDownPt);
+        invalidate();
+        return true;
+      }
+      if (event.kind === 'move') {
+        if (!selDragging || selDownPt === null) return false;
+        if (inContent) {
+          const p = selectionPointFromMouse(event.col, event.row);
+          if (p.row !== selDownPt.row || p.col !== selDownPt.col) selMoved = true;
+          state.scrollback.extendSelection(p);
+          invalidate();
+        }
+        return true; // 拖出滚动区：维持拖动态不更新（up 结束）
+      }
+      // up：拖选结束。无移动（单击）= 清除选择；有移动 = 保留选择
+      if (!selDragging) return false;
+      selDragging = false;
+      if (!selMoved) {
+        state.scrollback.clearSelection();
+        invalidate();
+      }
+      return true;
     },
   };
 
@@ -1917,7 +2040,14 @@ export function createNextChatHarness(runtime: ChatRuntime, deps: NextChatHarnes
   };
 
   const dispatcher: InputDispatcher = createInputDispatcher({
-    layers: [approvalLayer, queueLayer, subagentLayer, candidateMouseLayer, createComposerLayer(controller)],
+    layers: [
+      approvalLayer,
+      queueLayer,
+      subagentLayer,
+      candidateMouseLayer,
+      selectionMouseLayer,
+      createComposerLayer(controller),
+    ],
     fallback: (event) => {
       if (event.type === 'focus') {
         focused = event.direction === 'in';
@@ -2009,6 +2139,8 @@ export function createNextChatHarness(runtime: ChatRuntime, deps: NextChatHarnes
       for (let i = 0; i < sb.lineCount; i += 1) out.push(sb.rowOf(i).join(''));
       return out;
     },
+    selectedText: () => state.scrollback.getSelectedText(),
+    hasSelection: () => state.scrollback.hasSelection,
     subagentViewLines() {
       const sv = state.subagentView;
       if (!sv) return null;
