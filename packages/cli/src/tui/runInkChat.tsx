@@ -25,8 +25,8 @@ import { QueuePanel, cancelQueueItem, type QueuePanelItem } from './panels/queue
 import { RetryPanel, retryBudgetHasActivity, type RetryBudgetSnapshot } from './panels/retry-panel.js';
 import { TaskPanel } from './panels/task-panel.js';
 import { decideTuiMode, detectTerminalCapabilities, hasModernTerminalMarker } from './terminal-capabilities.js';
-import { parseCommand, HELP_TEXT } from '../commands.js';
 import { runSharedCommand, type InkCommandIo } from './ink-commands.js';
+import { createShellCommandDispatcher, type ShellCommandContext } from '../shell-commands.js';
 import { describeSteerResult } from '../steer.js';
 import { expandContextRefs, hasContextRefs } from '../context-ref.js';
 import {
@@ -48,7 +48,7 @@ import {
   MODE_ALIAS_TO_CORE,
   type ModeAlias,
 } from '../mode-alias.js';
-import { getContextUsage } from '@harness2/core';
+import { parseCoreCommand, type ParsedCoreCommand } from '@harness2/core';
 import type { TaskContract } from '@harness2/core';
 
 /** 现代终端检测：兼容旧导出，委托纯函数标记探测（WT_SESSION / TERM_PROGRAM / ConEmu / ANSICON / xterm 等） */
@@ -519,7 +519,7 @@ export function InkShell({
     applyScroll(0);
   }
 
-  /** T5：共享命令执行缝（委托 commands.ts 的 handleCommand） */
+  /** T5：共享命令执行缝（ink-commands.runSharedCommand → core runCoreCommand） */
   const commandIo: InkCommandIo = {
     print: (t) => {
       sendSystem(t);
@@ -583,14 +583,6 @@ export function InkShell({
       </Modal>,
       MODAL_CHROME_ROWS + MODE_ALIAS_ORDER.length,
     );
-  }
-
-  /**
-   * /help：帮助文本较长（约 24 行），浮层放不下也不适合截断；直接进转录（可滚动、与 legacy 打印行为一致），
-   * 同时避免挤占浮层预算（T3 位置规则只约束短弹层）。
-   */
-  function openHelp(): void {
-    sendSystem(HELP_TEXT);
   }
 
   function openSessions(): void {
@@ -706,76 +698,35 @@ export function InkShell({
   }
 
   /**
-   * T5 命令分发：ink 本地 UI 命令（/mode /help /sessions /context /compact /reasoning /tasks）
-   * 保持原交互；其余（/undo /redo /new /resume /fork /exit /quit /? 与未知命令）**委托共享
-   * commands.ts 的 handleCommand**，用 ChatRuntime 构建真实 CommandContext，保证两路径语义一致。
+   * T5/P1-Dev-2 命令分发（表驱动，壳内无 switch/case 命令名）：
+   *  - /mode /reasoning（core shellOnly）→ 壳侧 ShellCommand 分发表（shell-commands.ts，
+   *    三壳同一份实现）；本壳注入呈现缝：无参 /mode 打开选择浮层、/reasoning off 收起推理块。
+   *  - /sessions 无参 = 交互选择浮层（本壳呈现附加行为；带关键字走 core 文本列表）。
+   *  - 其余（/help /? /new /resume /fork /undo /redo /exit /quit /context /compact /tasks
+   *    与未知命令）→ ink-commands.runSharedCommand → core runCoreCommand（同一份 core 实现）。
    */
-  function handleCommand(parsed: { name: string; rest: string }): void {
-    const { name, rest } = parsed;
-    switch (name) {
-      case '/mode':
-        if (rest.length > 0) {
-          // 带参：文本分支，直接应用（若别名存在）
-          const aliasKey = (Object.keys(MODE_ALIAS_TO_CORE) as ModeAlias[]).find((a) => a === rest.toLowerCase());
-          if (aliasKey !== undefined) {
-            runtime.setMode(MODE_ALIAS_TO_CORE[aliasKey]);
-            sendSystem(`已切换模式: ${rest.toLowerCase()}`);
-          } else {
-            sendSystem(`error: 未知模式 ${rest}（可选: ${MODE_ALIAS_ORDER.join(', ')}）`);
-          }
-        } else {
-          openModePicker();
-        }
-        return;
-      case '/help':
-      case '/?':
-        // 帮助文本与 legacy 同源（commands.ts 的 HELP_TEXT），此处以浮层展示
-        openHelp();
-        return;
-      case '/sessions':
-        // 带关键字 → 共享搜索（文本输出）；无参 → 交互式选择列表
-        if (rest.length > 0) {
-          runSharedCommand(parsed, runtime, commandIo);
-          return;
-        }
-        openSessions();
-        return;
-      case '/context': {
-        const current = runtime.getCurrent();
-        const usage = current !== null ? getContextUsage(current.dir) : undefined;
-        sendSystem(`上下文占用: ${usage === undefined ? '—（无活动会话）' : `${Math.round(usage * 100)}%`}`);
-        return;
-      }
-      case '/compact':
-        sendSystem('压缩将在下一次 turn 开始时自动检查并执行；若已超阈值会自动触发。');
-        return;
-      case '/reasoning': {
-        const arg = rest.trim().toLowerCase();
-        if (arg.length === 0) {
-          sendSystem(`推理展示: ${runtime.reasoning() ? '开启' : '关闭'}（/reasoning on|off）`);
-          return;
-        }
-        if (arg === 'on') {
-          runtime.setReasoning(true);
-          sendSystem('推理展示已开启（turn 内按 Ctrl+R 展开/收起折叠块）。');
-          return;
-        }
-        if (arg === 'off') {
-          runtime.setReasoning(false);
-          setReasoningExpanded(false);
-          sendSystem('推理展示已关闭。');
-          return;
-        }
-        sendSystem(`error: 未知参数 ${rest}（用 on|off，或留空查看当前状态）`);
-        return;
-      }
-      case '/tasks':
-        sendSystem('任务列表请使用 `harness2 cron list` 查看（REPL 只读展示将在后续版本提供）。');
-        return;
-      default:
-        // /undo /redo（rewind 重投影）/new /resume /fork /exit /quit /? 与未知命令 → 共享实现
-        runSharedCommand(parsed, runtime, commandIo);
+  const dispatchShellCommand = createShellCommandDispatcher();
+  function handleCommand(parsed: ParsedCoreCommand): void {
+    if (parsed.id === 'sessions' && parsed.rest.length === 0) {
+      // 壳侧附加呈现：无参会话列表 = 交互选择浮层（core 文本列表由 /sessions <关键字> 承载）
+      openSessions();
+      return;
     }
+    if (parsed.id !== null && dispatchShellCommand(parsed.id, parsed.rest, shellCommandContext())) {
+      return;
+    }
+    // /undo /redo（rewind 重投影）/new /resume /fork /exit /quit /? 与未知命令 → 共享 core 实现
+    runSharedCommand({ name: parsed.raw, rest: parsed.rest }, runtime, commandIo);
+  }
+
+  /** 壳侧命令缝（每次构建取最新闭包：sendSystem/浮层/推理折叠均为组件状态） */
+  function shellCommandContext(): ShellCommandContext {
+    return {
+      print: sendSystem,
+      runtime,
+      openModePicker,
+      onReasoningOff: () => setReasoningExpanded(false),
+    };
   }
 
   /** T0：取消当前 turn（Esc/Ctrl+C 忙时触发；abort 后 stopReason=cancelled，部分文本照常落定） */
@@ -823,7 +774,7 @@ export function InkShell({
   }
 
   async function handleInput(text: string): Promise<void> {
-    const parsed = parseCommand(text);
+    const parsed = parseCoreCommand(text);
     if (parsed !== null) {
       liveSeqRef.current += 1;
       dispatchInputNow({ type: 'system', id: `echo:${liveSeqRef.current}`, text: `> ${text}` });

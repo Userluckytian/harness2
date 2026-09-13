@@ -1,27 +1,20 @@
 // command-registry：两路径共享的命令注册表（名字+一句话描述）。
-// 来源：legacy commands.ts 的实现命令 + T6/T7 新增（/mode /context /compact /reasoning /tasks）。
+// P1-Dev-2 内核下沉第二棒：本文件不再是壳内的元数据清单——命令元数据一律从 core
+// （CORE_COMMAND_META，经 @harness2/core 导出）派生，壳侧只保留展示/匹配工具函数
+// （COMMAND_ORDER / commandNameWithSlash / matchCommands / describeCommand）。
 // ink Composer 的候选下拉与 legacy readline 的 completer 都从这里读，禁止各维护一份。
+import { CORE_COMMAND_META } from '@harness2/core';
+
 export interface CommandMeta {
   name: string;
   description: string;
 }
 
-/** 全部命令注册表（按名字排序输出；REGISTRY 保留声明顺序，展示时用 COMMAND_ORDER） */
-export const COMMAND_REGISTRY: readonly CommandMeta[] = [
-  { name: 'new', description: '新建会话' },
-  { name: 'sessions', description: '列出当前目录的会话（可选关键字全文搜索）' },
-  { name: 'resume', description: '恢复指定会话（/resume <id>）' },
-  { name: 'fork', description: '从当前会话分叉新会话（/fork [seq]）' },
-  { name: 'undo', description: '撤销最近 n 个用户 turn（/undo [n] [--dry-run]）' },
-  { name: 'redo', description: '重做最近一次撤销（可连续逐层恢复）' },
-  { name: 'help', description: '显示本帮助' },
-  { name: 'exit', description: '退出（等价：Ctrl+C 两次，或空行按 Ctrl+D）' },
-  { name: 'mode', description: '切换审批模式（/mode [normal|allow-approve|auto|plan]）' },
-  { name: 'context', description: '查看当前上下文占用（状态栏常驻显示）' },
-  { name: 'compact', description: '手动触发上下文压缩（/compact [说明文字]）' },
-  { name: 'reasoning', description: '查看/切换推理过程展示（on|off，默认 off）' },
-  { name: 'tasks', description: '列出 cron 任务（只读）' },
-];
+/** 全部命令注册表（13 条；声明顺序 = core 元数据顺序 = 帮助展示顺序；壳不维护第二份清单） */
+export const COMMAND_REGISTRY: readonly CommandMeta[] = CORE_COMMAND_META.map((meta) => ({
+  name: meta.id,
+  description: meta.summary,
+}));
 
 /** 排序后的展示顺序（/mode 等新命令按注册表顺序） */
 export const COMMAND_ORDER: readonly string[] = COMMAND_REGISTRY.map((c) => c.name);

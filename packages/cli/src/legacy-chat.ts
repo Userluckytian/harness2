@@ -6,10 +6,10 @@
 // 渲染器独占输出；审批提问由 REPL 直接写问题文本并拦截下一行输入作答案。
 // 审批"总是允许"仅存进程内会话级缓存，绝不落盘。
 import { createInterface, type Interface } from 'node:readline';
-import { SnapshotStore, getContextUsage } from '@harness2/core';
+import { SnapshotStore, getContextUsage, parseCoreCommand, runCoreCommand } from '@harness2/core';
 import { StreamRenderer } from './render.js';
-import { handleCommand, parseCommand, type CommandContext } from './commands.js';
-import { MODE_ALIAS_LABEL, MODE_ALIAS_ORDER, MODE_ALIAS_TO_CORE, describeMode, parseModeAlias } from './mode-alias.js';
+import type { CommandContext } from './commands.js';
+import { createShellCommandDispatcher } from './shell-commands.js';
 import { matchCommands } from './command-registry.js';
 import { expandContextRefs, hasContextRefs } from './context-ref.js';
 import { ASK_CANCELLED, ChatSetupAbort, setupChatSession, type ChatRuntime } from './chat-setup.js';
@@ -142,7 +142,17 @@ export async function runLegacyReadlineChat(options: ChatOptions = {}): Promise<
     fork: (at?: number) => {
       runtime.fork(at, { print: (t) => renderer.line(t) });
     },
+    // /context 缝：runtime 既有取法（与改造前内联实现逐字同算法同输出）
+    contextUsage: () => {
+      const current = runtime.getCurrent();
+      return current !== null ? getContextUsage(current.dir) : undefined;
+    },
+    // compact / cronJobs 缝：ChatRuntime 无手动压缩句柄与 cron 存储句柄，如实不注入
+    // （core 降级文案与本壳改造前输出逐字一致，不伪造执行）
   };
+
+  /** 壳侧 ShellCommand 分发表（mode/reasoning；实现收敛在 shell-commands.ts，本壳为基准壳） */
+  const dispatchShellCommand = createShellCommandDispatcher();
 
   async function runUserTurn(text: string): Promise<void> {
     // @file/@dir 引用解析（发送前预处理；回显仍用原始 text）
@@ -162,64 +172,20 @@ export async function runLegacyReadlineChat(options: ChatOptions = {}): Promise<
     renderer.turnEnd(result);
   }
 
-  /** /reasoning：查看/切换推理过程展示（on|off，默认 off；两路径共用同一状态） */
-  function handleReasoningCommand(rest: string): void {
-    const arg = rest.trim().toLowerCase();
-    if (arg.length === 0) {
-      renderer.line(`推理展示: ${runtime.reasoning() ? '开启' : '关闭'}（/reasoning on|off）`);
-      return;
-    }
-    if (arg === 'on') {
-      runtime.setReasoning(true);
-      renderer.line('推理展示已开启（灰色斜体折叠输出）。');
-    } else if (arg === 'off') {
-      runtime.setReasoning(false);
-      renderer.line('推理展示已关闭。');
-    } else {
-      renderer.line(`error: 未知参数 ${rest}（用 on|off，或留空查看当前状态）`);
-    }
-  }
-
-  /** /mode：无参列出四选项与说明；带参直接应用别名（两路径共用 mode-alias 文案与映射） */
-  function handleModeCommand(rest: string): void {
-    if (rest.length === 0) {
-      renderer.line(`当前模式: ${describeMode(runtime.mode())}`);
-      renderer.line('可选模式:');
-      for (const alias of MODE_ALIAS_ORDER) {
-        renderer.line(`  ${alias}\t${MODE_ALIAS_LABEL[alias]}`);
-      }
-      renderer.line('用法: /mode <别名>（如 /mode plan）');
-      return;
-    }
-    const alias = parseModeAlias(rest);
-    if (alias === undefined) {
-      renderer.line(`error: 未知模式 ${rest}（可选: ${MODE_ALIAS_ORDER.join(', ')}）`);
-      return;
-    }
-    runtime.setMode(MODE_ALIAS_TO_CORE[alias]);
-    renderer.line(`已切换模式: ${alias}（${MODE_ALIAS_LABEL[alias]}）`);
-  }
-
   async function handleLine(line: string): Promise<void> {
     busy = true;
     try {
-      const parsed = parseCommand(line);
+      const parsed = parseCoreCommand(line);
       if (parsed !== null) {
-        if (parsed.name === '/mode') {
-          handleModeCommand(parsed.rest);
-        } else if (parsed.name === '/context') {
-          const current = runtime.getCurrent();
-          const usage = current !== null ? getContextUsage(current.dir) : undefined;
-          renderer.line(`上下文占用: ${usage === undefined ? '—（无活动会话）' : `${Math.round(usage * 100)}%`}`);
-        } else if (parsed.name === '/compact') {
-          renderer.line('压缩将在下一次 turn 开始时自动检查并执行；若已超阈值会自动触发。');
-        } else if (parsed.name === '/reasoning') {
-          handleReasoningCommand(parsed.rest);
-        } else if (parsed.name === '/tasks') {
-          renderer.line('任务列表请使用 `harness2 cron list` 查看（REPL 只读展示将在后续版本提供）。');
-        } else {
-          handleCommand(parsed, ctx);
+        // shellOnly 命令（mode/reasoning）→ 壳内 ShellCommand 分发表（shell-commands.ts）；
+        // 其余（含别名 /? /quit、未知命令、/context /compact /tasks）→ core runCoreCommand
+        if (
+          parsed.id !== null &&
+          dispatchShellCommand(parsed.id, parsed.rest, { print: (t) => renderer.line(t), runtime })
+        ) {
+          return;
         }
+        await runCoreCommand(parsed, ctx);
       } else if (line.trim().length === 0) {
         // 空行：无操作（Ctrl+D = EOF 由 readline close 处理）
       } else {
