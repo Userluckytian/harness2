@@ -1,10 +1,11 @@
-// 注册表结构测试：13 条全部注册、shellOnly 标记（mode/reasoning）、分组/别名/参数说明、分发行为。
+// 注册表结构测试：15 条全部注册、shellOnly 标记（mode/reasoning/minimal/fullscreen，P2-C 加性）、
+// 分组/别名/参数说明、分发行为。
 import { describe, expect, it } from 'vitest';
 import { CORE_COMMANDS, parseCoreCommand, runCoreCommand } from '../../src/commands/index.js';
 import { execCommand, makeRecordingCtx } from './helpers.js';
 
 describe('CORE_COMMANDS 注册表结构', () => {
-  it('13 条命令全部注册，id 不带 /，声明顺序对齐 cli command-registry', () => {
+  it('15 条命令全部注册，id 不带 /，声明顺序对齐 cli command-registry（P2-C 加性 minimal/fullscreen）', () => {
     expect(CORE_COMMANDS.map((c) => c.id)).toEqual([
       'new',
       'sessions',
@@ -18,6 +19,8 @@ describe('CORE_COMMANDS 注册表结构', () => {
       'context',
       'compact',
       'reasoning',
+      'minimal',
+      'fullscreen',
       'tasks',
     ]);
     for (const c of CORE_COMMANDS) {
@@ -25,9 +28,9 @@ describe('CORE_COMMANDS 注册表结构', () => {
     }
   });
 
-  it('11 条 core 实现（有 run）；mode/reasoning 仅元数据（shellOnly，无 run）', () => {
+  it('11 条 core 实现（有 run）；mode/reasoning/minimal/fullscreen 仅元数据（shellOnly，无 run）', () => {
     const shellOnly = CORE_COMMANDS.filter((c) => c.shellOnly === true).map((c) => c.id);
-    expect(shellOnly).toEqual(['mode', 'reasoning']);
+    expect(shellOnly).toEqual(['mode', 'reasoning', 'minimal', 'fullscreen']);
     for (const c of CORE_COMMANDS) {
       if (c.shellOnly === true) expect(c.run).toBeUndefined();
       else expect(c.run).toBeTypeOf('function');
@@ -48,9 +51,10 @@ describe('CORE_COMMANDS 注册表结构', () => {
     ]);
   });
 
-  it('别名注册：help ↔ ?、exit ↔ quit', () => {
+  it('别名注册：help ↔ ?、exit ↔ quit、fullscreen ↔ full（P2-C 渲染模式缩写）', () => {
     expect(CORE_COMMANDS.find((c) => c.id === 'help')?.aliases).toEqual(['?']);
     expect(CORE_COMMANDS.find((c) => c.id === 'exit')?.aliases).toEqual(['quit']);
+    expect(CORE_COMMANDS.find((c) => c.id === 'fullscreen')?.aliases).toEqual(['full']);
   });
 
   it('每条命令有中文 summary；带参命令有 argsSpec', () => {
@@ -75,6 +79,8 @@ describe('CORE_COMMANDS 注册表结构', () => {
     expect(groupOf('tasks')).toBe('调度');
     expect(groupOf('mode')).toBe('模式');
     expect(groupOf('reasoning')).toBe('模式');
+    expect(groupOf('minimal')).toBe('模式');
+    expect(groupOf('fullscreen')).toBe('模式');
     expect(groupOf('help')).toBe('通用');
     expect(groupOf('exit')).toBe('通用');
   });

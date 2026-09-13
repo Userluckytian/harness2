@@ -164,6 +164,32 @@
 //     P3-D 帧集与定时器）；有运行中子代理时行级动画接管（P3-D 语义不回退），状态行保持 ⏺；
 //     空闲停表。行为变化（任务规格要求）：busy 无子代理时状态行不再静止显示 ⏺，
 //     p3e-chrome 对应断言已同步。
+//
+// P2-C 接线（2026-09-13，Esc 语义 + 焦点环/键位 + 渲染模式 + core 配置加性）：
+//   - Esc 语义切新规格（G-14～G-20，reduceEsc 纯 reducer 专管，旧「Esc 停止/清稿」废止）：
+//     回合中 Esc 永不取消 → hint-cancel 提示（逐字 'Press Ctrl+C to cancel the turn'，
+//     toast 通道每用户回合最多一条去重）+ G-19 宽限推进；取消统一走 Ctrl+C（G-38）。
+//     取消请求后、turn 收尾前 = cancelling 态：此间 Esc 全吞（G-15）、Ctrl+C 升级
+//     requestExit（G-38）。空闲 Esc = 800ms 双击窗（G-17 清空+stash，Ctrl+S/Alt+S
+//     stash/pop 切换（P1-1 上游语义：非空=暂存并清空、空=恢复）；
+//     空草稿+有历史双击 = G-18 rewind picker——本壳接现有 /undo 能力做最小 picker，
+//     条目 = 转录用户回合（新在前），Enter = /undo n 真实执行，无假入口）。
+//   - 审批卡 Esc（G-20）：单击即寄放改为 reduceEsc 逐级退出（本壳卡片恒 1 层 → 退完即
+//     park），park 落点从 composer 改为 scrollback（G-20 语义）+ ESC_PARK_HINT_TEXT 提示；
+//     寄放态 Tab 回卡逻辑保留（优先于焦点环——卡片待答须先回卡，登记取舍）。
+//   - 焦点环/键位（G-08/G-09/G-10 + keymaps.ts 表）：Tab 双态（经 focus.ts reduceFocus）；
+//     simple 下 Space 回输入框（vim i 同点位，vim 模式本阶段未启用——登记）；scrollback
+//     焦点下 j/k/↑↓ 行滚、g/G 首尾、Ctrl+K/Ctrl+J 行滚（两窗格）接入现有 scrollback API。
+//     PageUp/PageDown/Ctrl+U/D 沿用 chat-controller 内置（G-10 同语义，不重复接线）。
+//     差异登记：G-09 turn 粒度导航（Shift+H/L/J/K）无 next 等价 API（Scrollback 无 turn
+//     锚点）→ 本阶段不接线（保持字符插入语义），下放 P3；输入模式恒 simple。
+//   - 渲染模式（G-01～G-03）：RenderMode 状态机接入（初值 = config [ui] screen_mode，
+//     core schema 已加性支持；缺省 fullscreen）；/minimal /fullscreen /full 三命令经
+//     shell-commands 壳表 + RenderModeControl 缝驱动；G-03 commandSupportInMode 谓词接入
+//     命令分发。minimal 基座本阶段未接入（评估结论与降级登记见 runRenderMode 装配处：
+//     G-02 🟡，切换需重进 REPL，会话保留）——跨模式切换如实给指引、不落假状态。
+//   - fullscreen 渲染接线：chat-screen 布局收敛到 allocateRegions+RegionLayoutManager
+//     （八区域中五个已接线，数据面板缺省隐藏），见 chat-screen.ts P2-C 注释。
 import { homedir } from 'node:os';
 import type { ChatOptions } from '../../legacy-chat.js';
 import {
@@ -174,13 +200,33 @@ import {
   type TurnResult,
   type TurnStreamHandler,
 } from '../../chat-setup.js';
-import { getContextUsage, parseCoreCommand, type AnySessionEvent, type ParsedCoreCommand } from '@harness2/core';
+import {
+  getContextUsage,
+  loadConfig,
+  parseCoreCommand,
+  type AnySessionEvent,
+  type ParsedCoreCommand,
+} from '@harness2/core';
 import { runSharedCommand, type InkCommandIo } from '../ink-commands.js';
 import { createShellCommandDispatcher } from '../../shell-commands.js';
 import { expandContextRefs, hasContextRefs } from '../../context-ref.js';
 import { createInputParser, type InputParser } from '../../input/parser.js';
 import { createInputDispatcher, type InputDispatcher, type InputLayer } from '../../input/dispatcher.js';
 import type { InputEvent } from '../../input/types.js';
+// P2-C：Esc 语义状态机（G-14～G-20）+ 键位表/焦点环（G-07～G-10）接入
+import { ESC_PARK_HINT_TEXT, reduceEsc, type EscPane, type TurnState } from '../input/esc-machine.js';
+import { resolveKeyAction, type InputModeId } from '../input/keymaps.js';
+import { focusActionFromKey, initialFocusState, reduceFocus, type FocusState } from '../input/focus.js';
+// P2-C：渲染模式状态机（G-01/G-02）与模式限定命令谓词（G-03）
+import { commandSupportInMode } from '../render/minimal.js';
+import {
+  DEFAULT_RENDER_MODE,
+  createRenderModeState,
+  resolveInitialRenderMode,
+  switchRenderMode,
+  type RenderMode,
+  type RenderModeState,
+} from '../render/mode.js';
 import { summarizeArgs, turnSummaryLine } from '../../render.js';
 import { describeSteerResult } from '../../steer.js';
 import { createUiScheduler, type UiScheduler } from '../scheduler.js';
@@ -253,7 +299,7 @@ const FOCUS_REPORT_OFF = '\x1b[?1004l';
 const MOUSE_ALL_MOTION_ON = '\x1b[?1003h';
 const MOUSE_ALL_MOTION_OFF = '\x1b[?1003l';
 
-const SHORTCUTS: readonly string[] = ['Enter 发送', 'Shift+Enter 换行', 'Esc 停止', 'Ctrl+C 退出', 'PgUp/PgDn 滚动'];
+const SHORTCUTS: readonly string[] = ['Enter 发送', 'Shift+Enter 换行', 'Ctrl+C 停止', 'Ctrl+C 退出', 'PgUp/PgDn 滚动'];
 
 // —— P3-E 重试预算快照（对齐 ink panels/retry-panel.tsx 的信息量；该模块是 ink/React 组件，
 // next 层不可跨用（会引入 react/ink 依赖进 headless 装配），故按其冻结文案做纯函数等价复刻；
@@ -350,6 +396,16 @@ export const NEXT_COMMANDS: readonly NextCommandEntry[] = [
   { name: 'compact', wiring: 'shared', note: 'core runCoreCommand 降级文案（runtime 无手动压缩句柄，如实不注入）' },
   { name: 'reasoning', wiring: 'shared', note: '壳侧 shell-commands 表（三壳同一份实现，legacy 基准文案）' },
   { name: 'tasks', wiring: 'shared', note: 'core runCoreCommand 降级文案（runtime 无 cron 存储句柄，如实不注入）' },
+  {
+    name: 'minimal',
+    wiring: 'shared',
+    note: '渲染模式切换（P2-C：shell-commands 壳表 + RenderMode 状态机；minimal 基座未接入 = G-02 🟡 降级指引，core catalog shellOnly 元数据）',
+  },
+  {
+    name: 'fullscreen',
+    wiring: 'shared',
+    note: '渲染模式切换（P2-C：/full 为别名，core catalog aliases；同模式幂等提示）',
+  },
   { name: 'plan', wiring: 'local', note: 'next 层 UI 声明态（ink 无此命令）' },
   { name: 'auto', wiring: 'local', note: 'next 层 UI 声明态（ink 无此命令）' },
   { name: 'always-approve', wiring: 'local', note: 'next 层 always-approve 开关（ink 无此命令）' },
@@ -603,6 +659,11 @@ export interface NextChatHarnessDeps {
   cwd?: string;
   /** P3-E：~ 短化基准主目录（缺省 os.homedir()；测试注入确定性缝） */
   home?: string;
+  /**
+   * P2-C：渲染模式初值（G-01；缺省 fullscreen）。真实装配（runNextChat）从 config
+   * [ui] screen_mode 经 resolveInitialRenderMode 解析后传入；headless 测试直接注入。
+   */
+  initialRenderMode?: RenderMode;
 }
 
 export interface NextChatHarness {
@@ -638,6 +699,8 @@ export interface NextChatHarness {
   subagentViewLines(): string[] | null;
   isBusy(): boolean;
   queueSnapshot(): readonly string[];
+  /** P2-C：当前渲染模式（G-01；初值来自 config [ui] screen_mode，缺省 fullscreen） */
+  renderMode(): RenderMode;
   awaitDone(): Promise<number>;
   /** 仅清理 timers（不触发退出；测试 afterEach 用） */
   dispose(): void;
@@ -700,6 +763,25 @@ export function createNextChatHarness(runtime: ChatRuntime, deps: NextChatHarnes
   // Ctrl+O 共享此单态变量（开启时新审批经 gate.choose('a') 代答，红线 6）。
   let uiMode: UiMode = 'normal';
   let scrollbackFocus = false; // Tab 双态焦点：false = 输入框（默认），true = 滚动区（折叠键族生效）
+
+  // —— P2-C 渲染模式状态机（G-01/G-02）——
+  // 初值 = deps.initialRenderMode（runNextChat 从 config [ui] screen_mode 解析；缺省 fullscreen）。
+  // 本壳只有 fullscreen 渲染基座（minimal 基座未接入 = G-02 🟡 降级，见 runRenderMode 切换处），
+  // 状态机在此阶段承担：同模式幂等裁决（/full 重复执行不产生事件）与跨模式请求的显式登记。
+  // （const 登记：本阶段跨模式切换走降级路径不落状态，见 requestRenderModeSwitch；P3 落
+  // minimal 基座后改回 let 承接 switchRenderMode 的状态提交。）
+  const renderModeState: RenderModeState = createRenderModeState(deps.initialRenderMode ?? DEFAULT_RENDER_MODE);
+
+  // —— P2-C Esc 语义状态机（G-14～G-20；reduceEsc 接线，纯 reducer + 装配层执行副作用）——
+  let turnState: TurnState = 'idle'; // running（回合中）/ cancelling（已请求取消、收尾前）/ idle
+  let lastEscAt: number | null = null; // 双击武装时刻（reduceEsc 回写）
+  let rewindGraceUntil = 0; // G-19 宽限 deadline（reduceEsc 回写；0 = 无）
+  let hintCancelTurnSeq = -1; // G-14 提示去重：已提示过的用户回合号（每回合最多一条）
+  let draftStash: string | null = null; // G-17 单槽 stash（双击 Esc 清空 / Ctrl+S+Alt+S 暂存的草稿；composer 空时恢复）
+  // G-08 焦点环状态（focus.ts reducer；scrollbackFocus 为其投影，见 applyFocus）
+  let focusRing: FocusState = initialFocusState();
+  // 输入模式（G-07）：本阶段恒 simple（vim 未接配置/命令入口，登记差异）；键位表仍按模式取。
+  const inputMode: InputModeId = 'simple';
 
   // —— P4-1 选择与复制（OSC52）状态 ——
   // 开关：HARNESS2_SELECT=0 完全旁路（鼠标不进选择态、Ctrl+C/y 不复制）。选择几何
@@ -1163,6 +1245,7 @@ export function createNextChatHarness(runtime: ChatRuntime, deps: NextChatHarnes
     // 「问题 + 选择列表」语义（近似：无独立问题行，标题承载）。query 统一经 gate.pending()
     // 取（buildApprovalSpec 的单一数据源，新提问挤占后 spec 以最新挂起为准）
     closeQueuePanel(false); // P3-E：审批最优先（dispatcher 首层），ask 挤占时队列面板让位
+    closeRewindPicker(); // P2-C：审批最优先——rewind picker 同为浮层，ask 挤占时让位（防残留接管）
     approvalActiveIndex = 0;
     approvalExpanded = false;
     approvalParked = false;
@@ -1173,7 +1256,9 @@ export function createNextChatHarness(runtime: ChatRuntime, deps: NextChatHarnes
   }
 
   /**
-   * Esc 寄放：卡片保持显示、审批仍挂起，键盘交还 composer（grok park 语义，见文件头）。
+   * 寄放（G-20 落地，P2-C 改）：卡片保持显示、审批仍挂起；焦点 park 到 scrollback（焦点环
+   * park 动作由 handleEscPress 的 exit-card 分支先行应用，本函数只置寄放标记），键盘经
+   * 焦点环语义可达 composer（scrollback 焦点下字母键自动回输入框，grok simple 语义）。
    * P1-1：子视图/picker 打开时**不**交还 composer——键盘属于 subagentLayer（视图层接管），
    * focus composer 会让输入进不绘制的草稿（隐形输入）；寄放态 approval 层放行，视图键照常。
    */
@@ -1187,9 +1272,10 @@ export function createNextChatHarness(runtime: ChatRuntime, deps: NextChatHarnes
     invalidate();
   }
 
-  /** 寄放态显式回卡（Tab）：重新接管键盘 */
+  /** 寄放态显式回卡（Tab）：重新接管键盘（焦点指示随 closeApproval/retake 复位） */
   function retakeApproval(): void {
     approvalParked = false;
+    scrollbackFocus = false; // 回卡后焦点语义复位（卡片接管；结算走 closeApproval 再复位）
     controller.blur();
     invalidate();
   }
@@ -1268,11 +1354,19 @@ export function createNextChatHarness(runtime: ChatRuntime, deps: NextChatHarnes
     if (!busy) return;
     sendSystem('^C（正在取消当前 turn…）');
     runtime.abortTurn();
+    // P2-C：取消已请求、收尾前 = cancelling（G-15 此间 Esc 全吞；G-38 此间 Ctrl+C 升级退出）
+    turnState = 'cancelling';
   }
 
   function interrupt(): void {
     if (gate.pending() !== null) {
       gate.cancel(); // 审批挂起时 Ctrl+C = 取消审批（对齐 Ink 的 Esc/Ctrl+C 便利取消）
+      return;
+    }
+    // G-38：cancelling 期间 Ctrl+C 升级为退出请求（先 abort 等收尾后收敛——requestExit 语义）
+    if (turnState === 'cancelling') {
+      clearHint();
+      requestExit('sigint');
       return;
     }
     const verdict = ctrlCGuard.press({ busy });
@@ -1410,6 +1504,7 @@ export function createNextChatHarness(runtime: ChatRuntime, deps: NextChatHarnes
   async function runTurnText(text: string): Promise<void> {
     bridge.reset();
     busy = true;
+    turnState = 'running'; // P2-C：回合运行中（G-14 Esc 提示通道；收尾回 idle）
     lastRetry = null; // P3-E：新 turn 清上一 turn 的重试标记（状态行不残留旧值）
     updateSpinner(); // P4-2：turn 开始即启动 spinner 定时器（无运行中子代理时驱动状态行帧动画）
     userSeq += 1;
@@ -1446,6 +1541,7 @@ export function createNextChatHarness(runtime: ChatRuntime, deps: NextChatHarnes
     } finally {
       bridge.reset();
       busy = false;
+      turnState = 'idle'; // P2-C：回合结束（正常/取消/异常一律）——cancelling 期结束（G-15 解除）
       // P2-3：turn 收尾（正常/取消/异常一律走此 finally）清空运行中子代理表——残留条目
       // （tool/result 因 abort/异常永不到达）会在下个 turn 给 spinner 续命
       // （updateSpinner 的 shouldRun = busy && size>0），定时器空转、指示字符失真。
@@ -1597,7 +1693,8 @@ export function createNextChatHarness(runtime: ChatRuntime, deps: NextChatHarnes
    * 壳侧 ShellCommand 分发器（shell-commands.ts 的表 + 本壳 override）。
    * 差异裁决（登记）：core 的 /mode 是审批模式别名（legacy/ink 语义）；next 的 /mode 是
    * UI 四态声明态（P3-B，测试锁定循环/四态语义，红线 6 不改审批行为）——以 override
-   * 注册本壳变体，而非在壳里另写一份分发。
+   * 注册本壳变体，而非在壳里另写一份分发。/minimal /fullscreen（含 /full 别名）来自
+   * 壳表本表（P2-C），经 renderMode 缝驱动 RenderMode 状态机。
    */
   const dispatchShellCommand = createShellCommandDispatcher({
     mode: (ctx, rest) => {
@@ -1649,6 +1746,7 @@ export function createNextChatHarness(runtime: ChatRuntime, deps: NextChatHarnes
     subagentDurations.clear();
     updateSpinner(); // 表清空 → 若 spinner 在转则停表
     // 防御：切会话瞬间若子视图/picker 仍打开（正常输入路径不可达——视图接管键盘），如实关闭
+    if (rewindPicker !== null) closeRewindPicker(); // P2-C：rewind picker 同理（转录已整体重建）
     if (subPicker !== null) closeSubPicker(true);
     if (subView !== null) closeSubagentView();
   }
@@ -1687,22 +1785,42 @@ export function createNextChatHarness(runtime: ChatRuntime, deps: NextChatHarnes
     requestExit: () => requestExit('exit'),
   };
 
+  // —— P2-C 渲染模式缝（shell-commands.RenderModeControl；降级依据见 requestRenderModeSwitch）——
+  const renderModeControl = {
+    current: (): RenderMode => renderModeState.mode,
+    requestSwitch: (to: RenderMode): 'switched' | 'same-mode' | 'degraded-unavailable' => requestRenderModeSwitch(to),
+  };
+
   /**
-   * 命令分发（表驱动）：① next 本地 UI 命令表（plan/auto/always-approve/theme/search）；
-   * ② shellOnly 命令（mode/reasoning）→ shell-commands 分发器（mode = 本壳 UI 四态 override，
-   * reasoning = 三壳同一份实现）；③ 其余（/help /? /exit /quit /new /resume /fork /undo
+   * 命令分发（表驱动）：⓪ G-03 模式限定门控（commandSupportInMode 谓词；当前模式不可用
+   * 的命令如实拒绝，文案自拟并登记）；① next 本地 UI 命令表（plan/auto/always-approve/
+   * theme/search）；② shellOnly 命令（mode/reasoning/minimal/fullscreen）→ shell-commands
+   * 分发器（mode = 本壳 UI 四态 override，reasoning = 三壳同一份实现，渲染模式经
+   * renderMode 缝驱动状态机）；③ 其余（/help /? /exit /quit /new /resume /fork /undo
    * /redo /sessions /context /compact /tasks 与未知命令）→ ink-commands.runSharedCommand →
    * core runCoreCommand（与 legacy/ink 同一份 core 实现；/undo /redo /new /resume /fork 的
    * 重投影语义经 runSharedCommand 保持不变）。
+   *
+   * G-03 门控现状登记：本阶段 next 恒处 fullscreen（minimal 基座未接入，见
+   * requestRenderModeSwitch 降级），谓词实际不触发——接线先行，随 P3 minimal 基座生效。
    */
   function handleCommand(parsed: ParsedCoreCommand): void {
     const word = parsed.id ?? parsed.raw.replace(/^\//, '');
+    const support = commandSupportInMode(word, renderModeState.mode);
+    if (support === 'unavailable-fullscreen-only' || support === 'unavailable-minimal-only') {
+      const only = support === 'unavailable-fullscreen-only' ? 'fullscreen' : 'minimal';
+      sendSystem(`当前渲染模式（${renderModeState.mode}）下不可用：/${word}（仅 ${only} 模式提供）`);
+      return;
+    }
     const local = nextLocalCommands[word];
     if (local !== undefined) {
       local(parsed.rest);
       return;
     }
-    if (parsed.id !== null && dispatchShellCommand(parsed.id, parsed.rest, { print: sendSystem, runtime })) {
+    if (
+      parsed.id !== null &&
+      dispatchShellCommand(parsed.id, parsed.rest, { print: sendSystem, runtime, renderMode: renderModeControl })
+    ) {
       return;
     }
     runSharedCommand({ name: parsed.raw, rest: parsed.rest }, runtime, commandIo);
@@ -1806,6 +1924,195 @@ export function createNextChatHarness(runtime: ChatRuntime, deps: NextChatHarnes
     reprojectAll();
   }
 
+  // —— P2-C 焦点环（G-08）：focus.ts reducer 落地，scrollbackFocus 为其投影 ——
+  /** 应用焦点环动作：toggle / to-prompt / park（park 由 G-20 卡片退完触发） */
+  function applyFocus(action: Parameters<typeof reduceFocus>[1]): void {
+    focusRing = reduceFocus(focusRing, action); // FocusState 不可变约定：reducer 返回新对象即整体替换
+    scrollbackFocus = focusRing.pane === 'scrollback';
+  }
+
+  /** G-20 卡片退完的 park：焦点落 scrollback（与 Tab toggle 共用同一投影） */
+  function parkFocusToScrollback(): void {
+    applyFocus({ type: 'park' });
+  }
+
+  // —— P2-C G-17 草稿 stash（双击 Esc 清空 → 入 stash；Ctrl+S/Alt+S = stash/pop 切换）——
+  // 上游 StashPrompt 语义（refs/grok-build prompt_stash.rs handle_stash_prompt_key /
+  // defaults.rs:702-714 long_help「One draft at a time: a new stash replaces the old
+  // one」，P1-1 语义对齐）：composer 非空 = 当前草稿入单槽 stash（旧 stash 被替换——
+  // 数据不丢，新草稿可恢复）并清空 composer；composer 空 = 恢复 stash 并清槽；空且无
+  // stash = 如实提示（不伪造恢复）。
+  function stashToggle(): void {
+    if ((state.draft ?? '').length > 0) {
+      draftStash = state.draft ?? ''; // 单槽：新 stash 替换旧 stash（上游「第二次 stash 丢弃槽内旧草稿」）
+      state.draft = '';
+      state.cursor = 0;
+      showHint('草稿已暂存（再按 Ctrl+S / Alt+S 恢复）');
+      return;
+    }
+    if (draftStash === null) {
+      showHint('（无暂存草稿）');
+      return;
+    }
+    const restored = draftStash;
+    draftStash = null;
+    state.draft = restored;
+    state.cursor = restored.length;
+    showHint('已恢复暂存草稿');
+  }
+
+  // —— P2-C G-18 rewind 最小 picker（接现有 /undo 能力；无假入口）——
+  // 条目 = 转录中的用户回合（新在前，磁盘重投影后与 /undo 的遮蔽语义一致）；选中第 i 项
+  // = /undo (i+1)（撤销该回合及其后全部用户回合）。core runUndo 无「rewind 到指定回合」
+  // 的单步接口，n 的换算即最小等价映射（登记：预览/dry-run 未做，Enter 直接执行）。
+  let rewindPicker: { items: string[]; undoCounts: number[]; activeIndex: number; armedFrom: EscPane } | null = null;
+
+  function userTurnTexts(): string[] {
+    const out: string[] = [];
+    for (const item of transcript.items) {
+      if (item.kind === 'user') out.push(item.text);
+    }
+    return out;
+  }
+
+  function syncRewindOverlay(): void {
+    if (rewindPicker === null) return;
+    state.overlays = [
+      {
+        title: `Rewind · 撤销到哪个回合（${rewindPicker.items.length}）`,
+        items: rewindPicker.items,
+        activeIndex: rewindPicker.activeIndex,
+        showNumbers: true,
+      },
+    ];
+  }
+
+  function openRewindPicker(armedFrom: EscPane): void {
+    const texts = userTurnTexts();
+    if (texts.length === 0) {
+      showHint('（无可撤销的用户回合）'); // reducer 判定与转录间状态被改写的兜底，不画空壳浮层
+      return;
+    }
+    const items = texts
+      .map((t, i) => {
+        const n = texts.length - i; // 该回合含其后的全部用户回合数 = /undo n
+        const oneLine = t.replace(/\s+/g, ' ').trim();
+        const preview = oneLine.length > 30 ? `${oneLine.slice(0, 30)}…` : oneLine;
+        return `撤销 ${n} 个回合 · ${preview}`;
+      })
+      .reverse();
+    const undoCounts = texts.map((_, i) => texts.length - i).reverse();
+    rewindPicker = { items, undoCounts, activeIndex: 0, armedFrom };
+    controller.blur(); // 浮层接管键盘（P1-1 同款：接管期输入进不了草稿）
+    syncRewindOverlay();
+    invalidate();
+  }
+
+  function closeRewindPicker(): void {
+    rewindPicker = null;
+    state.overlays = [];
+    controller.focus();
+    invalidate();
+  }
+
+  function confirmRewindPicker(): void {
+    const picker = rewindPicker;
+    if (picker === null) return;
+    if (busy) {
+      closeRewindPicker();
+      showHint('回合运行中不可撤销（G-14：取消请按 Ctrl+C）');
+      return;
+    }
+    const n = picker.undoCounts[Math.min(picker.activeIndex, picker.undoCounts.length - 1)] ?? 0;
+    closeRewindPicker();
+    if (n <= 0) return;
+    handleUserText(`/undo ${n}`); // 经既有命令管线：回显 + runSharedCommand（core runUndo）+ 重投影
+  }
+
+  // —— P2-C Esc 裁决入口（G-14～G-20；裸 Esc 专用，reduceEsc 纯函数裁决 + 本层执行副作用）——
+  function handleEscPress(): void {
+    const now = Date.now();
+    // P2-2：挂起审批卡存在且已寄放（approvalLayer 对寄放态放行，Esc 落进本策略）时，裸 Esc
+    // 整体吞掉——上游 prompt.rs try_handle_esc_policy（758-762）：blocking card 仍 pending
+    // 时只消费事件、不进任何后续裁决（卡的 Esc 语义=寄放，是唯一对外语义），防寄放态 Esc
+    // 连打误武装双击清稿 / 误开 rewind picker。对齐上游：先废弃 idle 武装再吞（不推宽限、
+    // 不给提示——上游此分支无 suppress_rewind_arm / hint）。卡片接管态（未寄放）不在此拦截：
+    // Esc 经 approvalLayer 进 reduceEsc 的 exit-card 分支（G-20 逐级退完 park）。
+    if (gate.pending() !== null && approvalParked) {
+      lastEscAt = null;
+      invalidate();
+      return;
+    }
+    const decision = reduceEsc({
+      turnState,
+      draftLength: (state.draft ?? '').length,
+      cardDepth: gate.pending() !== null && !approvalParked ? 1 : 0, // 审批卡 = 本壳唯一阻塞卡（1 层）
+      historyCount: userTurnTexts().length,
+      now,
+      lastEscAt,
+      rewindGraceUntil,
+      pane: scrollbackFocus ? 'scrollback' : 'prompt',
+    });
+    const se = decision.sideEffects;
+    if (se.lastEscAt !== undefined) lastEscAt = se.lastEscAt;
+    if (se.rewindGraceUntil !== undefined) rewindGraceUntil = se.rewindGraceUntil;
+    switch (decision.action) {
+      case 'hint-cancel': {
+        // G-14：toast 通道（瞬时提示）+ 每用户回合最多一条（dedupePerTurn 执行点）
+        if (se.hintCancel !== undefined && hintCancelTurnSeq !== userSeq) {
+          hintCancelTurnSeq = userSeq;
+          showHint(se.hintCancel.text);
+        }
+        break;
+      }
+      case 'exit-card': {
+        // G-20：审批卡退完（本壳恒 1 层 → parkedToScrollback=true）——寄放 + park 到滚动区
+        parkFocusToScrollback();
+        parkApproval();
+        if (se.exitCard?.parkedToScrollback === true) showHint(ESC_PARK_HINT_TEXT);
+        break;
+      }
+      case 'clear-stash': {
+        // G-17：清空 + stash（绝不进历史）；提示恢复通道
+        draftStash = state.draft ?? '';
+        state.draft = '';
+        state.cursor = 0;
+        showHint('草稿已清空并暂存（Ctrl+S / Alt+S 恢复）');
+        break;
+      }
+      case 'open-rewind': {
+        openRewindPicker(se.openRewind?.armedFrom ?? 'prompt');
+        break;
+      }
+      case 'swallow':
+      case 'none':
+      default:
+        // G-15/G-19：吞掉（连提示也不给）；'none' = 仅内部状态变化（双击第一击武装）
+        break;
+    }
+    invalidate();
+  }
+
+  // —— P2-C 渲染模式切换（G-02 装配层裁决）——
+  /**
+   * G-02 🟡 降级登记（评估结论）：本壳 fullscreen 基座 = alt-screen 全帧 diff 渲染
+   * （Screen + diff-presenter 整帧重绘）；minimal 契约（MINIMAL_CONTRACT：无 alt-screen、
+   * 系统行 write-through、终端原生滚动）需要另一条「追加式转录 + 底部 prompt 行」呈现
+   * 管线——复用 renderChat 会整帧重画转录（转录重复进原生 scrollback），改造 diff-presenter
+   * 为无接管呈现属 P3 体量；legacy readline 基座（G-02 注释）无法进程内交接（冻结区，
+   * 无帧状态可移交）。GROK_SCREEN_MODE_SWITCH=exec 重执行变体亦已登记下放 P3（mode.ts）。
+   * 故本阶段：跨模式切换请求经 switchRenderMode 裁决（同模式幂等返回无事件），跨模式事件
+   * **不落状态**（落了就是假切换），如实给「重进 REPL、会话保留」指引；状态提交随 P3
+   * minimal 基座一起落地。
+   */
+  function requestRenderModeSwitch(to: RenderMode): 'switched' | 'same-mode' | 'degraded-unavailable' {
+    const { state: next, event } = switchRenderMode(renderModeState, to, 'slash-command');
+    if (event === null) return 'same-mode';
+    // P3 前占位：next 壳只有 fullscreen 基座 —— 任何跨模式切换都不可当场完成
+    void next;
+    return 'degraded-unavailable';
+  }
+
   // —— 输入装配（parser → dispatcher（approval > composer）→ 兜底）——
   // 审批卡键位（P3-B，grok permission prompt 契约，见文件头）：Tab/Shift+Tab 循环走行、
   // 1-3 数字直选、Enter 确认、↑↓ 保留（grok 亦有）、Ctrl+F 展开全文、Esc 寄放（不回答
@@ -1856,9 +2163,10 @@ export function createNextChatHarness(runtime: ChatRuntime, deps: NextChatHarnes
         invalidate();
         return true;
       }
-      // Esc = 寄放焦点：不回答不关闭（卡片保持显示、审批挂起，键盘回 composer）
-      if (ev.key === 'escape') {
-        parkApproval();
+      // Esc（G-20，P2-C）：经 reduceEsc 逐级退出裁决——本壳卡片恒 1 层，退完即 park 到
+      // scrollback + 提示（不回答不关闭；取消只走 Ctrl+C / cancelApproval）
+      if (ev.key === 'escape' && !ev.modifiers.ctrl && !ev.modifiers.alt) {
+        handleEscPress();
         return true;
       }
       if (ev.modifiers.ctrl && ev.key === 'c') {
@@ -1888,19 +2196,16 @@ export function createNextChatHarness(runtime: ChatRuntime, deps: NextChatHarnes
       clearHint();
       // Ctrl+D 不在此拦截：keymap 裁决 = 半页下滚，由 chat-controller 内置消费（半页滚动
       // 与退出语义不冲突——退出只走 Ctrl+C 双击与 /exit，见文件头裁决说明）
-      if (ev.key === 'escape') {
-        // P4-1：有选择先清选择（Esc 清除选择语义），不停止 turn、不清草稿
+      if (ev.key === 'escape' && !ev.modifiers.ctrl && !ev.modifiers.alt) {
+        // P4-1：有选择先清选择（Esc 清除选择语义，先于 Esc 状态机；不停止 turn、不清草稿）
         if (selectEnabled && state.scrollback.hasSelection) {
           state.scrollback.clearSelection();
           invalidate();
           return 'consumed';
         }
-        if (busy) {
-          abortCurrentTurn(); // 忙时 Esc：停止当前 turn（不清草稿，对齐 Composer）
-          return 'consumed';
-        }
-        state.draft = '';
-        state.cursor = 0;
+        // P2-C：G-14～G-20 新规格——reduceEsc 裁决（回合中提示不取消 / 双击清稿+stash /
+        // rewind picker / 宽限吞掉），旧的「忙时 Esc 停止、空闲单击清稿」废止
+        handleEscPress();
         return 'consumed';
       }
       // Ctrl+O = always-approve 切换（keymap 裁决；旧折叠语义迁移 e/E/h/l，见文件头）
@@ -1941,8 +2246,9 @@ export function createNextChatHarness(runtime: ChatRuntime, deps: NextChatHarnes
         showHint(`模式：${uiMode}${uiMode === 'plan' || uiMode === 'auto' ? '（声明态）' : ''}`);
         return 'consumed';
       }
-      // Tab = 输入框/滚动区双态焦点（keymap 裁决采纳）。候选可见时不在本层切换：
-      // 条件短路返回 'ignored'，Tab 落到 controller 内置裁决 = 接受候选（优先级保持）
+      // Tab = 输入框/滚动区双态焦点（G-08 焦点环；P2-C 改经 focus.ts reduceFocus 落地）。
+      // 候选可见时不在本层切换：条件短路返回 'ignored'，Tab 落到 controller 内置裁决 =
+      // 接受候选（优先级保持）
       if (
         ev.key === 'tab' &&
         !ev.modifiers.ctrl &&
@@ -1950,9 +2256,62 @@ export function createNextChatHarness(runtime: ChatRuntime, deps: NextChatHarnes
         !ev.modifiers.shift &&
         state.candidates === null
       ) {
-        scrollbackFocus = !scrollbackFocus;
+        applyFocus(focusActionFromKey(inputMode, ev.key, ev.modifiers) ?? { type: 'toggle' }); // G-08 toggle
         invalidate();
         return 'consumed';
+      }
+      // —— P2-C 键位表接线（keymaps.ts 表驱动，G-09/G-10/G-17；差异登记见文件头）——
+      // 经 resolveKeyAction 匹配（pane 过滤 from 限定）；只接线本壳有真实落点的动作：
+      const binding = resolveKeyAction(inputMode, ev, scrollbackFocus ? 'scrollback' : 'prompt');
+      if (binding?.action === 'draft.stash-toggle') {
+        stashToggle(); // G-17：stash/pop 切换（非空=暂存并清空、空=恢复；两窗格皆可）
+        return 'consumed';
+      }
+      if (binding?.action === 'scroll.line-up') {
+        state.scrollback.scrollBy(-1); // G-10 行粒度（Ctrl+K，本壳新增）
+        invalidate();
+        return 'consumed';
+      }
+      if (binding?.action === 'scroll.line-down') {
+        state.scrollback.scrollBy(1); // G-10 行粒度（Ctrl+J，本壳新增）
+        invalidate();
+        return 'consumed';
+      }
+      if (binding?.action === 'paste.image') {
+        // G-12：真机透传/剪贴板读取下放 P7（image-paste.ts 登记）——如实提示，不做假入口
+        showHint('图片粘贴通道未接入（G-12 🟡：终端透传下放 P7）');
+        return 'consumed';
+      }
+      // G-09 导航（仅 scrollback 窗格；prompt 侧 ↑↓ 是草稿移动/历史，保持 controller 内置）。
+      // turn 粒度动作（nav.turn-next/prev、nav.viewport-turn-above/below）无 next 等价 API
+      // （Scrollback 无 turn 锚点）——不接线不消费，保持既有字符语义，下放 P3（登记差异）。
+      if (scrollbackFocus) {
+        if (binding?.action === 'nav.down') {
+          state.scrollback.scrollBy(1);
+          invalidate();
+          return 'consumed';
+        }
+        if (binding?.action === 'nav.up') {
+          state.scrollback.scrollBy(-1);
+          invalidate();
+          return 'consumed';
+        }
+        if (binding?.action === 'nav.first') {
+          state.scrollback.goToTop();
+          invalidate();
+          return 'consumed';
+        }
+        if (binding?.action === 'nav.last') {
+          state.scrollback.goToBottom();
+          invalidate();
+          return 'consumed';
+        }
+        if (binding?.action === 'focus.to-prompt') {
+          // G-08：simple 下 Space 回输入框——焦点环切换后字符照常走内置插入（'ignored'）
+          applyFocus({ type: 'to-prompt' });
+          invalidate();
+          return 'ignored';
+        }
       }
       // 滚动区焦点下的块折叠键族（仅无 Ctrl/Alt 修饰；grok 为选中块导航，此处 h/l 取
       // 最近工具/推理 item，差异已登记 keymap 文档）
@@ -1984,7 +2343,8 @@ export function createNextChatHarness(runtime: ChatRuntime, deps: NextChatHarnes
         }
         if (ev.text !== undefined && ev.text.length > 0) {
           // 其余字母键自动回到输入框（grok simple 模式语义），字符照常走内置插入
-          scrollbackFocus = false;
+          // （P2-C：经焦点环 to-prompt 落地，保持环状态一致）
+          applyFocus({ type: 'to-prompt' });
           invalidate();
           return 'ignored';
         }
@@ -2203,10 +2563,58 @@ export function createNextChatHarness(runtime: ChatRuntime, deps: NextChatHarnes
     },
   };
 
+  // —— P2-C rewind picker 键盘层（G-18；位于 queue 与 subagent 之间，审批仍最优先）——
+  // 打开时接管全部按键（P1-1 防御同款）：↑↓/j/k 走行、Enter 撤销（/undo n）、Esc/q 取消、
+  // 数字直选；Ctrl+C 放行 guard 协议。未打开时全放行。
+  const rewindLayer: InputLayer = {
+    name: 'rewind-picker',
+    handle: (event: InputEvent): boolean => {
+      if (rewindPicker === null) return false;
+      if (event.type === 'mouse') return true; // 接管期鼠标事件不透传
+      if (event.type !== 'key') return false; // focus 等系统事件放行
+      const ev = event;
+      if (ev.modifiers.ctrl && ev.key === 'c') return false; // Ctrl+C 永远放行（guard 协议）
+      const picker = rewindPicker;
+      const n = picker.items.length;
+      const move = (delta: number): void => {
+        if (rewindPicker === null || n === 0) return;
+        rewindPicker.activeIndex = (rewindPicker.activeIndex + delta + n) % n;
+        syncRewindOverlay();
+        invalidate();
+      };
+      if (ev.key === 'up' || (ev.key === 'k' && !ev.modifiers.ctrl && !ev.modifiers.alt)) {
+        move(-1);
+        return true;
+      }
+      if (ev.key === 'down' || (ev.key === 'j' && !ev.modifiers.ctrl && !ev.modifiers.alt)) {
+        move(1);
+        return true;
+      }
+      if (!ev.modifiers.ctrl && !ev.modifiers.alt && /^[1-9]$/.test(ev.key)) {
+        const idx = Number(ev.key) - 1;
+        if (idx < n) {
+          rewindPicker.activeIndex = idx;
+          confirmRewindPicker();
+          return true;
+        }
+      }
+      if (ev.key === 'enter' && !ev.modifiers.ctrl && !ev.modifiers.alt && !ev.modifiers.shift) {
+        confirmRewindPicker();
+        return true;
+      }
+      if ((ev.key === 'escape' || ev.key === 'q') && !ev.modifiers.ctrl && !ev.modifiers.alt) {
+        closeRewindPicker();
+        return true;
+      }
+      return true; // 接管期未识别键一律消费（不透传 composer）
+    },
+  };
+
   const dispatcher: InputDispatcher = createInputDispatcher({
     layers: [
       approvalLayer,
       queueLayer,
+      rewindLayer,
       subagentLayer,
       candidateMouseLayer,
       selectionMouseLayer,
@@ -2317,6 +2725,7 @@ export function createNextChatHarness(runtime: ChatRuntime, deps: NextChatHarnes
     },
     isBusy: () => busy,
     queueSnapshot: () => [...queue],
+    renderMode: () => renderModeState.mode,
     awaitDone: () => shutdown.awaitDone(),
     dispose() {
       clearTimers();
@@ -2401,9 +2810,34 @@ export async function runNextChat(options: ChatOptions = {}): Promise<void> {
   // 审查 P1：进程退出兜底（'exit' 回调内同步还原终端；正常路径已还原，序列幂等无副作用）
   const detachExitRestore = bindEmergencyExitRestore(stdout, canRaw ? stdin : undefined);
 
+  // P2-C：渲染模式初值（G-02）——config [ui] screen_mode（core schema 加性段）。
+  // loadConfig 与 setupChatSession 同源（core loadConfig）；此处二次读取只为解析壳渲染初值，
+  // 解析失败静默回退 fullscreen（致命配置错误已由 setupChatSession 的报错通道拦截退出）。
+  // 每用户回合提示去重等语义与该初值无关；[scrollback] 段由 P3 渲染层消费（core 已就绪）。
+  let initialRenderMode: RenderMode = DEFAULT_RENDER_MODE;
+  const bootNotes: string[] = [];
+  try {
+    const loaded = loadConfig({ root: runtime.root });
+    if (loaded.config !== null) {
+      const resolved = resolveInitialRenderMode(loaded.config); // core schema 已带 ui 段（P2-C 加性）
+      initialRenderMode = resolved.mode;
+      if (resolved.warning !== null) bootNotes.push(`warning: ${resolved.warning}`);
+      // G-02 🟡 降级登记：minimal 渲染基座本阶段未接入（评估与理由见 requestRenderModeSwitch）
+      // ——config 显式给了 minimal 时如实声明「本会话以 fullscreen 运行」，绝不伪造接管形态。
+      if (resolved.mode === 'minimal') {
+        initialRenderMode = 'fullscreen';
+        bootNotes.push(
+          'warning: config.ui.screen_mode = minimal —— minimal 渲染基座未接入（G-02 🟡 降级登记），本会话以 fullscreen 运行',
+        );
+      }
+    }
+  } catch {
+    initialRenderMode = DEFAULT_RENDER_MODE;
+  }
+
   const harness = createNextChatHarness(runtime, {
     out: stdout,
-    bootLines,
+    bootLines: [...bootLines, ...bootNotes],
     env,
     gate,
     screen,
@@ -2412,6 +2846,7 @@ export async function runNextChat(options: ChatOptions = {}): Promise<void> {
         childEventSink.handler = fn;
       },
     },
+    initialRenderMode,
     cleanup: async () => {
       screen.stop(); // 关鼠标上报 + 显示光标 + 退 alt-screen（幂等）
       stdout.write(MOUSE_ALL_MOTION_OFF); // 关全 motion 鼠标上报（与 1003h 成对；重复写无害）

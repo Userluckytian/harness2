@@ -151,6 +151,25 @@ export interface GatewaysConfig {
 /** 网关渠道名（与 GATEWAY_CHANNELS 对齐的类型形态） */
 export type GatewayChannelName = 'qq' | 'feishu';
 
+/**
+ * UI 渲染配置（P2-C 加性段）：screen_mode = 壳渲染模式初值（fullscreen = 接管屏幕 /
+ * minimal = 终端原生滚动，不接管）。取值与 cli 侧 tui/render/mode.ts 钉死的
+ * RENDER_MODES 对齐；缺省 fullscreen（壳层缺省语义，schema 不复制缺省常量）。
+ * 仅 next 渲染层消费；其余壳忽略（未知段不加告警——段本身已登记）。
+ */
+export interface UiConfig {
+  screen_mode?: 'fullscreen' | 'minimal';
+}
+
+/**
+ * 滚动转录配置（P2-C 加性段）：scroll.respect_manual_folds = 自动折叠是否覆盖手动折叠
+ * （缺省 true = 尊重手动折叠；与 cli tui/render/folds.ts 的
+ * RESPECT_MANUAL_FOLDS_CONFIG_PATH 同一路径）。仅 next 渲染层消费。
+ */
+export interface ScrollbackConfig {
+  scroll?: { respect_manual_folds?: boolean };
+}
+
 /** 合并+校验后的配置（唯一合法形态） */
 export interface HarnessConfig {
   providers: Record<string, ProviderConfig>;
@@ -165,6 +184,10 @@ export interface HarnessConfig {
   subagent: SubagentConfig;
   /** IM 网关配置（阶段 9；可选——缺省/未配置 = 零网关行为） */
   gateways?: GatewaysConfig;
+  /** UI 渲染配置（P2-C 加性；可选——缺省/未配置 = 壳层缺省 fullscreen） */
+  ui?: UiConfig;
+  /** 滚动转录配置（P2-C 加性；可选——缺省/未配置 = respect_manual_folds true） */
+  scrollback?: ScrollbackConfig;
 }
 
 /** 配置错误（工厂/CLI 对其做一行友好输出；消息不携带密钥） */
@@ -219,6 +242,8 @@ const KNOWN_TOP_KEYS = new Set([
   'mcpServers',
   'subagent',
   'gateways',
+  'ui',
+  'scrollback',
 ]);
 
 function collectUnknownKeys(obj: Dict, known: ReadonlySet<string>, where: string, warnings: string[]): void {
@@ -239,6 +264,9 @@ const MCP_SERVER_KNOWN_KEYS = new Set(['command', 'args', 'env', 'cwd', 'url', '
 const SUBAGENT_KNOWN_KEYS = new Set(['maxDepth', 'maxTurns']);
 const GATEWAYS_KNOWN_KEYS = new Set(['qq', 'feishu']);
 const GATEWAY_CHANNEL_KNOWN_KEYS = new Set(['enabled', 'appId', 'appSecretEnvKey', 'dmPolicy', 'groupPolicy', 'allow']);
+const UI_KNOWN_KEYS = new Set(['screen_mode']);
+const SCROLLBACK_KNOWN_KEYS = new Set(['scroll']);
+const SCROLLBACK_SCROLL_KNOWN_KEYS = new Set(['respect_manual_folds']);
 
 /**
  * 校验合并后的原始 JSON（展开 ${VAR} 之后的形态），产出 HarnessConfig。
@@ -693,6 +721,58 @@ export function parseConfig(raw: unknown): ConfigParseResult {
     }
   }
 
+  // —— ui（P2-C 加性；缺省 = 未配置，壳层回退 fullscreen）——
+  // screen_mode 只认 fullscreen | minimal（与 cli tui/render/mode.ts 的 RENDER_MODES 同域）；
+  // 其余类型/值报致命错误（走 config 报错通道，缺省回退由壳层负责）。
+  const ui: UiConfig = {};
+  const rawUi = raw['ui'];
+  let uiConfigured = false;
+  if (rawUi !== undefined) {
+    if (!isPlainObject(rawUi)) {
+      errors.push('config.ui 必须是对象');
+    } else {
+      uiConfigured = true; // 段配置即透出（可能为空对象——字段缺省语义由壳层裁定）
+      collectUnknownKeys(rawUi, UI_KNOWN_KEYS, 'ui', warnings);
+      const screenMode = rawUi['screen_mode'];
+      if (screenMode !== undefined) {
+        if (typeof screenMode !== 'string' || (screenMode !== 'fullscreen' && screenMode !== 'minimal')) {
+          errors.push(`ui.screen_mode 必须是 fullscreen | minimal，实际为 ${JSON.stringify(screenMode)}`);
+        } else {
+          ui.screen_mode = screenMode;
+        }
+      }
+    }
+  }
+
+  // —— scrollback（P2-C 加性；缺省 = 未配置，壳层回退 respect_manual_folds=true）——
+  const scrollback: ScrollbackConfig = {};
+  const rawScrollback = raw['scrollback'];
+  let scrollbackConfigured = false;
+  if (rawScrollback !== undefined) {
+    if (!isPlainObject(rawScrollback)) {
+      errors.push('config.scrollback 必须是对象');
+    } else {
+      scrollbackConfigured = true; // 段配置即透出（可能为空对象）
+      collectUnknownKeys(rawScrollback, SCROLLBACK_KNOWN_KEYS, 'scrollback', warnings);
+      const scroll = rawScrollback['scroll'];
+      if (scroll !== undefined) {
+        if (!isPlainObject(scroll)) {
+          errors.push('scrollback.scroll 必须是对象');
+        } else {
+          collectUnknownKeys(scroll, SCROLLBACK_SCROLL_KNOWN_KEYS, 'scrollback.scroll', warnings);
+          const respect = scroll['respect_manual_folds'];
+          if (respect !== undefined) {
+            if (typeof respect !== 'boolean') {
+              errors.push('scrollback.scroll.respect_manual_folds 必须是布尔值');
+            } else {
+              scrollback.scroll = { respect_manual_folds: respect };
+            }
+          }
+        }
+      }
+    }
+  }
+
   // —— 交叉引用校验（roles 引用存在的 channel/model）——
   for (const [role, rc] of Object.entries(roles)) {
     const provider = providers[rc.channel];
@@ -714,7 +794,20 @@ export function parseConfig(raw: unknown): ConfigParseResult {
   const safeWarnings = warnings.map(redactSecrets);
   if (safeErrors.length > 0) return { config: null, errors: safeErrors, warnings: safeWarnings };
   return {
-    config: { providers, roles, approval, memory, browser, bash, plugins, mcpServers, subagent, gateways },
+    config: {
+      providers,
+      roles,
+      approval,
+      memory,
+      browser,
+      bash,
+      plugins,
+      mcpServers,
+      subagent,
+      gateways,
+      ...(uiConfigured ? { ui } : {}),
+      ...(scrollbackConfigured ? { scrollback } : {}),
+    },
     errors: safeErrors,
     warnings: safeWarnings,
   };

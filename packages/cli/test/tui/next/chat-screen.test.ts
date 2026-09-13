@@ -111,10 +111,12 @@ describe('layoutChat 分层布局', () => {
     expect(L.shortcuts).toEqual({ top: 5, height: 1 });
   });
 
-  it('更极端 rows=2、3 行草稿：composer 截断到 2，statusline/shortcuts/scrollback 全为 0', () => {
+  it('更极端 rows=2、3 行草稿：G-04 收敛退化序——prompt 降 minHeight(1)、scrollback 保 1 行，statusline/shortcuts 归零', () => {
     const L = layoutChat(2, 80, makeState({ draft: 'a\nb\nc', statusline: 'S', shortcuts: ['q'] }));
-    expect(L.scrollback).toEqual({ top: 0, height: 0 });
-    expect(L.composer).toEqual({ top: 0, height: 2 });
+    // 区域模型（P2-C 收敛，登记差异）：scrollback 最低保 1 行（转录可见优先），
+    // prompt 先降 minHeight 再归零——与旧 columnLayout「composer 先截断、scrollback 可 0」不同
+    expect(L.scrollback).toEqual({ top: 0, height: 1 });
+    expect(L.composer).toEqual({ top: 1, height: 1 });
     expect(L.statusline.height).toBe(0);
     expect(L.shortcuts.height).toBe(0);
   });
@@ -419,7 +421,7 @@ describe('字符网格快照（固定 rows/cols 整屏 rowText）', () => {
 });
 
 describe('截断渲染路径钉死（审查 P2-1）', () => {
-  it('rows=8 + 超长草稿：composer 需求 8 行（7 草稿+1 提示）恰好占满全屏，其余层截断为 0', () => {
+  it('rows=8 + 超长草稿：G-04 收敛退化序——statusline/shortcuts 归零、prompt 降 1 行（光标行贴底兜底可见末行草稿）', () => {
     const { screen } = makeScreen(80, 8);
     const state = makeState({
       draft: 'l1\nl2\nl3\nl4\nl5\nl6\nl7',
@@ -428,15 +430,17 @@ describe('截断渲染路径钉死（审查 P2-1）', () => {
     });
     state.scrollback.append('hello world');
     const L = layoutChat(8, 80, state);
-    // columnLayout 固定层按声明序：composer（需求 8）优先拿满，其后 statusline/shortcuts 截断
-    expect(L.composer).toEqual({ top: 0, height: 8 });
+    // 区域模型（P2-C 收敛，登记差异）：scrollback 最低保 1 行、prompt 降到 minHeight=1
+    // （drawComposer 光标行贴底滚动兜底 → 末行草稿 l7 仍可见）；statusline/shortcuts 砍单归零
+    expect(L.scrollback).toEqual({ top: 0, height: 7 });
+    expect(L.composer).toEqual({ top: 7, height: 1 });
     expect(L.statusline.height).toBe(0);
     expect(L.shortcuts.height).toBe(0);
-    expect(L.scrollback.height).toBe(0);
     renderChat(screen, state);
     const text = gridOf(screen).join('\n');
-    expect(text).toContain('l7'); // 草稿完整可见
-    expect(text).not.toContain('status'); // 固定层被截断
+    expect(text).toContain('l7'); // 光标行贴底兜底：末行草稿可见
+    expect(text).not.toContain('status'); // 固定层被砍单
+    expect(text).not.toContain('q quit');
   });
 
   it('rows=2 + 候选：退化屏不崩；drawComposer(top=0+候选 3 行)≥buf.rows 整体早退不画（候选优先于草稿的取舍，钉死）', () => {

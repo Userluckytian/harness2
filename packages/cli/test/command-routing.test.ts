@@ -395,3 +395,66 @@ describe('三处入口分发结果一致（同一输入同输出）', () => {
     });
   });
 });
+
+// —— (e) 渲染模式命令（P2-C：minimal/fullscreen/full 经壳表 + RenderModeControl 缝）——
+
+describe('渲染模式命令（P2-C）经壳侧分发表', () => {
+  it('未注入 renderMode 缝（legacy/ink 现状）→ 如实声明未接入，不静默吞掉', () => {
+    const { runtime } = makeShellRuntime();
+    const lines: string[] = [];
+    const dispatch = createShellCommandDispatcher();
+    expect(dispatch('minimal', '', makeShellCtx(runtime, lines))).toBe(true);
+    expect(lines).toEqual(['error: 当前界面未接入渲染模式切换（/minimal 仅 next 渲染层提供）']);
+  });
+
+  it('同模式请求 → 幂等提示（状态机空切换）；带参被拒', () => {
+    const { runtime } = makeShellRuntime();
+    const lines: string[] = [];
+    const dispatch = createShellCommandDispatcher();
+    const current = (): 'fullscreen' => 'fullscreen';
+    dispatch(
+      'fullscreen',
+      '',
+      makeShellCtx(runtime, lines, { renderMode: { current, requestSwitch: () => 'same-mode' } }),
+    );
+    expect(lines).toEqual(['当前已是 fullscreen 渲染模式']);
+    lines.length = 0;
+    dispatch(
+      'fullscreen',
+      'now',
+      makeShellCtx(runtime, lines, { renderMode: { current, requestSwitch: () => 'same-mode' } }),
+    );
+    expect(lines).toEqual(['error: /fullscreen 不接受参数（渲染模式切换无参数）']);
+  });
+
+  it('/full 别名解析为 fullscreen（core findCoreCommand 别名 → 壳表 id 命中）', () => {
+    const { runtime } = makeShellRuntime();
+    const lines: string[] = [];
+    const dispatch = createShellCommandDispatcher();
+    const parsed = parseCoreCommand('/full');
+    expect(parsed?.id).toBe('fullscreen');
+    dispatch(
+      parsed!.id!,
+      '',
+      makeShellCtx(runtime, lines, { renderMode: { current: () => 'fullscreen', requestSwitch: () => 'same-mode' } }),
+    );
+    expect(lines).toEqual(['当前已是 fullscreen 渲染模式']);
+  });
+
+  it('跨模式请求 → degraded-unavailable 降级指引（G-02 🟡：重进 REPL、会话保留、未发生切换）', () => {
+    const { runtime } = makeShellRuntime();
+    const lines: string[] = [];
+    const dispatch = createShellCommandDispatcher();
+    const outcome = dispatch(
+      'minimal',
+      '',
+      makeShellCtx(runtime, lines, {
+        renderMode: { current: () => 'fullscreen', requestSwitch: () => 'degraded-unavailable' },
+      }),
+    );
+    expect(outcome).toBe(true);
+    expect(lines.join('\n')).toContain('G-02');
+    expect(lines.join('\n')).toContain('重新进入 REPL');
+    expect(lines.join('\n')).toContain('未发生切换');
+  });
+});

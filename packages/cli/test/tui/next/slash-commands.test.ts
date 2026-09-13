@@ -184,20 +184,22 @@ describe('模糊过滤 filterCommands', () => {
   });
 
   it('前缀命中优先于子序列命中，各自按字典序（/u → /undo 在前）', () => {
-    expect(filterCommands('/u')).toEqual(['/undo', '/auto', '/resume']);
+    // P2-C：候选表加性新增 /minimal /fullscreen → /fullscreen 为 'u' 的子序列命中
+    expect(filterCommands('/u')).toEqual(['/undo', '/auto', '/fullscreen', '/resume']);
   });
 
-  it('前缀命中（/re → reasoning redo resume + 子序列 always-approve）', () => {
-    // 字典序：reasoning < redo（e-a < e-d）；'re' 也是 always-approve 的子序列（…p-p-r-o-v-e）
-    expect(filterCommands('/re')).toEqual(['/reasoning', '/redo', '/resume', '/always-approve']);
+  it('前缀命中（/re → reasoning redo resume + 子序列 always-approve fullscreen）', () => {
+    // 字典序：reasoning < redo（e-a < e-d）；'re' 也是 always-approve / fullscreen 的子序列
+    // （P2-C 候选表加性新增 /fullscreen）
+    expect(filterCommands('/re')).toEqual(['/reasoning', '/redo', '/resume', '/always-approve', '/fullscreen']);
   });
 
   it('纯子序列命中（/he → /help + /theme；P4-2 新增 /theme 子序列命中）', () => {
     expect(filterCommands('/he')).toEqual(['/help', '/theme']);
   });
 
-  it('大小写不敏感（/UN → /undo）', () => {
-    expect(filterCommands('/UN')).toEqual(['/undo']);
+  it('大小写不敏感（/UN → /undo；/fullscreen 为子序列命中，P2-C）', () => {
+    expect(filterCommands('/UN')).toEqual(['/undo', '/fullscreen']);
   });
 
   it('无命中返回空数组（/zz）', () => {
@@ -220,7 +222,8 @@ describe('逐字过滤与候选状态', () => {
     typeText(h, 'r');
     expect(h.state.candidates?.items).toEqual(filterCommands('/r'));
     typeText(h, 'e');
-    expect(h.state.candidates?.items).toEqual(['/reasoning', '/redo', '/resume', '/always-approve']);
+    // P2-C 候选表加性 /fullscreen（'re' 的子序列命中）
+    expect(h.state.candidates?.items).toEqual(['/reasoning', '/redo', '/resume', '/always-approve', '/fullscreen']);
   });
 
   it('普通文本草稿无候选（不以 / 开头）', () => {
@@ -251,9 +254,9 @@ describe('逐字过滤与候选状态', () => {
     h.feed(ARROW_DOWN);
     h.flushUi();
     expect(h.state.candidates?.activeIndex).toBe(3);
-    typeText(h, 'c'); // '/c' → 候选缩到 3 条（P4-2 新增 /search 为 'c' 的子序列命中）
-    expect(h.state.candidates?.items).toEqual(['/compact', '/context', '/search']);
-    expect(h.state.candidates?.activeIndex).toBe(2);
+    typeText(h, 'c'); // '/c' → 候选缩到 4 条（P4-2 新增 /search；P2-C 加性 /fullscreen 为子序列命中）
+    expect(h.state.candidates?.items).toEqual(['/compact', '/context', '/fullscreen', '/search']);
+    expect(h.state.candidates?.activeIndex).toBe(3); // 旧高亮 3 仍在新范围内（原样保留）
   });
 
   it('候选可见时 ↑↓ 循环改选（内置行为与重算共存）', () => {

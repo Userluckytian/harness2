@@ -1,4 +1,4 @@
-// 13 条命令的元数据目录（纯数据，不 import 任何实现；帮助文本与 describeCapabilities
+// 15 条命令的元数据目录（纯数据，不 import 任何实现；帮助文本与 describeCapabilities
 // 都从这里读，保证「一份元数据多处消费」）。
 // summary/声明顺序从 cli command-registry.ts 逐字搬平（声明顺序 = 帮助展示顺序）。
 import type { CoreCommandGroup } from './types.js';
@@ -46,6 +46,19 @@ export const CORE_COMMAND_META: readonly CoreCommandMeta[] = [
     group: '模式',
     summary: '查看/切换推理过程展示（on|off，默认 off）',
     argsSpec: '[on|off]',
+    shellOnly: true,
+  },
+  {
+    id: 'minimal',
+    group: '模式',
+    summary: '切换 minimal 渲染模式（终端原生滚动，不接管屏幕）',
+    shellOnly: true,
+  },
+  {
+    id: 'fullscreen',
+    group: '模式',
+    summary: '切换 fullscreen 渲染模式（接管屏幕；缩写 /full）',
+    aliases: ['full'],
     shellOnly: true,
   },
   { id: 'tasks', group: '调度', summary: '列出 cron 任务（只读）' },
