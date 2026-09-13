@@ -1201,10 +1201,14 @@ export function createNextChatHarness(runtime: ChatRuntime, deps: NextChatHarnes
     ];
   }
 
-  /** 打开面板（Ctrl+X 入口）：仅 busy 且队列非空；否则瞬时提示不开面板 */
+  /** 打开面板（Ctrl+X 入口）：审批挂起时拒绝（审批最优先，防顶掉寄放卡）；否则仅 busy 且队列非空 */
   function openQueuePanel(): void {
+    if (gate.pending() !== null) {
+      showHint('审批待答（Tab 回卡）——先处理审批');
+      return;
+    }
     if (!busy || queue.length === 0) {
-      showHint('（队列为空）');
+      showHint(busy ? '（队列为空）' : '非忙时不开放队列面板（空闲时队列已由 drain 排空或等待下次 turn）');
       return;
     }
     queuePanel = { activeIndex: 0 };
@@ -1222,6 +1226,11 @@ export function createNextChatHarness(runtime: ChatRuntime, deps: NextChatHarnes
     queuePanel = null;
     const top = state.overlays[state.overlays.length - 1];
     if (state.overlays.length === 1 && top?.title?.startsWith('Queue · ') === true) state.overlays = [];
+    if (gate.pending() !== null) {
+      // 审批仍挂起（寄放卡曾被面板挤占/清除）：重建审批卡，杜绝「盲批」（审查 P1-1）
+      approvalParked = true; // 键盘留在 composer，卡片显示等待 Tab 回卡
+      state.overlays = [buildApprovalSpec()];
+    }
     controller.focus();
     if (refresh) invalidate();
   }

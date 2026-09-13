@@ -448,11 +448,31 @@ describe('P3-E 队列取消面板', () => {
     f.h.dispose();
   });
 
-  it('Ctrl+X 在空闲或队列空时不开面板（瞬时提示）', async () => {
+  it('Ctrl+X 在空闲或队列空时不开面板（瞬时提示；空闲提示区分于队列空，审查 P2-2）', async () => {
     const { h } = makeHarness();
     h.feed(CTRL_X);
     expect(h.state.overlays).toHaveLength(0);
-    expect((h.state.indicators ?? []).join(' ')).toContain('队列为空');
+    expect((h.state.indicators ?? []).join(' ')).toContain('非忙时不开放队列面板');
+    h.dispose();
+  });
+
+  it('审批寄放时 Ctrl+X 拒开面板（卡不被顶掉，审查 P1-1）；接管期 Ctrl+X 被审批层消费', async () => {
+    const { h, gate } = makeHarness();
+    const p = gate.ask('允许执行 write?');
+    await vi.advanceTimersByTimeAsync(80);
+    // 接管期：审批层整体消费键盘，Ctrl+X 到不了队列入口
+    h.feed(CTRL_X);
+    expect(h.state.overlays.length).toBe(1);
+    expect(h.pendingApproval()).toBe('允许执行 write?');
+    // 寄放：键盘回 composer，卡片保持显示——此时 Ctrl+X 必须拒开面板（P1-1）
+    h.feed(ESC);
+    await vi.advanceTimersByTimeAsync(120); // 孤立 ESC 空闲超时 → Esc 寄放
+    h.feed(CTRL_X);
+    expect(h.state.overlays.length).toBe(1); // 卡未被顶掉
+    expect(h.state.overlays[0]?.title).toContain('Approval');
+    expect((h.state.indicators ?? []).join(' ')).toContain('审批待答');
+    h.approve('n'); // 审批仍可正常回答
+    await p;
     h.dispose();
   });
 
