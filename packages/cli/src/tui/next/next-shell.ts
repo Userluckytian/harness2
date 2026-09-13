@@ -627,6 +627,7 @@ export function createNextChatHarness(runtime: ChatRuntime, deps: NextChatHarnes
     transcript = transcriptReducer(transcript, { type: 'system', id: `boot:${i}`, text });
   });
   const state: ChatScreenState = {
+    env: deps.env,
     scrollback: new Scrollback([], Math.max(1, screen.cols - 1)),
     draft: '',
     cursor: 0,
@@ -1029,7 +1030,8 @@ export function createNextChatHarness(runtime: ChatRuntime, deps: NextChatHarnes
     const text = sb.getSelectedText();
     deps.out.write(osc52Copy(text));
     sb.clearSelection();
-    showHint(`已复制 ${text.length} 字符`);
+    ctrlCGuard.reset(); // 复制不是退出意图：重置双击窗口（审查 P2-2，防 2s 内再按直接退出）
+    showHint(`已复制 ${[...text].length} 字符`); // 码点数（非 UTF-16 code unit）
     return true;
   }
 

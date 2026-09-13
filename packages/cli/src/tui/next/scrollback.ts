@@ -80,10 +80,45 @@ export function detectUrlSegments(text: string): LinkSegment[] {
       URL_RE.lastIndex += 1; // 防御：空匹配死循环
       continue;
     }
-    out.push({ startCol: colAt(text, m.index), endCol: colAt(text, m.index + m[0].length), url: m[0] });
+    // 尾部标点不入 href（审查 P2-1）：中英文句读/括号引号贴在 URL 尾上时视为句子标点
+    let url = m[0];
+    let end = m.index + m[0].length;
+    while (url.length > 0 && TRAILING_PUNCT.has(url.charAt(url.length - 1))) {
+      url = url.slice(0, -1);
+      end -= 1;
+    }
+    if (url.length === 0) continue;
+    out.push({ startCol: colAt(text, m.index), endCol: colAt(text, end), url });
   }
   return out;
 }
+
+/** URL 尾部剥离的标点（中英文句读与成对符号闭口侧） */
+const TRAILING_PUNCT = new Set([
+  '.',
+  ',',
+  ';',
+  ':',
+  '!',
+  '?',
+  '。',
+  '，',
+  '；',
+  '：',
+  '！',
+  '？',
+  '）',
+  '】',
+  '』',
+  '」',
+  ')',
+  ']',
+  '}',
+  '>',
+  '\"',
+  "'",
+  '`',
+]);
 
 /** UTF-16 索引 → 该处字符的起始显示列（索引落在行尾/零宽字符上时取已累计列数） */
 function colAt(text: string, utf16Index: number): number {
@@ -549,6 +584,8 @@ export interface ScrollbackRenderOptions {
   trackChar?: string;
   /** thumb 字符（默认 '█'） */
   thumbChar?: string;
+  /** 环境变量源（OSC8 开关判定；缺省 process.env——装配层传 deps.env 以单源） */
+  env?: NodeJS.ProcessEnv;
   /** 滚动条前景色（默认 0） */
   scrollbarFg?: number;
 }
@@ -590,7 +627,8 @@ export function drawScrollback(buf: CellBuffer, sb: Scrollback, opts: Scrollback
   const fg = opts.fg ?? 0;
   const sbFg = opts.scrollbarFg ?? 0;
   const contentCols = useScrollbar ? width - 1 : width;
-  const linksOn = process.env.HARNESS2_OSC8 !== '0'; // P4-1 开关（=0 完全旁路 URL 检测/标记）
+  // P4-1 开关（=0 完全旁路 URL 检测/标记）：优先用调用方注入的 env（与 presenter 单源，审查 P2-3）
+  const linksOn = (opts.env ?? process.env).HARNESS2_OSC8 !== '0';
   const sel = sb.selectionRange(); // P4-1 选择高亮（fg 换色；无选择 = null 零影响）
 
   const win = sb.visibleWindow(height);

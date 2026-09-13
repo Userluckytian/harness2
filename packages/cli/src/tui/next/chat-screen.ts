@@ -74,6 +74,8 @@ export interface ChatScreenState {
    * （草稿/候选不画），scrollback 区改画子会话内容；statusline/shortcuts 保持。
    */
   subagentView?: SubagentViewState | null;
+  /** 环境变量源（OSC8 开关判定单源；缺省 process.env，装配层传 deps.env） */
+  env?: NodeJS.ProcessEnv;
 }
 
 /** 各层矩形 + 分层中间量（导出供测试断言） */
@@ -221,7 +223,11 @@ function drawScrollbackLayer(buf: CellBuffer, state: ChatScreenState, layer: Lay
   if (layer.height <= 0) return; // 镜像 renderScrollback：零高度不渲染、不污染 viewportRows
   // P3-D：视图态改画子会话 scrollback（独立实例，主转录不动）；其余同主转录（滚动条/宽/fg 缺省）
   const sb = state.subagentView?.scrollback ?? state.scrollback;
-  drawScrollback(buf, sb, { top: layer.top, height: layer.height });
+  drawScrollback(buf, sb, {
+    top: layer.top,
+    height: layer.height,
+    ...(state.env !== undefined ? { env: state.env } : {}), // OSC8 开关单源（审查 P2-3）
+  });
 }
 
 function drawComposerLayer(buf: CellBuffer, state: ChatScreenState, layout: ChatLayout): void {
