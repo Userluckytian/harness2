@@ -96,6 +96,8 @@ export interface OverlaySpec {
   items: ReadonlyArray<string | OverlayItem>;
   /** 高亮条目下标（越界/缺省 = 无高亮） */
   activeIndex?: number;
+  /** 数字直选序号标记（前 9 项渲染 ` n.`；审批卡等支持数字直选的浮层置 true） */
+  showNumbers?: boolean;
 }
 
 export interface OverlayDrawOptions {
@@ -167,6 +169,39 @@ function clipToWidth(text: string, maxCols: number): string {
     out += ch;
     w += cw;
   }
+  return out;
+}
+
+/**
+ * 按显示宽度贪心折行（P3-B 审批卡 Ctrl+F 全文展开用）：宽字符放不下整字换到下一行
+ * （绝不切半边）、零宽字符跟随当前行、`\n` 强制断行；单个宽字符超宽时独占一行。
+ * 空串返回 `['']`（保持单空行占位，调用方按 items 处理时不塌缩）。
+ */
+export function wrapTextByWidth(text: string, maxCols: number): string[] {
+  const max = Math.max(1, Math.floor(maxCols));
+  const out: string[] = [];
+  let line = '';
+  let w = 0;
+  const breakLine = (): void => {
+    out.push(line);
+    line = '';
+    w = 0;
+  };
+  for (const ch of text) {
+    if (ch === '\n') {
+      breakLine();
+      continue;
+    }
+    const cw = charWidth(ch.codePointAt(0) ?? 0);
+    if (cw === 0) {
+      line += ch; // 零宽字符跟随，不影响宽度
+      continue;
+    }
+    if (w + cw > max) breakLine();
+    line += ch;
+    w += cw;
+  }
+  out.push(line);
   return out;
 }
 
@@ -249,7 +284,7 @@ export function drawOverlay(
     const isActive = gi === active;
     const rowFg = isActive ? activeFg : fg;
     let row: string;
-    if (opts.showNumbers === true && gi < 9) {
+    if ((opts.showNumbers === true || spec.showNumbers === true) && gi < 9) {
       // 右侧数字直选序号：` n.` 预留 3 列贴内容区右缘；标签给序号让位
       const marker = ` ${gi + 1}.`;
       const markerWidth = displayWidth(marker);

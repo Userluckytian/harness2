@@ -529,3 +529,106 @@ describe('性能冒烟', () => {
     for (const l of lines) expect(l.lineIndex).toBeGreaterThanOrEqual(0);
   });
 });
+
+// —— P3-D：subagent 耗时 + 运行 spinner（2026-09-12）——
+describe('projectTranscript：subagent 耗时（P3-D）', () => {
+  const call = {
+    type: 'tool/call' as const,
+    seq: 1,
+    callId: 's1',
+    tool: 'subagent_start',
+    args: '{"description":"调查 bug"}',
+  };
+  const okResult = {
+    type: 'tool/result' as const,
+    callId: 's1',
+    tool: 'subagent_start',
+    ok: true,
+    output: '{"childSessionId":"child-1"}',
+  };
+
+  it('durations 命中：`⏺ Subagent "调查 bug" 完成（43s）`（对齐 grok completed in 43s）', () => {
+    const lines = projectTranscript(build(call, okResult), { durations: new Map([['s1', 43]]) });
+    expect(lines[0]?.text).toBe('⏺ Subagent "调查 bug" 完成（43s）');
+  });
+
+  it('durations 未命中该 callId：不显示耗时（不伪造）', () => {
+    const lines = projectTranscript(build(call, okResult), { durations: new Map([['other', 43]]) });
+    expect(lines[0]?.text).toBe('⏺ Subagent "调查 bug" 完成');
+  });
+
+  it('不传 durations：保持既有文案（回归）', () => {
+    const lines = projectTranscript(build(call, okResult));
+    expect(lines[0]?.text).toBe('⏺ Subagent "调查 bug" 完成');
+  });
+
+  it('≥60s：分钟格式 `（1m35s）`', () => {
+    const lines = projectTranscript(build(call, okResult), { durations: new Map([['s1', 95]]) });
+    expect(lines[0]?.text).toBe('⏺ Subagent "调查 bug" 完成（1m35s）');
+  });
+
+  it('failed 命中：`⏺ Subagent "续跑" 失败（43s）`', () => {
+    const lines = projectTranscript(
+      build(
+        { type: 'tool/call' as const, seq: 3, callId: 's2', tool: 'subagent_continue', args: '{"description":"续跑"}' },
+        { type: 'tool/result' as const, callId: 's2', tool: 'subagent_continue', ok: false, error: 'boom\nstack' },
+      ),
+      { durations: new Map([['s2', 43]]) },
+    );
+    expect(lines[0]?.text).toBe('⏺ Subagent "续跑" 失败（43s）');
+  });
+
+  it('普通工具不受 durations 影响（耗时只对子代理块显示）', () => {
+    const lines = projectTranscript(
+      build(
+        { type: 'tool/call' as const, seq: 4, callId: 'r1', tool: 'read', args: '{"file_path":"a.txt"}' },
+        { type: 'tool/result' as const, callId: 'r1', tool: 'read', ok: true, output: 'hi' },
+      ),
+      { durations: new Map([['r1', 43]]) },
+    );
+    expect(lines[0]?.text).toBe('⏺ read(a.txt)');
+    expect(lines[1]?.text).not.toContain('43');
+  });
+});
+
+describe('projectTranscript：subagent 运行 spinner（P3-D）', () => {
+  const call = {
+    type: 'tool/call' as const,
+    seq: 1,
+    callId: 's1',
+    tool: 'subagent_start',
+    args: '{"description":"调查 bug"}',
+  };
+  const okResult = {
+    type: 'tool/result' as const,
+    callId: 's1',
+    tool: 'subagent_start',
+    ok: true,
+    output: '{"childSessionId":"child-1"}',
+  };
+
+  it('运行中 + spinner：指示字符替换 ⏺ 前缀', () => {
+    const lines = projectTranscript(build(call), { spinner: '⠋' });
+    expect(lines[0]?.text).toBe('⠋ Subagent "调查 bug" 运行中');
+  });
+
+  it('运行中无 spinner：保持 ⏺ 前缀（回归）', () => {
+    const lines = projectTranscript(build(call));
+    expect(lines[0]?.text).toBe('⏺ Subagent "调查 bug" 运行中');
+  });
+
+  it('spinner 只作用于运行中子代理行（完成行/普通工具行不变）', () => {
+    const lines = projectTranscript(
+      build(call, okResult, {
+        type: 'tool/call' as const,
+        seq: 2,
+        callId: 's3',
+        tool: 'subagent_start',
+        args: '{"description":"二号"}',
+      }),
+      { spinner: '◐', durations: new Map([['s1', 12]]) },
+    );
+    expect(lines[0]?.text).toBe('⏺ Subagent "调查 bug" 完成（12s）');
+    expect(lines[2]?.text).toBe('◐ Subagent "二号" 运行中');
+  });
+});

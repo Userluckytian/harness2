@@ -31,11 +31,24 @@ import type { Screen } from '../renderer/screen.js';
 import { DEFAULT_ACTIVE_FG, candidateRows, drawComposer, measureComposer } from './composer.js';
 import { drawOverlay, overlayNaturalHeight, overlayStackLayout, type OverlaySpec } from './overlay.js';
 import { drawScrollback, writeRowClipped, type Scrollback } from './scrollback.js';
+import { FG } from './projection.js';
 
 /** 候选列表状态（画在 composer 层顶部，activeIndex 高亮 + 滚动窗口） */
 export interface ChatCandidates {
   items: readonly string[];
   activeIndex: number;
+}
+
+/**
+ * P3-D：全屏子代理视图态（非 null = 视图接管整帧）。子会话转录由接线层（next-shell）
+ * 用独立 Scrollback 承载（磁盘重放 + onChildEvent 实时追加），本层只负责画：
+ * scrollback 区画子会话内容、composer 层只画一行提示（草稿/候选/指示不画）。
+ */
+export interface SubagentViewState {
+  /** 子会话转录滚动区（cols 契约与主 scrollback 一致：内容区宽 = 屏宽 - 1） */
+  scrollback: Scrollback;
+  /** composer 层提示行（q/Esc 返回 + 滚动键位 + 子会话标识） */
+  hint: string;
 }
 
 /** Chat 整帧状态（renderChat 只接受状态、画出结果；按键处理不在本库） */
@@ -56,6 +69,11 @@ export interface ChatScreenState {
   shortcuts: readonly string[] | string;
   /** 底边指示（画在 composer 层底行右侧，' · ' 连接右对齐） */
   indicators?: readonly string[];
+  /**
+   * P3-D：全屏子代理视图（非 null = 视图态）。布局上 composer 层收为 1 行提示行
+   * （草稿/候选不画），scrollback 区改画子会话内容；statusline/shortcuts 保持。
+   */
+  subagentView?: SubagentViewState | null;
 }
 
 /** 各层矩形 + 分层中间量（导出供测试断言） */
@@ -78,6 +96,87 @@ export function shortcutsText(shortcuts: readonly string[] | string): string {
   return typeof shortcuts === 'string' ? shortcuts : shortcuts.join(SHORTCUTS_SEPARATOR);
 }
 
+// —— P3-E 上下文化 chrome（纯函数，next-shell 装配层数据驱动调用）——
+
+/**
+ * 快捷键条四态（P3-E，对齐 grok shortcuts bar 随上下文变化的行为）。
+ * 互斥由单一 return 保证（优先级：审批接管 > 子视图 > busy > 空闲，与 dispatcher
+ * 层级一致）；寄放态（approvalParked）不算接管——键盘在 composer，走 idle 组。
+ */
+export interface ShortcutContext {
+  /** turn 运行中 */
+  busy: boolean;
+  /** FIFO 队列条数（只在 busy 态显示 Ctrl+X 段——队列只在忙时有意义） */
+  queueCount: number;
+  /** 审批卡接管键盘（挂起且未寄放） */
+  approvalActive: boolean;
+  /** 全屏子视图 / 子会话选择浮层打开 */
+  subviewOpen: boolean;
+}
+
+/** 快捷键条上下文 → 键位组（纯函数；busy 组队列段仅 queueCount>0 时出现） */
+export function shortcutsFor(ctx: ShortcutContext): readonly string[] {
+  if (ctx.approvalActive) return ['↑↓ 选择', 'Enter 确认', 'Ctrl+F 展开', 'Esc 寄放'];
+  if (ctx.subviewOpen) return ['q 返回', 'PgUp/PgDn 滚动'];
+  if (ctx.busy) {
+    const keys = ['Ctrl+C 取消'];
+    if (ctx.queueCount > 0) keys.push(`Ctrl+X 队列(${ctx.queueCount})`);
+    return keys;
+  }
+  return ['/ 命令', 'Tab 焦点', 'Ctrl+C 退出'];
+}
+
+/** cwd 短化：home 前缀替换为 ~（/home/me/proj → ~/proj；win 反斜杠同义）；非前缀原样 */
+export function shortenCwd(cwd: string, home: string): string {
+  if (home.length === 0 || cwd.length < home.length) return cwd;
+  const sep = cwd.includes('\\') || home.includes('\\') ? '\\' : '/';
+  const prefix = home.endsWith(sep) || home.endsWith('/') ? home : home + sep;
+  if (cwd === home) return '~';
+  if (cwd.startsWith(prefix)) return `~${sep}${cwd.slice(prefix.length)}`;
+  return cwd;
+}
+
+/** 上下文占用格式化：undefined = 未知（无活动会话/读取失败），显示 — 不伪造数值 */
+export function formatContextUsage(usage: number | undefined): string {
+  return usage === undefined ? '—' : `${Math.round(usage * 100)}%`;
+}
+
+/** 状态行上下文（P3-E：cwd · model · ctx% · 模式(非 normal) · 重试标记 · 运行中标记） */
+export interface StatusLineContext {
+  /** 装配期工作目录（原始路径，本函数内做 ~ 短化） */
+  cwd: string;
+  /** 用户主目录（~ 短化基准） */
+  home: string;
+  /** 模型名（= runtime.provider.name，写入 assistant/message.model 的同一标识） */
+  model: string;
+  /** 上下文占用 0..1（core getContextUsage；undefined = 未知 → ctx —） */
+  usage?: number;
+  /** UI 模式（四态；normal/缺省省略） */
+  mode?: string;
+  /** 上一 turn 的重试预算标记（used/max；无重试史省略） */
+  retry?: { used: number; max: number };
+  /** turn 运行中 */
+  busy?: boolean;
+}
+
+/** 状态行上下文 → 行文本（纯函数；段序固定：cwd · model · ctx · mode · retry · busy） */
+export function statusLineFor(ctx: StatusLineContext): string {
+  const parts = [shortenCwd(ctx.cwd, ctx.home), ctx.model, `ctx ${formatContextUsage(ctx.usage)}`];
+  if (ctx.mode !== undefined && ctx.mode !== 'normal') parts.push(ctx.mode);
+  if (ctx.retry !== undefined) parts.push(`重试 ${ctx.retry.used}/${ctx.retry.max}`);
+  if (ctx.busy === true) parts.push('⏺ 运行中…');
+  return parts.join(SHORTCUTS_SEPARATOR);
+}
+
+/** 队列面板条目预览列宽（对齐 ink queue-panel 的 PREVIEW_MAX=42） */
+export const QUEUE_PREVIEW_MAX = 42;
+
+/** 队列条目单行预览：折行合一 + 超长截断加省略号（仅展示用，不改队列原文） */
+export function queueEntryPreview(text: string, max: number = QUEUE_PREVIEW_MAX): string {
+  const oneLine = text.replace(/\s+/g, ' ').trim();
+  return oneLine.length <= max ? oneLine : `${oneLine.slice(0, max)}…`;
+}
+
 /**
  * 纵向分层（纯计算）：composer 高度 = 草稿物理行 + 候选行 + 1 提示行；
  * statusline 有则 1 行；shortcuts 固定 1 行；其余全给 scrollback（flex）。
@@ -86,9 +185,11 @@ export function shortcutsText(shortcuts: readonly string[] | string): string {
 export function layoutChat(rows: number, cols: number, state: ChatScreenState): ChatLayout {
   const totalRows = Math.max(0, Math.floor(rows));
   const totalCols = Math.max(1, Math.floor(cols));
-  const draft = state.draft ?? '';
-  const draftRows = measureComposer(draft, totalCols, state.cursor).rows;
-  const candRows = state.candidates === null ? 0 : candidateRows(state.candidates.items.length);
+  // P3-D：视图态 composer 收为 1 行提示行（草稿/候选不参与测量——draftRows 强制 0，
+  // 否则 measureComposer 的空草稿仍占 1 行会把提示行顶高）
+  const subview = state.subagentView ?? null;
+  const draftRows = subview !== null ? 0 : measureComposer(state.draft ?? '', totalCols, state.cursor).rows;
+  const candRows = subview !== null || state.candidates === null ? 0 : candidateRows(state.candidates.items.length);
   const hasStatusline = typeof state.statusline === 'string' && state.statusline.length > 0;
   const rects = columnLayout({
     total: totalRows,
@@ -118,14 +219,20 @@ export function layoutChat(rows: number, cols: number, state: ChatScreenState): 
 
 function drawScrollbackLayer(buf: CellBuffer, state: ChatScreenState, layer: LayerRect): void {
   if (layer.height <= 0) return; // 镜像 renderScrollback：零高度不渲染、不污染 viewportRows
-  // width/fg/滚动条字符均用 drawScrollback 缺省值（= 原 chat-screen 复刻的常量：
-  // width=buf.cols、内容区 = width-1、轨道 '│' / thumb '█'、fg 0）
-  drawScrollback(buf, state.scrollback, { top: layer.top, height: layer.height });
+  // P3-D：视图态改画子会话 scrollback（独立实例，主转录不动）；其余同主转录（滚动条/宽/fg 缺省）
+  const sb = state.subagentView?.scrollback ?? state.scrollback;
+  drawScrollback(buf, sb, { top: layer.top, height: layer.height });
 }
 
 function drawComposerLayer(buf: CellBuffer, state: ChatScreenState, layout: ChatLayout): void {
   const { top, height } = layout.composer;
   if (height <= 0 || top >= buf.rows) return; // 镜像 renderComposer：越界/零高度不渲染
+  // P3-D：视图态 composer 层只画一行提示（灰；草稿/候选/指示不画——子会话视图无输入）
+  const subview = state.subagentView;
+  if (subview) {
+    writeRowClipped(buf, top, subview.hint, buf.cols, FG.gray);
+    return;
+  }
   // composer 层内自上而下 = 候选行（层顶）→ 草稿行 → 提示行（层底，恒保留）。
   // drawComposer 语义：候选画在草稿区上方（底部锚定）、指示画在草稿区底行。
   // 映射：草稿区 top = 层顶 + 候选行数，height = 草稿可用行（draftCap）+ 提示行，
@@ -156,7 +263,7 @@ function drawOverlays(buf: CellBuffer, state: ChatScreenState, layout: ChatLayou
     const rect = rects[i];
     const spec = state.overlays[i];
     if (rect == null || spec === undefined) continue;
-    drawOverlay(buf, spec, rect, { width: cols, activeFg: DEFAULT_ACTIVE_FG });
+    drawOverlay(buf, spec, rect, { width: cols, activeFg: DEFAULT_ACTIVE_FG, showNumbers: spec.showNumbers === true });
   }
 }
 

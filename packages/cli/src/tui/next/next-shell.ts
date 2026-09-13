@@ -32,14 +32,100 @@
 //   1004 焦点上报（parser 产出 focus 事件 → focused 标记，notifier 策略自然生效）均已接。
 //
 // next 模式暂缺项（对齐 Ink 的差距，诚实登记、不伪造）：
-//   1. 斜杠命令仅 /help /? /exit /quit；/mode /sessions /undo /redo /new /resume /fork
-//      /context /compact /reasoning /tasks 未接（提示暂不支持，不静默吞掉）。
-//   2. 队列面板（Ctrl+X 取消排队条目）与 RetryPanel（重试预算展示）未接。
-//   3. 工具卡 output/子会话入口的磁盘补齐（enrichSubagentResults）未接：live 流不带 output，
-//      工具结果行只有状态无输出摘要；子会话只读浮层（Ctrl+J/K）未接。
-//   4. scrollback 绘制为单一前景色（drawScrollback 仅支持单 fg），projection 的逐行配色
-//      （用户/工具/错误行着色）不落地；工具/推理卡为纯文本行近似（无边框/反色）。
-//   5. 软折行视觉行内 ↑↓ 移动（Infinity 宽度逻辑行移动）、候选补全（matchCommands）未接。
+//   1. 斜杠命令已全集接齐（P3-C）：ink 版有的命令在本层均有等价行为——共享命令（/undo /redo
+//      /new /resume /fork /exit /quit /sessions）委托 ink-commands.runSharedCommand（真实
+//      CommandContext + 磁盘重投影）；/help /? /mode /context /compact /reasoning /tasks
+//      本地实现（与 ink 同文案）；/plan /auto /always-approve 为 next 层 UI 模式命令。
+//      登记差异：/sessions 无参为转录文本列表（ink 为选择浮层，浮层化暂缺）；/mode 无参 =
+//      UI 模式循环一次（等价 Shift+Tab）、带参接受四态名（ink 为 core 审批模式别名 + 选择
+//      浮层，core 契约冻结不改）；未知命令走共享「未知命令」文案（不再有本层「暂不支持」分支）。
+//   2. 队列面板（Ctrl+X 取消排队条目）与重试信息已接齐（P3-E）——差异登记：
+//      队列面板 = 浮层列表（Queue · N 项 + 高亮走行），Ctrl+X/x 取消高亮项（ink 只取消队首）、
+//      q/Esc 关闭、取消回报「已取消排队」system 行（ink 无回报行）；重试信息 = 转录 system 行
+//      （formatRetryBudget 文案与 ink RetryPanel 一致）+ 状态行「重试 used/max」标记
+//      （ink 为结构化底部面板；React 组件不可复用，形态差异如实登记）。
+//      状态行/快捷键条上下文化（P3-E）：状态行 = cwd(~) · model · ctx% · 模式(非 normal)
+//      · 重试标记 · 运行中标记（数据驱动纯函数 statusLineFor）；快捷键条 = shortcutsFor 四态
+//      （审批接管 > 子视图 > busy > 空闲，busy 组含 Ctrl+X 队列(N)）。旧「core 模式名/已排队 N」
+//      状态行段移除（模式由 UI 四态承载、队列数移至快捷键条），如实登记。
+//   3. 工具卡 output 的磁盘补齐（enrichSubagentResults）未接：live 流 tool/result 不带 output，
+//      工具结果行只有状态无输出摘要；live 工具卡也不显示 childSessionId 入口（StreamEvent 契约
+//      所限）——子会话候选改由 onChildEvent 登记补齐（见 P3-D），磁盘重投影后转录 item 自带。
+//   4. 工具卡/推理块仍为纯文本行近似（无边框/反色）；逐行前景色已落地（P3-A：
+//      projection fg → Scrollback 行对象 fg → drawScrollback 逐行绘制，单 fg 兜底保留）。
+//   5. 软折行视觉行内 ↑↓ 移动（Infinity 宽度逻辑行移动）未接；候选补全已接（P3-C，见下）。
+//
+// P3-D 子代理块（耗时/动画）+ 全屏子视图（2026-09-12，对齐 grok 16-subagents）：
+//   - 耗时：subagent tool/call → tool/result 的 turn 事件流间隔（UI 层近似计时——含审批
+//     等待/调度延迟，非 core runTurn durationMs，如实登记）；投影文案 `完成（43s）`（对齐
+//     grok "Subagent completed in 43s"）；<1s 视为即时完成不显示（0s 噪音）；无记录不伪造。
+//   - 运行动画：busy 且存在运行中子代理块（subagentStarts 非空）时 150ms setInterval 循环
+//     invalidation（braille spinner SPINNER_FRAMES，next-shell 持有帧序并传入投影，只替换
+//     运行中子代理行前缀）；空闲/无运行中块停表；spinner tick 走 reprojectAll 全量重建
+//     （items 引用不变时 syncProjection 会早退）。
+//   - 全屏子视图：滚动区焦点 `v` 打开（键位裁决与差异登记见 keymap 文档冲突项 6；grok 为
+//     选中块 Enter/Ctrl+F）。0 个子会话 = 瞬时提示；1 个 = 直开；多个 = overlay 列表选择
+//     （↑↓/j/k/数字/Enter，Esc/q 取消）。视图 = 独立 Scrollback（projectSession 磁盘重放
+//     ∪ onChildEvent 事件，seq id 幂等合并）+ composer 层降为 1 行「q/Esc 返回」提示行
+//     （chat-screen.subagentView 态：草稿/候选/指示不画）；运行中的子会话经 SubagentHooks
+//     .onChildEvent 实时追加进该视图（setupChatSession 装配层传参 → runNextChat sink 延迟
+//     转发 → harness；core 零改动）。视图内 ↑↓ 单行 / PgUp/PgDn 翻页 / 滚轮 ±3。
+//
+// P3-C 斜杠命令全集 + 模糊补全（2026-09-12，对齐 grok `/` 内联下拉 + ink matchCommands）：
+//   - 候选触发：draft 以 '/' 开头且不含空格/换行（= ink Composer 的 commandNameActive 语义）；
+//     逐字过滤实时重算（syncCandidates 在 invalidate 内，draft 变化必经 feed → invalidate）。
+//   - 过滤排序 filterCommands：前缀命中 > 子序列命中（isSubsequence），各自按字典序（ink 的
+//     matchCommands 是纯前缀，本层为其模糊超集；空输入 = 全部命令字典序）。
+//   - Tab / Enter 接受候选：草稿写回 `/cmd `（**含尾随空格**，即退出候选态；再按 Enter 才
+//     发送）。差异登记：grok 选中即执行、ink Enter 提交原草稿；本层采用任务规格的两段式
+//     （接受 → 可继续补参数 → 再 Enter 发送）。
+//   - 悬停/滚轮改选（grok panes.rs:958）：候选画在 composer 层顶部，命中测试
+//     composer.candidateItemAt（相对候选区顶行 → item 下标，含滚动窗口映射）；next 层在
+//     dispatcher 装 candidateMouseLayer（approval 与 composer 之间）：move 命中候选行改
+//     activeIndex、滚轮在候选行上 ±1 循环（候选区外滚轮照常滚转录）。真机悬停需 all-motion
+//     鼠标上报，本层补写 DECSET 1003（MOUSE_ALL_MOTION_ON，与 renderer MOUSE_ON 的
+//     1000;1002;1006 叠加；退出对称关闭）。
+//   - /undo /redo /new /resume /fork /sessions /exit 的重投影语义复用 runSharedCommand：
+//     rewind/会话切换后以 projectSession(dir) 整体重建转录（reprojectFromDisk；磁盘读取失败
+//     保底重投影内存转录，不伪造），并清空折叠覆盖集（对齐 ink 重投影清 expandedIds）。
+//
+// P3-A 键位（2026-09-12 keymap-parity 裁决落地，next 层）：
+//   - Tab = 输入框/滚动区双态焦点（候选可见时 Tab 仍是接受候选，dispatcher 候选优先）；
+//     滚动区焦点下 h/l/e/E 生效（块折叠键族），其余字母键自动回到输入框照常插入
+//     （grok simple 模式语义）；指示器显示 'scrollback'。
+//   - e = 展开全部块 / E = 折叠全部块（collapsed 覆盖集全量重置：e = 收录全部可折叠
+//     item 下标，E = 清空集）；h/l = 折叠/展开最近一次工具/推理 item（next 无块光标，
+//     取最近可折叠 item，对齐旧 Ctrl+O 定位策略；grok 是选中块导航，差异登记 keymap 文档）。
+//   - Ctrl+O = always-approve 切换（grok YOLO）：UI 开关自动代答 'a'——新审批 ask 时经
+//     gate.choose('a') 走 gate 的 resolve 路径，**不绕过 core 审批队列**（红线 6）；开关
+//     开启瞬间已挂起的审批不自动代答（当次仍手动回答）；底边指示器显示 'always-approve'。
+//     旧 Ctrl+O 折叠语义由 e/E/h/l 接管。
+//
+// P3-B 键位（2026-09-12 keymap-parity 裁决落地，next 层）：
+//   - 审批 blocking card 键位对齐 grok permission prompt：Tab/Shift+Tab 在选项间循环走行
+//     （↑↓ 保留）；1-3 数字直选；Enter 确认高亮项；Ctrl+F 展开/收起审批 query 全文（按
+//     显示宽度折行进 items，差异：chat-setup 的审批 query 只携带工具名文案、不含工具参数
+//     ——askApproval 契约冻结不可改，grok 是「展开完整参数」，此处展开的是全文案，参数级
+//     展开待 gate 契约扩展，差异已登记 keymap 文档）；Ctrl+C 取消（ASK_CANCELLED）；Ctrl+O
+//     always-approve（保留）。
+//   - Esc = 寄放焦点（grok permission prompt 语义）：关闭键盘接管但**不回答不关闭卡片**——
+//     overlay 保留显示、审批仍挂起（gate.pending() 非 null），controller.focus() 键盘回
+//     composer（照常编辑/提交）；寄放态 Tab 显式回卡重新接管；新 gate.ask / settle 均复位
+//     寄放态。寄放态下 Ctrl+C 走 composer 路径 → interrupt() → gate.cancel()（grok 同义）。
+//   - Shift+Tab = 模式循环 Normal→Plan→Auto→Always-approve→Normal（composer 焦点下生效；
+//     审批卡接管时 dispatcher 卡片层优先消费 Shift+Tab = 反向走行，层级天然区分；寄放态
+//     键盘在 composer，Shift+Tab 循环模式、Tab 回卡）。
+//   - 模式四态落地语义（红线 6：审批不得弱化，mode 不自动回答审批）：
+//     normal = 现状；plan / auto = **UI 声明态**——core 无 plan/auto 模式契约且冻结，仅底边
+//     指示 + 提交时转录打 [plan mode]/[auto mode] 灰色 system 提示行，**不改变任何审批/执行
+//     行为**（诚实实现，不伪造 core 能力；grok 的 auto=自动审批与红线 6 冲突，故不做「gate
+//     默认高亮 allow 项」，避免诱导一键放行）；always-approve = 与 Ctrl+O 共享同一状态
+//     （单态变量：开启时**新**审批经 gate.choose('a') 走 resolve 路径代答，红线 6 不绕过
+//     core 审批队列；挂起当次不代答；关闭回 normal）。
+//   - 斜杠命令 /plan /auto /always-approve 直接设置对应模式（/always-approve 为 toggle，
+//     grok 语义；/plan /auto 幂等设置）。
+//   - 底边指示顺序：模式（normal 省略）· scrollback 焦点 · 寄放提示 · 瞬时 hint。
+import { homedir } from 'node:os';
 import type { ChatOptions } from '../../legacy-chat.js';
 import {
   ASK_CANCELLED,
@@ -50,6 +136,8 @@ import {
   type TurnStreamHandler,
 } from '../../chat-setup.js';
 import { HELP_TEXT, parseCommand } from '../../commands.js';
+import { getContextUsage, type AnySessionEvent } from '@harness2/core';
+import { runSharedCommand, type InkCommandIo } from '../ink-commands.js';
 import { expandContextRefs, hasContextRefs } from '../../context-ref.js';
 import { createInputParser, type InputParser } from '../../input/parser.js';
 import { createInputDispatcher, type InputDispatcher, type InputLayer } from '../../input/dispatcher.js';
@@ -65,13 +153,32 @@ import {
   type ShutdownController,
 } from '../shutdown.js';
 import { createNotifier, stderrSink, type Notifier } from '../notify.js';
-import { emptyTranscript, transcriptReducer, type TranscriptEvent, type TranscriptItem } from '../transcript.js';
+import {
+  emptyTranscript,
+  isSubagentTool,
+  projectSession,
+  sessionEventToTranscript,
+  transcriptReducer,
+  type TranscriptEvent,
+  type TranscriptItem,
+  type TranscriptState,
+} from '../transcript.js';
 import type { WriteTarget } from '../renderer/diff-presenter.js';
 import { ALT_SCREEN_EXIT, MOUSE_OFF, SHOW_CURSOR } from '../renderer/ansi.js';
 import { Screen } from '../renderer/screen.js';
-import { renderChat, resizeChat, type ChatScreenState } from './chat-screen.js';
-import { projectTranscript, toggleCollapse, type ProjectionLine } from './projection.js';
+import {
+  renderChat,
+  resizeChat,
+  layoutChat,
+  queueEntryPreview,
+  shortcutsFor,
+  statusLineFor,
+  type ChatScreenState,
+} from './chat-screen.js';
+import { projectTranscript, subagentDescription, type ProjectionLine } from './projection.js';
 import { Scrollback } from './scrollback.js';
+import { wrapTextByWidth, type OverlaySpec } from './overlay.js';
+import { candidateItemAt } from './composer.js';
 import {
   attachInput,
   createChatController,
@@ -95,11 +202,132 @@ const BRACKETED_PASTE_ON = '\x1b[?2004h'; // ansi.ts 无此常量（既有文件
 const BRACKETED_PASTE_OFF = '\x1b[?2004l';
 const FOCUS_REPORT_ON = '\x1b[?1004h'; // DECSET 1004 焦点上报（ansi.ts 无现成常量，同上自定义）
 const FOCUS_REPORT_OFF = '\x1b[?1004l';
+// DECSET 1003 全 motion 鼠标上报（真机悬停改选必需；renderer 的 MOUSE_ON 只有 1000;1002;1006
+// = 按钮/拖动 motion。本层补写开启、退出对称关闭；headless 测试直接喂 SGR 序列不受影响）
+const MOUSE_ALL_MOTION_ON = '\x1b[?1003h';
+const MOUSE_ALL_MOTION_OFF = '\x1b[?1003l';
 
 const SHORTCUTS: readonly string[] = ['Enter 发送', 'Shift+Enter 换行', 'Esc 停止', 'Ctrl+C 退出', 'PgUp/PgDn 滚动'];
 
+// —— P3-E 重试预算快照（对齐 ink panels/retry-panel.tsx 的信息量；该模块是 ink/React 组件，
+// next 层不可跨用（会引入 react/ink 依赖进 headless 装配），故按其冻结文案做纯函数等价复刻；
+// 契约类型从 core TurnResult 派生，不复制 core 定义）——
+
+/** 冻结契约类型（从 TurnResult 派生，与 ink retry-panel 的 RetryBudgetSnapshot 同源） */
+export type RetryBudgetSnapshot = NonNullable<TurnResult['retryBudget']>;
+
+/** 预算是否有值得展示的活动：发生过重试或明确停因（turn 正常无重试时不占行，对齐 ink） */
+export function retryBudgetHasActivity(budget: RetryBudgetSnapshot): boolean {
+  return budget.usedAttempts > 0 || budget.stopReason !== 'none';
+}
+
+const RETRY_STOP_REASON_LABEL: Record<RetryBudgetSnapshot['stopReason'], string> = {
+  none: '未停',
+  'budget-exhausted': '次数预算耗尽',
+  timeout: '等待预算耗尽',
+  'retry-after': 'Retry-After 超预算',
+};
+
+/** 预算快照 → 单行可读文本（纯函数；文案与 ink panels/retry-panel.formatRetryBudget 一致） */
+export function formatRetryBudget(budget: RetryBudgetSnapshot): string {
+  const waitSec = Math.round(budget.waitMs / 1000);
+  const maxSec = Math.round(budget.maxWaitMs / 1000);
+  return `重试 已用 ${budget.usedAttempts}/${budget.maxExtraAttempts} · 剩余 ${budget.remainingAttempts} 次 · 等待 ${waitSec}s/${maxSec}s · 停因 ${RETRY_STOP_REASON_LABEL[budget.stopReason]}`;
+}
+
+// —— P3-D 子代理块（耗时/动画）与全屏子视图 ——
+/** spinner 帧序（braille 圆点，grok 运行中块动画同类字符族） */
+export const SPINNER_FRAMES: readonly string[] = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
+/** spinner 推进周期（ms） */
+export const SPINNER_INTERVAL_MS = 150;
+/**
+ * P3-D 键位裁决（差异登记 keymap 文档）：滚动区焦点下 `v` 打开子代理全屏视图（多子代理 =
+ * 列表选择）。grok 是「选中块 + Enter/Ctrl+F」——本层无块光标，且 Enter 在滚动区焦点保留
+ * 提交语义（肌肉记忆不迁移），故取独立字母键 v（view）。
+ */
+export const SUBAGENT_VIEW_KEY = 'v';
+/** 视图态 composer 层提示行 */
+const SUBVIEW_HINT = 'q/Esc 返回 · ↑↓/PgUp/PgDn/滚轮 滚动';
+
 const APPROVAL_ITEMS: readonly string[] = ['y 允许（本次）', 'a 总是允许（本会话）', 'n 拒绝'];
 const APPROVAL_ANSWERS: readonly string[] = ['y', 'a', 'n'];
+
+/**
+ * 模式四态（P3-B，grok Shift+Tab 循环序）：plan / auto 为 UI 声明态（core 无契约且冻结，
+ * 不改变审批/执行行为，红线 6）；always-approve 与 Ctrl+O 共享同一状态。
+ */
+export type UiMode = 'normal' | 'plan' | 'auto' | 'always-approve';
+const MODE_CYCLE: readonly UiMode[] = ['normal', 'plan', 'auto', 'always-approve'];
+
+/** plan 态提交消息时打进转录的声明提示（灰色 system 行） */
+const PLAN_MODE_NOTICE = '[plan mode] 下一条消息建议以规划为主：先探索并给出实现计划（UI 声明态：不改变审批/执行行为）';
+
+// —— P3-C 命令注册表（next 层命令全集；wiring = 行为来源，note = 与 ink 的差异登记）——
+
+/** 命令接线方式：local = 本层实现（与 ink 同文案/语义）；shared = 委托 ink-commands.runSharedCommand */
+export type NextCommandWiring = 'local' | 'shared';
+
+export interface NextCommandEntry {
+  /** 命令名（不含 '/'） */
+  name: string;
+  wiring: NextCommandWiring;
+  /** 与 ink 的差异登记（缺省 = 无差异） */
+  note?: string;
+}
+
+/**
+ * next 层斜杠命令注册表（P3-C 全集）。共享命令（/new /sessions /resume /fork /undo /redo
+ * /exit /quit 别名）委托 ink-commands.runSharedCommand（真实 CommandContext + 磁盘重投影）；
+ * 本地命令与 ink runInkChat.handleCommand 同文案。quit / ? 为共享实现的别名（不在候选表，
+ * 与 ink matchCommands 的候选口径一致——候选只含 COMMAND_REGISTRY 名 + next 扩展）。
+ */
+export const NEXT_COMMANDS: readonly NextCommandEntry[] = [
+  { name: 'new', wiring: 'shared' },
+  { name: 'sessions', wiring: 'shared', note: '无参 = 转录文本列表（ink 为选择浮层；浮层化登记暂缺）' },
+  { name: 'resume', wiring: 'shared' },
+  { name: 'fork', wiring: 'shared' },
+  { name: 'undo', wiring: 'shared' },
+  { name: 'redo', wiring: 'shared' },
+  { name: 'help', wiring: 'local' },
+  { name: 'exit', wiring: 'shared' },
+  {
+    name: 'mode',
+    wiring: 'local',
+    note: '无参 = UI 四态循环一次（等价 Shift+Tab）；带参接受四态名直接设置（ink 为 core 审批模式别名 + 选择浮层，core 契约冻结不改）',
+  },
+  { name: 'context', wiring: 'local' },
+  { name: 'compact', wiring: 'local', note: '自动压缩提示（与 ink 同文案，不静默）' },
+  { name: 'reasoning', wiring: 'local' },
+  { name: 'tasks', wiring: 'local', note: '只读提示（与 ink 同文案）：请用 harness2 cron list' },
+  { name: 'plan', wiring: 'local', note: 'next 层 UI 声明态（ink 无此命令）' },
+  { name: 'auto', wiring: 'local', note: 'next 层 UI 声明态（ink 无此命令）' },
+  { name: 'always-approve', wiring: 'local', note: 'next 层 always-approve 开关（ink 无此命令）' },
+];
+
+/** pattern 是否为 target 的子序列（空 pattern 恒真） */
+function isSubsequence(pattern: string, target: string): boolean {
+  if (pattern.length === 0) return true;
+  let i = 0;
+  for (const ch of target) {
+    if (ch === pattern[i]) i += 1;
+    if (i >= pattern.length) return true;
+  }
+  return false;
+}
+
+/**
+ * 模糊过滤候选（P3-C）：输入草稿（'/...'）→ 候选列表（带 '/' 前缀）。
+ * 前缀命中 > 子序列命中（isSubsequence），各自按字典序；空输入 = 全部命令字典序。
+ * ink 的 matchCommands 是纯前缀过滤，本层为其模糊超集（候选口径同源：注册表名 + next 扩展）。
+ */
+export function filterCommands(input: string): string[] {
+  const prefix = input.replace(/^\/+/, '').toLowerCase();
+  const names = NEXT_COMMANDS.map((c) => c.name).sort();
+  if (prefix.length === 0) return names.map((n) => `/${n}`);
+  const prefixHits = names.filter((n) => n.startsWith(prefix));
+  const subHits = names.filter((n) => !n.startsWith(prefix) && isSubsequence(prefix, n));
+  return [...prefixHits, ...subHits].map((n) => `/${n}`);
+}
 
 // —— 审批 gate（createDialogController 的非 React 等价，见文件头取舍说明）——
 
@@ -283,6 +511,14 @@ function createTurnStreamBridge(onEvent: (event: TranscriptEvent) => void): Turn
 
 // —— 装配层依赖（测试注入缝；runNextChat 传真终端）——
 
+/**
+ * P3-D：子会话事件缝（SubagentHooks.onChildEvent 的接收端）。runNextChat 用一个可变 sink
+ * 桥接 setupChatSession（装配期先于 harness 创建，故经 set 延迟注册 handler）。
+ */
+export interface SubagentEventSink {
+  set(handler: (sessionId: string, event: AnySessionEvent) => void): void;
+}
+
 export interface NextChatHarnessDeps {
   /** 渲染输出（Screen 的 WriteTarget；columns/rows 提供初始尺寸） */
   out: WriteTarget & { columns?: number; rows?: number };
@@ -300,6 +536,12 @@ export interface NextChatHarnessDeps {
   exit?: (code: number) => void;
   /** 外部已 start 的 Screen（runNextChat 自管启动序列时传入；缺省内部创建并 start） */
   screen?: Screen;
+  /** P3-D：子会话事件缝（缺省不接——无实时追加，视图只走磁盘重放/内存累积降级） */
+  subagentEventSink?: SubagentEventSink;
+  /** P3-E：状态行 cwd（缺省装配期取 process.cwd()；测试注入确定性缝） */
+  cwd?: string;
+  /** P3-E：~ 短化基准主目录（缺省 os.homedir()；测试注入确定性缝） */
+  home?: string;
 }
 
 export interface NextChatHarness {
@@ -325,6 +567,8 @@ export interface NextChatHarness {
   pendingApproval(): string | null;
   /** scrollback 逻辑行快照（测试断言用；wrap 段拼回 = 原逻辑行） */
   logicalLines(): string[];
+  /** P3-D：子视图逻辑行快照（null = 视图未打开） */
+  subagentViewLines(): string[] | null;
   isBusy(): boolean;
   queueSnapshot(): readonly string[];
   awaitDone(): Promise<number>;
@@ -346,6 +590,8 @@ export function createNextChatHarness(runtime: ChatRuntime, deps: NextChatHarnes
   // 重复写无害）；关闭序列在 runNextChat 的 cleanup 随 screen.stop 一并写出。开启后
   // parser 产出 focus 事件 → dispatcher 兜底更新 focused → notifier 策略自然生效。
   deps.out.write(FOCUS_REPORT_ON);
+  // DECSET 1003 全 motion 鼠标上报（P3-C 悬停改选；与 screen.start 的 MOUSE_ON 叠加，幂等）
+  deps.out.write(MOUSE_ALL_MOTION_ON);
 
   // —— 状态 ——
   let transcript = emptyTranscript();
@@ -375,6 +621,39 @@ export function createNextChatHarness(runtime: ChatRuntime, deps: NextChatHarnes
   let focused = true; // DECSET 1004 焦点（缺省聚焦；unfocused 策略下不响，保守处理）
   const queue: string[] = [];
   let collapsed = new Set<number>(); // 折叠覆盖标记集（itemIndex 取反默认折叠态）
+  // 模式四态（P3-B，见文件头语义说明）：plan/auto 为声明态不改行为；always-approve 与
+  // Ctrl+O 共享此单态变量（开启时新审批经 gate.choose('a') 代答，红线 6）。
+  let uiMode: UiMode = 'normal';
+  let scrollbackFocus = false; // Tab 双态焦点：false = 输入框（默认），true = 滚动区（折叠键族生效）
+
+  // —— P3-D 子代理块（耗时/动画）与全屏子视图状态 ——
+  // 耗时为 UI 层近似计时：subagent tool/call → tool/result 的 turn 事件流间隔（含审批等待/
+  // 调度延迟，非 core runTurn durationMs），如实登记差异；<1s 视为即时完成不显示（0s 噪音）。
+  const subagentStarts = new Map<string, number>(); // callId → Date.now()（运行中）
+  const subagentDurations = new Map<string, number>(); // callId → 秒（完成/失败后保留，重投影用）
+  let spinnerFrame = 0;
+  let spinnerTimer: ReturnType<typeof setInterval> | null = null;
+  // 子会话登记（onChildEvent 桥；childId → 描述 = 子会话首条 user/message 文本）。
+  // live 流的 tool/result 不带 output（StreamEvent 契约），childSessionId 不能从父转录解析——
+  // 视图候选以本登记 + 转录 item（磁盘重投影后）并集为准。
+  const childSessions = new Map<string, string | undefined>();
+  const childEvents = new Map<string, AnySessionEvent[]>(); // onChildEvent 原始事件（打开视图时与磁盘合并）
+  const childTranscripts = new Map<string, TranscriptState>(); // 增量累积（视图实时追加用）
+  let subView: { childId: string } | null = null; // 非 null = 全屏子视图
+  let subPicker: { items: string[]; targets: string[]; activeIndex: number } | null = null; // 多子代理选择
+
+  // —— P3-E 状态行上下文化 / 队列取消面板 / 重试标记 ——
+  // cwd 装配期取定（任务规格）；~ 短化基准 home 缺省 os.homedir()（测试注入）。
+  const cwd = deps.cwd ?? process.cwd();
+  const home = deps.home ?? homedir();
+  // ctx 占用缓存：keyed by (会话 dir, 转录 item 数)——item 数不变（流式原地替换/纯滚动）不重算，
+  // 避免 50ms flush / 150ms spinner 帧每帧读盘；item 增减（新消息/工具项）才重读（getContextUsage
+  // 同步可得，故为动态值而非「最近一次 /context」快照，诚实对齐任务规格的动态分支）。
+  let usageCache: { dir: string | null; items: number; value: number | undefined } | null = null;
+  // 上一 turn 的重试标记（turn 开始清空、有活动收尾时置位；状态行「重试 used/max」）
+  let lastRetry: { used: number; max: number } | null = null;
+  // 队列取消面板（Ctrl+X；busy 且队列非空时可开）——activeIndex 为高亮下标
+  let queuePanel: { activeIndex: number } | null = null;
 
   const contentCols = (): number => Math.max(1, screen.cols - 1);
 
@@ -383,15 +662,19 @@ export function createNextChatHarness(runtime: ChatRuntime, deps: NextChatHarnes
   let syncedLineCount = 0;
 
   function projectLines(): ProjectionLine[] {
-    return projectTranscript(transcript.items, { cols: contentCols(), collapsed });
+    return projectTranscript(transcript.items, {
+      cols: contentCols(),
+      collapsed,
+      // P3-D：耗时命中才随行显示；spinner 仅在动画定时器活动时传当前帧
+      ...(subagentDurations.size > 0 ? { durations: subagentDurations } : {}),
+      ...(spinnerTimer !== null ? { spinner: SPINNER_FRAMES[spinnerFrame % SPINNER_FRAMES.length] } : {}),
+    });
   }
 
   function rebuildScrollback(lines: readonly ProjectionLine[]): void {
     const old = state.scrollback;
-    const sb = new Scrollback(
-      lines.map((l) => l.text),
-      contentCols(),
-    );
+    // 行对象直传（text + fg）：projection 的逐行配色随行进入 scrollback（P3-A 配色落地）
+    const sb = new Scrollback(lines, contentCols());
     if (!old.follow) {
       // anchor 模式尽力保留视口：绝对 scrollTop 平移（新 maxScroll 钳制；取舍：重建即丢
       // wrap 缓存，anchor 语义以物理行数近似保持）
@@ -416,7 +699,7 @@ export function createNextChatHarness(runtime: ChatRuntime, deps: NextChatHarnes
     if (appendable && items.length === syncedItems.length && lines.length === syncedLineCount) return; // 无变化
     if (appendable) {
       const added = lines.slice(syncedLineCount);
-      if (added.length > 0) state.scrollback.appendLines(added.map((l) => l.text));
+      if (added.length > 0) state.scrollback.appendLines(added); // ProjectionLine 直传（text + fg）
     } else {
       rebuildScrollback(lines);
     }
@@ -433,18 +716,221 @@ export function createNextChatHarness(runtime: ChatRuntime, deps: NextChatHarnes
     invalidate();
   }
 
+  // —— P3-D 运行动画：busy 且存在运行中子代理块时 150ms 循环 invalidation ——
+  // spinner 改变的只是运行中子代理行的前缀字符（items 引用不变，syncProjection 的
+  // 「无变化」早退会跳过）→ tick 走 reprojectAll 全量重建（150ms 周期，帧开销可忽略）。
+  function updateSpinner(): void {
+    const shouldRun = busy && subagentStarts.size > 0;
+    if (shouldRun && spinnerTimer === null) {
+      spinnerFrame = 0;
+      spinnerTimer = setInterval(() => {
+        spinnerFrame += 1;
+        reprojectAll();
+      }, SPINNER_INTERVAL_MS);
+    } else if (!shouldRun && spinnerTimer !== null) {
+      clearInterval(spinnerTimer);
+      spinnerTimer = null;
+    }
+  }
+
+  // —— P3-D 全屏子视图（滚动区焦点 v 打开；q/Esc 返回；键位差异登记 keymap 文档）——
+
+  /** 子会话候选：转录 item（有 childSessionId，磁盘重投影后才有）∪ onChildEvent 登记，保序去重 */
+  function subagentCandidates(): Array<{ childId: string; desc: string }> {
+    const out: Array<{ childId: string; desc: string }> = [];
+    const seen = new Set<string>();
+    for (const item of transcript.items) {
+      if (item.kind === 'tool' && isSubagentTool(item.tool) && item.childSessionId !== undefined) {
+        seen.add(item.childSessionId);
+        out.push({ childId: item.childSessionId, desc: subagentDescription(item) });
+      }
+    }
+    for (const [childId, desc] of childSessions) {
+      if (!seen.has(childId)) out.push({ childId, desc: desc ?? childId });
+    }
+    return out;
+  }
+
+  function syncPickerOverlay(): void {
+    if (subPicker === null) return;
+    state.overlays = [
+      { title: '选择子会话', items: subPicker.items, activeIndex: subPicker.activeIndex, showNumbers: true },
+    ];
+  }
+
+  /** v 入口：0 个 = 瞬时提示；1 个 = 直开；多个 = 列表选择浮层 */
+  function openSubagentPicker(): void {
+    const subs = subagentCandidates();
+    if (subs.length === 0) {
+      showHint('（无可打开的子会话）');
+      return;
+    }
+    if (subs.length === 1) {
+      openSubagentView(subs[0]!.childId);
+      return;
+    }
+    subPicker = {
+      items: subs.map((s, i) => `${i + 1}. ${s.desc}（${s.childId}）`),
+      targets: subs.map((s) => s.childId),
+      activeIndex: 0,
+    };
+    controller.blur(); // 列表接管键盘
+    syncPickerOverlay();
+    invalidate();
+  }
+
+  function closeSubPicker(cancel: boolean): void {
+    const picker = subPicker;
+    subPicker = null;
+    state.overlays = [];
+    controller.focus();
+    if (!cancel && picker !== null) {
+      openSubagentView(picker.targets[picker.activeIndex] ?? picker.targets[0]!);
+      return;
+    }
+    invalidate();
+  }
+
+  /** 子会话不可读时的如实降级：错误行进转录（绝不伪造内容） */
+  function childTranscriptError(childId: string, message: string): TranscriptState {
+    return transcriptReducer(emptyTranscript(), {
+      type: 'system',
+      id: `subview-err:${childId}`,
+      text: `无法读取子会话 ${childId}: ${message}（子会话目录不存在或日志尚未落盘）`,
+    });
+  }
+
+  function openSubagentView(childId: string): void {
+    // 重建子转录 = 磁盘重放（权威，含落盘全量）∪ onChildEvent 事件（运行中/磁盘缺失兜底）。
+    // 事件按 seq 派生 id（sessionEventToTranscript），与磁盘同源事件 put() 幂等去重。
+    childTranscripts.set(childId, loadChildTranscript(childId));
+    subView = { childId };
+    controller.blur(); // 视图接管键盘（composer 不画，无输入）
+    rebuildSubview();
+    invalidate();
+  }
+
+  /** 磁盘重放 + live 事件合并（locate 失败/无目录时降级 live 事件；两者皆空 = 如实错误行） */
+  function loadChildTranscript(childId: string): TranscriptState {
+    let located = false;
+    let dirError: string | undefined;
+    let ts = emptyTranscript();
+    try {
+      const dir = runtime.sessionManager.locate(childId);
+      if (dir !== undefined) {
+        ts = projectSession(dir);
+        located = true;
+      }
+    } catch (e) {
+      dirError = (e as Error)?.message ?? String(e);
+    }
+    for (const ev of childEvents.get(childId) ?? []) {
+      const te = sessionEventToTranscript(ev);
+      if (te !== null) ts = transcriptReducer(ts, te);
+    }
+    if (ts.items.length === 0) {
+      return childTranscriptError(childId, dirError ?? (located ? '日志为空' : '未定位到子会话目录'));
+    }
+    return ts;
+  }
+
+  /** 子视图重建（打开/实时追加/子转录更新时）：子转录 → 投影 → 独立 Scrollback */
+  function rebuildSubview(): void {
+    if (subView === null) return;
+    const ts = childTranscripts.get(subView.childId) ?? emptyTranscript();
+    const sb = new Scrollback(projectTranscript(ts.items, { cols: contentCols() }), contentCols());
+    state.subagentView = { scrollback: sb, hint: `子会话 ${subView.childId} · ${SUBVIEW_HINT}` };
+  }
+
+  function closeSubagentView(): void {
+    subView = null;
+    state.subagentView = null;
+    controller.focus();
+    invalidate();
+  }
+
   // —— 渲染与 chrome ——
+  /** 当前会话 ctx 占用（带缓存：dir 或转录 item 数不变不重算，见状态区注释） */
+  function currentUsage(): number | undefined {
+    const dir = runtime.getCurrent()?.dir ?? null;
+    const items = transcript.items.length;
+    if (usageCache !== null && usageCache.dir === dir && usageCache.items === items) return usageCache.value;
+    const value = dir !== null ? getContextUsage(dir) : undefined;
+    usageCache = { dir, items, value };
+    return value;
+  }
+
+  /**
+   * P3-E 上下文化 chrome：状态行 = cwd(~) · model · ctx% · 模式(非 normal) · 重试 · 运行中；
+   * 快捷键条 = shortcutsFor 四态（审批 > 子视图 > busy > 空闲）。数据驱动（chat-screen 纯函数）。
+   * 变更登记：旧「core 审批模式名（default/…）」段与「已排队 N」段移除——模式由 UI 四态
+   * （非 normal 才显示）承载；队列条数移至 busy 快捷键组的 Ctrl+X 队列(N) 段。
+   */
   function refreshChrome(): void {
-    const parts = [String(runtime.mode()), `provider ${runtime.provider.name}`];
-    if (busy) parts.push('⏺ 运行中…');
-    if (queue.length > 0) parts.push(`已排队 ${queue.length}`);
-    state.statusline = parts.join(' · ');
-    state.indicators = hint !== null ? [hint] : [];
+    const usage = currentUsage();
+    state.statusline = statusLineFor({
+      cwd,
+      home,
+      model: runtime.provider.name,
+      ...(usage !== undefined ? { usage } : {}),
+      ...(uiMode !== 'normal' ? { mode: uiMode } : {}),
+      ...(lastRetry !== null ? { retry: lastRetry } : {}),
+      ...(busy ? { busy: true } : {}),
+    });
+    state.shortcuts = shortcutsFor({
+      busy,
+      queueCount: queue.length,
+      approvalActive: gate.pending() !== null && !approvalParked,
+      subviewOpen: subView !== null || subPicker !== null,
+    });
+    // 底边指示（P3-B 顺序：模式 · 焦点 · 其他）：normal 省略模式名，scrollback（Tab 焦点）、
+    // 审批寄放提示常驻，hint 瞬时叠加
+    const ind: string[] = [];
+    if (uiMode !== 'normal') ind.push(uiMode);
+    if (scrollbackFocus) ind.push('scrollback');
+    if (approvalParked) ind.push('审批待答（Tab 回卡）');
+    if (hint !== null) ind.push(hint);
+    state.indicators = ind;
   }
 
   function invalidate(): void {
+    syncCandidates();
     refreshChrome();
     renderChat(screen, state);
+  }
+
+  // —— 候选补全（P3-C：draft 以 '/' 开头且不含空格/换行 = ink commandNameActive 语义）——
+  // controller（冻结）接受候选/编辑后只改 state.draft/candidates.activeIndex，候选重算由本层
+  // 在 invalidate 内完成（draft 变化必经 feed → invalidate，天然逐字过滤）。
+  function syncCandidates(): void {
+    const draft = state.draft ?? '';
+    const active = draft.startsWith('/') && !draft.includes(' ') && !draft.includes('\n');
+    const prev = state.candidates;
+    if (!active) {
+      state.candidates = null;
+      return;
+    }
+    const items = filterCommands(draft);
+    if (items.length === 0) {
+      state.candidates = null;
+      return;
+    }
+    // 过滤结果不变（如纯 ↑↓ 导航）：保留 controller 改写的高亮；否则（增删字符）钳制旧高亮
+    const keep = prev !== null && prev.items.length === items.length && prev.items.every((it, i) => it === items[i]);
+    const activeIndex = keep
+      ? (prev?.activeIndex ?? 0)
+      : Math.min(Math.max(0, prev?.activeIndex ?? 0), items.length - 1);
+    state.candidates = { items, activeIndex };
+  }
+
+  /** 接受当前高亮候选：草稿写回 `/cmd `（含尾随空格 = 退出候选态；再 Enter 才发送） */
+  function acceptCandidate(): void {
+    const cands = state.candidates;
+    if (cands === null || cands.items.length === 0) return;
+    const chosen = cands.items[Math.min(cands.activeIndex, cands.items.length - 1)] ?? '';
+    if (!chosen.startsWith('/')) return;
+    state.draft = `${chosen} `;
+    state.cursor = state.draft.length;
   }
 
   // —— UI 调度器（T4 有界合并，对齐 InkShell 的 16ms/64 批）——
@@ -495,27 +981,101 @@ export function createNextChatHarness(runtime: ChatRuntime, deps: NextChatHarnes
     invalidate();
   }
 
-  // —— 审批 overlay ——
+  // —— 审批 overlay（P3-B blocking card：键盘接管 / 寄放两态 + Ctrl+F 全文展开）——
   let approvalActiveIndex = 0;
+  let approvalExpanded = false; // Ctrl+F 展开 query 全文（差异登记：query 无参数数据，见文件头）
+  let approvalParked = false; // Esc 寄放：卡片只显示不接管键盘，审批仍挂起
+  let approvalQueryRows = 0; // 展开态全文行数（显示高亮 = 行数 + 选项下标）
 
-  function openApproval(query: string): void {
+  /** 构建审批卡 spec：收起 = 标题承载 query（按宽裁剪）；展开 = query 全文折行进 items 前段 */
+  function buildApprovalSpec(): OverlaySpec {
+    const query = gate.pending() ?? '';
+    if (!approvalExpanded) {
+      approvalQueryRows = 0;
+      return {
+        title: `Approval · ${query}`,
+        items: APPROVAL_ITEMS,
+        activeIndex: approvalActiveIndex,
+        showNumbers: true,
+      };
+    }
+    // 全文行缩进两格与选项区分；展开宽度按内容区收敛（前缀 + 余量）
+    const qLines = wrapTextByWidth(query, Math.max(16, contentCols() - 6));
+    approvalQueryRows = qLines.length;
+    return {
+      title: 'Approval · 全文（Ctrl+F 收起）',
+      items: [...qLines.map((l) => `  ${l}`), ...APPROVAL_ITEMS],
+      activeIndex: approvalQueryRows + approvalActiveIndex,
+      showNumbers: true,
+    };
+  }
+
+  function openApproval(_query: string): void {
     // 问题全文放标题行（drawOverlay 按宽裁剪）；选项固定 y/a/n——对齐 Ink ConfirmDialog 的
-    // 「问题 + 选择列表」语义（近似：无独立问题行，标题承载）
+    // 「问题 + 选择列表」语义（近似：无独立问题行，标题承载）。query 统一经 gate.pending()
+    // 取（buildApprovalSpec 的单一数据源，新提问挤占后 spec 以最新挂起为准）
+    closeQueuePanel(false); // P3-E：审批最优先（dispatcher 首层），ask 挤占时队列面板让位
     approvalActiveIndex = 0;
-    state.overlays = [{ title: `Approval · ${query}`, items: APPROVAL_ITEMS, activeIndex: 0 }];
+    approvalExpanded = false;
+    approvalParked = false;
+    scrollbackFocus = false; // 审批接管时焦点语义回输入框（避免结算后指示器/折叠键族残留滚动区态）
+    state.overlays = [buildApprovalSpec()];
     controller.blur(); // overlay 互斥接管键盘（对齐 InkShell 的 overlayOpen 语义）
     invalidate();
   }
 
-  function closeApproval(): void {
-    state.overlays = [];
+  /**
+   * Esc 寄放：卡片保持显示、审批仍挂起，键盘交还 composer（grok park 语义，见文件头）。
+   * P1-1：子视图/picker 打开时**不**交还 composer——键盘属于 subagentLayer（视图层接管），
+   * focus composer 会让输入进不绘制的草稿（隐形输入）；寄放态 approval 层放行，视图键照常。
+   */
+  function parkApproval(): void {
+    approvalParked = true;
+    if (subView !== null || subPicker !== null) {
+      invalidate();
+      return;
+    }
     controller.focus();
     invalidate();
   }
 
+  /** 寄放态显式回卡（Tab）：重新接管键盘 */
+  function retakeApproval(): void {
+    approvalParked = false;
+    controller.blur();
+    invalidate();
+  }
+
+  /**
+   * 结算（选择/取消/挤占）关闭审批卡。P1-1 焦点感知（防「隐形输入进不绘制的草稿」）：
+   * - 子视图打开 → 不 focus composer，subagentLayer 继续接管（q/Esc 返回等视图键照常）；
+   * - picker 被审批挤占 → 恢复 picker 显示并保持其键盘接管（二选一取方案 a）：用户的选择
+   *   进度（activeIndex）保留、行为与「审批从未出现」一致、diff 最小；方案 b（取消 picker）
+   *   会无谓丢弃用户上下文，不取。挤占期间 subagentLayer 对 picker/视图让位（见其
+   *   approvalActive 处理），不会隐形改选；
+   * - 两者皆空 → 现状 focus composer。
+   */
+  function closeApproval(): void {
+    state.overlays = [];
+    approvalParked = false;
+    approvalExpanded = false;
+    scrollbackFocus = false; // 结算回 composer 焦点（审查 P2-1：指示器与折叠键族同步复位）
+    if (subView !== null) {
+      invalidate();
+      return;
+    }
+    if (subPicker !== null) {
+      syncPickerOverlay(); // 恢复被 openApproval 覆盖的列表浮层（controller 保持 blur = picker 接管）
+      invalidate();
+      return;
+    }
+    controller.focus();
+    invalidate();
+  }
+
+  /** 重建审批卡 spec（走行/展开/收起/resize 后统一走此函数，activeIndex 以选项下标为源） */
   function syncApprovalOverlay(): void {
-    const overlay = state.overlays[0];
-    if (overlay !== undefined) state.overlays = [{ ...overlay, activeIndex: approvalActiveIndex }];
+    if (state.overlays.length > 0) state.overlays = [buildApprovalSpec()];
   }
 
   function chooseApproval(index: number): void {
@@ -524,9 +1084,32 @@ export function createNextChatHarness(runtime: ChatRuntime, deps: NextChatHarnes
     gate.choose(answer as 'y' | 'a' | 'n');
   }
 
+  // —— 模式四态（P3-B；plan/auto 声明态不改行为，红线 6 见文件头）——
+  function setMode(mode: UiMode): void {
+    if (uiMode === mode) return; // 幂等（/plan /auto 重复设置保持）
+    uiMode = mode;
+    invalidate();
+  }
+
+  /** Shift+Tab 循环：Normal→Plan→Auto→Always-approve→Normal（grok 循环序） */
+  function cycleMode(): void {
+    const idx = MODE_CYCLE.indexOf(uiMode);
+    setMode(MODE_CYCLE[(idx + 1) % MODE_CYCLE.length] ?? 'normal');
+  }
+
+  // —— Ctrl+O always-approve（UI 开关；开关态只影响**新**审批的代答，见文件头红线 6）——
+  function toggleAlwaysApprove(): void {
+    setMode(uiMode === 'always-approve' ? 'normal' : 'always-approve');
+  }
+
   const gate = deps.gate;
   gate.bind?.({
-    onOpen: (query) => openApproval(query),
+    onOpen: (query) => {
+      openApproval(query);
+      // always-approve 开启时自动代答 'a'：经 gate.choose 走 resolve 路径（红线 6：
+      // 不绕过 core 审批队列）；切换瞬间已挂起的审批不在此路径（onOpen 只对新 ask 触发）
+      if (uiMode === 'always-approve') gate.choose('a');
+    },
     onSettled: () => closeApproval(),
   });
 
@@ -585,15 +1168,86 @@ export function createNextChatHarness(runtime: ChatRuntime, deps: NextChatHarnes
   // —— 提交 / 队列（对齐 InkShell.submit 的 FIFO 队列语义）——
   function enqueue(text: string): void {
     queue.push(text);
+    if (queuePanel !== null) syncQueueOverlay(); // 面板打开中（编程入口绕过键盘）同步条目数
     invalidate();
   }
 
   function drainQueue(): void {
     if (shutdown.isShuttingDown()) return;
+    if (queuePanel !== null) closeQueuePanel(false); // 面板是 busy 态的伴生浮层，turn 收尾即关
     const next = queue.shift();
     if (next === undefined) return;
     invalidate();
     void handleUserText(next);
+  }
+
+  // —— P3-E 队列取消面板（Ctrl+X；对齐 ink queue-panel 的取消语义，形态差异见下）——
+  // 差异登记：ink QueuePanel 是底部常驻面板、Ctrl+X 只取消队首；本层为浮层列表
+  // （Queue · N 项 + 高亮），↑↓/j/k 走行、Ctrl+X/x 取消**高亮项**（ink 单取消能力的超集）、
+  // q/Esc 关闭，取消回报「已取消排队: <预览>」system 行（任务规格要求，ink 无回报行）。
+  function syncQueueOverlay(): void {
+    if (queuePanel === null) return;
+    if (queue.length === 0) {
+      closeQueuePanel(false);
+      return;
+    }
+    queuePanel.activeIndex = Math.min(Math.max(0, queuePanel.activeIndex), queue.length - 1);
+    state.overlays = [
+      {
+        title: `Queue · ${queue.length} 项`,
+        items: queue.map((t) => queueEntryPreview(t)),
+        activeIndex: queuePanel.activeIndex,
+      },
+    ];
+  }
+
+  /** 打开面板（Ctrl+X 入口）：审批挂起时拒绝（审批最优先，防顶掉寄放卡）；否则仅 busy 且队列非空 */
+  function openQueuePanel(): void {
+    if (gate.pending() !== null) {
+      showHint('审批待答（Tab 回卡）——先处理审批');
+      return;
+    }
+    if (!busy || queue.length === 0) {
+      showHint(busy ? '（队列为空）' : '非忙时不开放队列面板（空闲时队列已由 drain 排空或等待下次 turn）');
+      return;
+    }
+    queuePanel = { activeIndex: 0 };
+    controller.blur(); // 浮层接管键盘（P1-1 同款：接管期输入进不了草稿）
+    syncQueueOverlay();
+    invalidate();
+  }
+
+  /**
+   * 关闭面板并还键盘给 composer。仅当浮层栈仍是本面板时清除——审批 ask 会挤占（openApproval
+   * 里先关本面板，queuePanel 已置 null，此处防御性判断保证不清掉别人的浮层）。
+   */
+  function closeQueuePanel(refresh = true): void {
+    if (queuePanel === null) return;
+    queuePanel = null;
+    const top = state.overlays[state.overlays.length - 1];
+    if (state.overlays.length === 1 && top?.title?.startsWith('Queue · ') === true) state.overlays = [];
+    if (gate.pending() !== null) {
+      // 审批仍挂起（寄放卡曾被面板挤占/清除）：重建审批卡，杜绝「盲批」（审查 P1-1）
+      approvalParked = true; // 键盘留在 composer，卡片显示等待 Tab 回卡
+      state.overlays = [buildApprovalSpec()];
+    }
+    controller.focus();
+    if (refresh) invalidate();
+  }
+
+  /** 取消高亮项：FIFO 移除 + 「已取消排队」system 行；取空自动关面板 */
+  function cancelQueuedAt(index: number): void {
+    const removed = queue[index];
+    if (removed === undefined || queuePanel === null) return;
+    queue.splice(index, 1);
+    sendSystem(`已取消排队: ${queueEntryPreview(removed)}`);
+    if (queue.length === 0) {
+      closeQueuePanel();
+      return;
+    }
+    queuePanel.activeIndex = Math.min(index, queue.length - 1);
+    syncQueueOverlay();
+    invalidate();
   }
 
   function submit(text: string): void {
@@ -608,6 +1262,7 @@ export function createNextChatHarness(runtime: ChatRuntime, deps: NextChatHarnes
   async function runTurnText(text: string): Promise<void> {
     bridge.reset();
     busy = true;
+    lastRetry = null; // P3-E：新 turn 清上一 turn 的重试标记（状态行不残留旧值）
     userSeq += 1;
     // 输入优先：user 回显立即落定（对齐 InkShell dispatchInputNow）
     scheduler.setInputPriority(true);
@@ -628,13 +1283,30 @@ export function createNextChatHarness(runtime: ChatRuntime, deps: NextChatHarnes
       if (terminal !== null && !isDuplicateFinal(terminal)) dispatch(terminal);
       if (result !== undefined) {
         dispatch({ type: 'status', id: `status:${userSeq}`, text: turnSummaryLine(result) });
+        // P3-E 重试信息（对齐 ink RetryPanel 信息量：used/remaining/等待/stopReason；形态差异
+        // 登记：ink 为结构化面板，本层简化为转录 system 行 + 状态行「重试 used/max」标记——
+        // ink RetryPanel 是 React 组件不可复用，且 retryBudget 快照仅 turn 收尾可得，时机一致）
+        const budget = result.retryBudget;
+        if (budget !== undefined && retryBudgetHasActivity(budget)) {
+          lastRetry = { used: budget.usedAttempts, max: budget.maxExtraAttempts };
+          dispatch({ type: 'system', id: `retry:${userSeq}`, text: formatRetryBudget(budget) });
+        }
       }
     } catch (e) {
       sendSystem(`error: ${(e as Error)?.message ?? String(e)}`);
     } finally {
       bridge.reset();
       busy = false;
+      // P2-3：turn 收尾（正常/取消/异常一律走此 finally）清空运行中子代理表——残留条目
+      // （tool/result 因 abort/异常永不到达）会在下个 turn 给 spinner 续命
+      // （updateSpinner 的 shouldRun = busy && size>0），定时器空转、指示字符失真。
+      // subagentDurations 保留（已完成耗时属转录内容，重投影仍要显示）。
+      subagentStarts.clear();
+      updateSpinner(); // P3-D：turn 结束（含取消/异常）→ 空闲停表
       scheduler.flushNow(); // final flush：终态/状态行立即落定
+      // P2-3：清表后强制全量重投影——中止前最后一次 flush 可能已把 spinner 帧字符烤进
+      // scrollback（pending 行此后不再变化），不重建则冻结帧残留
+      reprojectAll();
       invalidate();
       // 回合结束提醒（cancelled 不发；退出中不发；异常结束照发——对齐 InkShell）
       if (!shutdown.isShuttingDown()) {
@@ -649,7 +1321,7 @@ export function createNextChatHarness(runtime: ChatRuntime, deps: NextChatHarnes
     }
   }
 
-  // —— 命令（next 模式最小集，见文件头暂缺项）——
+  // —— 命令（P3-C 全集；共享命令委托 runSharedCommand，差异登记见文件头）——
   function handleUserText(text: string): void {
     const parsed = parseCommand(text);
     if (parsed !== null) {
@@ -661,8 +1333,65 @@ export function createNextChatHarness(runtime: ChatRuntime, deps: NextChatHarnes
       handleCommand(parsed);
       return;
     }
+    // plan 声明态：提交消息时在转录打灰色提示行（不改执行，红线 6 见文件头）
+    if (uiMode === 'plan') sendSystem(PLAN_MODE_NOTICE);
     void runTurnText(text);
   }
+
+  /**
+   * P2-1：会话切换（/fork /new /resume，经 reprojectFromDisk 的重投影路径）时清空子会话
+   * 瞬时状态：childSessions/childEvents/childTranscripts（onChildEvent 登记，属旧会话）、
+   * subagentStarts/subagentDurations（耗时/spinner，属旧会话的 turn 流）。/undo /redo 不换
+   * 会话，不清（rewind 后子会话入口仍在）。子会话**入口不从磁盘重建 childSessions 登记**：
+   * 重投影后的转录 item 自带 childSessionId（磁盘 result output），subagentCandidates 的
+   * 「转录 item ∪ 登记」并集已覆盖入口，描述经 subagentDescription(item) 取自磁盘 args——
+   * 入口可完整重建，登记不重建（如实注释，不伪造）。
+   */
+  function clearChildSessionState(): void {
+    childSessions.clear();
+    childEvents.clear();
+    childTranscripts.clear();
+    subagentStarts.clear();
+    subagentDurations.clear();
+    updateSpinner(); // 表清空 → 若 spinner 在转则停表
+    // 防御：切会话瞬间若子视图/picker 仍打开（正常输入路径不可达——视图接管键盘），如实关闭
+    if (subPicker !== null) closeSubPicker(true);
+    if (subView !== null) closeSubagentView();
+  }
+
+  /**
+   * P3-C 重投影（对齐 ink reprojectTranscript）：/undo /redo 追加 rewind/marker、会话切换
+   * （/new /resume /fork）之后，用 projectSession 从磁盘会话日志整体重建转录（被遮蔽的
+   * user/assistant 条目消失、恢复时再现）。先落定待处理事件；清空折叠覆盖集（对齐 ink 清
+   * expandedIds，避免旧 item 下标残留）；磁盘读取失败保底重投影内存转录（不伪造）。
+   * P2-1：检测到会话 id 变化时一并清空子会话瞬时状态（见 clearChildSessionState）。
+   */
+  let reprojectSessionId: string | null = runtime.getCurrent()?.id ?? null;
+  function reprojectFromDisk(): void {
+    flushUi();
+    const current = runtime.getCurrent();
+    const currentId = current?.id ?? null;
+    if (currentId !== reprojectSessionId) {
+      clearChildSessionState();
+      reprojectSessionId = currentId;
+    }
+    collapsed = new Set<number>();
+    if (current !== null) {
+      try {
+        transcript = projectSession(current.dir);
+      } catch {
+        // 磁盘读取失败：保持内存转录（下方 reprojectAll 兜底刷新视图）
+      }
+    }
+    reprojectAll();
+  }
+
+  /** 共享命令执行缝（委托 ink-commands.runSharedCommand；print/reproject/requestExit 对齐 InkShell） */
+  const commandIo: InkCommandIo = {
+    print: (t) => sendSystem(t),
+    reproject: () => reprojectFromDisk(),
+    requestExit: () => requestExit('exit'),
+  };
 
   function handleCommand(parsed: { name: string; rest: string }): void {
     switch (parsed.name) {
@@ -670,12 +1399,86 @@ export function createNextChatHarness(runtime: ChatRuntime, deps: NextChatHarnes
       case '/?':
         sendSystem(HELP_TEXT);
         return;
+      // —— 共享命令（P3-C）：/undo /redo（rewind 重投影）/new /resume /fork /sessions /exit
+      // /quit /? 与未知命令 → ink-commands.runSharedCommand（真实 CommandContext；未知命令
+      // 由共享 handleCommand 输出「未知命令」，不再有本层「暂不支持」分支）
       case '/exit':
       case '/quit':
         requestExit('exit');
         return;
+      // —— 本地 UI 命令（与 ink runInkChat.handleCommand 同文案；差异登记见文件头）——
+      case '/mode': {
+        const arg = parsed.rest.trim().toLowerCase();
+        if (arg.length === 0) {
+          cycleMode(); // 无参 = 循环切换一次（等价 Shift+Tab；任务规格二选一取循环，登记差异）
+          showHint(`模式：${uiMode}${uiMode === 'plan' || uiMode === 'auto' ? '（声明态）' : ''}`);
+          return;
+        }
+        if ((MODE_CYCLE as readonly string[]).includes(arg)) {
+          setMode(arg as UiMode);
+          sendSystem(
+            `已切换模式: ${arg}${arg === 'plan' || arg === 'auto' ? '（UI 声明态：不改变审批/执行行为）' : ''}`,
+          );
+          return;
+        }
+        sendSystem(`error: 未知模式 ${parsed.rest}（可选: ${MODE_CYCLE.join(', ')}）`);
+        return;
+      }
+      case '/context': {
+        const current = runtime.getCurrent();
+        const usage = current !== null ? getContextUsage(current.dir) : undefined;
+        sendSystem(`上下文占用: ${usage === undefined ? '—（无活动会话）' : `${Math.round(usage * 100)}%`}`);
+        return;
+      }
+      case '/compact':
+        sendSystem('压缩将在下一次 turn 开始时自动检查并执行；若已超阈值会自动触发。');
+        return;
+      case '/reasoning': {
+        const arg = parsed.rest.trim().toLowerCase();
+        if (arg.length === 0) {
+          sendSystem(`推理展示: ${runtime.reasoning() ? '开启' : '关闭'}（/reasoning on|off）`);
+          return;
+        }
+        if (arg === 'on') {
+          runtime.setReasoning(true);
+          sendSystem('推理展示已开启（turn 内按 Ctrl+R 展开/收起折叠块）。');
+          return;
+        }
+        if (arg === 'off') {
+          runtime.setReasoning(false);
+          sendSystem('推理展示已关闭。');
+          return;
+        }
+        sendSystem(`error: 未知参数 ${parsed.rest}（用 on|off，或留空查看当前状态）`);
+        return;
+      }
+      case '/tasks':
+        sendSystem('任务列表请使用 `harness2 cron list` 查看（REPL 只读展示将在后续版本提供）。');
+        return;
+      // —— 模式命令（P3-B；plan/auto 声明态、always-approve toggle，见文件头语义）——
+      case '/plan':
+        setMode('plan');
+        sendSystem('[plan mode] 已声明 plan 模式（UI 声明态：仅提示，不改变审批/执行行为；Shift+Tab 可切回）');
+        return;
+      case '/auto':
+        setMode('auto');
+        sendSystem(
+          '[auto mode] 已声明 auto 模式（UI 声明态：grok 的 auto=自动审批与红线 6 冲突，本层不自动放行，审批仍需人工回答）',
+        );
+        return;
+      case '/always-approve': {
+        const turningOn = uiMode !== 'always-approve';
+        setMode(turningOn ? 'always-approve' : 'normal');
+        sendSystem(
+          turningOn
+            ? '[always-approve] 已开启（开启后的新审批自动代答 a，经 gate resolve 路径；再跑 /always-approve 或 Ctrl+O 关闭）'
+            : '[always-approve] 已关闭（审批恢复人工回答）',
+        );
+        return;
+      }
       default:
-        sendSystem(`next 渲染层暂不支持命令 ${parsed.name}（当前支持 /help /exit /quit；其余请用缺省 ink 路径）`);
+        // /undo /redo /new /resume /fork /sessions（无参文本列表）与未知命令 → 共享实现
+        runSharedCommand(parsed, runtime, commandIo);
     }
   }
 
@@ -683,7 +1486,46 @@ export function createNextChatHarness(runtime: ChatRuntime, deps: NextChatHarnes
   let lastStep: { turnId: string | undefined; text: string } | null = null;
   const bridge = createTurnStreamBridge((event) => {
     if (event.type === 'assistant/step') lastStep = { turnId: event.turnId, text: event.text };
+    // P3-D 耗时（UI 层近似计时，见状态区注释）：subagent tool/call 起表，tool/result 结算
+    if (event.type === 'tool/call' && isSubagentTool(event.tool)) {
+      subagentStarts.set(event.callId, Date.now());
+      updateSpinner();
+    } else if (event.type === 'tool/result' && subagentStarts.has(event.callId)) {
+      const startedAt = subagentStarts.get(event.callId) ?? Date.now();
+      subagentStarts.delete(event.callId);
+      const seconds = Math.round((Date.now() - startedAt) / 1000);
+      if (seconds >= 1) subagentDurations.set(event.callId, seconds); // <1s 即时完成不显示
+      updateSpinner();
+    }
     dispatch(event);
+  });
+
+  // —— P3-D：onChildEvent 桥（SubagentHooks → 子会话登记 + 视图实时追加）——
+  // runNextChat 在 setupChatSession 装配期注入 SubagentHooks（core 导出面，core 零改动），
+  // 事件经 sink 延迟注册到本 handler；writer 先落盘后回调（core 侧保证）。
+  deps.subagentEventSink?.set((sessionId, event) => {
+    if (!childSessions.has(sessionId)) childSessions.set(sessionId, undefined);
+    if (event.type === 'user/message') {
+      const text = event.payload.text;
+      if (typeof text === 'string' && text.length > 0 && childSessions.get(sessionId) === undefined) {
+        childSessions.set(sessionId, text.split('\n')[0]?.trim() || undefined);
+      }
+    }
+    let list = childEvents.get(sessionId);
+    if (list === undefined) {
+      list = [];
+      childEvents.set(sessionId, list);
+    }
+    list.push(event);
+    const te = sessionEventToTranscript(event);
+    if (te !== null) {
+      const prev = childTranscripts.get(sessionId) ?? emptyTranscript();
+      childTranscripts.set(sessionId, transcriptReducer(prev, te));
+    }
+    if (subView !== null && subView.childId === sessionId) {
+      rebuildSubview(); // 实时追加：视图打开中 → 独立 Scrollback 全量重建（子会话行数有限）
+      invalidate();
+    }
   });
 
   /** turn-final 与末段 step 文本重复时跳过（避免同正文显示两份，见 bridge 差异说明） */
@@ -696,25 +1538,57 @@ export function createNextChatHarness(runtime: ChatRuntime, deps: NextChatHarnes
     );
   }
 
-  // —— 折叠（Ctrl+O：展开/收起最近一张工具卡，对齐 InkShell.toggleLastTool）——
-  function toggleLastTool(): void {
-    let last = -1;
+  // —— 折叠键族（P3-A，keymap 裁决：旧 Ctrl+O 折叠语义迁移至 e/E/h/l）——
+  // collapsed 覆盖集语义（见 projection.ts）：在集 = 与该 item 默认折叠态取反；
+  // 工具/推理 item 的默认态都是折叠 → 全量展开 = 收录全部可折叠下标，全量折叠 = 清空集。
+  function isCollapsibleItem(item: TranscriptItem | undefined): boolean {
+    return item !== undefined && (item.kind === 'tool' || (item.kind === 'assistant' && item.reasoning !== undefined));
+  }
+
+  /** 最近一次工具/推理 item 下标（next 无块光标，h/l 取最近可折叠 item，对齐旧 Ctrl+O 定位） */
+  function lastCollapsibleIndex(): number {
     for (let i = transcript.items.length - 1; i >= 0; i -= 1) {
-      if (transcript.items[i]?.kind === 'tool') {
-        last = i;
-        break;
-      }
+      if (isCollapsibleItem(transcript.items[i])) return i;
     }
-    if (last < 0) return;
-    collapsed = toggleCollapse(last, collapsed);
+    return -1;
+  }
+
+  /** e：展开全部块（覆盖集 = 全部可折叠 item 下标 + 全量重投影） */
+  function expandAllBlocks(): void {
+    const next = new Set<number>();
+    transcript.items.forEach((item, i) => {
+      if (isCollapsibleItem(item)) next.add(i);
+    });
+    collapsed = next;
+    reprojectAll();
+  }
+
+  /** E：折叠全部块（覆盖集清空 = 纯默认态，全量重投影） */
+  function collapseAllBlocks(): void {
+    collapsed = new Set<number>();
+    reprojectAll();
+  }
+
+  /** h/l：折叠（false）/ 展开（true）最近一次工具/推理块 */
+  function setNearestBlockExpanded(expand: boolean): void {
+    const idx = lastCollapsibleIndex();
+    if (idx < 0) return;
+    const next = new Set(collapsed);
+    if (expand) next.add(idx);
+    else next.delete(idx);
+    collapsed = next;
     reprojectAll();
   }
 
   // —— 输入装配（parser → dispatcher（approval > composer）→ 兜底）——
+  // 审批卡键位（P3-B，grok permission prompt 契约，见文件头）：Tab/Shift+Tab 循环走行、
+  // 1-3 数字直选、Enter 确认、↑↓ 保留（grok 亦有）、Ctrl+F 展开全文、Esc 寄放（不回答
+  // 不关闭）、Ctrl+C 取消、Ctrl+O always-approve。寄放态（approvalParked）本层全放行：
+  // 键盘回 composer，Tab 由 extraKeyHandler 显式回卡。
   const approvalLayer: InputLayer = {
     name: 'approval',
     handle: (event: InputEvent): boolean => {
-      if (gate.pending() === null) return false;
+      if (gate.pending() === null || approvalParked) return false;
       if (event.type !== 'key') return false;
       const ev = event;
       const n = APPROVAL_ITEMS.length;
@@ -730,6 +1604,13 @@ export function createNextChatHarness(runtime: ChatRuntime, deps: NextChatHarnes
         invalidate();
         return true;
       }
+      // Tab/Shift+Tab 在选项间循环走行（grok：never move focus out of the card）
+      if (ev.key === 'tab' && !ev.modifiers.ctrl && !ev.modifiers.alt) {
+        approvalActiveIndex = (approvalActiveIndex + (ev.modifiers.shift ? -1 : 1) + n) % n;
+        syncApprovalOverlay();
+        invalidate();
+        return true;
+      }
       if (ev.key === 'enter' && !ev.modifiers.ctrl && !ev.modifiers.alt && !ev.modifiers.shift) {
         chooseApproval(approvalActiveIndex);
         return true;
@@ -741,12 +1622,26 @@ export function createNextChatHarness(runtime: ChatRuntime, deps: NextChatHarnes
           return true;
         }
       }
+      // Ctrl+F 展开/收起审批 query 全文（grok 为完整工具参数；我方 query 无参数数据，
+      // 展开全文案，差异已登记 keymap 文档）
+      if (ev.modifiers.ctrl && ev.key === 'f') {
+        approvalExpanded = !approvalExpanded;
+        syncApprovalOverlay();
+        invalidate();
+        return true;
+      }
+      // Esc = 寄放焦点：不回答不关闭（卡片保持显示、审批挂起，键盘回 composer）
       if (ev.key === 'escape') {
-        gate.cancel();
+        parkApproval();
         return true;
       }
       if (ev.modifiers.ctrl && ev.key === 'c') {
         gate.cancel();
+        return true;
+      }
+      // Ctrl+O 在审批卡上切换 always-approve（grok 卡片键位）：只动开关，**不代答当次**
+      if (ev.modifiers.ctrl && ev.key === 'o') {
+        toggleAlwaysApprove();
         return true;
       }
       return false;
@@ -772,16 +1667,257 @@ export function createNextChatHarness(runtime: ChatRuntime, deps: NextChatHarnes
         state.cursor = 0;
         return 'consumed';
       }
+      // Ctrl+O = always-approve 切换（keymap 裁决；旧折叠语义迁移 e/E/h/l，见文件头）
       if (ev.modifiers.ctrl && ev.key === 'o') {
-        toggleLastTool();
+        toggleAlwaysApprove();
         return 'consumed';
+      }
+      // P3-E：Ctrl+X = 队列取消面板（busy 且队列非空时打开；否则瞬时提示。打开后由
+      // queueLayer 接管键盘——再次 Ctrl+X / x = 取消高亮项，q/Esc = 关闭）
+      if (ev.modifiers.ctrl && ev.key === 'x') {
+        openQueuePanel();
+        return 'consumed';
+      }
+      // 寄放态 Tab = 显式回卡（grok：card parked → Tab hands keyboard back to the card；
+      // Shift+Tab 保持模式循环，见下方差异登记）
+      if (approvalParked && ev.key === 'tab' && !ev.modifiers.ctrl && !ev.modifiers.alt && !ev.modifiers.shift) {
+        retakeApproval();
+        return 'consumed';
+      }
+      // 候选可见时 Tab / Enter = 接受高亮候选（P3-C）：草稿写回 `/cmd `（含尾随空格即退出
+      // 候选态，再 Enter 才发送；grok 选中即执行、ink Enter 提交原草稿，差异登记见文件头）。
+      // extraKeyHandler 先于 controller 内置候选裁决调用，本层拦截后 controller 的
+      // 「Enter 提交高亮候选」不会触发。
+      if (
+        state.candidates !== null &&
+        state.candidates.items.length > 0 &&
+        !ev.modifiers.ctrl &&
+        !ev.modifiers.alt &&
+        ((ev.key === 'tab' && !ev.modifiers.shift) || (ev.key === 'enter' && !ev.modifiers.shift))
+      ) {
+        acceptCandidate();
+        return 'consumed';
+      }
+      // Shift+Tab = 模式循环（composer 焦点语义；审批卡接管时 dispatcher 卡片层优先消费
+      // 为反向走行，到不了这里；候选可见时模式循环仍生效——全局 chord 优先级高于候选）
+      if (ev.key === 'tab' && ev.modifiers.shift && !ev.modifiers.ctrl && !ev.modifiers.alt) {
+        cycleMode();
+        showHint(`模式：${uiMode}${uiMode === 'plan' || uiMode === 'auto' ? '（声明态）' : ''}`);
+        return 'consumed';
+      }
+      // Tab = 输入框/滚动区双态焦点（keymap 裁决采纳）。候选可见时不在本层切换：
+      // 条件短路返回 'ignored'，Tab 落到 controller 内置裁决 = 接受候选（优先级保持）
+      if (
+        ev.key === 'tab' &&
+        !ev.modifiers.ctrl &&
+        !ev.modifiers.alt &&
+        !ev.modifiers.shift &&
+        state.candidates === null
+      ) {
+        scrollbackFocus = !scrollbackFocus;
+        invalidate();
+        return 'consumed';
+      }
+      // 滚动区焦点下的块折叠键族（仅无 Ctrl/Alt 修饰；grok 为选中块导航，此处 h/l 取
+      // 最近工具/推理 item，差异已登记 keymap 文档）
+      if (scrollbackFocus && !ev.modifiers.ctrl && !ev.modifiers.alt) {
+        if (ev.key === 'e') {
+          expandAllBlocks();
+          return 'consumed';
+        }
+        if (ev.key === 'E') {
+          collapseAllBlocks();
+          return 'consumed';
+        }
+        if (ev.key === 'h') {
+          setNearestBlockExpanded(false);
+          return 'consumed';
+        }
+        if (ev.key === 'l') {
+          setNearestBlockExpanded(true);
+          return 'consumed';
+        }
+        // P3-D 键位裁决：v = 打开子代理全屏视图（0 提示 / 1 直开 / 多选列表；差异登记 keymap）
+        if (ev.key === SUBAGENT_VIEW_KEY) {
+          openSubagentPicker();
+          return 'consumed';
+        }
+        if (ev.text !== undefined && ev.text.length > 0) {
+          // 其余字母键自动回到输入框（grok simple 模式语义），字符照常走内置插入
+          scrollbackFocus = false;
+          invalidate();
+          return 'ignored';
+        }
       }
       return 'ignored';
     },
   });
 
+  // —— 候选鼠标层（P3-C 悬停/滚轮改选，grok panes.rs:958；位于 approval 与 composer 之间）——
+  // 候选画在 composer 层顶部（chat-screen layoutChat：composer.top 起的候选行），命中测试
+  // 用 composer.candidateItemAt（含滚动窗口映射）。move 命中候选行改选；滚轮在候选行上
+  // ±1 循环；候选区外的滚轮/移动不消费（composer 层照常滚动转录）。controller blur 期
+  // （审批卡接管）不抢事件（composer 层同 guard）。
+  const candidateMouseLayer: InputLayer = {
+    name: 'candidate-mouse',
+    handle: (event: InputEvent): boolean => {
+      if (event.type !== 'mouse' || !controller.isFocused()) return false;
+      const cands = state.candidates;
+      if (cands === null || cands.items.length === 0) return false;
+      const layout = layoutChat(screen.rows, screen.cols, state);
+      if (layout.candidateRows <= 0) return false;
+      const relRow = event.row - layout.composer.top;
+      if (relRow < 0 || relRow >= layout.candidateRows) return false;
+      if (event.kind === 'move') {
+        const idx = candidateItemAt(cands.items.length, cands.activeIndex, relRow);
+        if (idx !== null && idx !== cands.activeIndex) {
+          cands.activeIndex = idx;
+          invalidate();
+        }
+        return true;
+      }
+      if (event.kind === 'scroll') {
+        const n = cands.items.length;
+        cands.activeIndex = (cands.activeIndex + (event.button === 0 ? -1 : 1) + n) % n;
+        invalidate();
+        return true;
+      }
+      return false;
+    },
+  };
+
+  // —— P3-E 队列取消面板键盘层（位于 approval 与 subagent 之间：审批最优先）——
+  // 打开时接管全部按键（P1-1 同款防御：字母不透传 composer）；Ctrl+C 放行走 guard 协议
+  // （busy 取消 / 双击退出，浮层不拦截安全键）。未打开时全放行（composer 正常编辑）。
+  const queueLayer: InputLayer = {
+    name: 'queue-panel',
+    handle: (event: InputEvent): boolean => {
+      if (queuePanel === null) return false;
+      if (event.type === 'mouse') return true; // 接管期鼠标事件不透传
+      if (event.type !== 'key') return false; // focus 等系统事件放行
+      const ev = event;
+      if (ev.modifiers.ctrl && ev.key === 'c') return false; // Ctrl+C 永远放行（guard 协议）
+      const n = queue.length;
+      const move = (delta: number): void => {
+        if (queuePanel === null || n === 0) return;
+        queuePanel.activeIndex = (queuePanel.activeIndex + delta + n) % n;
+        syncQueueOverlay();
+        invalidate();
+      };
+      if (ev.key === 'up' || (ev.key === 'k' && !ev.modifiers.ctrl && !ev.modifiers.alt)) {
+        move(-1);
+        return true;
+      }
+      if (ev.key === 'down' || (ev.key === 'j' && !ev.modifiers.ctrl && !ev.modifiers.alt)) {
+        move(1);
+        return true;
+      }
+      // Ctrl+X / x = 取消高亮项（对齐 ink queue-panel 取消语义；x 忽略 shift 变体）
+      if (ev.key === 'x' && !ev.modifiers.alt) {
+        cancelQueuedAt(queuePanel.activeIndex);
+        return true;
+      }
+      if ((ev.key === 'escape' || ev.key === 'q') && !ev.modifiers.ctrl && !ev.modifiers.alt) {
+        closeQueuePanel();
+        return true;
+      }
+      return true; // 接管期未识别键一律消费（不透传 composer）
+    },
+  };
+
+  // —— P3-D 子视图/选择列表键盘层（位于 approval 与 composer 之间：审批仍最优先）——
+  // 列表浮层：↑↓/j/k 走行、数字直选、Enter 打开、Esc/q 取消。
+  // 视图态（controller 已 blur，composer 层不消费）：q/Esc 返回、↑↓ 单行、PgUp/PgDn 翻页、
+  // 滚轮 ±3；**其余键一律消费**（P1-1 防御：视图打开时键盘完全被视图层接管——即使 composer
+  // 被异常复位焦点，输入也进不了不绘制的草稿）。
+  // 审批卡接管期（挂起且未寄放）本层整体让位：杜绝浮层/视图在审批卡下被隐形改选/关闭
+  // （如 j 隐形改选不可见 picker、q 隐形关视图）；结算后由 closeApproval 恢复相应状态。
+  const approvalActive = (): boolean => gate.pending() !== null && !approvalParked;
+  const subagentLayer: InputLayer = {
+    name: 'subagent-view',
+    handle: (event: InputEvent): boolean => {
+      if (approvalActive()) return false;
+      if (subPicker !== null) {
+        const picker = subPicker; // 局部快照（闭包内 TS 收窄；closeSubPicker 会置空外层变量）
+        if (event.type !== 'key') return false;
+        const ev = event;
+        const n = picker.items.length;
+        const move = (delta: number): void => {
+          picker.activeIndex = (picker.activeIndex + delta + n) % n;
+          subPicker = picker;
+          syncPickerOverlay();
+          invalidate();
+        };
+        if (ev.key === 'up' || (ev.key === 'k' && !ev.modifiers.ctrl && !ev.modifiers.alt)) {
+          move(-1);
+          return true;
+        }
+        if (ev.key === 'down' || (ev.key === 'j' && !ev.modifiers.ctrl && !ev.modifiers.alt)) {
+          move(1);
+          return true;
+        }
+        if (!ev.modifiers.ctrl && !ev.modifiers.alt && /^[1-9]$/.test(ev.key)) {
+          const idx = Number(ev.key) - 1;
+          if (idx < n) {
+            picker.activeIndex = idx;
+            closeSubPicker(false);
+            return true;
+          }
+        }
+        if (ev.key === 'enter' && !ev.modifiers.ctrl && !ev.modifiers.alt && !ev.modifiers.shift) {
+          closeSubPicker(false);
+          return true;
+        }
+        if (ev.key === 'escape' || ev.key === 'q') {
+          closeSubPicker(true);
+          return true;
+        }
+        return true; // P1-1 防御：picker 接管期未识别键一律消费（不透传 composer）
+      }
+      if (subView === null) return false;
+      if (event.type === 'mouse') {
+        if (event.kind !== 'scroll') return true; // P1-1 防御：视图接管期鼠标事件不透传（滚轮除外，下方处理）
+        const sb = state.subagentView?.scrollback;
+        if (sb === undefined) return false;
+        if (event.button === 0) sb.wheelUp();
+        else sb.wheelDown();
+        invalidate();
+        return true;
+      }
+      if (event.type !== 'key') return false; // focus 等系统事件放行（兜底 focused 标记需要）
+      const ev = event;
+      const sb = state.subagentView?.scrollback;
+      if (sb === undefined) return false;
+      if ((ev.key === 'q' || ev.key === 'escape') && !ev.modifiers.ctrl && !ev.modifiers.alt) {
+        closeSubagentView();
+        return true;
+      }
+      if (ev.key === 'up') {
+        sb.scrollBy(-1);
+        invalidate();
+        return true;
+      }
+      if (ev.key === 'down') {
+        sb.scrollBy(1);
+        invalidate();
+        return true;
+      }
+      if (ev.key === 'pageup') {
+        sb.pageUp();
+        invalidate();
+        return true;
+      }
+      if (ev.key === 'pagedown') {
+        sb.pageDown();
+        invalidate();
+        return true;
+      }
+      return true; // P1-1 防御：未识别键一律消费（杜绝「隐形输入进不绘制的草稿」）
+    },
+  };
+
   const dispatcher: InputDispatcher = createInputDispatcher({
-    layers: [approvalLayer, createComposerLayer(controller)],
+    layers: [approvalLayer, queueLayer, subagentLayer, candidateMouseLayer, createComposerLayer(controller)],
     fallback: (event) => {
       if (event.type === 'focus') {
         focused = event.direction === 'in';
@@ -814,6 +1950,10 @@ export function createNextChatHarness(runtime: ChatRuntime, deps: NextChatHarnes
     clearInterval(idleTimer);
     scheduler.dispose();
     bridge.dispose();
+    if (spinnerTimer !== null) {
+      clearInterval(spinnerTimer);
+      spinnerTimer = null;
+    }
     if (hintTimer !== null) {
       clearTimeout(hintTimer);
       hintTimer = null;
@@ -845,8 +1985,10 @@ export function createNextChatHarness(runtime: ChatRuntime, deps: NextChatHarnes
       const prevCols = screen.cols;
       resizeChat(screen, state, cols, rows);
       if (Math.max(1, cols) !== prevCols) {
-        // 宽度变化：截断/摘要行按新宽度重排——强制全量重投影（审查 P2；只调 rows 不重投影）
+        // 宽度变化：截断/摘要行按新宽度重投影（强制全量重投影；只调 rows 不重投影）
         reprojectAll();
+        // 审批卡展开态的全文折行按新宽度重排（收起态标题裁剪由 drawOverlay 逐帧处理，免重建）
+        syncApprovalOverlay();
       } else {
         invalidate();
       }
@@ -865,6 +2007,13 @@ export function createNextChatHarness(runtime: ChatRuntime, deps: NextChatHarnes
       const sb = state.scrollback;
       const out: string[] = [];
       for (let i = 0; i < sb.lineCount; i += 1) out.push(sb.rowOf(i).join(''));
+      return out;
+    },
+    subagentViewLines() {
+      const sv = state.subagentView;
+      if (!sv) return null;
+      const out: string[] = [];
+      for (let i = 0; i < sv.scrollback.lineCount; i += 1) out.push(sv.scrollback.rowOf(i).join(''));
       return out;
     },
     isBusy: () => busy,
@@ -926,10 +2075,16 @@ export function bindEmergencyExitRestore(
 export async function runNextChat(options: ChatOptions = {}): Promise<void> {
   const bootLines: string[] = [];
   const gate = createApprovalGate();
+  // P3-D：SubagentHooks 接线缝（装配期先于 harness 创建 → 可变 sink 延迟转发）。
+  // core 的 SubagentHooks 为导出契约，此处仅装配层传参（core/冻结区零改动）。
+  const childEventSink: { handler: ((sessionId: string, event: AnySessionEvent) => void) | null } = { handler: null };
   const runtime = await setupChatSession(options, {
     line: (t) => bootLines.push(t),
     // 审批弹窗：经 gate 打开 overlay，选择后 resolve；挤占/取消 resolve 为 ASK_CANCELLED
     askApproval: (query) => gate.ask(query),
+    subagentHooks: {
+      onChildEvent: (sessionId, event) => childEventSink.handler?.(sessionId, event),
+    },
   });
 
   const stdout = process.stdout as NodeJS.WriteStream & { columns?: number; rows?: number };
@@ -953,8 +2108,14 @@ export async function runNextChat(options: ChatOptions = {}): Promise<void> {
     env,
     gate,
     screen,
+    subagentEventSink: {
+      set: (fn) => {
+        childEventSink.handler = fn;
+      },
+    },
     cleanup: async () => {
       screen.stop(); // 关鼠标上报 + 显示光标 + 退 alt-screen（幂等）
+      stdout.write(MOUSE_ALL_MOTION_OFF); // 关全 motion 鼠标上报（与 1003h 成对；重复写无害）
       stdout.write(FOCUS_REPORT_OFF); // 关焦点上报（与 1004h 成对；重复写无害）
       stdout.write(BRACKETED_PASTE_OFF);
       if (canRaw) {

@@ -51,6 +51,7 @@ import {
   type SessionWriter,
   type ApprovalMode,
   type SteerResult,
+  type SubagentHooks,
 } from '@harness2/core';
 import type { ChatOptions } from './legacy-chat.js';
 import { PLAN_MODE_SYSTEM_PREFIX } from './mode-alias.js';
@@ -98,6 +99,11 @@ export interface ChatSetupHooks {
   line: (t: string) => void;
   /** 审批提问（signal 为 turn 取消信号，abort 时应以便利方式结束等待） */
   askApproval: (query: string, signal?: AbortSignal) => Promise<string>;
+  /**
+   * P3-D：子会话事件观察缝（可选；透传 createSubagentTools 的 hooks——core 导出契约，
+   * 此处仅装配层传参）。next 渲染层用它把子会话事件实时追加进全屏子视图。
+   */
+  subagentHooks?: SubagentHooks;
 }
 
 /** 每轮 turn 的流式渲染回调（legacy=直写 stdout；ink=桥接 React state） */
@@ -383,6 +389,7 @@ export async function setupChatSession(options: ChatOptions, hooks: ChatSetupHoo
       parentSessionId: sessionId,
       depth: 0,
       skills: skillsStore,
+      ...(hooks.subagentHooks !== undefined ? { hooks: hooks.subagentHooks } : {}),
     })) {
       if (tools.get(def.name) !== undefined) {
         line(`warning: subagent 工具 "${def.name}" 与不可收回的既有工具重名，本会话跳过注册`);

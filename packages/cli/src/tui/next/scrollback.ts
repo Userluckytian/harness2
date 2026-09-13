@@ -10,7 +10,9 @@
 //   到达底部自动恢复 follow；scrollTopRow 全程钳制在 [0, maxScrollRow]。
 // - 业务数据投影（transcript item → 文本行）不在本文件：T2-4/T2-5 接线时由调用方把
 //   TranscriptItem 渲染成文本行喂给 append/appendLines（复用 transcript.ts 的
-//   reducer/viewport 思路，原文件零改动）。
+//   reducer/viewport 思路，原文件零改动）。行级前景色（P3-A）：append/appendLines/构造
+//   接受 {text, fg} 行对象（字符串 = fg 缺省），PhysicalRow 沿所属逻辑行携带 fg，
+//   drawScrollback 按行绘制（opts.fg 仅对无行级 fg 的行兜底）。
 // - 绘制分两级：drawScrollback（纯 buffer 绘制，接受 CellBuffer，可与其他层在同一次
 //   screen.render 回调内组合）与 renderScrollback（薄壳 = screen.render(buf => drawScrollback)，
 //   经 diff-presenter 产生差量帧）。整帧装配（chat-screen）应使用 drawScrollback。
@@ -59,11 +61,25 @@ export function wrapLine(text: string, cols: number): string[] {
   return out;
 }
 
-/** 物理行：text = 物理行文本；lineIndex = 所属逻辑行；segIndex = 逻辑行内第几段 */
+/** 逻辑行：text 原样（可含宽字符，不裁剪不换行）；fg = 24bit RGB 前景色（undefined = 终端默认色） */
+export interface ScrollbackLine {
+  text: string;
+  fg?: number;
+}
+
+/** append/appendLines/构造函数的行输入：字符串（fg 缺省）或行对象 */
+export type LineInput = string | ScrollbackLine;
+
+function toLine(l: LineInput): ScrollbackLine {
+  return typeof l === 'string' ? { text: l } : l;
+}
+
+/** 物理行：text = 物理行文本；lineIndex = 所属逻辑行；segIndex = 逻辑行内第几段；fg 沿所属逻辑行（缺省 = 默认色） */
 export interface PhysicalRow {
   text: string;
   lineIndex: number;
   segIndex: number;
+  fg?: number;
 }
 
 /** visibleWindow 结果：scrollTop 为钳制后的物理行偏移；rows 恒等于 viewportRows 长度（不足补空行） */
@@ -82,7 +98,7 @@ const EMPTY_ROW: PhysicalRow = { text: '', lineIndex: -1, segIndex: 0 };
  * 调用方负责让 sb.cols === contentCols，本类不做自动同步以免反复失效缓存）。
  */
 export class Scrollback {
-  private lines: string[];
+  private lines: ScrollbackLine[];
   private colsValue: number;
   private wrapCache = new Map<number, string[]>();
   private prefix: number[]; // prefix[i] = 前 i 个逻辑行的物理行总数；有效范围 [0, built]
@@ -91,8 +107,8 @@ export class Scrollback {
   private scrollTopValue = 0;
   private viewportRows = 24; // 由 visibleWindow 更新；缺省 24 供滚动操作在首次 visibleWindow 前使用
 
-  constructor(lines: readonly string[] = [], cols = 80) {
-    this.lines = [...lines];
+  constructor(lines: readonly LineInput[] = [], cols = 80) {
+    this.lines = lines.map(toLine);
     this.colsValue = Math.max(1, Math.floor(cols));
     this.prefix = [0];
   }
@@ -138,7 +154,7 @@ export class Scrollback {
   rowOf(lineIndex: number): string[] {
     let rows = this.wrapCache.get(lineIndex);
     if (rows === undefined) {
-      rows = wrapLine(this.lines[lineIndex] ?? '', this.colsValue);
+      rows = wrapLine(this.lines[lineIndex]?.text ?? '', this.colsValue);
       this.wrapCache.set(lineIndex, rows);
     }
     return rows;
@@ -150,16 +166,16 @@ export class Scrollback {
     return this.prefix[lineIndex] ?? 0;
   }
 
-  /** 追加一个逻辑行：前缀和增量扩展（已构建部分不重算） */
-  append(text: string): void {
-    this.lines.push(text);
+  /** 追加一个逻辑行（字符串或 {text, fg} 行对象）：前缀和增量扩展（已构建部分不重算） */
+  append(line: LineInput): void {
+    this.lines.push(toLine(line));
     if (this.followFlag) this.scrollTopValue = this.maxScrollRow; // 贴底
     // anchor 模式：scrollTopRow 不变（新内容不推走视口）
   }
 
-  /** 批量追加（一次贴底同步，O(新增)） */
-  appendLines(texts: readonly string[]): void {
-    for (const t of texts) this.lines.push(t);
+  /** 批量追加（一次贴底同步，O(新增)）；行对象/字符串可混排 */
+  appendLines(lines: readonly LineInput[]): void {
+    for (const l of lines) this.lines.push(toLine(l));
     if (this.followFlag) this.scrollTopValue = this.maxScrollRow;
   }
 
@@ -258,8 +274,13 @@ export class Scrollback {
     let need = vp;
     while (need > 0 && lineIdx < this.lines.length) {
       const segs = this.rowOf(lineIdx);
+      const lineFg = this.lines[lineIdx]?.fg;
       for (let s = skip; s < segs.length && need > 0; s += 1) {
-        rows.push({ text: segs[s] ?? '', lineIndex: lineIdx, segIndex: s });
+        rows.push(
+          lineFg === undefined
+            ? { text: segs[s] ?? '', lineIndex: lineIdx, segIndex: s }
+            : { text: segs[s] ?? '', lineIndex: lineIdx, segIndex: s, fg: lineFg },
+        );
         need -= 1;
       }
       skip = 0;
@@ -322,7 +343,7 @@ export interface ScrollbackRenderOptions {
   height?: number;
   /** 渲染总宽度，默认 screen.cols（滚动条画在最后一列） */
   width?: number;
-  /** 正文前景色（24bit RGB，0 = 默认色） */
+  /** 正文兜底前景色（24bit RGB，0 = 默认色）：仅对无行级 fg 的物理行生效（行对象 fg 优先） */
   fg?: number;
   /** 是否画滚动条（默认 true） */
   scrollbar?: boolean;
@@ -376,7 +397,8 @@ export function drawScrollback(buf: CellBuffer, sb: Scrollback, opts: Scrollback
   for (let i = 0; i < win.rows.length; i += 1) {
     const row = win.rows[i];
     if (row === undefined) continue;
-    writeRowClipped(buf, top + i, row.text, contentCols, fg);
+    // 逐行前景色（P3-A 配色落地）：行对象 fg 优先，缺省回退 opts.fg（0 = 终端默认色）
+    writeRowClipped(buf, top + i, row.text, contentCols, row.fg ?? fg);
   }
   if (useScrollbar) {
     const bar = scrollbarInfo(win.totalRows, win.viewportRows, win.scrollTop);
