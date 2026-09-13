@@ -19,9 +19,141 @@
 //
 // 数据结构：每行断行结果按 lineIndex 惰性缓存（Map），prefix[i] = 前 i 个逻辑行的物理
 // 行总数（惰性增长，append 增量扩展不重算）——与 spike scrollback 同思路。
-import { charWidth } from '../renderer/cell-buffer.js';
+//
+// P4-1 选择与超链接（2026-09-12）：
+// - 超链接（OSC8）：drawScrollback 绘制每物理行时检测 `https?://` 连续非空白区段
+//   （detectUrlSegments），按显示列把区段各格标记 linkId（URL 注册进 CellBuffer 的
+//   linkId→URL 表，presenter 每帧按 run 包裹 OSC8）。检测按物理行独立进行——软折行把
+//   URL 切断时尾部区段不匹配 `https?://` 前缀、不标链接（不给错误 href，如实近似）。
+//   开关 HARNESS2_OSC8=0 时检测整体旁路（本层 env 判定，presenter 侧同样有开关兜底）。
+// - 文本选择：几何状态（anchor/head 物理行坐标）挂在 Scrollback 实例上；渲染为
+//   **fg 换色**（SELECTION_FG 亮青，深底终端下的选中近似反色）——不引入 bg 属性位，
+//   presenter/既有 renderer 测试零改动。宽字符选中判定按首列（首列命中则整字 +
+//   续列同色，不切半边）。开关 HARNESS2_SELECT=0 时由装配层（next-shell）旁路：
+//   鼠标/键盘路径不产生选择态，本层纯库不读该开关（选择态只能经装配层写入）。
+// - getSelectedText 取舍（钉死）：物理行文本 + 行间分隔；**同逻辑行的软折行段直接
+//   拼接（不加 \n）**，仅不同逻辑行间加 \n——既避免物理行重组的换行噪音，又不做
+//   完整逻辑行重组（部分列选择的中间段无从对齐）。零宽字符不进复制文本（近似）。
+import { charWidth, displayWidth } from '../renderer/cell-buffer.js';
 import type { CellBuffer } from '../renderer/cell-buffer.js';
 import { Screen } from '../renderer/screen.js';
+import { DARK_THEME, type Theme } from './theme.js';
+
+/** 选择坐标点：row = 绝对物理行号，col = 显示列（0 基） */
+export interface SelectionPoint {
+  row: number;
+  col: number;
+}
+
+/** 归一化选择区间：start ≤ end（物理行坐标） */
+export interface SelectionRange {
+  startRow: number;
+  startCol: number;
+  endRow: number;
+  endCol: number;
+}
+
+/**
+ * 选中高亮前景色（P4-1 fg 换色方案：亮青，深底终端下的选中近似反色）。
+ * P4-2：保留为 dark 主题 `fg.selection` 的同值常量（既有测试断言沿用）；绘制时优先取
+ * opts.theme 的 selection 槽（缺省 dark = 本值，零变化）。
+ */
+export const SELECTION_FG = DARK_THEME.fg.selection;
+
+/** URL 区段：[startCol, endCol) 显示列区间 + 区段原文（即 href） */
+export interface LinkSegment {
+  startCol: number;
+  endCol: number;
+  url: string;
+}
+
+const URL_RE = /https?:\/\/[^\s]+/g;
+
+/**
+ * 行内 URL 区段检测（P4-1）：`https?://` 开头的连续非空白区段 → 显示列区间。
+ * 按 UTF-16 匹配索引换算显示列（宽字符 2 列、零宽 0 列）；一行多 URL 各自成段。
+ * 注意：按物理行独立检测——软折行切断 URL 时尾部区段无 `https?://` 前缀、不产出
+ * （不给错误 href；已知近似，见文件头）。
+ */
+export function detectUrlSegments(text: string): LinkSegment[] {
+  const out: LinkSegment[] = [];
+  if (text.length === 0) return out;
+  URL_RE.lastIndex = 0;
+  let m: RegExpExecArray | null;
+  while ((m = URL_RE.exec(text)) !== null) {
+    if (m[0].length === 0) {
+      URL_RE.lastIndex += 1; // 防御：空匹配死循环
+      continue;
+    }
+    // 尾部标点不入 href（审查 P2-1）：中英文句读/括号引号贴在 URL 尾上时视为句子标点
+    let url = m[0];
+    let end = m.index + m[0].length;
+    while (url.length > 0 && TRAILING_PUNCT.has(url.charAt(url.length - 1))) {
+      url = url.slice(0, -1);
+      end -= 1;
+    }
+    if (url.length === 0) continue;
+    out.push({ startCol: colAt(text, m.index), endCol: colAt(text, end), url });
+  }
+  return out;
+}
+
+/** URL 尾部剥离的标点（中英文句读与成对符号闭口侧） */
+const TRAILING_PUNCT = new Set([
+  '.',
+  ',',
+  ';',
+  ':',
+  '!',
+  '?',
+  '。',
+  '，',
+  '；',
+  '：',
+  '！',
+  '？',
+  '）',
+  '】',
+  '』',
+  '」',
+  ')',
+  ']',
+  '}',
+  '>',
+  '\"',
+  "'",
+  '`',
+]);
+
+/** UTF-16 索引 → 该处字符的起始显示列（索引落在行尾/零宽字符上时取已累计列数） */
+function colAt(text: string, utf16Index: number): number {
+  let col = 0;
+  let idx = 0;
+  for (const ch of text) {
+    if (idx >= utf16Index) break;
+    const w = charWidth(ch.codePointAt(0) ?? 0);
+    if (idx + ch.length > utf16Index) break; // 索引落在多码点字符中间：取当前列
+    if (w > 0) col += w;
+    idx += ch.length;
+  }
+  return col;
+}
+
+/** 按显示列切片：首列落在 [colStart, colEnd) 的字符整字入选（宽字符首列判定） */
+function sliceByCols(text: string, colStart: number, colEnd: number, rowWidth: number): string {
+  const start = Math.min(Math.max(0, colStart), rowWidth);
+  const end = Math.min(Math.max(0, colEnd), rowWidth);
+  if (start >= end) return '';
+  let col = 0;
+  let out = '';
+  for (const ch of text) {
+    const w = charWidth(ch.codePointAt(0) ?? 0);
+    if (w === 0) continue; // 零宽字符不进复制文本（近似，见文件头）
+    if (col >= start && col < end) out += ch;
+    col += w;
+  }
+  return out;
+}
 
 /**
  * 宽字符感知断行：把一行文本按显示宽度断成若干物理行。
@@ -106,6 +238,9 @@ export class Scrollback {
   private followFlag = true;
   private scrollTopValue = 0;
   private viewportRows = 24; // 由 visibleWindow 更新；缺省 24 供滚动操作在首次 visibleWindow 前使用
+  // —— P4-1 选择几何（物理行坐标；anchor = 拖选起点，head = 当前拖动点）——
+  private selAnchor: SelectionPoint | null = null;
+  private selHead: SelectionPoint | null = null;
 
   constructor(lines: readonly LineInput[] = [], cols = 80) {
     this.lines = lines.map(toLine);
@@ -158,6 +293,16 @@ export class Scrollback {
       this.wrapCache.set(lineIndex, rows);
     }
     return rows;
+  }
+
+  /**
+   * 第 i 逻辑行的行对象快照（text + fg；越界 = undefined）。P4-2 新增：装配层/测试读取
+   * 行级前景色（搜索高亮/主题断言）用——lines 数组私有，此前只能经 visibleWindow 读
+   * （会污染 viewportRows 状态）。
+   */
+  lineAt(lineIndex: number): ScrollbackLine | undefined {
+    const l = this.lines[lineIndex];
+    return l !== undefined ? { text: l.text, fg: l.fg } : undefined;
   }
 
   /** 逻辑行 i 的起始物理行号 */
@@ -293,7 +438,110 @@ export class Scrollback {
     return { scrollTop, totalRows: total, viewportRows: vp, rows };
   }
 
-  /** prefix 前缀和构建到第 i 个逻辑行（含） */
+  // —— P4-1 选择几何（物理行坐标；装配层 next-shell 的鼠标/键盘路径调用）——
+
+  /** 开始选择（鼠标按下）：anchor = head = p（行/列钳制到非负） */
+  beginSelection(p: SelectionPoint): void {
+    const point = { row: Math.max(0, Math.floor(p.row)), col: Math.max(0, Math.floor(p.col)) };
+    this.selAnchor = point;
+    this.selHead = point;
+  }
+
+  /** 扩展选择（拖动 move）：只移动 head，方向无关（selectionRange 归一化） */
+  extendSelection(p: SelectionPoint): void {
+    if (this.selAnchor === null) {
+      this.beginSelection(p);
+      return;
+    }
+    this.selHead = { row: Math.max(0, Math.floor(p.row)), col: Math.max(0, Math.floor(p.col)) };
+  }
+
+  /** 清除选择（单击无移动 / Esc / 复制完成） */
+  clearSelection(): void {
+    this.selAnchor = null;
+    this.selHead = null;
+  }
+
+  /** 是否存在非零宽选择（begin 未拖动 = 零宽 = 无选择，Ctrl+C 不劫持） */
+  get hasSelection(): boolean {
+    const r = this.selectionRange();
+    return r !== null && !(r.startRow === r.endRow && r.startCol === r.endCol);
+  }
+
+  /** 归一化选择区间（start ≤ end；无选择 = null） */
+  selectionRange(): SelectionRange | null {
+    if (this.selAnchor === null || this.selHead === null) return null;
+    const a = this.selAnchor;
+    const h = this.selHead;
+    const aFirst = a.row < h.row || (a.row === h.row && a.col <= h.col);
+    const [s, e] = aFirst ? [a, h] : [h, a];
+    return { startRow: s.row, startCol: s.col, endRow: e.row, endCol: e.col };
+  }
+
+  /** 绝对物理行 → 行信息（text 为该物理行原文；越界 = null） */
+  physicalRowAt(absRow: number): PhysicalRow | null {
+    const total = this.totalRows;
+    if (absRow < 0 || absRow >= total) return null;
+    // 二分找 lineIdx：prefix[lineIdx] ≤ absRow < prefix[lineIdx+1]
+    let lo = 0;
+    let hi = this.lines.length - 1;
+    let lineIdx = 0;
+    while (lo <= hi) {
+      const mid = (lo + hi) >> 1;
+      if ((this.prefixAt(mid + 1) ?? 0) <= absRow) lo = mid + 1;
+      else {
+        lineIdx = mid;
+        hi = mid - 1;
+      }
+    }
+    const segIndex = absRow - (this.prefixAt(lineIdx) ?? 0);
+    return { text: this.rowOf(lineIdx)[segIndex] ?? '', lineIndex: lineIdx, segIndex };
+  }
+
+  /**
+   * 选中文本（P4-1 取舍见文件头）：首/尾行按列切片、中间行整行；同逻辑行软折行段
+   * 直接拼接（不加 \n），不同逻辑行间以 \n 连接。宽字符按首列整字判定；零宽字符不进文本。
+   */
+  getSelectedText(): string {
+    const r = this.selectionRange();
+    if (r === null) return '';
+    const parts: string[] = [];
+    let prevLineIndex = -1;
+    let prevSegContiguous = false;
+    for (let row = r.startRow; row <= r.endRow; row += 1) {
+      const info = this.physicalRowAt(row);
+      if (info === null) {
+        prevSegContiguous = false; // 行缺失（选择越出内容区）：打断软折行拼接
+        continue;
+      }
+      const rowWidth = displayWidth(info.text);
+      let colStart: number;
+      let colEnd: number;
+      if (r.startRow === r.endRow) {
+        colStart = r.startCol;
+        colEnd = r.endCol;
+      } else if (row === r.startRow) {
+        colStart = r.startCol;
+        colEnd = Number.MAX_SAFE_INTEGER;
+      } else if (row === r.endRow) {
+        colStart = 0;
+        colEnd = r.endCol;
+      } else {
+        colStart = 0;
+        colEnd = Number.MAX_SAFE_INTEGER;
+      }
+      const piece = sliceByCols(info.text, colStart, colEnd, rowWidth);
+      const sameLogicalLine = info.lineIndex === prevLineIndex && prevSegContiguous;
+      if (sameLogicalLine && parts.length > 0) {
+        parts[parts.length - 1] = (parts[parts.length - 1] ?? '') + piece; // 软折行段拼接（去换行噪音）
+      } else {
+        parts.push(piece);
+      }
+      prevLineIndex = info.lineIndex;
+      prevSegContiguous = true;
+    }
+    return parts.join('\n');
+  } /** prefix 前缀和构建到第 i 个逻辑行（含） */
   private ensurePrefix(i: number): void {
     const n = Math.min(i, this.lines.length);
     while (this.built < n) {
@@ -351,8 +599,12 @@ export interface ScrollbackRenderOptions {
   trackChar?: string;
   /** thumb 字符（默认 '█'） */
   thumbChar?: string;
+  /** 环境变量源（OSC8 开关判定；缺省 process.env——装配层传 deps.env 以单源） */
+  env?: NodeJS.ProcessEnv;
   /** 滚动条前景色（默认 0） */
   scrollbarFg?: number;
+  /** P4-2：主题（选中高亮 fg 取 fg.selection；缺省 dark = SELECTION_FG，零变化） */
+  theme?: Theme;
 }
 
 /**
@@ -392,6 +644,10 @@ export function drawScrollback(buf: CellBuffer, sb: Scrollback, opts: Scrollback
   const fg = opts.fg ?? 0;
   const sbFg = opts.scrollbarFg ?? 0;
   const contentCols = useScrollbar ? width - 1 : width;
+  // P4-1 开关（=0 完全旁路 URL 检测/标记）：优先用调用方注入的 env（与 presenter 单源，审查 P2-3）
+  const linksOn = (opts.env ?? process.env).HARNESS2_OSC8 !== '0';
+  const sel = sb.selectionRange(); // P4-1 选择高亮（fg 换色；无选择 = null 零影响）
+  const selFg = (opts.theme ?? DARK_THEME).fg.selection; // P4-2：选中高亮 fg 从主题取（缺省 dark 零变化）
 
   const win = sb.visibleWindow(height);
   for (let i = 0; i < win.rows.length; i += 1) {
@@ -399,6 +655,9 @@ export function drawScrollback(buf: CellBuffer, sb: Scrollback, opts: Scrollback
     if (row === undefined) continue;
     // 逐行前景色（P3-A 配色落地）：行对象 fg 优先，缺省回退 opts.fg（0 = 终端默认色）
     writeRowClipped(buf, top + i, row.text, contentCols, row.fg ?? fg);
+    const absRow = win.scrollTop + i;
+    if (linksOn && row.lineIndex >= 0) markLinkSegments(buf, top + i, row.text, contentCols);
+    if (sel !== null) applySelectionHighlight(buf, top + i, absRow, sel, contentCols, selFg);
   }
   if (useScrollbar) {
     const bar = scrollbarInfo(win.totalRows, win.viewportRows, win.scrollTop);
@@ -407,6 +666,58 @@ export function drawScrollback(buf: CellBuffer, sb: Scrollback, opts: Scrollback
       const isThumb = bar.visible && y >= bar.thumbTop && y < bar.thumbTop + bar.thumbHeight;
       buf.setCell(x, top + y, isThumb ? thumbChar : trackChar, 1, sbFg);
     }
+  }
+}
+
+/** 把一行的 URL 区段标进 buffer（linkId + 注册表）；空白截断区（未被写入的格子）跳过 */
+function markLinkSegments(buf: CellBuffer, y: number, text: string, maxCols: number): void {
+  for (const seg of detectUrlSegments(text)) {
+    if (seg.startCol >= maxCols) continue;
+    const id = buf.registerLink(seg.url);
+    const end = Math.min(seg.endCol, maxCols);
+    for (let x = seg.startCol; x < end; x += 1) {
+      const idx = y * buf.cols + x;
+      const ch = buf.chars[idx] ?? ' ';
+      const w = buf.widths[idx] ?? 0;
+      if (ch === ' ' && w === 0) continue; // 空白截断区未写入（宽字符放不下整字丢弃）：不标
+      buf.setLinkId(x, y, id);
+    }
+  }
+}
+
+/** 选择高亮（fg 换色）：选中格置 selFg（主题 selection 槽）；纯空白格写为半宽空格高亮（避免 w0 空格差量畸变） */
+function applySelectionHighlight(
+  buf: CellBuffer,
+  y: number,
+  absRow: number,
+  sel: SelectionRange,
+  maxCols: number,
+  selFg: number,
+): void {
+  if (absRow < sel.startRow || absRow > sel.endRow) return;
+  let colStart: number;
+  let colEnd: number;
+  if (sel.startRow === sel.endRow) {
+    colStart = sel.startCol;
+    colEnd = sel.endCol;
+  } else if (absRow === sel.startRow) {
+    colStart = sel.startCol;
+    colEnd = Number.MAX_SAFE_INTEGER;
+  } else if (absRow === sel.endRow) {
+    colStart = 0;
+    colEnd = sel.endCol;
+  } else {
+    colStart = 0;
+    colEnd = Number.MAX_SAFE_INTEGER;
+  }
+  const from = Math.max(0, colStart);
+  const to = Math.min(colEnd, maxCols);
+  for (let x = from; x < to; x += 1) {
+    const idx = y * buf.cols + x;
+    const ch = buf.chars[idx] ?? ' ';
+    const w = buf.widths[idx] ?? 0;
+    if (ch === ' ' && w === 0) buf.setCell(x, y, ' ', 1, selFg);
+    else buf.setCell(x, y, ch, w as 0 | 1 | 2, selFg); // 保 char/width/linkId，仅换 fg
   }
 }
 

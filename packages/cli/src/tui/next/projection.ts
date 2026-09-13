@@ -17,13 +17,18 @@
 import { diffLines } from 'diff';
 import { displayWidth } from '../input.js';
 import { isSubagentTool, type ToolItem, type TranscriptItem } from '../transcript.js';
+import { DARK_THEME, type Theme } from './theme.js';
 
-/** 前景色（24bit RGB；undefined = 终端默认色，与 drawScrollback 的 fg=0 缺省一致） */
+/**
+ * 前景色（24bit RGB；undefined = 终端默认色，与 drawScrollback 的 fg=0 缺省一致）。
+ * P4-2：值改为从 dark 主题逐值引用（零变化契约——旧常量语义 = dark 主题槽位），
+ * 供既有测试断言沿用；新代码请用 theme.ts 的语义槽位。
+ */
 export const FG = {
-  green: 0x3fb950,
-  red: 0xf85149,
-  yellow: 0xd29922,
-  gray: 0x8b949e,
+  green: DARK_THEME.fg.toolOk,
+  red: DARK_THEME.fg.toolFailed,
+  yellow: DARK_THEME.fg.toolPending,
+  gray: DARK_THEME.fg.reasoning,
 } as const;
 
 export type ProjectionLineKind =
@@ -58,6 +63,11 @@ export interface ProjectOptions {
    * 不传 = 保持 `⏺` 前缀；只替换运行中（pending）子代理行的前缀，完成/失败行与普通工具行不变。
    */
   spinner?: string;
+  /**
+   * P4-2：主题（命名色板）。不传 = dark（= 现状默认色，零变化契约）；换主题时调用方
+   * 需全量重投影（fg 烤进行对象，增量 append 不会重算旧行）。
+   */
+  theme?: Theme;
 }
 
 // --- 小工具 ---
@@ -157,6 +167,7 @@ function projectReasoning(
   expanded: boolean,
   cols: number | undefined,
   out: ProjectionLine[],
+  theme: Theme,
 ): void {
   const trimmed = text.trim();
   if (trimmed.length === 0) return;
@@ -165,12 +176,12 @@ function projectReasoning(
       text: clipLine(`  ▸ 思考…(${trimmed.length} 字)`, cols),
       lineIndex,
       kind: 'reasoning',
-      fg: FG.gray,
+      fg: theme.fg.reasoning,
     });
     return;
   }
   for (const line of splitLines(trimmed)) {
-    out.push({ text: `  │ ${line}`, lineIndex, kind: 'reasoning', fg: FG.gray });
+    out.push({ text: `  │ ${line}`, lineIndex, kind: 'reasoning', fg: theme.fg.reasoning });
   }
 }
 
@@ -192,7 +203,7 @@ function computeDiffRows(before: string, after: string): DiffRow[] {
 }
 
 /** diff 块（展开态）：`── 文件 ──` 头 + `+/-/@@` 前缀行 + 截断提示（前缀近似 DiffCard 颜色语义） */
-function projectDiff(item: ToolItem, lineIndex: number, out: ProjectionLine[]): void {
+function projectDiff(item: ToolItem, lineIndex: number, out: ProjectionLine[], theme: Theme): void {
   const args = parseJsonObject(item.args);
   const filePath = firstString(args.file_path, args.path, args.file) ?? item.tool;
   const before = item.tool === 'edit' ? (typeof args.old_text === 'string' ? args.old_text : '') : '';
@@ -205,7 +216,7 @@ function projectDiff(item: ToolItem, lineIndex: number, out: ProjectionLine[]): 
         ? args.content
         : '';
   const rows = computeDiffRows(before, after);
-  out.push({ text: `── ${filePath} ──`, lineIndex, kind: 'diff', fg: FG.gray });
+  out.push({ text: `── ${filePath} ──`, lineIndex, kind: 'diff', fg: theme.fg.diffHunk });
   let oldLine = 0;
   let newLine = 0;
   let inHunk = false;
@@ -216,7 +227,7 @@ function projectDiff(item: ToolItem, lineIndex: number, out: ProjectionLine[]): 
     // 的第一个块省略头——`── 文件 ──` 已充当分隔，避免 write 新文件类纯增量 diff 的噪音行。
     const hunkStart = row.kind !== 'context' && !inHunk;
     if (hunkStart && !atDiffStart && visible < DIFF_MAX_LINES) {
-      out.push({ text: `@@ -${oldLine + 1} +${newLine + 1} @@`, lineIndex, kind: 'diff', fg: FG.gray });
+      out.push({ text: `@@ -${oldLine + 1} +${newLine + 1} @@`, lineIndex, kind: 'diff', fg: theme.fg.diffHunk });
     }
     if (row.kind === 'add') newLine += 1;
     else if (row.kind === 'remove') oldLine += 1;
@@ -227,13 +238,13 @@ function projectDiff(item: ToolItem, lineIndex: number, out: ProjectionLine[]): 
     inHunk = row.kind !== 'context';
     atDiffStart = false;
     if (visible >= DIFF_MAX_LINES) continue; // 行号计数继续走，行不再产出
-    if (row.kind === 'add') out.push({ text: `+ ${row.text}`, lineIndex, kind: 'diff', fg: FG.green });
-    else if (row.kind === 'remove') out.push({ text: `- ${row.text}`, lineIndex, kind: 'diff', fg: FG.red });
-    else out.push({ text: row.text, lineIndex, kind: 'diff', fg: FG.gray });
+    if (row.kind === 'add') out.push({ text: `+ ${row.text}`, lineIndex, kind: 'diff', fg: theme.fg.diffAdd });
+    else if (row.kind === 'remove') out.push({ text: `- ${row.text}`, lineIndex, kind: 'diff', fg: theme.fg.diffDel });
+    else out.push({ text: row.text, lineIndex, kind: 'diff', fg: theme.fg.diffHunk });
     visible += 1;
   }
   if (rows.length > DIFF_MAX_LINES) {
-    out.push({ text: `… 还有 ${rows.length - DIFF_MAX_LINES} 行`, lineIndex, kind: 'diff', fg: FG.gray });
+    out.push({ text: `… 还有 ${rows.length - DIFF_MAX_LINES} 行`, lineIndex, kind: 'diff', fg: theme.fg.diffHunk });
   }
 }
 
@@ -247,10 +258,12 @@ function projectTool(
   expanded: boolean,
   cols: number | undefined,
   out: ProjectionLine[],
+  theme: Theme,
   opts: Pick<ProjectOptions, 'durations' | 'spinner'> = {},
 ): void {
   const isSub = isSubagentTool(item.tool);
-  const statusFg = item.status === 'pending' ? FG.yellow : item.status === 'ok' ? FG.green : FG.red;
+  const statusFg =
+    item.status === 'pending' ? theme.fg.toolPending : item.status === 'ok' ? theme.fg.toolOk : theme.fg.toolFailed;
   if (isSub) {
     // P3-D：耗时命中才追加（UI 层近似计时，无命中不伪造）；运行中行用 spinner 前缀
     const duration = opts.durations?.get(item.callId);
@@ -281,16 +294,16 @@ function projectTool(
   }
   // T1：子会话只读入口提示（解析不到不显示；Ink 版还带 Ctrl+J/K 键位提示，键位归接线层）
   if (item.childSessionId !== undefined) {
-    out.push({ text: `  ↳ 子会话 ${item.childSessionId}`, lineIndex, kind: 'subagent', fg: FG.gray });
+    out.push({ text: `  ↳ 子会话 ${item.childSessionId}`, lineIndex, kind: 'subagent', fg: theme.fg.subagentDetail });
   }
   // 结果行：pending 无；失败原因首行始终可见
   let deferredOutput: string[] = [];
   if (item.status === 'failed') {
     const errLines = item.error !== undefined && item.error.length > 0 ? splitLines(item.error) : ['（无错误详情）'];
-    out.push({ text: `  └ ✗ ${errLines[0] ?? ''}`, lineIndex, kind: 'tool-result', fg: FG.red });
+    out.push({ text: `  └ ✗ ${errLines[0] ?? ''}`, lineIndex, kind: 'tool-result', fg: theme.fg.toolResultFailed });
     if (expanded) {
       for (const line of errLines.slice(1)) {
-        out.push({ text: `  │ ${line}`, lineIndex, kind: 'tool-result', fg: FG.gray });
+        out.push({ text: `  │ ${line}`, lineIndex, kind: 'tool-result', fg: theme.fg.toolResultDetail });
       }
     }
     const output = item.output ?? '';
@@ -309,20 +322,20 @@ function projectTool(
         text: clipLine(`  └ ✓ ${summary}`.trimEnd(), cols),
         lineIndex,
         kind: 'tool-result',
-        fg: FG.green,
+        fg: theme.fg.toolResultOk,
       });
     } else {
       // 展开态：`  └ ✓` 头 + 输出逐行 `  │ `（输出行排在 diff 块之后，见下方 deferred 输出）
-      out.push({ text: '  └ ✓', lineIndex, kind: 'tool-result', fg: FG.green });
+      out.push({ text: '  └ ✓', lineIndex, kind: 'tool-result', fg: theme.fg.toolResultOk });
       deferredOutput = lines;
     }
   }
   // 展开态：edit/write 的 diff 卡（DiffCard 的前缀字符近似）在结果行之后、输出之前
   if (expanded && (item.tool === 'edit' || item.tool === 'write')) {
-    projectDiff(item, lineIndex, out);
+    projectDiff(item, lineIndex, out, theme);
   }
   for (const line of deferredOutput) {
-    out.push({ text: `  │ ${line}`, lineIndex, kind: 'tool-result', fg: FG.gray });
+    out.push({ text: `  │ ${line}`, lineIndex, kind: 'tool-result', fg: theme.fg.toolResultDetail });
   }
 }
 
@@ -333,39 +346,40 @@ function projectTool(
 export function projectTranscript(items: readonly TranscriptItem[], opts: ProjectOptions = {}): ProjectionLine[] {
   const collapsed = opts.collapsed;
   const cols = opts.cols !== undefined && opts.cols > 0 ? Math.floor(opts.cols) : undefined;
+  const theme = opts.theme ?? DARK_THEME; // P4-2：缺省 dark = 现状默认色（零变化契约）
   const out: ProjectionLine[] = [];
   for (let i = 0; i < items.length; i += 1) {
     const item = items[i];
     if (item === undefined) continue;
-    // 覆盖标记：在集 = 与默认折叠态取反（默认折叠的 item 展开；默认展开的收起）
+    // 覆盖标记：在集 = 与该 item 默认折叠态取反（默认折叠的 item 展开；默认展开的收起）
     const expanded = collapsed?.has(i) ?? false;
     switch (item.kind) {
       case 'user': {
         const lines = splitLines(item.text);
-        out.push({ text: `❯ ${lines[0] ?? ''}`, lineIndex: i, kind: 'user' });
+        out.push({ text: `❯ ${lines[0] ?? ''}`, lineIndex: i, kind: 'user', fg: theme.fg.user });
         for (let k = 1; k < lines.length; k += 1) {
-          out.push({ text: lines[k] ?? '', lineIndex: i, kind: 'user' });
+          out.push({ text: lines[k] ?? '', lineIndex: i, kind: 'user', fg: theme.fg.user });
         }
         break;
       }
       case 'assistant': {
         for (const line of splitLines(item.text)) {
-          out.push({ text: line, lineIndex: i, kind: 'assistant' });
+          out.push({ text: line, lineIndex: i, kind: 'assistant', fg: theme.fg.assistant });
         }
         if (item.reasoning !== undefined) {
-          projectReasoning(item.reasoning, i, expanded, cols, out);
+          projectReasoning(item.reasoning, i, expanded, cols, out, theme);
         }
         break;
       }
       case 'partial': {
         for (const line of splitLines(item.text)) {
-          out.push({ text: line, lineIndex: i, kind: 'assistant' });
+          out.push({ text: line, lineIndex: i, kind: 'assistant', fg: theme.fg.assistant });
         }
         out.push({
           text: `${EXPAND_HINT} ${reasonLine(item.stopReason, item.error)}`,
           lineIndex: i,
           kind: 'system',
-          fg: FG.yellow,
+          fg: theme.fg.systemWarn,
         });
         break;
       }
@@ -375,16 +389,16 @@ export function projectTranscript(items: readonly TranscriptItem[], opts: Projec
           text: `${EXPAND_HINT} ${reasonLine(item.stopReason, item.error)}`,
           lineIndex: i,
           kind: 'system',
-          fg: FG.red,
+          fg: theme.fg.systemError,
         });
         break;
       }
       case 'tool':
-        projectTool(item, i, expanded, cols, out, opts);
+        projectTool(item, i, expanded, cols, out, theme, opts);
         break;
       case 'system':
       case 'status':
-        out.push({ text: item.text, lineIndex: i, kind: 'system', fg: FG.gray });
+        out.push({ text: item.text, lineIndex: i, kind: 'system', fg: theme.fg.system });
         break;
     }
   }

@@ -15,6 +15,7 @@ import {
   retryBudgetHasActivity,
   createApprovalGate,
   createNextChatHarness,
+  SPINNER_FRAMES,
   type ApprovalGate,
   type NextChatHarness,
   type SubagentEventSink,
@@ -319,7 +320,9 @@ describe('P3-E 状态行（harness 集成）', () => {
     );
     h.submit('跑');
     await vi.advanceTimersByTimeAsync(0);
-    expect(h.state.statusline).toContain('⏺ 运行中…');
+    // P4-2：busy 且无运行中子代理时「⏺ 运行中…」的 ⏺ 为 spinner 帧动画（任务规格要求，
+    // 150ms 推进 SPINNER_FRAMES）——断言接受任一帧或 ⏺；段文本「运行中…」与收尾消失语义不变。
+    expect(h.state.statusline).toMatch(new RegExp(`[${SPINNER_FRAMES.join('')}] 运行中…`));
     release();
     await settle(h);
     expect(h.state.statusline).not.toContain('运行中');

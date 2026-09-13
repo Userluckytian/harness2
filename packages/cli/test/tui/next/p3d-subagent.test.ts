@@ -271,7 +271,7 @@ describe('P3-D 子代理运行动画（spinner）', () => {
     h.dispose();
   });
 
-  it('busy 但无运行中子代理 → 不启动 spinner（普通工具运行中行不变）', async () => {
+  it('busy 但无运行中子代理 → 行级 spinner 不转（普通工具行不变；状态行动画另测 P4-2）', async () => {
     let release: (() => void) | undefined;
     const gate = new Promise<void>((r) => {
       release = r;

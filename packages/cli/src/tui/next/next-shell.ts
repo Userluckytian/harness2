@@ -125,6 +125,43 @@
 //   - 斜杠命令 /plan /auto /always-approve 直接设置对应模式（/always-approve 为 toggle，
 //     grok 语义；/plan /auto 幂等设置）。
 //   - 底边指示顺序：模式（normal 省略）· scrollback 焦点 · 寄放提示 · 瞬时 hint。
+//
+// P4-1 选择与复制（OSC52）+ 超链接（OSC8）（2026-09-12）：
+//   - 鼠标拖选：滚动区矩形内左键 down → move 扩展 → up 完成（方向无关、跨行、宽字符
+//     按首列整字）；单击（无移动）= 清除选择。焦点无关（scrollback 焦点/非焦点均可）；
+//     approval/queue/subagent/候选层在先，既有点击语义零变化；滚轮放行照常滚动。
+//     已知简化：拖选中滚轮不更新选择；子视图/picker 打开时鼠标被 subagentLayer 接管，
+//     选择仅作用于主转录（如实登记）。
+//   - 复制（OSC52）：Ctrl+C 有选择时优先复制（写 `\x1b]52;c;<base64>\x1b\\` 到 stdout、
+//     清选择、hint「已复制 N 字符」），无选择走既有 guard 协议（优先级不打扰）；Esc 清
+//     选择（先于 busy abort/清草稿）；y（滚动区焦点）同样复制。Windows Terminal 1.17+
+//     支持 OSC52，老终端忽略序列（无害）。
+//   - 超链接（OSC8）：scrollback 绘制时检测 `https?://` 非空白区段标 linkId，
+//     diff-presenter 按连续 run 包裹（见 renderer/osc.ts 兼容面注释）；软折行切断的
+//     URL 尾段不标（不给错误 href）。开关：HARNESS2_SELECT=0 关选择复制、
+//     HARNESS2_OSC8=0 关超链接（均默认开启，=0 完全旁路）。
+//
+// P4-2 主题系统 + /theme + /search + busy 状态行 spinner（2026-09-13，P4 收口包）：
+//   - 主题：next/theme.ts 命名色板（dark = 现状默认色逐值对齐，切换往返 dark 视觉零变化；
+//     light = 深字浅底自定合理值，bg 假定浅色仅登记口径——cell-buffer 无 bg 通道）。
+//     投影/滚动区选中高亮/composer 光标与 active 候选/浮层高亮/子视图提示色全部从主题取；
+//     next-shell 持有 theme 状态（state.theme 下发 chat-screen），/theme 切换走 reprojectAll
+//     全量重投影（行级 fg 烤进行对象）。会话内存级不持久化（grok 写 config.toml + 5 主题 +
+//     auto 系统外观 + picker，差异如实登记）。theme.ts 预留 spinner fg 槽：状态行/composer
+//     为单 fg 整行绘制，未逐段接线（不伪造已生效）。
+//   - /theme：无参 = 列出可用并提示当前；带名 = 切换（大小写不敏感，grok 同语义）；未知名报错。
+//   - /search（简版，任务规格裁决）：/search <文本> 从当前视口底之后找首个命中逻辑行 →
+//     anchor 定位到视口顶（底部钳制）+ 命中行整行高亮（主题 searchHit，行级单 fg 无行内分段）
+//     + system 行「N 处命中（第 k 处）」；再次同查询/无参 = 跳下一处（末尾回卷）；clear 清高亮；
+//     命中判定大小写不敏感、中文按子串；命中计数排除搜索回显与状态行（防自匹配放大 N）；
+//     高亮保留到下次搜索或 clear（无定时清除）；折叠/换主题重投影后按文本重算仍正确；
+//     不作用于子视图。差异登记：grok 为 /find 交互式搜索栏（Esc-steal、n/N 语义），
+//     本层不做 / 交互输入框（评估后取简：composer 焦点态/输入框接线工作量大、收益低）。
+//   - busy 状态行 spinner：updateSpinner 启动条件扩展为 busy 即运转——无运行中子代理时
+//     tick 只刷 chrome，状态行「⏺ 运行中…」的 ⏺ 换 SPINNER_FRAMES 当前帧（150ms，复用
+//     P3-D 帧集与定时器）；有运行中子代理时行级动画接管（P3-D 语义不回退），状态行保持 ⏺；
+//     空闲停表。行为变化（任务规格要求）：busy 无子代理时状态行不再静止显示 ⏺，
+//     p3e-chrome 对应断言已同步。
 import { homedir } from 'node:os';
 import type { ChatOptions } from '../../legacy-chat.js';
 import {
@@ -165,6 +202,7 @@ import {
 } from '../transcript.js';
 import type { WriteTarget } from '../renderer/diff-presenter.js';
 import { ALT_SCREEN_EXIT, MOUSE_OFF, SHOW_CURSOR } from '../renderer/ansi.js';
+import { osc52Copy } from '../renderer/osc.js';
 import { Screen } from '../renderer/screen.js';
 import {
   renderChat,
@@ -176,8 +214,9 @@ import {
   type ChatScreenState,
 } from './chat-screen.js';
 import { projectTranscript, subagentDescription, type ProjectionLine } from './projection.js';
-import { Scrollback } from './scrollback.js';
+import { Scrollback, type SelectionPoint } from './scrollback.js';
 import { wrapTextByWidth, type OverlaySpec } from './overlay.js';
+import { DEFAULT_THEME, getTheme, themeNames, type Theme } from './theme.js';
 import { candidateItemAt } from './composer.js';
 import {
   attachInput,
@@ -191,6 +230,11 @@ import { terminalEvent } from '../useTurnStream.js';
 /** next 渲染开关（runInkChat 入口分支用；默认关闭 → legacy ink 不变） */
 export function shouldUseNextRenderer(env: Record<string, string | undefined>): boolean {
   return env.HARNESS2_RENDERER === 'next';
+}
+
+/** P4-1 选择开关：HARNESS2_SELECT=0 时鼠标拖选/键盘复制完全旁路（默认开启） */
+export function selectionEnabledForEnv(env: Record<string, string | undefined>): boolean {
+  return env.HARNESS2_SELECT !== '0';
 }
 
 // —— 常量（对齐既有装配的口径）——
@@ -302,6 +346,16 @@ export const NEXT_COMMANDS: readonly NextCommandEntry[] = [
   { name: 'plan', wiring: 'local', note: 'next 层 UI 声明态（ink 无此命令）' },
   { name: 'auto', wiring: 'local', note: 'next 层 UI 声明态（ink 无此命令）' },
   { name: 'always-approve', wiring: 'local', note: 'next 层 always-approve 开关（ink 无此命令）' },
+  {
+    name: 'theme',
+    wiring: 'local',
+    note: 'next 层主题切换 dark|light（P4-2）：无参列出可用并提示当前，未知名报错；会话内存级不持久化（grok 为 picker + config.toml 持久化 + auto 系统外观，差异登记）',
+  },
+  {
+    name: 'search',
+    wiring: 'local',
+    note: '滚动区文本搜索（P4-2 简版）：/search <文本> 命中定位+高亮，无参重复上次，clear 清高亮；不做 / 交互输入框（grok 为 /find 交互式搜索栏，差异登记）',
+  },
 ];
 
 /** pattern 是否为 target 的子序列（空 pattern 恒真） */
@@ -567,6 +621,12 @@ export interface NextChatHarness {
   pendingApproval(): string | null;
   /** scrollback 逻辑行快照（测试断言用；wrap 段拼回 = 原逻辑行） */
   logicalLines(): string[];
+  /** P4-2：逻辑行前景色（undefined = 默认色；主题/搜索高亮断言用） */
+  logicalLineFg(index: number): number | undefined;
+  /** P4-1：当前选中文本（无选择 = 空串；测试断言用） */
+  selectedText(): string;
+  /** P4-1：是否存在非零宽选择（测试断言用） */
+  hasSelection(): boolean;
   /** P3-D：子视图逻辑行快照（null = 视图未打开） */
   subagentViewLines(): string[] | null;
   isBusy(): boolean;
@@ -590,6 +650,8 @@ export function createNextChatHarness(runtime: ChatRuntime, deps: NextChatHarnes
   // 重复写无害）；关闭序列在 runNextChat 的 cleanup 随 screen.stop 一并写出。开启后
   // parser 产出 focus 事件 → dispatcher 兜底更新 focused → notifier 策略自然生效。
   deps.out.write(FOCUS_REPORT_ON);
+  // P4-1：OSC8 开关随 deps.env 驱动（headless 测试注入；真机 process.env 同值）
+  screen.setOsc8Enabled(env.HARNESS2_OSC8 !== '0');
   // DECSET 1003 全 motion 鼠标上报（P3-C 悬停改选；与 screen.start 的 MOUSE_ON 叠加，幂等）
   deps.out.write(MOUSE_ALL_MOTION_ON);
 
@@ -599,7 +661,12 @@ export function createNextChatHarness(runtime: ChatRuntime, deps: NextChatHarnes
   bootLines.forEach((text, i) => {
     transcript = transcriptReducer(transcript, { type: 'system', id: `boot:${i}`, text });
   });
+  // —— P4-2 主题与搜索状态（会话内存级，不持久化——如实登记，grok 写 config.toml）——
+  // 注意：state 字面量引用 theme，须先于其声明（dark = 现状默认色，零变化契约）。
+  let theme: Theme = DEFAULT_THEME;
+  let searchState: { query: string; lastHit: number } | null = null; // null = 无活动搜索/高亮
   const state: ChatScreenState = {
+    env: deps.env,
     scrollback: new Scrollback([], Math.max(1, screen.cols - 1)),
     draft: '',
     cursor: 0,
@@ -608,6 +675,7 @@ export function createNextChatHarness(runtime: ChatRuntime, deps: NextChatHarnes
     shortcuts: SHORTCUTS,
     statusline: '',
     indicators: [],
+    theme,
   };
 
   let busy = false;
@@ -625,6 +693,15 @@ export function createNextChatHarness(runtime: ChatRuntime, deps: NextChatHarnes
   // Ctrl+O 共享此单态变量（开启时新审批经 gate.choose('a') 代答，红线 6）。
   let uiMode: UiMode = 'normal';
   let scrollbackFocus = false; // Tab 双态焦点：false = 输入框（默认），true = 滚动区（折叠键族生效）
+
+  // —— P4-1 选择与复制（OSC52）状态 ——
+  // 开关：HARNESS2_SELECT=0 完全旁路（鼠标不进选择态、Ctrl+C/y 不复制）。选择几何
+  // （anchor/head）挂在 state.scrollback 上（本层只驱动）；子视图/picker 打开时鼠标
+  // 被 subagentLayer 整体接管，选择仅作用于主转录（如实登记，不做子视图内选择）。
+  const selectEnabled = selectionEnabledForEnv(env);
+  let selDragging = false; // 鼠标左键拖选进行中（down 于滚动区 → move 扩展 → up 结束）
+  let selMoved = false; // down 后是否发生过位置变化（up 时区分拖选与单击清除）
+  let selDownPt: SelectionPoint | null = null; // 本次拖选起点（move 位移检测基准）
 
   // —— P3-D 子代理块（耗时/动画）与全屏子视图状态 ——
   // 耗时为 UI 层近似计时：subagent tool/call → tool/result 的 turn 事件流间隔（含审批等待/
@@ -662,12 +739,37 @@ export function createNextChatHarness(runtime: ChatRuntime, deps: NextChatHarnes
   let syncedLineCount = 0;
 
   function projectLines(): ProjectionLine[] {
-    return projectTranscript(transcript.items, {
+    const lines = projectTranscript(transcript.items, {
       cols: contentCols(),
       collapsed,
+      theme, // P4-2：主题色板（缺省 dark；/theme 切换走 reprojectAll 全量重投影）
       // P3-D：耗时命中才随行显示；spinner 仅在动画定时器活动时传当前帧
       ...(subagentDurations.size > 0 ? { durations: subagentDurations } : {}),
       ...(spinnerTimer !== null ? { spinner: SPINNER_FRAMES[spinnerFrame % SPINNER_FRAMES.length] } : {}),
+    });
+    return applySearchHighlight(lines);
+  }
+
+  // —— P4-2 搜索高亮（post-pass）——
+  // 命中判定 = 逻辑行文本大小写不敏感子串（中文按子串）；命中行整行 fg 换主题 searchHit
+  // （next 行级单 fg 约束，无行内分段高亮）。自身回显/状态行排除（避免命中计数被自匹配放大）。
+  // 高亮保留到下次搜索或 /search clear（无定时清除，任务规格）；每次重投影按当前文本重算，
+  // 折叠/换主题/spinner 重建后仍正确，新追加的流式行命中同样着色。
+  const SEARCH_STATUS_PREFIX = '搜索 "';
+  const SEARCH_ECHO_PREFIX = '> /search';
+
+  function isSearchNoise(text: string): boolean {
+    return text.startsWith(SEARCH_STATUS_PREFIX) || text.startsWith(SEARCH_ECHO_PREFIX);
+  }
+
+  function applySearchHighlight(lines: ProjectionLine[]): ProjectionLine[] {
+    if (searchState === null) return lines;
+    const q = searchState.query.toLowerCase();
+    if (q.length === 0) return lines;
+    return lines.map((l) => {
+      if (isSearchNoise(l.text)) return l;
+      if (l.text.toLowerCase().includes(q)) return { ...l, fg: theme.fg.searchHit };
+      return l;
     });
   }
 
@@ -716,16 +818,20 @@ export function createNextChatHarness(runtime: ChatRuntime, deps: NextChatHarnes
     invalidate();
   }
 
-  // —— P3-D 运行动画：busy 且存在运行中子代理块时 150ms 循环 invalidation ——
-  // spinner 改变的只是运行中子代理行的前缀字符（items 引用不变，syncProjection 的
-  // 「无变化」早退会跳过）→ tick 走 reprojectAll 全量重建（150ms 周期，帧开销可忽略）。
+  // —— P3-D 运行动画 + P4-2 状态行 spinner：busy 时 150ms 循环（目标二选一/共存分发）——
+  // 启动条件（P4-2 扩展）：原为 busy 且存在运行中子代理块（行级 spinner 改运行中子代理行
+  // 前缀，items 引用不变 → tick 走 reprojectAll 全量重建）；现扩展为 busy 即运转——
+  // busy 且**无**运行中子代理时，tick 只刷 chrome（invalidate），把状态行「⏺ 运行中…」的
+  // ⏺ 换成 SPINNER_FRAMES 当前帧（scrollback 无变化，免全量重建）；空闲停表。
   function updateSpinner(): void {
-    const shouldRun = busy && subagentStarts.size > 0;
+    const shouldRun = busy;
     if (shouldRun && spinnerTimer === null) {
       spinnerFrame = 0;
       spinnerTimer = setInterval(() => {
         spinnerFrame += 1;
-        reprojectAll();
+        if (subagentStarts.size > 0)
+          reprojectAll(); // 行级 spinner（P3-D 语义不回退）
+        else invalidate(); // 状态行 spinner（P4-2）
       }, SPINNER_INTERVAL_MS);
     } else if (!shouldRun && spinnerTimer !== null) {
       clearInterval(spinnerTimer);
@@ -838,7 +944,8 @@ export function createNextChatHarness(runtime: ChatRuntime, deps: NextChatHarnes
   function rebuildSubview(): void {
     if (subView === null) return;
     const ts = childTranscripts.get(subView.childId) ?? emptyTranscript();
-    const sb = new Scrollback(projectTranscript(ts.items, { cols: contentCols() }), contentCols());
+    // P4-2：子视图行级 fg 与主转录同源（同一主题）；搜索高亮不作用于子视图（主转录专属）
+    const sb = new Scrollback(projectTranscript(ts.items, { cols: contentCols(), theme }), contentCols());
     state.subagentView = { scrollback: sb, hint: `子会话 ${subView.childId} · ${SUBVIEW_HINT}` };
   }
 
@@ -868,6 +975,12 @@ export function createNextChatHarness(runtime: ChatRuntime, deps: NextChatHarnes
    */
   function refreshChrome(): void {
     const usage = currentUsage();
+    // P4-2：busy 且无运行中子代理时，状态行「⏺ 运行中…」的 ⏺ 用 spinner 帧动画
+    // （复用 P3-D 帧集与定时器；有运行中子代理 = 行级动画接管，状态行保持 ⏺ 静止）
+    const spinFrame =
+      busy && subagentStarts.size === 0 && spinnerTimer !== null
+        ? SPINNER_FRAMES[spinnerFrame % SPINNER_FRAMES.length]
+        : undefined;
     state.statusline = statusLineFor({
       cwd,
       home,
@@ -876,6 +989,7 @@ export function createNextChatHarness(runtime: ChatRuntime, deps: NextChatHarnes
       ...(uiMode !== 'normal' ? { mode: uiMode } : {}),
       ...(lastRetry !== null ? { retry: lastRetry } : {}),
       ...(busy ? { busy: true } : {}),
+      ...(spinFrame !== undefined ? { spinnerFrame: spinFrame } : {}),
     });
     state.shortcuts = shortcutsFor({
       busy,
@@ -979,6 +1093,33 @@ export function createNextChatHarness(runtime: ChatRuntime, deps: NextChatHarnes
       invalidate();
     }, HINT_CLEAR_MS);
     invalidate();
+  }
+
+  // —— P4-1 选择与复制（OSC52）——
+  /**
+   * 有选择时复制到系统剪贴板（OSC52 写 stdout，Buffer base64 编码），清选择并提示
+   * 「已复制 N 字符」。无选择返回 false（Ctrl+C 落回 guard 协议，优先级不打扰既有语义）。
+   */
+  function copySelectionToClipboard(): boolean {
+    if (!selectEnabled) return false;
+    const sb = state.scrollback;
+    if (!sb.hasSelection) return false;
+    const text = sb.getSelectedText();
+    deps.out.write(osc52Copy(text));
+    sb.clearSelection();
+    ctrlCGuard.reset(); // 复制不是退出意图：重置双击窗口（审查 P2-2，防 2s 内再按直接退出）
+    showHint(`已复制 ${[...text].length} 字符`); // 码点数（非 UTF-16 code unit）
+    return true;
+  }
+
+  /** 鼠标事件 → 选择坐标点（滚动区矩形内换算绝对物理行；行/列钳制） */
+  function selectionPointFromMouse(mouseCol: number, mouseRow: number): SelectionPoint {
+    const sb = state.scrollback;
+    const rect = layoutChat(screen.rows, screen.cols, state).scrollback;
+    const win = sb.visibleWindow(rect.height); // 与 drawScrollback 同参：scrollTop 幂等
+    const relRow = mouseRow - rect.top;
+    const absRow = Math.min(Math.max(0, win.scrollTop + relRow), Math.max(0, sb.totalRows - 1));
+    return { row: absRow, col: Math.min(Math.max(0, mouseCol), contentCols() - 1) };
   }
 
   // —— 审批 overlay（P3-B blocking card：键盘接管 / 寄放两态 + Ctrl+F 全文展开）——
@@ -1263,6 +1404,7 @@ export function createNextChatHarness(runtime: ChatRuntime, deps: NextChatHarnes
     bridge.reset();
     busy = true;
     lastRetry = null; // P3-E：新 turn 清上一 turn 的重试标记（状态行不残留旧值）
+    updateSpinner(); // P4-2：turn 开始即启动 spinner 定时器（无运行中子代理时驱动状态行帧动画）
     userSeq += 1;
     // 输入优先：user 回显立即落定（对齐 InkShell dispatchInputNow）
     scheduler.setInputPriority(true);
@@ -1319,6 +1461,98 @@ export function createNextChatHarness(runtime: ChatRuntime, deps: NextChatHarnes
         drainQueue();
       }
     }
+  }
+
+  // —— P4-2 搜索（/search 简版：命令行式，无 / 交互输入框——评估后取简，差异登记见文件头）——
+  // 行为：从当前视口底物理行**之后**找第一个命中逻辑行（无 = 回卷首个）；再次同查询 = 上一
+  // 命中行之后的第一处（末尾回卷）。命中行 anchor 定位到视口顶（底部钳制）+ 整行高亮
+  // （主题 searchHit）。命中计数排除搜索回显（'> /search'）与状态行（'搜索 "'），防自匹配
+  // 放大 N。大小写不敏感；中文按子串；无高亮清除定时器（保留到下次搜索或 clear，任务规格）。
+  const SEARCH_USAGE = '用法: /search <文本>（无参数 = 重复上次搜索；/search clear 清除高亮）';
+
+  function computeHits(query: string): number[] {
+    const sb = state.scrollback;
+    const q = query.toLowerCase();
+    const hits: number[] = [];
+    for (let i = 0; i < sb.lineCount; i += 1) {
+      const text = sb.rowOf(i).join('');
+      if (isSearchNoise(text)) continue;
+      if (text.toLowerCase().includes(q)) hits.push(i);
+    }
+    return hits;
+  }
+
+  function runSearch(query: string, repeat: boolean): void {
+    const hits = computeHits(query);
+    if (hits.length === 0) {
+      searchState = { query, lastHit: -1 }; // 记忆查询（无参重试同词）；未命中 = 高亮清空（属「下次搜索」）
+      reprojectAll(); // 清掉上一轮高亮（若有）
+      sendSystem(`搜索 "${query}"：未找到`);
+      return;
+    }
+    const prev = searchState;
+    let target: number;
+    if (repeat && prev !== null && prev.lastHit >= 0) {
+      target = hits.find((h) => h > prev.lastHit) ?? hits[0]!; // 循环
+    } else {
+      // 首搜：从当前视口底物理行之后向下找；无（含贴底跟随态）→ 回卷首个
+      const layout = layoutChat(screen.rows, screen.cols, state);
+      const win = state.scrollback.visibleWindow(Math.max(1, layout.scrollback.height));
+      const bottomRow = win.scrollTop + win.viewportRows - 1;
+      target = hits.find((h) => state.scrollback.lineStart(h) > bottomRow) ?? hits[0]!;
+    }
+    searchState = { query, lastHit: target };
+    reprojectAll(); // 命中行高亮（fg 变化需全量重投影；anchor 尽力保留）
+    // 注意：reprojectAll 会整体替换 state.scrollback（rebuildScrollback）——定位必须作用于
+    // 重建后的新实例，不能用重建前捕获的旧引用（否则跳转落在孤儿实例上，视口不动）。
+    const sb = state.scrollback;
+    sb.goToTop();
+    sb.scrollBy(sb.lineStart(target)); // 命中行定位到视口顶（钳制到底部时仍可见）
+    const ordinal = hits.indexOf(target) + 1;
+    sendSystem(`搜索 "${query}"：${hits.length} 处命中（第 ${ordinal} 处）`);
+  }
+
+  function runSearchCommand(arg: string): void {
+    if (arg.length === 0) {
+      if (searchState !== null) {
+        runSearch(searchState.query, true); // 无参 = 重复上次查询（跳下一处）
+        return;
+      }
+      sendSystem(SEARCH_USAGE);
+      return;
+    }
+    if (arg.toLowerCase() === 'clear') {
+      searchState = null;
+      reprojectAll(); // 清高亮
+      sendSystem('搜索高亮已清除');
+      return;
+    }
+    const repeat = searchState !== null && searchState.query === arg;
+    runSearch(arg, repeat);
+  }
+
+  // —— P4-2 主题切换（/theme）：会话内存级，不持久化（grok 写 config.toml，差异登记）——
+  function runThemeCommand(arg: string): void {
+    if (arg.length === 0) {
+      const list = themeNames()
+        .map((n) => (n === theme.name ? `${n}（当前）` : n))
+        .join(' · ');
+      sendSystem(`主题: ${list} — 用法 /theme ${themeNames().join('|')}`);
+      return;
+    }
+    const next = getTheme(arg);
+    if (next === undefined) {
+      sendSystem(`error: 未知主题 ${arg}（可用: ${themeNames().join(', ')}）`);
+      return;
+    }
+    if (next.name === theme.name) {
+      sendSystem(`主题已是 ${theme.name}（可用: ${themeNames().join(', ')}）`);
+      return;
+    }
+    theme = next;
+    state.theme = next;
+    reprojectAll(); // 行级 fg 烤进 scrollback 行对象：切主题必须全量重投影（anchor 尽力保留）
+    sendSystem(`已切换主题: ${next.name}（会话内存级，不持久化）`);
   }
 
   // —— 命令（P3-C 全集；共享命令委托 runSharedCommand，差异登记见文件头）——
@@ -1476,6 +1710,13 @@ export function createNextChatHarness(runtime: ChatRuntime, deps: NextChatHarnes
         );
         return;
       }
+      // —— P4-2 主题与搜索 ——
+      case '/theme':
+        runThemeCommand(parsed.rest.trim().toLowerCase());
+        return;
+      case '/search':
+        runSearchCommand(parsed.rest.trim());
+        return;
       default:
         // /undo /redo /new /resume /fork /sessions（无参文本列表）与未知命令 → 共享实现
         runSharedCommand(parsed, runtime, commandIo);
@@ -1652,13 +1893,23 @@ export function createNextChatHarness(runtime: ChatRuntime, deps: NextChatHarnes
     onSubmit: (text) => submit(text),
     onInterrupt: () => interrupt(),
     extraKeyHandler: (ev) => {
-      if (ev.modifiers.ctrl && ev.key === 'c') return 'ignored'; // 让内置 onInterrupt（guard 协议）处理
+      // Ctrl+C 有选择时优先复制（P4-1：OSC52 + 清选择 + hint），无选择走 guard 协议
+      if (ev.modifiers.ctrl && ev.key === 'c') {
+        if (copySelectionToClipboard()) return 'consumed';
+        return 'ignored'; // 让内置 onInterrupt（guard 协议）处理
+      }
       // 其余任意按键重置退出协议（对齐 Composer：非 Ctrl+C 按键清窗口与提示）
       ctrlCGuard.reset();
       clearHint();
       // Ctrl+D 不在此拦截：keymap 裁决 = 半页下滚，由 chat-controller 内置消费（半页滚动
       // 与退出语义不冲突——退出只走 Ctrl+C 双击与 /exit，见文件头裁决说明）
       if (ev.key === 'escape') {
+        // P4-1：有选择先清选择（Esc 清除选择语义），不停止 turn、不清草稿
+        if (selectEnabled && state.scrollback.hasSelection) {
+          state.scrollback.clearSelection();
+          invalidate();
+          return 'consumed';
+        }
         if (busy) {
           abortCurrentTurn(); // 忙时 Esc：停止当前 turn（不清草稿，对齐 Composer）
           return 'consumed';
@@ -1742,6 +1993,10 @@ export function createNextChatHarness(runtime: ChatRuntime, deps: NextChatHarnes
           openSubagentPicker();
           return 'consumed';
         }
+        // P4-1：y = 复制选中文本（有选择才消费；无选择落入下方字母键回输入框语义）
+        if (ev.key === 'y' && copySelectionToClipboard()) {
+          return 'consumed';
+        }
         if (ev.text !== undefined && ev.text.length > 0) {
           // 其余字母键自动回到输入框（grok simple 模式语义），字符照常走内置插入
           scrollbackFocus = false;
@@ -1783,6 +2038,53 @@ export function createNextChatHarness(runtime: ChatRuntime, deps: NextChatHarnes
         return true;
       }
       return false;
+    },
+  };
+
+  // —— P4-1 选择鼠标层（拖选转录文本；位于候选层之后、composer 层之前）——
+  // 优先级契约（不破坏既有点击语义）：approval/queue/subagent 层在先（接管期本层自然
+  // 收不到/让位）；候选区 move/scroll 由 candidateMouseLayer 在先消费；本层只消费滚动区
+  // 矩形内的 down/move/up（拖选），滚轮放行（composer 层照常滚转录）；滚动区外的
+  // down（候选区/状态行/快捷键条/composer）一律不消费——既有点击语义零变化。
+  // 焦点无关（scrollback 焦点或非焦点均可拖选，keymap 裁决）。滚轮拖选中的滚动不更新
+  // 选择（wheel 不经本层，已知简化）。
+  const selectionMouseLayer: InputLayer = {
+    name: 'selection-mouse',
+    handle: (event: InputEvent): boolean => {
+      if (!selectEnabled || event.type !== 'mouse') return false;
+      if (approvalActive()) return false; // 审批卡接管期让位（寄放态也不拖选，避免误触）
+      if (event.kind === 'scroll') return false; // 滚轮照常（composer 层滚转录）
+      const rect = layoutChat(screen.rows, screen.cols, state).scrollback;
+      const relRow = event.row - rect.top;
+      const inContent =
+        rect.height > 0 && relRow >= 0 && relRow < rect.height && event.col >= 0 && event.col < contentCols();
+      if (event.kind === 'down') {
+        if (event.button !== 0 || !inContent) return false; // 右/中键与非滚动区不启动选择
+        selDragging = true;
+        selMoved = false;
+        selDownPt = selectionPointFromMouse(event.col, event.row);
+        state.scrollback.beginSelection(selDownPt);
+        invalidate();
+        return true;
+      }
+      if (event.kind === 'move') {
+        if (!selDragging || selDownPt === null) return false;
+        if (inContent) {
+          const p = selectionPointFromMouse(event.col, event.row);
+          if (p.row !== selDownPt.row || p.col !== selDownPt.col) selMoved = true;
+          state.scrollback.extendSelection(p);
+          invalidate();
+        }
+        return true; // 拖出滚动区：维持拖动态不更新（up 结束）
+      }
+      // up：拖选结束。无移动（单击）= 清除选择；有移动 = 保留选择
+      if (!selDragging) return false;
+      selDragging = false;
+      if (!selMoved) {
+        state.scrollback.clearSelection();
+        invalidate();
+      }
+      return true;
     },
   };
 
@@ -1917,7 +2219,14 @@ export function createNextChatHarness(runtime: ChatRuntime, deps: NextChatHarnes
   };
 
   const dispatcher: InputDispatcher = createInputDispatcher({
-    layers: [approvalLayer, queueLayer, subagentLayer, candidateMouseLayer, createComposerLayer(controller)],
+    layers: [
+      approvalLayer,
+      queueLayer,
+      subagentLayer,
+      candidateMouseLayer,
+      selectionMouseLayer,
+      createComposerLayer(controller),
+    ],
     fallback: (event) => {
       if (event.type === 'focus') {
         focused = event.direction === 'in';
@@ -2009,6 +2318,11 @@ export function createNextChatHarness(runtime: ChatRuntime, deps: NextChatHarnes
       for (let i = 0; i < sb.lineCount; i += 1) out.push(sb.rowOf(i).join(''));
       return out;
     },
+    logicalLineFg(index) {
+      return state.scrollback.lineAt(index)?.fg;
+    },
+    selectedText: () => state.scrollback.getSelectedText(),
+    hasSelection: () => state.scrollback.hasSelection,
     subagentViewLines() {
       const sv = state.subagentView;
       if (!sv) return null;
