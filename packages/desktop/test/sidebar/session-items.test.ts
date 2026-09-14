@@ -1,7 +1,11 @@
 // D-23 数据适配：store 会话摘要 + 展示态覆层 → 侧栏行数据。
 import { describe, expect, it } from 'vitest';
-import { UNTITLED_SESSION_LABEL, buildSessionItems, toSessionItem } from '../../src/renderer/sidebar/session-items.js';
-import type { SidebarSessionSource } from '../../src/renderer/sidebar/session-items.js';
+import {
+  UNTITLED_SESSION_LABEL,
+  buildSessionItems,
+  toSessionItem,
+} from '@harness2/ui-shared/renderer/sidebar/session-items.js';
+import type { SidebarSessionSource } from '@harness2/ui-shared/renderer/sidebar/session-items.js';
 
 const source = (id: string, overrides: Partial<SidebarSessionSource> = {}): SidebarSessionSource => ({
   id,

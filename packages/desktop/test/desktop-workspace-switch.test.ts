@@ -1,7 +1,7 @@
 // D5 工作区切换测试（F1）：A/B 项目 root/cwd 不串、草稿不串、分叉不改原会话。
 import { describe, expect, it, vi } from 'vitest';
-import { AppStore } from '../src/renderer/store.js';
-import { createController } from '../src/renderer/app-controller.js';
+import { AppStore } from '@harness2/ui-shared/renderer/store.js';
+import { createController } from '@harness2/ui-shared/renderer/app-controller.js';
 import type { EffectiveRunConfigShape, Harness2Api, SessionEventsPayloadShape } from '../src/shared/protocol.js';
 
 function runConfig(sessionId: string, root: string, cwd: string): EffectiveRunConfigShape {

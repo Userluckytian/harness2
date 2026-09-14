@@ -6,7 +6,9 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 
-const css = readFileSync(fileURLToPath(new URL('../../src/renderer/sidebar/sidebar.css', import.meta.url)), 'utf8');
+// P8：样式表本身也是「三壳共享的呈现层」，已下沉 @harness2/ui-shared（web 壳同一份）；
+// 这里读**源文件**（不依赖 dist 产物），断言逐条不变。
+const css = readFileSync(fileURLToPath(new URL('../../../ui-shared/src/styles/sidebar.css', import.meta.url)), 'utf8');
 /** 去掉注释：样式表里的散文会提到属性名，不能当声明证据 */
 const declarations = css.replace(/\/\*[\s\S]*?\*\//g, ' ');
 

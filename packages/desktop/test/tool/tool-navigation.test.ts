@@ -11,7 +11,7 @@ import {
   TRAJECTORY_VIEW_KEY,
   createToolNavigation,
   toolJumpActions,
-} from '../../src/renderer/tool/index.js';
+} from '@harness2/ui-shared/renderer/tool/index.js';
 
 describe('D-86 ①：openFile 路由右栏文本预览', () => {
   it('打开文件 → 目标 = 右栏，且待打开状态可被右栏消费（路径/行号/会话/调用）', () => {

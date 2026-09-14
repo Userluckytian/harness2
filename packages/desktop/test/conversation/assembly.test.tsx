@@ -20,8 +20,8 @@ import type {
   StatusDetail,
   WsFrame,
 } from '../../src/shared/protocol.js';
-import { createController, type Controller } from '../../src/renderer/app-controller.js';
-import { AppStore } from '../../src/renderer/store.js';
+import { createController, type Controller } from '@harness2/ui-shared/renderer/app-controller.js';
+import { AppStore } from '@harness2/ui-shared/renderer/store.js';
 import {
   ConversationSeat,
   conversationImageUrls,
@@ -39,21 +39,24 @@ import {
   type ConversationImageAttachment,
   type ConversationViewProps,
   type ConversationViewRegistry,
-} from '../../src/renderer/conversation/views/index.js';
-import { createImageUrlCache, type ImageUrlCache } from '../../src/renderer/conversation/views/image-url-cache.js';
-import type { ViewSelectionPersistence } from '../../src/renderer/conversation/views/view-ring.js';
-import type { FileRefReader } from '../../src/shared/file-ref.js';
+} from '@harness2/ui-shared/renderer/conversation/views/index.js';
+import {
+  createImageUrlCache,
+  type ImageUrlCache,
+} from '@harness2/ui-shared/renderer/conversation/views/image-url-cache.js';
+import type { ViewSelectionPersistence } from '@harness2/ui-shared/renderer/conversation/views/view-ring.js';
+import type { FileRefReader } from '@harness2/ui-shared/shared/file-ref.js';
 import type {
   FileReaderLike,
   ImageReadIO,
   UploadTransport,
-} from '../../src/renderer/conversation/composer/attachments.js';
-import { ComposerChain } from '../../src/renderer/conversation/composer/composer-chain.js';
-import type { PendingSubmission } from '../../src/renderer/conversation/composer/composer-state.js';
+} from '@harness2/ui-shared/renderer/conversation/composer/attachments.js';
+import { ComposerChain } from '@harness2/ui-shared/renderer/conversation/composer/composer-chain.js';
+import type { PendingSubmission } from '@harness2/ui-shared/renderer/conversation/composer/composer-state.js';
 import {
   DEFAULT_BUSY_ENTER_BEHAVIOR,
   type BusyEnterBehavior,
-} from '../../src/renderer/conversation/composer/submit-policy.js';
+} from '@harness2/ui-shared/renderer/conversation/composer/submit-policy.js';
 
 afterEach(cleanup);
 

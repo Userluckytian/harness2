@@ -14,10 +14,10 @@ import { resolveNewSessionScope, type NewSessionScope, type NewSessionScopeInput
 import { sidebarStateClasses } from './collapse.js';
 import { useCollapse } from './use-collapse.js';
 import { useScrollAffordance } from './use-scroll-affordance.js';
-import { DEFAULT_SIDEBAR_LABELS, type SidebarLabels } from './labels.js';
-import { SessionBrowser, type WorkspacesOwnerProps } from './SessionBrowser.js';
-import type { SidebarSessionItem } from './session-items.js';
-import './sidebar.css';
+import { DEFAULT_SIDEBAR_LABELS, type SidebarLabels } from '@harness2/ui-shared/renderer/sidebar/labels.js';
+import { SessionBrowser, type WorkspacesOwnerProps } from '@harness2/ui-shared/renderer/sidebar/SessionBrowser.js';
+import type { SidebarSessionItem } from '@harness2/ui-shared/renderer/sidebar/session-items.js';
+import '@harness2/ui-shared/styles/sidebar.css';
 
 /** 品牌标记席位属主事实（D-20）：只要一个方形边长 */
 export interface BrandMarkOwnerProps {

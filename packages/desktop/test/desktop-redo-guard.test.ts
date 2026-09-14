@@ -5,9 +5,9 @@
 // 恰好带 per-file target —— 守卫用它作基线，对照 change-review 实时 current 比对。
 // 红线：冲突阻止 + 可行动提示（不静默重放）；显式 overwrite 才放行；undo 语义零改动。
 import { describe, expect, it, vi } from 'vitest';
-import { AppStore } from '../src/renderer/store.js';
-import { createController } from '../src/renderer/app-controller.js';
-import { summarizeRedoConflict } from '../src/renderer/features/workspace/change-review-model.js';
+import { AppStore } from '@harness2/ui-shared/renderer/store.js';
+import { createController } from '@harness2/ui-shared/renderer/app-controller.js';
+import { summarizeRedoConflict } from '@harness2/ui-shared/renderer/features/workspace/change-review-model.js';
 import type { ChangeSetShape, Harness2Api, UndoRedoResponseShape } from '../src/shared/protocol.js';
 
 const realUndoRes = (file: string, target: string | null): UndoRedoResponseShape => ({

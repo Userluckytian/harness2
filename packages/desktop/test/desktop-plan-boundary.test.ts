@@ -1,7 +1,7 @@
 // D3 计划边界测试（F2）：计划有证据、只读投影、**切权限必须显式**（展示计划不自动提权）。
 import { describe, expect, it, vi } from 'vitest';
-import { AppStore } from '../src/renderer/store.js';
-import { createController } from '../src/renderer/app-controller.js';
+import { AppStore } from '@harness2/ui-shared/renderer/store.js';
+import { createController } from '@harness2/ui-shared/renderer/app-controller.js';
 import { buildPlanDisplay, resolveModeSwitch, taskStateLabel } from '../src/renderer/features/plan/plan-model.js';
 import type { Harness2Api, PlanStateShape } from '../src/shared/protocol.js';
 

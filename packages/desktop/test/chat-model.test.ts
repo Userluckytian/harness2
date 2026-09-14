@@ -8,7 +8,7 @@ import {
   projectChatItems,
   type ActiveEvent,
   type TurnEndInfo,
-} from '../src/renderer/chat-model.js';
+} from '@harness2/ui-shared/renderer/chat-model.js';
 import type { SessionEventShape } from '../src/shared/protocol.js';
 
 let seqCounter = 0;
@@ -150,7 +150,7 @@ describe('delta 与落盘一致性（清空规则的数据侧）', () => {
 
 describe('displayToolName 来源前缀', () => {
   it('mcp__<server>__<tool> → [MCP:server] tool；subagent_* → [子会话]；本地原样', async () => {
-    const { displayToolName } = await import('../src/renderer/chat-model.js');
+    const { displayToolName } = await import('@harness2/ui-shared/renderer/chat-model.js');
     expect(displayToolName('mcp__filesystem__read_file')).toBe('[MCP:filesystem] read_file');
     expect(displayToolName('subagent_start')).toBe('[子会话] subagent_start');
     expect(displayToolName('subagent_continue')).toBe('[子会话] subagent_continue');
@@ -161,7 +161,7 @@ describe('displayToolName 来源前缀', () => {
 
 describe('subagent 子会话跳转', () => {
   it('tool/result.output JSON → childSessionId 提取进 ChatItem；非 JSON/缺字段 → 无跳转', async () => {
-    const { projectChatItems, emptyLive } = await import('../src/renderer/chat-model.js');
+    const { projectChatItems, emptyLive } = await import('@harness2/ui-shared/renderer/chat-model.js');
     seqCounter = 0;
     const events: ActiveEvent[] = [
       ev('user/message', { text: '派子任务', turnId: 't1' }),

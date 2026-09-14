@@ -1,8 +1,8 @@
 // D0 桌面流契约测试：S0/S3 带水位 delta（连续性判定）+ attempt 终态 + P3 终态文本投影。
 // 纯 store 单测（不经 IPC/WS）：驱动 applyFrame，断言渲染投影结果。
 import { describe, expect, it } from 'vitest';
-import { AppStore } from '../src/renderer/store.js';
-import { acceptDelta } from '../src/renderer/delivery.js';
+import { AppStore } from '@harness2/ui-shared/renderer/store.js';
+import { acceptDelta } from '@harness2/ui-shared/renderer/delivery.js';
 import type { SessionEventsPayloadShape, WsFrame } from '../src/shared/protocol.js';
 
 let seq = 0;

@@ -8,7 +8,7 @@ import {
   type ImageReadIO,
   type UploadTask,
   type UploadTransport,
-} from '../../../src/renderer/conversation/composer/attachments.js';
+} from '@harness2/ui-shared/renderer/conversation/composer/attachments.js';
 
 function fakeReader(dataUrl: string | null, errorMessage?: string): FileReaderLike {
   const reader: FileReaderLike = {

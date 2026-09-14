@@ -5,11 +5,11 @@ import type { ReactElement } from 'react';
 import {
   ConversationViewRegistryError,
   createConversationViewRegistry,
-} from '../../../src/renderer/conversation/views/index.js';
+} from '@harness2/ui-shared/renderer/conversation/views/index.js';
 import type {
   ConversationViewDefinition,
   ConversationViewProps,
-} from '../../../src/renderer/conversation/views/index.js';
+} from '@harness2/ui-shared/renderer/conversation/views/index.js';
 
 function View(): null {
   return null;

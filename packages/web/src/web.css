@@ -1,0 +1,122 @@
+/* web 壳**页面骨架**样式（两栏 + 顶部状态条）。
+   组件级样式（会话列表行、转录、composer、视图环、连接角标）全部来自 `@harness2/ui-shared`
+   的共享样式表（`styles/shell.css` + `styles/sidebar.css`，main.tsx 直接 import），
+   这里只写本壳独有的页面骨架与几个 web 专属小块。 */
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+}
+
+.web-shell {
+  display: grid;
+  grid-template-columns: 280px 1fr;
+  height: 100%;
+  min-height: 0;
+  background: var(--bg);
+  color: var(--fg);
+}
+
+.web-sidebar {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  border-right: 1px solid var(--border);
+  background: var(--surface);
+}
+
+.web-brand {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--border);
+}
+
+.web-brand-name {
+  font-weight: 600;
+}
+
+.web-brand-tag {
+  font-size: 11px;
+  padding: 1px 6px;
+  border: 1px solid var(--border2);
+  border-radius: 999px;
+  color: var(--fg-muted);
+}
+
+.web-sidebar-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border);
+}
+
+.web-new-session {
+  padding: 6px 10px;
+  border: 1px solid var(--border2);
+  border-radius: var(--radius);
+  background: var(--accent-soft);
+  color: var(--accent-2);
+  cursor: pointer;
+}
+
+.web-new-session:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.web-blocked,
+.web-search {
+  font-size: 12px;
+  color: var(--fg-muted);
+}
+
+.web-search {
+  padding: 5px 8px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface2);
+  color: inherit;
+}
+
+.web-session-list {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.web-main {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+}
+
+.web-banner {
+  padding: 6px 12px;
+  font-size: 12px;
+  background: var(--warn-soft);
+  color: var(--warn);
+  border-bottom: 1px solid var(--border);
+}
+
+.web-conversation-header {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  padding: 8px 14px;
+  border-bottom: 1px solid var(--border);
+}
+
+.web-conversation-title {
+  font-weight: 600;
+}
+
+.web-conversation-cwd {
+  font-size: 11px;
+  color: var(--fg-muted);
+}

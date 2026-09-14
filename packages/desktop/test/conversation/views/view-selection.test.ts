@@ -1,7 +1,7 @@
 // 视图选择规则测试（D-31）：有效持久选择 > 已注册 chat > 不渲染；**绝不选「第一个注册的」**。
 // 纯函数，无 React 依赖（node 环境）。
 import { describe, expect, it } from 'vitest';
-import { CHAT_VIEW_KEY, selectConversationView } from '../../../src/renderer/conversation/views/index.js';
+import { CHAT_VIEW_KEY, selectConversationView } from '@harness2/ui-shared/renderer/conversation/views/index.js';
 
 const ACTIVE = { active: true } as const;
 const INACTIVE = { active: false } as const;

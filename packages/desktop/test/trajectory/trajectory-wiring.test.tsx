@@ -12,8 +12,8 @@ import type {
   StatusDetail,
   WsFrame,
 } from '../../src/shared/protocol.js';
-import { createController, type Controller } from '../../src/renderer/app-controller.js';
-import { AppStore } from '../../src/renderer/store.js';
+import { createController, type Controller } from '@harness2/ui-shared/renderer/app-controller.js';
+import { AppStore } from '@harness2/ui-shared/renderer/store.js';
 import {
   ConversationSeat,
   conversationTrajectoryFocus,
@@ -21,7 +21,7 @@ import {
   createDesktopConversationViewRegistry,
   disposeTrajectoryInspect,
 } from '../../src/renderer/conversation/assembly.js';
-import { toolNavigation } from '../../src/renderer/tool/index.js';
+import { toolNavigation } from '@harness2/ui-shared/renderer/tool/index.js';
 import {
   TRAJECTORY_COMPOSER_INSET_VAR,
   TRAJECTORY_VIEW_KEY,

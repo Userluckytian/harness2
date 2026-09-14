@@ -171,7 +171,10 @@ export function initialState(): AppState {
 export interface RefReport {
   sources: FileRefSource[];
   skipped: Array<{ token: string; reason: FileRefSkipReason }>;
+  /** 文件确认不存在（读取通道可用） */
   notFound: string[];
+  /** 读取通道缺失/不可用/读取失败（P2-3：与「未找到」分开归因，不误导用户去改路径） */
+  unavailable: string[];
 }
 
 export class AppStore {

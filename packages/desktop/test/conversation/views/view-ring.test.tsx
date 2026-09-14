@@ -10,12 +10,12 @@ import type { ComponentType } from 'react';
 import {
   createConversationViewRegistry,
   ConversationViewRing,
-} from '../../../src/renderer/conversation/views/index.js';
+} from '@harness2/ui-shared/renderer/conversation/views/index.js';
 import type {
   ConversationImageAttachment,
   ConversationViewProps,
   ViewSelectionPersistence,
-} from '../../../src/renderer/conversation/views/index.js';
+} from '@harness2/ui-shared/renderer/conversation/views/index.js';
 
 interface TestSession {
   readonly id: string;

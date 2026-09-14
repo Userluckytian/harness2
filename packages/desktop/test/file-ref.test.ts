@@ -8,12 +8,13 @@ import {
   FILE_REF_MAX_LEN,
   FILE_REF_NOT_FOUND_SUFFIX,
   FILE_REF_TRUNCATED_SUFFIX,
+  FILE_REF_UNAVAILABLE_SUFFIX,
   extractFileRefs,
   isBinaryContent,
   resolveFileRefs,
   utf8Bytes,
   type FileRefReader,
-} from '../src/shared/file-ref.js';
+} from '@harness2/ui-shared/shared/file-ref.js';
 
 const okReader = (content: string, truncated = false): FileRefReader =>
   vi.fn(async () => ({ ok: true, content, ...(truncated ? { truncated: true } : {}) }));
@@ -105,6 +106,42 @@ describe('resolveFileRefs / 未找到与提示', () => {
     expect(r.notFound).toEqual(['bad.md']);
     expect(r.finalText.startsWith(r.blocks[0]!)).toBe(true);
     expect(r.finalText.endsWith(FILE_REF_NOT_FOUND_SUFFIX.replace('@x', 'bad.md'))).toBe(true);
+  });
+});
+
+describe('resolveFileRefs / P2-3 读取通道不可用与「未找到」分开归因', () => {
+  it('reason: unavailable（壳无读取通道）→ 记 unavailable + 尾部「读取通道不可用」，不说「未找到」', async () => {
+    const readRef = vi.fn(async () => ({
+      ok: false,
+      reason: 'unavailable' as const,
+      error: '该壳未提供文件引用读取通道',
+    }));
+    const r = await resolveFileRefs('@src/a.ts 看下', 'cwd', readRef);
+    expect(r.unavailable).toEqual(['src/a.ts']);
+    expect(r.notFound).toEqual([]);
+    expect(r.finalText.endsWith(FILE_REF_UNAVAILABLE_SUFFIX.replace('@x', 'src/a.ts'))).toBe(true);
+    expect(r.finalText).not.toContain('未找到');
+  });
+
+  it('契约违约（ok:true 却无 content）→ 记 unavailable（读取失败，不是文件不存在）', async () => {
+    const readRef = vi.fn(async () => ({ ok: true }));
+    const r = await resolveFileRefs('@a.md', 'cwd', readRef);
+    expect(r.unavailable).toEqual(['a.md']);
+    expect(r.notFound).toEqual([]);
+  });
+
+  it('读取器无返回（通道违约）→ 记 unavailable（不猜测文件是否存在）', async () => {
+    const readRef = vi.fn(async () => undefined as never);
+    const r = await resolveFileRefs('@nil.md', 'cwd', readRef);
+    expect(r.unavailable).toEqual(['nil.md']);
+    expect(r.notFound).toEqual([]);
+  });
+
+  it('未标注 reason 的旧读取器（ok:false）→ 仍按「未找到」归因（契约向后兼容）', async () => {
+    const readRef = vi.fn(async () => ({ ok: false, error: '未找到' }));
+    const r = await resolveFileRefs('@old.md', 'cwd', readRef);
+    expect(r.notFound).toEqual(['old.md']);
+    expect(r.unavailable).toEqual([]);
   });
 });
 

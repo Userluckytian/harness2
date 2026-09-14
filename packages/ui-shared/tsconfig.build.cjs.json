@@ -1,0 +1,18 @@
+// CJS 产物（Electron 主进程 / preload 经 require 消费：desktop main 需要 layout/drafts/metadata 纯函数）。
+// 与 ESM 构建的差异：module/moduleResolution 改 CJS、关闭 verbatimModuleSyntax（CJS 产物不允许）。
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": false,
+    // Node16 + package.json type=commonjs → 产物为 CJS（TS7 已移除 node10 解析模式）
+    "module": "Node16",
+    "moduleResolution": "Node16",
+    "verbatimModuleSyntax": false,
+    "outDir": "dist/cjs",
+    "rootDir": "src",
+    "declaration": true,
+    "declarationMap": false,
+    "sourceMap": false
+  },
+  "include": ["src"]
+}

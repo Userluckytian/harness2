@@ -1,51 +1,27 @@
-// app-shared（B3-2 拆分产物）：渲染端共享状态与跨组件纯逻辑。
-// store/controller 单例在此构造，App 根与 ChatView / SidePanel / 侧栏装配点都从这取；
-// App.tsx 保持对外再导出（main.tsx / 测试仍从 './App.js' 引）。
-// P4-C：旧 components/SessionList 已删除（侧栏改由 renderer/sidebar 的 SidebarRoot 承担）。
-import { useSyncExternalStore } from 'react';
-import type { ConnectionStatus, SettingsTheme } from '../shared/protocol.js';
-import { AppStore, type AppState } from './store.js';
-import { createController } from './app-controller.js';
+// app-shared（桌面**组装根**）：把桌面桥 `window.harness2` 注入共享应用壳。
+//
+// 实现已下沉 `@harness2/ui-shared`（store / controller / 端口 / 订阅 Hook）；本文件只做两件事：
+//   1. 用**桌面**的端口实现装配单例（store + controller + useAppState）；
+//   2. 对外保持既有导出面（`./app-shared.js` 是桌面几十个文件的既有引用路径）。
+// 旧分栏（pane）相关的兼容导出保留：调用点已随三栅拆除清零，仅为对外导出面兼容。
+import { THEME_CYCLE, createAppShell, sessionTitle, StatusBadge } from '@harness2/ui-shared/renderer/app-shell.js';
+import type { AppState } from '@harness2/ui-shared/renderer/store.js';
 
-export const THEME_CYCLE: readonly SettingsTheme[] = ['warmPaper', 'dark', 'system'];
-
-export const store = new AppStore();
-export const controller = createController(store, window.harness2);
+export { THEME_CYCLE, StatusBadge, sessionTitle };
 
 /** 拖拽载荷：jsdom 无 dataTransfer，模块级回退（优先 dataTransfer）。
  * @deprecated P4-C：分栏拖拽（旧 SessionList）已随三栅拆除，当前无调用点；保留仅为对外导出面兼容。 */
 export const dragState: { sessionId: string | null } = { sessionId: null };
 
-export function useAppState() {
-  return useSyncExternalStore(store.subscribe, store.getState);
-}
-
-const STATUS_LABEL: Record<ConnectionStatus, { text: string; className: string }> = {
-  connecting: { text: '连接服务…', className: 'badge badge-connecting' },
-  connected: { text: '已连接', className: 'badge badge-connected' },
-  reconnecting: { text: '重连中…', className: 'badge badge-reconnecting' },
-  offline: { text: '服务离线', className: 'badge badge-offline' },
-};
-
-export function StatusBadge({ status, error }: { status: ConnectionStatus; error?: string }) {
-  const label = STATUS_LABEL[status];
-  return (
-    <span className={label.className} title={error ?? ''}>
-      <span className="dot" aria-hidden />
-      {label.text}
-    </span>
-  );
-}
+/** 桌面应用壳（store + controller + 状态订阅）：端口 = preload 暴露的 window.harness2 */
+export const shell = createAppShell(window.harness2);
+export const store = shell.store;
+export const controller = shell.controller;
+export const useAppState = shell.useAppState;
 
 /** 点击会话时目标分栏：优先空栏，其次第一栏
  * @deprecated P4-C：分栏状态已无渲染出口（三栅取代分栏），无调用点；后台判定改看选中态。 */
 export function targetPaneFor(state: AppState): number {
   const empty = state.layout.panes.findIndex((p) => p.sessionId === null);
   return empty >= 0 ? empty : 0;
-}
-
-/** 会话展示标题：覆层 title 优先，否则 firstUserText（空会话回落占位） */
-export function sessionTitle(state: AppState, s: { id: string; firstUserText: string }): string {
-  const t = store.displayTitleFor(s.id) ?? s.firstUserText;
-  return t.length > 0 ? t : '(空会话)';
 }

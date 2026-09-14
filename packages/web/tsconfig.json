@@ -1,0 +1,14 @@
+// web 壳类型检查（noEmit）：src + test；产物由 vite 打包（dist/）。
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "verbatimModuleSyntax": false,
+    "jsx": "react-jsx",
+    "lib": ["ES2023", "DOM", "DOM.Iterable"],
+    "types": ["node", "vite/client"]
+  },
+  "include": ["src", "test", "vite.config.mts", "vitest.config.mts"]
+}

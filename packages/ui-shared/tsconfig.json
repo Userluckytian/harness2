@@ -1,0 +1,16 @@
+// 全量类型检查（noEmit）：src + test 统一入口。
+// 与 base 的差异：源平面是**浏览器侧**（DOM + JSX），且本包以 Bundler 解析（产物由
+// tsconfig.build.{esm,cjs}.json 双构建，见 dist-type.mjs 写的 dist/*/package.json 类型标记）。
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "verbatimModuleSyntax": false,
+    "jsx": "react-jsx",
+    "lib": ["ES2023", "DOM", "DOM.Iterable"],
+    "types": []
+  },
+  "include": ["src", "test", "vitest.config.mts"]
+}

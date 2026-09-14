@@ -1,7 +1,7 @@
 // D1 可见队列测试：服务端队列 + 本地在途提交 + ack 结论 → 用户可读清单。
 // 语义红线：ack 未到 = 待确认（不重发）；ack 丢失 = 未确认（提示勿重复提交）；paused 不自动执行。
 import { describe, expect, it } from 'vitest';
-import { composeQueueView } from '../src/renderer/features/composer/composer-model.js';
+import { composeQueueView } from '@harness2/ui-shared/renderer/features/composer/composer-model.js';
 import type { QueueEntryShape } from '../src/shared/protocol.js';
 
 const queued = (id: string, text: string, state: 'queued' | 'paused' = 'queued'): QueueEntryShape => ({

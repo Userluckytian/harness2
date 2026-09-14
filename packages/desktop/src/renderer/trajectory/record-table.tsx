@@ -9,7 +9,7 @@ import { useEffect, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import { formatDurationMs, formatUsage } from './format.js';
 import { roleLabel, stateLabel } from './inspector.js';
-import { composerInsetCssValue } from './shell-contract.js';
+import { composerInsetCssValue } from '@harness2/ui-shared/renderer/trajectory/shell-contract.js';
 import { BETWEEN_TURNS_LABEL, type TrajectoryRow } from './types.js';
 import {
   DEFAULT_OVERSCAN_ROWS,

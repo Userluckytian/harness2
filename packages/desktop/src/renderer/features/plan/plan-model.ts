@@ -8,6 +8,11 @@
 //   - 审批过期 fail-closed（ISO 解析失败也视为过期），缺席/过期卡片不假装可响应。
 import type { TaskContractShape, TaskStateShape, ApprovalScopeShape } from '../../../shared/protocol.js';
 import type { PlanStateShape } from '../../../shared/protocol.js';
+// P8-P1-1：过期判定**唯一实现**已下沉 `@harness2/ui-shared`（approval-model，web 壳同一份）。
+// 本模块按名字转出，既有 `from './plan-model.js'` 的调用面不变；不再本地维护第二份。
+import { isApprovalExpired } from '@harness2/ui-shared/renderer/approval/approval-model.js';
+
+export { isApprovalExpired };
 
 /** 终态集合（与 core TASK_TERMINAL_STATES 同口径） */
 export const TERMINAL_TASK_STATES: ReadonlySet<TaskStateShape> = new Set([
@@ -211,13 +216,9 @@ export interface ApprovalGroup<T extends ApprovalCard = ApprovalCard> {
 /**
  * 过期判定：ISO 已过 / 非法（无法解析）→ 过期（fail-closed，与 core isApprovalExpired 同口径）。
  * 缺失 expiresAt 视为未过期（旧 serve 不发该字段时不误杀）。
+ * P8-P1-1：实现来自 `@harness2/ui-shared/renderer/approval/approval-model.js`（上方 import 转出），
+ * 本文件不再保留本地第二份（同语义谓词单一源）。
  */
-export function isApprovalExpired(expiresAt: string | undefined, now: number = Date.now()): boolean {
-  if (expiresAt === undefined) return false;
-  const t = Date.parse(expiresAt);
-  if (Number.isNaN(t)) return true;
-  return t <= now;
-}
 
 /** 过滤出可响应卡片（未过期）；过期卡片保留但标记 expired，由 UI 提示而非静默消失 */
 export interface ApprovalDisplayCard extends ApprovalCard {

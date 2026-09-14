@@ -3,8 +3,8 @@
 // 反「看似有功能实为空壳」：断言的是具体字段落到 DOM，而不是只有卡片外壳。
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
-import { CommandLog } from '../src/renderer/features/timeline/CommandLog.js';
-import type { TimelineToolRow } from '../src/renderer/features/timeline/execution-log.js';
+import { CommandLog } from '@harness2/ui-shared/renderer/features/timeline/CommandLog.js';
+import type { TimelineToolRow } from '@harness2/ui-shared/renderer/features/timeline/execution-log.js';
 
 afterEach(() => cleanup());
 

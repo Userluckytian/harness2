@@ -1,9 +1,12 @@
 // 变更审查面板（D5/F5）：按任务聚合的变更清单 + 真实 diff + **外部改动不静默覆盖**的安全撤销。
 // 数据源：S7 `/change-review`（拟议 vs 真实落盘）+ `/execution-view`（任务归属）。只读展示。
 import { useState } from 'react';
-import { buildDiffRows } from '../../components/DiffCard.js';
+import { buildDiffRows } from '@harness2/ui-shared/renderer/components/DiffCard.js';
 import { controller, store, useAppState } from '../../app-shared.js';
-import { buildChangeReviewView, type ChangedFileView } from './change-review-model.js';
+import {
+  buildChangeReviewView,
+  type ChangedFileView,
+} from '@harness2/ui-shared/renderer/features/workspace/change-review-model.js';
 
 function FileEntry({ file, sessionId, onUndo }: { file: ChangedFileView; sessionId: string; onUndo: () => void }) {
   const [expanded, setExpanded] = useState(false);

@@ -4,7 +4,7 @@ import {
   STICK_TO_BOTTOM_THRESHOLD,
   isAtBottom,
   nextScrollTop,
-} from '../src/renderer/features/timeline/execution-log.js';
+} from '@harness2/ui-shared/renderer/features/timeline/execution-log.js';
 
 const box = (scrollTop: number, scrollHeight: number, clientHeight: number) => ({
   scrollTop,

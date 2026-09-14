@@ -3,7 +3,7 @@
 // 与布局/偏好同策略：磁盘为唯一事实源，渲染端只经 IPC 读写（零 Node）。
 import { homedir } from 'node:os';
 import { join } from 'node:path';
-import { normalizeDrafts, type DraftsMap } from '../shared/drafts.js';
+import { normalizeDrafts, type DraftsMap } from '@harness2/ui-shared/shared/drafts.js';
 import { readJsonWithDefault, writeJsonNormalized } from './json-file.js';
 
 export const DRAFTS_FILE = 'desktop-drafts.json';

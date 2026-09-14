@@ -1,15 +1,16 @@
 // 右栏文件文本预览（D-86 ① 的**消费端**：`openFile` 路由的落点）。
 //
 // 定位：D-76（`ui-sidebar-documentpreview`）尚未装配前的过渡实现 —— 只做「按路径读文本并如实显示」：
-//   读取通道 = preload 既有 IPC `readFileForRef(path, cwd)`（渲染进程零 Node，不碰文件系统）；
-//   主进程侧有 cwd 半径边界校验 + 64KB 截断 → 越界/截断/失败都**如实显示**，不假装成功。
+//   读取通道 = 宿主能力端口 `HostBridge.readFileForRef`（桌面 = preload IPC；web = serve HTTP）；
+//   主进程/服务端侧有 cwd 半径边界校验 + 64KB 截断 → 越界/截断/失败都**如实显示**，不假装成功。
 //   Markdown/PDF/HTML 分页渲染、`dsh-resource://` 资源模型属 D-76，落地后本组件让位移交。
 //
 // 只读、无副作用：不写文件、不落浏览器存储。
 import { useEffect, useState } from 'react';
 import type { ToolFilePreview } from './tool-navigation.js';
+import { useHostBridge } from '../host-bridge.js';
 
-/** 读取结果（与 preload `readFileForRef` 同形） */
+/** 读取结果（与宿主 `readFileForRef` 同形） */
 export interface FilePreviewReadResult {
   readonly ok: boolean;
   readonly content?: string;
@@ -17,17 +18,15 @@ export interface FilePreviewReadResult {
   readonly error?: string;
 }
 
-/** 读取通道（测试注入；缺省走 preload 的既有 IPC） */
+/** 读取通道（测试注入；缺省走宿主能力端口 `HostBridge.readFileForRef`） */
 export type FilePreviewReader = (path: string, cwd: string) => Promise<FilePreviewReadResult>;
-
-const defaultReader: FilePreviewReader = (path, cwd) => window.harness2.readFileForRef(path, cwd);
 
 export interface ToolFilePreviewProps {
   /** 待预览文件（null = 尚未打开任何文件） */
   readonly preview: ToolFilePreview | null;
-  /** 读取边界（`readFileForRef` 的 cwd；缺省空串 → 主进程用 serve root 兜底） */
+  /** 读取边界（`readFileForRef` 的 cwd；缺省空串 → 壳用 serve root 兜底） */
   readonly cwd?: string;
-  /** 读取通道（缺省 = window.harness2.readFileForRef） */
+  /** 读取通道（缺省 = 宿主能力端口；端口也没有 → 如实报「此壳未提供文件读取通道」） */
   readonly readFile?: FilePreviewReader;
   /** 清空预览（宿主回收；缺省不渲染清空入口） */
   readonly onClear?: () => void;
@@ -37,6 +36,7 @@ export function ToolFilePreviewPanel({ preview, cwd, readFile, onClear }: ToolFi
   const [content, setContent] = useState<string | null>(null);
   const [truncated, setTruncated] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const bridge = useHostBridge();
 
   const path = preview?.path ?? null;
   const line = preview?.line;
@@ -49,10 +49,16 @@ export function ToolFilePreviewPanel({ preview, cwd, readFile, onClear }: ToolFi
       return;
     }
     let cancelled = false;
-    const reader = readFile ?? defaultReader;
+    const reader: FilePreviewReader | undefined =
+      readFile ?? (bridge?.readFileForRef ? (p, c) => bridge.readFileForRef!(p, c) : undefined);
     setContent(null);
     setError(null);
     setTruncated(false);
+    if (reader === undefined) {
+      // 该壳没有文件读取通道：如实说明，不假装加载中
+      setError('此壳未提供文件读取通道（HostBridge.readFileForRef 缺失）');
+      return;
+    }
     void reader(path, cwd ?? '')
       .then((res) => {
         if (cancelled) return;
@@ -69,7 +75,7 @@ export function ToolFilePreviewPanel({ preview, cwd, readFile, onClear }: ToolFi
     return () => {
       cancelled = true;
     };
-  }, [path, cwd, readFile]);
+  }, [path, cwd, readFile, bridge]);
 
   if (preview === null) {
     return (

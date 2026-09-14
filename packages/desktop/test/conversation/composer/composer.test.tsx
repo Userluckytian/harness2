@@ -3,7 +3,7 @@
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type React from 'react';
-import { Composer, type ComposerIO } from '../../../src/renderer/conversation/composer/Composer.js';
+import { Composer, type ComposerIO } from '@harness2/ui-shared/renderer/conversation/composer/Composer.js';
 import {
   ComposerStore,
   createComposerState,
@@ -11,18 +11,18 @@ import {
   insertText,
   type ComposerChip,
   type PendingSubmission,
-} from '../../../src/renderer/conversation/composer/composer-state.js';
+} from '@harness2/ui-shared/renderer/conversation/composer/composer-state.js';
 import {
   ComposerChain,
   type ComposerChainProps,
   type ComposerSessionSnapshot,
-} from '../../../src/renderer/conversation/composer/composer-chain.js';
+} from '@harness2/ui-shared/renderer/conversation/composer/composer-chain.js';
 import type {
   ImageReadIO,
   UploadTask,
   UploadTransport,
-} from '../../../src/renderer/conversation/composer/attachments.js';
-import type { BusyEnterBehavior } from '../../../src/renderer/conversation/composer/submit-policy.js';
+} from '@harness2/ui-shared/renderer/conversation/composer/attachments.js';
+import type { BusyEnterBehavior } from '@harness2/ui-shared/renderer/conversation/composer/submit-policy.js';
 
 afterEach(cleanup);
 

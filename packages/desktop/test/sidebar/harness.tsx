@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import { fireEvent, render, screen } from '@testing-library/react';
 import { SidebarRoot, type SidebarRootProps } from '../../src/renderer/sidebar/SidebarRoot.js';
-import type { SidebarSessionItem } from '../../src/renderer/sidebar/session-items.js';
+import type { SidebarSessionItem } from '@harness2/ui-shared/renderer/sidebar/session-items.js';
 
 /** 最小可用 props：收起态由各自宿主控制，回调默认空实现 */
 export const BASE_SIDEBAR_PROPS: SidebarRootProps = {

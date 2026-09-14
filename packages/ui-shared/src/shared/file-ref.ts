@@ -3,7 +3,8 @@
 // 协议契约（T9 research doc，两端必须一致——CLI context-ref 与桌面共享同一套语义）：
 //   1. 正则 /@([^\s"']+)/g 找所有 `@路径` token（@ 紧跟非空、不含引号字节才触发）。
 //   2. 路径优先「相对当前 cwd」解析；文件 readFile（UTF-8），失败/不存在跳过，
-//      并在本轮消息末尾追加提示 `[@x 未找到，已忽略]`（x = 原 token）。
+//      并在本轮消息末尾追加提示（x = 原 token）：文件不存在 → `[@x 未找到，已忽略]`；
+//      读取通道缺失/读取失败 → `[@x 读取通道不可用，已忽略]`（P2-3：分开归因，不把「读不了」说成「不存在」）。
 //   3. 单文件 64KB 截断保护：超出取前 64KB 并追加截断提示。
 //   4. 解析结果拼成代码块插到发给模型的 user message 最前面；UI 里回显的仍是原始输入文本。
 //
@@ -31,14 +32,29 @@ export const FILE_REF_BUDGET_SUFFIX = '[@x 超出本轮引用字节预算，已�
 /** 未找到时的文案（x 由调用方替换为原始 token；两端必须一致） */
 export const FILE_REF_NOT_FOUND_SUFFIX = '[@x 未找到，已忽略]';
 
+/**
+ * 读取通道缺失 / 读取失败时的文案（P2-3；x 由调用方替换为原始 token）。
+ * 与「未找到」分开归因：文件可能存在，只是本壳没有读取通道或这次读取失败——
+ * 不能把「通道不可用」说成「文件不存在」（不可行动）。
+ */
+export const FILE_REF_UNAVAILABLE_SUFFIX = '[@x 读取通道不可用，已忽略]';
+
 /** 截断时的提示文案（追加在该文件代码块末尾；两端必须一致） */
 export const FILE_REF_TRUNCATED_SUFFIX = '\n[… 内容过长已截断 @x]';
 
-/** readRef 回调形状：path 传原始 token，cwd 传当前会话工作目录；返回读取结果 */
-export type FileRefReader = (
-  path: string,
-  cwd: string,
-) => Promise<{ ok: boolean; content?: string; truncated?: boolean; error?: string }>;
+/** readRef 的返回形状（P2-3：`reason` 区分「文件不存在」与「通道缺失/读取失败」） */
+export interface FileRefReadOutcome {
+  ok: boolean;
+  content?: string;
+  truncated?: boolean;
+  error?: string;
+  reason?: 'not-found' | 'unavailable';
+}
+
+/** readRef 回调形状：path 传原始 token，cwd 传当前会话工作目录；返回读取结果。
+ *  `reason`（可选，P2-3）：'not-found' = 文件确实不存在；'unavailable' = 通道缺失/读取失败。
+ *  缺省按 'not-found' 归因（旧壳实现不变）。 */
+export type FileRefReader = (path: string, cwd: string) => Promise<FileRefReadOutcome>;
 
 /** 从文本提取所有 @路径 token（去重，保持首次出现顺序；无 @ 返回空数组） */
 export function extractFileRefs(text: string): string[] {
@@ -73,8 +89,10 @@ export interface ResolveFileRefsResult {
   finalText: string;
   /** 解析成功的代码块（`` ``` … ``` ``，按 token 出现顺序） */
   blocks: string[];
-  /** 未找到/读取失败的原始 token 列表 */
+  /** 确认**不存在**的原始 token 列表（读取通道可用但文件不在） */
   notFound: string[];
+  /** 读取通道缺失/不可用/读取失败的原始 token 列表（P2-3：与「未找到」分开归因） */
+  unavailable: string[];
   /** 实际纳入上下文的引用来源（D1：来源可见） */
   sources: FileRefSource[];
   /** 被拒收的引用（二进制 / 超字节预算）及原因 */
@@ -108,7 +126,8 @@ export function isBinaryContent(content: string): boolean {
  * 解析并拼接 @file 引用。
  * - 不含 @ → finalText = 原文（零开销，不触发任何 readRef）。
  * - cwd 为空/未知 → 不解析，按无 @ 处理（不报错、不发 IPC）。
- * - 读取失败/不存在 → 跳过，记入 notFound，并在消息末尾追加 `[@token 未找到，已忽略]`。
+ * - 读取失败/不存在 → 跳过；**分开归因**（P2-3）：文件不存在 → notFound（`[@token 未找到，已忽略]`），
+ *   读取通道缺失/不可用/读取失败 → unavailable（`[@token 读取通道不可用，已忽略]`）。
  * - 超 64KB → 取前 64KB 并在代码块末尾追加截断提示（截断标记由主进程 truncated 给出）。
  * - 二进制 → 不纳入上下文，记入 skipped（附 `[@token 二进制文件，已忽略]`）。
  * - 单轮总字节预算（FILE_REF_TOTAL_MAX_BYTES）→ 超出者不纳入，记入 skipped（附预算提示）。
@@ -120,20 +139,30 @@ export async function resolveFileRefs(
   opts?: { maxTotalBytes?: number },
 ): Promise<ResolveFileRefsResult> {
   if (typeof cwd !== 'string' || cwd.length === 0 || !text.includes('@')) {
-    return { finalText: text, blocks: [], notFound: [], sources: [], skipped: [] };
+    return { finalText: text, blocks: [], notFound: [], unavailable: [], sources: [], skipped: [] };
   }
   const budget = opts?.maxTotalBytes ?? FILE_REF_TOTAL_MAX_BYTES;
   const tokens = extractFileRefs(text);
   const blocks: string[] = [];
   const notFound: string[] = [];
+  const unavailable: string[] = [];
   const sources: FileRefSource[] = [];
   const skipped: Array<{ token: string; reason: FileRefSkipReason }> = [];
   const notes: string[] = [];
   let usedBytes = 0;
   for (const token of tokens) {
-    const res = await readRef(token, cwd);
+    const res: FileRefReadOutcome | undefined = await readRef(token, cwd);
     if (res?.ok !== true || res.content === undefined) {
-      notFound.push(token);
+      // P2-3：只在读取通道**可用**且明确报告文件不存在时才归因「未找到」；
+      // 通道缺失（壳未注入 readRef）/读取失败/契约违约（无返回、或 ok:true 却无 content）
+      // 一律归因「读取通道不可用」，否则会把「本壳读不了」说成「文件不存在」，用户据此去改路径 = 不可行动。
+      const unavailableSinceChannel = res === undefined || res.reason === 'unavailable' || res.ok === true;
+      if (unavailableSinceChannel) {
+        unavailable.push(token);
+        notes.push(FILE_REF_UNAVAILABLE_SUFFIX.replace('@x', token));
+      } else {
+        notFound.push(token);
+      }
       continue;
     }
     if (isBinaryContent(res.content)) {
@@ -165,5 +194,5 @@ export async function resolveFileRefs(
     finalText = finalText + suffix;
   }
   if (notes.length > 0) finalText = finalText + notes.join('');
-  return { finalText, blocks, notFound, sources, skipped };
+  return { finalText, blocks, notFound, unavailable, sources, skipped };
 }

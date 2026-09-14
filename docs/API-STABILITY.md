@@ -39,6 +39,8 @@
 > **镜像类型强度（阶段级审查 P2 记录）：** core 端 `turn-end.textOutcome` **恒发（必填）**；gateway / desktop 的镜像帧类型声明为**可选**，仅为兼容旧版 serve 实例（缺失时客户端按 `finalText`/`partialText` 推断，见 `packages/gateway/src/render.ts`）。
 >
 > **鉴权携带方式（如实边界）：** 桌面主进程 WS 握手走 `?token=` 查询参数（主进程全局 WebSocket 不支持自定义 header），gateway 走 `x-harness2-token` 请求头；两者均被 serve 端 `extractServeToken` 接受。`?token=` 可能出现在本地 URL，serve 端不记录/不回显 token。
+>
+> **web 壳 token 暴露面（P8，如实边界）：** web 直连 serve 时 token 三条路径均**客户端可见**——① `VITE_HARNESS2_TOKEN` 构建期环境变量被 Vite **静态内联**进打包产物，随 JS 分发；② 页面 URL `?token=` 会被 `readWebEnv()` 读取并进入**浏览器历史/Referer**（`packages/web/src/env.ts`）；③ WS 握手 `?token=`（浏览器 WebSocket 不支持自定义请求头，与桌面主进程同因）。结论：**web 壳 token 不是秘密**，仅用于本地/受信网络的手测与部署；生产须由同源反向代理注入鉴权，勿把长期 token 放进 URL 或构建变量。
 
 ---
 

@@ -7,7 +7,7 @@ import {
   sameWorkspace,
   summarizeUndoPreview,
   workspaceInfoFrom,
-} from '../src/renderer/features/workspace/change-review-model.js';
+} from '@harness2/ui-shared/renderer/features/workspace/change-review-model.js';
 import type { ChangeSetShape, ToolExecutionViewShape, UndoRedoResponseShape } from '../src/shared/protocol.js';
 
 const changeSet: ChangeSetShape = {

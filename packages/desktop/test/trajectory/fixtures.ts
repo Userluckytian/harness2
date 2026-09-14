@@ -2,7 +2,7 @@
 //
 // 事件形状与 core `SessionEvent` 一致（v/seq/ts/type/payload），时间戳全部可预测
 // （基准 T0 + 偏移），因此时间/耗时断言是确定值而非近似。
-import type { ActiveEvent } from '../../src/renderer/chat-model.js';
+import type { ActiveEvent } from '@harness2/ui-shared/renderer/chat-model.js';
 
 /** 基准时刻（UTC）：所有夹具时间戳 = T0 + offset */
 export const T0 = Date.parse('2026-09-14T10:00:00.000Z');

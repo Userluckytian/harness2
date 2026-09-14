@@ -18,6 +18,7 @@
   },
   "dependencies": {
     "@harness2/core": "workspace:^",
+    "@harness2/ui-shared": "workspace:^",
     "diff": "^9.0.0",
     "jsonc-parser": "^3.3.1",
     "react": "^19.2.8",

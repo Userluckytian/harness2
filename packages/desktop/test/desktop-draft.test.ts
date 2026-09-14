@@ -3,9 +3,15 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { DRAFT_MAX_CHARS, dropDraft, getDraftValue, normalizeDrafts, setDraftValue } from '../src/shared/drafts.js';
+import {
+  DRAFT_MAX_CHARS,
+  dropDraft,
+  getDraftValue,
+  normalizeDrafts,
+  setDraftValue,
+} from '@harness2/ui-shared/shared/drafts.js';
 import { draftsFilePath, readDrafts, writeDrafts } from '../src/main/drafts-file.js';
-import { AppStore } from '../src/renderer/store.js';
+import { AppStore } from '@harness2/ui-shared/renderer/store.js';
 
 const dirs: string[] = [];
 function tmpHome(): string {

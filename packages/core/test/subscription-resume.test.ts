@@ -621,3 +621,50 @@ describe('S3c2：v2 连接带水位 delta + attempt-final（旧连接继续旧�
     v2.close();
   });
 });
+
+// P8-②：把 `?protocolVersion=2` 的真实语义钉死 —— **查询参数只是声明，不切帧**。
+// core `attachWsServer` 的 upgrade 只读 `url.pathname` 与 token（`extractServeToken`），
+// 从不解析 `protocolVersion`；真正把连接置为 v2（后续 delta/attempt-final 改走带水位帧）
+// 的唯一入口是成功的 `resume-subscription`（`conn.v2 = true`，ws.ts:400）。
+// 这条断言在此固定该口径，防止未来误把查询参数当生效开关（那样会静默改变旧客户端的帧形状）。
+describe('protocolVersion 查询参数只作声明（不切帧；真正切 v2 靠 resume-subscription）', () => {
+  it('带 ?protocolVersion=2 但未 resume 的连接仍收旧 delta；不带该参数但 resume 的连接收带水位帧', async () => {
+    const handle = await startServe({
+      requireToken: false,
+      port: 0,
+      home: tmpDir('h2-v2flag-home-'),
+      root: tmpDir('h2-v2flag-root-'),
+      provider: new MockProvider([{ textChunks: ['甲', '乙'], chunkDelayMs: 30 }]),
+    });
+    handles.push(handle);
+    const id = await createSession(handle);
+
+    // declared：握手声明 protocolVersion=2，但**不发** resume-subscription
+    const declared = new WsClient(`ws://127.0.0.1:${handle.port}/ws?protocolVersion=2`);
+    await declared.open;
+    declared.send({ op: 'subscribe', sessionId: id });
+    // resumed：握手**不带**查询参数，但发 resume-subscription（真正切 v2 的动作）
+    const resumed = new WsClient(`ws://127.0.0.1:${handle.port}/ws`);
+    await resumed.open;
+    resumed.send({ op: 'subscribe', sessionId: id });
+    resumed.send({ op: 'resume-subscription', sessionId: id, lastSeq: 0, epoch: 1 });
+    await resumed.waitFor((f) => f.type === 'resume-snapshot', 'snapshot');
+
+    declared.send({ op: 'user-message', sessionId: id, text: 'v2 语义' });
+
+    // declared（仅声明）：只收旧形状 delta，零带水位帧 —— 查询参数没有切帧效果
+    const ld = await declared.waitFor((f) => f.type === 'delta' && f.kind === 'text', 'declared 旧 delta');
+    if (ld.type !== 'delta' || ld.kind !== 'text') throw new Error('unreachable: ld');
+    // resumed（已 resume）：收带水位帧
+    const wd = await resumed.waitFor((f) => f.type === 'text-delta', 'resumed 带水位 delta');
+    if (wd.type !== 'text-delta') throw new Error('unreachable: wd');
+    expect(wd.chunkOffset).toBe(0);
+
+    await sleep(200);
+    expect(declared.frames.filter((f) => f.type === 'text-delta').length).toBe(0);
+    expect(resumed.frames.filter((f) => f.type === 'delta').length).toBe(0);
+
+    declared.close();
+    resumed.close();
+  });
+});

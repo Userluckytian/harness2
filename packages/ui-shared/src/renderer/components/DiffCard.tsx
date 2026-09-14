@@ -1,9 +1,10 @@
-// B5 write/edit diff 卡片：用会话内 rewind_points.jsonl 的文件快照 before/after（经 IPC，
-// 渲染进程零 Node）经「diff」算行级差异，渲染红绿 unified diff 卡片。
+// B5 write/edit diff 卡片：用会话内 rewind_points.jsonl 的文件快照 before/after（经宿主能力端口
+// `HostBridge.getSnapshotForCall`）算行级差异，渲染红绿 unified diff 卡片。
 // 数据源不是重读磁盘（磁盘可能已被后续覆盖）——只读快照，纯展示 + 「撤销此次修改」按钮。
 import { useEffect, useState } from 'react';
 import { diffLines, type Change } from 'diff';
 import type { SnapshotForCallShape } from '../../shared/protocol.js';
+import { useHostBridge } from '../host-bridge.js';
 
 /** 一行渲染类型：add=新增(ok)、del=删除(danger)、ctx=上下文 */
 export type DiffRowType = 'add' | 'del' | 'ctx';
@@ -48,6 +49,7 @@ export function DiffCard({ sessionId, seq, file, onUndo }: DiffCardProps): React
   const [entry, setEntry] = useState<NonNullable<SnapshotForCallShape['entry']> | null>(null);
   const [readError, setReadError] = useState<string | null>(null);
   const [expanded, setExpanded] = useState(false);
+  const bridge = useHostBridge();
 
   useEffect(() => {
     let cancelled = false;
@@ -60,7 +62,14 @@ export function DiffCard({ sessionId, seq, file, onUndo }: DiffCardProps): React
         cancelled = true;
       };
     }
-    void window.harness2
+    // 该壳没有快照读取通道：如实说明（不假装「加载中」，也不伪造 diff）
+    if (bridge?.getSnapshotForCall === undefined) {
+      setReadError('此壳未提供快照读取通道（HostBridge.getSnapshotForCall 缺失）');
+      return () => {
+        cancelled = true;
+      };
+    }
+    void bridge
       .getSnapshotForCall(sessionId, seq)
       .then((res) => {
         if (cancelled) return;
@@ -73,7 +82,7 @@ export function DiffCard({ sessionId, seq, file, onUndo }: DiffCardProps): React
     return () => {
       cancelled = true;
     };
-  }, [sessionId, seq]);
+  }, [sessionId, seq, bridge]);
 
   // 读失败 / 未拿到快照 → 降级：只显示一行提示 + （若有 file）文件名，不渲染 diff 行
   if (entry === null) {

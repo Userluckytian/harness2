@@ -83,6 +83,15 @@ jobs:
         if: ${{ !cancelled() && steps.build.outcome == 'success' }}
         run: pnpm --filter @harness2/desktop test
 
+      # P8：共享 UI 包与 web 壳各自独立测试步骤（与 core/gateway 同口径，单点红不遮蔽其余包）
+      - name: Test ui-shared
+        if: ${{ !cancelled() && steps.build.outcome == 'success' }}
+        run: pnpm --filter @harness2/ui-shared test
+
+      - name: Test web
+        if: ${{ !cancelled() && steps.build.outcome == 'success' }}
+        run: pnpm --filter @harness2/web test
+
   # 桌面端构建矩阵（阶段 11 Task 3）：三平台各自构建 + artifact 上传（unsigned；
   # 构建失败即红）。GUI 测试不做（见 docs/issue-log/OPEN.md）；桌面单测为纯逻辑
   # （jsdom，无 GUI），仅 windows 跑一次即可覆盖。

@@ -2,8 +2,8 @@
 // PD4（D-P2）：F4 断线重复点击审批幂等 —— 在途去重（后端只收一次决定）+ 提交失败如实保留
 // 审批（可重试，不假装已决定）+ UI 在途反馈（按钮禁用防连点）。
 import { describe, expect, it, vi } from 'vitest';
-import { AppStore } from '../src/renderer/store.js';
-import { createController } from '../src/renderer/app-controller.js';
+import { AppStore } from '@harness2/ui-shared/renderer/store.js';
+import { createController } from '@harness2/ui-shared/renderer/app-controller.js';
 import type { Harness2Api, WsFrame } from '../src/shared/protocol.js';
 function seedApproval(store: AppStore, requestId = 'r1'): void {
   store.applyFrame({ type: 'approval-request', sessionId: 's1', tool: 'write', args: {}, requestId } as WsFrame);

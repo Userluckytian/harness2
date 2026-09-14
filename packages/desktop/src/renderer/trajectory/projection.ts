@@ -9,7 +9,7 @@
 //   * 进行中的轮次 `endedAtMs = null` → 耗时列留空，绝不把「现在 - 开始」当耗时；
 //   * 助手行 TTFT/解码段**只在有真实首 token 观测**（`firstOutputAtMs`）时给出，
 //     否则 ttftMs/decodeMs 留 null（UI 只画总段并标注「TTFT 未观测」）。
-import { parseSubagentChildId, type ActiveEvent, type TurnEndInfo } from '../chat-model.js';
+import { parseSubagentChildId, type ActiveEvent, type TurnEndInfo } from '@harness2/ui-shared/renderer/chat-model.js';
 import {
   BETWEEN_TURNS_LABEL,
   UNASSIGNED_TURN_ID,
