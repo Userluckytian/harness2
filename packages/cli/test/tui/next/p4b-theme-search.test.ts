@@ -714,6 +714,42 @@ describe('P1-2 /search 模式门控单源', () => {
   });
 });
 
+// —— P2-4：面板来源如实（/search 由本壳本地实现 → 不许显示 core 却执行 local）——
+describe('P2-4 面板来源如实标注（壳遮蔽 core）', () => {
+  const CTRL_P = '\x10';
+
+  it('fullscreen 面板里 /search 只有一条，source/badge = shell，摘要来自壳实现', () => {
+    const { h } = makeHarness(makeRuntime(), { initialRenderMode: 'fullscreen' });
+    h.feed(CTRL_P);
+    h.flushUi();
+    const rows = (h.state.palette?.rows ?? []).filter((r) => r.kind === 'command' && r.entry.name === 'search');
+    expect(rows, '面板应有且仅有一条 /search').toHaveLength(1);
+    const entry = rows[0]!.kind === 'command' ? rows[0]!.entry : undefined;
+    expect(entry?.source).toBe('shell'); // 修复前这里是 'core'（显示 core 却执行 local）
+    expect(paletteBadge(entry!)).toBe('shell');
+    expect(entry?.summary).toContain('转录'); // 壳实现摘要，不是 core 的「索引化全文检索」
+    // 同名 core 行不得残留（否则等于两条同名命令）
+    expect(
+      (h.state.palette?.rows ?? []).filter(
+        (r) => r.kind === 'command' && r.entry.source === 'core' && r.entry.name === 'search',
+      ),
+    ).toHaveLength(0);
+    // 其它 core 命令（未被遮蔽）仍标 core——修复不波及无关条目
+    const reindex = (h.state.palette?.rows ?? []).find((r) => r.kind === 'command' && r.entry.name === 'reindex');
+    expect(reindex?.kind === 'command' ? reindex.entry.source : undefined).toBe('core');
+    h.feed(CTRL_P);
+    h.dispose();
+  });
+
+  it('badge 与现实一致：面板执行 /search 落到壳本地实现（用法文案为壳实现）', () => {
+    const { h } = makeHarness(makeRuntime(), { initialRenderMode: 'fullscreen' });
+    h.submit('/search');
+    h.flushUi();
+    expect(linesOf(h).join('\n')).toContain('用法: /search <文本>（无参数 = 重复上次搜索；/search clear 清除高亮）');
+    h.dispose();
+  });
+});
+
 // —— busy 状态行 spinner ——
 describe('P4-2 busy 状态行 spinner', () => {
   it('busy 且无运行中子代理：状态行 ⏺ → 帧动画（150ms 推进 SPINNER_FRAMES）', async () => {

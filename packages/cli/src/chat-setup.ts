@@ -4,10 +4,14 @@
 // onStream 回调桥接，不直接写 stdout。审批提问经 askApproval 钩子注入（legacy 走 readline
 // 拦截；ink 走弹窗）。"总是允许"仅存进程内会话级缓存，绝不落盘。
 import {
+  applyToolSelection,
   createApprovalPolicy,
   createBrowserTools,
-  createMemoryTool,
+  createFanoutTools,
+  createMemoryToolForPolicy,
   createProvider,
+  createScriptTool,
+  createSkillAuthoringTool,
   createSkillTool,
   createSubagentTools,
   defaultConfigPaths,
@@ -27,13 +31,19 @@ import {
   projectSkillsRoot,
   registerBuiltinTools,
   resolveCompactionOptions,
+  resolveEnabledToolNames,
   runTurn,
+  SCRIPT_TOOL_NAME,
   SessionSteerSink,
   forkSession,
   SessionManager,
+  SkillAuthoringStore,
   SkillStore,
   SnapshotStore,
+  SpawnHistoryStore,
   ToolRegistry,
+  ToolRpcService,
+  FANOUT_TOOL_NAMES,
   SUBAGENT_TOOL_NAMES,
   type ApprovalConfig,
   type ConfiguredApprovalHandler,
@@ -41,8 +51,9 @@ import {
   type ApprovalInput,
   type ChatProvider,
   type CompactionOptions,
-  type MemorySink,
+  type MemoryMode,
   type MockScript,
+  type ToolSelectionConfig,
   type TurnResult,
   type AnySessionEvent,
   type SessionAppender,
@@ -123,6 +134,15 @@ export interface ChatRuntime {
   provider: ChatProvider;
   approval: ApprovalHandler | undefined;
   tools: ToolRegistry;
+  /**
+   * P7-C 加性：当前会话模型面工具注册表（含会话绑定变体 + config.tools 过滤）——
+   * `/tools` 命令的盘点来源；缺省（测试桩）时命令如实显示空表。
+   */
+  toolRegistry?: () => ToolRegistry;
+  /** P7-C 加性：当前生效的 config.tools 选择（/tools 展示启用/禁用状态） */
+  toolSelection?: () => ToolSelectionConfig | undefined;
+  /** P7-C 加性：项目 config.json 路径（/tools select 落盘目标） */
+  configPath?: () => string | undefined;
   skillsStore: SkillStore;
   sessionManager: SessionManager;
   /** 工作目录（config 加载根目录，cwd） */
@@ -169,6 +189,11 @@ export async function setupChatSession(options: ChatOptions, hooks: ChatSetupHoo
   let provider: ChatProvider;
   let approval: ApprovalHandler | undefined;
   let memoryStore: MemoryStore | undefined;
+  let memoryMode: MemoryMode | undefined;
+  let memoryPending: PendingMemoryStore | undefined;
+  let skillsAuthoringStore: SkillAuthoringStore | undefined;
+  let toolsConfig: ToolSelectionConfig | undefined;
+  let projectConfigPath: string | undefined;
   let compaction: CompactionOptions | undefined;
   let pluginBus: PluginBus | undefined;
   let mcpManager: McpManager | undefined;
@@ -176,6 +201,11 @@ export async function setupChatSession(options: ChatOptions, hooks: ChatSetupHoo
   const extensionDisposers: Array<() => void | Promise<void>> = [];
   const tools = new ToolRegistry();
   registerBuiltinTools(tools);
+  // H-42 扇出历史（P7-C 接线）：进程级单例（跨会话保留最近 10 次；未来 /replay 读）
+  const fanoutHistory = new SpawnHistoryStore();
+  // 会话绑定工具集（memory/skill_author/subagent/fanout + config.tools 过滤 + run_script）：
+  // 每次切换会话重建；未装配任何会话绑定能力时等同静态基座 tools。
+  let sessionTools: ToolRegistry = tools;
 
   // 会话与会话中止态：装配中途即可能被异步闭包（memory sink / 审批 ask）在运行期读取
   let current: ChatSession | null = null;
@@ -265,21 +295,22 @@ export async function setupChatSession(options: ChatOptions, hooks: ChatSetupHoo
       process.exitCode = 1;
       throw new ChatSetupAbort();
     }
+    // 记忆装配（H-21/P7-A）：只建 store/暂存区，工具注册延后到 bindSessionTools——
+    // 统一走 createMemoryToolForPolicy（三壳唯一策略出口，off/ask/auto 三态 + 主动持久化）。
     if (loaded.config.memory.mode !== 'off') {
       memoryStore = new MemoryStore(defaultMemoriesRoot(options.home));
-      if (loaded.config.memory.mode === 'ask') {
-        const pendingStore = new PendingMemoryStore(defaultPendingRoot(options.home), memoryStore);
-        const sink: MemorySink = {
-          apply: async (ops) => {
-            const stagedItem = await pendingStore.stage(current?.id ?? 'unknown', ops);
-            return { ok: true, warnings: [], files: [], stagedId: stagedItem.id };
-          },
-        };
-        tools.register(createMemoryTool(sink));
-      } else {
-        tools.register(createMemoryTool(memoryStore));
+      memoryMode = loaded.config.memory.mode;
+      if (memoryMode === 'ask') {
+        memoryPending = new PendingMemoryStore(defaultPendingRoot(options.home), memoryStore);
       }
     }
+    // 经验造技能（P7-A H-22）：skills.authoring=on 才装配 skill_author（缺省 off）
+    if (loaded.config.skills?.authoring === 'on') {
+      skillsAuthoringStore = new SkillAuthoringStore(projectSkillsRoot(root));
+    }
+    // 工具面选择（P7-C H-30）：config.tools（缺省不裁剪）+ 项目 config.json 路径（/tools select 落盘目标）
+    toolsConfig = loaded.config.tools;
+    projectConfigPath = defaultConfigPaths(root, options.home).projectConfig;
     approvalCfg = loaded.config.approval;
     currentMode = approvalCfg?.mode ?? 'default';
     policy = createApprovalPolicy(approvalCfg);
@@ -362,23 +393,44 @@ export async function setupChatSession(options: ChatOptions, hooks: ChatSetupHoo
   }
   noteCrashSessionId(current.id);
 
-  // —— subagent 工具装配 ——
-  const subagentDisposers: Array<() => void> = [];
-  const bindSubagentTools = (sessionId: string): void => {
-    for (const dispose of subagentDisposers) dispose();
-    subagentDisposers.length = 0;
-    for (const name of SUBAGENT_TOOL_NAMES) {
-      if (tools.get(name) === undefined) continue;
-      const revoked = pluginBus?.revokeTool(name) === true;
-      line(
-        `warning: 工具 "${name}" 与 subagent 权威工具重名，已剔除冲突版本（subagent 实现优先）${revoked ? '' : '，但冲突工具不可收回'}`,
-      );
+  // —— 会话绑定工具装配（P7 接线）——
+  // 每次绑定重建模型面注册表：静态基座 tools − subagent 冲突名/memory → 追加会话变体
+  // （memory 按策略 / skill_author / subagent / fanout）→ config.tools 过滤 → run_script
+  // （RPC 服务绑本进程审批缝，内层调用同样受审批约束，不可绕过）。切换会话时重绑，
+  // 血缘（parentSessionId）与暂存归因（sessionId）随之更新。
+  const bindSessionTools = (sessionId: string): void => {
+    const next = new ToolRegistry();
+    const subNames = new Set<string>([...SUBAGENT_TOOL_NAMES, ...FANOUT_TOOL_NAMES]);
+    for (const def of tools.list()) {
+      if (def.name === 'memory') continue; // 换装按会话绑定的变体（策略出口统一）
+      if (subNames.has(def.name)) {
+        // 插件抢占 subagent/fanout 权威工具名：剔除插件版 + 提示（权威版随后重挂）
+        const revoked = pluginBus?.revokeTool(def.name) === true;
+        line(
+          `warning: 工具 "${def.name}" 与 subagent 权威工具重名，已剔除冲突版本（subagent 实现优先）${revoked ? '' : '，但冲突工具不可收回'}`,
+        );
+        continue;
+      }
+      next.register(def);
     }
+    // 记忆（H-21/P7-A）：off→不注册、ask→pending 暂存、auto→直写 + 主动持久化
+    if (memoryStore !== undefined && memoryMode !== undefined) {
+      const memoryTool = createMemoryToolForPolicy(memoryStore, memoryMode, {
+        ...(memoryPending !== undefined ? { pending: memoryPending } : {}),
+        sessionId,
+      });
+      if (memoryTool !== undefined) next.register(memoryTool);
+    }
+    // 经验造技能（H-22）：模型只提案，落盘走 `harness2 skill approve <id>`
+    if (skillsAuthoringStore !== undefined) {
+      next.register(createSkillAuthoringTool(skillsAuthoringStore, { sessionId }));
+    }
+    // subagent + 并行扇出（阶段 8 / H-42）：按会话绑血缘
     const childProvider =
       options.provider === 'mock'
         ? new MockProvider(options.mockChildScript ?? MOCK_CHILD_DEMO_SCRIPT)
         : (subagentConfig?.provider ?? provider);
-    for (const def of createSubagentTools({
+    const subagentOptions = {
       manager,
       provider: childProvider,
       baseTools: tools,
@@ -390,15 +442,39 @@ export async function setupChatSession(options: ChatOptions, hooks: ChatSetupHoo
       depth: 0,
       skills: skillsStore,
       ...(hooks.subagentHooks !== undefined ? { hooks: hooks.subagentHooks } : {}),
-    })) {
-      if (tools.get(def.name) !== undefined) {
+    };
+    for (const def of createSubagentTools(subagentOptions)) {
+      if (next.get(def.name) !== undefined) {
         line(`warning: subagent 工具 "${def.name}" 与不可收回的既有工具重名，本会话跳过注册`);
         continue;
       }
-      subagentDisposers.push(tools.register(def));
+      next.register(def);
     }
+    for (const def of createFanoutTools({ ...subagentOptions, history: fanoutHistory })) {
+      if (next.get(def.name) !== undefined) continue;
+      next.register(def);
+    }
+    // 工具面过滤（H-30）：动态工具同样受 toolset/enable 约束；未配置 = 不过滤（零回归）
+    const selected = toolsConfig !== undefined ? applyToolSelection(next, toolsConfig) : next;
+    // run_script（H-43）：RPC 服务绑本进程审批缝；RPC 可见表 = selected 快照（不含 run_script 防递归）
+    const wouldEnableScript =
+      toolsConfig === undefined ||
+      resolveEnabledToolNames([...selected.list().map((d) => d.name), SCRIPT_TOOL_NAME], toolsConfig).enabled.includes(
+        SCRIPT_TOOL_NAME,
+      );
+    if (wouldEnableScript) {
+      const rpcRegistry = new ToolRegistry();
+      for (const def of selected.list()) rpcRegistry.register(def);
+      const service = new ToolRpcService({
+        registry: rpcRegistry,
+        cwd: root,
+        ...(approval !== undefined ? { approval } : {}),
+      });
+      selected.register(createScriptTool({ service }));
+    }
+    sessionTools = selected;
   };
-  bindSubagentTools(current.id);
+  bindSessionTools(current.id);
 
   // —— 生命周期 ——
   const closeCurrent = (): void => {
@@ -440,7 +516,7 @@ export async function setupChatSession(options: ChatOptions, hooks: ChatSetupHoo
     try {
       const result = await runTurn(turnWriter, {
         provider,
-        tools,
+        tools: sessionTools,
         ...(approval !== undefined ? { approval } : {}),
         ...(memoryStore !== undefined ? { memory: memoryStore } : {}),
         skills: skillsStore,
@@ -485,7 +561,7 @@ export async function setupChatSession(options: ChatOptions, hooks: ChatSetupHoo
       current = newSession();
       print(`会话: ${current.id}（新建）`);
     }
-    bindSubagentTools(current.id);
+    bindSessionTools(current.id);
     noteCrashSessionId(current.id);
     print(`会话: ${current.id}（${id === null ? '新建' : '已恢复'}）`);
   };
@@ -500,6 +576,7 @@ export async function setupChatSession(options: ChatOptions, hooks: ChatSetupHoo
       const r = forkSession(manager, current.id, at !== undefined ? { atSeq: at } : {});
       closeCurrent();
       current = openById(r.id);
+      bindSessionTools(current.id); // P7：分叉后重绑会话绑定工具（血缘/暂存归因随新会话）
       print(
         `会话: ${current.id}（自 ${r.parentSession} 分叉，复制 ${r.copiedEvents} 个活动事件${at !== undefined ? `，截取到 seq ${at}` : ''}）`,
       );
@@ -511,8 +588,6 @@ export async function setupChatSession(options: ChatOptions, hooks: ChatSetupHoo
   const finish = async (fhooks: { closeReadline?: () => void; destroyInput?: () => void }): Promise<void> => {
     closeCurrent();
     noteCrashSessionId(undefined);
-    for (const dispose of subagentDisposers) dispose();
-    subagentDisposers.length = 0;
     for (const dispose of extensionDisposers) {
       try {
         await dispose();
@@ -537,6 +612,9 @@ export async function setupChatSession(options: ChatOptions, hooks: ChatSetupHoo
     provider,
     approval,
     tools,
+    toolRegistry: () => sessionTools,
+    toolSelection: () => toolsConfig,
+    configPath: () => projectConfigPath,
     skillsStore,
     sessionManager: manager,
     root,

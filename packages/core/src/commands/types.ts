@@ -8,6 +8,8 @@ import type { CronJob } from '../cron/jobs.js';
 import type { SessionManager } from '../session/manager.js';
 import type { SnapshotStore } from '../session/snapshots.js';
 import type { SessionWriter } from '../session/writer.js';
+import type { ToolRegistry } from '../tools/registry.js';
+import type { ToolSelectionConfig } from '../tools/selection.js';
 
 /** 命令语义分组（describeCapabilities / 帮助展示用） */
 export type CoreCommandGroup = '会话' | '历史' | '上下文' | '调度' | '模式' | '通用';
@@ -54,6 +56,15 @@ export interface CoreCommandContext {
   compact?(): boolean | Promise<boolean>;
   /** 读 cron 任务列表（只读）。未注入时 /tasks 输出 `harness2 cron list` 引导文案（对齐现有壳行为）。 */
   cronJobs?(): readonly CronJob[];
+  /**
+   * 当前运行时工具注册表（/tools list|show 的盘点来源；未注入 = 空表，列表如实为空）。
+   * 形状与 tools/manage.ts 的 ToolsCommandIo.registry 同源——壳只做一行注入。
+   */
+  toolRegistry?(): ToolRegistry;
+  /** 当前生效的工具选择配置（config.tools；未注入 = 不裁剪，与既有全量行为一致） */
+  toolSelection?(): ToolSelectionConfig | undefined;
+  /** 项目 config.json 路径（/tools select 落盘目标；未注入 = 只打印片段不落盘，只读/干跑） */
+  configPath?(): string | undefined;
 }
 
 /** 命令执行体；新命令可异步（返回 Promise），旧 8 条保持同步（cli 既有测试不改字） */

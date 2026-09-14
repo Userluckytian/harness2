@@ -64,7 +64,13 @@ function makeRuntime(overrides: Partial<ChatRuntime> = {}): ChatRuntime {
     approval: undefined,
     tools: {} as ChatRuntime['tools'],
     skillsStore: {} as ChatRuntime['skillsStore'],
-    sessionManager: { list: () => [], locate: () => undefined } as unknown as ChatRuntime['sessionManager'],
+    sessionManager: {
+      list: () => [],
+      locate: () => undefined,
+      // P7 加性：palette 全项枚举会执行 /reindex（core 会话能力命令）——stub 提供最小实现
+      reindex: () => ({ sessions: 0, indexed: 0, messages: 0, failures: [] }),
+      searchIndexed: () => [],
+    } as unknown as ChatRuntime['sessionManager'],
     root: '/tmp/harness2-p3e-wiring',
     getCurrent: () => null,
     switchSession: () => undefined,
@@ -258,16 +264,16 @@ describe('P3-E 接线1：palette（Ctrl+P / ? / 键盘 / Enter 路由）', () =>
     h.dispose();
   });
 
-  // 完成定义「palette 每个面板项点了有反应」的机器证据：全量枚举面板行（core 23 单源 +
-  // 壳 6 = 29），逐项在**全新 harness** 里走 Ctrl+P → 查询 → Enter 的完整面板路径，
-  // 断言无三类「断线」兜底文案。状态型反应（/exit 退出、/new 换会话、/minimal 切模式）
-  // 无 print 输出，由各自既有用例覆盖；此处的判据 = 不落兜底（真路由到实现）。
-  it('每个面板项执行都不落兜底（全 29 项枚举；逐项新 harness 防状态串扰）', async () => {
+  // 完成定义「palette 每个面板项点了有反应」的机器证据：全量枚举面板行（core 29 单源 +
+  // 壳 5 = 34；/search 已进 core catalog，故壳条目由 6 减为 5），逐项在**全新 harness** 里走
+  // Ctrl+P → 查询 → Enter 的完整面板路径，断言无三类「断线」兜底文案。状态型反应（/exit 退出、
+  // /new 换会话、/minimal 切模式）无 print 输出，由各自既有用例覆盖；此处的判据 = 不落兜底。
+  it('每个面板项执行都不落兜底（全 34 项枚举；逐项新 harness 防状态串扰）', async () => {
     const probe = makeHarness(undefined, { home: '/tmp/hx-p3e-missing-home' });
     probe.h.feed(CTRL_P);
     const names = paletteCommandNames(probe.h).map((n) => n.slice(1));
     probe.h.dispose();
-    expect(names).toHaveLength(29); // 23 core（describeCapabilities）+ 6 壳（plan/auto/always-approve/theme/search/expand）
+    expect(names).toHaveLength(34); // 29 core（describeCapabilities）+ 5 壳（plan/auto/always-approve/theme/expand）
     for (const name of names) {
       const { h } = makeHarness(undefined, { home: '/tmp/hx-p3e-missing-home' });
       h.feed(CTRL_P);

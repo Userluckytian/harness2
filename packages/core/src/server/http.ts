@@ -24,7 +24,9 @@ import { createApprovalPolicy } from '../approval/policy.js';
 import { defaultMemoriesRoot, MemoryStore } from '../memory/store.js';
 import { defaultPendingRoot, PendingMemoryStore } from '../memory/pending.js';
 import { defaultSkillsRoot, projectSkillsRoot, SkillStore } from '../skills/store.js';
+import { SkillAuthoringStore } from '../skills/authoring.js';
 import { createSkillTool } from '../skills/tool.js';
+import type { ToolSelectionConfig } from '../tools/selection.js';
 import { SessionManager, defaultSessionsRoot } from '../session/manager.js';
 import { CronScheduler, type CronFinishedFrame } from '../cron/scheduler.js';
 import { defaultCronRoot } from '../cron/jobs.js';
@@ -192,6 +194,12 @@ export interface StartServeOptions {
   subagent?: SessionHubSubagent;
   /** 注入 Skills 商店（阶段 10；mock/测试用）。缺省：项目 .harness2/skills/ + 全局 ~/.harness2/skills/ 两级派生 */
   skills?: SkillStore;
+  /** P7-A H-22 加性：经验造技能 store（mock/测试用）。缺省：config.skills.authoring=on 时按项目技能目录派生 */
+  skillsAuthoring?: SkillAuthoringStore;
+  /** P7-C H-43 加性：是否注册 run_script（缺省 = 配置加载成功时开启；注入 provider 的测试路径缺省关闭） */
+  script?: boolean;
+  /** P7-C H-30 加性：工具面选择配置（mock/测试用）。缺省：config.tools 派生 */
+  toolsConfig?: ToolSelectionConfig;
   /** hub 观察钩子透传（WS 事件面 / 测试用） */
   hooks?: SessionHubHooks;
   /** S3c1 → S3c2 接线缝：resume/cancel/submit 实际状态提供者（缺省未接线 → unknown/error） */
@@ -262,6 +270,15 @@ export async function startServe(options: StartServeOptions = {}): Promise<Serve
   }
   tools.register(createSkillTool(skills));
 
+  // P7 加性接线（A/B/C 三棒 core 能力进 serve）：
+  //   - skillsAuthoring：config.skills.authoring=on 时派生经验造技能 store（缺省 off = 不注册）；
+  //   - script：run_script 开关（配置路径缺省开启；注入 provider 的测试/mock 路径缺省关闭）；
+  //   - toolsConfig：config.tools 工具面选择（缺省不裁剪）。
+  // 三者随 hub options 进 sessions-turn 的 per-turn 装配（三壳共用装配点），此处不造第二套逻辑。
+  let skillsAuthoring: SkillAuthoringStore | undefined = options.skillsAuthoring;
+  let script: boolean | undefined = options.script;
+  let toolsConfig: ToolSelectionConfig | undefined = options.toolsConfig;
+
   let provider = options.provider;
   let decide = options.decide;
   let memory: SessionHubMemory | undefined = options.memory;
@@ -300,6 +317,14 @@ export async function startServe(options: StartServeOptions = {}): Promise<Serve
       maxOutputTokens = modelCfg?.maxOutputTokens;
     }
     approvalConfig = loaded.config.approval;
+    // P7-A：经验造技能（config.skills.authoring=on 才注册 skill_author；缺省 off）
+    if (skillsAuthoring === undefined && loaded.config.skills?.authoring === 'on') {
+      skillsAuthoring = new SkillAuthoringStore(projectSkillsRoot(root));
+    }
+    // P7-C：配置路径缺省开启 run_script（工具面选择仍可剔除它）
+    if (script === undefined) script = true;
+    // P7-C：工具面选择（config.tools；未配置 = 不裁剪）
+    if (toolsConfig === undefined) toolsConfig = loaded.config.tools;
     // 记忆装配：mode ≠ off 时派生（roles.small 复盘 provider；缺失回退主 provider）
     if (memory === undefined && loaded.config.memory.mode !== 'off') {
       const store = new MemoryStore(defaultMemoriesRoot(home));
@@ -381,6 +406,9 @@ export async function startServe(options: StartServeOptions = {}): Promise<Serve
     ...(subagent !== undefined ? { subagent } : {}),
     ...(plugins !== undefined ? { plugins } : {}),
     ...(skills !== undefined ? { skills } : {}),
+    ...(skillsAuthoring !== undefined ? { skillsAuthoring } : {}),
+    ...(script !== undefined ? { script } : {}),
+    ...(toolsConfig !== undefined ? { toolsConfig } : {}),
     ...(options.approvalTimeoutMs !== undefined ? { approvalTimeoutMs: options.approvalTimeoutMs } : {}),
     ...(options.hooks !== undefined ? { hooks: options.hooks } : {}),
     // S7：run-config 只读投影的装配来源（真实状态，非自造）

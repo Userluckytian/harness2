@@ -32,7 +32,7 @@ describe('T5 runSharedCommand：委托共享 handleCommand', () => {
     const tr = await createTestRuntime();
     running.push(tr);
     const { io, lines, reproject } = makeIo();
-    const r = runSharedCommand({ name: '/undo', rest: '' }, tr.runtime, io);
+    const r = await runSharedCommand({ name: '/undo', rest: '' }, tr.runtime, io);
     expect(r.reprojected).toBe(true);
     expect(reproject).toHaveBeenCalledTimes(1);
     expect(lines.some((l) => l.includes('没有可撤回的用户消息'))).toBe(true);
@@ -43,7 +43,7 @@ describe('T5 runSharedCommand：委托共享 handleCommand', () => {
     running.push(tr);
     const before = tr.runtime.getCurrent()?.id;
     const { io, reproject } = makeIo();
-    const r = runSharedCommand({ name: '/new', rest: '' }, tr.runtime, io);
+    const r = await runSharedCommand({ name: '/new', rest: '' }, tr.runtime, io);
     expect(tr.runtime.getCurrent()?.id).not.toBe(before);
     expect(r.reprojected).toBe(true);
     expect(reproject).toHaveBeenCalledTimes(1);
@@ -53,7 +53,7 @@ describe('T5 runSharedCommand：委托共享 handleCommand', () => {
     const tr = await createTestRuntime();
     running.push(tr);
     const { io, lines } = makeIo();
-    const r = runSharedCommand({ name: '/help', rest: '' }, tr.runtime, io);
+    const r = await runSharedCommand({ name: '/help', rest: '' }, tr.runtime, io);
     expect(r.reprojected).toBe(false);
     expect(lines.join('\n')).toBe(HELP_TEXT);
     expect(lines.join('\n')).toContain('/undo');
@@ -64,7 +64,7 @@ describe('T5 runSharedCommand：委托共享 handleCommand', () => {
     const tr = await createTestRuntime();
     running.push(tr);
     const { io, lines, reproject } = makeIo();
-    runSharedCommand({ name: '/nope', rest: '' }, tr.runtime, io);
+    await runSharedCommand({ name: '/nope', rest: '' }, tr.runtime, io);
     expect(lines.some((l) => l.includes('未知命令 /nope'))).toBe(true);
     expect(reproject).not.toHaveBeenCalled();
   });
@@ -73,7 +73,7 @@ describe('T5 runSharedCommand：委托共享 handleCommand', () => {
     const tr = await createTestRuntime();
     running.push(tr);
     const { io, requestExit } = makeIo();
-    runSharedCommand({ name: '/exit', rest: '' }, tr.runtime, io);
+    await runSharedCommand({ name: '/exit', rest: '' }, tr.runtime, io);
     expect(requestExit).toHaveBeenCalledTimes(1);
   });
 });

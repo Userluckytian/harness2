@@ -50,6 +50,28 @@ export const CORE_COMMAND_META: readonly CoreCommandMeta[] = [
     argsSpec: '[输出路径]',
     shellOnly: true,
   },
+  // —— P7-B 会话能力（H-11～H-14）加性注册（2026-09-14）：实现已在 core
+  //    （session/capabilities.ts 的 runSessionCapability，registry.ts 的 RUNS 表接线），
+  //    三壳共用命令面直接可执行——一律非 shellOnly（无「由界面层实现」假入口）。——
+  {
+    id: 'search',
+    group: '会话',
+    summary: '索引化全文检索会话（分词命中，默认全部命中）',
+    argsSpec: '<查询> [--or] [--limit N]',
+  },
+  { id: 'reindex', group: '会话', summary: '重建会话检索索引（派生物，可随时重建）' },
+  {
+    id: 'import',
+    group: '会话',
+    summary: '导入会话导出包（zip，含子会话；版本迁移与坏行容错）',
+    argsSpec: '<zip 路径> [--overwrite] [--dry-run]',
+  },
+  {
+    id: 'title',
+    group: '会话',
+    summary: '查看/设置/自动生成会话标题（/title [<标题>|--auto]）',
+    argsSpec: '[<标题>|--auto]',
+  },
   {
     id: 'undo',
     group: '历史',
@@ -73,6 +95,13 @@ export const CORE_COMMAND_META: readonly CoreCommandMeta[] = [
   { id: 'skills', group: '通用', summary: '列出可用 skills（两级扫描合并，只读）', shellOnly: true },
   { id: 'plugins', group: '通用', summary: '列出插件目录与装载审批状态（只读）', shellOnly: true },
   { id: 'mcps', group: '通用', summary: '列出配置的 MCP 服务器（只读配置，不探测连接）', shellOnly: true },
+  // P7-C H-31 工具面命令（实现 = tools/manage.ts 的 runToolsCommand，RUNS 表接线）
+  {
+    id: 'tools',
+    group: '通用',
+    summary: '查看/切换工具面（工具清单、工具集 list/show/select）',
+    argsSpec: '<list|show|select> [参数]',
+  },
   {
     id: 'mode',
     group: '模式',
@@ -102,6 +131,12 @@ export const CORE_COMMAND_META: readonly CoreCommandMeta[] = [
   },
   { id: 'context', group: '上下文', summary: '查看当前上下文占用（状态栏常驻显示）' },
   { id: 'compact', group: '上下文', summary: '手动触发上下文压缩（/compact [说明文字]）', argsSpec: '[说明文字]' },
+  {
+    id: 'compact-layers',
+    group: '上下文',
+    summary: '按分层压缩（turn → session）执行一次压缩并展示分层产物',
+    argsSpec: '[turn|session]',
+  },
   { id: 'memory', group: '上下文', summary: '查看长期记忆条目与用量（MEMORY.md/USER.md，只读）', shellOnly: true },
   { id: 'tasks', group: '调度', summary: '列出 cron 任务（只读）' },
 ];

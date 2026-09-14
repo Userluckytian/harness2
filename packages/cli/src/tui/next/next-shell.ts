@@ -575,7 +575,22 @@ export const NEXT_COMMANDS: readonly NextCommandEntry[] = [
     wiring: 'shared',
     note: 'core runCoreCommand（contextUsage 缝取 runtime 既有口径，输出与改造前逐字一致）',
   },
-  { name: 'compact', wiring: 'shared', note: 'core runCoreCommand 降级文案（runtime 无手动压缩句柄，如实不注入）' },
+  {
+    name: 'compact',
+    wiring: 'shared',
+    note: 'core /compact：有活动会话 = 分层压缩（H-12，与 /compact-layers 同一实现）；无活动会话 = 如实降级文案',
+  },
+  // —— P7 加性（B/C 棒 core 能力接线）：会话能力命令 + 工具面命令，wiring 'shared'（runSharedCommand
+  //    → core runCoreCommand，三壳同一份实现）。注：next 另有 /search（local 转录搜索，P4-2）
+  //    与 core /search（会话全文检索）同名——本壳路由优先 local（登记差异：next 用 /reindex /title
+  //    等会话能力可用；会话全文检索在 legacy/ink 可执行，next 面板行执行落到 local 转录搜索）。
+  //    P2-4：面板行如实标**壳**（source 'shell'，见 shadowedCoreCommands/buildNextPaletteEntries），
+  //    不再以 core badge 冒充 core 实现。 ——
+  { name: 'reindex', wiring: 'shared', note: 'core 会话检索索引重建（H-11）' },
+  { name: 'import', wiring: 'shared', note: 'core 会话导出包导入（H-13）' },
+  { name: 'title', wiring: 'shared', note: 'core 会话标题查看/设置/自动生成（H-14）' },
+  { name: 'compact-layers', wiring: 'shared', note: 'core 分层压缩（H-12；/compact 默认路径同实现）' },
+  { name: 'tools', wiring: 'shared', note: 'core 工具面 list/show/select（H-31）' },
   { name: 'reasoning', wiring: 'shared', note: '壳侧 shell-commands 表（三壳同一份实现，legacy 基准文案）' },
   { name: 'tasks', wiring: 'shared', note: 'core runCoreCommand 降级文案（runtime 无 cron 存储句柄，如实不注入）' },
   {
@@ -617,7 +632,7 @@ export const NEXT_COMMANDS: readonly NextCommandEntry[] = [
     name: 'search',
     wiring: 'local',
     summary: '转录文本搜索定位（仅 fullscreen）',
-    note: '滚动区文本搜索（P4-2 简版）：/search <文本> 命中定位+高亮，无参重复上次，clear 清高亮；不做 / 交互输入框（grok 为 /find 交互式搜索栏，差异登记）；G-03：仅 fullscreen（定位作用于应用内视口，minimal 终端原生滚动无此视口）',
+    note: '滚动区文本搜索（P4-2 简版）：/search <文本> 命中定位+高亮，无参重复上次，clear 清高亮；不做 / 交互输入框（grok 为 /find 交互式搜索栏，差异登记）；G-03：仅 fullscreen（定位作用于应用内视口，minimal 终端原生滚动无此视口）。P2-4：与 core /search（会话全文检索）同名且本壳路由优先 local——面板行按本壳实现如实标 badge「shell」（不再冒充 core）。',
   },
   {
     name: 'expand',
@@ -2409,11 +2424,35 @@ export function createNextChatHarness(runtime: ChatRuntime, deps: NextChatHarnes
   /** 壳条目派生（G-50）：NEXT_COMMANDS 中 core catalog 没有的条目（本壳 UI 命令）→ 面板行 */
   function shellPaletteEntries(): ShellPaletteEntry[] {
     const coreIds = new Set(describeCapabilities().commands.map((c) => c.id));
-    return NEXT_COMMANDS.filter((c) => !coreIds.has(c.name)).map((c) => ({
+    const shadowed = shadowedCoreCommands();
+    // P2-4：同名遮蔽 core 且**由本壳本地分发**的命令（如 /search 的 local 转录搜索）也要出现在
+    // 壳条目里——否则面板只剩 core 行（badge core），Enter 却走本地实现（显示 core 却执行 local）。
+    return NEXT_COMMANDS.filter((c) => !coreIds.has(c.name) || shadowed.has(c.name)).map((c) => ({
       name: c.name,
       summary: c.summary ?? `${c.wiring} 实现（/${c.name}）`,
       group: '界面',
     }));
+  }
+
+  /**
+   * 同名遮蔽 core 的本地命令集（P2-4）：从**本壳实际分发表** nextLocalCommands 派生——
+   * 只有 core catalog 里有同名命令、且本壳 handleCommand 会先命中本地表时才算遮蔽（当前 = /search）。
+   * 派生而非硬编码清单，避免「面板声明」与「实际路由」再次漂移。
+   */
+  function shadowedCoreCommands(): Set<string> {
+    const coreIds = new Set(describeCapabilities().commands.map((c) => c.id));
+    return new Set(
+      NEXT_COMMANDS.map((c) => c.name).filter((n) => coreIds.has(n) && nextLocalCommands[n] !== undefined),
+    );
+  }
+
+  /** 面板条目 = core 条目 + 壳条目；同名时以壳条目为准（P2-4：壳知道自己实际执行什么） */
+  function buildNextPaletteEntries(): PaletteEntry[] {
+    const shell = shellPaletteEntries();
+    const shellNames = new Set(shell.map((e) => e.name));
+    return buildPaletteEntries(renderModeState.mode, shell).filter(
+      (e) => !(e.source === 'core' && shellNames.has(e.name)),
+    );
   }
 
   function paletteRows(): ReturnType<typeof filterPaletteRows> {
@@ -2430,7 +2469,7 @@ export function createNextChatHarness(runtime: ChatRuntime, deps: NextChatHarnes
     closeQueuePanel(false);
     closeRewindPicker();
     if (blockViewer !== null) closeBlockViewer();
-    paletteEntries = buildPaletteEntries(renderModeState.mode, shellPaletteEntries());
+    paletteEntries = buildNextPaletteEntries();
     paletteState = paletteOpenState(filterPaletteRows('', paletteEntries));
     controller.blur(); // 面板接管键盘（查询进面板，不进草稿）
     invalidate();
@@ -2456,7 +2495,7 @@ export function createNextChatHarness(runtime: ChatRuntime, deps: NextChatHarnes
   /** 模式切换后重建面板条目（modeSupport badge 与 G-03 门控随模式变化；保留查询与归一高亮） */
   function rebuildPaletteEntriesForMode(): void {
     if (!paletteState.open) return;
-    paletteEntries = buildPaletteEntries(renderModeState.mode, shellPaletteEntries());
+    paletteEntries = buildNextPaletteEntries();
     paletteState = paletteSetQuery(
       paletteState,
       paletteState.query,
@@ -3023,7 +3062,7 @@ export function createNextChatHarness(runtime: ChatRuntime, deps: NextChatHarnes
     ) {
       return;
     }
-    runSharedCommand({ name: parsed.raw, rest: parsed.rest }, runtime, commandIo);
+    void runSharedCommand({ name: parsed.raw, rest: parsed.rest }, runtime, commandIo);
   }
 
   // —— turn 流桥与终态去重 ——

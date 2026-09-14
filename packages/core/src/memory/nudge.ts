@@ -15,7 +15,7 @@ import { SessionWriter } from '../session/writer.js';
 import { ToolRegistry } from '../tools/registry.js';
 import type { ToolDefinition } from '../tools/types.js';
 import { assembleMemorySnapshot, type MemoryStore } from './store.js';
-import { createMemoryTool } from './tool.js';
+import { createMemoryToolForPolicy } from './mode.js';
 import { PendingMemoryStore } from './pending.js';
 
 /** 复盘 turn 的独立系统提示（经 memory/snapshot 事件冻结进临时会话，与主对话提示互不影响） */
@@ -147,26 +147,19 @@ export async function runNudgeReview(options: NudgeOptions): Promise<NudgeResult
   }
 }
 
-/** 按模式构造 memory 工具：auto = 直写；ask = 暂存（工具名保持 memory，模型无感差异） */
+/**
+ * 按模式构造 memory 工具（保留旧签名，三壳既有调用不受影响）：
+ * auto = 直写；ask = 暂存（工具名保持 memory，模型无感差异）。
+ * 实现委托 createMemoryToolForPolicy——模式语义只有一份（P7-A / H-21）。
+ */
 export function createMemoryToolForMode(
   store: MemoryStore,
   mode: NudgeMode,
   pending: PendingMemoryStore | undefined,
   sessionId: string,
 ): ToolDefinition {
-  if (mode === 'ask') {
-    if (pending === undefined) throw new Error('nudge: ask 模式需要 pending store');
-    return createMemoryTool({
-      apply: async (ops) => {
-        const stagedItem = await pending.stage(sessionId, ops);
-        return {
-          ok: true,
-          warnings: [],
-          files: [],
-          stagedId: stagedItem.id,
-        };
-      },
-    });
-  }
-  return createMemoryTool(store);
+  if (mode === 'ask' && pending === undefined) throw new Error('nudge: ask 模式需要 pending store');
+  const tool = createMemoryToolForPolicy(store, mode, pending !== undefined ? { pending, sessionId } : { sessionId });
+  if (tool === undefined) throw new Error(`nudge: 模式 ${mode} 不装配 memory 工具`);
+  return tool;
 }

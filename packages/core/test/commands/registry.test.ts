@@ -1,12 +1,12 @@
-// 注册表结构测试：23 条全部注册（P3-A 加性扩容 15→23：G-54~G-90 补齐）、shellOnly 标记
-// （mode/reasoning/minimal/fullscreen + P3-A 批次 session-info/export/timeline/doctor/
-// memory/skills/plugins/mcps）、分组/别名/参数说明、分发行为。
+// 注册表结构测试：29 条全部注册（P3-A 加性 15→23 + P7 加性 23→29：会话能力 5 + 工具面 1）、
+// shellOnly 标记（mode/reasoning/minimal/fullscreen + P3-A 批次 session-info/export/timeline/
+// doctor/memory/skills/plugins/mcps）、分组/别名/参数说明、分发行为。
 import { describe, expect, it } from 'vitest';
 import { CORE_COMMANDS, parseCoreCommand, runCoreCommand } from '../../src/commands/index.js';
 import { execCommand, makeRecordingCtx } from './helpers.js';
 
 describe('CORE_COMMANDS 注册表结构', () => {
-  it('23 条命令全部注册，id 不带 /，声明顺序按 group 聚簇（P3-A 加性：G-54~G-90 补齐）', () => {
+  it('29 条命令全部注册，id 不带 /，声明顺序按 group 聚簇（P7 加性）', () => {
     expect(CORE_COMMANDS.map((c) => c.id)).toEqual([
       'new',
       'sessions',
@@ -14,6 +14,10 @@ describe('CORE_COMMANDS 注册表结构', () => {
       'session-info',
       'fork',
       'export',
+      'search',
+      'reindex',
+      'import',
+      'title',
       'undo',
       'redo',
       'timeline',
@@ -23,12 +27,14 @@ describe('CORE_COMMANDS 注册表结构', () => {
       'skills',
       'plugins',
       'mcps',
+      'tools',
       'mode',
       'reasoning',
       'minimal',
       'fullscreen',
       'context',
       'compact',
+      'compact-layers',
       'memory',
       'tasks',
     ]);
@@ -37,7 +43,7 @@ describe('CORE_COMMANDS 注册表结构', () => {
     }
   });
 
-  it('11 条 core 实现（有 run）；shellOnly 12 条仅元数据（P2-C 4 条 + P3-A 批次 8 条）', () => {
+  it('17 条 core 实现（有 run）；shellOnly 12 条仅元数据（P2-C 4 条 + P3-A 批次 8 条）', () => {
     const shellOnly = CORE_COMMANDS.filter((c) => c.shellOnly === true).map((c) => c.id);
     // 期望顺序 = CORE_COMMANDS 声明顺序（memory 归「上下文」簇，故在 P2-C 模式簇之后）
     expect(shellOnly).toEqual([
@@ -64,12 +70,18 @@ describe('CORE_COMMANDS 注册表结构', () => {
       'sessions',
       'resume',
       'fork',
+      'search',
+      'reindex',
+      'import',
+      'title',
       'undo',
       'redo',
       'help',
       'exit',
+      'tools',
       'context',
       'compact',
+      'compact-layers',
       'tasks',
     ]);
   });
@@ -93,7 +105,21 @@ describe('CORE_COMMANDS 注册表结构', () => {
       expect(c.summary.length).toBeGreaterThan(0);
     }
     const withArgs = CORE_COMMANDS.filter((c) => c.argsSpec !== undefined).map((c) => c.id);
-    expect(withArgs).toEqual(['sessions', 'resume', 'fork', 'export', 'undo', 'mode', 'reasoning', 'compact']);
+    expect(withArgs).toEqual([
+      'sessions',
+      'resume',
+      'fork',
+      'export',
+      'search',
+      'import',
+      'title',
+      'undo',
+      'tools',
+      'mode',
+      'reasoning',
+      'compact',
+      'compact-layers',
+    ]);
     expect(CORE_COMMANDS.find((c) => c.id === 'undo')?.argsSpec).toBe('[n] [--dry-run]');
   });
 

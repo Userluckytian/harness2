@@ -269,6 +269,56 @@ describe('P1-1 默认壳全命令枚举：无 shellOnly 假入口', () => {
   });
 });
 
+// —— (a3) P7 新命令在默认壳（legacy/ink 共用分发）可执行 ——
+// 机器证据：A/B/C 三棒接线进命令面的 6 条新命令都**非 shellOnly**（core 有真执行体），
+// 默认壳表不接管，逐条经 core runCoreCommand 产出真输出（无「由界面层实现」兜底）。
+describe('P7 新命令在默认壳可执行（search/reindex/import/title/compact-layers/tools）', () => {
+  const P7_NEW_IDS = ['search', 'reindex', 'import', 'title', 'compact-layers', 'tools'] as const;
+
+  it('core 有真执行体且默认壳表不接管（非 shellOnly，无假入口）', () => {
+    const { runtime } = makeShellRuntime();
+    const dispatch = createShellCommandDispatcher();
+    for (const id of P7_NEW_IDS) {
+      expect(CORE_COMMAND_META.find((m) => m.id === id)?.shellOnly, `/${id} 不应为 shellOnly`).toBeUndefined();
+      expect(dispatch(id, '', makeShellCtx(runtime, [])), `/${id} 不应被壳表接管`).toBe(false);
+    }
+  });
+
+  it('逐条 runCoreCommand 产出真输出（含会话能力与工具面）', async () => {
+    const tr = await createTestRuntime();
+    running.push(tr);
+    const lines: string[] = [];
+    const ctx: CommandContext = {
+      print: (t) => lines.push(t),
+      manager: tr.runtime.sessionManager,
+      cwd: tr.runtime.root,
+      current: () => tr.runtime.getCurrent(),
+      switchSession: (id) => tr.runtime.switchSession(id, { print: (t) => lines.push(t) }),
+      requestExit: () => undefined,
+      snapshots: () => undefined,
+      contextUsage: () => 0.05,
+      toolRegistry: () => tr.runtime.toolRegistry?.() ?? tr.runtime.tools,
+      toolSelection: () => tr.runtime.toolSelection?.(),
+      configPath: () => tr.runtime.configPath?.(),
+    };
+    const cases: Array<{ line: string; match: RegExp }> = [
+      { line: '/reindex', match: /索引重建/ },
+      { line: '/search 关键词', match: /命中|无命中/ },
+      { line: '/import /no/such/file.zip', match: /导入失败/ },
+      { line: '/title', match: /标题：/ },
+      { line: '/compact-layers', match: /未执行压缩|已执行分层压缩/ },
+      { line: '/tools list', match: /工具 \d+ 个/ },
+    ];
+    for (const c of cases) {
+      lines.length = 0;
+      await runCoreCommand(parseCoreCommand(c.line)!, ctx);
+      const out = lines.join('\n');
+      expect(out, `${c.line} 无 core 输出`).toMatch(c.match);
+      expect(out, `${c.line} 落 shellOnly 兜底`).not.toContain('由界面层实现');
+    }
+  });
+});
+
 // —— (b) core 命令经 runCoreCommand 执行 ——
 
 describe('core 命令经 runCoreCommand 执行', () => {
@@ -374,9 +424,9 @@ describe('三处入口分发结果一致（同一输入同输出）', () => {
       legacyLines.length = 0;
       inkLines.length = 0;
       const parsed = parseCoreCommand(line)!;
-      void runCoreCommand(parsed, legacyCtx);
+      await runCoreCommand(parsed, legacyCtx); // P7：/compact 有活动会话 = 异步分层压缩，须 await
       const fromLegacy = [...legacyLines];
-      runSharedCommand({ name: parsed.raw, rest: parsed.rest }, tr.runtime, io);
+      await runSharedCommand({ name: parsed.raw, rest: parsed.rest }, tr.runtime, io);
       expect(inkLines).toEqual(fromLegacy);
       expect(fromLegacy.length).toBeGreaterThan(0);
     }

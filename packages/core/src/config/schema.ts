@@ -4,6 +4,9 @@
 import { redactSecrets } from './redact.js';
 // plugins/types 对本模块只有 type-only 引用（编译期擦除），此处反向引入其名称常量不构成运行时环
 import { PLUGIN_NAME_PATTERN } from '../plugins/types.js';
+// tools 侧两个纯常量模块（无 config 依赖，不构成运行时环）：工具名约束与工具集名单
+import { TOOL_NAME_PATTERN } from '../tools/types.js';
+import { TOOLSET_NAMES } from '../tools/toolsets.js';
 
 /** 模型条目（仅容量元数据；协议行为由 provider 实现决定） */
 export interface ModelEntry {
@@ -53,6 +56,21 @@ export interface MemoryConfig {
 
 export const MEMORY_MODES: readonly MemoryMode[] = ['off', 'ask', 'auto'];
 export const DEFAULT_MEMORY_CONFIG: MemoryConfig = { mode: 'off', nudgeInterval: 10 };
+
+/**
+ * Skills 配置（P7-A H-22 加性段）：authoring = 经验造技能开关。
+ *   - 缺省/未配置 = off（**默认关闭**，尊重最小授权：模型默认不能提交技能提案）；
+ *   - 'on' = 装配层注册 skill_author 工具（只提案，不落盘；审批走 `harness2 skill approve`）。
+ * 本段为可选段：未配置时 HarnessConfig 上不出现该字段（旧字面量配置与快照不变）。
+ */
+export type SkillAuthoringMode = 'off' | 'on';
+
+export interface SkillsConfig {
+  /** 经验造技能开关（off = 不注册 skill_author；缺省 off） */
+  authoring?: SkillAuthoringMode;
+}
+
+export const SKILL_AUTHORING_MODES: readonly SkillAuthoringMode[] = ['off', 'on'];
 
 /**
  * 浏览器工具配置（阶段 7）：enabled=false 不注册浏览器工具；
@@ -121,6 +139,22 @@ export interface SubagentConfig {
 }
 
 export const DEFAULT_SUBAGENT_CONFIG: SubagentConfig = { maxDepth: 1, maxTurns: 25 };
+
+/**
+ * 工具面配置（P7-C H-30/H-31 加性段）：工具集 + 逐工具开关。
+ * 组合语义（唯一表述见 tools/selection.ts 文件头，两处必须一致）：
+ *   - 无本段（或空对象）= 全量启用（P7 之前的既有行为，零回归）；
+ *   - toolset = 工具集名（见 TOOLSET_NAMES），基线 = 该套成员（按已注册工具求交）；
+ *   - enable[name] 逐工具覆盖：true 加入 / false 剔除，**优先级高于 toolset**；
+ *   - 禁用的工具既不进模型工具表（ChatRequest.tools），也不可被调用（注册表已剔除）。
+ * 本段为可选段：未配置时 HarnessConfig 上不出现该字段（旧字面量配置与快照不变）。
+ */
+export interface ToolsConfig {
+  /** 工具集名（read-only / coding / research / ops / all）；缺省 = 不裁剪 */
+  toolset?: string;
+  /** 逐工具开关：true 启用 / false 禁用（覆盖 toolset；键须匹配 ^[a-z0-9_]+$） */
+  enable?: Record<string, boolean>;
+}
 
 /**
  * IM 网关渠道配置（阶段 9）：DM/群策略三态，缺省 allowlist（防滥用）。
@@ -234,6 +268,10 @@ export interface HarnessConfig {
   plugins: PluginsConfig;
   mcpServers: McpServersConfig;
   subagent: SubagentConfig;
+  /** 工具面配置（P7-C 加性；可选——缺省/未配置 = 全量启用，零回归） */
+  tools?: ToolsConfig;
+  /** Skills 配置（P7-A 加性；可选——缺省/未配置 = authoring off） */
+  skills?: SkillsConfig;
   /** IM 网关配置（阶段 9；可选——缺省/未配置 = 零网关行为） */
   gateways?: GatewaysConfig;
   /** UI 渲染配置（P2-C 加性；可选——缺省/未配置 = 壳层缺省 fullscreen） */
@@ -293,6 +331,8 @@ const KNOWN_TOP_KEYS = new Set([
   'plugins',
   'mcpServers',
   'subagent',
+  'tools',
+  'skills',
   'gateways',
   'ui',
   'scrollback',
@@ -314,6 +354,8 @@ const BASH_KNOWN_KEYS = new Set(['shell']);
 const PLUGINS_KNOWN_KEYS = new Set(['enabled', 'allow']);
 const MCP_SERVER_KNOWN_KEYS = new Set(['command', 'args', 'env', 'cwd', 'url', 'headers']);
 const SUBAGENT_KNOWN_KEYS = new Set(['maxDepth', 'maxTurns']);
+const TOOLS_KNOWN_KEYS = new Set(['toolset', 'enable']);
+const SKILLS_KNOWN_KEYS = new Set(['authoring']);
 const GATEWAYS_KNOWN_KEYS = new Set(['qq', 'feishu']);
 const GATEWAY_CHANNEL_KNOWN_KEYS = new Set(['enabled', 'appId', 'appSecretEnvKey', 'dmPolicy', 'groupPolicy', 'allow']);
 const UI_KNOWN_KEYS = new Set(['screen_mode', 'follow_up_behavior', 'status_line']);
@@ -705,6 +747,75 @@ export function parseConfig(raw: unknown): ConfigParseResult {
     }
   }
 
+  // —— tools（P7-C H-30/H-31 加性；缺省 = 不出现，即全量启用）——
+  // toolset 必须是 TOOLSET_NAMES 之一（拼错即报错，避免「配了但没生效」的静默）；enable 的
+  // 键必须匹配工具名约束 ^[a-z0-9_]+$（值与注册表工具名同域），值必须是布尔。
+  // 注意：enable 里可以出现**当前未注册**的工具名（MCP/插件工具装配期才知道；禁用项允许先行），
+  // 因此这里只校验形状，不与「已注册工具」做交叉校验。
+  const tools: ToolsConfig = {};
+  let toolsConfigured = false;
+  const rawTools = raw['tools'];
+  if (rawTools !== undefined) {
+    if (!isPlainObject(rawTools)) {
+      errors.push('config.tools 必须是对象');
+    } else {
+      toolsConfigured = true; // 段配置即透出（空对象 = 显式空选择语义，由 selection 层解释）
+      collectUnknownKeys(rawTools, TOOLS_KNOWN_KEYS, 'tools', warnings);
+      const toolset = rawTools['toolset'];
+      if (toolset !== undefined) {
+        if (typeof toolset !== 'string' || !TOOLSET_NAMES.includes(toolset)) {
+          errors.push(`tools.toolset 必须是 ${TOOLSET_NAMES.join(' | ')}，实际为 ${JSON.stringify(toolset)}`);
+        } else {
+          tools.toolset = toolset;
+        }
+      }
+      const enable = rawTools['enable'];
+      if (enable !== undefined) {
+        if (!isPlainObject(enable)) {
+          errors.push('tools.enable 必须是对象（工具名 → true/false）');
+        } else {
+          const parsed: Record<string, boolean> = {};
+          for (const [name, value] of Object.entries(enable)) {
+            if (!TOOL_NAME_PATTERN.test(name)) {
+              errors.push(`tools.enable 键 ${JSON.stringify(name)} 必须是合法工具名（匹配 ${TOOL_NAME_PATTERN}）`);
+              continue;
+            }
+            if (typeof value !== 'boolean') {
+              errors.push(`tools.enable.${name} 必须是布尔值，实际为 ${JSON.stringify(value)}`);
+              continue;
+            }
+            parsed[name] = value;
+          }
+          tools.enable = parsed;
+        }
+      }
+    }
+  }
+
+  // —— skills（P7-A H-22 加性；缺省 = 不出现，即 authoring off）——
+  // authoring 只接受 off|on（拼错即报错，避免「配了但没生效」的静默）；未配置 = off。
+  const skills: SkillsConfig = {};
+  let skillsConfigured = false;
+  const rawSkills = raw['skills'];
+  if (rawSkills !== undefined) {
+    if (!isPlainObject(rawSkills)) {
+      errors.push('config.skills 必须是对象');
+    } else {
+      skillsConfigured = true; // 段配置即透出（空对象 = authoring 缺省 off）
+      collectUnknownKeys(rawSkills, SKILLS_KNOWN_KEYS, 'skills', warnings);
+      const authoring = rawSkills['authoring'];
+      if (authoring !== undefined) {
+        if (typeof authoring !== 'string' || !SKILL_AUTHORING_MODES.includes(authoring as SkillAuthoringMode)) {
+          errors.push(
+            `skills.authoring 必须是 ${SKILL_AUTHORING_MODES.join(' | ')}，实际为 ${JSON.stringify(authoring)}`,
+          );
+        } else {
+          skills.authoring = authoring as SkillAuthoringMode;
+        }
+      }
+    }
+  }
+
   // —— gateways（阶段 9；缺省 = {}：零网关行为）——
   // 渠道名白名单（GATEWAY_CHANNELS）；DM/群策略缺省 allowlist（防滥用）；
   // appId 非密钥可入 config，appSecret 只走 auth.json.gateways / env（这里不校验密钥本身）。
@@ -944,6 +1055,8 @@ export function parseConfig(raw: unknown): ConfigParseResult {
       plugins,
       mcpServers,
       subagent,
+      ...(toolsConfigured ? { tools } : {}),
+      ...(skillsConfigured ? { skills } : {}),
       gateways,
       ...(uiConfigured ? { ui } : {}),
       ...(scrollbackConfigured ? { scrollback } : {}),

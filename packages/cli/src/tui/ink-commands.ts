@@ -35,12 +35,16 @@ const REPROJECT_COMMANDS = new Set(['/undo', '/redo']);
  * 入参保持 { name, rest }（name 含 / 前缀）形状——既有调用方与测试不改一字；
  * 内部经 findCoreCommand 解析别名后转 core ParsedCoreCommand。
  * 返回 { reprojected } 供上层记录（当前仅 /undo /redo 与切换会话会重投影）。
+ *
+ * P7 起为 async：会话能力命令（/search /import /title /compact-layers）与 /tools 有异步缝，
+ * 必须先 await 再回放输出行（否则转录空）。同步命令不触 await，输出仍在调用栈内同步产出
+ * （既有同步断言不变）；异步命令的调用方按 fire-and-forget（void）即可。
  */
-export function runSharedCommand(
+export async function runSharedCommand(
   parsed: { name: string; rest: string },
   runtime: ChatRuntime,
   io: InkCommandIo,
-): { reprojected: boolean } {
+): Promise<{ reprojected: boolean }> {
   const lines: string[] = [];
   const collect = (t: string): void => {
     lines.push(t);
@@ -69,11 +73,17 @@ export function runSharedCommand(
       const c = runtime.getCurrent();
       return c === null ? undefined : getContextUsage(c.dir);
     },
+    // P7-C 工具面缝（/tools list|show|select）：runtime 暴露会话绑定注册表/选择/config 路径
+    toolRegistry: () => runtime.toolRegistry?.() ?? runtime.tools,
+    toolSelection: () => runtime.toolSelection?.(),
+    configPath: () => runtime.configPath?.(),
   };
   const beforeId = runtime.getCurrent()?.id ?? null;
-  // 本文件注入的缝全为同步（不注入 compact），runCoreCommand 实际同步完成；void 标注
-  // 类型上的 Promise 可能性（core 命令允许异步缝）。
-  void runCoreCommand({ raw: parsed.name, id: findCoreCommand(parsed.name)?.id ?? null, rest: parsed.rest }, ctx);
+  const result = runCoreCommand(
+    { raw: parsed.name, id: findCoreCommand(parsed.name)?.id ?? null, rest: parsed.rest },
+    ctx,
+  );
+  if (result instanceof Promise) await result;
   const afterId = runtime.getCurrent()?.id ?? null;
   const reprojected = REPROJECT_COMMANDS.has(parsed.name) || beforeId !== afterId;
   if (reprojected) io.reproject();

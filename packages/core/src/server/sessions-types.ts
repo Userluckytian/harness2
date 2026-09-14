@@ -19,9 +19,11 @@ import { SessionManager } from '../session/manager.js';
 import type { LoadedEvent } from '../session/reader.js';
 import type { AnySessionEvent, SessionHeaderPayload } from '../session/types.js';
 import type { SkillStore } from '../skills/store.js';
+import type { SkillAuthoringStore } from '../skills/authoring.js';
 import type { ToolExecutionRequest } from '../tools/executor.js';
 import type { BrowserPool } from '../tools/predefined/browser.js';
 import { ToolRegistry } from '../tools/registry.js';
+import type { ToolSelectionConfig } from '../tools/selection.js';
 import type { ApprovalDecision, ApprovalInput, ToolResult } from '../tools/types.js';
 
 export class HubError extends Error {
@@ -139,6 +141,12 @@ export interface SessionHubOptions {
   subagent?: SessionHubSubagent;
   /** Skills 装配（阶段 10）——每次 turn 扫描两级目录并把列表追加进 system（skill 工具在共享注册表） */
   skills?: SkillStore;
+  /** P7-A H-22 加性：经验造技能 store（skills.authoring=on 时启动器注入）。缺省 = 不注册 skill_author */
+  skillsAuthoring?: SkillAuthoringStore;
+  /** P7-C H-43 加性：是否注册 run_script（缺省 false）。RPC 服务按会话绑审批缝，内层调用不可绕过审批 */
+  script?: boolean;
+  /** P7-C H-30 加性：工具面选择配置（config.tools）。per-turn 注册表据此过滤；缺省 = 不裁剪（零回归） */
+  toolsConfig?: ToolSelectionConfig;
   /** 插件装配（阶段 8）——插件事件订阅的桥接（emitSessionEvent） */
   plugins?: SessionHubPlugins;
   hooks?: SessionHubHooks;

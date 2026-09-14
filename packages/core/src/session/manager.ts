@@ -10,10 +10,21 @@
 // 列表/搜索为只读（loadSession 不截断日志）；resume 打开 writer，沿用其崩溃残行恢复语义。
 import { randomBytes } from 'node:crypto';
 import { createHash } from 'node:crypto';
-import { existsSync, readdirSync, statSync } from 'node:fs';
+import { existsSync, readdirSync, statSync, type Dirent } from 'node:fs';
 import { homedir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { computeProjection, loadSession, type ProjectionMessage } from './reader.js';
+import { SessionSearchIndex, type IndexedSearchOptions } from './searchIndex.js';
+import {
+  autoTitleSession,
+  clearSessionTitle,
+  readSessionTitle,
+  writeSessionTitle,
+  type AutoTitleOptions,
+  type AutoTitleResult,
+  type SessionTitle,
+  type TitleSource,
+} from './titles.js';
 import { SESSION_LOG_FILE, type SessionHeaderPayload } from './types.js';
 import { SessionWriter } from './writer.js';
 
@@ -73,11 +84,36 @@ export interface SessionSummary {
   messageCount: number;
   /** 日志最后一个事件的 seq */
   lastSeq: number;
+  /** H-14 会话标题（title.json；未生成时缺省，加性字段，旧消费方零影响） */
+  title?: string;
 }
 
 export interface SessionSearchHit extends SessionSummary {
   /** 命中的消息片段（≤60 字，最多 3 条） */
   hits: Array<{ role: ProjectionMessage['role']; seq: number; snippet: string }>;
+}
+
+/**
+ * H-11 索引化检索命中：在 SessionSearchHit 形状上叠加索引专有信息，
+ * 使既有壳渲染代码（消费 `hits`/摘要字段）零改动即可切到索引检索。
+ */
+export interface IndexedSessionSearchHit extends SessionSearchHit {
+  /** 会话内最高命中得分（同一次检索内可比） */
+  score: number;
+  /** 查询分词结果（壳可展示/调试；供「摘要」注入方复用） */
+  matchedTokens: string[];
+}
+
+/** 索引重建统计（/reindex 等入口的输出） */
+export interface ReindexReport {
+  /** 处理的会话数 */
+  sessions: number;
+  /** 建成/更新的索引数（含失败跳过） */
+  indexed: number;
+  /** 索引中的消息总数 */
+  messages: number;
+  /** 重建失败的会话目录（如实登记，不吞） */
+  failures: Array<{ id: string; error: string }>;
 }
 
 export interface SessionCreateResult {
@@ -106,6 +142,7 @@ function summarizeSession(id: string, dir: string): SessionSummary {
     mtimeMs = 0;
   }
   const firstUser = messages.find((m) => m.role === 'user');
+  const title = readSessionTitle(dir);
   return {
     id,
     dir,
@@ -114,6 +151,7 @@ function summarizeSession(id: string, dir: string): SessionSummary {
     firstUserText: firstUser ? summarize(firstUser.text) : '',
     messageCount: messages.length,
     lastSeq: session.events.at(-1)?.event.seq ?? 0,
+    ...(title !== null ? { title: title.title } : {}),
   };
 }
 
@@ -227,6 +265,115 @@ export class SessionManager {
         return hits.length > 0 ? { ...s, hits } : null;
       })
       .filter((x): x is SessionSearchHit => x !== null);
+  }
+
+  /**
+   * 遍历会话目录（id + dir），不解析日志内容——索引化检索/重建的公共枚举。
+   * cwd 提供时只访问该 cwd 组；组目录缺失/不可读时安静跳过（只读容错）。
+   */
+  private *sessionDirs(cwd?: string): Generator<{ id: string; dir: string }> {
+    const groups = cwd === undefined ? this.listGroupDirs() : [this.groupDir(cwd)];
+    for (const group of groups) {
+      if (!existsSync(group)) continue;
+      let entries: Dirent[];
+      try {
+        entries = readdirSync(group, { withFileTypes: true });
+      } catch {
+        continue; // 组目录被并发删除/无权限：跳过
+      }
+      for (const entry of entries) {
+        if (!entry.isDirectory()) continue;
+        const dir = join(group, entry.name);
+        if (!existsSync(join(dir, SESSION_LOG_FILE))) continue;
+        yield { id: entry.name, dir };
+      }
+    }
+  }
+
+  /**
+   * H-11 索引化全文检索：每个会话先增量同步自己的倒排索引（索引缺失自动重建），
+   * 再在索引上检索；只有命中的会话才做一次摘要求值（loadSession）。
+   * 语义差异（相对 search 的线性子串）：查询先分词（NFKC + 小写 + CJK 单字/双字），
+   * 多 token 默认 AND（全部命中），与 FTS5 缺省口径一致；mode:'or' 可放宽。
+   * 返回 mtime 倒序（与 list/search 一致），每个会话最多 3 条命中片段。
+   */
+  searchIndexed(cwd: string | undefined, query: string, opts: IndexedSearchOptions = {}): IndexedSessionSearchHit[] {
+    if (query.trim().length === 0) return [];
+    const results: IndexedSessionSearchHit[] = [];
+    for (const { id, dir } of this.sessionDirs(cwd)) {
+      let hit: IndexedSessionSearchHit;
+      try {
+        const result = new SessionSearchIndex(dir).search(query, opts);
+        if (result.hits.length === 0) continue;
+        hit = {
+          ...summarizeSession(id, dir),
+          hits: result.hits.slice(0, 3).map((h) => ({ role: h.role, seq: h.seq, snippet: h.snippet })),
+          score: result.hits[0]?.score ?? 0,
+          matchedTokens: result.tokens,
+        };
+      } catch {
+        continue; // 损坏会话不阻塞检索（与 list/search 同口径）
+      }
+      results.push(hit);
+    }
+    return results.sort((a, b) => b.mtimeMs - a.mtimeMs);
+  }
+
+  /**
+   * 重建索引（派生物，可随时全量重建）：cwd 提供时只处理该组，否则全库。
+   * 失败逐会话登记（failures），不抛错中断——索引缺失只影响检索速度，不影响事实源。
+   */
+  reindex(cwd?: string): ReindexReport {
+    const report: ReindexReport = { sessions: 0, indexed: 0, messages: 0, failures: [] };
+    for (const { id, dir } of this.sessionDirs(cwd)) {
+      report.sessions += 1;
+      try {
+        const data = new SessionSearchIndex(dir).rebuild();
+        report.indexed += 1;
+        report.messages += data.messages.length;
+      } catch (e) {
+        report.failures.push({ id, error: (e as Error | undefined)?.message ?? String(e) });
+      }
+    }
+    return report;
+  }
+
+  /** 删除索引文件（cwd 提供时只处理该组）；返回删除数量。事实源零触碰。 */
+  dropIndexes(cwd?: string): number {
+    let removed = 0;
+    for (const { dir } of this.sessionDirs(cwd)) {
+      try {
+        if (new SessionSearchIndex(dir).remove()) removed += 1;
+      } catch {
+        // 删除失败（并发删除等）：忽略，索引本就是派生缓存
+      }
+    }
+    return removed;
+  }
+
+  // —— H-14 会话标题（title.json 辅助文件；事实源零触碰） ——
+
+  /** 读取某会话标题（未生成 → null）。cwd 提供时按该组定位。 */
+  titleOf(id: string, opts: { cwd?: string } = {}): SessionTitle | null {
+    return readSessionTitle(this.locate(id, opts));
+  }
+
+  /** 人工重命名（source: 'manual'）。标题写入 title.json，不追加任何事件。 */
+  rename(id: string, title: string, opts: { cwd?: string; source?: TitleSource } = {}): SessionTitle {
+    const dir = this.locate(id, opts);
+    return writeSessionTitle(dir, title, { source: opts.source ?? 'manual' });
+  }
+
+  /** 自动标题（启发式 + 可选注入精炼）；已有标题默认复用。 */
+  async autoTitle(id: string, opts: AutoTitleOptions & { cwd?: string } = {}): Promise<AutoTitleResult> {
+    const { cwd, ...rest } = opts;
+    const dir = this.locate(id, cwd !== undefined ? { cwd } : {});
+    return autoTitleSession(dir, rest);
+  }
+
+  /** 清空标题（返回是否实际删除）。 */
+  clearTitle(id: string, opts: { cwd?: string } = {}): boolean {
+    return clearSessionTitle(this.locate(id, opts));
   }
 
   /**

@@ -147,6 +147,12 @@ export async function runLegacyReadlineChat(options: ChatOptions = {}): Promise<
       const current = runtime.getCurrent();
       return current !== null ? getContextUsage(current.dir) : undefined;
     },
+    // P7-C 工具面缝（/tools list|show|select）：runtime 暴露会话绑定注册表、选择配置与 config 路径
+    toolRegistry: () => runtime.toolRegistry?.() ?? runtime.tools,
+    toolSelection: () => runtime.toolSelection?.(),
+    configPath: () => runtime.configPath?.(),
+    // compact / cronJobs 缝：core /compact 默认路径 = 分层压缩（有活动会话直接执行）；
+    // ChatRuntime 无手动单层压缩句柄与 cron 存储句柄，如实不注入（core 降级文案与改造前一致）。
     // compact / cronJobs 缝：ChatRuntime 无手动压缩句柄与 cron 存储句柄，如实不注入
     // （core 降级文案与本壳改造前输出逐字一致，不伪造执行）
   };

@@ -68,14 +68,16 @@ describe('buildPaletteEntries（G-50 合并来源）', () => {
   });
 
   it('壳条目追加在 core 之后，缺省分组「通用」，同样参与模式限定', () => {
+    // P7 加性：core catalog 新增 /search（会话全文检索）——壳 fixture 改用 /expand（仍是 next 壳命令）
+    // 避免与 core id 撞名（buildPaletteEntries 会剔除 core 已有名的壳条目）。
     const entries = buildPaletteEntries('fullscreen', [
       { name: 'plan', summary: '声明 plan 模式', group: '模式' },
-      { name: 'search', summary: '滚动区文本搜索' },
+      { name: 'expand', summary: '重放转录' },
     ]);
-    expect(entries.slice(-2).map((e) => e.name)).toEqual(['plan', 'search']);
+    expect(entries.slice(-2).map((e) => e.name)).toEqual(['plan', 'expand']);
     expect(entries.find((e) => e.name === 'plan')!.group).toBe('模式');
-    expect(entries.find((e) => e.name === 'search')!.group).toBe('通用');
-    expect(entries.find((e) => e.name === 'search')!.source).toBe('shell');
+    expect(entries.find((e) => e.name === 'expand')!.group).toBe('通用');
+    expect(entries.find((e) => e.name === 'expand')!.source).toBe('shell');
   });
 });
 

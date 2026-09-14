@@ -564,3 +564,30 @@ describe('redactSecrets / redactedSummary / redactObject', () => {
     expect((obj as { status: number }).status).toBe(401);
   });
 });
+
+// P7-A H-22 加性配置段：skills.authoring（off|on，缺省不出现 = off）
+describe('skills.authoring（P7-A 加性配置段）', () => {
+  const base = (): Record<string, unknown> => JSON.parse(BASE_CONFIG) as Record<string, unknown>;
+
+  it('缺省：不出现 skills 段（authoring 缺省 off，旧字面量配置零回归）', () => {
+    const r = parseConfig(base());
+    expect(r.errors).toEqual([]);
+    expect(r.config?.skills).toBeUndefined();
+  });
+
+  it("authoring='on' 透出；非法值报错", () => {
+    const r = parseConfig({ ...base(), skills: { authoring: 'on' } });
+    expect(r.errors).toEqual([]);
+    expect(r.config?.skills?.authoring).toBe('on');
+
+    const bad = parseConfig({ ...base(), skills: { authoring: 'yes' } });
+    expect(bad.config).toBeNull();
+    expect(bad.errors.some((e) => e.includes('skills.authoring'))).toBe(true);
+  });
+
+  it('未知字段告警（不静默）', () => {
+    const r = parseConfig({ ...base(), skills: { authoring: 'off', nope: 1 } });
+    expect(r.warnings.some((w) => w.includes('skills: 未知字段 "nope"'))).toBe(true);
+    expect(r.config?.skills?.authoring).toBe('off');
+  });
+});

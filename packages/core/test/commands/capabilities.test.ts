@@ -1,4 +1,5 @@
-// describeCapabilities 结构测试：命令数=23（P3-A 加性扩容 15→23：G-54~G-90 补齐）、shellOnly 标记、modes 非空、工具表、审批策略摘要。
+// describeCapabilities 结构测试：命令数=29（P3-A 加性 15→23 + P7 加性 23→29：会话能力 5 + 工具面 1）、
+// shellOnly 标记、modes 非空、工具表、审批策略摘要。
 import { describe, expect, it } from 'vitest';
 import { DEFAULT_SAFE_TOOLS } from '../../src/approval/policy.js';
 import { describeCapabilities } from '../../src/commands/capabilities.js';
@@ -6,9 +7,9 @@ import { APPROVAL_MODES } from '../../src/config/schema.js';
 import { builtinTools } from '../../src/tools/predefined/index.js';
 
 describe('describeCapabilities', () => {
-  it('commands = 全部 23 条元数据（id/summary/argsSpec 与注册表一致；P3-A 加性）', () => {
+  it('commands = 全部 29 条元数据（id/summary/argsSpec 与注册表一致；P7 加性）', () => {
     const caps = describeCapabilities();
-    expect(caps.commands.length).toBe(23);
+    expect(caps.commands.length).toBe(29);
     expect(caps.commands.map((c) => c.id)).toEqual([
       'new',
       'sessions',
@@ -16,6 +17,10 @@ describe('describeCapabilities', () => {
       'session-info',
       'fork',
       'export',
+      'search',
+      'reindex',
+      'import',
+      'title',
       'undo',
       'redo',
       'timeline',
@@ -25,12 +30,14 @@ describe('describeCapabilities', () => {
       'skills',
       'plugins',
       'mcps',
+      'tools',
       'mode',
       'reasoning',
       'minimal',
       'fullscreen',
       'context',
       'compact',
+      'compact-layers',
       'memory',
       'tasks',
     ]);
@@ -38,9 +45,14 @@ describe('describeCapabilities', () => {
     expect(caps.commands.find((c) => c.id === 'undo')?.argsSpec).toBe('[n] [--dry-run]');
     expect(caps.commands.find((c) => c.id === 'new')?.aliases).toEqual(['clear']);
     expect(caps.commands.find((c) => c.id === 'undo')?.aliases).toEqual(['rewind']);
+    // P7 新增 6 条非 shellOnly（core 有真执行体，无假入口）
+    for (const id of ['search', 'reindex', 'import', 'title', 'tools', 'compact-layers']) {
+      expect(caps.commands.find((c) => c.id === id)?.shellOnly).toBeUndefined();
+    }
+    expect(caps.commands.find((c) => c.id === 'search')?.argsSpec).toBe('<查询> [--or] [--limit N]');
   });
 
-  it('shellOnly 12 条带标记（P2-C 4 条 + P3-A 批次 8 条），其余 11 条不带（core 实现）', () => {
+  it('shellOnly 12 条带标记（P2-C 4 条 + P3-A 批次 8 条），其余 17 条不带（core 实现）', () => {
     const caps = describeCapabilities();
     const shellOnly = new Set([
       'mode',
