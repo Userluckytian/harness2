@@ -6,53 +6,31 @@
 // 原内建 textarea / send() / 草稿读写 / @引用解析随之删除（避免两套输入互相打架）；
 // 这里只保留转录渲染，作为视图环的 `chat` 视图内容。
 // 数据源（store/controller）由调用方经 props 传入（视图环从会话对象取），不在此抓全局单例。
+//
+// P6-C 收敛（D-6x 模块边界）：工具卡与审批条不再是本文件的内联实现 ——
+//   tool 行 → `renderer/tool`（ToolCard：单一视图卡片 + D-86 的 openFile/inspect 路由）
+//   审批条 → `renderer/approval`（ApprovalBar：与右栏审批中心同一套卡片实现）
+// 本文件只负责「聊天条目 → 该用哪个卡片」的装配（数据由 store/controller 注入）。
 import { useEffect, useRef, useSyncExternalStore } from 'react';
 import type { Controller } from '../app-controller.js';
 import { displayToolName, type ChatItem } from '../chat-model.js';
 import { composeQueueView } from '../features/composer/composer-model.js';
-import { CommandLog } from '../features/timeline/CommandLog.js';
 import { buildToolRow, isAtBottom, nextScrollTop } from '../features/timeline/execution-log.js';
+import { ApprovalBar, type ApprovalCardModel } from '../approval/index.js';
+import {
+  ToolCard,
+  controllerToolActions,
+  summarizeToolArgs,
+  toolCardFromItem,
+  toolJumpActions,
+  toolNavigation,
+} from '../tool/index.js';
 import type { AppStore } from '../store.js';
-import { DiffCard } from './DiffCard.js';
 
 /** 转录视图的数据源（store + controller 真身；由会话对象携带） */
 export interface ChatTranscriptDeps {
   readonly store: AppStore;
   readonly controller: Controller;
-}
-
-/** 参数摘要（工具行/审批按钮用；单行 ≤80 字） */
-function argsSummary(args: unknown): string {
-  if (args === undefined) return '';
-  const one = JSON.stringify(args) ?? '';
-  return one.length <= 80 ? one : `${one.slice(0, 80)}…`;
-}
-
-/** write/edit 的目标文件（args.file_path；缺失返回 undefined，供 diff 卡标题兜底） */
-function diffTargetFile(args: unknown): string | undefined {
-  if (typeof args === 'object' && args !== null) {
-    const fp = (args as Record<string, unknown>)['file_path'];
-    if (typeof fp === 'string' && fp.length > 0) return fp;
-  }
-  return undefined;
-}
-
-/** 子会话跳转按钮（阶段 8 / P4-C）：打开子会话（选中 + 全量重放 + 拉齐只读视图） */
-function SubagentJump({ childSessionId, controller }: { childSessionId: string; controller: Controller }) {
-  return (
-    <button
-      type="button"
-      className="subagent-jump"
-      title={`打开子会话 ${childSessionId} 轨迹`}
-      onClick={() => {
-        // P4-C：分栏（PaneArea）已拆除，分栏状态无渲染出口 → 走「选会话」同一路径，
-        // 不再经 assignToPane 写已废弃的 pane 绑定。
-        void controller.selectSession(childSessionId);
-      }}
-    >
-      子会话 {childSessionId} ↗
-    </button>
-  );
 }
 
 export function ChatItemView({
@@ -90,48 +68,33 @@ export function ChatItemView({
         </div>
       );
     case 'tool': {
-      const jump = item.childSessionId;
-      // B5 diff 卡片：write/edit 成功且有快照序（seq = rewind_points.jsonl 条目键）时展示真实红绿 diff
-      const showDiff = (item.tool === 'write' || item.tool === 'edit') && sessionId !== undefined;
-      const targetFile = diffTargetFile(item.args);
-      // D2：有 S7 执行视图（真实 shell/cwd/exitCode/输出归属）时优先渲染命令日志卡
+      // D2：有 S7 执行视图（真实 shell/cwd/exitCode/输出归属）时优先渲染命令日志卡；
+      // 无执行视图时 buildToolRow 按结果字段如实降级（D-86：运行中的 bash/pwsh 也是 terminal 卡片）。
       const view =
         sessionId !== undefined
           ? store.peekViews(sessionId)?.executionViews.find((v) => v.callId === item.callId)
           : undefined;
-      const commandRow = view !== undefined ? buildToolRow(item, view) : undefined;
-      const showCommandLog =
-        commandRow !== undefined &&
-        (commandRow.tool === 'bash' || commandRow.outputRef.length > 0 || commandRow.status === 'cancelled');
+      const commandRow = buildToolRow(item, view);
+      // D-86 ①/②：文件路径 → 右栏（真实现）；inspect → 轨迹视图（未装配时动作缺省 → 按钮不渲染）
+      // 登记（已知边界）：这里用**模块单例** `toolNavigation` 而非 `useToolNavigation()` 的 Context ——
+      // 生产路径两者等价（应用未包 Provider，Context 默认值就是该单例）；但测试若注入自建实例，
+      // ChatView 仍读单例会「分裂」。改法：把 ToolNavigationProvider 包到应用根，再改用 hook。
+      const jumps = toolJumpActions(toolNavigation);
+      const actions = {
+        ...controllerToolActions(controller, sessionId),
+        onOpenFile: jumps.openFile,
+        ...(jumps.inspect !== undefined ? { onInspect: jumps.inspect } : {}),
+      };
       return (
-        <div className={`tool-entry${item.result ? (item.result.ok ? 'tool-ok' : 'tool-fail') : 'tool-pending'}`}>
-          <div className={`tool-row ${item.result ? (item.result.ok ? 'tool-ok' : 'tool-fail') : 'tool-pending'}`}>
-            <span className="tool-line">
-              &gt; {displayToolName(item.tool)} ({argsSummary(item.args)})
-            </span>
-            {item.result === undefined ? (
-              <span className="tool-status">运行中…</span>
-            ) : (
-              <span className="tool-status">
-                {item.result.ok ? 'ok' : `FAILED${item.result.error !== undefined ? `: ${item.result.error}` : ''}`}
-              </span>
-            )}
-            {jump !== undefined && <SubagentJump childSessionId={jump} controller={controller} />}
-          </div>
-          {showDiff && item.result?.ok && (
-            <DiffCard
-              sessionId={sessionId}
-              seq={item.seq}
-              file={targetFile}
-              onUndo={() => void controller.undoSession(sessionId)}
-            />
-          )}
-          {showCommandLog && commandRow !== undefined && (
-            <CommandLog row={commandRow} displayName={displayToolName(item.tool)} />
-          )}
-        </div>
+        <ToolCard
+          card={toolCardFromItem(item)}
+          {...(sessionId !== undefined ? { sessionId } : {})}
+          commandRow={commandRow}
+          actions={actions}
+        />
       );
     }
+
     case 'attempt':
       return (
         <div className="attempt-row">
@@ -151,7 +114,7 @@ export function ChatItemView({
           {item.tool !== undefined ? (
             <div className="tool-row tool-pending">
               <span className="tool-line">
-                &gt; {displayToolName(item.tool)} ({argsSummary(item.args)})
+                &gt; {displayToolName(item.tool)} ({summarizeToolArgs(item.args)})
               </span>
               <span className="tool-status">运行中…</span>
             </div>
@@ -251,29 +214,18 @@ export function ChatTranscript({ streamId, store, controller }: ChatTranscriptDe
         {items.length === 0 && <div className="empty-state">发送第一条消息开始对话</div>}
       </div>
       {stream.approvals.length > 0 && (
-        <div className="approval-bar">
-          {stream.approvals.map((a) => (
-            <div key={a.requestId} className="approval-item">
-              <span>
-                允许执行 <b>{a.tool}</b>？{argsSummary(a.args)}
-              </span>
-              <button
-                type="button"
-                className="btn-allow"
-                onClick={() => void controller.respondApproval(a.requestId, 'allow')}
-              >
-                允许
-              </button>
-              <button
-                type="button"
-                className="btn-deny"
-                onClick={() => void controller.respondApproval(a.requestId, 'deny')}
-              >
-                拒绝
-              </button>
-            </div>
-          ))}
-        </div>
+        <ApprovalBar
+          approvals={stream.approvals.map((a): ApprovalCardModel => ({
+            requestId: a.requestId,
+            tool: a.tool,
+            args: a.args,
+            ...(a.scope !== undefined ? { scope: a.scope } : {}),
+            ...(a.expiresAt !== undefined ? { expiresAt: a.expiresAt } : {}),
+            ...(a.cwd !== undefined ? { cwd: a.cwd } : {}),
+          }))}
+          respondingOf={(requestId) => store.isApprovalResponding(requestId)}
+          onDecision={(requestId, decision) => void controller.respondApproval(requestId, decision)}
+        />
       )}
       {refReport !== undefined &&
         refReport.sources.length + refReport.skipped.length + refReport.notFound.length > 0 && (

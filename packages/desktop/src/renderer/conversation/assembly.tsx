@@ -1,13 +1,13 @@
-// assembly.tsx — 桌面对话页接线（P5-C）：把「视图环（P5-A）」与「composer（P5-B）」接进会话席位。
+// assembly.tsx — 桌面对话页接线（P5-C 视图环+composer；P6 接线棒补轨迹标签与 D-46 浮层）。
 //
 // 本文件是**唯一装配点**（渲染侧），只做接线，不重新实现业务语义：
-//   1. 视图环（D-30/D-32）：注册**真实存在**的视图 —— 当前只有 `chat`（转录渲染）。
-//      Trajectory 归 P6，现在不注册（不画空标签、不放点了没反应的 tab）。
+//   1. 视图环（D-30/D-32）：注册**真实存在**的视图 —— `chat`（转录渲染）+ `trajectory`
+//      （P6-A `ui-trajectory`，D-40：作为视图环里的 Trajectory 标签页，不是弹窗）。
 //   2. 视图选择（D-31）：持久选择走注入缝（`ViewSelectionPersistence`）——本文件给**内存**实现，
 //      不碰任何浏览器端持久化存储（D-14 口径，`test/layout/no-persistence` 有反向守卫），
-//      无持久源时按规则回落 `chat`。
+//      无持久源时按规则回落 `chat`。该实现**可订阅**：环外改写（D-86 ② inspect 跳轨迹）也会切视图。
 //   3. 会话绑定（D-32）：同一会话内 session 对象引用稳定（切换视图不重建会话、不重订阅）。
-//   4. 图片 URL 缓存（D-39）：`createImageUrlCache` 的 `peekUrl` 传给视图环（Chat 与未来 Trajectory 共用）。
+//   4. 图片 URL 缓存（D-39）：`createImageUrlCache` 的 `peekUrl` 传给视图环（Chat 与 Trajectory 共用）。
 //      授权读取来源：桌面桥**当前没有**图片/附件授权读取 IPC → read 恒 null（缺口登记，绝不伪造 URL）。
 //   5. composer 真实 IO（D-34/D-35/D-36/D-37）：submit 走 `app-controller.submitMessage`
 //      （最终是 bridge `op:'submit'`，intent 语义由 core 判定，桌面只投递意图）；stop 走既有取消；
@@ -22,8 +22,13 @@
 //      - ack 落定后 rejected → 上抛给 Composer（按 P0-2 语义还原草稿 + 显示原因），
 //        unknown → 交由可见队列如实标注，不假报成功；
 //      - 附件引用只取真能送出去的（图片无通道 → 不产引用、如实标 failed）。
+//   8. D-46 壳的义务：composer 以**浮层**置于全高记录表之上（`.composer-overlay`），并把实测高度
+//      经 `ComposerOverlayHost` 同时给到轨迹视图（props 注入）与 CSS 变量 `--trajectory-composer-inset`
+//      （Chat 等其它视图据此预留底部内边距）。未测量（0）时不写变量 = 不虚构预留。
+//   9. D-86 ②：轨迹视图消费者在此注册进 `toolNavigation` —— 工具卡的「查看轨迹」由此真实跳转
+//      （未注册时 `canInspect()` 为 false，工具卡不渲染该入口）。
 import { useEffect, useMemo, useRef, useSyncExternalStore } from 'react';
-import type { ReactNode } from 'react';
+import type { CSSProperties, ReactNode } from 'react';
 import { newClientMessageId } from '../../shared/ids.js';
 import { resolveFileRefs, type FileRefReader } from '../../shared/file-ref.js';
 import type { MessageReferenceShape, SubmitAckStateShape } from '../../shared/protocol.js';
@@ -31,6 +36,17 @@ import { lastTurnIdOf, type Controller } from '../app-controller.js';
 import { ChatTranscript } from '../components/ChatView.js';
 import { ConversationHeader } from '../components/ConversationHeader.js';
 import type { AppStore } from '../store.js';
+import { toolNavigation, type TrajectoryViewConsumer } from '../tool/index.js';
+import {
+  TRAJECTORY_COMPOSER_INSET_VAR,
+  TRAJECTORY_VIEW_KEY,
+  createComposerOverlayHost,
+  createTrajectoryFocusStore,
+  createTrajectoryViewDefinition,
+  useComposerOverlayInset,
+  type ComposerOverlayHost,
+  type TrajectoryFocusStore,
+} from '../trajectory/index.js';
 import {
   attachmentReference,
   DEFAULT_MAX_CONCURRENT_FILE_UPLOADS,
@@ -82,8 +98,21 @@ export function ConversationChatView({ sessionId, session }: ConversationViewPro
   return <ChatTranscript streamId={sessionId} store={session.store} controller={session.controller} />;
 }
 
-/** 会话视图注册表：只注册真实存在的视图（当前 = chat） */
-export function createDesktopConversationViewRegistry(): ConversationViewRegistry<ConversationSession> {
+/** 注册表装配可选项（P6 接线棒：D-46 的浮层测量宿主按需注入） */
+export interface DesktopViewRegistryOptions {
+  /** D-46：壳持有的 composer 浮层测量宿主（交给轨迹视图读实测预留高度） */
+  readonly composerHost?: ComposerOverlayHost;
+  /** P2-5：D-86 ② inspect 的定位通道（交给轨迹视图定位 callId/seq 对应记录） */
+  readonly focusStore?: TrajectoryFocusStore;
+}
+
+/**
+ * 会话视图注册表：只注册**真实存在**的视图 —— `chat`（P5-C 转录）+ `trajectory`
+ * （P6-A `ui-trajectory`，D-40：视图环里的 Trajectory 标签页）。注册顺序 = 标签顺序。
+ */
+export function createDesktopConversationViewRegistry(
+  options: DesktopViewRegistryOptions = {},
+): ConversationViewRegistry<ConversationSession> {
   const registry = createViewRegistry<ConversationSession>();
   registry.register({
     key: CHAT_VIEW_KEY,
@@ -91,28 +120,88 @@ export function createDesktopConversationViewRegistry(): ConversationViewRegistr
     owner: CONVERSATION_CHAT_OWNER,
     component: ConversationChatView,
   });
+  registry.register(
+    createTrajectoryViewDefinition<ConversationSession>({
+      ...(options.composerHost !== undefined ? { composerHost: options.composerHost } : {}),
+      ...(options.focusStore !== undefined ? { focusStore: options.focusStore } : {}),
+    }),
+  );
   return registry;
 }
 
+/**
+ * D-46 的壳侧测量宿主（应用单例）：`ConversationSeat` 观察 composer 浮层真实高度，
+ * 轨迹视图经 `useComposerOverlayInset` 读同一条状态 —— 一处测量、两处消费（props + CSS 变量）。
+ */
+export const conversationComposerOverlay: ComposerOverlayHost = createComposerOverlayHost();
+
+/**
+ * P2-5（D-86 ②）的定位通道（应用单例）：工具卡 inspect 的 `callId`/`seq` 经此到达轨迹视图，
+ * 打开轨迹时选中并滚动到对应记录。一处写入（消费者）、一处读取（轨迹视图），只在内存。
+ */
+export const conversationTrajectoryFocus: TrajectoryFocusStore = createTrajectoryFocusStore();
+
 /** 应用级视图注册表（渲染端单例；与 shellSlots 同层） */
-export const conversationViewRegistry = createDesktopConversationViewRegistry();
+export const conversationViewRegistry = createDesktopConversationViewRegistry({
+  composerHost: conversationComposerOverlay,
+  focusStore: conversationTrajectoryFocus,
+});
 
 /**
  * 视图选择持久缝（D-31 / D-14）：**内存**实现 —— 只在本进程存活期内记住每个会话的选择。
  * 刻意不落浏览器存储（D-14 明令）；要跨重启持久须由宿主另注入实现（如主进程配置文件通道）。
+ * `subscribe` 让**环外**改写（D-86 ② inspect 跳轨迹、测试注入）也能即时切换视图，而不必伪造点击。
  */
 export function createInMemoryViewSelectionPersistence(): ViewSelectionPersistence {
   const bySession = new Map<string, string>();
+  const listeners = new Set<() => void>();
+  const emit = (): void => {
+    for (const listener of [...listeners]) listener();
+  };
   return {
     read: (sessionId) => bySession.get(sessionId) ?? null,
     write: (sessionId, key) => {
+      const before = bySession.get(sessionId) ?? null;
       if (key === null) bySession.delete(sessionId);
       else bySession.set(sessionId, key);
+      if ((bySession.get(sessionId) ?? null) !== before) emit();
+    },
+    subscribe: (listener) => {
+      listeners.add(listener);
+      return () => {
+        listeners.delete(listener);
+      };
     },
   };
 }
 
 export const conversationViewPersistence = createInMemoryViewSelectionPersistence();
+
+/**
+ * D-86 ②：把轨迹视图登记为 `inspect` 的消费者。工具卡的「查看轨迹」由此真实可见并生效：
+ *   * 未注册时 `toolNavigation.canInspect()` 为 false → 工具卡不渲染该入口（不摆死按钮）；
+ *   * 已注册时点击 → 记下 `callId`/`seq` 定位请求（P2-5）并把**该会话**的视图选择写成 `trajectory`，
+ *     视图环经 `ViewSelectionPersistence.subscribe` 即时切过去（不伪造点击、不新开第二个详情视图）。
+ */
+export function createTrajectoryInspectConsumer(
+  persistence: ViewSelectionPersistence,
+  viewKey: string = TRAJECTORY_VIEW_KEY,
+  focusStore?: TrajectoryFocusStore,
+): TrajectoryViewConsumer {
+  return {
+    key: viewKey,
+    open: (request) => {
+      if (request.sessionId.length === 0) return;
+      focusStore?.request(request);
+      persistence.write(request.sessionId, viewKey);
+    },
+  };
+}
+
+/** 应用级注册（disposer 导出供测试/热重载回收；正常生命周期与进程同寿） */
+export const disposeTrajectoryInspect = toolNavigation.registerTrajectoryView(
+  createTrajectoryInspectConsumer(conversationViewPersistence, TRAJECTORY_VIEW_KEY, conversationTrajectoryFocus),
+);
 
 /**
  * D-39 授权读取（宿主注入）。**缺口登记**：preload 暴露的 IPC 面（见 shared/protocol.ts `Harness2Api`）
@@ -296,6 +385,8 @@ export interface ConversationSeatProps {
   readonly readRef?: FileRefReader;
   /** 预组装的 composer port（测试/诊断用；缺省内部按 deps 组装） */
   readonly port?: ConversationComposerPort;
+  /** D-46：composer 浮层测量宿主（缺省 = 应用单例 conversationComposerOverlay） */
+  readonly composerOverlayHost?: ComposerOverlayHost;
 }
 
 /**
@@ -382,8 +473,23 @@ export function ConversationSeat(props: ConversationSeatProps): ReactNode {
       ? undefined
       : { id: sessionId, running, ...(activeTurnId !== undefined ? { activeTurnId } : {}) };
 
+  // D-46：composer 以浮层置于全高记录表之上，并预留**实测**高度。
+  // 测量源 = ResizeObserver（环境无 RO 时静默不测 → 预留 0，绝不虚构），
+  // 出口两处：轨迹视图经 host 读 props；其余视图（Chat）读 CSS 变量 `--trajectory-composer-inset`。
+  const composerOverlayHost = props.composerOverlayHost ?? conversationComposerOverlay;
+  const composerInsetPx = useComposerOverlayInset(composerOverlayHost);
+  const composerRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    composerOverlayHost.observe(composerRef.current);
+    return () => composerOverlayHost.observe(null);
+  }, [composerOverlayHost]);
+  const seatStyle: CSSProperties | undefined =
+    composerInsetPx === undefined
+      ? undefined
+      : ({ [TRAJECTORY_COMPOSER_INSET_VAR]: `${composerInsetPx}px` } as CSSProperties);
+
   return (
-    <div className="conversation-seat" data-testid="conversation-seat">
+    <div className="conversation-seat" data-testid="conversation-seat" style={seatStyle}>
       {sessionId !== null && session !== undefined ? (
         <>
           <ConversationHeader sessionId={sessionId} cwd={state.sessions.find((s) => s.id === sessionId)?.cwd} />
@@ -405,20 +511,22 @@ export function ConversationSeat(props: ConversationSeatProps): ReactNode {
           <p>选择左侧会话开始对话（Ctrl+K 打开命令面板）</p>
         </div>
       )}
-      <Composer
-        sessionId={sessionId ?? undefined}
-        session={composerSession}
-        running={running}
-        // D-35 繁忙态 Enter：桌面暂无配置通道 → 默认 queue（缺口登记，不伪造配置读取）
-        busyEnter={props.busyEnter ?? DEFAULT_BUSY_ENTER_BEHAVIOR}
-        // owner/parent 离线 = 锁定编辑；无会话也锁定（Composer 内部另判 sessionId）
-        locked={state.status !== 'connected'}
-        stopAvailable={running}
-        store={composerStore}
-        chain={chain}
-        io={port.io}
-        {...(props.imageIO !== undefined ? { imageIO: props.imageIO } : {})}
-      />
+      <div className="composer-overlay" ref={composerRef} data-testid="composer-overlay">
+        <Composer
+          sessionId={sessionId ?? undefined}
+          session={composerSession}
+          running={running}
+          // D-35 繁忙态 Enter：桌面暂无配置通道 → 默认 queue（缺口登记，不伪造配置读取）
+          busyEnter={props.busyEnter ?? DEFAULT_BUSY_ENTER_BEHAVIOR}
+          // owner/parent 离线 = 锁定编辑；无会话也锁定（Composer 内部另判 sessionId）
+          locked={state.status !== 'connected'}
+          stopAvailable={running}
+          store={composerStore}
+          chain={chain}
+          io={port.io}
+          {...(props.imageIO !== undefined ? { imageIO: props.imageIO } : {})}
+        />
+      </div>
     </div>
   );
 }

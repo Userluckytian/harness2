@@ -10,6 +10,7 @@ import type {
   ConnectionStatus,
   MessageReferenceShape,
   SessionSummaryShape,
+  SettingsEventFrame,
   StatusDetail,
   SubmitIntentShape,
   WsClientOp,
@@ -21,6 +22,15 @@ import { readPreferences, writePreferences } from './preferences-file.js';
 import { readMetadata, writeMetadataPatch } from './metadata-file.js';
 import { readDrafts, writeDrafts } from './drafts-file.js';
 import { readAuthMasked, readSettingsConfig, updateAuth, updateSettingsConfig } from './config-file.js';
+import {
+  ackModelsDeclaration,
+  deleteModelsProvider,
+  discoverModelsFor,
+  readCredentialStatuses,
+  readModelsDocument,
+  updateModelsProvider,
+  writeChannelKey,
+} from './models-config.js';
 import { getCrashReports, getDoctorReport } from './diagnostics.js';
 import { listWorkspaceDir } from './workspace-fs.js';
 import { getContextUsageForSession } from './context-usage.js';
@@ -147,6 +157,8 @@ export interface BridgeDeps {
   sendEvent: (frame: WsFrame) => void;
   /** 渲染窗口推送（连接状态） */
   sendStatus: (status: ConnectionStatus, detail?: StatusDetail) => void;
+  /** P6-B（D-58）：设置域事件推送（settings/credentials/llm/connection；渲染端订阅而非轮询） */
+  sendSettingsEvent?: (frame: SettingsEventFrame) => void;
   /** D4：运行态上报（main 据此在关窗口前提示；关 UI ≠ 已停任务） */
   setBusy?: (info: { busy: boolean; runningTurns: number; backgroundTasks: number }) => void;
 }
@@ -268,6 +280,15 @@ export function createBridge(deps: BridgeDeps): Bridge {
     }
   };
 
+  /** P6-B（D-58）：设置域事件出口（窗口已销毁/未接线时静默忽略，不打断写路径） */
+  const emitSettings = (frame: SettingsEventFrame): void => {
+    try {
+      deps.sendSettingsEvent?.(frame);
+    } catch {
+      // 窗口已销毁：忽略
+    }
+  };
+
   /**
    * 系统通知触发（B7）：渲染端判定「窗口非聚焦 + 会话不可见」后经 IPC 调到这里。
    * - Notification 支持时原生弹通知；点击 → 聚焦窗口 + 回传 notify/click 帧（渲染端跳会话）
@@ -332,6 +353,8 @@ export function createBridge(deps: BridgeDeps): Bridge {
         // PD2：WS 建立/恢复必须让渲染端知道 —— 重连后渲染端据此重发订阅并拉权威快照
         // （controller.resyncSubscriptions 挂在 onConnectionStatus('connected') 上）。
         deps.sendStatus('connected');
+        // P6-B（D-58）：连接（重）建立 = 设置域缓存作废（模型配置页据此重新拉文档，不轮询）
+        emitSettings({ type: 'connection/reset' });
       });
       socket.addEventListener('message', (ev) => {
         try {
@@ -554,6 +577,61 @@ export function createBridge(deps: BridgeDeps): Bridge {
         return readAuthMasked(deps.home);
       case 'settings:updateAuth':
         return updateAuth(deps.home, (args['patch'] as Record<string, unknown>) ?? {});
+      // —— P6-B（D-50～D-59）：模型配置文档 + 凭据通道（密钥只写不回读明文） ——
+      case 'settings:getModels':
+        return readModelsDocument(deps.home, deps.root);
+      case 'settings:updateModels': {
+        const revision = typeof args['revision'] === 'string' ? args['revision'] : '';
+        const originalId = typeof args['originalId'] === 'string' ? args['originalId'] : undefined;
+        const mainModel = typeof args['mainModel'] === 'string' ? args['mainModel'] : undefined;
+        const res = updateModelsProvider(
+          deps.home,
+          deps.root,
+          {
+            revision,
+            provider: args['provider'],
+            ...(originalId !== undefined ? { originalId } : {}),
+            ...(mainModel !== undefined ? { mainModel } : {}),
+          },
+          emitSettings,
+        );
+        return res;
+      }
+      case 'settings:deleteProvider': {
+        const res = deleteModelsProvider(
+          deps.home,
+          deps.root,
+          {
+            route: typeof args['route'] === 'string' ? args['route'] : '',
+            confirmRoute: typeof args['confirmRoute'] === 'string' ? args['confirmRoute'] : '',
+          },
+          emitSettings,
+        );
+        return res;
+      }
+      case 'settings:writeChannelKey': {
+        const res = writeChannelKey(
+          deps.home,
+          deps.root,
+          typeof args['route'] === 'string' ? args['route'] : '',
+          args['key'],
+          emitSettings,
+        );
+        return res;
+      }
+      case 'settings:getCredentialStatus': {
+        const raw = args['routes'];
+        const routes = Array.isArray(raw) ? raw.filter((r): r is string => typeof r === 'string') : [];
+        return readCredentialStatuses(deps.home, deps.root, routes);
+      }
+      case 'settings:ackModelsDeclaration':
+        return ackModelsDeclaration(deps.home, args['version']);
+      case 'settings:discoverModels':
+        return discoverModelsFor(deps.home, deps.root, {
+          route: typeof args['route'] === 'string' ? args['route'] : '',
+          baseUrl: typeof args['baseUrl'] === 'string' ? args['baseUrl'] : '',
+          protocol: args['protocol'] === 'anthropic' ? 'anthropic' : 'openai',
+        });
       case 'settings:getPreferences':
         return readPreferences(deps.home);
       case 'settings:setPreferences':

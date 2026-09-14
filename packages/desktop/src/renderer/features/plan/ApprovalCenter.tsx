@@ -1,16 +1,15 @@
 // 审批中心（D3/F4）：全部待批可见、主子归属清楚、过期 fail-closed、拒绝项明确未执行。
 // 卡片数据来自服务端 approval-request 帧/重订阅快照，展示层不做推断。
+//
+// P6-C：卡片正文收敛到 `renderer/approval`（ApprovalCard）—— 与对话内联审批条同一实现，
+// 本文件只保留「取数 → 装饰 → 分组」与动作回传（controller.respondApproval）。
 import { controller, store, useAppState } from '../../app-shared.js';
-import { decorateApprovals, groupApprovals, type ApprovalCard } from './plan-model.js';
-
-function argsSummary(args: unknown): string {
-  const one = args === undefined ? '' : (JSON.stringify(args) ?? '');
-  return one.length <= 120 ? one : `${one.slice(0, 120)}…`;
-}
+import { ApprovalCard } from '../../approval/index.js';
+import { decorateApprovals, groupApprovals, type ApprovalCard as ApprovalCardModel } from './plan-model.js';
 
 export function ApprovalCenter() {
   useAppState();
-  const approvals: ApprovalCard[] = store.allApprovals().map((a) => ({
+  const approvals: ApprovalCardModel[] = store.allApprovals().map((a) => ({
     requestId: a.requestId,
     tool: a.tool,
     args: a.args,
@@ -53,48 +52,12 @@ export function ApprovalCenter() {
             {g.isChild && <span className="approval-parent">（子任务，父 {g.parentTaskId}）</span>}
           </div>
           {g.cards.map((c) => (
-            <div
+            <ApprovalCard
               key={c.requestId}
-              className={`approval-card${c.expired ? ' approval-expired' : ''}`}
-              data-request-id={c.requestId}
-            >
-              <div className="approval-card-main">
-                <b>{c.tool}</b>
-                <span className="approval-args">{argsSummary(c.args)}</span>
-              </div>
-              <div className="approval-card-meta">
-                {c.cwd !== undefined && <span>cwd: {c.cwd}</span>}
-                {c.scope !== undefined && <span>范围: {c.scope === 'once' ? '一次' : '本会话'}</span>}
-                {c.taskStateLabel !== undefined && <span>任务状态: {c.taskStateLabel}</span>}
-                {c.expiresAt !== undefined && <span>过期: {c.expiresAt}</span>}
-              </div>
-              {c.expired ? (
-                <div className="approval-note">已过期（服务端会拒收迟到决策）</div>
-              ) : (
-                <div className="approval-actions">
-                  {store.isApprovalResponding(c.requestId) ? (
-                    <span className="approval-note">提交中…（防重复提交）</span>
-                  ) : (
-                    <>
-                      <button
-                        type="button"
-                        className="btn-allow"
-                        onClick={() => void controller.respondApproval(c.requestId, 'allow')}
-                      >
-                        允许
-                      </button>
-                      <button
-                        type="button"
-                        className="btn-deny"
-                        onClick={() => void controller.respondApproval(c.requestId, 'deny')}
-                      >
-                        拒绝（不执行）
-                      </button>
-                    </>
-                  )}
-                </div>
-              )}
-            </div>
+              card={c}
+              responding={store.isApprovalResponding(c.requestId)}
+              onDecision={(decision) => void controller.respondApproval(c.requestId, decision)}
+            />
           ))}
         </div>
       ))}

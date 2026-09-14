@@ -1,0 +1,385 @@
+/* P6-B 模型配置页样式（与 renderer/layout/app-frame.css、sidebar/sidebar.css 同模式：
+   按能力目录自带样式，由组件 import）。色值走既有主题变量，缺省回退暖纸色。 */
+
+.models-settings {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 16px;
+  color: var(--fg, #2b2b2b);
+}
+
+.models-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.models-title {
+  margin: 0 0 4px;
+  font-size: 16px;
+}
+
+.models-desc {
+  margin: 0;
+  font-size: 12px;
+  opacity: 0.75;
+  max-width: 60ch;
+}
+
+.models-rows,
+.models-model-list,
+.models-discover-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.models-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.models-row {
+  border: 1px solid var(--border, #d9d2c6);
+  border-radius: 8px;
+  background: var(--bg-elevated, #fffdf8);
+}
+
+.models-row-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 8px 10px;
+  background: none;
+  border: 0;
+  text-align: left;
+  cursor: pointer;
+  font: inherit;
+  color: inherit;
+}
+
+.models-row-id {
+  font-size: 12px;
+  opacity: 0.8;
+}
+
+.models-row-meta {
+  margin-left: auto;
+  font-size: 11px;
+  opacity: 0.6;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.models-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex: 0 0 auto;
+  border: 1px solid transparent;
+}
+
+.models-dot-ok {
+  background: #2e9e5b;
+}
+
+.models-dot-bad {
+  background: #c0392b;
+}
+
+/* unknown：不上色（不猜）；只画一个中性空心点 */
+.models-dot-unknown {
+  background: transparent;
+  border-color: var(--border, #b9b2a6);
+}
+
+.models-card,
+.models-create {
+  padding: 12px 14px 14px;
+  border-top: 1px dashed var(--border, #d9d2c6);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.models-create {
+  border: 1px solid var(--border, #d9d2c6);
+  border-radius: 8px;
+  background: var(--bg-elevated, #fffdf8);
+}
+
+.models-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.models-label {
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.models-input {
+  padding: 5px 8px;
+  border: 1px solid var(--border, #cfc7ba);
+  border-radius: 6px;
+  background: var(--bg-input, #fff);
+  color: inherit;
+  font: inherit;
+  font-size: 13px;
+}
+
+.models-input:disabled {
+  background: var(--bg-disabled, #f2efe8);
+  color: inherit;
+  opacity: 0.85;
+}
+
+.models-input-num {
+  max-width: 130px;
+}
+
+.models-key-row {
+  display: flex;
+  gap: 8px;
+}
+
+.models-key-input {
+  flex: 1 1 auto;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+.models-btn {
+  padding: 5px 10px;
+  border: 1px solid var(--border, #cfc7ba);
+  border-radius: 6px;
+  background: var(--bg-elevated, #fffdf8);
+  color: inherit;
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.models-btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.models-btn-primary {
+  border-color: #a8621b;
+  background: #a8621b;
+  color: #fff;
+}
+
+.models-btn-danger {
+  border-color: #c0392b;
+  color: #a5311f;
+}
+
+.models-hint {
+  margin: 0;
+  font-size: 11px;
+  opacity: 0.7;
+}
+
+.models-error {
+  margin: 0;
+  font-size: 12px;
+  color: #a5311f;
+}
+
+.models-live {
+  margin: 0;
+  font-size: 12px;
+  color: #2e6f43;
+}
+
+.models-errors,
+.models-warnings {
+  margin: 0;
+  padding-left: 18px;
+  font-size: 12px;
+  color: #a5311f;
+}
+
+.models-warnings {
+  color: #8a6a1f;
+}
+
+.models-advanced {
+  border: 1px solid var(--border, #d9d2c6);
+  border-radius: 6px;
+  padding: 6px 8px;
+}
+
+.models-advanced > summary {
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.models-advanced-body {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding-top: 8px;
+}
+
+.models-catalog {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding-top: 6px;
+  border-top: 1px dotted var(--border, #d9d2c6);
+}
+
+.models-catalog-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.models-model-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-bottom: 4px;
+}
+
+.models-model-row .models-input:first-child {
+  flex: 1 1 180px;
+}
+
+.models-empty,
+.models-empty-line {
+  font-size: 12px;
+  opacity: 0.7;
+  padding: 6px 2px;
+}
+
+.models-checkbox {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.models-discover {
+  border: 1px solid var(--border, #d9d2c6);
+  border-radius: 6px;
+  padding: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  background: var(--bg-subtle, #faf7f1);
+}
+
+.models-discover-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.models-discover-search {
+  flex: 1 1 auto;
+}
+
+.models-discover-list {
+  max-height: 220px;
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.models-discover-item .models-checkbox {
+  width: 100%;
+}
+
+.models-discover-id {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+.models-discover-name {
+  opacity: 0.65;
+  font-size: 11px;
+}
+
+.models-discover-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.models-discover-actions .models-hint {
+  margin-right: auto;
+}
+
+.models-card-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.models-delete {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.models-confirm {
+  position: fixed;
+  z-index: 40;
+  left: 50%;
+  top: 20%;
+  transform: translateX(-50%);
+  width: min(520px, 90vw);
+  padding: 16px;
+  border: 1px solid var(--border, #cfc7ba);
+  border-radius: 10px;
+  background: var(--bg-elevated, #fffdf8);
+  box-shadow: 0 12px 40px rgb(0 0 0 / 28%);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.models-confirm-title {
+  margin: 0;
+  font-size: 15px;
+}
+
+.models-confirm-body,
+.models-confirm-note {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.models-confirm-note {
+  opacity: 0.72;
+}
+
+.models-confirm-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.models-declare-list {
+  margin: 0;
+  padding-left: 18px;
+  font-size: 12px;
+  line-height: 1.6;
+}

@@ -7,6 +7,8 @@ import type {
   ConnectionStatus,
   Harness2Api,
   MessageReferenceShape,
+  ModelsProviderInputShape,
+  SettingsEventFrame,
   StatusDetail,
   WsFrame,
 } from '../shared/protocol.js';
@@ -15,6 +17,7 @@ const IPC_INVOKE = 'harness2:invoke';
 const IPC_EVENT = 'harness2:event';
 const IPC_STATUS = 'harness2:status';
 const IPC_STOP_ALL = 'harness2:stop-all';
+const IPC_SETTINGS_EVENT = 'harness2:settings-event';
 
 const api: Harness2Api = {
   listSessions: (cwd?: string) => ipcRenderer.invoke(IPC_INVOKE, { cmd: 'listSessions', cwd }),
@@ -39,6 +42,24 @@ const api: Harness2Api = {
   settingsGetAuthMasked: () => ipcRenderer.invoke(IPC_INVOKE, { cmd: 'settings:getAuthMasked' }),
   settingsUpdateAuth: (patch: Record<string, unknown>) =>
     ipcRenderer.invoke(IPC_INVOKE, { cmd: 'settings:updateAuth', patch }),
+  // —— P6-B（D-50～D-59）：模型配置文档 + 凭据通道（密钥只写不回读明文） ——
+  settingsGetModels: () => ipcRenderer.invoke(IPC_INVOKE, { cmd: 'settings:getModels' }),
+  settingsUpdateModels: (opts: {
+    revision: string;
+    provider: ModelsProviderInputShape;
+    originalId?: string;
+    mainModel?: string;
+  }) => ipcRenderer.invoke(IPC_INVOKE, { cmd: 'settings:updateModels', ...opts }),
+  settingsDeleteProvider: (route: string, confirmRoute: string) =>
+    ipcRenderer.invoke(IPC_INVOKE, { cmd: 'settings:deleteProvider', route, confirmRoute }),
+  settingsWriteChannelKey: (route: string, key: string) =>
+    ipcRenderer.invoke(IPC_INVOKE, { cmd: 'settings:writeChannelKey', route, key }),
+  settingsGetCredentialStatus: (routes: string[]) =>
+    ipcRenderer.invoke(IPC_INVOKE, { cmd: 'settings:getCredentialStatus', routes }),
+  settingsAckModelsDeclaration: (version: number) =>
+    ipcRenderer.invoke(IPC_INVOKE, { cmd: 'settings:ackModelsDeclaration', version }),
+  settingsDiscoverModels: (input: { route: string; baseUrl: string; protocol: 'openai' | 'anthropic' }) =>
+    ipcRenderer.invoke(IPC_INVOKE, { cmd: 'settings:discoverModels', ...input }),
   settingsGetPreferences: () => ipcRenderer.invoke(IPC_INVOKE, { cmd: 'settings:getPreferences' }),
   settingsSetPreferences: (preferences: unknown) =>
     ipcRenderer.invoke(IPC_INVOKE, { cmd: 'settings:setPreferences', preferences }),
@@ -104,6 +125,13 @@ const api: Harness2Api = {
     ipcRenderer.on(IPC_STOP_ALL, wrapped);
     return () => {
       ipcRenderer.removeListener(IPC_STOP_ALL, wrapped);
+    };
+  },
+  onSettingsEvent: (listener: (frame: SettingsEventFrame) => void) => {
+    const wrapped = (_e: Electron.IpcRendererEvent, frame: SettingsEventFrame): void => listener(frame);
+    ipcRenderer.on(IPC_SETTINGS_EVENT, wrapped);
+    return () => {
+      ipcRenderer.removeListener(IPC_SETTINGS_EVENT, wrapped);
     };
   },
 };
