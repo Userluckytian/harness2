@@ -354,6 +354,80 @@ describe('schema 校验', () => {
     expect(badSection.config).toBeNull();
     expect(badSection.errors.join('\n')).toContain('config.scrollback 必须是对象');
   });
+
+  it('ui.follow_up_behavior（P3-C 加性）：queue | steer 两值；未配置不透出；非法致命', () => {
+    const base = {
+      providers: { a: { protocol: 'openai', baseUrl: 'https://x' } },
+      roles: { main: { channel: 'a', model: 'm' } },
+    };
+    const none = parseConfig(base);
+    expect(none.config?.ui?.follow_up_behavior).toBeUndefined();
+    const queue = parseConfig({ ...base, ui: { follow_up_behavior: 'queue' } });
+    expect(queue.config?.ui).toEqual({ follow_up_behavior: 'queue' });
+    const steer = parseConfig({ ...base, ui: { follow_up_behavior: 'steer' } });
+    expect(steer.config?.ui).toEqual({ follow_up_behavior: 'steer' });
+    const bad = parseConfig({ ...base, ui: { follow_up_behavior: 'interrupt' } });
+    expect(bad.config).toBeNull();
+    expect(bad.errors.join('\n')).toContain('ui.follow_up_behavior 必须是 queue | steer');
+  });
+
+  it('ui.status_line（P3-C 加性）：type 同义归一 off/none/hidden→disabled；items 闭合枚举；padding 钳 16；refresh_interval 1..86400；command 型必带 command', () => {
+    const base = {
+      providers: { a: { protocol: 'openai', baseUrl: 'https://x' } },
+      roles: { main: { channel: 'a', model: 'm' } },
+    };
+    // 未配置不透出；空对象透出（缺省语义由壳层裁定）
+    expect(parseConfig(base).config?.ui?.status_line).toBeUndefined();
+    expect(parseConfig({ ...base, ui: { status_line: {} } }).config?.ui).toEqual({ status_line: {} });
+    // type 三规范值 + 三个同义拼写归一
+    for (const t of ['builtin', 'command', 'disabled'] as const) {
+      const r = parseConfig({
+        ...base,
+        ui: { status_line: { type: t, ...(t === 'command' ? { command: 'x' } : {}) } },
+      });
+      expect(r.config?.ui?.status_line?.type).toBe(t);
+    }
+    for (const synonym of ['off', 'none', 'hidden']) {
+      const r = parseConfig({ ...base, ui: { status_line: { type: synonym } } });
+      expect(r.config?.ui?.status_line?.type).toBe('disabled');
+    }
+    const badType = parseConfig({ ...base, ui: { status_line: { type: 'neon' } } });
+    expect(badType.config).toBeNull();
+    expect(badType.errors.join('\n')).toContain('ui.status_line.type');
+    // items：合法枚举收、未知条目致命、非数组致命
+    const items = parseConfig({
+      ...base,
+      ui: { status_line: { type: 'builtin', items: ['cwd', 'cost', 'turn-timer'] } },
+    });
+    expect(items.config?.ui?.status_line?.items).toEqual(['cwd', 'cost', 'turn-timer']);
+    const badItem = parseConfig({ ...base, ui: { status_line: { items: ['weather'] } } });
+    expect(badItem.config).toBeNull();
+    expect(badItem.errors.join('\n')).toContain('ui.status_line.items 含未知条目');
+    // padding：负数致命；>16 钳到 16（G-46「上限 16」= 钳制语义）
+    const badPadding = parseConfig({ ...base, ui: { status_line: { padding: -1 } } });
+    expect(badPadding.config).toBeNull();
+    expect(parseConfig({ ...base, ui: { status_line: { padding: 99 } } }).config?.ui?.status_line?.padding).toBe(16);
+    // refresh_interval：1..86400 之外致命
+    const badRefresh = parseConfig({ ...base, ui: { status_line: { refresh_interval: 86_401 } } });
+    expect(badRefresh.config).toBeNull();
+    expect(badRefresh.errors.join('\n')).toContain('1..86400');
+    expect(
+      parseConfig({ ...base, ui: { status_line: { refresh_interval: 300 } } }).config?.ui?.status_line
+        ?.refresh_interval,
+    ).toBe(300);
+    // command 型缺 command → 致命（不做无命令的命令行）
+    const missing = parseConfig({ ...base, ui: { status_line: { type: 'command' } } });
+    expect(missing.config).toBeNull();
+    expect(missing.errors.join('\n')).toContain('必须提供 command');
+    // 未知子键告警
+    const unknownKey = parseConfig({ ...base, ui: { status_line: { type: 'builtin', style: 'bold' } } });
+    expect(unknownKey.config).not.toBeNull();
+    expect(unknownKey.warnings.filter((w) => w.includes('ui.status_line'))).toHaveLength(1);
+    // 非对象段致命
+    const badSection = parseConfig({ ...base, ui: { status_line: 'bold' } });
+    expect(badSection.config).toBeNull();
+    expect(badSection.errors.join('\n')).toContain('ui.status_line 必须是对象');
+  });
 });
 
 describe('错误消息不回显密钥内容', () => {

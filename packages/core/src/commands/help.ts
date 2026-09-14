@@ -17,9 +17,10 @@ const HELP_NOTES: readonly string[] = [
 
 /** 由命令元数据构建帮助文本（供 HELP_TEXT 与测试复用） */
 export function buildHelpText(entries: ReadonlyArray<{ id: string; summary: string }>): string {
-  const list = entries.map((c) => `  ${`/${c.id}`.padEnd(12)}${c.summary}`);
+  // 列宽 14：容纳 P3-A 的 /session-info（13 列，G-59 上游规范名）并保留 ≥1 空格间隔
+  const list = entries.map((c) => `  ${`/${c.id}`.padEnd(14)}${c.summary}`);
   return ['命令：', ...list, ...HELP_NOTES].join('\n');
 }
 
-/** /help 输出（13 条命令清单 + core 语义说明区） */
+/** /help 输出（23 条命令清单 + core 语义说明区；P3-A 加性 15→23） */
 export const HELP_TEXT: string = buildHelpText(CORE_COMMAND_META);
