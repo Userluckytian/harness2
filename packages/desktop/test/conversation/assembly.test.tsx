@@ -241,15 +241,16 @@ beforeEach(() => {
 // —— 用例 ——
 
 describe('视图环装配（D-30 / D-31 / D-32）', () => {
-  it('只注册真实存在的视图：唯一标签是 chat（无 Trajectory 空标签），内容 = 既有转录', async () => {
+  it('注册表 = 真实存在且已装配的视图：chat + trajectory（P6 起 D-40 接入），默认选中 chat', async () => {
     const { store, controller } = boot();
     renderSeat({ store, controller });
 
     const tabs = screen.getAllByRole('tab');
-    expect(tabs.map((tab) => tab.getAttribute('data-view-key'))).toEqual(['chat']);
+    expect(tabs.map((tab) => tab.getAttribute('data-view-key'))).toEqual(['chat', 'trajectory']);
     expect(tabs[0]?.getAttribute('data-view-owner')).toBe('ui-chat');
+    expect(tabs[1]?.getAttribute('data-view-owner')).toBe('ui-trajectory');
     expect(tabs[0]?.getAttribute('aria-selected')).toBe('true');
-    expect(screen.queryByRole('tab', { name: 'Trajectory' })).toBeNull();
+    expect(tabs[1]?.getAttribute('aria-selected')).toBe('false');
     // 转录渲染是 chat 视图内容（真会话数据）
     expect(await screen.findByText('第一句回复')).toBeTruthy();
     expect(screen.getByTestId('view-ring-session')).toBeTruthy();
@@ -496,10 +497,11 @@ describe('D-30 装配级：视图唯一注册表 / 与渲染目标无关', () =>
     expect(screen.getByTestId('custom-chat')).toBeTruthy();
   });
 
-  it('默认注册表只注册真实存在的视图：keys()=[chat]、owner=ui-chat；Trajectory 未注册（P6 前不画空标签）', () => {
-    expect(createDesktopConversationViewRegistry().keys()).toEqual(['chat']);
+  it('默认注册表只注册真实存在的视图：keys()=[chat, trajectory]、owner 各归其包（P6 接线，D-40）', () => {
+    expect(createDesktopConversationViewRegistry().keys()).toEqual(['chat', 'trajectory']);
     expect(conversationViewRegistry.get('chat')?.owner).toBe('ui-chat');
-    expect(conversationViewRegistry.has('trajectory')).toBe(false);
+    expect(conversationViewRegistry.get('trajectory')?.owner).toBe('ui-trajectory');
+    expect(conversationViewRegistry.get('trajectory')?.title).toBe('Trajectory');
   });
 });
 

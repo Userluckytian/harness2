@@ -1,0 +1,460 @@
+/* 轨迹视图（D-40～D-47）样式。
+   与既有皮肤的关系：沿用 styles.css 的主题变量（--surface/--border/--fg/... ），
+   只补轨迹面板自己的盒子与条带皮肤。
+   虚拟化硬约束：`--trajectory-row-height` 必须与 virtual-window.ts 的 DEFAULT_ROW_HEIGHT_PX 一致，
+   否则占位高度与真实行高不一致会让滚动位置漂移。 */
+
+.trajectory-panel {
+  --trajectory-row-height: 28px;
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-height: 0;
+  min-width: 0;
+  gap: 8px;
+  padding: 8px 10px 0;
+  color: var(--fg);
+}
+
+.trajectory-empty {
+  margin: 12px 4px;
+  color: var(--fg-muted);
+}
+
+/* —— 时间概览（D-42/D-43） —— */
+
+.trajectory-overview {
+  position: relative;
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 6px 8px;
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+.trajectory-overview-hint {
+  display: flex;
+  gap: 10px;
+  font-size: 11px;
+  color: var(--fg-dim);
+}
+
+.trajectory-overview-track {
+  position: relative;
+  width: 100%;
+  min-height: 10px;
+  background: var(--muted);
+  border-radius: 4px;
+  cursor: crosshair;
+  user-select: none;
+}
+
+.trajectory-overview-empty-text {
+  margin: 2px 0;
+  font-size: 12px;
+  color: var(--fg-muted);
+}
+
+.trajectory-overview-selection {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  background: var(--accent-soft);
+  border-left: 1px solid var(--accent);
+  border-right: 1px solid var(--accent);
+  pointer-events: none;
+}
+
+.trajectory-overview-bar {
+  position: absolute;
+  height: 8px;
+  background: transparent;
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.trajectory-overview-bar.is-point {
+  width: 2px;
+  min-width: 2px;
+}
+
+.trajectory-overview-bar.is-hovered {
+  outline: 1px solid var(--accent-2);
+}
+
+.trajectory-overview-bar.is-selected {
+  outline: 1px solid var(--accent);
+  box-shadow: 0 0 0 2px var(--accent-soft);
+}
+
+.trajectory-overview-seg {
+  display: inline-block;
+  height: 100%;
+  vertical-align: top;
+}
+
+.trajectory-overview-bar.is-user .trajectory-overview-seg {
+  background: var(--accent);
+}
+
+.trajectory-overview-bar.is-assistant .trajectory-overview-seg {
+  background: var(--ok);
+}
+
+.trajectory-overview-bar.is-tool .trajectory-overview-seg {
+  background: var(--warn);
+}
+
+.trajectory-overview-bar.is-between-turns .trajectory-overview-seg {
+  background: var(--fg-dim);
+}
+
+/* 助手条两段：TTFT（浅）/ 解码（深）—— 只有真实观测到首 token 时才出现两段 */
+.trajectory-overview-seg.is-ttft {
+  background: var(--accent-soft);
+  border-right: 1px solid var(--accent-2);
+}
+
+.trajectory-overview-seg.is-decode {
+  background: var(--ok);
+  flex: 1 1 auto;
+}
+
+.trajectory-overview-bar.is-ttft-decode .trajectory-overview-seg {
+  display: inline-block;
+}
+
+.trajectory-overview-detail {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  font-size: 11px;
+  color: var(--fg-muted);
+  background: var(--surface);
+  border: 1px dashed var(--border2);
+  border-radius: 6px;
+  padding: 4px 6px;
+}
+
+.trajectory-overview-detail-title {
+  color: var(--fg);
+  font-weight: 600;
+}
+
+.trajectory-filter-note,
+.trajectory-between-note {
+  margin: 0;
+  font-size: 11px;
+  color: var(--fg-muted);
+}
+
+/* —— 主体：记录表 + 局部检查器 —— */
+
+.trajectory-body {
+  display: flex;
+  flex: 1 1 auto;
+  min-height: 0;
+  min-width: 0;
+  gap: 8px;
+}
+
+.trajectory-records {
+  display: flex;
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+}
+
+.trajectory-records-scroll {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  /* D-46 兜底：壳没写 CSS 变量时预留 0（不假装有浮层） */
+  padding-bottom: var(--trajectory-composer-inset, 0px);
+}
+
+.trajectory-spacer {
+  width: 100%;
+}
+
+.trajectory-row {
+  height: var(--trajectory-row-height, 28px);
+  box-sizing: border-box;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+}
+
+/* 轮次边界 = 粗分割线（D-41） */
+.trajectory-turn-boundary {
+  border-top: 3px solid var(--border2);
+  margin-top: 2px;
+}
+
+.trajectory-turn-divider {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  font-size: 11px;
+  color: var(--fg-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.trajectory-between-divider {
+  border-top: 1px dashed var(--fg-dim);
+}
+
+.trajectory-between-hint {
+  color: var(--fg-dim);
+  text-transform: none;
+}
+
+.trajectory-turn-label {
+  font-weight: 600;
+  color: var(--fg);
+}
+
+.trajectory-turn-time,
+.trajectory-step-time {
+  font-variant-numeric: tabular-nums;
+}
+
+/* D-47：耗时未知（含进行中）时该列留空 —— 只留一个弱化占位线，不写任何数字 */
+.trajectory-turn-time[data-missing='true'],
+.trajectory-step-time[data-missing='true'] {
+  min-width: 0;
+}
+
+.trajectory-running-flag {
+  padding: 0 6px;
+  border-radius: 8px;
+  background: var(--warn-soft);
+  color: var(--warn);
+}
+
+.trajectory-step {
+  cursor: pointer;
+  border-bottom: 1px solid var(--muted);
+}
+
+.trajectory-step:hover {
+  background: var(--surface2);
+}
+
+.trajectory-step.is-selected {
+  background: var(--accent-soft);
+}
+
+.trajectory-step-cell {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  min-width: 0;
+  font-size: 12px;
+}
+
+/* 行内紧凑标记 = 步骤（D-41） */
+.trajectory-step-marker {
+  flex: 0 0 auto;
+  min-width: 22px;
+  font-variant-numeric: tabular-nums;
+  color: var(--fg-dim);
+}
+
+.trajectory-role-badge {
+  flex: 0 0 auto;
+  padding: 0 6px;
+  border-radius: 8px;
+  background: var(--muted);
+  color: var(--fg-muted);
+  font-size: 11px;
+}
+
+.trajectory-role-badge[data-role='assistant'] {
+  background: var(--ok-soft);
+  color: var(--ok);
+}
+
+.trajectory-role-badge[data-role='user'] {
+  background: var(--accent-soft);
+  color: var(--accent-2);
+}
+
+.trajectory-role-badge[data-role='tool'],
+.trajectory-role-badge[data-role='subtool'] {
+  background: var(--warn-soft);
+  color: var(--warn);
+}
+
+.trajectory-state-badge {
+  flex: 0 0 auto;
+  padding: 0 6px;
+  border-radius: 8px;
+  font-size: 11px;
+}
+
+.trajectory-state-badge[data-state='running'] {
+  background: var(--warn-soft);
+  color: var(--warn);
+}
+
+.trajectory-state-badge[data-state='failed'] {
+  background: var(--danger-soft);
+  color: var(--danger);
+}
+
+.trajectory-state-badge[data-state='cancelled'] {
+  background: var(--muted);
+  color: var(--fg-dim);
+}
+
+.trajectory-attach-badge {
+  flex: 0 0 auto;
+  font-size: 11px;
+  color: var(--fg-dim);
+}
+
+.trajectory-step-label {
+  flex: 0 0 auto;
+  font-weight: 600;
+}
+
+.trajectory-step-text {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--fg-muted);
+}
+
+.trajectory-step-time {
+  flex: 0 0 auto;
+  min-width: 56px;
+  text-align: right;
+  color: var(--fg-muted);
+}
+
+/* —— 局部检查器（D-44） —— */
+
+.trajectory-inspector {
+  flex: 0 0 300px;
+  min-width: 0;
+  overflow-y: auto;
+  padding: 8px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font-size: 12px;
+}
+
+.trajectory-inspector-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 6px;
+}
+
+.trajectory-inspector-title {
+  font-weight: 600;
+}
+
+.trajectory-inspector-subject {
+  color: var(--fg-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.trajectory-inspector-close {
+  margin-left: auto;
+  padding: 0 6px;
+  border: 1px solid var(--border2);
+  border-radius: 6px;
+  background: var(--surface2);
+  color: var(--fg-muted);
+  cursor: pointer;
+}
+
+.trajectory-inspector-empty {
+  color: var(--fg-muted);
+}
+
+.trajectory-inspector-fields {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 2px 8px;
+  margin: 0 0 8px;
+}
+
+.trajectory-inspector-field {
+  display: contents;
+}
+
+.trajectory-inspector-field dt {
+  color: var(--fg-muted);
+}
+
+.trajectory-inspector-field dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+/* 缺数据：弱化但**可见**（显示「未记录」而不是留白） */
+.trajectory-inspector-field dd.is-missing {
+  color: var(--fg-dim);
+  font-style: italic;
+}
+
+.trajectory-inspector-attachments h4,
+.trajectory-inspector-io h4 {
+  margin: 6px 0 2px;
+  font-size: 12px;
+  color: var(--fg-muted);
+}
+
+.trajectory-inspector-attachment-summary[data-empty='true'] {
+  color: var(--fg-dim);
+  font-style: italic;
+}
+
+.trajectory-inspector-image-list,
+.trajectory-inspector-file-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.trajectory-inspector-image-thumb {
+  max-width: 96px;
+  max-height: 96px;
+  border-radius: 4px;
+  border: 1px solid var(--border);
+}
+
+.trajectory-inspector-image-missing,
+.trajectory-inspector-file {
+  color: var(--fg-muted);
+}
+
+.trajectory-inspector-pre {
+  margin: 0;
+  padding: 6px;
+  max-height: 180px;
+  overflow: auto;
+  background: var(--code-bg);
+  color: var(--code-fg);
+  border-radius: 6px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-size: 11px;
+}

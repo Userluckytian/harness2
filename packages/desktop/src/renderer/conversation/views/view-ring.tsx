@@ -26,6 +26,11 @@ import type { ConversationViewEntry, ConversationViewProps, ConversationViewRegi
 export interface ViewSelectionPersistence {
   read(sessionId: string): string | null;
   write(sessionId: string, key: string | null): void;
+  /**
+   * 可选：宿主在**环外**改写选择时的变更通知（如 D-86 ② 工具卡 inspect → 切到轨迹视图）。
+   * 提供时环订阅它重读选择（否则只有点击标签才会切视图）。缺省不提供 = 旧行为不变。
+   */
+  subscribe?(listener: () => void): () => void;
 }
 
 /**
@@ -73,6 +78,16 @@ export function ConversationViewRing<S extends object = object>(props: Conversat
     const next = persistence.read(sessionId);
     if (next !== persisted) setPersisted(next);
   }
+
+  // 环外改写（D-86 ② 工具卡 inspect 等）：宿主给了订阅缝就跟随，否则只有点击标签会切视图。
+  useEffect(() => {
+    const subscribeSelection = persistence.subscribe;
+    if (typeof subscribeSelection !== 'function') return undefined;
+    return subscribeSelection.call(persistence, () => {
+      const next = persistence.read(sessionId);
+      setPersisted((prev) => (prev === next ? prev : next));
+    });
+  }, [persistence, sessionId]);
 
   // 会话订阅：仅 [session] 依赖 → 切视图不重订阅（D-32）。收到的更新用于强制重渲染视图。
   const [, setSessionRevision] = useState(0);

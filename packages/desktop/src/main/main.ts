@@ -8,7 +8,7 @@ import { join } from 'node:path';
 import { createBridge, registerBridgeIpc, type Bridge } from './bridge.js';
 import { ServeManager } from './serve-manager.js';
 import { createCloseWindowHandler } from './close-window-handler.js';
-import type { ConnectionStatus, StatusDetail, WsFrame } from '../shared/protocol.js';
+import type { ConnectionStatus, SettingsEventFrame, StatusDetail, WsFrame } from '../shared/protocol.js';
 
 const SMOKE = process.argv.includes('--smoke');
 
@@ -53,6 +53,13 @@ function startDesktop(opts: { show: boolean; provider: 'mock' | 'config'; home?:
       win.webContents.send('harness2:event', frame);
     }
   };
+  // P6-B（D-58）：设置域事件通道（模型配置页订阅 settings/credentials/llm/connection，不轮询）。
+  // 通道名与 shared/protocol.ts 的 IPC_SETTINGS_EVENT 一致（preload 内联，protocol.test 静态校验）。
+  const sendSettingsEvent = (frame: SettingsEventFrame): void => {
+    for (const win of BrowserWindow.getAllWindows()) {
+      win.webContents.send('harness2:settings-event', frame);
+    }
+  };
 
   const serve = new ServeManager({
     cliEntry: resolveCliEntry(),
@@ -74,6 +81,7 @@ function startDesktop(opts: { show: boolean; provider: 'mock' | 'config'; home?:
     home,
     sendEvent,
     sendStatus,
+    sendSettingsEvent,
     // D4：渲染端上报运行态 → 关窗口前提示（关 UI 不等于停任务）
     setBusy: (info) => {
       runtime.busy = info.busy;

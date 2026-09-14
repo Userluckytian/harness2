@@ -1,8 +1,15 @@
-// 设置弹窗（B2）：居中 dialog + 左侧 14 类导航 + 右侧内容区。
+// 设置弹窗（B2；P6-C 重构为**设置壳 + 分区装配**）。
+//
+// 结构（D-6x「ui-settings-general（设置壳与通用设置）」对应物）：
+//   壳与内容槽 → `renderer/settings/shell`（分区导航 + 按需挂载 + 能力模块注入面）；
+//   通用设置   → `renderer/settings/general`（主题真生效 / 通知详情 / 快捷键说明）；
+//   模型配置   → B 棒 `ui-settings-models`（按 props 契约接 `ModelsSettings`；未落地时**显式占位 +
+//               过渡面板**，不造假实现）；
+//   凭据等既有分区 → 本文件内（配置读写仍走既有 settings:* IPC，与 CLI 共用 config.json / auth.json）。
+//
 // 数据读取一律经 window.harness2 的 settings:* IPC（渲染进程零 Node，不碰文件系统）。
-// 第 1/2/13/14 类纯本地/静态（desktop-preferences.json）；第 3/4/6/9/10 类真实读写
-// config.json/auth.json（与 CLI 共用同一份）；复杂类（记忆待审批/插件/MCP/定时/诊断细化）
-// 先只读展示并标注「完整管理功能见后续版本」。
+// 主题呈现：选择经宿主 `onThemeChange`（装配层 = P4 的 setShellTheme）→ 立即写 D-15 四要素，再持久化偏好；
+// 本文件不自己碰 DOM、不自己碰壳 store（边界：分区内容只经 props 与宿主交互）。
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import type {
   SettingsAuthMaskedShape,
@@ -10,34 +17,21 @@ import type {
   SettingsCrashReportShape,
   SettingsDoctorCheck,
   SettingsDoctorReportShape,
+  SettingsNotifyDetails,
   SettingsPreferencesShape,
   SettingsTheme,
 } from '../../shared/protocol.js';
-
-type NotifyDetails = 'minimal' | 'full';
-
-interface SettingsCategory {
-  id: string;
-  label: string;
-  en: string;
-}
-
-const CATEGORIES: SettingsCategory[] = [
-  { id: 'general', label: '通用', en: 'General' },
-  { id: 'appearance', label: '外观', en: 'Appearance' },
-  { id: 'providers', label: '模型与角色', en: 'Providers & Models' },
-  { id: 'approval', label: '审批与安全', en: 'Approval & Security' },
-  { id: 'memory', label: '记忆', en: 'Memory' },
-  { id: 'browser', label: '浏览器工具', en: 'Browser' },
-  { id: 'cron', label: '定时任务', en: 'Cron' },
-  { id: 'plugins', label: '插件与集成', en: 'Plugins & MCP' },
-  { id: 'subagent', label: '子代理', en: 'Subagent' },
-  { id: 'gateway', label: 'IM 网关', en: 'Gateway' },
-  { id: 'sessions', label: '会话与数据', en: 'Sessions & Data' },
-  { id: 'diagnostics', label: '诊断', en: 'Diagnostics' },
-  { id: 'shortcuts', label: '快捷键', en: 'Keyboard Shortcuts' },
-  { id: 'about', label: '关于', en: 'About' },
-];
+import { useShellTheme } from '../layout/shell-theme.js';
+import { GeneralSettings } from '../settings/general/index.js';
+import {
+  MODELS_SECTION_ID,
+  MODELS_SETTINGS_OWNER,
+  SettingsSectionBlock,
+  SettingsShell,
+  findSettingsSection,
+  type ModelsSettingsProps,
+  type SettingsSectionDefinition,
+} from '../settings/shell/index.js';
 
 const APPROVAL_MODES = [
   { value: 'default', label: '每次执行前询问', desc: 'default：安全工具自动执行，有副作用工具先询问' },
@@ -62,104 +56,20 @@ const GATEWAY_POLICIES = [
   { value: 'disabled', label: '禁用' },
 ];
 
-// —— 子组件：每类一个小节，接收数据 + 保存回调 ——
+// —— 分区：模型配置（B 棒接管前） ——
 
-function Section({ title, desc, children }: { title: string; desc?: string; children: React.ReactNode }) {
-  return (
-    <div className="settings-section">
-      <h3>{title}</h3>
-      {desc !== undefined && <p className="settings-desc">{desc}</p>}
-      {children}
-    </div>
-  );
-}
-
-function GeneralSection({
-  prefs,
-  onSave,
-}: {
-  prefs: SettingsPreferencesShape;
-  onSave: (p: SettingsPreferencesShape) => Promise<void>;
-}) {
-  const [count, setCount] = useState(prefs.defaultPaneCount);
-  const [notify, setNotify] = useState<NotifyDetails>(prefs.notifyDetails);
-  const save = (): Promise<void> => onSave({ ...prefs, defaultPaneCount: count, notifyDetails: notify });
-  return (
-    <>
-      <Section title="启动默认分栏数" desc="新建会话自动打入的分栏数（1..3）">
-        <div className="settings-row">
-          {[1, 2, 3].map((n) => (
-            <button key={n} type="button" className={`seg${count === n ? ' seg-on' : ''}`} onClick={() => setCount(n)}>
-              {n} 栏
-            </button>
-          ))}
-        </div>
-      </Section>
-      <Section title="通知详情级别" desc="任务完成系统通知里附带的内容粒度（仅影响桌面通知文案）">
-        <div className="settings-row">
-          <button
-            type="button"
-            className={`seg${notify === 'minimal' ? ' seg-on' : ''}`}
-            onClick={() => setNotify('minimal')}
-          >
-            精简（仅标题）
-          </button>
-          <button
-            type="button"
-            className={`seg${notify === 'full' ? ' seg-on' : ''}`}
-            onClick={() => setNotify('full')}
-          >
-            完整（含回复摘要）
-          </button>
-        </div>
-      </Section>
-      <Section title="发送快捷键">
-        <p className="settings-desc">Enter 发送 · Shift+Enter 换行 · Ctrl+K 命令面板 · Ctrl+, 打开本设置</p>
-      </Section>
-      <button type="button" className="btn-primary" onClick={() => void save()}>
-        保存偏好
-      </button>
-    </>
-  );
-}
-
-function AppearanceSection({
-  prefs,
-  onSave,
-}: {
-  prefs: SettingsPreferencesShape;
-  onSave: (p: SettingsPreferencesShape) => Promise<void>;
-}) {
-  const themes: Array<{ value: SettingsTheme; label: string }> = [
-    { value: 'warmPaper', label: '暖纸浅色' },
-    { value: 'dark', label: '深色' },
-    { value: 'system', label: '跟随系统' },
-  ];
-  return (
-    <Section title="主题" desc="切换即时生效，无需重启应用">
-      <div className="settings-row">
-        {themes.map((t) => (
-          <button
-            key={t.value}
-            type="button"
-            className={`seg${prefs.theme === t.value ? ' seg-on' : ''}`}
-            onClick={() => void onSave({ ...prefs, theme: t.value })}
-          >
-            {t.label}
-          </button>
-        ))}
-      </div>
-    </Section>
-  );
-}
-
-function ProvidersSection({
+/**
+ * 模型配置的**过渡面板**（B 棒 `ui-settings-models` 落地前）：
+ * 保留既有的「主模型改写」真实能力（roles.main → config.json 白名单深合并），并显式标注待接入。
+ * B 的 `ModelsSettings` 注册进 `MODELS_SECTION_ID` 后，本面板自动让位（不再渲染）。
+ */
+function ModelsTransitionSection({
   cfg,
   onSave,
 }: {
   cfg: SettingsConfigShape;
   onSave: (patch: Record<string, unknown>) => Promise<void>;
-}) {
+}): React.ReactNode {
   // PD5：主模型改写入口（roles.main → 全局 config.json 白名单深合并）。生效范围如实标注：
   // 运行中会话的 effective run-config 是创建期快照，新会话/重启 serve 后生效。
   const mainRole = cfg.roles['main'] ?? { channel: '', model: '' };
@@ -172,68 +82,84 @@ function ProvidersSection({
       .catch((e: Error) => setMainFeedback(e.message));
   };
   return (
-    <Section title="模型与角色" desc="channel 列表与 roles 映射（config.json 同一份，与 CLI 共用）">
-      <div className="settings-table">
-        {Object.entries(cfg.providers).map(([name, p]) => (
-          <div key={name} className="settings-table-row">
-            <span className="row-key">{name}</span>
-            <span className="row-val">{p.protocol}</span>
-            <span className="row-val mono">{p.baseUrl}</span>
-            {p.envKey !== undefined && <span className="row-val mono">env:{p.envKey}</span>}
-          </div>
-        ))}
-        {Object.keys(cfg.providers).length === 0 && (
-          <div className="settings-desc">未配置 provider（可在 CLI 的 ~/.harness2/config.json 配置）</div>
-        )}
-      </div>
-      <div className="settings-table">
-        {Object.entries(cfg.roles).map(([role, r]) => (
-          <div key={role} className="settings-table-row">
-            <span className="row-key">{role}</span>
-            <span className="row-val">channel: {r.channel}</span>
-            <span className="row-val">model: {r.model}</span>
-          </div>
-        ))}
-      </div>
-      <div className="settings-table">
-        <div className="settings-table-row">
-          <span className="row-key">main（主模型）</span>
-          <input
-            className="settings-input mono"
-            value={mainChannel}
-            placeholder="channel（如 local-oai）"
-            onChange={(e) => setMainChannel(e.target.value)}
-          />
-          <input
-            className="settings-input mono"
-            value={mainModel}
-            placeholder="model（须在该 channel 的 models 内）"
-            onChange={(e) => setMainModel(e.target.value)}
-          />
-          <button type="button" className="btn-primary" onClick={applyMain}>
-            保存主模型
-          </button>
+    <>
+      <SettingsSectionBlock
+        title="模型配置页待接入（B 棒 ui-settings-models）"
+        desc="该分区已按 props 契约预留（组件名 ModelsSettings，见 renderer/settings/shell/models-contract.ts）"
+      >
+        <p className="settings-note">
+          模型配置页（D-50～D-59、D-85）由并行开发的 B 棒 `renderer/settings/models/**` 提供，尚未落地；
+          本分区当前由下面的**过渡面板**承载（与 CLI 共用 config.json），B 组件注册后本提示与过渡面板自动让位。
+        </p>
+      </SettingsSectionBlock>
+      <SettingsSectionBlock
+        title="模型与角色（过渡）"
+        desc="channel 列表与 roles 映射（config.json 同一份，与 CLI 共用）"
+      >
+        <div className="settings-table">
+          {Object.entries(cfg.providers).map(([name, p]) => (
+            <div key={name} className="settings-table-row">
+              <span className="row-key">{name}</span>
+              <span className="row-val">{p.protocol}</span>
+              <span className="row-val mono">{p.baseUrl}</span>
+              {p.envKey !== undefined && <span className="row-val mono">env:{p.envKey}</span>}
+            </div>
+          ))}
+          {Object.keys(cfg.providers).length === 0 && (
+            <div className="settings-desc">未配置 provider（可在 CLI 的 ~/.harness2/config.json 配置）</div>
+          )}
         </div>
-      </div>
-      {mainFeedback !== null && <p className="settings-feedback">{mainFeedback}</p>}
-      <p className="settings-note">
-        模型改动写入**全局** config.json（与 CLI 共用同一份；密钥仍只进 auth.json，写前校验、原子落盘）。
-        运行中会话的生效配置不变，新会话/重启 serve 后生效；增删 provider 仍请在 CLI 配置文件中进行。
-      </p>
-      {cfg.sources.global === false && cfg.sources.project === false && (
-        <p className="settings-warn">尚未找到任何配置文件（~/.harness2/config.json）</p>
-      )}
-    </Section>
+        <div className="settings-table">
+          {Object.entries(cfg.roles).map(([role, r]) => (
+            <div key={role} className="settings-table-row">
+              <span className="row-key">{role}</span>
+              <span className="row-val">channel: {r.channel}</span>
+              <span className="row-val">model: {r.model}</span>
+            </div>
+          ))}
+        </div>
+        <div className="settings-table">
+          <div className="settings-table-row">
+            <span className="row-key">main（主模型）</span>
+            <input
+              className="settings-input mono"
+              value={mainChannel}
+              placeholder="channel（如 local-oai）"
+              onChange={(e) => setMainChannel(e.target.value)}
+            />
+            <input
+              className="settings-input mono"
+              value={mainModel}
+              placeholder="model（须在该 channel 的 models 内）"
+              onChange={(e) => setMainModel(e.target.value)}
+            />
+            <button type="button" className="btn-primary" onClick={applyMain}>
+              保存主模型
+            </button>
+          </div>
+        </div>
+        {mainFeedback !== null && <p className="settings-feedback">{mainFeedback}</p>}
+        <p className="settings-note">
+          模型改动写入**全局** config.json（与 CLI 共用同一份；密钥仍只进 auth.json，写前校验、原子落盘）。
+          运行中会话的生效配置不变，新会话/重启 serve 后生效；增删 provider 仍请在 CLI 配置文件中进行。
+        </p>
+        {cfg.sources.global === false && cfg.sources.project === false && (
+          <p className="settings-warn">尚未找到任何配置文件（~/.harness2/config.json）</p>
+        )}
+      </SettingsSectionBlock>
+    </>
   );
 }
 
-function ApprovalSection({
+// —— 分区：审批与安全 ——
+
+function ApprovalSettingsSection({
   cfg,
   onSave,
 }: {
   cfg: SettingsConfigShape;
   onSave: (patch: Record<string, unknown>) => Promise<void>;
-}) {
+}): React.ReactNode {
   const [mode, setMode] = useState(cfg.approval.mode);
   const [feedback, setFeedback] = useState<string | null>(null);
   const apply = (): void => {
@@ -242,7 +168,7 @@ function ApprovalSection({
       .catch((e: Error) => setFeedback(e.message));
   };
   return (
-    <Section title="审批模式" desc="与 CLI config.json 的 approval.mode 同一字段">
+    <SettingsSectionBlock title="审批模式" desc="与 CLI config.json 的 approval.mode 同一字段">
       <div className="settings-choice">
         {APPROVAL_MODES.map((m) => (
           <button
@@ -257,7 +183,10 @@ function ApprovalSection({
         ))}
       </div>
       {cfg.approval.tools !== undefined && Object.keys(cfg.approval.tools).length > 0 && (
-        <Section title="工具级规则（只读展示）" desc="按工具粒度 allow/ask/deny，见 config.json approval.tools">
+        <SettingsSectionBlock
+          title="工具级规则（只读展示）"
+          desc="按工具粒度 allow/ask/deny，见 config.json approval.tools"
+        >
           <div className="settings-table">
             {Object.entries(cfg.approval.tools).map(([tool, rule]) => (
               <div key={tool} className="settings-table-row">
@@ -266,7 +195,7 @@ function ApprovalSection({
               </div>
             ))}
           </div>
-        </Section>
+        </SettingsSectionBlock>
       )}
       <div className="settings-row">
         <button type="button" className="btn-primary" onClick={apply}>
@@ -274,9 +203,11 @@ function ApprovalSection({
         </button>
         {feedback !== null && <span className="settings-feedback">{feedback}</span>}
       </div>
-    </Section>
+    </SettingsSectionBlock>
   );
 }
+
+// —— 分区：记忆 ——
 
 function MemorySection({
   cfg,
@@ -284,7 +215,7 @@ function MemorySection({
 }: {
   cfg: SettingsConfigShape;
   onSave: (patch: Record<string, unknown>) => Promise<void>;
-}) {
+}): React.ReactNode {
   const [mode, setMode] = useState(cfg.memory.mode);
   const [interval, setInterval] = useState(String(cfg.memory.nudgeInterval));
   const apply = (): void => {
@@ -294,7 +225,7 @@ function MemorySection({
   };
   return (
     <>
-      <Section title="记忆模式" desc="off/ask/auto 三态（memory.mode）">
+      <SettingsSectionBlock title="记忆模式" desc="off/ask/auto 三态（memory.mode）">
         <div className="settings-row">
           {MEMORY_MODES.map((m) => (
             <button
@@ -307,8 +238,8 @@ function MemorySection({
             </button>
           ))}
         </div>
-      </Section>
-      <Section title="复盘提醒间隔" desc="nudgeInterval（分钟，1..1000）">
+      </SettingsSectionBlock>
+      <SettingsSectionBlock title="复盘提醒间隔" desc="nudgeInterval（分钟，1..1000）">
         <input
           className="settings-input"
           type="number"
@@ -317,12 +248,15 @@ function MemorySection({
           value={interval}
           onChange={(e) => setInterval(e.target.value)}
         />
-      </Section>
-      <Section title="待审批记忆" desc="ask 模式下的暂存条目可在 CLI 中用 harness2 memory pending 查看与审批">
+      </SettingsSectionBlock>
+      <SettingsSectionBlock
+        title="待审批记忆"
+        desc="ask 模式下的暂存条目可在 CLI 中用 harness2 memory pending 查看与审批"
+      >
         <p className="settings-note">
           完整管理功能见后续版本（当前经 CLI：harness2 memory pending / approve / reject）
         </p>
-      </Section>
+      </SettingsSectionBlock>
       <button type="button" className="btn-primary" onClick={apply}>
         保存
       </button>
@@ -330,13 +264,15 @@ function MemorySection({
   );
 }
 
+// —— 分区：浏览器工具 ——
+
 function BrowserSection({
   cfg,
   onSave,
 }: {
   cfg: SettingsConfigShape;
   onSave: (patch: Record<string, unknown>) => Promise<void>;
-}) {
+}): React.ReactNode {
   const [enabled, setEnabled] = useState(cfg.browser.enabled);
   const [max, setMax] = useState(String(cfg.browser.maxConcurrent));
   const [idle, setIdle] = useState(String(cfg.browser.idleDestroyMs));
@@ -349,13 +285,13 @@ function BrowserSection({
   };
   return (
     <>
-      <Section title="浏览器工具" desc="browser_navigate / browser_snapshot 等浏览器工具">
+      <SettingsSectionBlock title="浏览器工具" desc="browser_navigate / browser_snapshot 等浏览器工具">
         <label className="settings-check">
           <input type="checkbox" checked={enabled} onChange={(e) => setEnabled(e.target.checked)} />
           启用浏览器工具
         </label>
-      </Section>
-      <Section title="最大并发数" desc="maxConcurrent（1..8）">
+      </SettingsSectionBlock>
+      <SettingsSectionBlock title="最大并发数" desc="maxConcurrent（1..8）">
         <input
           className="settings-input"
           type="number"
@@ -364,8 +300,8 @@ function BrowserSection({
           value={max}
           onChange={(e) => setMax(e.target.value)}
         />
-      </Section>
-      <Section title="空闲销毁时长" desc="idleDestroyMs（毫秒，≥1000）">
+      </SettingsSectionBlock>
+      <SettingsSectionBlock title="空闲销毁时长" desc="idleDestroyMs（毫秒，≥1000）">
         <input
           className="settings-input"
           type="number"
@@ -373,7 +309,7 @@ function BrowserSection({
           value={idle}
           onChange={(e) => setIdle(e.target.value)}
         />
-      </Section>
+      </SettingsSectionBlock>
       <button type="button" className="btn-primary" onClick={apply}>
         保存
       </button>
@@ -381,19 +317,21 @@ function BrowserSection({
   );
 }
 
-function CronSection() {
+// —— 分区：定时任务 / 插件与集成 / 子代理 ——
+
+function CronSection(): React.ReactNode {
   return (
-    <Section title="定时任务" desc="cron 任务由 CLI 命令管理（harness2 cron add/remove/list）">
+    <SettingsSectionBlock title="定时任务" desc="cron 任务由 CLI 命令管理（harness2 cron add/remove/list）">
       <p className="settings-note">桌面端可视化任务管理见后续版本；当前请在 CLI 中配置定时任务。</p>
-    </Section>
+    </SettingsSectionBlock>
   );
 }
 
-function PluginsSection({ cfg }: { cfg: SettingsConfigShape }) {
+function PluginsSection({ cfg }: { cfg: SettingsConfigShape }): React.ReactNode {
   const mcpNames = Object.keys(cfg.mcpServers);
   return (
     <>
-      <Section title="已装插件" desc="config.json plugins.allow 白名单">
+      <SettingsSectionBlock title="已装插件" desc="config.json plugins.allow 白名单">
         <div className="settings-table">
           {cfg.plugins.allow.length === 0 && <div className="settings-desc">无已启用插件</div>}
           {cfg.plugins.allow.map((p) => (
@@ -404,8 +342,8 @@ function PluginsSection({ cfg }: { cfg: SettingsConfigShape }) {
           ))}
         </div>
         <p className="settings-note">插件增删与审批经 CLI：harness2 plugin list / enable / disable</p>
-      </Section>
-      <Section title="MCP 服务器" desc="config.json mcpServers（stdio / streamable HTTP）">
+      </SettingsSectionBlock>
+      <SettingsSectionBlock title="MCP 服务器" desc="config.json mcpServers（stdio / streamable HTTP）">
         <div className="settings-table">
           {mcpNames.length === 0 && <div className="settings-desc">未配置 MCP 服务器</div>}
           {mcpNames.map((name) => {
@@ -428,7 +366,7 @@ function PluginsSection({ cfg }: { cfg: SettingsConfigShape }) {
             <span className="row-val">项目级 + 全局级（只读，由 CLI harness2 skill list 查看）</span>
           </div>
         </div>
-      </Section>
+      </SettingsSectionBlock>
     </>
   );
 }
@@ -439,7 +377,7 @@ function SubagentSection({
 }: {
   cfg: SettingsConfigShape;
   onSave: (patch: Record<string, unknown>) => Promise<void>;
-}) {
+}): React.ReactNode {
   const [maxDepth, setMaxDepth] = useState(String(cfg.subagent.maxDepth));
   const [maxTurns, setMaxTurns] = useState(String(cfg.subagent.maxTurns));
   const apply = (): void => {
@@ -451,7 +389,7 @@ function SubagentSection({
   };
   return (
     <>
-      <Section title="子代理深度" desc="maxDepth（1..10）">
+      <SettingsSectionBlock title="子代理深度" desc="maxDepth（1..10）">
         <input
           className="settings-input"
           type="number"
@@ -460,8 +398,8 @@ function SubagentSection({
           value={maxDepth}
           onChange={(e) => setMaxDepth(e.target.value)}
         />
-      </Section>
-      <Section title="子代理最大步数" desc="maxTurns（1..200）">
+      </SettingsSectionBlock>
+      <SettingsSectionBlock title="子代理最大步数" desc="maxTurns（1..200）">
         <input
           className="settings-input"
           type="number"
@@ -470,12 +408,12 @@ function SubagentSection({
           value={maxTurns}
           onChange={(e) => setMaxTurns(e.target.value)}
         />
-      </Section>
-      <Section title="子代理模型" desc="roles.subagent 的 channel / model（可在 CLI 配置文件调整）">
+      </SettingsSectionBlock>
+      <SettingsSectionBlock title="子代理模型" desc="roles.subagent 的 channel / model（可在 CLI 配置文件调整）">
         <p className="settings-desc">
           channel: {cfg.roles['subagent']?.channel ?? '未配置'} · model: {cfg.roles['subagent']?.model ?? '未配置'}
         </p>
-      </Section>
+      </SettingsSectionBlock>
       <button type="button" className="btn-primary" onClick={apply}>
         保存
       </button>
@@ -483,7 +421,9 @@ function SubagentSection({
   );
 }
 
-function GatewaySection({
+// —— 分区：凭据（IM 网关的 appId/appSecret + 私聊/群策略） ——
+
+function CredentialsSection({
   cfg,
   auth,
   onSaveCfg,
@@ -493,7 +433,7 @@ function GatewaySection({
   auth: SettingsAuthMaskedShape;
   onSaveCfg: (patch: Record<string, unknown>) => Promise<void>;
   onSaveAuth: (patch: Record<string, unknown>) => Promise<void>;
-}) {
+}): React.ReactNode {
   const channels = ['qq', 'feishu'] as const;
   const [appId, setAppId] = useState<Record<string, string>>({});
   const [secret, setSecret] = useState<Record<string, string>>({});
@@ -532,7 +472,7 @@ function GatewaySection({
     });
   };
   return (
-    <Section title="IM 网关" desc="QQ / 飞书凭据写 auth.json（只显示掩码），私聊/群策略写 config.json">
+    <SettingsSectionBlock title="IM 网关凭据" desc="QQ / 飞书凭据写 auth.json（只显示掩码），私聊/群策略写 config.json">
       {channels.map((c) => {
         const gw = (cfg.gateways?.[c] ?? {}) as Record<string, unknown>;
         const enabled = gw['enabled'] !== false;
@@ -592,36 +532,36 @@ function GatewaySection({
         );
       })}
       <p className="settings-note">连接状态点与断线重连提示属于真机项，见残留手工验收清单。</p>
-    </Section>
+    </SettingsSectionBlock>
   );
 }
 
-function SessionsSection() {
+// —— 分区：会话与数据 / 诊断 / 快捷键 / 关于 ——
+
+function SessionsSection(): React.ReactNode {
   return (
-    <>
-      <Section title="会话与数据" desc="会话以事件溯源日志存储在本地">
-        <div className="settings-table">
-          <div className="settings-table-row">
-            <span className="row-key">存储位置</span>
-            <span className="row-val mono">~/.harness2/sessions/</span>
-          </div>
-          <div className="settings-table-row">
-            <span className="row-key">导出 / 回放</span>
-            <span className="row-val">CLI：harness2 export &lt;id&gt; · harness2 replay（桌面入口见后续版本）</span>
-          </div>
+    <SettingsSectionBlock title="会话与数据" desc="会话以事件溯源日志存储在本地">
+      <div className="settings-table">
+        <div className="settings-table-row">
+          <span className="row-key">存储位置</span>
+          <span className="row-val mono">~/.harness2/sessions/</span>
         </div>
-        <p className="settings-note">仅本地存储，无遥测上报。</p>
-      </Section>
-    </>
+        <div className="settings-table-row">
+          <span className="row-key">导出 / 回放</span>
+          <span className="row-val">CLI：harness2 export &lt;id&gt; · harness2 replay（桌面入口见后续版本）</span>
+        </div>
+      </div>
+      <p className="settings-note">仅本地存储，无遥测上报。</p>
+    </SettingsSectionBlock>
   );
 }
 
-function DiagnosticsSection() {
+function DiagnosticsSection(): React.ReactNode {
   const [report, setReport] = useState<SettingsDoctorReportShape | null>(null);
   const [crashes, setCrashes] = useState<SettingsCrashReportShape[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const run = (): void => {
+  const run = useCallback((): void => {
     setLoading(true);
     setError(null);
     void window.harness2
@@ -633,12 +573,12 @@ function DiagnosticsSection() {
       .settingsGetCrashReports()
       .then(setCrashes)
       .catch(() => {});
-  };
-  useEffect(run, []); // eslint-disable-line react-hooks/exhaustive-deps
+  }, []);
+  useEffect(run, [run]);
   const statusLabel: Record<SettingsDoctorCheck['status'], string> = { ok: 'OK', warn: 'WARN', fail: 'FAIL' };
   return (
     <>
-      <Section title="doctor 六项检查" desc="复用内核 runDoctor（node/config/home/mcp/sessions/skills）">
+      <SettingsSectionBlock title="doctor 六项检查" desc="复用内核 runDoctor（node/config/home/mcp/sessions/skills）">
         <button type="button" className="btn-primary" onClick={run} disabled={loading}>
           {loading ? '检查中…' : '运行检查'}
         </button>
@@ -654,8 +594,8 @@ function DiagnosticsSection() {
             ))}
           </div>
         )}
-      </Section>
-      <Section title="崩溃报告" desc="~/.harness2/crash/（本地，无遥测）">
+      </SettingsSectionBlock>
+      <SettingsSectionBlock title="崩溃报告" desc="~/.harness2/crash/（本地，无遥测）">
         <div className="settings-table">
           {crashes.length === 0 && <div className="settings-desc">无崩溃报告</div>}
           {crashes.map((c) => (
@@ -666,12 +606,12 @@ function DiagnosticsSection() {
             </div>
           ))}
         </div>
-      </Section>
+      </SettingsSectionBlock>
     </>
   );
 }
 
-function ShortcutsSection() {
+function ShortcutsSection(): React.ReactNode {
   const rows = [
     ['Enter', '发送当前消息'],
     ['Shift+Enter', '换行（不发送）'],
@@ -682,7 +622,7 @@ function ShortcutsSection() {
     ['Ctrl+Shift+I / Cmd+Opt+I', '开发者工具'],
   ];
   return (
-    <Section title="快捷键" desc="只读列表">
+    <SettingsSectionBlock title="快捷键" desc="只读列表">
       <div className="settings-table">
         {rows.map(([k, d]) => (
           <div key={k} className="settings-table-row">
@@ -691,38 +631,40 @@ function ShortcutsSection() {
           </div>
         ))}
       </div>
-    </Section>
+    </SettingsSectionBlock>
   );
 }
 
-function AboutSection() {
+function AboutSection(): React.ReactNode {
   return (
-    <>
-      <Section title="harness2 桌面端" desc="事件溯源 · 单写者 · 崩溃一致 · 仅本地无遥测">
-        <div className="settings-table">
-          <div className="settings-table-row">
-            <span className="row-key">版本</span>
-            <span className="row-val">v1.0.0</span>
-          </div>
-          <div className="settings-table-row">
-            <span className="row-key">内核</span>
-            <span className="row-val">@harness2/core（会话事件溯源内核）</span>
-          </div>
-          <div className="settings-table-row">
-            <span className="row-key">数据</span>
-            <span className="row-val">仅本地存储，无遥测上报</span>
-          </div>
-          <div className="settings-table-row">
-            <span className="row-key">更新</span>
-            <span className="row-val">目前无自动更新；需手动下载新安装包或 npm update</span>
-          </div>
+    <SettingsSectionBlock title="harness2 桌面端" desc="事件溯源 · 单写者 · 崩溃一致 · 仅本地无遥测">
+      <div className="settings-table">
+        <div className="settings-table-row">
+          <span className="row-key">版本</span>
+          <span className="row-val">v1.0.0</span>
         </div>
-      </Section>
-    </>
+        <div className="settings-table-row">
+          <span className="row-key">内核</span>
+          <span className="row-val">@harness2/core（会话事件溯源内核）</span>
+        </div>
+        <div className="settings-table-row">
+          <span className="row-key">数据</span>
+          <span className="row-val">仅本地存储，无遥测上报</span>
+        </div>
+        <div className="settings-table-row">
+          <span className="row-key">更新</span>
+          <span className="row-val">目前无自动更新；需手动下载新安装包或 npm update</span>
+        </div>
+      </div>
+    </SettingsSectionBlock>
   );
 }
 
-// —— 主弹窗 ——
+function LoadingPane(): React.ReactNode {
+  return <div className="settings-desc">加载中…</div>;
+}
+
+// —— 主弹窗（组合根） ——
 
 export function SettingsDialog({
   open,
@@ -733,10 +675,12 @@ export function SettingsDialog({
   onClose: () => void;
   onThemeChange: (t: SettingsTheme) => void;
 }) {
-  const [active, setActive] = useState('general');
   const [prefs, setPrefs] = useState<SettingsPreferencesShape | null>(null);
   const [cfg, setCfg] = useState<SettingsConfigShape | null>(null);
   const [auth, setAuth] = useState<SettingsAuthMaskedShape | null>(null);
+  const [prefsNote, setPrefsNote] = useState<string | null>(null);
+  // 当前主题来自壳主题 store（P4/D-15 的真源），不另存一份易漂移的副本
+  const theme = useShellTheme();
 
   const reload = useCallback(async () => {
     try {
@@ -758,10 +702,27 @@ export function SettingsDialog({
     if (open) void reload();
   }, [open, reload]);
 
-  const savePrefs = async (next: SettingsPreferencesShape): Promise<void> => {
-    const saved = await window.harness2.settingsSetPreferences(next);
-    setPrefs(saved);
-    if (saved.theme !== prefs?.theme) onThemeChange(saved.theme);
+  /** 偏好持久化（全量对象写回；prefs 未载入时不写，避免把未读到的字段刷成默认值） */
+  const savePrefsPatch = (patch: Partial<SettingsPreferencesShape>): void => {
+    if (prefs === null) {
+      setPrefsNote('偏好尚未载入，改动未保存');
+      return;
+    }
+    setPrefsNote(null);
+    const next: SettingsPreferencesShape = { ...prefs, ...patch };
+    void window.harness2
+      .settingsSetPreferences(next)
+      .then((saved) => setPrefs(saved))
+      .catch((e: Error) => setPrefsNote(`偏好保存失败：${e.message}`));
+  };
+
+  const selectTheme = (t: SettingsTheme): void => {
+    onThemeChange(t); // 宿主：立即呈现（P4 setShellTheme → D-15 四要素）
+    savePrefsPatch({ theme: t });
+  };
+
+  const selectNotifyDetails = (d: SettingsNotifyDetails): void => {
+    savePrefsPatch({ notifyDetails: d });
   };
 
   const saveCfg = async (patch: Record<string, unknown>): Promise<void> => {
@@ -776,65 +737,134 @@ export function SettingsDialog({
     setAuth(await window.harness2.settingsGetAuthMasked());
   };
 
-  const sections: Record<string, React.ReactNode> = useMemo(
-    () => ({
-      general: prefs !== null ? <GeneralSection key="g" prefs={prefs} onSave={savePrefs} /> : <LoadingPane />,
-      appearance: prefs !== null ? <AppearanceSection key="a" prefs={prefs} onSave={savePrefs} /> : <LoadingPane />,
-      providers: cfg !== null ? <ProvidersSection key="p" cfg={cfg} onSave={saveCfg} /> : <LoadingPane />,
-      approval: cfg !== null ? <ApprovalSection key="ap" cfg={cfg} onSave={saveCfg} /> : <LoadingPane />,
-      memory: cfg !== null ? <MemorySection key="m" cfg={cfg} onSave={saveCfg} /> : <LoadingPane />,
-      browser: cfg !== null ? <BrowserSection key="b" cfg={cfg} onSave={saveCfg} /> : <LoadingPane />,
-      cron: <CronSection key="c" />,
-      plugins: cfg !== null ? <PluginsSection key="pl" cfg={cfg} /> : <LoadingPane />,
-      subagent: cfg !== null ? <SubagentSection key="s" cfg={cfg} onSave={saveCfg} /> : <LoadingPane />,
-      gateway:
-        cfg !== null && auth !== null ? (
-          <GatewaySection key="g2" cfg={cfg} auth={auth} onSaveCfg={saveCfg} onSaveAuth={saveAuth} />
-        ) : (
-          <LoadingPane />
+  // B 棒模型页的接入面：注册进 MODELS_SECTION_ID 即接管（props 契约见 models-contract.ts）。
+  // 未注册 → 显式占位 + 过渡面板（不 import 不存在的路径，不造假实现）。
+  const modelsContribution = findSettingsSection(MODELS_SECTION_ID);
+
+  const sections: readonly SettingsSectionDefinition[] = useMemo(() => {
+    const ModelsComponent = modelsContribution?.component;
+    const modelsProps: ModelsSettingsProps = {
+      active: true,
+      ...(cfg !== null ? { config: cfg } : {}),
+      onSaveConfig: saveCfg,
+      ...(modelsContribution?.props ?? {}),
+    };
+    return [
+      {
+        id: 'general',
+        label: '通用',
+        en: 'General',
+        owner: 'ui-settings-general',
+        order: 0,
+        render: () => (
+          <GeneralSettings
+            theme={theme}
+            onSelectTheme={selectTheme}
+            notifyDetails={prefs?.notifyDetails ?? 'minimal'}
+            onSelectNotifyDetails={selectNotifyDetails}
+            loaded={prefs !== null}
+            note={prefsNote}
+          />
         ),
-      sessions: <SessionsSection key="se" />,
-      diagnostics: <DiagnosticsSection key="d" />,
-      shortcuts: <ShortcutsSection key="k" />,
-      about: <AboutSection key="ab" />,
-    }),
+      },
+      {
+        id: MODELS_SECTION_ID,
+        label: '模型配置',
+        en: 'Models',
+        owner: modelsContribution?.owner ?? MODELS_SETTINGS_OWNER,
+        order: 10,
+        render: () =>
+          ModelsComponent !== undefined ? (
+            <ModelsComponent {...modelsProps} />
+          ) : cfg !== null ? (
+            <ModelsTransitionSection cfg={cfg} onSave={saveCfg} />
+          ) : (
+            <LoadingPane />
+          ),
+      },
+      {
+        id: 'credentials',
+        label: '凭据',
+        en: 'Credentials',
+        owner: 'ui-settings',
+        order: 20,
+        render: () =>
+          cfg !== null && auth !== null ? (
+            <CredentialsSection cfg={cfg} auth={auth} onSaveCfg={saveCfg} onSaveAuth={saveAuth} />
+          ) : (
+            <LoadingPane />
+          ),
+      },
+      {
+        id: 'approval',
+        label: '审批与安全',
+        en: 'Approval & Security',
+        owner: 'ui-settings',
+        order: 30,
+        render: () => (cfg !== null ? <ApprovalSettingsSection cfg={cfg} onSave={saveCfg} /> : <LoadingPane />),
+      },
+      {
+        id: 'memory',
+        label: '记忆',
+        en: 'Memory',
+        owner: 'ui-settings',
+        order: 40,
+        render: () => (cfg !== null ? <MemorySection cfg={cfg} onSave={saveCfg} /> : <LoadingPane />),
+      },
+      {
+        id: 'browser',
+        label: '浏览器工具',
+        en: 'Browser',
+        owner: 'ui-settings',
+        order: 50,
+        render: () => (cfg !== null ? <BrowserSection cfg={cfg} onSave={saveCfg} /> : <LoadingPane />),
+      },
+      { id: 'cron', label: '定时任务', en: 'Cron', owner: 'ui-settings', order: 60, render: () => <CronSection /> },
+      {
+        id: 'plugins',
+        label: '插件与集成',
+        en: 'Plugins & MCP',
+        owner: 'ui-settings',
+        order: 70,
+        render: () => (cfg !== null ? <PluginsSection cfg={cfg} /> : <LoadingPane />),
+      },
+      {
+        id: 'subagent',
+        label: '子代理',
+        en: 'Subagent',
+        owner: 'ui-settings',
+        order: 80,
+        render: () => (cfg !== null ? <SubagentSection cfg={cfg} onSave={saveCfg} /> : <LoadingPane />),
+      },
+      {
+        id: 'sessions',
+        label: '会话与数据',
+        en: 'Sessions & Data',
+        owner: 'ui-settings',
+        order: 90,
+        render: () => <SessionsSection />,
+      },
+      {
+        id: 'diagnostics',
+        label: '诊断',
+        en: 'Diagnostics',
+        owner: 'ui-settings',
+        order: 100,
+        render: () => <DiagnosticsSection />,
+      },
+      {
+        id: 'shortcuts',
+        label: '快捷键',
+        en: 'Keyboard Shortcuts',
+        owner: 'ui-settings',
+        order: 110,
+        render: () => <ShortcutsSection />,
+      },
+      { id: 'about', label: '关于', en: 'About', owner: 'ui-settings', order: 120, render: () => <AboutSection /> },
+    ];
+    // 分区渲染闭包捕获上述数据/回调；数据未变时不重建分区表
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [prefs, cfg, auth, active],
-  );
+  }, [prefs, cfg, auth, theme, prefsNote, modelsContribution]);
 
-  if (!open) return null;
-
-  return (
-    <div className="settings-overlay" onClick={onClose}>
-      <div className="settings-dialog" role="dialog" aria-label="设置" onClick={(e) => e.stopPropagation()}>
-        <div className="settings-nav">
-          <div className="settings-nav-title">设置</div>
-          {CATEGORIES.map((c) => (
-            <button
-              key={c.id}
-              type="button"
-              className={`settings-nav-item${active === c.id ? ' on' : ''}`}
-              onClick={() => setActive(c.id)}
-            >
-              <span className="nav-cn">{c.label}</span>
-              <span className="nav-en">{c.en}</span>
-            </button>
-          ))}
-        </div>
-        <div className="settings-content">
-          <div className="settings-content-head">
-            <span className="settings-head-title">{CATEGORIES.find((c) => c.id === active)?.label}</span>
-            <button type="button" className="btn-close" onClick={onClose} aria-label="关闭">
-              ✕
-            </button>
-          </div>
-          <div className="settings-body">{sections[active]}</div>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function LoadingPane() {
-  return <div className="settings-desc">加载中…</div>;
+  return <SettingsShell open={open} onClose={onClose} sections={sections} />;
 }
