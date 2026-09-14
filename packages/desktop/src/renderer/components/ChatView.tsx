@@ -1,13 +1,25 @@
-// 消息流（B3-2 拆分产物；D1 接 Composer 草稿/引用/可见队列；D2 接真实命令日志 + 稳定滚动）。
-// ChatItemView / ChatView（气泡、tool 行、命令日志、diff 卡、审批条、输入框）。
-import { useEffect, useRef } from 'react';
+// 消息流（B3-2 拆分产物；D2 接真实命令日志 + 稳定滚动）。
+// ChatItemView / ChatTranscript（气泡、tool 行、命令日志、diff 卡、审批条、可见队列）。
+//
+// P5-C 收敛：本文件**不再自带输入框** —— 对话页的唯一 composer 是
+// `renderer/conversation/composer/Composer.tsx`（由 `conversation/assembly.tsx` 装配）。
+// 原内建 textarea / send() / 草稿读写 / @引用解析随之删除（避免两套输入互相打架）；
+// 这里只保留转录渲染，作为视图环的 `chat` 视图内容。
+// 数据源（store/controller）由调用方经 props 传入（视图环从会话对象取），不在此抓全局单例。
+import { useEffect, useRef, useSyncExternalStore } from 'react';
+import type { Controller } from '../app-controller.js';
 import { displayToolName, type ChatItem } from '../chat-model.js';
-import { resolveFileRefs } from '../../shared/file-ref.js';
-import { autoHeightFor, composeQueueView, shouldSubmitOnKey } from '../features/composer/composer-model.js';
+import { composeQueueView } from '../features/composer/composer-model.js';
 import { CommandLog } from '../features/timeline/CommandLog.js';
 import { buildToolRow, isAtBottom, nextScrollTop } from '../features/timeline/execution-log.js';
+import type { AppStore } from '../store.js';
 import { DiffCard } from './DiffCard.js';
-import { controller, store, useAppState } from '../app-shared.js';
+
+/** 转录视图的数据源（store + controller 真身；由会话对象携带） */
+export interface ChatTranscriptDeps {
+  readonly store: AppStore;
+  readonly controller: Controller;
+}
 
 /** 参数摘要（工具行/审批按钮用；单行 ≤80 字） */
 function argsSummary(args: unknown): string {
@@ -26,7 +38,7 @@ function diffTargetFile(args: unknown): string | undefined {
 }
 
 /** 子会话跳转按钮（阶段 8 / P4-C）：打开子会话（选中 + 全量重放 + 拉齐只读视图） */
-function SubagentJump({ childSessionId }: { childSessionId: string }) {
+function SubagentJump({ childSessionId, controller }: { childSessionId: string; controller: Controller }) {
   return (
     <button
       type="button"
@@ -43,7 +55,17 @@ function SubagentJump({ childSessionId }: { childSessionId: string }) {
   );
 }
 
-export function ChatItemView({ item, sessionId }: { item: ChatItem; sessionId?: string }) {
+export function ChatItemView({
+  item,
+  sessionId,
+  store,
+  controller,
+}: {
+  item: ChatItem;
+  sessionId?: string;
+  store: AppStore;
+  controller: Controller;
+}) {
   switch (item.kind) {
     case 'turn-header':
       return <div className="turn-header">── turn</div>;
@@ -94,7 +116,7 @@ export function ChatItemView({ item, sessionId }: { item: ChatItem; sessionId?: 
                 {item.result.ok ? 'ok' : `FAILED${item.result.error !== undefined ? `: ${item.result.error}` : ''}`}
               </span>
             )}
-            {jump !== undefined && <SubagentJump childSessionId={jump} />}
+            {jump !== undefined && <SubagentJump childSessionId={jump} controller={controller} />}
           </div>
           {showDiff && item.result?.ok && (
             <DiffCard
@@ -171,12 +193,14 @@ export function ChatItemView({ item, sessionId }: { item: ChatItem; sessionId?: 
   }
 }
 
-export function ChatView({ streamId }: { streamId: string | null }) {
-  const state = useAppState();
-  const stream = streamId !== null ? store.peekStream(streamId) : undefined;
-  const items = streamId !== null ? store.chatItems(streamId) : [];
-  // D1：草稿按会话隔离（store 持事实；切换会话各自保留），持久化经 controller 去抖落盘
-  const draft = streamId !== null ? store.draftFor(streamId) : '';
+/**
+ * 会话转录视图（视图环 `chat` 视图的内容；P5-C 起不再含输入框）。
+ * 消息流 + 审批条 + 可见队列；输入由 `conversation/composer` 的常驻 Composer 承担。
+ */
+export function ChatTranscript({ streamId, store, controller }: ChatTranscriptDeps & { streamId: string }) {
+  const state = useSyncExternalStore(store.subscribe, store.getState);
+  const stream = store.peekStream(streamId);
+  const items = store.chatItems(streamId);
   const scrollRef = useRef<HTMLDivElement>(null);
   /** 渲染前是否贴底（决定新内容到达时是否跟随滚动） */
   const wasAtBottomRef = useRef(true);
@@ -196,55 +220,33 @@ export function ChatView({ streamId }: { streamId: string | null }) {
     if (el !== null) wasAtBottomRef.current = isAtBottom(el);
   };
 
-  if (streamId === null) {
-    return (
-      <div className="chat empty-pane">
-        <p>从左侧拖会话到此分屏</p>
-      </div>
-    );
-  }
   if (stream === undefined || !stream.loaded) {
     return (
       <div className="chat empty-pane">
-        <p>加载会话…</p>
+        <p>{state.status === 'connected' ? '加载会话…' : '服务未连接…'}</p>
       </div>
     );
   }
-
-  const draftText = draft.trim();
-  const send = (): void => {
-    if (draftText.length === 0) return;
-    const session = state.sessions.find((s) => s.id === streamId);
-    const cwd = session?.cwd;
-    // 原始输入与模型上下文分离：草稿先清（用户可继续输入下一句），随后解析 @引用 合成 finalText
-    controller.setDraft(streamId, '');
-    if (cwd && cwd.length > 0 && draftText.includes('@')) {
-      // D1：@引用 解析（路径边界/字节预算/二进制由 shared/file-ref 统一把关）
-      void resolveFileRefs(draftText, cwd, (path, c) => window.harness2.readFileForRef(path, c)).then(
-        ({ finalText, sources, skipped, notFound }) => {
-          // 引用来源可见：进了上下文的 / 被拒的 / 未找到的，全部记账后展示
-          store.setRefReport(streamId, { sources, skipped, notFound });
-          void controller.submitMessage(streamId, finalText);
-        },
-      );
-      return;
-    }
-    store.setRefReport(streamId, { sources: [], skipped: [], notFound: [] });
-    void controller.submitMessage(streamId, draftText);
-  };
 
   const queueView = composeQueueView({
     queue: stream.queue,
     pendingSubmits: stream.pendingSubmits,
     submitAcks: stream.submitAcks,
   });
+  // D1/P1-1：本轮 `@path` 引用来源报告（哪些进了上下文、哪些被拒及原因）—— 引用结果必须可见
   const refReport = store.peekRefReport(streamId);
 
   return (
     <div className="chat">
       <div className="messages" ref={scrollRef} onScroll={onMessagesScroll}>
         {items.map((item, i) => (
-          <ChatItemView key={item.callId ?? item.seq ?? `i${i}`} item={item} sessionId={streamId} />
+          <ChatItemView
+            key={item.callId ?? item.seq ?? `i${i}`}
+            item={item}
+            sessionId={streamId}
+            store={store}
+            controller={controller}
+          />
         ))}
         {items.length === 0 && <div className="empty-state">发送第一条消息开始对话</div>}
       </div>
@@ -312,42 +314,6 @@ export function ChatView({ streamId }: { streamId: string | null }) {
           ))}
         </div>
       )}
-      <div className="composer">
-        <textarea
-          value={draft}
-          style={{ height: autoHeightFor(draft) }}
-          placeholder={state.status === 'connected' ? '输入消息（Enter 发送，Shift+Enter 换行）' : '服务未连接…'}
-          disabled={state.status !== 'connected'}
-          onChange={(e) => controller.setDraft(streamId, e.target.value)}
-          onKeyDown={(e) => {
-            // IME 不误发：组合中（isComposing / keyCode 229）绝不提交
-            if (shouldSubmitOnKey(e)) {
-              e.preventDefault();
-              send();
-            }
-          }}
-        />
-        {stream.running ? (
-          <>
-            <button
-              type="button"
-              className="btn-send"
-              disabled={draftText.length === 0}
-              title="排队发送（当前 turn 结束后按序执行）"
-              onClick={send}
-            >
-              排队
-            </button>
-            <button type="button" className="btn-stop" onClick={() => void controller.cancelTurn(streamId)}>
-              ■ 停止
-            </button>
-          </>
-        ) : (
-          <button type="button" className="btn-send" disabled={draftText.length === 0} onClick={send}>
-            发送
-          </button>
-        )}
-      </div>
     </div>
   );
 }

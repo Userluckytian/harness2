@@ -710,26 +710,151 @@ body,
 .runtime-cancel {
   color: var(--muted);
 }
+/* —— 对话席位（P5-C 接线）：头部 + 视图环 + 常驻 composer 纵向填满 main 席位 —— */
+.conversation-seat {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+}
+.view-ring {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+}
+.view-ring-tabs {
+  display: flex;
+  gap: 4px;
+  padding: 6px 12px 0;
+  border-bottom: 1px solid var(--border);
+}
+.view-ring-tab {
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  color: var(--fg-muted);
+  padding: 4px 10px;
+  font: inherit;
+  cursor: pointer;
+}
+.view-ring-tab.is-active {
+  color: var(--fg);
+  border-bottom-color: var(--accent);
+}
+.view-ring-session,
+.view-ring-view {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+}
+.view-ring-empty {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  justify-content: center;
+  color: var(--fg-muted);
+}
+
+/* —— 常驻 composer（P5-B / D-33：无会话也挂载，仅 inert） —— */
+.composer-slot {
+  display: flex;
+  flex-direction: column;
+}
+.composer-takeover[hidden],
+.composer-default[hidden] {
+  display: none;
+}
 .composer {
   display: flex;
+  flex-direction: column;
   gap: 8px;
   padding: 10px 16px;
   border-top: 1px solid var(--border);
   background: var(--panel);
 }
-.composer textarea {
-  flex: 1;
-  resize: none;
-  height: 64px;
+.composer-editor {
+  min-height: 40px;
+  max-height: 200px;
+  overflow-y: auto;
   background: var(--composer-bg);
   color: inherit;
   border: 1px solid var(--border);
   border-radius: 8px;
   padding: 8px;
   font: inherit;
+  white-space: pre-wrap;
+  word-break: break-word;
 }
-.composer textarea:focus {
+.composer-editor:focus {
   outline: 1px solid var(--accent);
+}
+.composer-editor[aria-disabled='true'] {
+  opacity: 0.6;
+}
+.composer-chip {
+  background: var(--accent-soft);
+  border: 1px solid var(--border2);
+  border-radius: 4px;
+  padding: 0 4px;
+  margin: 0 2px;
+  font-size: 12px;
+  white-space: nowrap;
+}
+.composer-attachments {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--fg-muted);
+}
+.composer-attachment.att-failed {
+  color: var(--danger);
+}
+.composer-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+.btn-attach {
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--fg-muted);
+  padding: 8px 12px;
+  cursor: pointer;
+}
+.btn-reference {
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--fg-muted);
+  padding: 8px 12px;
+  cursor: pointer;
+}
+.btn-attach:disabled,
+.btn-reference:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+/* 附件缩略图（图片本地预览；图片当前不可提交，缩略图仅作本地预览） */
+.composer-attachment-thumb {
+  width: 16px;
+  height: 16px;
+  object-fit: cover;
+  border-radius: 3px;
+  vertical-align: -3px;
+  margin-right: 4px;
+}
+/* 提交结果提示（P1-2 拒绝可见 / P2-1 placement 落点） */
+.composer-status {
+  padding: 4px 2px;
+  font-size: 12px;
+  color: var(--fg-muted);
+}
+.composer-status[data-kind='error'] {
+  color: var(--danger);
 }
 .btn-send,
 .btn-stop {

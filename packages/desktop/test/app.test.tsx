@@ -203,25 +203,35 @@ describe('对话 UI（jsdom）', () => {
     expect(document.querySelector('[data-seat="rightbar"]')?.hasAttribute('hidden')).toBe(true);
   });
 
-  it('输入框：Enter 提交（trim）→ 转运行中（停止按钮）→ 停止发 cancel；Shift+Enter 换行不提交', async () => {
+  // P5-C 迁移：内建 textarea 已被常驻 Composer 取代（contentEditable + 主指针按钮）。
+  // 输入模拟用粘贴分支（jsdom 无 beforeinput 合成路径，见 conversation/assembly.test.tsx 文件头）。
+  // P5 修复（P0-1）：这里**必须**输入带首尾空白的文本并断言 trim 后的载荷 ——
+  // 旧写法直接粘贴已 trim 的数据再断言同值，等于把「提交边界丢 trim」这个回归测不出来
+  // （去掉 trim 也照样绿）。输入 '  你好  ' → 断言 rawText '你好' 才能真正钉住 trim。
+  it('composer：Enter 提交（提交边界 trim）→ 转运行中（停止）→ 停止发 cancel；Shift+Enter 换行不提交', async () => {
     const api = makeFakeApi();
     const App = (await bootApp(api)) as { App: () => React.ReactNode };
     render(<App.App />);
     fireEvent.click(await screen.findByRole('button', { name: /第一句/ }));
 
-    const box = (await screen.findByPlaceholderText(/输入消息/)) as HTMLTextAreaElement;
-    fireEvent.change(box, { target: { value: '  你好  ' } });
-    fireEvent.keyDown(box, { key: 'Enter', shiftKey: true }); // 换行：不提交
-    fireEvent.keyDown(box, { key: 'Enter', shiftKey: false }); // 提交
-    // D1：发送走 submit（幂等 clientMessageId + queue 语义），不再走无 ack 的 user-message
-    expect(api.submit).toHaveBeenCalledWith(
-      expect.objectContaining({ sessionId: 's1', rawText: '你好', intent: 'queue' }),
+    const editor = await screen.findByTestId('composer-editor');
+    await waitFor(() => expect(editor.getAttribute('aria-disabled')).toBeNull()); // 连接建立后才可输入
+    fireEvent.paste(editor, { clipboardData: { getData: () => '  你好  ' } });
+    fireEvent.keyDown(editor, { key: 'Enter', shiftKey: true }); // 换行：不提交
+    fireEvent.keyDown(editor, { key: 'Enter', shiftKey: false }); // 提交
+    // D1/P5-C：发送走 submit（幂等 clientMessageId + queue 语义），仍不碰无 ack 的 user-message
+    // P0-1：载荷已 trim（上游 ui-conversation/src/client/input/facade.ts:736,760 defaultSink(draft.trim(), …)）
+    // 提交边界含 @引用 解析（可能 await），故用 waitFor 等落定
+    await waitFor(() =>
+      expect(api.submit).toHaveBeenCalledWith(
+        expect.objectContaining({ sessionId: 's1', rawText: '你好', intent: 'queue' }),
+      ),
     );
-    expect(box.value).toBe(''); // 提交后清空草稿
+    expect(editor.textContent).toBe(''); // D-34：提交即清（同一事务）
 
-    // 乐观 running → 停止按钮出现
-    expect(await screen.findByRole('button', { name: /停止/ })).toBeTruthy();
-    fireEvent.click(screen.getByRole('button', { name: /停止/ }));
+    // 乐观 running → 同一主指针位置变成 Stop
+    const stop = await screen.findByRole('button', { name: '停止' });
+    fireEvent.click(stop);
     // D3/D4：停止走 cancel（三态 ack），目标 = 当前 turn
     expect(api.cancel).toHaveBeenCalledWith(expect.objectContaining({ target: { kind: 'turn', id: 't1' } }));
   });

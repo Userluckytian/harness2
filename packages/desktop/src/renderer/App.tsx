@@ -23,7 +23,7 @@ import { filterSessionList } from '../shared/metadata.js';
 
 // 对外再导出（拆分前 App.tsx 的全部导出面；main.tsx / 测试仍从 './App.js' 引）
 export { controller, dragState, store, useAppState, StatusBadge } from './app-shared.js';
-export { ChatItemView, ChatView } from './components/ChatView.js';
+export { ChatItemView, ChatTranscript } from './components/ChatView.js';
 
 export function cycleTheme(current: SettingsTheme): SettingsTheme {
   const i = THEME_CYCLE.indexOf(current);
