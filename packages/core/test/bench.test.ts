@@ -145,7 +145,7 @@ function patchCentralUncompressedSize(zip: Uint8Array, fakeSize: number): Uint8A
 }
 
 describe('runSessionBench 基线管线（小样本自检）', () => {
-  it('六项操作全部产出测量记录（大样本跑 scripts/bench-session.mjs，不在每测运行）', () => {
+  it('九项操作全部产出测量记录（大样本跑 scripts/bench-session.mjs，不在每测运行）', () => {
     const r = runSessionBench({ events: 400, seed: 20260907 });
     expect(r.events).toBe(400);
     expect(r.logBytes).toBeGreaterThan(0);
@@ -155,6 +155,9 @@ describe('runSessionBench 基线管线（小样本自检）', () => {
       'computeProjection',
       'manager.list（全库）',
       'manager.search（全库）',
+      'SessionManager.reindex（索引构建）',
+      'manager.searchIndexed（全库·索引热）',
+      'SessionSearchIndex.search（索引热·单会话）',
       'exportSession',
       'importReplay',
     ]);

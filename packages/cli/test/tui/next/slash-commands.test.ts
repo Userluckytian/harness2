@@ -214,10 +214,17 @@ describe('模糊过滤 filterCommands', () => {
     expect(filterCommands('/u')).toEqual(['/undo', '/auto', '/fullscreen', '/plugins', '/resume']);
   });
 
-  it('前缀命中（/re → reasoning redo resume + 子序列 always-approve fullscreen）', () => {
-    // 字典序：reasoning < redo（e-a < e-d）；'re' 也是 always-approve / fullscreen 的子序列
-    // （P2-C 候选表加性新增 /fullscreen）
-    expect(filterCommands('/re')).toEqual(['/reasoning', '/redo', '/resume', '/always-approve', '/fullscreen']);
+  it('前缀命中（/re → reasoning redo reindex resume + 子序列 always-approve fullscreen）', () => {
+    // 字典序：reasoning < redo < reindex < resume；'re' 也是 always-approve / fullscreen 的子序列
+    // （P2-C 加性 /fullscreen；P7 加性 /reindex 前缀命中）
+    expect(filterCommands('/re')).toEqual([
+      '/reasoning',
+      '/redo',
+      '/reindex',
+      '/resume',
+      '/always-approve',
+      '/fullscreen',
+    ]);
   });
 
   it('纯子序列命中（/he → /help + /theme；P4-2 新增 /theme 子序列命中）', () => {
@@ -257,8 +264,15 @@ describe('逐字过滤与候选状态', () => {
     typeText(h, 'r');
     expect(h.state.candidates?.items).toEqual(filterCommands('/r'));
     typeText(h, 'e');
-    // P2-C 候选表加性 /fullscreen（'re' 的子序列命中）
-    expect(h.state.candidates?.items).toEqual(['/reasoning', '/redo', '/resume', '/always-approve', '/fullscreen']);
+    // P2-C 候选表加性 /fullscreen（'re' 的子序列命中）；P7 加性 /reindex（'re' 前缀命中）
+    expect(h.state.candidates?.items).toEqual([
+      '/reasoning',
+      '/redo',
+      '/reindex',
+      '/resume',
+      '/always-approve',
+      '/fullscreen',
+    ]);
   });
 
   it('普通文本草稿无候选（不以 / 开头）', () => {
@@ -291,8 +305,17 @@ describe('逐字过滤与候选状态', () => {
     expect(h.state.candidates?.activeIndex).toBe(3);
     typeText(h, 'c');
     // 接线迁移（P3-A 批次）：候选表加性 /doctor /mcps（G-50 壳命令清单登记）→ '/c' 的
-    // 子序列命中 +2（d-o-**c**-t-o-r、**m**-**c**-p-**s**）；钳制语义不变（旧高亮 3 仍在范围内）。
-    expect(h.state.candidates?.items).toEqual(['/compact', '/context', '/doctor', '/fullscreen', '/mcps', '/search']);
+    // 子序列命中 +2（d-o-**c**-t-o-r、**m**-**c**-p-**s**）；P7 加性 /compact-layers（前缀命中）；
+    // 钳制语义不变（旧高亮 3 仍在范围内）。
+    expect(h.state.candidates?.items).toEqual([
+      '/compact',
+      '/compact-layers',
+      '/context',
+      '/doctor',
+      '/fullscreen',
+      '/mcps',
+      '/search',
+    ]);
     expect(h.state.candidates?.activeIndex).toBe(3); // 旧高亮 3 仍在新范围内（原样保留）
   });
 

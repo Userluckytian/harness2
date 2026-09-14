@@ -25,11 +25,20 @@ import type { ToolRegistry } from '../tools/registry.js';
 import type { ChatProvider } from '../provider/types.js';
 import { SessionWriter } from '../session/writer.js';
 import { computeNextRun, CronJobStore, defaultCronRoot, appendIncident, type CronJob } from './jobs.js';
+import { redactSecrets } from '../config/redact.js';
+import type { CronDeliveryDispatcher } from './delivery.js';
 
 /** 默认 tick 周期（60s，hermes 同口径） */
 export const CRON_TICK_INTERVAL_MS = 60_000;
 /** 连续失败熔断阈值 */
 export const CRON_FAIL_CIRCUIT = 3;
+
+/** 投递结果（加性帧字段；H-46 通道抽象） */
+export interface CronDeliveryFrame {
+  channel: string;
+  ok: boolean;
+  error?: string;
+}
 
 export interface CronFinishedFrame {
   type: 'cron';
@@ -37,6 +46,8 @@ export interface CronFinishedFrame {
   id: string;
   ok: boolean;
   error?: string;
+  /** H-46 加性：本次执行的投递结果（未配置投递目标时缺省） */
+  deliver?: CronDeliveryFrame;
 }
 
 export interface CronSchedulerOptions {
@@ -54,6 +65,8 @@ export interface CronSchedulerOptions {
   tickIntervalMs?: number;
   /** WS 通知缝（{type:'cron', op:'finished', id, ok}） */
   onFinished?: (frame: CronFinishedFrame) => void;
+  /** H-46：投递通道注册表（任务 deliver 目标 → 平台通道）；缺省 = 只落本地 history */
+  delivery?: CronDeliveryDispatcher;
   /** 会话日志 fsync（测试可关） */
   fsync?: boolean;
   now?: () => Date;
@@ -64,6 +77,8 @@ export interface CronRunOutcome {
   dir: string;
   stopReason?: TurnResult['stopReason'];
   error?: string;
+  /** H-46 加性：最终文本（投递信封用；可能含敏感内容，出口由 delivery 层脱敏） */
+  text?: string;
 }
 
 export class CronScheduler {
@@ -153,9 +168,16 @@ export class CronScheduler {
   /** 执行 + 熔断记账（调度路径）；异常收口不外抛 */
   private async executeAndRecord(job: CronJob, now: Date): Promise<void> {
     const outcome = await this.execute(job);
+    const delivered = await this.deliverResult(job, outcome, now);
     if (outcome.ok) {
       this.store.update(job.id, { failCount: 0, lastRunAt: now.toISOString(), lastError: undefined });
-      this.options.onFinished?.({ type: 'cron', op: 'finished', id: job.id, ok: true });
+      this.options.onFinished?.({
+        type: 'cron',
+        op: 'finished',
+        id: job.id,
+        ok: true,
+        ...(delivered !== undefined ? { deliver: delivered } : {}),
+      });
       return;
     }
     const current = this.store.get(job.id);
@@ -172,7 +194,50 @@ export class CronScheduler {
     } else {
       this.store.update(job.id, { failCount, lastRunAt: now.toISOString(), lastError: error });
     }
-    this.options.onFinished?.({ type: 'cron', op: 'finished', id: job.id, ok: false, error });
+    this.options.onFinished?.({
+      type: 'cron',
+      op: 'finished',
+      id: job.id,
+      ok: false,
+      error,
+      ...(delivered !== undefined ? { deliver: delivered } : {}),
+    });
+  }
+
+  /**
+   * H-46 投递：任务配置了 deliver 且注入了通道注册表时投递执行结果。
+   * best-effort——投递失败只记 incident + 帧上如实回报，**不影响熔断计数**（熔断只认执行结果）。
+   */
+  private async deliverResult(
+    job: CronJob,
+    outcome: CronRunOutcome,
+    now: Date,
+  ): Promise<CronDeliveryFrame | undefined> {
+    const target = job.deliver;
+    const dispatcher = this.options.delivery;
+    if (target === undefined || dispatcher === undefined) return undefined;
+    const result = await dispatcher.deliver(target, {
+      jobId: job.id,
+      instruction: job.instruction,
+      ok: outcome.ok,
+      ts: now.toISOString(),
+      resultPath: outcome.dir,
+      ...(outcome.text !== undefined ? { text: outcome.text } : {}),
+      ...(outcome.error !== undefined ? { error: outcome.error } : {}),
+    });
+    if (!result.ok) {
+      appendIncident(this.root, {
+        kind: 'delivery_failed',
+        jobId: job.id,
+        channel: target.channel,
+        error: redactSecrets(result.error ?? 'delivery failed'),
+      });
+    }
+    return {
+      channel: target.channel,
+      ok: result.ok,
+      ...(result.error !== undefined ? { error: redactSecrets(result.error) } : {}),
+    };
   }
 
   /** 单次执行：独立临时会话（history/<id>/<ts>/）跑 runTurn，产出 result.md */
@@ -215,6 +280,7 @@ export class CronScheduler {
         dir,
         stopReason: result.stopReason,
         ...(result.error !== undefined ? { error: result.error } : {}),
+        ...(result.finalText !== undefined ? { text: result.finalText } : {}),
       };
     } catch (e) {
       const msg = (e as Error)?.message ?? String(e);

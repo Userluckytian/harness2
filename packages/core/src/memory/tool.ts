@@ -18,6 +18,22 @@ export interface MemorySink {
   apply(ops: readonly MemoryOp[]): Promise<MemoryApplyResult & { stagedId?: string }>;
 }
 
+export interface MemoryToolOptions {
+  /**
+   * auto 模式：在工具描述里声明「主动持久化」契约——无需提醒、也不必征求许可即写入
+   * （H-21）。off/ask 不传（ask 由 pending 结果里的 staged id 表达审批语义）。
+   */
+  proactive?: boolean;
+}
+
+/** 主动持久化契约（H-21）：仅在 auto 模式追加到工具描述 */
+export const PROACTIVE_TOOL_CONTRACT =
+  'Persist proactively: when you notice a durable fact that will still matter in later sessions ' +
+  '(user identity/preferences/corrections, project conventions, environment facts), write it yourself — ' +
+  'without being reminded and without asking for permission first. Do not wait for the user to say "remember this". ' +
+  'Writes are still enforced against the hard character budget and rejected when over limit, so consolidate ' +
+  'existing entries instead of skipping the write.';
+
 const OPERATION_SCHEMA = {
   type: 'object',
   properties: {
@@ -40,19 +56,21 @@ const OPERATION_SCHEMA = {
   required: ['operation', 'target'],
 } as const;
 
-export function createMemoryTool(sink: MemorySink): ToolDefinition {
+export function createMemoryTool(sink: MemorySink, options: MemoryToolOptions = {}): ToolDefinition {
+  const base =
+    `Persist long-term memories across sessions in two files: target='memory' (${memoryFileName('memory')}, ` +
+    `your own notes about the project/task, budget ${MEMORY_BUDGET_CHARS} chars) and target='user' ` +
+    `(${memoryFileName('user')}, durable facts and preferences about the user, budget ${USER_BUDGET_CHARS} chars). ` +
+    'Entries are separated by a line "§" — never include such a line inside an entry. ' +
+    'Operations: add (append), replace (oldText -> text), remove (oldText). ' +
+    'Use "operations" for an atomic batch (all-or-nothing): when near the budget, consolidate by removing an ' +
+    'outdated entry and adding a refined one in the SAME batch ("删旧加新") — the budget is checked once against ' +
+    'the final state. Writes are rejected if the final state exceeds the budget; the result reports remaining space. ' +
+    'Keep entries short, factual and durable; never store secrets or transient conversation details.';
+  const description = options.proactive === true ? `${base} ${PROACTIVE_TOOL_CONTRACT}` : base;
   return {
     name: 'memory',
-    description:
-      `Persist long-term memories across sessions in two files: target='memory' (${memoryFileName('memory')}, ` +
-      `your own notes about the project/task, budget ${MEMORY_BUDGET_CHARS} chars) and target='user' ` +
-      `(${memoryFileName('user')}, durable facts and preferences about the user, budget ${USER_BUDGET_CHARS} chars). ` +
-      'Entries are separated by a line "§" — never include such a line inside an entry. ' +
-      'Operations: add (append), replace (oldText -> text), remove (oldText). ' +
-      'Use "operations" for an atomic batch (all-or-nothing): when near the budget, consolidate by removing an ' +
-      'outdated entry and adding a refined one in the SAME batch ("删旧加新") — the budget is checked once against ' +
-      'the final state. Writes are rejected if the final state exceeds the budget; the result reports remaining space. ' +
-      'Keep entries short, factual and durable; never store secrets or transient conversation details.',
+    description,
     parameters: {
       type: 'object',
       properties: {

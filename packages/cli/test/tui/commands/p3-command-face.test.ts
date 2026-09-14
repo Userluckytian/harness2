@@ -4,7 +4,7 @@
 //  1. 8 条 P3-A shellOnly 新命令（session-info/export/timeline/doctor/memory/skills/
 //     plugins/mcps）逐条：在 palette 里可见 + 经面板 Enter 真分发链执行 + 有**真实输出**
 //     （真实会话日志 / 临时 home+root 夹具），export 另证临时目录真实产物。
-//  2. palette **全项执行枚举**（29 = core 23 + 壳 6）：逐项在全新 harness 里走
+//  2. palette **全项执行枚举**（34 = core 29 + 壳 5）：逐项在全新 harness 里走
 //     Ctrl+P → 逐行 → Enter 的完整面板路径，断言不落三类断线兜底
 //     （「未知命令」/「由界面层实现」/「error:」），并如实登记唯一合法 `error:` 输出
 //     （/resume 裸命令的用法提示——用法错误 ≠ 兜底）。
@@ -181,6 +181,10 @@ function makeRuntime(session: ChatSession | null): ChatRuntime {
       list: () => [],
       locate: () => undefined,
       search: () => [],
+      // P7 加性：palette 全项枚举执行 /reindex /title（core 会话能力命令）——stub 提供最小实现
+      reindex: () => ({ sessions: 0, indexed: 0, messages: 0, failures: [] }),
+      searchIndexed: () => [],
+      titleOf: () => null,
     } as unknown as ChatRuntime['sessionManager'],
     root: workRoot,
     getCurrent: () => session,
@@ -326,16 +330,16 @@ describe('P3-A 新命令（shellOnly 八条）经 palette 执行有真实输出'
   });
 });
 
-// ─── 2. palette 全项执行枚举（29 项） ────────────────────────────────────────
+// ─── 2. palette 全项执行枚举（34 项） ────────────────────────────────────────
 
 describe('P3-A palette 全项执行枚举（无断线兜底）', () => {
-  it('29 = core 23 + 壳 6；逐项全新 harness 走完整面板路径，无「未知命令」/「由界面层实现」/「error:」兜底', async () => {
+  it('34 = core 29 + 壳 5；逐项全新 harness 走完整面板路径，无「未知命令」/「由界面层实现」/「error:」兜底', async () => {
     // 先取条目清单（不执行）——顺序 = core catalog 序 + 壳条目序
     const probe = makeHarness(makeSession().session);
     probe.h.feed(CTRL_P);
     const names = paletteNames(probe.h);
     probe.h.dispose();
-    expect(names).toHaveLength(29);
+    expect(names).toHaveLength(34);
     expect(names).toEqual(
       expect.arrayContaining([...NEW_SHELL_COMMANDS, 'plan', 'auto', 'always-approve', 'theme', 'search', 'expand']),
     );
@@ -364,6 +368,9 @@ describe('P3-A palette 全项执行枚举（无断线兜底）', () => {
         if (name === 'resume') {
           // /resume 裸命令（面板 Enter 不带参数）= 用法错误，属**合法**输出，不是兜底
           expect(errorLines).toContain('用法 /resume <id>');
+        } else if (name === 'import') {
+          // P7 /import 裸命令（面板 Enter 不带 zip 参数）= 用法错误，属**合法**输出，不是兜底
+          expect(errorLines).toContain('用法 /import <zip 路径>');
         } else {
           fallbackHits.push(`${name}: ${errorLines}`);
         }

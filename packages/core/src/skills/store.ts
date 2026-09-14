@@ -71,12 +71,12 @@ export interface SkillScanResult {
 }
 
 /**
- * 解析 markdown frontmatter（YAML 简表）：首行 `---` 起、独立 `---` 行止，
- * 逐行 `key: value`（value 去引号）；缺 name/description、name 含空白 → null（坏文件）。
- * 未知键忽略；description 支持块标量（`|` 字面 / `>` 折叠）续行（真实 skill 常见格式）。
- * 正文原样保留。
+ * 解析 markdown frontmatter（YAML 简表）为字段表：首行 `---` 起、独立 `---` 行止，
+ * 逐行 `key: value`（value 去引号）；非 frontmatter / 未闭合 → null。
+ * 未知键保留在表里（调用方自行取用，如 H-22 的 derivedFrom/revision 来源痕迹）。
+ * description 支持块标量（`|` 字面 / `>` 折叠）续行（真实 skill 常见格式）。
  */
-export function parseSkillFrontmatter(raw: string): { name: string; description: string } | null {
+export function parseSkillFrontmatterFields(raw: string): Map<string, string> | null {
   const lines = raw.replace(/^\uFEFF/, '').split(/\r?\n/);
   if (lines[0]?.trim() !== '---') return null;
   let closeIndex = -1;
@@ -130,6 +130,16 @@ export function parseSkillFrontmatter(raw: string): { name: string; description:
     }
   }
   flushBlock();
+  return fields;
+}
+
+/**
+ * 解析 markdown frontmatter（YAML 简表）：name/description 必填，name 不得含空白，
+ * 否则 null（坏文件）。未知键忽略；description 支持块标量续行。正文原样保留。
+ */
+export function parseSkillFrontmatter(raw: string): { name: string; description: string } | null {
+  const fields = parseSkillFrontmatterFields(raw);
+  if (fields === null) return null;
   const name = fields.get('name') ?? '';
   const description = fields.get('description') ?? '';
   if (name.length === 0 || /\s/.test(name)) return null;

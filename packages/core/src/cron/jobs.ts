@@ -5,6 +5,7 @@
 import { appendFileSync, existsSync, mkdirSync, readFileSync, renameSync, unlinkSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
+import { validateDeliveryTarget, type CronDeliveryTarget } from './delivery.js';
 
 /** 任务上限（防失控，hermes 同口径） */
 export const CRON_MAX_JOBS = 50;
@@ -13,7 +14,13 @@ export interface CronJob {
   id: string;
   /** 发给模型的指令（cron 执行 = 以此为 user turn 起独立临时会话） */
   instruction: string;
-  /** 调度表达式：interval（如 "5m"/"2h"/"1d"）或 "daily HH:MM"（本地时区） */
+  /**
+   * 调度表达式（本地时区）：
+   *   - interval：`"5m"` / `"2h"` / `"1d"`（最小 1 分钟）；
+   *   - daily：`"daily HH:MM"`（每天定点，如 `"daily 09:00"`）；
+   *   - weekly（H-46 加性）：`"weekly <dows> HH:MM"`（dows = 0-6 逗号列表，0=周日，
+   *     如 `"weekly 1,2,3,4,5 09:00"` = 工作日 09:00）。
+   */
   schedule: string;
   /** 下次应执行时间（ISO8601 UTC） */
   nextRun: string;
@@ -23,6 +30,11 @@ export interface CronJob {
   createdAt: string;
   lastRunAt?: string;
   lastError?: string;
+  /**
+   * H-46 加性：执行结果投递目标（缺省 = 只落本地 history，不投递）。
+   * 通道由壳/网关注册，core 不实现具体平台（H-47 未拍板）。
+   */
+  deliver?: CronDeliveryTarget;
 }
 
 export interface CronJobsFile {
@@ -38,12 +50,17 @@ export class CronError extends Error {
   }
 }
 
-export type ParsedSchedule = { kind: 'interval'; intervalMs: number } | { kind: 'daily'; hour: number; minute: number };
+export type ParsedSchedule =
+  | { kind: 'interval'; intervalMs: number }
+  | { kind: 'daily'; hour: number; minute: number }
+  | { kind: 'weekly'; days: readonly number[]; hour: number; minute: number };
 
 const INTERVAL_PATTERN = /^(\d+)([mhd])$/;
 const DAILY_PATTERN = /^daily (\d{1,2}):(\d{2})$/;
+const WEEKLY_PATTERN = /^weekly ([0-6](?:,[0-6])*) (\d{1,2}):(\d{2})$/;
 
-/** 解析调度表达式：interval "5m"/"2h"/"1d"（最小 1 分钟）或 "daily HH:MM"；非法抛 CronError */
+/** 解析调度表达式：interval "5m"/"2h"/"1d"（最小 1 分钟）、"daily HH:MM" 或
+ *  "weekly <dows> HH:MM"（H-46 加性，dows=0-6 逗号列表，0=周日）；非法抛 CronError */
 export function parseSchedule(spec: string): ParsedSchedule {
   const trimmed = spec.trim();
   const interval = INTERVAL_PATTERN.exec(trimmed);
@@ -64,12 +81,39 @@ export function parseSchedule(spec: string): ParsedSchedule {
     if (hour > 23 || minute > 59) throw new CronError(`daily 时间非法（HH:MM 00:00-23:59）: ${spec}`);
     return { kind: 'daily', hour, minute };
   }
-  throw new CronError(`调度表达式非法（可用 "5m"/"2h"/"1d" 或 "daily HH:MM"）: ${spec}`);
+  const weekly = WEEKLY_PATTERN.exec(trimmed);
+  if (weekly) {
+    const hour = Number(weekly[2]);
+    const minute = Number(weekly[3]);
+    if (hour > 23 || minute > 59) throw new CronError(`weekly 时间非法（HH:MM 00:00-23:59）: ${spec}`);
+    const days = [...new Set(weekly[1]!.split(',').map((d) => Number(d)))].sort((a, b) => a - b);
+    if (days.length === 0) throw new CronError(`weekly 星期列表为空: ${spec}`);
+    return { kind: 'weekly', days, hour, minute };
+  }
+  throw new CronError(`调度表达式非法（可用 "5m"/"2h"/"1d"、"daily HH:MM" 或 "weekly <0-6 逗号列表> HH:MM"）: ${spec}`);
+}
+
+const ZH_WEEKDAY = ['日', '一', '二', '三', '四', '五', '六'] as const;
+
+/** 调度表达式的用户可读回显（中文；三壳确认步骤与 list 展示共用） */
+export function describeSchedule(spec: string): string {
+  const parsed = parseSchedule(spec);
+  if (parsed.kind === 'interval') {
+    const minutes = parsed.intervalMs / 60_000;
+    if (minutes % 1440 === 0) return `每 ${minutes / 1440} 天`;
+    if (minutes % 60 === 0) return `每 ${minutes / 60} 小时`;
+    return `每 ${minutes} 分钟`;
+  }
+  const hhmm = `${String(parsed.hour).padStart(2, '0')}:${String(parsed.minute).padStart(2, '0')}`;
+  if (parsed.kind === 'daily') return `每天 ${hhmm}`;
+  const days = parsed.days.map((d) => ZH_WEEKDAY[d]).join('、');
+  return `每周${days} ${hhmm}`;
 }
 
 /**
  * 计算 from 之后的下一次执行时间（ISO8601 UTC）：
- *   interval = from + intervalMs；daily = from 之后最近的本地 HH:MM（含 from 当天未到点）。
+ *   interval = from + intervalMs；daily = from 之后最近的本地 HH:MM（含 from 当天未到点）；
+ *   weekly = from 之后最近的本地「星期 ∈ days 且到 HH:MM」。
  * 落后的调度不做补跑展开（调用方在到点时一次性推进，见 scheduler 的 at-most-once 口径）。
  */
 export function computeNextRun(schedule: string, from: Date = new Date()): string {
@@ -79,8 +123,18 @@ export function computeNextRun(schedule: string, from: Date = new Date()): strin
   }
   const next = new Date(from);
   next.setHours(parsed.hour, parsed.minute, 0, 0);
-  if (next.getTime() <= from.getTime()) next.setDate(next.getDate() + 1);
-  return next.toISOString();
+  if (parsed.kind === 'daily') {
+    if (next.getTime() <= from.getTime()) next.setDate(next.getDate() + 1);
+    return next.toISOString();
+  }
+  // weekly：从今天起最多找 8 天（7 天必然覆盖全部星期）
+  for (let i = 0; i < 8; i += 1) {
+    if (parsed.days.includes(next.getDay()) && next.getTime() > from.getTime()) {
+      return next.toISOString();
+    }
+    next.setDate(next.getDate() + 1);
+  }
+  throw new CronError(`weekly 调度无法推进（星期列表非法）: ${schedule}`);
 }
 
 export function defaultCronRoot(home?: string): string {
@@ -116,6 +170,22 @@ function isJobLike(v: unknown): v is CronJob {
   );
 }
 
+/** 读入时规整可选的 deliver：非法投递目标直接剔除（坏字段不得让任务整条不可用） */
+function normalizeDeliver(job: CronJob): CronJob {
+  if (job.deliver === undefined) return job;
+  if (validateDeliveryTarget(job.deliver) !== null) {
+    const { deliver: _dropped, ...rest } = job;
+    return rest;
+  }
+  return job;
+}
+
+/** CronJobStore.add 的可选项（H-46 加性） */
+export interface CronAddOptions {
+  /** 投递目标（缺省 = 只落本地 history） */
+  deliver?: CronDeliveryTarget;
+}
+
 export class CronJobStore {
   readonly root: string;
   readonly jobsFile: string;
@@ -131,7 +201,7 @@ export class CronJobStore {
     try {
       const parsed = JSON.parse(readFileSync(this.jobsFile, 'utf8')) as Partial<CronJobsFile>;
       if (!Array.isArray(parsed.jobs)) return [];
-      return parsed.jobs.filter(isJobLike);
+      return parsed.jobs.filter(isJobLike).map(normalizeDeliver);
     } catch {
       return [];
     }
@@ -141,11 +211,13 @@ export class CronJobStore {
     return this.list().find((j) => j.id === id);
   }
 
-  /** 新增任务：调度先解析（非法即抛），上限 CRON_MAX_JOBS */
-  add(instruction: string, schedule: string): CronJob {
+  /** 新增任务：调度先解析（非法即抛），上限 CRON_MAX_JOBS；可选投递目标（H-46 加性） */
+  add(instruction: string, schedule: string, options: CronAddOptions = {}): CronJob {
     const trimmed = instruction.trim();
     if (trimmed.length === 0) throw new CronError('instruction 必须是非空字符串');
     parseSchedule(schedule); // 合法性校验
+    const invalidDeliver = validateDeliveryTarget(options.deliver);
+    if (invalidDeliver !== null) throw new CronError(`投递目标非法：${invalidDeliver}`);
     const jobs = this.list();
     if (jobs.length >= CRON_MAX_JOBS) {
       throw new CronError(`任务数已达上限 ${CRON_MAX_JOBS}，请先删除部分任务`);
@@ -158,9 +230,15 @@ export class CronJobStore {
       enabled: true,
       failCount: 0,
       createdAt: new Date().toISOString(),
+      ...(options.deliver !== undefined ? { deliver: options.deliver } : {}),
     };
     this.writeAll([...jobs, job]);
     return job;
+  }
+
+  /** 启停（H-46 全链路：创建/列出/删除/启停）；返回更新后任务，未找到 = undefined */
+  setEnabled(id: string, enabled: boolean): CronJob | undefined {
+    return this.update(id, { enabled });
   }
 
   remove(id: string): boolean {

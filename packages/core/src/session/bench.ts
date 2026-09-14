@@ -12,6 +12,7 @@ import { performance } from 'node:perf_hooks';
 import { loadSession, computeProjection, type LoadedSession } from './reader.js';
 import { SessionManager, encodeCwd, SESSION_ID_PATTERN } from './manager.js';
 import { exportSession, importReplay } from './export.js';
+import { SessionSearchIndex } from './searchIndex.js';
 import { SESSION_LOG_FILE, type AnySessionEvent } from './types.js';
 
 /** 合成日志选项（确定性：同 seed 同事件序列） */
@@ -223,6 +224,29 @@ export function runSessionBench(
       (r) => `${r.length} hits`,
     );
     ops.push(searched.record);
+
+    // H-11 索引化检索（P7-B）：先量索引构建，再量热查询（同一 manager，索引已在内存）
+    const reindexed = measure(
+      'SessionManager.reindex（索引构建）',
+      () => manager.reindex(),
+      (r) => `${r.indexed}/${r.sessions} sessions, ${r.messages} msgs`,
+    );
+    ops.push(reindexed.record);
+    const indexedSearched = measure(
+      'manager.searchIndexed（全库·索引热）',
+      () => manager.searchIndexed(undefined, BENCH_SEARCH_WORD),
+      (r) => `${r.length} hits`,
+    );
+    ops.push(indexedSearched.record);
+    // 索引本体热查询（不含会话摘要求值）：体现「检索时延只与返回上限有关」的设计
+    const indexOnly = new SessionSearchIndex(dir);
+    indexOnly.load(); // 预热：解析索引文件进内存
+    const indexQuery = measure(
+      'SessionSearchIndex.search（索引热·单会话）',
+      () => indexOnly.search(BENCH_SEARCH_WORD, { sync: false }),
+      (r) => `${r.hits.length} hits / ${r.totalMessages} msgs`,
+    );
+    ops.push(indexQuery.record);
 
     const zipPath = join(scratch, 'bench-export.zip');
     const exported = measure(

@@ -4,17 +4,17 @@ import { HELP_TEXT } from '../../src/commands/index.js';
 import { execCommand, makeRecordingCtx } from './helpers.js';
 
 describe('HELP_TEXT', () => {
-  it('命令清单 23 行（/id 左对齐 14 列 + 中文 summary；P3-A 加性 G-54~G-90 补齐）', () => {
+  it('命令清单 29 行（/id 左对齐 16 列 + 中文 summary；P3-A 15→23 + P7 23→29）', () => {
     const commandLines = HELP_TEXT.split('\n').filter((l) => l.startsWith('  /'));
-    expect(commandLines.length).toBe(23);
-    expect(commandLines[0]).toBe(`  ${'/new'.padEnd(14)}新建会话`);
-    expect(commandLines).toContain(`  ${'/sessions'.padEnd(14)}列出当前目录的会话（可选关键字全文搜索）`);
-    expect(commandLines).toContain(`  ${'/undo'.padEnd(14)}撤销最近 n 个用户 turn（/undo [n] [--dry-run]）`);
-    expect(commandLines).toContain(`  ${'/mode'.padEnd(14)}切换审批模式（/mode [normal|allow-approve|auto|plan]）`);
-    expect(commandLines).toContain(`  ${'/tasks'.padEnd(14)}列出 cron 任务（只读）`);
-    expect(commandLines).toContain(`  ${'/export'.padEnd(14)}导出当前会话轨迹为 ZIP（只读打包，含子代理会话）`);
+    expect(commandLines.length).toBe(29);
+    expect(commandLines[0]).toBe(`  ${'/new'.padEnd(16)}新建会话`);
+    expect(commandLines).toContain(`  ${'/sessions'.padEnd(16)}列出当前目录的会话（可选关键字全文搜索）`);
+    expect(commandLines).toContain(`  ${'/undo'.padEnd(16)}撤销最近 n 个用户 turn（/undo [n] [--dry-run]）`);
+    expect(commandLines).toContain(`  ${'/mode'.padEnd(16)}切换审批模式（/mode [normal|allow-approve|auto|plan]）`);
+    expect(commandLines).toContain(`  ${'/tasks'.padEnd(16)}列出 cron 任务（只读）`);
+    expect(commandLines).toContain(`  ${'/export'.padEnd(16)}导出当前会话轨迹为 ZIP（只读打包，含子代理会话）`);
     expect(commandLines).toContain(
-      `  ${'/doctor'.padEnd(14)}环境自检分节报告（node/config/目录/MCP 配置/会话库/skills）`,
+      `  ${'/doctor'.padEnd(16)}环境自检分节报告（node/config/目录/MCP 配置/会话库/skills）`,
     );
   });
 
@@ -27,6 +27,17 @@ describe('HELP_TEXT', () => {
       '  - 审批提示中的 [a] 本会话总是 = 该工具后续所有调用不再询问（仅进程内会话级，不落盘）。',
     );
     expect(HELP_TEXT).toContain('  - 以 / 开头的普通消息会被当作命令，无法直接发送。');
+  });
+
+  // P1-3：run_script 的快照/观察面缺口必须写进 /help（钉死声明文案，防「假声明」回退）
+  it('说明区声明 run_script 边界：子进程执行、内层改动不进快照/不可 undo、不进观察面', () => {
+    expect(HELP_TEXT).toContain(
+      '  - run_script 在独立 Node 子进程里执行代码（与 bash 同级的代码执行，审批在工具级）；',
+    );
+    expect(HELP_TEXT).toContain(
+      '    脚本内经 harness.tools 的 write/edit 改动同样不进快照、/undo 无法恢复，内层调用也不进',
+    );
+    expect(HELP_TEXT).toContain('    会话日志与执行观察面——需要可回滚的写入请直接调 write/edit。');
   });
 });
 

@@ -1,10 +1,15 @@
 // 11 条 core 命令的业务实现（help/exit/new/resume/sessions/fork/undo/redo/context/compact/tasks）。
 // 输出文案从 cli commands.ts 与三处内联实现逐字搬平；只经 ctx.print 产出纯文本行。
 // mode/reasoning 不在本文件（shellOnly：实现留壳，见 catalog.ts 与 types.ts 注释）。
+// P7（2026-09-14）加性：/compact 默认路径切到分层压缩（H-12）——有活动会话时委托
+// session/capabilities.ts 的 compact-layers（同一条 core 实现，三壳共用）；无活动会话或
+// 未接入时保持旧「自动压缩提示」文案（迁移说明：旧 ctx.compact 缝仍作为兼容回退保留）。
 import { getContextUsage } from '../agent/contextUsage.js';
 import type { CronJob } from '../cron/jobs.js';
+import { runSessionCapability } from '../session/capabilities.js';
 import type { SnapshotRestoreItem } from '../session/snapshots.js';
 import { redoLastUndo, undoLastTurn } from '../session/undo.js';
+import { asSessionCapabilityContext } from './capability-bridge.js';
 import { HELP_TEXT } from './help.js';
 import { parseUndoArgs } from './parse.js';
 import type { CoreCommandArgs, CoreCommandContext } from './types.js';
@@ -148,7 +153,20 @@ function fallbackContextUsage(ctx: CoreCommandContext): number | undefined {
   return current !== null ? getContextUsage(current.writer.dir) : undefined;
 }
 
-export function runCompact(ctx: CoreCommandContext): void | Promise<void> {
+export function runCompact(ctx: CoreCommandContext, args: CoreCommandArgs = { rest: '' }): void | Promise<void> {
+  // P7：默认路径 = 分层压缩（H-12）。有活动会话 → 与 /compact-layers 同一 core 实现
+  // （分层产物 + 尾部保护 + 阈值判定；未达阈值如实输出「未执行压缩」）。
+  if (ctx.current() !== null) {
+    const forced = args.rest.trim();
+    // 说明文字（自由文本）不当作层参数；仅 turn|session 透传（与 /compact-layers 对齐）
+    const rest = forced === 'turn' || forced === 'session' ? forced : '';
+    return runSessionCapability('compact-layers', { rest }, asSessionCapabilityContext(ctx)).then(() => undefined);
+  }
+  return runCompactLegacy(ctx);
+}
+
+/** 旧路径（兼容回退）：无活动会话时保持「下一次 turn 自动压缩」提示；注入 compact 缝则委托之。 */
+function runCompactLegacy(ctx: CoreCommandContext): void | Promise<void> {
   if (ctx.compact === undefined) {
     ctx.print('压缩将在下一次 turn 开始时自动检查并执行；若已超阈值会自动触发。');
     return;

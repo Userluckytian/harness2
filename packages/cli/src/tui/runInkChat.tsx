@@ -729,7 +729,7 @@ export function InkShell({
       return;
     }
     // /undo /redo（rewind 重投影）/new /resume /fork /exit /quit /? 与未知命令 → 共享 core 实现
-    runSharedCommand({ name: parsed.raw, rest: parsed.rest }, runtime, commandIo);
+    void runSharedCommand({ name: parsed.raw, rest: parsed.rest }, runtime, commandIo);
   }
 
   /** 壳侧命令缝（每次构建取最新闭包：sendSystem/浮层/推理折叠均为组件状态） */

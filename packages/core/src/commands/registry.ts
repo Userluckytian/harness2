@@ -1,5 +1,10 @@
-// core 命令注册表：13 条全部注册（11 条 run 来自 handlers；mode/reasoning shellOnly 无 run）。
+// core 命令注册表：29 条元数据（P7-B/C 加性 23→29：会话能力 5 条 + 工具面 1 条）。
+// 非 shellOnly 命令必须有 run（RUNS 表；模块加载时缺 run 即抛错，杜绝假入口）。
 // findCoreCommand / parseCoreCommand / runCoreCommand 供各壳统一分发（词法解析来自 parse.ts）。
+import { runSessionCapability } from '../session/capabilities.js';
+import { runToolsCommand, type ToolsCommandIo } from '../tools/manage.js';
+import { ToolRegistry } from '../tools/registry.js';
+import { asSessionCapabilityContext } from './capability-bridge.js';
 import { CORE_COMMAND_META } from './catalog.js';
 import {
   runCompact,
@@ -15,7 +20,29 @@ import {
   runUndo,
 } from './handlers.js';
 import { splitCommandLine } from './parse.js';
-import type { CoreCommand, CoreCommandContext, CoreCommandRun } from './types.js';
+import type { CoreCommand, CoreCommandArgs, CoreCommandContext, CoreCommandRun } from './types.js';
+
+/** 会话能力命令适配器（RUNS 表用）：委托 runSessionCapability，未识别 id 不会到达这里 */
+function sessionCapability(id: string): CoreCommandRun {
+  return (ctx: CoreCommandContext, args: CoreCommandArgs) =>
+    runSessionCapability(id, { rest: args.rest }, asSessionCapabilityContext(ctx)).then(() => undefined);
+}
+
+/**
+ * /tools 适配器（RUNS 表用）：core 只做数据 + 决策，壳注入 registry/selection/configPath
+ * （未注入时如实为空表 / 不落盘——不伪造执行）。参数按空白切分（rest 已 trim）。
+ */
+export function runTools(ctx: CoreCommandContext, args: CoreCommandArgs): void {
+  const selection = ctx.toolSelection?.();
+  const configPath = ctx.configPath?.();
+  const io: ToolsCommandIo = {
+    registry: ctx.toolRegistry?.() ?? new ToolRegistry(),
+    ...(selection !== undefined ? { current: selection } : {}),
+    ...(configPath !== undefined ? { configPath } : {}),
+  };
+  const argv = args.rest.split(/\s+/).filter((s) => s.length > 0);
+  ctx.print(runToolsCommand(argv, io).output);
+}
 
 /** id → run 装配表（shellOnly 命令不出现） */
 const RUNS: Readonly<Record<string, CoreCommandRun>> = {
@@ -23,16 +50,24 @@ const RUNS: Readonly<Record<string, CoreCommandRun>> = {
   sessions: runSessions,
   resume: runResume,
   fork: runFork,
+  // P7-B 会话能力命令（H-11～H-14）：core 实现 = session/capabilities.ts
+  search: sessionCapability('search'),
+  reindex: sessionCapability('reindex'),
+  import: sessionCapability('import'),
+  title: sessionCapability('title'),
   undo: runUndo,
   redo: runRedo,
   help: runHelp,
   exit: runExit,
+  // P7-C 工具面命令（H-31）：core 实现 = tools/manage.ts
+  tools: runTools,
   context: runContext,
   compact: runCompact,
+  'compact-layers': sessionCapability('compact-layers'),
   tasks: runTasks,
 };
 
-/** 全部命令（声明顺序 = 帮助展示顺序；11 条带 run，mode/reasoning 仅元数据） */
+/** 全部命令（声明顺序 = 帮助展示顺序；非 shellOnly 一律带 run，shellOnly 仅元数据） */
 export const CORE_COMMANDS: readonly CoreCommand[] = CORE_COMMAND_META.map((meta) => {
   if (meta.shellOnly === true) return { ...meta };
   const run = RUNS[meta.id];

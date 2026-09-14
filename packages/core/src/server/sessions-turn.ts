@@ -1,24 +1,36 @@
 // SessionHub turn 流转（A4 拆分自 sessions.ts，纯搬运）：用户消息串行队列、runTurn 装配、
 // 流式增量转发、nudge 复盘、undo/redo/fork。
 import { runTurn } from '../agent/loop.js';
-import { SUBAGENT_TOOL_NAMES, createSubagentTools } from '../agent/subagent.js';
+import { FANOUT_TOOL_NAMES, SUBAGENT_TOOL_NAMES, createSubagentTools } from '../agent/subagent.js';
+import { SpawnHistoryStore, createFanoutTools } from '../agent/subagent-fanout.js';
 import type { TaskSpec } from '../agent/task-coordinator.js';
 import type { TurnResult, TurnStreamEvent } from '../agent/types.js';
 import { redactSecrets } from '../config/redact.js';
 import type { TaskContract, TaskId } from '../interaction/types.js';
-import { createMemoryToolForMode, runNudgeReview } from '../memory/nudge.js';
+import { createMemoryToolForPolicy } from '../memory/mode.js';
+import { runNudgeReview } from '../memory/nudge.js';
 import { ForkError, type ForkResult, forkSession } from '../session/fork.js';
 import { SnapshotStore } from '../session/snapshots.js';
 import type { AnySessionEvent } from '../session/types.js';
 import { type UndoRedoResult, redoLastUndo, undoLastTurn } from '../session/undo.js';
+import { createSkillAuthoringTool } from '../skills/authoring.js';
 import { createBrowserTools } from '../tools/predefined/browser.js';
 import { ToolRegistry } from '../tools/registry.js';
+import { ToolRpcService } from '../tools/rpc.js';
+import { SCRIPT_TOOL_NAME, createScriptTool } from '../tools/script.js';
+import { applyToolSelection, resolveEnabledToolNames } from '../tools/selection.js';
 import type { ApprovalHandler } from '../tools/types.js';
 import { SessionHubAssembly } from './sessions-assembly.js';
 import { type HubEntry, UNDO_MAX_N } from './sessions-core.js';
 import { HubError } from './sessions-types.js';
 
 export abstract class SessionHubTurn extends SessionHubAssembly {
+  /**
+   * H-42 fan-out 历史（P7-C 接线）：hub 级单例（同一实例跨 turn/跨会话保留最近 10 次记录，
+   * 供未来 /replay 展示）；fanout 工具本身按会话重绑（parentSessionId）。
+   */
+  private readonly fanoutHistory = new SpawnHistoryStore();
+
   // —— turn 流转 ——
 
   /** 用户消息：入该会话串行队列（busy 即排队，同 REPL）；未知会话先 ensureOpen */
@@ -69,7 +81,7 @@ export abstract class SessionHubTurn extends SessionHubAssembly {
     try {
       const result = await runTurn(entry.writer, {
         provider: this.options.provider,
-        tools: this.buildTurnTools(id),
+        tools: this.buildTurnTools(id, ac.signal),
         approval: this.makeApprovalHandler(id, ac.signal),
         cwd: entry.cwd, // S1：每会话真实 cwd（从此前审计的 this.options.cwd 改为 header 真值）
         userText: text,
@@ -118,17 +130,32 @@ export abstract class SessionHubTurn extends SessionHubAssembly {
   }
 
   /**
-   * turn 工具注册表：无记忆/浏览器/subagent 装配时直接复用共享注册表；有则按会话换装——
-   * memory 工具按模式绑定 store/pending，browser_* 工具按会话 id 绑定池键，
-   * subagent 工具按会话 id 绑定血缘（父子审批/取消传播随之按会话上抛）。
+   * turn 工具注册表：无记忆/浏览器/subagent/skills 造技能/脚本/工具面配置时直接复用共享
+   * 注册表；有则按会话换装——memory 工具按模式绑定 store/pending（H-21 统一策略出口），
+   * browser_* 按会话 id 绑池键，subagent/fanout 按会话 id 绑血缘，skill_author 绑会话归因，
+   * run_script 绑本会话审批缝。最后按 config.tools（H-30）过滤。
+   *
+   * @param signal 当前 turn 的取消信号（run_script 内层 RPC 审批等待随 turn 取消；
+   *   诊断路径 toolsForSession 不传时用永不中止的占位信号，审批超时仍由 hub 队列兜底）
    */
-  protected buildTurnTools(sessionId: string): ToolRegistry {
+  protected buildTurnTools(sessionId: string, signal?: AbortSignal): ToolRegistry {
     const memory = this.options.memory;
     const browser = this.options.browser;
     const subagent = this.options.subagent;
-    if (memory === undefined && browser === undefined && subagent === undefined) return this.options.tools;
+    const skillsAuthoring = this.options.skillsAuthoring;
+    const scriptEnabled = this.options.script === true;
+    const toolsConfig = this.options.toolsConfig;
+    const needsPerTurn =
+      memory !== undefined ||
+      browser !== undefined ||
+      subagent !== undefined ||
+      skillsAuthoring !== undefined ||
+      scriptEnabled ||
+      toolsConfig !== undefined;
+    if (!needsPerTurn) return this.options.tools;
     const registry = new ToolRegistry();
-    const subNames = new Set<string>(SUBAGENT_TOOL_NAMES);
+    // P7-C H-42：fanout 与 subagent_* 同属「子代理类」，插件抢占时同样用权威版（不静默告警）
+    const subNames = new Set<string>([...SUBAGENT_TOOL_NAMES, ...FANOUT_TOOL_NAMES]);
     for (const def of this.options.tools.list()) {
       if (def.name === 'memory') continue; // 换装按会话绑定的变体
       if (subagent !== undefined && subNames.has(def.name)) {
@@ -145,13 +172,19 @@ export abstract class SessionHubTurn extends SessionHubAssembly {
       registry.register(def);
     }
     if (memory !== undefined) {
-      registry.register(createMemoryToolForMode(memory.store, memory.mode, memory.pending, sessionId));
+      // H-21/P7-A 统一策略出口：off→undefined（不注册，模型不可见）、ask→pending 暂存、
+      // auto→直写 + 主动持久化契约。装配层不再各写 if/else（CLI 与 serve 同一条路径）。
+      const memoryTool = createMemoryToolForPolicy(memory.store, memory.mode, {
+        ...(memory.pending !== undefined ? { pending: memory.pending } : {}),
+        sessionId,
+      });
+      if (memoryTool !== undefined) registry.register(memoryTool);
     }
     if (browser !== undefined) {
       for (const def of createBrowserTools(sessionId, browser.pool)) registry.register(def);
     }
     if (subagent !== undefined) {
-      for (const def of createSubagentTools({
+      const subagentOptions = {
         manager: this.options.manager,
         provider: subagent.provider,
         baseTools: this.options.tools,
@@ -167,23 +200,53 @@ export abstract class SessionHubTurn extends SessionHubAssembly {
         depth: 0,
         // 子会话事件/turn-end 桥接进 hub 观察者（WS 面可见子会话流量）
         hooks: {
-          onChildEvent: (childId, event) => this.emitEvent(childId, event),
-          onChildTurnEnd: (childId, result) => this.emitTurnEnd(childId, result),
+          onChildEvent: (childId: string, event: AnySessionEvent) => this.emitEvent(childId, event),
+          onChildTurnEnd: (childId: string, result: TurnResult) => this.emitTurnEnd(childId, result),
         },
         // 子会话 ask 上抛同一待审批队列（requestId 全局可应答；payload.sessionId = 子会话）。
         // S2：血缘在工厂闭包记录（childId→parentId），工厂三参签名修 maxDepth>1 血缘——
         // 孙会话父 = 落地子会话（非顶父；交付链/后代 BFS 随之准确）
-        approvalFactory: (childId, parentId, signal) => {
+        approvalFactory: (childId: string, parentId: string, signal2: AbortSignal) => {
           this.subagentChildren.set(childId, parentId);
-          return this.makeApprovalHandler(childId, signal);
+          return this.makeApprovalHandler(childId, signal2);
         },
         // 阶段 11 口径统一（加性）：子会话注入宿主同款 skills 列表（与 chat REPL 一致）
         ...(this.options.skills !== undefined ? { skills: this.options.skills } : {}),
-      })) {
+      };
+      for (const def of createSubagentTools(subagentOptions)) {
+        registry.register(def);
+      }
+      // P7-C H-42 并行扇出（加性接线）：每会话绑血缘 + 审批上抛；历史进 hub 级单例
+      for (const def of createFanoutTools({ ...subagentOptions, history: this.fanoutHistory })) {
         registry.register(def);
       }
     }
-    return registry;
+    if (skillsAuthoring !== undefined) {
+      // P7-A H-22 经验造技能（skills.authoring=on 时由启动器注入 store）：模型只提案，
+      // 落盘走人工审批（`harness2 skill approve <id>`）。sessionId 进 derivedFrom 归因。
+      registry.register(createSkillAuthoringTool(skillsAuthoring, { sessionId }));
+    }
+    // P7-C H-30 工具面过滤：config.tools（toolset/enable）应用到 per-turn 注册表——动态工具
+    // （memory/browser/subagent/fanout/skill_author）同样受约束；未配置 = 不过滤（零回归）。
+    const selected = toolsConfig !== undefined ? applyToolSelection(registry, toolsConfig) : registry;
+    if (scriptEnabled) {
+      // H-43 run_script（P7-C 接线）：RPC 服务绑定**本会话**审批缝（内层工具调用同样走既有
+      // 审批策略，不可绕过）；RPC 可见注册表 = selected 的快照（不含 run_script，防脚本递归）。
+      const wouldEnableScript =
+        toolsConfig === undefined ||
+        resolveEnabledToolNames(
+          [...selected.list().map((d) => d.name), SCRIPT_TOOL_NAME],
+          toolsConfig,
+        ).enabled.includes(SCRIPT_TOOL_NAME);
+      if (wouldEnableScript) {
+        const rpcRegistry = new ToolRegistry();
+        for (const def of selected.list()) rpcRegistry.register(def);
+        const approval = this.makeApprovalHandler(sessionId, signal ?? new AbortController().signal);
+        const service = new ToolRpcService({ registry: rpcRegistry, cwd: this.sessionCwd(sessionId), approval });
+        selected.register(createScriptTool({ service }));
+      }
+    }
+    return selected;
   }
 
   /** EventMirrorWriter 事件侧记：运行中 turn 调过 memory 工具（nudge 计数归零依据）；

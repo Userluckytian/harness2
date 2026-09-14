@@ -37,6 +37,13 @@ import type { TaskRunResult, TaskSpec, TaskWriteMode } from './task-coordinator.
 export const SUBAGENT_TOOL_NAMES = ['subagent_start', 'subagent_continue'] as const;
 
 /**
+ * H-42 并行扇出工具名（P7-C 加性）：与 SUBAGENT_TOOL_NAMES 同属「子代理类」，子会话一律不继承
+ * （扇出是顶层编排能力，子会话内再扇出会指数放大资源占用）。定义在这里而不是 fanout 模块，
+ * 是为了让 buildSubagentChildTools 的剔除逻辑与工具实现单向依赖（subagent-fanout → subagent）。
+ */
+export const FANOUT_TOOL_NAMES = ['subagent_fanout'] as const;
+
+/**
  * per-session 绑定类工具名（子会话不继承——阶段 11 口径统一，两端一致）：
  * memory（记忆按宿主进程绑定）与 browser_*（浏览器上下文按会话 id 绑定池键）。
  * 子会话是独立会话，继承会带来跨会话状态污染（CLI 历史上共享注册表直通导致继承，
@@ -120,7 +127,8 @@ function approvalFor(opts: SubagentOptions, childSessionId: string, signal: Abor
  */
 export function buildSubagentChildTools(options: SubagentOptions, childSessionId: string): ToolRegistry {
   const registry = new ToolRegistry();
-  const subNames = new Set<string>(SUBAGENT_TOOL_NAMES);
+  // H-42：扇出工具与 subagent_* 同属「子代理类」，子会话一律不继承（含 maxDepth 未到时）
+  const subNames = new Set<string>([...SUBAGENT_TOOL_NAMES, ...FANOUT_TOOL_NAMES]);
   const sessionBound = new Set<string>(SUBAGENT_SESSION_BOUND_TOOL_NAMES);
   for (const def of options.baseTools.list()) {
     if (subNames.has(def.name) || sessionBound.has(def.name)) continue;

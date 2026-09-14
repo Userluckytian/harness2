@@ -189,8 +189,9 @@ const REPLAY_LIMIT_HINT =
  * 由后置实际体积校验兜底。条目声明 0xFFFFFFFF（zip64 标记值）时该项不可信，
  * 同样交给后置校验。恶意包可谎报体积，本地信任域口径下前置校验是主闸门、
  * 后置校验拦「声明撒谎」包的后续处理。
+ * H-13：导出为公开函数供 portability.importSession 复用（同一体积闸门，禁止第二套实现）。
  */
-function declaredUncompressedTotal(data: Uint8Array): number | null {
+export function declaredUncompressedTotal(data: Uint8Array): number | null {
   const minEocd = 22;
   if (data.length < minEocd) return null;
   // EOCD 从尾部向前扫（注释最长 65535 字节）
