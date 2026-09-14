@@ -6,12 +6,15 @@
 // 装配点只此一处（App/frame 不用动）；旧的 components/SessionList.tsx 已删除，不留第二套侧栏。
 // 轨道归属（P4-C 裁决）：帧容器（frame-seat-views.tsx）只提供轨道容器宽度（收起 56px），
 // 轨道内容（品牌标记/展开按钮/区域图标）由 SidebarRoot 在 rail 态渲染 —— 两边各司其职，不重复画。
+//
+// P5-C 装配：会话席位内容 = renderer/conversation/assembly.tsx 的 ConversationSeat
+// （会话头 + ConversationViewRing + 常驻 Composer）。本文件只递 store/controller，
+// 不在这里写对话语义（视图环与 composer 的接线全在 assembly.tsx）。
 import { useEffect, useState } from 'react';
-import { ChatView } from '../components/ChatView.js';
 import { CommandPalette } from '../components/CommandPalette.js';
-import { ConversationHeader } from '../components/ConversationHeader.js';
 import { SettingsDialog } from '../components/SettingsDialog.js';
 import { SidePanel } from '../components/SidePanel.js';
+import { ConversationSeat } from '../conversation/assembly.js';
 import { controller, store, useAppState } from '../app-shared.js';
 import { SidebarRoot, buildSessionItems, resolveBuildVersion } from '../sidebar/index.js';
 import type { SlotRegistry } from '../slots/index.js';
@@ -72,24 +75,9 @@ function SidebarSeatContent(): React.ReactNode {
   );
 }
 
-/** 中栏 conversation key 的内容（ui-conversation）：会话头 + 消息流 */
+/** 中栏 conversation key 的内容（ui-conversation）：会话头 + 视图环 + 常驻 composer（见 conversation/assembly） */
 function ConversationSeatContent(): React.ReactNode {
-  const state = useAppState();
-  const sessionId = state.selectedId;
-  if (sessionId === null) {
-    return (
-      <div className="chat empty-pane">
-        <p>选择左侧会话开始对话（Ctrl+K 打开命令面板）</p>
-      </div>
-    );
-  }
-  const session = state.sessions.find((s) => s.id === sessionId);
-  return (
-    <>
-      <ConversationHeader sessionId={sessionId} cwd={session?.cwd} />
-      <ChatView streamId={sessionId} />
-    </>
-  );
+  return <ConversationSeat store={store} controller={controller} />;
 }
 
 /**

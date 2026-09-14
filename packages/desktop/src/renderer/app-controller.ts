@@ -23,11 +23,22 @@ export interface Controller {
   selectSession(id: string): Promise<void>;
   replaySession(id: string): Promise<void>;
   sendMessage(id: string, text: string): Promise<void>;
-  /** D1：submit 提交（幂等 clientMessageId；queue 进可见队列；结果经 submit-ack 帧收敛） */
+  /**
+   * D1：submit 提交（幂等 clientMessageId；queue 进可见队列；结果经 submit-ack 帧收敛）。
+   * P5-C：`clientMessageId` 可由 composer 传入（D-34 乐观提交冻结的那一个）——桌面不得另生成一个，
+   * 否则本地在途队列（`pendingSubmits`）与 ack 收不回同一条；缺省仍本地生成（旧调用路径）。
+   * 失败语义（两条并存，互不替代）：先记 `submit-ack: unknown`（F7 不假报成功、不自动重发），
+   * **再上抛**——composer 据此按 D-34 恢复草稿与全部附件，等用户确认后再投递。
+   */
   submitMessage(
     id: string,
     rawText: string,
-    opts?: { intent?: SubmitIntentShape; references?: MessageReferenceShape[]; expectedTurnId?: string },
+    opts?: {
+      intent?: SubmitIntentShape;
+      references?: MessageReferenceShape[];
+      expectedTurnId?: string;
+      clientMessageId?: string;
+    },
   ): Promise<{ clientMessageId: string }>;
   /** D3/D4：取消当前 turn（三态 ack；不把取消当 undo，不假报停止） */
   cancelTurn(id: string): Promise<void>;
@@ -394,9 +405,15 @@ export function createController(store: AppStore, api: Harness2Api): Controller 
     async submitMessage(
       id: string,
       rawText: string,
-      opts?: { intent?: SubmitIntentShape; references?: MessageReferenceShape[]; expectedTurnId?: string },
+      opts?: {
+        intent?: SubmitIntentShape;
+        references?: MessageReferenceShape[];
+        expectedTurnId?: string;
+        clientMessageId?: string;
+      },
     ): Promise<{ clientMessageId: string }> {
-      const clientMessageId = newClientMessageId();
+      // P5-C：composer 已在 D-34 提交事务里冻结了 clientMessageId —— 原样沿用（本地在途队列与 ack 同键）
+      const clientMessageId = opts?.clientMessageId ?? newClientMessageId();
       const intent: SubmitIntentShape = opts?.intent === 'steer' ? 'steer' : 'queue';
       // 本地先登记（可见队列 + pendingSubmits）；ack 到达或超时后收敛
       store.noteSubmit(id, { clientMessageId, rawText, intent });
@@ -419,6 +436,8 @@ export function createController(store: AppStore, api: Harness2Api): Controller 
           state: 'unknown',
           reason: `提交未送达: ${(e as Error).message}`,
         });
+        // P5-C：上抛给 composer 的 D-34 还原路径（草稿 + 全部附件恢复待重提）；不在这里重发
+        throw e;
       }
       return { clientMessageId };
     },
@@ -614,8 +633,15 @@ export function createController(store: AppStore, api: Harness2Api): Controller 
   };
 }
 
-/** 事件流里最后一个 turnId（与 store 内部口径一致；取消目标定位用） */
-function lastTurnIdOf(stream: { events: readonly ActiveEvent[] }): string | undefined {
+/**
+ * 事件流里最后一个 turnId（与 store 内部口径一致；取消目标定位用）。
+ *
+ * 导出给装配层复用（P1-2）：steer 的 `expectedTurnId` 需要**同一个**推导 ——
+ * 事件/重放路径只置 `running`、不置 `activeAttempt`（`activeAttempt` 只在
+ * `resume-snapshot` 到达时填充），所以只读 `stream.activeAttempt?.turnId` 会恒为
+ * undefined，core 对无 `expectedTurnId` 的 steer 直接 `rejected`（sessions-tasks.ts:95-104）。
+ */
+export function lastTurnIdOf(stream: { events: readonly ActiveEvent[] }): string | undefined {
   for (let i = stream.events.length - 1; i >= 0; i--) {
     const p = stream.events[i]!.payload as Record<string, unknown>;
     const t = p['turnId'];
