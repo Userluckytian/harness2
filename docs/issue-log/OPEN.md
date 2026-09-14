@@ -3,6 +3,8 @@
 > 规则：每天开工先读本文件掌握未完成事项；每天收工把当天仍未关闭的项同步进来，已关闭的移出。
 > 状态：待处理 / 修复中 / 已修复待验证。已关闭项不在此文件，历史留在各日期日志。
 > 元约定：`docs/issue-log/README.md`（AGENTS.md 强制遵循第 6 条）
+> **P9 收口：三份 refs 文档新增「归存汇总（2026-09-14 P9）」小节**——每条 G-/D-/H- 编号现均有归存（✅ 已完成 / 🟡 部分待续 / ⬜ 未排期 / ➖ 不采纳 / 待人类决策 五类，含理由与编号区间）：`refs-grok-build.md` 95 条（44/43/5/3/0）、`refs-deepseek-harness.md` 63 条（40/7/15/1/0）、`refs-hermes-agent.md` 54 条（9/14/22/8/1，H-47 待拍板）。**归存 ≠ 已排期**：⬜ 未排期项与悬空 🟡 项的具体接收阶段由后续排期决定；本文件其余的开放项以本表为准。
+>
 > **已决策/已关闭事项：** 已关闭 / 已评估不修 / 已评估推迟 / 已知限制 / 口径登记 / 已被取代 等已决策事项，统一迁入 [`DECISIONS.md`](DECISIONS.md)（B1 只搬不删，保留原文与日期）。
 > **本阶段（阶段 15 质量收口，2026-09-09）：** 总纲 [`2026-09-09-phase-quality-closeout.md`](../ai-framework/plans/2026-09-09-phase-quality-closeout.md) · 验收表 [`…-acceptance.md`](../ai-framework/plans/2026-09-09-phase-quality-closeout-acceptance.md) · 审查任务书 [`…-review-brief.md`](../ai-framework/plans/2026-09-09-phase-quality-closeout-review-brief.md) · 执行者任务书 [`…-executor.md`](../ai-framework/plans/2026-09-09-phase-quality-closeout-executor.md)
 >
