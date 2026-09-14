@@ -375,8 +375,12 @@ describe('Tab 滚动区焦点（双态，keymap 裁决采纳）', () => {
   });
 });
 
-describe('折叠键族（e/E/h/l，仅滚动区焦点下生效）', () => {
-  it('e = 展开全部块：write diff 与推理块都展开', async () => {
+describe('折叠键族（G-05 规格机 folds.ts：h/l/←/→/e/Shift+E/Ctrl+E/r；仅滚动区焦点下生效）', () => {
+  // 规格迁移（P3-D）：P3-A 旧裁决「e=全展/E=全收」废止——refs-grok-build.md G-05 规格为
+  // e=toggle 聚焦块、Shift+E=全部展开、Ctrl+E=thinking 开合、r=原始视图；旧断言随规格
+  // 迁移为 Shift+E 全展（检验力保持：展开推理块 + diff 块的行为等价），折叠全部能力
+  // 无规格依据随之移除（e 可逐块收起）。
+  it('Shift+E = 全部展开：write diff 与推理块都展开（旧「e=全展」断言随 G-05 规格迁移）', async () => {
     const { h } = makeHarness(
       makeRuntime({
         runUserTurn: async (_text, onStream) => {
@@ -401,23 +405,48 @@ describe('折叠键族（e/E/h/l，仅滚动区焦点下生效）', () => {
     expect(baseline).toContain('▸ 思考…'); // 推理默认折叠
     expect(baseline).not.toContain('+ one'); // diff 默认折叠
     h.feed(TAB);
-    h.feed('e');
+    h.feed('E'); // legacy 终端大写字符 = Shift+E（chordMatches 编码口径）
     const expanded = linesOf(h).join('\n');
     expect(expanded).toContain('+ one'); // diff 展开
     expect(expanded).toContain('│ 想一步'); // 推理展开
     h.dispose();
   });
 
-  it('E = 折叠全部块：展开态回到默认折叠（行数回落基线）', async () => {
+  it('e = toggle 最近（聚焦）块：只翻最近一块，不影响更早块（G-05 规格语义）', async () => {
     const { h } = makeHarness(foldRuntime());
     await submitFoldTurn(h);
     const baseline = linesOf(h).length;
     h.feed(TAB);
-    h.feed('e');
-    expect(linesOf(h).length).toBeGreaterThan(baseline);
-    h.feed('E');
+    h.feed('e'); // toggle 最近块（write diff）→ 展开
+    expect(linesOf(h).join('\n')).toContain('+ one');
+    h.feed('e'); // 再 toggle → 收起（回到默认折叠）
     expect(linesOf(h).length).toBe(baseline);
     expect(linesOf(h).join('\n')).not.toContain('+ one');
+    h.dispose();
+  });
+
+  it('Ctrl+E = thinking 块开合（G-05）：有展开 thinking → 全收', async () => {
+    const { h } = makeHarness(
+      makeRuntime({
+        runUserTurn: async (_text, onStream) => {
+          onStream({ type: 'reasoning-delta', text: '想一步', turnId: 't1' });
+          await vi.advanceTimersByTimeAsync(60);
+          onStream({
+            type: 'tool-call',
+            call: { id: 'cf', name: 'write', arguments: JSON.stringify({ file_path: 'a.txt', content: 'one\ntwo' }) },
+            turnId: 't1',
+          });
+          onStream({ type: 'tool-result', callId: 'cf', ok: true, turnId: 't1' });
+          return result('done');
+        },
+      }),
+    );
+    await submitFoldTurn(h);
+    h.feed(TAB);
+    h.feed('E'); // 全展（thinking 展开 + diff 展开）
+    expect(linesOf(h).join('\n')).toContain('│ 想一步');
+    h.feed('\x05'); // Ctrl+E（0x05）→ 有展开 thinking → 全收
+    expect(linesOf(h).join('\n')).not.toContain('│ 想一步');
     h.dispose();
   });
 
@@ -439,6 +468,18 @@ describe('折叠键族（e/E/h/l，仅滚动区焦点下生效）', () => {
     expect(linesOf(h).join('\n')).toContain('+ one');
     h.feed('h');
     expect(linesOf(h).join('\n')).not.toContain('+ one');
+    h.dispose();
+  });
+
+  it('r = 原始视图（G-05）：工具行显示 args 原文且不截断', async () => {
+    const { h } = makeHarness(foldRuntime());
+    await submitFoldTurn(h);
+    const normal = linesOf(h).join('\n');
+    expect(normal).toContain('⏺ write(a.txt)'); // 摘要提炼（file_path）
+    h.feed(TAB);
+    h.feed('r');
+    const raw = linesOf(h).join('\n');
+    expect(raw).toContain(JSON.stringify({ file_path: 'a.txt', content: 'one\ntwo' })); // args 原文
     h.dispose();
   });
 
@@ -886,7 +927,11 @@ describe('审批 overlay', () => {
     expect(h.pendingApproval()).toBe('允许执行 write?');
     expect(h.state.overlays.length).toBe(1);
     expect(h.state.overlays[0]?.title).toContain('Approval');
-    expect(h.state.overlays[0]?.title).toContain('允许执行 write?');
+    // P3-E 接线迁移（G-21）：审批卡经 cards/render.renderPermissionCard 呈现——
+    // title = `Approval · ${payload.tool}`（tool 自 gate 查询文案提取「允许执行 write?」→ write），
+    // 旧「标题承载整句查询」随卡片契约迁移；应答空间 y/a/n 不变（item id 复用 gate 应答）。
+    expect(h.state.overlays[0]?.title).toContain('write');
+    expect(h.state.overlays[0]?.items).toEqual(['y 允许（本次）', 'a 总是允许（本会话）', 'n 拒绝']);
     h.feed('2');
     await p;
     expect(answer).toBe('a');
@@ -1118,72 +1163,72 @@ describe('P3-B 审批 blocking card：Tab/Shift+Tab 走行', () => {
   });
 });
 
-describe('P3-B 审批 blocking card：Ctrl+F 参数全文展开', () => {
+describe('P3-E 审批卡接线（B 棒调度器 + CardView 呈现）：Ctrl+F 移除与卡形状不变式', () => {
+  // 接线迁移登记（G-21/G-25）：审批卡改走 cards/render.renderPermissionCard——CardView 契约
+  // 为 title/items/activeIndex（文件头映射表）；askApproval 契约冻结仅携带文案（P3-B 登记
+  // 延续），卡片无参数全文可展开 → 旧「Ctrl+F 展开 query 全文」5 例废止，迁移为
+  // 「Ctrl+F 不再绑定卡片键、卡形状恒 3 交互项」的负向断言（检验力等价：卡形状 + 数字直选
+  // 不受全文行影响的两例保留为形状断言）。参数级展开待 gate 契约扩展（P7 归存）。
   const LONG_QUERY =
     '允许执行 write? [y]本次 [a]本会话总是（该工具后续所有调用不再询问） [n]拒绝 这是一段很长的说明文本用于验证展开折行';
 
-  it('Ctrl+F 展开：审批 query 全文按显示宽度折行进 items（收起态只有 3 个选项）', () => {
+  it('卡形状恒 3 交互项（items[].label = B renderPermissionCard 契约）；Ctrl+F 不改形状', () => {
     const { h, gate } = makeHarness();
     void gate.ask(LONG_QUERY);
-    expect(h.state.overlays[0]?.items).toHaveLength(3); // 收起：仅选项
-    h.feed(CTRL_F);
-    const items = h.state.overlays[0]?.items ?? [];
-    expect(items.length).toBeGreaterThan(3); // 全文行 + 选项
-    const joined = items
-      .map((it) => (typeof it === 'string' ? it : it.label))
-      .join('\n')
-      .replace(/\s+/g, '');
-    expect(joined).toContain(LONG_QUERY.replace(/\s+/g, '')); // 全文可见（不被标题行裁剪）
+    expect(h.state.overlays[0]?.items).toEqual(['y 允许（本次）', 'a 总是允许（本会话）', 'n 拒绝']);
+    h.feed(CTRL_F); // 旧展开键已移除：卡片层不消费 → 落空（无浮层/草稿/高亮变化）
+    expect(h.state.overlays[0]?.items).toEqual(['y 允许（本次）', 'a 总是允许（本会话）', 'n 拒绝']);
+    expect(h.state.overlays[0]?.title).toContain('Approval · write');
     h.cancelApproval();
     h.dispose();
   });
 
-  it('Ctrl+F 再按收起：恢复 3 选项结构', () => {
-    const { h, gate } = makeHarness();
-    void gate.ask(LONG_QUERY);
-    h.feed(CTRL_F);
-    h.feed(CTRL_F);
-    expect(h.state.overlays[0]?.items).toHaveLength(3);
-    h.cancelApproval();
-    h.dispose();
-  });
-
-  it('展开态 Tab 走行仍只在 3 个选项间循环（高亮只落在选项行）', () => {
-    const { h, gate } = makeHarness();
-    void gate.ask(LONG_QUERY);
-    h.feed(CTRL_F);
-    const items = h.state.overlays[0]?.items ?? [];
-    const queryRows = items.length - 3;
-    h.feed(TAB);
-    expect(h.state.overlays[0]?.activeIndex).toBe(queryRows + 1); // 显示高亮 = 全文行数 + 选项下标
-    h.feed(TAB);
-    h.feed(TAB);
-    expect(h.state.overlays[0]?.activeIndex).toBe(queryRows + 0); // 循环回第一选项
-    h.cancelApproval();
-    h.dispose();
-  });
-
-  it('展开态数字直选仍直接回答（不受全文行影响）', async () => {
+  it('Ctrl+F 不回答审批（安全负向：移除的键不得产生副作用）', async () => {
     let answer: string | null = null;
     const { h, gate } = makeHarness();
     const p = gate.ask(LONG_QUERY).then((a) => {
       answer = a;
     });
     h.feed(CTRL_F);
+    h.feed(CTRL_F);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(answer).toBeNull(); // 未被回答
+    expect(h.pendingApproval()).toBe(LONG_QUERY);
+    h.cancelApproval();
+    await p;
+    expect(answer).toBe(ASK_CANCELLED);
+    h.dispose();
+  });
+
+  it('Tab 走行仍只在 3 个选项间循环（G-25 卡内焦点环；activeIndex = 环下标）', () => {
+    const { h, gate } = makeHarness();
+    void gate.ask(LONG_QUERY);
+    h.feed(TAB);
+    expect(h.state.overlays[0]?.activeIndex).toBe(1);
+    h.feed(TAB);
+    h.feed(TAB);
+    expect(h.state.overlays[0]?.activeIndex).toBe(0); // 循环回第一选项
+    h.cancelApproval();
+    h.dispose();
+  });
+
+  it('数字直选仍直接回答（item id 复用 ApprovalGate 应答空间）', async () => {
+    let answer: string | null = null;
+    const { h, gate } = makeHarness();
+    const p = gate.ask(LONG_QUERY).then((a) => {
+      answer = a;
+    });
     h.feed('2');
     await p;
     expect(answer).toBe('a');
     h.dispose();
   });
 
-  it('resize 重建展开视图（新宽度重排全文行）', () => {
+  it('resize 后卡形状不变（CardView 无宽度相关行——旧展开重排语义随契约移除）', () => {
     const { h, gate } = makeHarness();
     void gate.ask(LONG_QUERY);
-    h.feed(CTRL_F);
-    const narrowCount = (h.state.overlays[0]?.items ?? []).length;
     h.resize(40, 24);
-    const items = h.state.overlays[0]?.items ?? [];
-    expect(items.length - 3).toBeGreaterThanOrEqual(narrowCount - 3); // 变窄 → 全文行数不减
+    expect(h.state.overlays[0]?.items).toEqual(['y 允许（本次）', 'a 总是允许（本会话）', 'n 拒绝']);
     h.cancelApproval();
     h.dispose();
   });

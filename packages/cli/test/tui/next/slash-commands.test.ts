@@ -15,6 +15,7 @@ import {
   createNextChatHarness,
   filterCommands,
   NEXT_COMMANDS,
+  resolveShellCommandName,
   type ApprovalGate,
   type NextChatHarness,
 } from '../../../src/tui/next/next-shell.js';
@@ -150,10 +151,22 @@ afterEach(() => {
 
 // —— 命令注册表完整性（对照 ink COMMAND_REGISTRY 全集）——
 describe('P3-C 命令注册表完整性', () => {
+  // P3-E 接线迁移：P3-A 的 8 条 shellOnly 命令（session-info/export/timeline/doctor/
+  // memory/skills/plugins/mcps）已迁入 NEXT_COMMANDS 正式表（wiring 'shell'，真实现 =
+  // tui/commands/shell-command-impls.ts 经 runPaletteShellCommand 路由），A 棒预告的
+  // PENDING 差异集合随之清空。
+  const P3A_SHELL_ONLY_PENDING_WIRING = new Set<string>([]);
+
   it('ink COMMAND_REGISTRY 全集逐条都在 next 命令表中（或显式登记差异）', () => {
     const nextNames = NEXT_COMMANDS.map((c) => c.name);
     for (const c of COMMAND_REGISTRY) {
+      if (P3A_SHELL_ONLY_PENDING_WIRING.has(c.name)) continue; // P3-A 差异登记（见上）
       expect(nextNames).toContain(c.name);
+    }
+    // 差异清单本身必须是 catalog 真实条目（防登记过期：接线棒迁入正式表后应清空本集合）
+    const registryNames = new Set(COMMAND_REGISTRY.map((c) => c.name));
+    for (const name of P3A_SHELL_ONLY_PENDING_WIRING) {
+      expect(registryNames.has(name)).toBe(true);
     }
   });
 
@@ -163,7 +176,8 @@ describe('P3-C 命令注册表完整性', () => {
     expect(names).toContain('auto');
     expect(names).toContain('always-approve');
     for (const c of NEXT_COMMANDS) {
-      expect(['local', 'shared']).toContain(c.wiring);
+      // P3-E 接线：wiring 'shell' = P3-A shellOnly 命令的壳侧 thin 实现（见文件头迁移登记）
+      expect(['local', 'shared', 'shell']).toContain(c.wiring);
     }
   });
 
@@ -171,6 +185,16 @@ describe('P3-C 命令注册表完整性', () => {
     for (const item of filterCommands('/u')) {
       expect(item.startsWith('/')).toBe(true);
     }
+  });
+
+  it('G-84 别名：/theme 登记别名 t；resolveShellCommandName 归一（t→theme；未知原样）', () => {
+    const theme = NEXT_COMMANDS.find((c) => c.name === 'theme');
+    expect(theme?.aliases).toEqual(['t']);
+    expect(resolveShellCommandName('t')).toBe('theme');
+    expect(resolveShellCommandName('/t')).toBe('theme');
+    expect(resolveShellCommandName('T')).toBe('theme'); // 大小写不敏感（门控/分发同一入口）
+    expect(resolveShellCommandName('theme')).toBe('theme');
+    expect(resolveShellCommandName('foo')).toBe('foo'); // 未知命令原样交给共享「未知命令」路径
   });
 });
 
@@ -184,8 +208,10 @@ describe('模糊过滤 filterCommands', () => {
   });
 
   it('前缀命中优先于子序列命中，各自按字典序（/u → /undo 在前）', () => {
-    // P2-C：候选表加性新增 /minimal /fullscreen → /fullscreen 为 'u' 的子序列命中
-    expect(filterCommands('/u')).toEqual(['/undo', '/auto', '/fullscreen', '/resume']);
+    // P2-C：候选表加性新增 /minimal /fullscreen → /fullscreen 为 'u' 的子序列命中。
+    // P3-E 接线：NEXT_COMMANDS 迁入 P3-A shellOnly 八条 → /plugins（p-l-u-g-i-n-s 含 'u'）
+    // 为 'u' 的新子序列命中。
+    expect(filterCommands('/u')).toEqual(['/undo', '/auto', '/fullscreen', '/plugins', '/resume']);
   });
 
   it('前缀命中（/re → reasoning redo resume + 子序列 always-approve fullscreen）', () => {
@@ -198,8 +224,17 @@ describe('模糊过滤 filterCommands', () => {
     expect(filterCommands('/he')).toEqual(['/help', '/theme']);
   });
 
+  it('G-84 别名计入前缀命中：/t 命中 /theme（候选仍以规范名呈现，不新增别名候选行）', () => {
+    const hits = filterCommands('/t');
+    expect(hits).toContain('/theme'); // 别名 t 与规范名 theme 同判（前缀命中族）
+    expect(hits.slice(0, 3)).toEqual(['/tasks', '/theme', '/timeline']); // 前缀命中所列，字典序
+    expect(hits).not.toContain('/t'); // 别名不是候选项本身
+  });
+
   it('大小写不敏感（/UN → /undo；/fullscreen 为子序列命中，P2-C）', () => {
-    expect(filterCommands('/UN')).toEqual(['/undo', '/fullscreen']);
+    // 接线迁移（P3-A 批次）：候选表加性 /plugins（G-50 壳命令清单的 NEXT_COMMANDS 登记），
+    // 'UN'（小写 un）为 'plugins' 的子序列命中 → 命中数 +1；前缀/子序列过滤语义不变。
+    expect(filterCommands('/UN')).toEqual(['/undo', '/fullscreen', '/plugins']);
   });
 
   it('无命中返回空数组（/zz）', () => {
@@ -254,8 +289,10 @@ describe('逐字过滤与候选状态', () => {
     h.feed(ARROW_DOWN);
     h.flushUi();
     expect(h.state.candidates?.activeIndex).toBe(3);
-    typeText(h, 'c'); // '/c' → 候选缩到 4 条（P4-2 新增 /search；P2-C 加性 /fullscreen 为子序列命中）
-    expect(h.state.candidates?.items).toEqual(['/compact', '/context', '/fullscreen', '/search']);
+    typeText(h, 'c');
+    // 接线迁移（P3-A 批次）：候选表加性 /doctor /mcps（G-50 壳命令清单登记）→ '/c' 的
+    // 子序列命中 +2（d-o-**c**-t-o-r、**m**-**c**-p-**s**）；钳制语义不变（旧高亮 3 仍在范围内）。
+    expect(h.state.candidates?.items).toEqual(['/compact', '/context', '/doctor', '/fullscreen', '/mcps', '/search']);
     expect(h.state.candidates?.activeIndex).toBe(3); // 旧高亮 3 仍在新范围内（原样保留）
   });
 
@@ -417,6 +454,16 @@ describe('命令真实行为（共享/本地接线）', () => {
     h.submit('/mode xxx');
     h.flushUi();
     expect(hasLine(h, 'error: 未知模式')).toBe(true);
+  });
+
+  it('P2-2：/mode 接受 catalog 声明的 allow-approve（别名 → always-approve），不报未知模式', () => {
+    const { h } = makeHarness();
+    h.submit('/mode allow-approve');
+    h.flushUi();
+    const all = linesOf(h).join('\n');
+    expect(all).toContain('已切换模式: allow-approve（= always-approve）');
+    expect(all).not.toContain('未知模式');
+    h.dispose();
   });
 
   it('/help → HELP_TEXT（命令： 列表）', () => {

@@ -1,4 +1,4 @@
-// describeCapabilities 结构测试：命令数=15（P2-C 加性 minimal/fullscreen）、shellOnly 标记、modes 非空、工具表、审批策略摘要。
+// describeCapabilities 结构测试：命令数=23（P3-A 加性扩容 15→23：G-54~G-90 补齐）、shellOnly 标记、modes 非空、工具表、审批策略摘要。
 import { describe, expect, it } from 'vitest';
 import { DEFAULT_SAFE_TOOLS } from '../../src/approval/policy.js';
 import { describeCapabilities } from '../../src/commands/capabilities.js';
@@ -6,38 +6,59 @@ import { APPROVAL_MODES } from '../../src/config/schema.js';
 import { builtinTools } from '../../src/tools/predefined/index.js';
 
 describe('describeCapabilities', () => {
-  it('commands = 全部 15 条元数据（id/summary/argsSpec 与注册表一致）', () => {
+  it('commands = 全部 23 条元数据（id/summary/argsSpec 与注册表一致；P3-A 加性）', () => {
     const caps = describeCapabilities();
-    expect(caps.commands.length).toBe(15);
+    expect(caps.commands.length).toBe(23);
     expect(caps.commands.map((c) => c.id)).toEqual([
       'new',
       'sessions',
       'resume',
+      'session-info',
       'fork',
+      'export',
       'undo',
       'redo',
+      'timeline',
       'help',
       'exit',
+      'doctor',
+      'skills',
+      'plugins',
+      'mcps',
       'mode',
-      'context',
-      'compact',
       'reasoning',
       'minimal',
       'fullscreen',
+      'context',
+      'compact',
+      'memory',
       'tasks',
     ]);
     expect(caps.commands.find((c) => c.id === 'resume')?.summary).toBe('恢复指定会话（/resume <id>）');
     expect(caps.commands.find((c) => c.id === 'undo')?.argsSpec).toBe('[n] [--dry-run]');
+    expect(caps.commands.find((c) => c.id === 'new')?.aliases).toEqual(['clear']);
+    expect(caps.commands.find((c) => c.id === 'undo')?.aliases).toEqual(['rewind']);
   });
 
-  it('mode/reasoning/minimal/fullscreen 带 shellOnly 标记，其余 11 条不带（core 实现）', () => {
+  it('shellOnly 12 条带标记（P2-C 4 条 + P3-A 批次 8 条），其余 11 条不带（core 实现）', () => {
     const caps = describeCapabilities();
+    const shellOnly = new Set([
+      'mode',
+      'reasoning',
+      'minimal',
+      'fullscreen',
+      'session-info',
+      'export',
+      'timeline',
+      'doctor',
+      'memory',
+      'skills',
+      'plugins',
+      'mcps',
+    ]);
     for (const c of caps.commands) {
-      if (c.id === 'mode' || c.id === 'reasoning' || c.id === 'minimal' || c.id === 'fullscreen') {
-        expect(c.shellOnly).toBe(true);
-      } else {
-        expect(c.shellOnly).toBeUndefined();
-      }
+      if (shellOnly.has(c.id)) expect(c.shellOnly).toBe(true);
+      else expect(c.shellOnly).toBeUndefined();
     }
   });
 

@@ -112,20 +112,21 @@ afterEach(() => {
   vi.useRealTimers();
 });
 
-describe('G-02 跨模式切换请求后的运行时状态（不重启的可观测等价）', () => {
-  it('/minimal 降级路径不触碰运行时状态：草稿保留、转录保留、同进程会话照常出回合', async () => {
+describe('G-02 跨模式切换后的运行时状态（P3-D 实体化：真切换不重启）', () => {
+  it('/minimal 真切换不触碰运行时状态：草稿保留、转录保留、同进程会话照常出回合', async () => {
+    // 规格迁移（P3-D）：原断言锁「降级路径不改状态」（G-02 🟡）；minimal 基座实体化后
+    // 升级为锁「真切换不改状态」——切换只换渲染基座，会话/草稿/队列等运行时状态原样。
     const { h } = makeHarness();
     await submitTurn(h, '切换前的任务'); // 会话已有真实回合
     h.feed('未发送草稿'); // 未提交草稿留在 composer
     expect(h.state.draft).toBe('未发送草稿');
-    h.submit('/minimal'); // 跨模式切换请求（本阶段降级：如实指引，不落假状态）
+    h.submit('/minimal'); // 跨模式切换（G-02 实体化：进程内换基座）
     h.flushUi();
-    expect(h.renderMode()).toBe('fullscreen'); // 状态未变（不做假切换）
+    expect(h.renderMode()).toBe('minimal'); // 状态机真实提交
     const lines = h.logicalLines().join('\n');
-    expect(lines).toContain('G-02'); // 降级登记可见
-    expect(lines).toContain('收到：切换前的任务'); // 转录原样（切换请求不重建转录）
+    expect(lines).toContain('收到：切换前的任务'); // 转录原样（切换不重建转录/会话）
     expect(h.state.draft).toBe('未发送草稿'); // 草稿原样（命令分发路径不碰运行时状态）
-    h.feed('并续写'); // 同一进程同一 composer 继续编辑
+    h.feed('并续写'); // 同一进程同一 composer 继续编辑（minimal 基座下照常出回合）
     h.feed(ENTER);
     await settle(h);
     expect(h.logicalLines().join('\n')).toContain('收到：未发送草稿并续写'); // 会话活着：回合照常执行
@@ -151,7 +152,11 @@ describe('G-03 分发层模式门控真实行为', () => {
     h.flushUi();
     const all = h.logicalLines().join('\n');
     expect(all).toContain('> /expand'); // 命令回显照常
-    expect(all).toContain('当前渲染模式（fullscreen）下不可用：/expand（仅 minimal 模式提供）'); // 门控文案
+    // 规格迁移（P3-D）：拒绝文案补上游「指向替代」语义（Run /fullscreen to switch this
+    // session. 的中文等价——审查 P2-5 遗留）
+    expect(all).toContain(
+      '当前渲染模式（fullscreen）下不可用：/expand（仅 minimal 模式提供；运行 /minimal 切换本会话）',
+    ); // 门控文案（含指向替代）
     expect(all).not.toContain('未知命令'); // 门控先于 core 未知命令兜底触发
     h.dispose();
   });

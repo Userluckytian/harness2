@@ -152,13 +152,65 @@ export interface GatewaysConfig {
 export type GatewayChannelName = 'qq' | 'feishu';
 
 /**
+ * follow-up 行为（G-26 加性枚举）：回合运行中普通 Enter 的路由——
+ * queue = 入队不打断（缺省）；steer = 仍入队展示，但由壳在安全 step 边界经
+ * core SessionSteerSink 实时转向注入。取值与 cli 侧 tui/queue/queue.ts 的
+ * FOLLOW_UP_BEHAVIORS 同域。
+ */
+export type FollowUpBehavior = 'queue' | 'steer';
+
+export const FOLLOW_UP_BEHAVIORS: readonly FollowUpBehavior[] = ['queue', 'steer'];
+
+/**
+ * 状态行类型（G-42 加性枚举）：builtin = 内置段；command = 外部命令脚本（stdin JSON 契约）；
+ * disabled = 关闭（缺省）。off / none / hidden 是 disabled 的同义拼写——schema 归一为
+ * 'disabled' 存储（上游 25-status-line.md：「off, none, and hidden are accepted as
+ * spellings of disabled」）。
+ */
+export type StatusLineType = 'builtin' | 'command' | 'disabled';
+
+export const STATUS_LINE_TYPES: readonly StatusLineType[] = ['builtin', 'command', 'disabled'];
+
+/** disabled 的同义拼写（G-42；校验接受、归一为 'disabled'） */
+export const STATUS_LINE_DISABLED_SYNONYMS: readonly string[] = ['off', 'none', 'hidden'];
+
+/** 内置状态行条目全集（G-43；items 只能取其中的名字，顺序即渲染顺序） */
+export const STATUS_LINE_BUILTIN_ITEMS: readonly string[] = [
+  'cwd',
+  'model',
+  'context',
+  'cost',
+  'turn-timer',
+  'session-name',
+];
+
+/** 状态行配置（G-42～G-46 加性段）：字段语义见 refs-grok-build.md G-42～G-49。 */
+export interface StatusLineConfig {
+  /** builtin / command / disabled（off/none/hidden 归一为 disabled）；缺省 disabled */
+  type?: StatusLineType;
+  /** builtin 段清单；缺省 ['cwd', 'model', 'context']（G-43） */
+  items?: string[];
+  /** command 型脚本命令（支持 ~/ 前缀，展开归壳层） */
+  command?: string;
+  /** 水平每侧留白字符数；>16 钳到 16（G-46「padding 上限 16」），负数报错 */
+  padding?: number;
+  /** command 型定时刷新秒数；1–86400 整数（G-46），缺省 = 纯事件驱动 */
+  refresh_interval?: number;
+}
+
+/**
  * UI 渲染配置（P2-C 加性段）：screen_mode = 壳渲染模式初值（fullscreen = 接管屏幕 /
  * minimal = 终端原生滚动，不接管）。取值与 cli 侧 tui/render/mode.ts 钉死的
  * RENDER_MODES 对齐；缺省 fullscreen（壳层缺省语义，schema 不复制缺省常量）。
  * 仅 next 渲染层消费；其余壳忽略（未知段不加告警——段本身已登记）。
+ * P3-C 加性：follow_up_behavior（G-26 队列/转向路由）与 status_line（G-42～G-49 状态行）。
  */
 export interface UiConfig {
   screen_mode?: 'fullscreen' | 'minimal';
+  /** 回合运行中 Enter 的 follow-up 路由（G-26）；缺省 queue（壳层裁定） */
+  follow_up_behavior?: FollowUpBehavior;
+  /** 状态行配置（G-42～G-49）；缺省 type=disabled 即整行不渲染 */
+  status_line?: StatusLineConfig;
 }
 
 /**
@@ -264,7 +316,8 @@ const MCP_SERVER_KNOWN_KEYS = new Set(['command', 'args', 'env', 'cwd', 'url', '
 const SUBAGENT_KNOWN_KEYS = new Set(['maxDepth', 'maxTurns']);
 const GATEWAYS_KNOWN_KEYS = new Set(['qq', 'feishu']);
 const GATEWAY_CHANNEL_KNOWN_KEYS = new Set(['enabled', 'appId', 'appSecretEnvKey', 'dmPolicy', 'groupPolicy', 'allow']);
-const UI_KNOWN_KEYS = new Set(['screen_mode']);
+const UI_KNOWN_KEYS = new Set(['screen_mode', 'follow_up_behavior', 'status_line']);
+const STATUS_LINE_KNOWN_KEYS = new Set(['type', 'items', 'command', 'padding', 'refresh_interval']);
 const SCROLLBACK_KNOWN_KEYS = new Set(['scroll']);
 const SCROLLBACK_SCROLL_KNOWN_KEYS = new Set(['respect_manual_folds']);
 
@@ -739,6 +792,93 @@ export function parseConfig(raw: unknown): ConfigParseResult {
           errors.push(`ui.screen_mode 必须是 fullscreen | minimal，实际为 ${JSON.stringify(screenMode)}`);
         } else {
           ui.screen_mode = screenMode;
+        }
+      }
+      // —— follow_up_behavior（P3-C 加性；G-26：queue | steer，缺省由壳层裁定 queue）——
+      const followUp = rawUi['follow_up_behavior'];
+      if (followUp !== undefined) {
+        if (typeof followUp !== 'string' || !FOLLOW_UP_BEHAVIORS.includes(followUp as FollowUpBehavior)) {
+          errors.push(
+            `ui.follow_up_behavior 必须是 ${FOLLOW_UP_BEHAVIORS.join(' | ')}，实际为 ${JSON.stringify(followUp)}`,
+          );
+        } else {
+          ui.follow_up_behavior = followUp as FollowUpBehavior;
+        }
+      }
+      // —— status_line（P3-C 加性；G-42～G-46）——
+      // type 接受 off/none/hidden 同义拼写并归一为 'disabled'；items 是闭合枚举；
+      // padding 钳到 0..16（G-46「上限 16」是钳制语义，不报错）；refresh_interval 1..86400。
+      const rawStatusLine = rawUi['status_line'];
+      if (rawStatusLine !== undefined) {
+        if (!isPlainObject(rawStatusLine)) {
+          errors.push('ui.status_line 必须是对象');
+        } else {
+          const statusLine: StatusLineConfig = {};
+          collectUnknownKeys(rawStatusLine, STATUS_LINE_KNOWN_KEYS, 'ui.status_line', warnings);
+          const rawType = rawStatusLine['type'];
+          if (rawType !== undefined) {
+            if (typeof rawType !== 'string') {
+              errors.push(
+                `ui.status_line.type 必须是 ${STATUS_LINE_TYPES.join(' | ')}，实际为 ${JSON.stringify(rawType)}`,
+              );
+            } else if ((STATUS_LINE_TYPES as readonly string[]).includes(rawType)) {
+              statusLine.type = rawType as StatusLineType;
+            } else if (STATUS_LINE_DISABLED_SYNONYMS.includes(rawType)) {
+              statusLine.type = 'disabled'; // G-42：同义拼写归一
+            } else {
+              errors.push(
+                `ui.status_line.type 必须是 ${[...STATUS_LINE_TYPES, ...STATUS_LINE_DISABLED_SYNONYMS].join(' | ')}，实际为 ${JSON.stringify(rawType)}`,
+              );
+            }
+          }
+          const rawItems = rawStatusLine['items'];
+          if (rawItems !== undefined) {
+            if (!Array.isArray(rawItems) || !rawItems.every((x) => typeof x === 'string')) {
+              errors.push('ui.status_line.items 必须是字符串数组');
+            } else {
+              const bad = (rawItems as string[]).filter((x) => !STATUS_LINE_BUILTIN_ITEMS.includes(x));
+              if (bad.length > 0) {
+                errors.push(
+                  `ui.status_line.items 含未知条目 ${JSON.stringify(bad)}（可选：${STATUS_LINE_BUILTIN_ITEMS.join('、')}）`,
+                );
+              } else {
+                statusLine.items = [...(rawItems as string[])];
+              }
+            }
+          }
+          const rawCommand = rawStatusLine['command'];
+          if (rawCommand !== undefined) {
+            if (typeof rawCommand !== 'string' || rawCommand.trim() === '') {
+              errors.push('ui.status_line.command 必须是非空字符串');
+            } else {
+              statusLine.command = rawCommand;
+            }
+          }
+          const rawPadding = rawStatusLine['padding'];
+          if (rawPadding !== undefined) {
+            if (typeof rawPadding !== 'number' || !Number.isInteger(rawPadding) || rawPadding < 0) {
+              errors.push('ui.status_line.padding 必须是 >= 0 的整数');
+            } else {
+              statusLine.padding = Math.min(rawPadding, 16); // G-46：上限 16 = 钳制语义
+            }
+          }
+          const rawRefresh = rawStatusLine['refresh_interval'];
+          if (rawRefresh !== undefined) {
+            if (
+              typeof rawRefresh !== 'number' ||
+              !Number.isInteger(rawRefresh) ||
+              rawRefresh < 1 ||
+              rawRefresh > 86_400
+            ) {
+              errors.push('ui.status_line.refresh_interval 必须是 1..86400 的整数（秒）');
+            } else {
+              statusLine.refresh_interval = rawRefresh;
+            }
+          }
+          if (statusLine.type === 'command' && statusLine.command === undefined) {
+            errors.push('ui.status_line.type 为 command 时必须提供 command（脚本命令）');
+          }
+          ui.status_line = statusLine;
         }
       }
     }

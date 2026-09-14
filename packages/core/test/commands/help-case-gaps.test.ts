@@ -2,7 +2,7 @@
 //   既有 help-exit.test.ts 只抽查 HELP_TEXT 的 5 条命令行与说明区关键行；
 //   既有 parse.test.ts 只在 splitCommandLine 层测 /HELP、在 parseCoreCommand 层测 /UNDO。
 //   本文件补：
-//   - HELP_TEXT 命令清单区逐条含全部命令 id（声明顺序，防漏登记；P2-C 起 15 条）；
+//   - HELP_TEXT 命令清单区逐条含全部命令 id（声明顺序，防漏登记；P3-A 起 23 条）；
 //   - 全部命令大写输入经 parseCoreCommand 全管线解析为规范 id（含别名 /QUIT → exit）；
 //   - /HELP /EXIT 大写输入经 runCoreCommand 分发（输出帮助 / 请求退出）；
 //   - 大写未知命令的报错文案中命令词已小写归一。
@@ -11,12 +11,12 @@ import { CORE_COMMANDS, HELP_TEXT, parseCoreCommand, runCoreCommand } from '../.
 import { execCommand, makeRecordingCtx } from './helpers.js';
 
 describe('HELP_TEXT 命令清单全覆盖', () => {
-  it('清单区逐条含全部命令 id（声明顺序，/id 前缀；P2-C 起 15 条）', () => {
+  it('清单区逐条含全部命令 id（声明顺序，/id 前缀；P3-A 起 23 条）', () => {
     const listed = HELP_TEXT.split('\n')
       .filter((l) => l.startsWith('  /'))
       .map((l) => l.trim().split(/\s+/)[0]!.slice(1));
     expect(listed).toEqual(CORE_COMMANDS.map((c) => c.id));
-    expect(listed).toHaveLength(15);
+    expect(listed).toHaveLength(23);
   });
 });
 

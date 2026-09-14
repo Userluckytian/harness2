@@ -1,6 +1,6 @@
 // G-01 minimal 契约 + G-03 模式限定命令清单单测（数据化断言）：
 // - minimal 契约：无 alt-screen、固定区域只有 prompt + 可选 status line、系统行直写
-// - G-03 两份清单即数据：仅 fullscreen 六命令、仅 minimal 一命令、/workflow minimal 降级
+// - G-03 两份清单即数据：仅 fullscreen 七命令、仅 minimal 一命令、/workflow minimal 降级
 // - 谓词矩阵：commandSupportInMode / isCommandAvailableInMode 全组合表驱动
 import { describe, expect, it } from 'vitest';
 import {
@@ -34,8 +34,8 @@ describe('minimal 模式契约（G-01）', () => {
 });
 
 describe('G-03 命令清单即数据', () => {
-  it('仅 fullscreen 清单恰好六命令：find/jump/timeline/theme/tutorial/dashboard', () => {
-    expect(FULLSCREEN_ONLY_COMMANDS).toEqual(['find', 'jump', 'timeline', 'theme', 'tutorial', 'dashboard']);
+  it('仅 fullscreen 清单恰好七命令：find/jump/search/timeline/theme/tutorial/dashboard', () => {
+    expect(FULLSCREEN_ONLY_COMMANDS).toEqual(['find', 'jump', 'search', 'timeline', 'theme', 'tutorial', 'dashboard']);
   });
 
   it('仅 minimal 清单恰好一命令：expand（全屏下无原生 scrollback 可展开）', () => {

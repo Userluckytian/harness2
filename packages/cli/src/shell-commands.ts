@@ -1,19 +1,37 @@
-// shell-commands：壳侧 ShellCommand 分发表（P1-Dev-2 内核下沉第二棒）。
-// core 的 15 条命令中 mode/reasoning/minimal/fullscreen 标记 shellOnly（core 无执行体）：
-// 审批模式切换与推理展示开关是壳状态/呈现语义，渲染模式切换是壳渲染基座语义，实现留壳
-// ——但三处壳（legacy readline / ink / next）不得各写一份，统一收敛到本表，由各入口经
-// createShellCommandDispatcher 表驱动分发（壳内禁止 switch/case 命令名）。实现与文案以
-// legacy-chat 为基准逐字统一；各壳的呈现差异经 ShellCommandContext 可选缝注入（ink 的无参
-// /mode 选择浮层、/reasoning off 收起推理块），next 的 /mode 为 UI 四态声明态语义（测试锁定
-// + P3-B 红线 6），经 dispatcher override 注册；next 的 /minimal /fullscreen /full 经
-// RenderModeControl 缝驱动 tui/render/mode.ts 的 RenderMode 状态机（P2-C）。
+// shell-commands：壳侧 ShellCommand 分发表（P1-Dev-2 内核下沉第二棒；P1-1 收敛）。
+// core 的 23 条命令中 mode/reasoning/minimal/fullscreen 与 P3-A 批次的 8 条
+// （session-info/export/timeline/doctor/memory/skills/plugins/mcps）标记 shellOnly（core 无
+// 执行体）：审批模式切换与推理展示开关是壳状态/呈现语义，渲染模式切换是壳渲染基座语义；
+// 8 条只读命令是 core 能力（loadSession/exportSession/runDoctor/MemoryStore/SkillStore/
+// scanPluginSources/loadConfig）的壳侧接线。以上一律实现留壳——但三处壳（legacy readline /
+// ink / next）不得各写一份，统一收敛到本表，由各入口经 createShellCommandDispatcher 表驱动
+// 分发（壳内禁止 switch/case 命令名）。实现与文案以 legacy-chat 为基准逐字统一；各壳的呈现
+// 差异经 ShellCommandContext 可选缝注入（ink 的无参 /mode 选择浮层、/reasoning off 收起推理
+// 块），next 的 /mode 为 UI 四态声明态语义（测试锁定 + P3-B 红线 6），经 dispatcher override
+// 注册；next 的 /minimal /fullscreen /full 经 RenderModeControl 缝驱动 tui/render/mode.ts 的
+// RenderMode 状态机（P2-C）。
+//
+// 8 条 shellOnly 命令的实现单一来源 = tui/commands/shell-command-impls.ts（core API + io.print
+// 文本输出，文案与 cli 对应子命令逐字同源）；本表引用注册，故默认壳（legacy/ink）与 next 走
+// 同一条真实现，不再落 core 的「由界面层实现（shellOnly）」兜底。
 import type { ChatRuntime } from './chat-setup.js';
 import { MODE_ALIAS_LABEL, MODE_ALIAS_ORDER, MODE_ALIAS_TO_CORE, describeMode, parseModeAlias } from './mode-alias.js';
 import type { RenderMode } from './tui/render/mode.js';
+import {
+  PALETTE_SHELL_COMMANDS,
+  runPaletteShellCommand,
+  type ShellCommandIo,
+} from './tui/commands/shell-command-impls.js';
 
-/** 壳侧命令执行缝：print 为该壳的转录输出；runtime 提供审批模式/推理开关状态（两路径同一份） */
-export interface ShellCommandContext {
-  print(text: string): void;
+// 壳上下文注入缝（P1-1 提炼）：print/currentSessionDir/root/home 由各壳注入自己的值——
+// legacy 取 options.home/root，ink 取 InkShell props，next 取 runtime.root + deps.home。
+export type { ShellCommandIo } from './tui/commands/shell-command-impls.js';
+
+/**
+ * 壳侧命令执行上下文：ShellCommandIo（共享执行缝）的超集——runtime 提供审批模式/推理开关
+ * 状态（三路径同一份），其余可选缝为各壳呈现差异。
+ */
+export interface ShellCommandContext extends ShellCommandIo {
   runtime: ChatRuntime;
   /** ink 缝：无参 /mode 打开交互选择浮层（注入后取代基准实现的文本列表呈现；带参仍走基准实现） */
   openModePicker?: () => void;
@@ -44,6 +62,21 @@ export interface RenderModeControl {
 }
 
 export type ShellCommandRun = (ctx: ShellCommandContext, rest: string) => void;
+
+/**
+ * P3-A 八条 shellOnly 命令的壳表条目：实现单一来源 = runPaletteShellCommand
+ * （tui/commands/shell-command-impls.ts）。异步实现（doctor/memory）的 Promise 在此收口，
+ * 异常如实进转录，绝不静默（宿主分发表保持同步返回 boolean 的既有契约）。
+ */
+function runPaletteCommand(id: string): ShellCommandRun {
+  return (ctx, rest) => {
+    const result = runPaletteShellCommand(id, ctx, rest);
+    // 同步实现返回 true（本表恒接管）；异步实现（doctor/memory）返回 Promise——异常如实进
+    // 转录，绝不静默（宿主分发表保持同步返回 boolean 的既有契约）。
+    if (typeof result === 'boolean') return;
+    void result.catch((e: unknown) => ctx.print(`error: ${e instanceof Error ? e.message : String(e)}`));
+  };
+}
 
 export interface ShellCommand {
   /** 规范命令 id（不含 /；与 core 元数据一致） */
@@ -139,18 +172,22 @@ export function runRenderModeCommand(target: RenderMode): ShellCommandRun {
   };
 }
 
-/** 壳侧命令表（core shellOnly 的四条；表驱动——壳内不得再出现 switch/case 命令名） */
+/** 壳侧命令表（core 的 12 条 shellOnly：4 条壳状态/渲染语义 + P3-A 8 条只读命令；表驱动——壳内不得再出现 switch/case 命令名） */
 export const SHELL_COMMANDS: readonly ShellCommand[] = [
   { id: 'mode', run: runModeCommand },
   { id: 'reasoning', run: runReasoningCommand },
   { id: 'minimal', run: runRenderModeCommand('minimal') },
   { id: 'fullscreen', run: runRenderModeCommand('fullscreen') },
+  // P1-1 收敛：8 条 P3-A shellOnly 命令（session-info/export/timeline/doctor/memory/skills/
+  // plugins/mcps）与上述 4 条同表分发——默认壳（legacy/ink）因此获得真实现，不再落 core 兜底。
+  ...PALETTE_SHELL_COMMANDS.map((id) => ({ id, run: runPaletteCommand(id) })),
 ];
 
 /**
  * 构建壳侧命令分发器（查表执行；未注册返回 false，调用方回落 core runCoreCommand）。
  * overrides 允许某壳为特定 shellOnly 命令注册本壳变体（当前仅 next 的 UI 四态 /mode，
  * 差异裁决登记在其调用处），不得用于新增 core 未注册的命令（那是壳内第二份清单）。
+ * 异步实现（doctor/memory）在表内自行收口，故本函数恒同步返回 boolean（调用方不 await）。
  */
 export function createShellCommandDispatcher(
   overrides: Readonly<Record<string, ShellCommandRun>> = {},

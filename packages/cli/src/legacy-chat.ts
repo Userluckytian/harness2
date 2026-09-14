@@ -151,7 +151,8 @@ export async function runLegacyReadlineChat(options: ChatOptions = {}): Promise<
     // （core 降级文案与本壳改造前输出逐字一致，不伪造执行）
   };
 
-  /** 壳侧 ShellCommand 分发表（mode/reasoning；实现收敛在 shell-commands.ts，本壳为基准壳） */
+  /** 壳侧 ShellCommand 分发表（mode/reasoning/minimal/fullscreen + P3-A 八条只读命令；
+   * 实现收敛在 shell-commands.ts / tui/commands/shell-command-impls.ts，本壳为基准壳） */
   const dispatchShellCommand = createShellCommandDispatcher();
 
   async function runUserTurn(text: string): Promise<void> {
@@ -177,11 +178,19 @@ export async function runLegacyReadlineChat(options: ChatOptions = {}): Promise<
     try {
       const parsed = parseCoreCommand(line);
       if (parsed !== null) {
-        // shellOnly 命令（mode/reasoning）→ 壳内 ShellCommand 分发表（shell-commands.ts）；
-        // 其余（含别名 /? /quit、未知命令、/context /compact /tasks）→ core runCoreCommand
+        // shellOnly 命令（mode/reasoning/minimal/fullscreen + P3-A 八条只读命令）→ 壳内
+        // ShellCommand 分发表（shell-commands.ts）；其余（含别名 /? /quit、未知命令、
+        // /context /compact /tasks）→ core runCoreCommand
         if (
           parsed.id !== null &&
-          dispatchShellCommand(parsed.id, parsed.rest, { print: (t) => renderer.line(t), runtime })
+          dispatchShellCommand(parsed.id, parsed.rest, {
+            print: (t) => renderer.line(t),
+            runtime,
+            // P1-1 壳上下文注入缝：会话目录/根/home（8 条只读命令定位用）
+            currentSessionDir: () => runtime.getCurrent()?.dir ?? null,
+            root,
+            ...(options.home !== undefined ? { home: options.home } : {}),
+          })
         ) {
           return;
         }

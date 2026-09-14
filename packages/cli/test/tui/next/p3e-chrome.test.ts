@@ -1,8 +1,10 @@
-// P3-E 状态行/快捷键条上下文化 + 队列取消面板（Ctrl+X）+ 重试信息（headless 单测）：
+// P3-E 状态行/快捷键条上下文化 + 队列取消面板（Ctrl+;）+ 重试信息（headless 单测）：
 // - 状态行：cwd(短化 ~) · model · ctx 占用% · 模式(非 normal) · 重试标记 · 运行中标记（数据驱动纯函数）
 // - 快捷键条：shortcutsFor(state) 纯函数四态（审批接管 > 子视图 > busy > 空闲），互斥由单一返回保证
-// - 队列取消面板：busy 且队列非空时 Ctrl+X 打开浮层（Queue · N 项），↑↓/j/k 走行，
-//   Ctrl+X/x 取消高亮项（FIFO 移除 + 「已取消排队」system 行），q/Esc 关闭
+// - 队列取消面板：busy 且队列非空时 Ctrl+;（kitty CSI-u）打开浮层（Queue · N 项），↑↓/j/k 走行，
+//   裸 x 取消高亮项（FIFO 移除 + 「已取消排队」system 行），q/Esc 关闭
+//   （P3-F 键位冲突修复：Ctrl+X 不再是本面板的壳侧别名——该和弦归 G-39 快捷键帮助；
+//    Ctrl+X 在面板内 = 关面板并开帮助，见 p3f-agent-keys.test.ts）
 // - 重试信息：turn 收尾 retryBudget 快照有活动（usedAttempts>0 或 stopReason≠none）→
 //   转录 system 行（formatRetryBudget，对齐 ink RetryPanel 信息量）+ 状态行「重试 used/max」标记
 // 红绿流程：先于实现落盘（红），实现后转绿（日志存 Temp/p3e-evidence）。
@@ -23,7 +25,8 @@ import {
 
 const ESC = '\x1b';
 const TAB = '\t';
-const CTRL_X = '\x18'; // Ctrl+X
+const CTRL_X = '\x18'; // Ctrl+X（P3-F 起 = G-39 快捷键帮助，不再是队列面板别名）
+const KITTY_CTRL_SEMI = '\x1b[59;5u'; // kitty CSI-u：';' + ctrl（G-29 队列面板主键）
 const ARROW_UP = '\x1b[A';
 const ARROW_DOWN = '\x1b[B';
 
@@ -162,18 +165,22 @@ describe('shortcutsFor 四态', () => {
     ]);
   });
 
-  it('busy 且队列非空：Ctrl+C 取消 · Ctrl+X 队列(N)', () => {
+  it('busy 且队列非空：Ctrl+C 取消 · Ctrl+; 队列(N)', () => {
+    // 接线迁移（G-29）：队列段主键按 panel.ts QUEUE_PANEL_OPEN_KEYS 更新为 Ctrl+;
+    // （「Toggle the prompt queue pane」上游键位表）；Ctrl+X 保留为壳侧附加入口，不在条内展示。
     expect(shortcutsFor({ busy: true, queueCount: 3, approvalActive: false, subviewOpen: false })).toEqual([
       'Ctrl+C 取消',
-      'Ctrl+X 队列(3)',
+      'Ctrl+; 队列(3)',
     ]);
   });
 
-  it('审批接管：↑↓ 选择 · Enter 确认 · Ctrl+F 展开 · Esc 寄放', () => {
+  it('审批接管：Tab/↑↓ 选择 · Enter 确认 · Esc 寄放', () => {
+    // 接线迁移（G-25/G-21）：审批卡改走 B 棒 cards 调度器——① Tab/Shift+Tab 卡内焦点环
+    // （G-25），↑↓ 保留，快捷键条合并展示为 Tab/↑↓；② 旧「Ctrl+F 展开」随卡片呈现契约
+    // 移除（askApproval 契约冻结仅携带文案，卡无参数全文可展开，P3-B 登记延续）。
     expect(shortcutsFor({ busy: true, queueCount: 2, approvalActive: true, subviewOpen: false })).toEqual([
-      '↑↓ 选择',
+      'Tab/↑↓ 选择',
       'Enter 确认',
-      'Ctrl+F 展开',
       'Esc 寄放',
     ]);
   });
@@ -186,8 +193,9 @@ describe('shortcutsFor 四态', () => {
   });
 
   it('互斥：审批接管优先于 busy/子视图（单一键位组，无混排）', () => {
+    // 接线迁移（G-25/G-21）：同上——审批组按 G-25 卡内焦点环更新（Tab/↑↓ 合并、Ctrl+F 移除）。
     const s = shortcutsFor({ busy: true, queueCount: 1, approvalActive: true, subviewOpen: true });
-    expect(s).toEqual(['↑↓ 选择', 'Enter 确认', 'Ctrl+F 展开', 'Esc 寄放']);
+    expect(s).toEqual(['Tab/↑↓ 选择', 'Enter 确认', 'Esc 寄放']);
   });
 
   it('互斥：子视图优先于 busy；空闲态不显示队列段（队列段只在 busy 态）', () => {
@@ -365,7 +373,9 @@ describe('P3-E 快捷键条（harness 集成）', () => {
     h.dispose();
   });
 
-  it('busy 态切换为 busy 键位组；入队后出现 Ctrl+X 队列(N)', async () => {
+  it('busy 态切换为 busy 键位组；入队后出现 Ctrl+; 队列(N)', async () => {
+    // 接线迁移（G-29）：队列段主键 Ctrl+X → Ctrl+;（panel.ts QUEUE_PANEL_OPEN_KEYS；
+    // Ctrl+X 为壳侧别名不在条内展示）。
     let release!: () => void;
     const blocker = new Promise<void>((r) => {
       release = r;
@@ -382,7 +392,7 @@ describe('P3-E 快捷键条（harness 集成）', () => {
     await vi.advanceTimersByTimeAsync(0);
     expect(h.state.shortcuts).toEqual(['Ctrl+C 取消']);
     h.submit('second');
-    expect(h.state.shortcuts).toEqual(['Ctrl+C 取消', 'Ctrl+X 队列(1)']);
+    expect(h.state.shortcuts).toEqual(['Ctrl+C 取消', 'Ctrl+; 队列(1)']);
     release();
     await settle(h);
     expect(h.state.shortcuts).toEqual(['/ 命令', 'Tab 焦点', 'Ctrl+C 退出']);
@@ -390,10 +400,11 @@ describe('P3-E 快捷键条（harness 集成）', () => {
   });
 
   it('审批挂起时快捷键条切换为审批键位组（dispatcher 最优先层一致）', async () => {
+    // 接线迁移（G-25/G-21）：审批组按 B 棒卡片呈现契约更新（Tab/↑↓ 合并、Ctrl+F 移除）。
     const { h, gate } = makeHarness();
     void gate.ask('允许执行 write?');
     expect(h.pendingApproval()).toBe('允许执行 write?');
-    expect(h.state.shortcuts).toEqual(['↑↓ 选择', 'Enter 确认', 'Ctrl+F 展开', 'Esc 寄放']);
+    expect(h.state.shortcuts).toEqual(['Tab/↑↓ 选择', 'Enter 确认', 'Esc 寄放']);
     h.approve('y');
     expect(h.state.shortcuts).toEqual(['/ 命令', 'Tab 焦点', 'Ctrl+C 退出']);
     h.dispose();
@@ -417,7 +428,7 @@ describe('P3-E 快捷键条（harness 集成）', () => {
   });
 });
 
-// —— 队列取消面板（Ctrl+X）——
+// —— 队列取消面板（Ctrl+;；P3-F 起 Ctrl+X 归快捷键帮助，不再是本面板别名）——
 describe('P3-E 队列取消面板', () => {
   function blockedHarness(): { f: Fixture; release: () => void } {
     let release!: () => void;
@@ -438,39 +449,45 @@ describe('P3-E 队列取消面板', () => {
     return { f, release };
   }
 
-  it('busy 且队列非空：Ctrl+X 打开浮层（标题 Queue · N 项，条目=预览，高亮 0）', async () => {
+  it('busy 且队列非空：Ctrl+; 打开浮层（标题 Queue · N 项，条目=预览，高亮末行）', async () => {
+    // 接线迁移（G-29）：打开高亮从 0 改为**末行**（panel.ts toggleQueuePanel 上游语义
+    // 「with the last row highlighted」）；标题/条目呈现契约不变。
+    // P3-F：入口和弦改用 G-29 主键 Ctrl+;（kitty CSI-u；Ctrl+X 不再是别名）。
     const { f, release } = blockedHarness();
     await vi.advanceTimersByTimeAsync(0);
-    f.h.feed(CTRL_X);
+    f.h.feed(KITTY_CTRL_SEMI);
     expect(f.h.state.overlays).toHaveLength(1);
     expect(f.h.state.overlays[0]?.title).toBe('Queue · 2 项');
     expect(f.h.state.overlays[0]?.items).toEqual(['second message 多行内容', 'third']);
-    expect(f.h.state.overlays[0]?.activeIndex).toBe(0);
+    expect(f.h.state.overlays[0]?.activeIndex).toBe(1); // G-29：末行高亮
     release();
     await settle(f.h);
     f.h.dispose();
   });
 
-  it('Ctrl+X 在空闲或队列空时不开面板（瞬时提示；空闲提示区分于队列空，审查 P2-2）', async () => {
+  it('队列空时 Ctrl+; 不开面板（瞬时提示；G-29 打开条件 = 队列非空，busy 门废止）', async () => {
+    // 接线迁移（G-29）：「Toggle the prompt queue pane (when non-empty)」——打开条件统一为
+    // 队列非空（空闲 + 非空在 drain 语义下实际不可达），早批的 busy 门废止；空队列提示
+    // 相应改为「（队列为空）」（不再区分忙/闲两态文案）。
     const { h } = makeHarness();
-    h.feed(CTRL_X);
+    h.feed(KITTY_CTRL_SEMI);
     expect(h.state.overlays).toHaveLength(0);
-    expect((h.state.indicators ?? []).join(' ')).toContain('非忙时不开放队列面板');
+    expect((h.state.indicators ?? []).join(' ')).toContain('队列为空');
     h.dispose();
   });
 
-  it('审批寄放时 Ctrl+X 拒开面板（卡不被顶掉，审查 P1-1）；接管期 Ctrl+X 被审批层消费', async () => {
+  it('审批寄放时 Ctrl+; 拒开面板（卡不被顶掉，审查 P1-1）；接管期被审批层消费', async () => {
     const { h, gate } = makeHarness();
     const p = gate.ask('允许执行 write?');
     await vi.advanceTimersByTimeAsync(80);
-    // 接管期：审批层整体消费键盘，Ctrl+X 到不了队列入口
-    h.feed(CTRL_X);
+    // 接管期：审批层整体消费键盘，队列入口和弦到不了（卡片仍最优先）
+    h.feed(KITTY_CTRL_SEMI);
     expect(h.state.overlays.length).toBe(1);
     expect(h.pendingApproval()).toBe('允许执行 write?');
-    // 寄放：键盘回 composer，卡片保持显示——此时 Ctrl+X 必须拒开面板（P1-1）
+    // 寄放：键盘回 composer，卡片保持显示——此时 Ctrl+; 必须拒开面板（P1-1）
     h.feed(ESC);
     await vi.advanceTimersByTimeAsync(120); // 孤立 ESC 空闲超时 → Esc 寄放
-    h.feed(CTRL_X);
+    h.feed(KITTY_CTRL_SEMI);
     expect(h.state.overlays.length).toBe(1); // 卡未被顶掉
     expect(h.state.overlays[0]?.title).toContain('Approval');
     expect((h.state.indicators ?? []).join(' ')).toContain('审批待答');
@@ -479,18 +496,21 @@ describe('P3-E 队列取消面板', () => {
     h.dispose();
   });
 
-  it('↑↓/j/k 走行移动高亮（循环）', async () => {
+  it('↑↓/j/k 走行移动高亮（钳制不回绕，G-29）', async () => {
+    // 接线迁移（G-29）：panel.ts moveQueuePanelSelection 钳到 [0, queueCount-1]，端点**不回绕**
+    // （早批循环语义废止）；打开高亮 = 末行（G-29），故序列从 1 起步。
     const { f, release } = blockedHarness();
     await vi.advanceTimersByTimeAsync(0);
-    f.h.feed(CTRL_X);
+    f.h.feed(KITTY_CTRL_SEMI);
+    expect(f.h.state.overlays[0]?.activeIndex).toBe(1); // 末行高亮
     f.h.feed(ARROW_DOWN);
-    expect(f.h.state.overlays[0]?.activeIndex).toBe(1);
+    expect(f.h.state.overlays[0]?.activeIndex).toBe(1); // 已在末行：钳制不动
     f.h.feed('j');
-    expect(f.h.state.overlays[0]?.activeIndex).toBe(0); // 循环回队首
+    expect(f.h.state.overlays[0]?.activeIndex).toBe(1); // 同上（j=down 同义）
     f.h.feed(ARROW_UP);
-    expect(f.h.state.overlays[0]?.activeIndex).toBe(1); // 反向循环
-    f.h.feed('k');
     expect(f.h.state.overlays[0]?.activeIndex).toBe(0);
+    f.h.feed('k');
+    expect(f.h.state.overlays[0]?.activeIndex).toBe(0); // 已在首行：钳制不动
     release();
     await settle(f.h);
     f.h.dispose();
@@ -499,7 +519,7 @@ describe('P3-E 队列取消面板', () => {
   it('x 取消高亮项：FIFO 移除 + 「已取消排队」system 行 + 面板刷新', async () => {
     const { f, release } = blockedHarness();
     await vi.advanceTimersByTimeAsync(0);
-    f.h.feed(CTRL_X);
+    f.h.feed(KITTY_CTRL_SEMI);
     f.h.feed(ARROW_DOWN); // 高亮第 2 项
     f.h.feed('x');
     expect(f.h.queueSnapshot()).toEqual(['second message\n多行内容']); // 第 2 项被移除
@@ -511,13 +531,17 @@ describe('P3-E 队列取消面板', () => {
     f.h.dispose();
   });
 
-  it('Ctrl+X 在面板打开时同样取消高亮项', async () => {
+  it('P3-F 冲突修复：面板内 Ctrl+X 不再取消条目（该和弦归 G-39 快捷键帮助）', async () => {
+    // 旧断言（Ctrl+X = 面板内取消高亮项）随 P3-F 键位归属裁决**废止**：Ctrl+X / Ctrl+. 归
+    // 快捷键帮助（keymaps.AGENT_CHORD_TABLE），面板内按 Ctrl+X = 关面板 + 开帮助；取消高亮行
+    // 的面板内键位收窄为裸 `x`（上一条用例）。详细回归见 p3f-agent-keys.test.ts。
     const { f, release } = blockedHarness();
     await vi.advanceTimersByTimeAsync(0);
+    f.h.feed(KITTY_CTRL_SEMI);
+    expect(f.h.state.overlays[0]?.title).toBe('Queue · 2 项');
     f.h.feed(CTRL_X);
-    f.h.feed(CTRL_X); // 取消高亮（队首）
-    expect(f.h.queueSnapshot()).toEqual(['third']);
-    expect(linesOf(f.h)).toContain('已取消排队: second message 多行内容');
+    expect(f.h.queueSnapshot()).toEqual(['second message\n多行内容', 'third']); // 队列未被取消
+    expect(f.h.state.overlays[0]?.title).toContain('Keyboard shortcuts'); // 转为快捷键帮助浮层
     release();
     await settle(f.h);
     f.h.dispose();
@@ -526,7 +550,7 @@ describe('P3-E 队列取消面板', () => {
   it('取消全部条目后面板自动关闭', async () => {
     const { f, release } = blockedHarness();
     await vi.advanceTimersByTimeAsync(0);
-    f.h.feed(CTRL_X);
+    f.h.feed(KITTY_CTRL_SEMI);
     f.h.feed('x');
     f.h.feed('x');
     expect(f.h.queueSnapshot()).toEqual([]);
@@ -539,11 +563,11 @@ describe('P3-E 队列取消面板', () => {
   it('q / Esc 关闭面板不取消任何条目', async () => {
     const { f, release } = blockedHarness();
     await vi.advanceTimersByTimeAsync(0);
-    f.h.feed(CTRL_X);
+    f.h.feed(KITTY_CTRL_SEMI);
     f.h.feed('q');
     expect(f.h.queueSnapshot()).toEqual(['second message\n多行内容', 'third']);
     expect(f.h.state.overlays).toHaveLength(0);
-    f.h.feed(CTRL_X);
+    f.h.feed(KITTY_CTRL_SEMI);
     f.h.feed(ESC);
     await vi.advanceTimersByTimeAsync(60); // 孤立 ESC 空闲超时（50ms）后 parser 才产出 Esc 键
     expect(f.h.queueSnapshot()).toEqual(['second message\n多行内容', 'third']);
@@ -556,7 +580,7 @@ describe('P3-E 队列取消面板', () => {
   it('面板打开期间键盘被接管：字母不进草稿（P1-1 同款防御）', async () => {
     const { f, release } = blockedHarness();
     await vi.advanceTimersByTimeAsync(0);
-    f.h.feed(CTRL_X);
+    f.h.feed(KITTY_CTRL_SEMI);
     f.h.feed('abc'); // 'a' 若透传会进草稿
     expect(f.h.state.draft).toBe('');
     release();
@@ -567,7 +591,7 @@ describe('P3-E 队列取消面板', () => {
   it('turn 收尾自动关闭面板，队列继续 drain', async () => {
     const { f, release } = blockedHarness();
     await vi.advanceTimersByTimeAsync(0);
-    f.h.feed(CTRL_X);
+    f.h.feed(KITTY_CTRL_SEMI);
     expect(f.h.state.overlays).toHaveLength(1);
     release();
     await settle(f.h);
@@ -577,13 +601,15 @@ describe('P3-E 队列取消面板', () => {
   });
 
   it('审批挂起挤占队列面板：面板关闭、审批键位接管；结算后不复活', async () => {
+    // 接线迁移（G-25/G-21）：审批键位组按 B 棒卡片呈现契约更新（Tab/↑↓ 合并、Ctrl+F 移除）；
+    // 挤占/结算语义不变。
     const { f, release } = blockedHarness();
     await vi.advanceTimersByTimeAsync(0);
-    f.h.feed(CTRL_X);
+    f.h.feed(KITTY_CTRL_SEMI);
     expect(f.h.state.overlays[0]?.title).toBe('Queue · 2 项');
     void f.gate.ask('允许执行 write?');
     expect(f.h.state.overlays[0]?.title).toContain('Approval');
-    expect(f.h.state.shortcuts).toEqual(['↑↓ 选择', 'Enter 确认', 'Ctrl+F 展开', 'Esc 寄放']);
+    expect(f.h.state.shortcuts).toEqual(['Tab/↑↓ 选择', 'Enter 确认', 'Esc 寄放']);
     f.h.approve('y');
     expect(f.h.state.overlays).toHaveLength(0);
     expect(f.h.queueSnapshot()).toEqual(['second message\n多行内容', 'third']); // 队列未被面板关闭动过

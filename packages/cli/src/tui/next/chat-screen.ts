@@ -42,6 +42,12 @@ import { candidateRows, drawComposer, measureComposer } from './composer.js';
 import { drawOverlay, overlayNaturalHeight, overlayStackLayout, type OverlaySpec } from './overlay.js';
 import { drawScrollback, writeRowClipped, type Scrollback } from './scrollback.js';
 import { DEFAULT_THEME, type Theme } from './theme.js';
+// P3-F（G-39）：快捷键帮助内容的 Agent 级段取自键位归属表（单一事实来源，不抄第二份键位）
+import { AGENT_CHORD_TABLE } from '../input/keymaps.js';
+// P3-E 接线1（G-31）：命令面板渲染缝——面板行组成/绘制来自 tui/commands（A 棒冻结模块），
+// 本文件只负责把 drawPalette 组装进 overlayModal 区域的浮层栈（与 drawOverlay 同帧）。
+import { drawPalette, paletteNaturalHeight } from '../commands/palette-view.js';
+import type { PaletteRow, PaletteState } from '../commands/palette-model.js';
 
 /** 候选列表状态（画在 composer 层顶部，activeIndex 高亮 + 滚动窗口） */
 export interface ChatCandidates {
@@ -84,6 +90,17 @@ export interface ChatScreenState {
    * （草稿/候选不画），scrollback 区改画子会话内容；statusline/shortcuts 保持。
    */
   subagentView?: SubagentViewState | null;
+  /**
+   * P3-E 接线1（G-31）：命令面板打开时的渲染数据（装配层在 refreshChrome 同步；
+   * open 且 rows 就绪才存在）。绘制经 drawPalette 进 overlayModal 区域浮层栈的**栈底**
+   * （紧贴 composer，与浮层/审批卡互斥——面板打开即独占浮层栈）。
+   */
+  palette?: { state: PaletteState; rows: readonly PaletteRow[] } | null;
+  /**
+   * P3-E 接线4（G-47）：command 型状态行脚本的多行输出（最多 5 行）。存在时 statusLine
+   * 区域按行数取高、逐行绘制；undefined/空 = 单行 statusline 字段语义（P3-E chrome）。
+   */
+  statusLines?: readonly string[];
   /** 环境变量源（OSC8 开关判定单源；缺省 process.env，装配层传 deps.env） */
   env?: NodeJS.ProcessEnv;
   /**
@@ -116,31 +133,131 @@ export function shortcutsText(shortcuts: readonly string[] | string): string {
 // —— P3-E 上下文化 chrome（纯函数，next-shell 装配层数据驱动调用）——
 
 /**
- * 快捷键条四态（P3-E，对齐 grok shortcuts bar 随上下文变化的行为）。
- * 互斥由单一 return 保证（优先级：审批接管 > 子视图 > busy > 空闲，与 dispatcher
+ * 快捷键条状态（P3-E 四态 + P3-F 两个新浮层态）。
+ * 互斥由单一 return 保证（优先级：审批接管 > 子视图/浮层 > busy > 空闲，与 dispatcher
  * 层级一致）；寄放态（approvalParked）不算接管——键盘在 composer，走 idle 组。
  */
 export interface ShortcutContext {
   /** turn 运行中 */
   busy: boolean;
-  /** FIFO 队列条数（只在 busy 态显示 Ctrl+X 段——队列只在忙时有意义） */
+  /** FIFO 队列条数（只在 busy 态显示队列段——队列只在忙时有意义） */
   queueCount: number;
   /** 审批卡接管键盘（挂起且未寄放） */
   approvalActive: boolean;
   /** 全屏子视图 / 子会话选择浮层打开 */
   subviewOpen: boolean;
+  /**
+   * P3-F：G-39 快捷键帮助 / G-34 会话选择器接管键盘（缺省 undefined = 未打开）。
+   * 可选字段——既有调用方零改动；两浮层各自有一组真实可用的键位（不展示无关提示）。
+   */
+  modal?: 'help' | 'session-picker';
 }
 
-/** 快捷键条上下文 → 键位组（纯函数；busy 组队列段仅 queueCount>0 时出现） */
+/**
+ * 快捷键条上下文 → 键位组（纯函数；busy 组队列段仅 queueCount>0 时出现）。
+ * P3-E 接线迁移（登记）：
+ *  - 队列段主键按 G-29 面板键位表 = `Ctrl+;`（panel.ts QUEUE_PANEL_OPEN_KEYS）；approval 组
+ *    按 G-25 卡内焦点环更新——Tab/Shift+Tab 环走（旧「Ctrl+F 展开」随 B 棒卡片呈现契约移除：
+ *    askApproval 契约仅携带文案，卡片无参数全文可展开，P3-B 差异登记延续）。
+ * P3-F 冲突修复（登记）：早批「Ctrl+X 作队列面板壳侧附加别名」已**废止**——Ctrl+X 归
+ * G-39 快捷键帮助（见 keymaps.ts AGENT_CHORD_TABLE）；队列段因此只剩 Ctrl+; 一族键位。
+ * P3-F 新增：帮助 / 会话选择器两组（modal 字段），文案与各自 input layer 的真实键位一致。
+ */
 export function shortcutsFor(ctx: ShortcutContext): readonly string[] {
-  if (ctx.approvalActive) return ['↑↓ 选择', 'Enter 确认', 'Ctrl+F 展开', 'Esc 寄放'];
+  if (ctx.approvalActive) return ['Tab/↑↓ 选择', 'Enter 确认', 'Esc 寄放'];
+  if (ctx.modal === 'help') return ['Esc / q 关闭', '↑↓ / j k 滚动'];
+  if (ctx.modal === 'session-picker') return ['↑↓ 选择', 'Enter 切换', 'Esc 取消'];
   if (ctx.subviewOpen) return ['q 返回', 'PgUp/PgDn 滚动'];
   if (ctx.busy) {
     const keys = ['Ctrl+C 取消'];
-    if (ctx.queueCount > 0) keys.push(`Ctrl+X 队列(${ctx.queueCount})`);
+    if (ctx.queueCount > 0) keys.push(`Ctrl+; 队列(${ctx.queueCount})`);
     return keys;
   }
   return ['/ 命令', 'Tab 焦点', 'Ctrl+C 退出'];
+}
+
+// ── P3-F（G-39）：快捷键帮助内容（cheatsheet）──────────────────────────────────
+//
+// 数据驱动、单一事实来源：
+//  - 首段直接复用 `shortcutsFor`（快捷键条同一份数据，不抄第二份）；
+//  - 其余段是壳内**已接线**的固定键位（每条注明 G 号）；
+//  - Agent 级（G-31～G-41）整段取自 `input/keymaps.ts` 的 `AGENT_CHORD_TABLE`，
+//    未接线的条目带「（P7 未接入）」后缀如实呈现——帮助面板因此永不出现「按了没反应」
+//    的键（既讲清现有键位，也讲清哪些和弦已被登记但尚未接驳）。
+
+/** 快捷键帮助浮层的标题（装配层用它识别/关闭本浮层；唯一字符串常量，前缀匹配） */
+export const SHORTCUTS_HELP_TITLE = 'Keyboard shortcuts（快捷键）';
+
+/** 帮助浮层标题尾部操作提示（与标题同源呈现，避免用户找不到关闭键） */
+export const SHORTCUTS_HELP_HINT = 'Esc / q 关闭 · ↑↓ / j k 滚动';
+
+export interface ShortcutsHelpSection {
+  readonly title: string;
+  readonly lines: readonly string[];
+}
+
+/** 壳内固定键位（非 Agent 级、非上下文态）：逐条注明 G 号 */
+const FIXED_SHORTCUT_SECTIONS: readonly ShortcutsHelpSection[] = [
+  {
+    title: '输入',
+    lines: [
+      'Enter 发送 · Shift+Enter 换行',
+      'Ctrl+I / Ctrl+Enter 立即发送（取消当前回合并发出）· G-28',
+      'Alt+V 粘贴图片（Windows；真机透传下放 P7）· G-12',
+      'Ctrl+S / Alt+S 暂存草稿 ⇄ 恢复 · G-17',
+      '! 行首 = shell 模式直接执行 · G-11',
+    ],
+  },
+  {
+    title: '焦点与滚动',
+    lines: ['Tab 输入框 ⇄ 转录区 · G-08', 'PgUp/PgDn 整页 · Ctrl+U / Ctrl+D 半页 · Ctrl+K / Ctrl+J 单行 · G-10'],
+  },
+  {
+    title: '转录区（Tab 切到转录后）',
+    lines: [
+      'j / k 上下行 · Shift+J / Shift+K 视口上/下回合 · Shift+H / Shift+L 按回合前后 · G-09',
+      'g / Shift+G 顶 / 底 · e 折叠 · r 原始视图 · h / l 开合 · G-05 / G-09',
+      'Enter / Ctrl+F 块查看器 · y / Shift+Y 复制块（含元数据）· G-06',
+      'v 子会话视图 · q / Esc 返回',
+    ],
+  },
+  {
+    title: '其他',
+    lines: ['/ 行首 = 斜杠命令（Tab / Enter 接受候选）· ? 空草稿时开命令面板 · G-50～G-53'],
+  },
+];
+
+/**
+ * 快捷键帮助分组内容（G-39）。`ctx` 用于首段「当前上下文」（= 快捷键条数据）。
+ * 返回结构而非直接拼行，便于单测断言分组与忠实性（未接线条目必须带 P7 后缀）。
+ */
+export function shortcutsHelpSections(ctx: ShortcutContext): readonly ShortcutsHelpSection[] {
+  const agentLines = AGENT_CHORD_TABLE.map((entry) => {
+    const tier = entry.tier === '参考' ? ' · 参考级' : '';
+    const state = entry.owner === 'deferred' ? '（P7 未接入）' : '';
+    return `${entry.label} — ${entry.summary}${state}${tier}`;
+  });
+  return [
+    { title: '快捷键条（常用入口）', lines: [shortcutsText(shortcutsFor(ctx))] },
+    ...FIXED_SHORTCUT_SECTIONS,
+    { title: 'Agent 级键位（G-31～G-41）', lines: agentLines },
+  ];
+}
+
+/** 展示行宽上限（帮助面板每行不超此宽；超长截断加省略号，避免浮层内被硬裁剪丢信息） */
+export const SHORTCUTS_HELP_MAX_COLS = 96;
+
+/** 分组内容 → 扁平展示行（段标题行 `── 标题 ──` + 各行；超宽截断加省略号） */
+export function shortcutsHelpLines(ctx: ShortcutContext): string[] {
+  const out: string[] = [];
+  const push = (text: string): void => {
+    out.push(text.length <= SHORTCUTS_HELP_MAX_COLS ? text : `${text.slice(0, SHORTCUTS_HELP_MAX_COLS - 1)}…`);
+  };
+  for (const section of shortcutsHelpSections(ctx)) {
+    push(`── ${section.title} ──`);
+    for (const line of section.lines) push(line);
+  }
+  return out;
 }
 
 /** cwd 短化：home 前缀替换为 ~（/home/me/proj → ~/proj；win 反斜杠同义）；非前缀原样 */
@@ -227,8 +344,11 @@ interface ChatLayerMeasure {
   draftRows: number;
   /** 候选可见行数（candidateRows，0 = 无候选） */
   candidateRows: number;
-  /** statusline 是否有内容（决定 statusLine 区域可见性） */
-  hasStatusline: boolean;
+  /**
+   * statusLine 区域行数：command 型多行输出按行数取高（G-47 最多 5 行）；
+   * 单行 statusline 有内容 = 1；无 = 0。
+   */
+  statusRows: number;
 }
 
 function measureChatLayers(state: ChatScreenState, cols: number): ChatLayerMeasure {
@@ -237,8 +357,14 @@ function measureChatLayers(state: ChatScreenState, cols: number): ChatLayerMeasu
   const subview = state.subagentView ?? null;
   const draftRows = subview !== null ? 0 : measureComposer(state.draft ?? '', cols, state.cursor).rows;
   const candRows = subview !== null || state.candidates === null ? 0 : candidateRows(state.candidates.items.length);
-  const hasStatusline = typeof state.statusline === 'string' && state.statusline.length > 0;
-  return { draftRows, candidateRows: candRows, hasStatusline };
+  // P3-E 接线4：statusLines（command 型多行）优先于单行 statusline 字段
+  const statusRows =
+    state.statusLines !== undefined && state.statusLines.length > 0
+      ? state.statusLines.length
+      : typeof state.statusline === 'string' && state.statusline.length > 0
+        ? 1
+        : 0;
+  return { draftRows, candidateRows: candRows, statusRows };
 }
 
 /** ChatScreenState → 八区域布局输入（五个接线区域；数据面板缺省隐藏，不造假内容） */
@@ -246,10 +372,11 @@ function buildRegionInputs(state: ChatScreenState, chat: ChatLayerMeasure): Read
   const inputs = new Map<RegionId, RegionInput>();
   inputs.set('scrollback', {}); // 主区：显式输入即恒可见，拿剩余高度
   inputs.set('prompt', { naturalHeight: chat.draftRows + chat.candidateRows + 1 }); // 含提示行
-  inputs.set('statusLine', { naturalHeight: 1, visible: chat.hasStatusline });
+  inputs.set('statusLine', { naturalHeight: chat.statusRows, visible: chat.statusRows > 0 });
   inputs.set('shortcutsBar', { naturalHeight: 1 });
-  if (state.overlays.length > 0) {
-    const natural = state.overlays.reduce((sum, spec) => sum + overlayNaturalHeight(spec), 0);
+  if (state.overlays.length > 0 || state.palette?.state.open === true) {
+    const paletteH = state.palette?.state.open === true ? paletteNaturalHeight(state.palette.rows.length) : 0;
+    const natural = paletteH + state.overlays.reduce((sum, spec) => sum + overlayNaturalHeight(spec), 0);
     inputs.set('overlayModal', { naturalHeight: natural });
   }
   return inputs;
@@ -262,7 +389,7 @@ function mapRegionLayout(region: RegionLayout, chat: ChatLayerMeasure): ChatLayo
     return { top: a?.top ?? 0, height: a?.height ?? 0 };
   };
   const composer = allocOf('prompt');
-  const statusline = chat.hasStatusline ? allocOf('statusLine') : { top: composer.top + composer.height, height: 0 };
+  const statusline = chat.statusRows > 0 ? allocOf('statusLine') : { top: composer.top + composer.height, height: 0 };
   const shortcuts = allocOf('shortcutsBar');
   return {
     scrollback: allocOf('scrollback'),
@@ -322,18 +449,38 @@ function drawComposerLayer(buf: CellBuffer, state: ChatScreenState, layout: Chat
 }
 
 function drawOverlaysInRegion(buf: CellBuffer, state: ChatScreenState, cols: number, layout: ChatLayout): void {
-  if (state.overlays.length === 0) return;
   const theme = state.theme ?? DEFAULT_THEME; // P4-2：浮层高亮从主题取（缺省 dark 零变化）
+  // P3-E 接线1（G-31）：palette 进浮层栈**栈底**（紧贴 composer；面板打开即独占浮层栈，
+  // 与审批/队列等互斥由装配层保证）。绘制经 A 棒 drawPalette（组头/badge/active 前缀），
+  // 高亮与注释色取主题（与 drawOverlay 同源）。
+  const palette = state.palette?.state.open === true ? state.palette : undefined;
+  const paletteHeight = palette !== undefined ? paletteNaturalHeight(palette.rows.length) : 0;
+  if (state.overlays.length === 0 && paletteHeight === 0) return;
   // 区域模型下 overlayModal 的可用空间 = 固定区簇之上（clusterTop），即 prompt 顶行
   // （本阶段数据面板隐藏，簇顶 == composer.top）；栈布局在区域内复刻（多浮层自下而上）。
   const composerTop = layout.composer.top;
   const rects = overlayStackLayout({
     screenRows: composerTop,
     composerTop,
-    overlays: state.overlays.map((spec) => ({ height: overlayNaturalHeight(spec) })),
+    overlays: [
+      ...(paletteHeight > 0 ? [{ height: paletteHeight }] : []),
+      ...state.overlays.map((spec) => ({ height: overlayNaturalHeight(spec) })),
+    ],
   });
-  for (let i = 0; i < rects.length; i += 1) {
-    const rect = rects[i];
+  let offset = 0;
+  if (palette !== undefined) {
+    const rect = rects[0];
+    if (rect != null) {
+      // drawPalette 画满 buf 宽（PaletteDrawOptions 无 width 缝——A 棒契约：面板恒全宽）
+      drawPalette(buf, palette.state, palette.rows, rect, {
+        activeFg: theme.fg.active,
+        headerFg: theme.fg.system,
+      });
+    }
+    offset = 1;
+  }
+  for (let i = 0; i < state.overlays.length; i += 1) {
+    const rect = rects[offset + i];
     const spec = state.overlays[i];
     if (rect == null || spec === undefined) continue;
     drawOverlay(buf, spec, rect, { width: cols, activeFg: theme.fg.active, showNumbers: spec.showNumbers === true });
@@ -371,7 +518,12 @@ export function renderChat(screen: Screen, state: ChatScreenState): number {
   });
   manager.setInput('statusLine', {
     render: ({ buf, top }) => {
-      writeRowClipped(buf, top, state.statusline ?? '', cols, 0);
+      // P3-E 接线4（G-47）：command 型多行输出逐行绘制（每行 ≤1024 字符由 shapeCommandOutput
+      // 钳制）；无 statusLines 时维持单行 statusline 语义（writeRowClipped 越界行静默忽略）
+      const lines = state.statusLines ?? [state.statusline ?? ''];
+      for (let i = 0; i < lines.length; i += 1) {
+        writeRowClipped(buf, top + i, lines[i] ?? '', cols, 0);
+      }
     },
   });
   manager.setInput('shortcutsBar', {
@@ -379,7 +531,7 @@ export function renderChat(screen: Screen, state: ChatScreenState): number {
       writeRowClipped(buf, top, shortcutsText(state.shortcuts), cols, 0);
     },
   });
-  if (state.overlays.length > 0) {
+  if (state.overlays.length > 0 || state.palette?.state.open === true) {
     manager.setInput('overlayModal', {
       render: ({ buf }) => {
         drawOverlaysInRegion(buf, state, cols, layout);

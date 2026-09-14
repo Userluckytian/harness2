@@ -181,6 +181,7 @@ export async function runInkChat(options: ChatOptions = {}): Promise<void> {
         dialog={dialog}
         terminalEvents={terminalEvents}
         notifier={notifier}
+        {...(options.home !== undefined ? { home: options.home } : {})}
         onExit={(reason: ExitReason) => {
           shutdown.request(reason);
         }}
@@ -237,6 +238,7 @@ export function InkShell({
   onTranscriptChange,
   terminalEvents,
   notifier,
+  home,
 }: {
   runtime: ChatRuntime;
   bootLines: string[];
@@ -248,6 +250,8 @@ export function InkShell({
   terminalEvents?: TerminalEventBridge;
   /** T4：回合结束提醒器（runInkChat 注入；测试可传 capture sink 版本；缺省按环境变量构造） */
   notifier?: Notifier;
+  /** P1-1 壳上下文缝：用户数据根（memory/plugins/mcps 全局根；缺省 = ChatOptions.home/真实 home） */
+  home?: string;
 }): React.ReactElement {
   // T3：typed 转录（替代 string[] + Static）；会话切换时整体重投影
   const [transcript, setTranscript] = useState<TranscriptState>(() => initialTranscript(bootLines));
@@ -484,6 +488,14 @@ export function InkShell({
         openLastSubagent();
         return;
       }
+      // P3-F（G-34）：Ctrl+R = 会话选择器（复用 /sessions 无参的同一 openSessions 浮层）。
+      // 差异登记：本壳 busy 期 Ctrl+R 已被 T8「推理折叠块展开/收起」占用（T0 起 Composer 忙时
+      // 接管普通输入，推理键只能挑 Ctrl+R）——故空闲态（本分支）才走会话选择器，busy 期保持
+      // 推理键语义（下一壳 next 的 Ctrl+R 无此冲突，两窗格皆为会话选择器）。
+      if (key.ctrl && input.toLowerCase() === 'r' && !busyRef.current) {
+        openSessions();
+        return;
+      }
     },
     { isActive: !overlayOpen },
   );
@@ -699,8 +711,9 @@ export function InkShell({
 
   /**
    * T5/P1-Dev-2 命令分发（表驱动，壳内无 switch/case 命令名）：
-   *  - /mode /reasoning（core shellOnly）→ 壳侧 ShellCommand 分发表（shell-commands.ts，
-   *    三壳同一份实现）；本壳注入呈现缝：无参 /mode 打开选择浮层、/reasoning off 收起推理块。
+   *  - shellOnly 命令（/mode /reasoning /minimal /fullscreen + P3-A 八条只读命令）→ 壳侧
+   *    ShellCommand 分发表（shell-commands.ts，三壳同一份实现）；本壳注入呈现缝：无参 /mode
+   *    打开选择浮层、/reasoning off 收起推理块。
    *  - /sessions 无参 = 交互选择浮层（本壳呈现附加行为；带关键字走 core 文本列表）。
    *  - 其余（/help /? /new /resume /fork /undo /redo /exit /quit /context /compact /tasks
    *    与未知命令）→ ink-commands.runSharedCommand → core runCoreCommand（同一份 core 实现）。
@@ -724,6 +737,10 @@ export function InkShell({
     return {
       print: sendSystem,
       runtime,
+      // P1-1 壳上下文注入缝：会话目录/根/home（8 条只读命令定位用）
+      currentSessionDir: () => runtime.getCurrent()?.dir ?? null,
+      root: runtime.root,
+      ...(home !== undefined ? { home } : {}),
       openModePicker,
       onReasoningOff: () => setReasoningExpanded(false),
     };

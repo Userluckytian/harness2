@@ -4,14 +4,18 @@ import { HELP_TEXT } from '../../src/commands/index.js';
 import { execCommand, makeRecordingCtx } from './helpers.js';
 
 describe('HELP_TEXT', () => {
-  it('命令清单 15 行（/id 左对齐 12 列 + 中文 summary；P2-C 加性 minimal/fullscreen）', () => {
+  it('命令清单 23 行（/id 左对齐 14 列 + 中文 summary；P3-A 加性 G-54~G-90 补齐）', () => {
     const commandLines = HELP_TEXT.split('\n').filter((l) => l.startsWith('  /'));
-    expect(commandLines.length).toBe(15);
-    expect(commandLines[0]).toBe(`  ${'/new'.padEnd(12)}新建会话`);
-    expect(commandLines).toContain(`  ${'/sessions'.padEnd(12)}列出当前目录的会话（可选关键字全文搜索）`);
-    expect(commandLines).toContain(`  ${'/undo'.padEnd(12)}撤销最近 n 个用户 turn（/undo [n] [--dry-run]）`);
-    expect(commandLines).toContain(`  ${'/mode'.padEnd(12)}切换审批模式（/mode [normal|allow-approve|auto|plan]）`);
-    expect(commandLines).toContain(`  ${'/tasks'.padEnd(12)}列出 cron 任务（只读）`);
+    expect(commandLines.length).toBe(23);
+    expect(commandLines[0]).toBe(`  ${'/new'.padEnd(14)}新建会话`);
+    expect(commandLines).toContain(`  ${'/sessions'.padEnd(14)}列出当前目录的会话（可选关键字全文搜索）`);
+    expect(commandLines).toContain(`  ${'/undo'.padEnd(14)}撤销最近 n 个用户 turn（/undo [n] [--dry-run]）`);
+    expect(commandLines).toContain(`  ${'/mode'.padEnd(14)}切换审批模式（/mode [normal|allow-approve|auto|plan]）`);
+    expect(commandLines).toContain(`  ${'/tasks'.padEnd(14)}列出 cron 任务（只读）`);
+    expect(commandLines).toContain(`  ${'/export'.padEnd(14)}导出当前会话轨迹为 ZIP（只读打包，含子代理会话）`);
+    expect(commandLines).toContain(
+      `  ${'/doctor'.padEnd(14)}环境自检分节报告（node/config/目录/MCP 配置/会话库/skills）`,
+    );
   });
 
   it('说明区含 core 语义（快照/rewind/分叉/审批 [a]/命令前缀）', () => {

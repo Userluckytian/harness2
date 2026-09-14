@@ -68,6 +68,14 @@ export interface ProjectOptions {
    * 需全量重投影（fg 烤进行对象，增量 append 不会重算旧行）。
    */
   theme?: Theme;
+  /**
+   * G-05 `r` 原始视图开关（folds.ts 的 rawMarkdown，P3-D 接线）。next 无 markdown 渲染层
+   * （assistant 正文本就是原始 markdown 文本），故本开关的 next 层落法（映射登记）：
+   * - 工具卡调用行不做摘要提炼：`⏺ tool(<args 原文>)`（有 args 时），退回 summary；
+   * - 关闭超宽截断（clipLine 不生效）——原始视图不做「装饰性」加工。
+   * 不传 = false（正常渲染投影，零变化契约）。
+   */
+  rawMarkdown?: boolean;
 }
 
 // --- 小工具 ---
@@ -83,6 +91,7 @@ function splitLines(text: string): string[] {
 
 /** 按 cols 截断超宽行（宽字符整字取舍，留 1 列给省略号）；cols ≤ 0 不截断 */
 function clipLine(text: string, cols: number | undefined): string {
+  // G-05 rawMarkdown（r）：原始视图不做截断加工（映射见 ProjectOptions.rawMarkdown 注）
   if (cols === undefined || cols < 1 || displayWidth(text) <= cols) return text;
   let w = 0;
   let out = '';
@@ -135,6 +144,14 @@ export function subagentDescription(item: ToolItem): string {
   const desc = firstString(args.description, args.prompt, args.task);
   if (desc !== undefined) return oneLine(desc);
   return item.summary;
+}
+
+/**
+ * G-05 rawMarkdown（r）：工具调用行的原始载荷——args 原文（未解析未提炼）；
+ * 无 args 退回 summary（不伪造）。映射依据见 ProjectOptions.rawMarkdown 注。
+ */
+function rawArgsOf(item: ToolItem): string {
+  return item.args !== undefined && item.args.length > 0 ? item.args : item.summary;
 }
 
 /**
@@ -259,9 +276,11 @@ function projectTool(
   cols: number | undefined,
   out: ProjectionLine[],
   theme: Theme,
-  opts: Pick<ProjectOptions, 'durations' | 'spinner'> = {},
+  opts: Pick<ProjectOptions, 'durations' | 'spinner' | 'rawMarkdown'> = {},
 ): void {
   const isSub = isSubagentTool(item.tool);
+  // G-05 rawMarkdown（r）：调用行不做摘要提炼，直接展示 args 原文（映射见 ProjectOptions 注）
+  const callSummary = opts.rawMarkdown === true ? rawArgsOf(item) : toolSummaryOf(item);
   const statusFg =
     item.status === 'pending' ? theme.fg.toolPending : item.status === 'ok' ? theme.fg.toolOk : theme.fg.toolFailed;
   if (isSub) {
@@ -286,7 +305,7 @@ function projectTool(
     }
   } else {
     out.push({
-      text: clipLine(`⏺ ${item.tool}(${toolSummaryOf(item)})`, cols),
+      text: clipLine(`⏺ ${item.tool}(${callSummary})`, cols),
       lineIndex,
       kind: 'tool',
       fg: statusFg,
@@ -345,7 +364,13 @@ function projectTool(
  */
 export function projectTranscript(items: readonly TranscriptItem[], opts: ProjectOptions = {}): ProjectionLine[] {
   const collapsed = opts.collapsed;
-  const cols = opts.cols !== undefined && opts.cols > 0 ? Math.floor(opts.cols) : undefined;
+  // G-05 rawMarkdown（r）：原始视图不做超宽截断（clipLine 的 cols 输入置 undefined）
+  const cols =
+    opts.rawMarkdown === true
+      ? undefined
+      : opts.cols !== undefined && opts.cols > 0
+        ? Math.floor(opts.cols)
+        : undefined;
   const theme = opts.theme ?? DARK_THEME; // P4-2：缺省 dark = 现状默认色（零变化契约）
   const out: ProjectionLine[] = [];
   for (let i = 0; i < items.length; i += 1) {
