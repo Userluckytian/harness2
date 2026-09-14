@@ -18,12 +18,12 @@ import {
 import { shellSlots } from './layout/shell-registry.js';
 import { JUMP_TO_SESSION_ID, type PaletteCommand, type PaletteSession } from './components/CommandPalette.js';
 import { controller, store, useAppState, THEME_CYCLE, StatusBadge } from './app-shared.js';
-import type { AppState } from './store.js';
-import { filterSessionList } from '../shared/metadata.js';
+import type { AppState } from '@harness2/ui-shared/renderer/store.js';
+import { filterSessionList } from '@harness2/ui-shared/shared/metadata.js';
 
 // 对外再导出（拆分前 App.tsx 的全部导出面；main.tsx / 测试仍从 './App.js' 引）
 export { controller, dragState, store, useAppState, StatusBadge } from './app-shared.js';
-export { ChatItemView, ChatTranscript } from './components/ChatView.js';
+export { ChatItemView, ChatTranscript } from '@harness2/ui-shared/renderer/components/ChatView.js';
 
 export function cycleTheme(current: SettingsTheme): SettingsTheme {
   const i = THEME_CYCLE.indexOf(current);

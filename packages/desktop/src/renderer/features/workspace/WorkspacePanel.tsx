@@ -2,7 +2,10 @@
 // A/B 项目隔离以真实 run-config 的 cwd 为准（不猜、不共享 UI 状态）。
 import { useState } from 'react';
 import { controller, store, useAppState } from '../../app-shared.js';
-import { sameWorkspace, workspaceInfoFrom } from './change-review-model.js';
+import {
+  sameWorkspace,
+  workspaceInfoFrom,
+} from '@harness2/ui-shared/renderer/features/workspace/change-review-model.js';
 
 export function WorkspacePanel({ sessionId }: { sessionId: string | null }) {
   const state = useAppState();

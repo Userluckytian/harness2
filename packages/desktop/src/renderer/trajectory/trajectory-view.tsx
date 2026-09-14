@@ -11,17 +11,25 @@
 // D-46：composer 浮层预留高度经 `ComposerOverlayHost` 注入（或退化为读 CSS 变量）。
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import type { ReactNode } from 'react';
-import type { SessionImageUrlResolver } from '../conversation/views/image-url-cache.js';
-import type { ConversationViewDefinition, ConversationViewProps } from '../conversation/views/view-registry.js';
-import type { AppStore } from '../store.js';
+import type { SessionImageUrlResolver } from '@harness2/ui-shared/renderer/conversation/views/image-url-cache.js';
+import type {
+  ConversationViewDefinition,
+  ConversationViewProps,
+} from '@harness2/ui-shared/renderer/conversation/views/view-registry.js';
+import type { AppStore } from '@harness2/ui-shared/renderer/store.js';
 import { findFocusRowKey, type TrajectoryFocusStore } from './inspect-focus.js';
 import { projectTrajectory } from './projection.js';
-import { overlayInsetFromHost, type ComposerOverlayHost } from './shell-contract.js';
+import {
+  useComposerOverlayInset,
+  type ComposerOverlayHost,
+} from '@harness2/ui-shared/renderer/trajectory/shell-contract.js';
 import { currentStreamingStepId, TrajectoryTimingObserver } from './timing.js';
 import { TrajectoryPanel } from './trajectory-panel.js';
 
-/** 视图 key（D-40；会话内唯一，与 P5 的 'chat' 并列） */
-export const TRAJECTORY_VIEW_KEY = 'trajectory';
+/** 视图 key（D-40；会话内唯一，与 P5 的 'chat' 并列）—— 字面量唯一来源在共享包 */
+import { TRAJECTORY_VIEW_KEY } from '@harness2/ui-shared/renderer/conversation/views/view-keys.js';
+
+export { TRAJECTORY_VIEW_KEY };
 /** 标签标题 */
 export const TRAJECTORY_VIEW_TITLE = 'Trajectory';
 /** 归属包名（D-02 口径：一个 UI 能力一个包名） */
@@ -35,17 +43,11 @@ export interface TrajectorySession {
   readonly subscribe?: (listener: () => void) => () => void;
 }
 
-/** D-46：订阅壳的 composer 浮层实测高度；壳未接（undefined）或未测量 → undefined（记录表读 CSS 变量） */
-export function useComposerOverlayInset(host: ComposerOverlayHost | undefined): number | undefined {
-  const subscribe = useCallback(
-    (listener: () => void) => (host === undefined ? () => undefined : host.subscribe(listener)),
-    [host],
-  );
-  const getSnapshot = useCallback(() => (host === undefined ? undefined : host.getState()), [host]);
-  const state = useSyncExternalStore(subscribe, getSnapshot, () => undefined);
-  const inset = overlayInsetFromHost(state);
-  return inset.paddingBottomPx > 0 ? inset.paddingBottomPx : undefined;
-}
+/**
+ * D-46：订阅壳的 composer 浮层实测高度（**实现已下沉** 共享包 shell-contract，
+ * 本模块只再导出，桌面既有引用面不变）。
+ */
+export { useComposerOverlayInset };
 
 export interface TrajectoryViewContentProps {
   readonly session: TrajectorySession;

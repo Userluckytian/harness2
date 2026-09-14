@@ -4,8 +4,8 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import React from 'react';
-import { ToolFilePreviewPanel } from '../../src/renderer/tool/index.js';
-import type { ToolFilePreview } from '../../src/renderer/tool/index.js';
+import { ToolFilePreviewPanel } from '@harness2/ui-shared/renderer/tool/index.js';
+import type { ToolFilePreview } from '@harness2/ui-shared/renderer/tool/index.js';
 
 afterEach(cleanup);
 

@@ -4,7 +4,7 @@ import { createRoot } from 'react-dom/client';
 import { App } from './App';
 import { ErrorBoundary } from './ErrorBoundary';
 import { registerModelsSettingsSection } from './settings/models/index.js';
-import './styles.css';
+import '@harness2/ui-shared/styles/shell.css';
 
 registerModelsSettingsSection();
 

@@ -7,7 +7,7 @@ import {
   resolveMainButton,
   resolveSubmitMode,
   type SubmitPolicyInput,
-} from '../../../src/renderer/conversation/composer/submit-policy.js';
+} from '@harness2/ui-shared/renderer/conversation/composer/submit-policy.js';
 
 const base: SubmitPolicyInput = {
   running: false,

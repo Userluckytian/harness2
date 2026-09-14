@@ -2,13 +2,8 @@
 // 纯逻辑（可注入假 api 单测）；React 组件只读 store + 调 controller 方法。
 // 切换会话流程（多会话切换不断流核心路径）：subscribe → /events 全量重放（store 判重）
 // → 后续增量由 WS 帧按 seq 去重追加；后台会话的帧持续缓冲进各自 SessionStream。
-import type {
-  Harness2Api,
-  MessageReferenceShape,
-  SubmitIntentShape,
-  UndoRedoResponseShape,
-  WsFrame,
-} from '../shared/protocol.js';
+import type { MessageReferenceShape, SubmitIntentShape, UndoRedoResponseShape, WsFrame } from '../shared/protocol.js';
+import type { HarnessClient } from './ports.js';
 import { newCancelRequestId, newClientMessageId } from '../shared/ids.js';
 import { decideUndo, summarizeRedoConflict, summarizeUndoPreview } from './features/workspace/change-review-model.js';
 import type { ActiveEvent } from './chat-model.js';
@@ -86,6 +81,14 @@ export interface Controller {
   initMetadata(): Promise<void>;
   /** D1：读会话草稿（~/.harness2/desktop-drafts.json；按会话隔离） */
   initDrafts(): Promise<void>;
+  /**
+   * D1/P2-4：草稿持久化能力契约（只读，创建时按端口能力定死）：
+   *   - `'disk'`：壳提供了落盘写通道（`api.draftsSet`），去抖写盘，刷新/关闭不丢；
+   *   - `'memory-only'`：壳没有落盘通道 —— 草稿仅内存生效，刷新/关闭会丢。壳**必须**据此在
+   *     「有未发送草稿」时注册卸载护栏（共享层 `installDraftsUnloadGuard` / `useDraftsUnloadGuard`），
+   *     不静默丢弃。
+   */
+  readonly draftsPersistence: 'disk' | 'memory-only';
   /** D1：写单会话草稿（内存即时生效；落盘去抖合并，避免每个按键一次写盘） */
   setDraft(id: string, text: string): void;
   /** 重命名会话（仅展示态 title 覆层，不碰事件日志）；返回新覆层整体 */
@@ -101,7 +104,7 @@ export interface Controller {
   setApprovalMode(sessionId: string, mode: 'default' | 'plan'): Promise<{ ok: boolean; message: string }>;
 }
 
-export function createController(store: AppStore, api: Harness2Api): Controller {
+export function createController(store: AppStore, api: HarnessClient): Controller {
   /** 订阅 start() 的帧监听集合：store 主消费 + App 副作用（B7 通知）一条通道转发 */
   const frameListeners = new Set<(frame: WsFrame) => void>();
 
@@ -168,6 +171,7 @@ export function createController(store: AppStore, api: Harness2Api): Controller 
   };
   /** D0：能力盘点（serve 就绪或切换会话时刷新；失败保持上次结果，不伪造「全部可用」） */
   const loadCapabilities = async (id?: string): Promise<void> => {
+    if (api.capabilities === undefined) return; // 该壳未提供探测通道：不猜、不摆假能力表
     try {
       store.setCapabilities(await api.capabilities(id));
     } catch {
@@ -251,8 +255,10 @@ export function createController(store: AppStore, api: Harness2Api): Controller 
       store.applyFrame({ type: 'error', error: `取消任务失败: ${(e as Error).message}` });
     }
   };
-  /** D4：把运行态推给主进程（关窗口提示依据；fire-and-forget） */
+  /** D4：把运行态推给主进程（关窗口提示依据；fire-and-forget）。
+   *  未提供 setBusy 的壳（如 web）如实跳过——不得假设「没上报 = 没在跑」。 */
   const pushBusy = (): void => {
+    if (api.setBusy === undefined) return;
     const counts = store.runtimeCounts();
     const busy = counts.runningTurns > 0 || counts.backgroundTasks > 0 || store.anyPendingApprovals();
     void api.setBusy(busy, counts).catch(() => {});
@@ -308,17 +314,29 @@ export function createController(store: AppStore, api: Harness2Api): Controller 
     refreshAuthoritativeState(id);
   };
 
-  /** D1：草稿落盘去抖（500ms 合并；关闭/切换期间不丢——内存即时生效，落盘尽力而为） */
+  /** D1/P2-4：草稿持久化能力（端口能力，**惰性读取**：模块装配期 api 可能尚未就绪；
+   *  缺 `draftsSet` → memory-only，刷新丢草稿，壳据契约注册卸载护栏）。 */
+  const draftsPersistence = (): 'disk' | 'memory-only' => {
+    const client: HarnessClient | undefined = api;
+    return client?.draftsSet === undefined ? 'memory-only' : 'disk';
+  };
+
+  /** D1：草稿落盘去抖（500ms 合并；关闭/切换期间不丢——内存即时生效，落盘尽力而为）。
+   *  P2-4：无落盘通道（memory-only）时**不做**静默早退——壳据 `draftsPersistence` 注册卸载护栏。 */
   let draftsTimer: ReturnType<typeof setTimeout> | null = null;
   const persistDraftsSoon = (): void => {
+    if (draftsPersistence() === 'memory-only') return; // 仅内存生效；卸载护栏由壳按契约注册
     if (draftsTimer !== null) clearTimeout(draftsTimer);
     draftsTimer = setTimeout(() => {
       draftsTimer = null;
-      void api.draftsSet(store.getState().drafts).catch(() => {});
+      void api.draftsSet?.(store.getState().drafts).catch(() => {});
     }, 500);
   };
 
   return {
+    get draftsPersistence(): 'disk' | 'memory-only' {
+      return draftsPersistence();
+    },
     start(): () => void {
       const statusUnsub = api.onConnectionStatus((status, detail) => {
         store.applyStatus(status, detail);
@@ -560,6 +578,7 @@ export function createController(store: AppStore, api: Harness2Api): Controller 
     async initLayout(): Promise<void> {
       // P1-3：只读兼容 —— 旧 desktop-layout.json 仍被读取（normalizeLayout 校验后进 store），
       // 但渲染端不再有任何写回路径（无 setPaneCount/assignToPane/persistLayout）。
+      if (api.loadLayout === undefined) return; // 该壳无旧版布局文件：保持默认
       try {
         store.applyLayout((await api.loadLayout()) as Parameters<AppStore['applyLayout']>[0]);
       } catch {
@@ -567,6 +586,7 @@ export function createController(store: AppStore, api: Harness2Api): Controller 
       }
     },
     async initMetadata(): Promise<void> {
+      if (api.metadataGet === undefined) return; // 该壳未提供覆层通道：保持空（回退默认展示）
       try {
         store.applyMetadata(await api.metadataGet());
       } catch {
@@ -574,6 +594,7 @@ export function createController(store: AppStore, api: Harness2Api): Controller 
       }
     },
     async initDrafts(): Promise<void> {
+      if (api.draftsGet === undefined) return; // 该壳未提供草稿通道：保持空（不影响发送）
       try {
         store.applyDrafts(await api.draftsGet());
       } catch {
@@ -586,6 +607,11 @@ export function createController(store: AppStore, api: Harness2Api): Controller 
     },
     async renameSession(id: string, title: string): Promise<void> {
       store.updateMetadata(id, { title });
+      if (api.metadataSet === undefined) {
+        // 无持久化通道：内存覆盖层已生效，但**如实告知**不落盘（不假装已保存）
+        store.applyFrame({ type: 'error', error: '此壳未提供会话展示态持久化通道：重命名仅在本次会话内生效' });
+        return;
+      }
       try {
         // 磁盘为唯一事实源：写回后整体回读校准（含 normalize 丢弃的空 title 等边界）
         store.applyMetadata(await api.metadataSet(id, { title }));
@@ -595,6 +621,10 @@ export function createController(store: AppStore, api: Harness2Api): Controller 
     },
     async archiveSession(id: string, archived: boolean): Promise<void> {
       store.updateMetadata(id, { archived });
+      if (api.metadataSet === undefined) {
+        store.applyFrame({ type: 'error', error: '此壳未提供会话展示态持久化通道：归档仅在本次会话内生效' });
+        return;
+      }
       try {
         store.applyMetadata(await api.metadataSet(id, { archived }));
       } catch (e) {
@@ -607,6 +637,11 @@ export function createController(store: AppStore, api: Harness2Api): Controller 
       // 标记（侧栏隐藏，数据保留）+ 从当前视图移除；**绝不伪造物理删除**（事件日志原样保留，
       // 如需物理清理走 serve 数据目录/CLI）。
       store.updateMetadata(id, { deleted: true });
+      if (api.metadataSet === undefined) {
+        store.applyFrame({ type: 'error', error: '此壳未提供会话展示态持久化通道：删除标记仅从当前视图移除' });
+        store.removeSessionFromView(id);
+        return;
+      }
       try {
         await api.metadataSet(id, { deleted: true });
       } catch (e) {
@@ -619,6 +654,9 @@ export function createController(store: AppStore, api: Harness2Api): Controller 
       // 全局 config.json（密钥类字段被拒、写前 parseConfig 校验）。作用范围必须如实告知：
       // per-session effective run-config 在会话创建时解析，**当前会话不变，新会话生效**。
       void sessionId; // 预留：未来 core 提供 per-session 覆写时按会话定向
+      if (api.settingsUpdateConfig === undefined) {
+        return { ok: false, message: '此壳未提供配置写入通道（HarnessClient.settingsUpdateConfig 缺失）' };
+      }
       try {
         const res = await api.settingsUpdateConfig({ approval: { mode } });
         if (!res.ok) return { ok: false, message: `切换失败：${res.error ?? '配置校验未通过'}` };

@@ -9,8 +9,8 @@ import {
   sliceOutputLines,
   splitOutputLines,
   statusLabel,
-} from '../src/renderer/features/timeline/execution-log.js';
-import type { ChatItem } from '../src/renderer/chat-model.js';
+} from '@harness2/ui-shared/renderer/features/timeline/execution-log.js';
+import type { ChatItem } from '@harness2/ui-shared/renderer/chat-model.js';
 import type { ToolExecutionViewShape } from '../src/shared/protocol.js';
 
 function view(over: Partial<ToolExecutionViewShape> = {}): ToolExecutionViewShape {

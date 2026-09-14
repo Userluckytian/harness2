@@ -16,7 +16,7 @@ import {
   isApprovalExpired,
   summarizeApprovalArgs,
   type ApprovalCardModel,
-} from '../../src/renderer/approval/index.js';
+} from '@harness2/ui-shared/renderer/approval/index.js';
 
 afterEach(cleanup);
 

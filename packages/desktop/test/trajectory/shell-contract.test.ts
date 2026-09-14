@@ -12,7 +12,7 @@ import {
   initialComposerOverlayState,
   overlayInsetFromHost,
   parseComposerInsetPx,
-} from '../../src/renderer/trajectory/shell-contract.js';
+} from '@harness2/ui-shared/renderer/trajectory/shell-contract.js';
 
 /** 最小 ResizeObserver 替身（记录 observe/disconnect，手动触发回调） */
 class FakeResizeObserver {

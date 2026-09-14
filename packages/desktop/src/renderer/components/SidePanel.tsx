@@ -7,7 +7,11 @@
 import { useEffect, useState } from 'react';
 import { controller, store, useAppState } from '../app-shared.js';
 import { useFrame } from '../layout/frame-context.js';
-import { ToolFilePreviewPanel, useToolFilePreview, useToolNavigation } from '../tool/index.js';
+import {
+  ToolFilePreviewPanel,
+  useToolFilePreview,
+  useToolNavigation,
+} from '@harness2/ui-shared/renderer/tool/index.js';
 import { PlanPanel } from '../features/plan/PlanPanel.js';
 import { TaskPanel } from '../features/plan/TaskPanel.js';
 import { ApprovalCenter } from '../features/plan/ApprovalCenter.js';

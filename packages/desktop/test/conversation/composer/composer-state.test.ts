@@ -33,8 +33,8 @@ import {
   type ComposerChip,
   type FailedDraftRecord,
   type PendingSubmission,
-} from '../../../src/renderer/conversation/composer/composer-state.js';
-import type { ComposerAttachment } from '../../../src/renderer/conversation/composer/attachments.js';
+} from '@harness2/ui-shared/renderer/conversation/composer/composer-state.js';
+import type { ComposerAttachment } from '@harness2/ui-shared/renderer/conversation/composer/attachments.js';
 
 function chip(id: string, label: string): ComposerChip {
   return { kind: 'chip', id, label, reference: { id: `ref-${id}`, kind: 'file', path: label.replace(/^@/, '') } };

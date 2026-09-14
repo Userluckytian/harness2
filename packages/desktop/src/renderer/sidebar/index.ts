@@ -10,8 +10,8 @@ export type {
   SidebarRootProps,
   SidebarSeats,
 } from './SidebarRoot.js';
-export { SessionBrowser } from './SessionBrowser.js';
-export type { SessionBrowserProps, WorkspacesOwnerProps } from './SessionBrowser.js';
+export { SessionBrowser } from '@harness2/ui-shared/renderer/sidebar/SessionBrowser.js';
+export type { SessionBrowserProps, WorkspacesOwnerProps } from '@harness2/ui-shared/renderer/sidebar/SessionBrowser.js';
 
 // 几何（D-11 / D-13）
 export {
@@ -39,9 +39,17 @@ export { SCROLLBAR_LINGER_MS, scrollAffordance } from './scroll-affordance.js';
 export type { ScrollAffordanceEvent, ScrollAffordanceState } from './scroll-affordance.js';
 
 // 会话行视图模型（D-23）
-export { UNTITLED_SESSION_LABEL, buildSessionItems, toSessionItem } from './session-items.js';
-export type { SidebarSessionFlags, SidebarSessionItem, SidebarSessionSource } from './session-items.js';
+export {
+  UNTITLED_SESSION_LABEL,
+  buildSessionItems,
+  toSessionItem,
+} from '@harness2/ui-shared/renderer/sidebar/session-items.js';
+export type {
+  SidebarSessionFlags,
+  SidebarSessionItem,
+  SidebarSessionSource,
+} from '@harness2/ui-shared/renderer/sidebar/session-items.js';
 
 // 文案
-export { DEFAULT_SIDEBAR_LABELS } from './labels.js';
-export type { SidebarLabels } from './labels.js';
+export { DEFAULT_SIDEBAR_LABELS } from '@harness2/ui-shared/renderer/sidebar/labels.js';
+export type { SidebarLabels } from '@harness2/ui-shared/renderer/sidebar/labels.js';

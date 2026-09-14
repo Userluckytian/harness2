@@ -3,7 +3,7 @@
 // 写前先 normalize（防 IPC 侧传入非法结构落盘）。公共读写逻辑见 json-file.ts（B2 抽取共用）。
 import { homedir } from 'node:os';
 import { join } from 'node:path';
-import { defaultLayout, normalizeLayout, type DesktopLayout } from '../shared/layout.js';
+import { defaultLayout, normalizeLayout, type DesktopLayout } from '@harness2/ui-shared/shared/layout.js';
 import { readJsonWithDefault, writeJsonNormalized } from './json-file.js';
 
 export const LAYOUT_FILE = 'desktop-layout.json';

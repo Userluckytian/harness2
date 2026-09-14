@@ -1,3 +1,4 @@
+import { useCallback, useSyncExternalStore } from 'react';
 // D-46 壳的义务契约：composer 作为**浮层**置于全高记录表之上，并预留其实时高度。
 //
 // 分工（本棒不做装配）：
@@ -137,4 +138,22 @@ export function overlayInsetFromHost(state: ComposerOverlayState | undefined): T
     return { paddingBottomPx: DEFAULT_COMPOSER_INSET_PX, source: 'none' };
   }
   return { paddingBottomPx: state.insetPx, source: 'composer-host' };
+}
+
+/**
+ * D-46 消费端 Hook：订阅壳持有的 composer 浮层实测高度。
+ * 壳未接（undefined）或未测量 → undefined（调用方据此走 CSS 变量兜底，不虚构预留）。
+ *
+ * 归属说明：本 Hook 原先长在桌面轨迹模块里，但它只依赖壳注入的 host 端口（与轨迹无关），
+ * P8 起随契约一起下沉共享包；desktop 轨迹模块改为再导出（行为零改动）。
+ */
+export function useComposerOverlayInset(host: ComposerOverlayHost | undefined): number | undefined {
+  const subscribe = useCallback(
+    (listener: () => void) => (host === undefined ? () => undefined : host.subscribe(listener)),
+    [host],
+  );
+  const getSnapshot = useCallback(() => (host === undefined ? undefined : host.getState()), [host]);
+  const state = useSyncExternalStore(subscribe, getSnapshot, () => undefined);
+  const inset = overlayInsetFromHost(state);
+  return inset.paddingBottomPx > 0 ? inset.paddingBottomPx : undefined;
 }

@@ -1,8 +1,8 @@
 // D5 安全撤销测试（F5）：dryRun 比对 → 外部改动拦截 → 显式覆盖才真正恢复；无冲突直接恢复。
 // 用假 api 断言调用序列（真实链路）——不是纯函数自测。
 import { describe, expect, it, vi } from 'vitest';
-import { AppStore } from '../src/renderer/store.js';
-import { createController } from '../src/renderer/app-controller.js';
+import { AppStore } from '@harness2/ui-shared/renderer/store.js';
+import { createController } from '@harness2/ui-shared/renderer/app-controller.js';
 import type { Harness2Api, UndoRedoResponseShape } from '../src/shared/protocol.js';
 
 const preview = (dirty: boolean): UndoRedoResponseShape => ({

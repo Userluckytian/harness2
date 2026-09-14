@@ -1,8 +1,8 @@
 // 图片 URL 缓存测试（D-39）：逐会话缓存 + 一次授权读取共享 + 清理/失效。
 // node 环境（纯逻辑，无 React）。
 import { describe, expect, it, vi } from 'vitest';
-import { createImageUrlCache, ImageUrlCacheError } from '../../../src/renderer/conversation/views/index.js';
-import type { ConversationImageAttachment } from '../../../src/renderer/conversation/views/index.js';
+import { createImageUrlCache, ImageUrlCacheError } from '@harness2/ui-shared/renderer/conversation/views/index.js';
+import type { ConversationImageAttachment } from '@harness2/ui-shared/renderer/conversation/views/index.js';
 
 const A1: ConversationImageAttachment = { id: 'a1', mimeType: 'image/png' };
 const A2: ConversationImageAttachment = { id: 'a2', mimeType: 'image/jpeg' };

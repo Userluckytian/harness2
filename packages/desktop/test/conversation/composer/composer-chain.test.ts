@@ -8,7 +8,7 @@ import {
   sortComposerChain,
   type ComposerChainEntry,
   type ComposerChainProps,
-} from '../../../src/renderer/conversation/composer/composer-chain.js';
+} from '@harness2/ui-shared/renderer/conversation/composer/composer-chain.js';
 
 const owner = (patch: Partial<ComposerChainProps> = {}): ComposerChainProps => ({
   sessionId: 's1',

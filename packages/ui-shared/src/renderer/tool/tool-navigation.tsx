@@ -12,7 +12,7 @@
 //
 // 只存内存、不落任何浏览器存储（D-14 口径）；快照不可变，无变化时引用稳定。
 import { createContext, useContext, useSyncExternalStore } from 'react';
-import { TRAJECTORY_VIEW_KEY } from '../trajectory/trajectory-view.js';
+import { TRAJECTORY_VIEW_KEY } from '../conversation/views/view-keys.js';
 
 /** D-86 ①：文件打开的路由目标（右栏文本预览） */
 export const TOOL_OPEN_FILE_TARGET = 'rightbar';

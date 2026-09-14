@@ -14,8 +14,8 @@ import {
   toolFileTarget,
   toolStatusLabel,
   toolStatusOf,
-} from '../../src/renderer/tool/index.js';
-import type { TimelineToolRow } from '../../src/renderer/features/timeline/execution-log.js';
+} from '@harness2/ui-shared/renderer/tool/index.js';
+import type { TimelineToolRow } from '@harness2/ui-shared/renderer/features/timeline/execution-log.js';
 
 afterEach(cleanup);
 

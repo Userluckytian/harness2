@@ -1,8 +1,8 @@
 // D4 关窗口行为测试：关 UI ≠ 已停任务；有运行中工作必须显式选择。
 import { describe, expect, it, vi } from 'vitest';
 import { CLOSE_DIALOG_BUTTONS, closeDialogMessage, decideCloseAction } from '../src/shared/close-window.js';
-import { AppStore } from '../src/renderer/store.js';
-import { createController } from '../src/renderer/app-controller.js';
+import { AppStore } from '@harness2/ui-shared/renderer/store.js';
+import { createController } from '@harness2/ui-shared/renderer/app-controller.js';
 import type { Harness2Api, SessionEventsPayloadShape } from '../src/shared/protocol.js';
 
 const replay = (id: string): SessionEventsPayloadShape => ({

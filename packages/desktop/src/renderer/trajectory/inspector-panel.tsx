@@ -3,7 +3,7 @@
 // 字段：token 用量 / 耗时 / 输入 / 输出 / 计时 / 图片与文件附件摘要。
 // 缺数据一律显示「未记录」「无」——不显示 0 或空行（诚实性口径与 D-47 同源）。
 import type { ReactNode } from 'react';
-import type { SessionImageUrlResolver } from '../conversation/views/image-url-cache.js';
+import type { SessionImageUrlResolver } from '@harness2/ui-shared/renderer/conversation/views/image-url-cache.js';
 import type { TrajectoryInspectorView } from './inspector.js';
 import type { TrajectoryAttachment } from './types.js';
 

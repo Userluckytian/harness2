@@ -6,7 +6,7 @@ import {
   autoHeightFor,
   isImeComposing,
   shouldSubmitOnKey,
-} from '../src/renderer/features/composer/composer-model.js';
+} from '@harness2/ui-shared/renderer/features/composer/composer-model.js';
 
 describe('IME 不误发（D1 可用性红线）', () => {
   it('isComposing=true 视为组合中（标准事件序列）', () => {

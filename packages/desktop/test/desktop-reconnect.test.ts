@@ -3,7 +3,7 @@
 //   - submit-ack 三态收敛（unknown ≠ rejected）；ack 丢失 → 标 unknown 且**不自动重发**。
 // 纯 store 单测：直接驱动 applyFrame / noteSubmit / expirePendingSubmits。
 import { describe, expect, it, vi } from 'vitest';
-import { AppStore } from '../src/renderer/store.js';
+import { AppStore } from '@harness2/ui-shared/renderer/store.js';
 import type { ResumeSnapshotShape, SessionEventsPayloadShape } from '../src/shared/protocol.js';
 
 const replayPayload = (id: string): SessionEventsPayloadShape => ({
@@ -190,7 +190,7 @@ describe('cancel-ack 三态（全局表；不假报停止）', () => {
 });
 
 // —— 审查 P2-2：resume 路径接线（重连自动恢复 + force 在途去重 + UI 真实调用点）——
-import { createController } from '../src/renderer/app-controller.js';
+import { createController } from '@harness2/ui-shared/renderer/app-controller.js';
 import type { ConnectionStatus, Harness2Api, StatusDetail, WsFrame } from '../src/shared/protocol.js';
 
 function reconnectApi(over: Partial<Harness2Api> = {}): {

@@ -228,7 +228,8 @@ export function ChatTranscript({ streamId, store, controller }: ChatTranscriptDe
         />
       )}
       {refReport !== undefined &&
-        refReport.sources.length + refReport.skipped.length + refReport.notFound.length > 0 && (
+        refReport.sources.length + refReport.skipped.length + refReport.notFound.length + refReport.unavailable.length >
+          0 && (
           <div className="ref-report" aria-label="引用来源">
             {refReport.sources.length > 0 && (
               <span className="ref-sources">
@@ -238,6 +239,11 @@ export function ChatTranscript({ streamId, store, controller }: ChatTranscriptDe
             {refReport.skipped.map((s) => (
               <span key={s.token} className="ref-skipped">
                 {s.token} 未纳入（{s.reason === 'binary' ? '二进制' : '超出字节预算'}）
+              </span>
+            ))}
+            {refReport.unavailable.map((t) => (
+              <span key={t} className="ref-missing">
+                {t} 读取通道不可用
               </span>
             ))}
             {refReport.notFound.map((t) => (

@@ -31,7 +31,7 @@ import {
   waitForHealth,
 } from '../src/main/serve-manager.js';
 import type { StatusDetail } from '../src/shared/protocol.js';
-import { AppStore } from '../src/renderer/store.js';
+import { AppStore } from '@harness2/ui-shared/renderer/store.js';
 
 const dirs: string[] = [];
 const children: Array<{ kill: () => void }> = [];

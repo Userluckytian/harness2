@@ -5,7 +5,7 @@
 //   1. 模型字段只来自**真实数据**（事件 payload / ts / 明确的观测注入）；
 //   2. 「未知」一律用 null（不是 0、不是估算）—— UI 据此留空（D-47：进行中的行不虚构耗时）；
 //   3. 嵌套子工具的行位由**真实 payload 的父引用**决定（args.parentCallId），无引用不发明层级。
-import type { TurnEndInfo } from '../chat-model.js';
+import type { TurnEndInfo } from '@harness2/ui-shared/renderer/chat-model.js';
 
 /** 步骤角色：用户 / 助手 / 工具 / 嵌套子工具 / 轮次之间（独立压缩请求，D-47） */
 export type TrajectoryStepRole = 'user' | 'assistant' | 'tool' | 'subtool' | 'between-turns';

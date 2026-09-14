@@ -4,7 +4,7 @@
 // D-46：`composerInsetPx` 由壳注入（或读 CSS 变量）→ 记录表预留底部内边距。
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { ReactNode } from 'react';
-import type { SessionImageUrlResolver } from '../conversation/views/image-url-cache.js';
+import type { SessionImageUrlResolver } from '@harness2/ui-shared/renderer/conversation/views/image-url-cache.js';
 import { deriveInspectorForRow } from './inspector.js';
 import './trajectory.css';
 import { InspectorPanel } from './inspector-panel.js';

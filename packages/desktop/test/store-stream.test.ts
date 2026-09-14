@@ -1,6 +1,6 @@
 // 会话流缓冲测试（Task 4）：重放→增量去重→delta 清空→running/unread/审批生命周期。
 import { describe, expect, it } from 'vitest';
-import { AppStore } from '../src/renderer/store.js';
+import { AppStore } from '@harness2/ui-shared/renderer/store.js';
 import type { SessionEventsPayloadShape, WsFrame } from '../src/shared/protocol.js';
 
 let seq = 0;

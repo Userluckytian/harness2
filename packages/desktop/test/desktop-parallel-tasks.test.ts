@@ -13,8 +13,8 @@ import { join } from 'node:path';
 import { MockProvider, startServe, type ServeHandle } from '@harness2/core';
 import type { Bridge, BridgeDeps } from '../src/main/bridge.js';
 import type { ConnectionStatus, Harness2Api, WsFrame } from '../src/shared/protocol.js';
-import { AppStore } from '../src/renderer/store.js';
-import { createController } from '../src/renderer/app-controller.js';
+import { AppStore } from '@harness2/ui-shared/renderer/store.js';
+import { createController } from '@harness2/ui-shared/renderer/app-controller.js';
 import { buildTaskTree, summarizeTasks } from '../src/renderer/features/plan/plan-model.js';
 import type { TaskContractShape } from '../src/shared/protocol.js';
 

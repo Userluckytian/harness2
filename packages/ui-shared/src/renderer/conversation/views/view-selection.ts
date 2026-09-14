@@ -10,8 +10,10 @@
 // 持久选择的读写由注入缝提供（见 view-ring 的 ViewSelectionPersistence / D-14 口径：
 // 面板几何不持久化；视图选择的持久性由宿主注入，本模块不碰任何浏览器存储）。
 
-/** 内置主视图 key（D-31 的回落目标） */
-export const CHAT_VIEW_KEY = 'chat';
+import { CHAT_VIEW_KEY } from './view-keys.js';
+
+/** 内置主视图 key（D-31 的回落目标；字面量唯一来源见 `view-keys.ts`） */
+export { CHAT_VIEW_KEY };
 
 /**
  * 会话状态（选择规则的第三类输入）：

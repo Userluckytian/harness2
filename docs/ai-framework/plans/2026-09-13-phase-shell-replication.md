@@ -323,6 +323,16 @@ harness2/
 - 子代理 1 个即可；目录独占 `packages/web/**` + 新建共享包。
 - **退出闸门**：浏览器能完成一轮真实对话；共享包重复代码率约为零（审查者目测即可）。
 
+**执行记录（2026-09-14，编排者四段跑毕）**：
+
+- ① 开发：一棒完成共享包抽取与 web 壳——新建 `packages/ui-shared`（`git mv` 自 desktop 40 文件 + 端口层 `HarnessClient`/`Persistence`/`AttachmentReader`/`HostBridge`；双产物 ESM/CJS；线协议成唯一事实源）、新建 `packages/web`（React+Vite，serve HTTP/WS 客户端 + 会话列表 + 对话页；dev 代理避开 CORS）、desktop 68 文件改 import 共享包并删除本地实现（**无复制粘贴**：11 个关键符号全仓各仅 1 处）。
+- ② 测试：P8 四项要求覆盖矩阵 + 21 例补口（web 契约：畸形帧四形态丢弃、`turn-end` 三态、`cancel-ack` 三态、重连状态机、`protocolVersion=2` 真正切帧靠 `resume-subscription` 的语义钉死（含 core 侧用例）、降级真实性 14 例）。
+- ③ 审查（只读）：**无 P0**；2 条 P1（`isApprovalExpired` 在共享包与 desktop 各一份活实现、一个测试文件 prettier 红使 CI 必红）+ 10 条 P2；正向核对通过（共享包零 electron/node 依赖、协议单一源且通道名静态一致性护栏仍有效、`changeOrigin` 不弱化信任域、desktop 用例断言零变更）。
+- ④ 验证（编排者亲跑）：六闸门全绿（build/typecheck 0 · eslint **0 error / 46 warning** · prettier 全绿 · **4033 passed + 5 skipped**：ui-shared 70 · web 36 · core 1232+2 · gateway 40 · desktop 952+1 · cli 1703+2）+ desktop smoke 通过 + web build 通过；**浏览器真机一轮**（我用内置浏览器亲跑）：打开 web 壳 → 显示「已连接」→ 会话列表来自真实 serve → 「新会话」在无可用 cwd 时**如实置灰并给出原因**（P2-9 修复）→ 选中会话后 Chat 标签与 composer 挂载 → 发送消息 → **真实模型（本地网关 big-pickle）多步工具调用与流式渲染**（转录含 bash/grep 工具卡、exit 0、耗时、输出与复制按钮）→ 产生最终回答 → 发第二条长任务后主按钮切 `■ 停止`（D-36 单按钮）→ 点击停止 → 日志出现 `assistant/attempt {"error":"cancelled"}` 且按钮回到「发送」。
+- 修复棒闭环：P1-1 收敛为单一源、P1-2 格式化、P2 `@path` 归因/草稿 `beforeunload` 护栏/新建会话置灰/死导出清理。
+- 登记：`docs/API-STABILITY.md` 补 web token 暴露面边界；OPEN.md 记 core 测试固定端口 46213 与 dev serve 撞端口、web 列表条数不实时刷新、Enter 提交自动化未复现（待真机）、共享包 dist 耦合口径。
+- CI：`.github/workflows/ci.yml` 的 test job 增补 `Test ui-shared` 与 `Test web` 两步（与 core/gateway 同口径，单点红不遮蔽其余包）。
+
 ## P9 收口：全面验收、文档、发布准备（2 天）
 
 - ① 按 `docs/SMOKE-TEST.md` 重跑全部用例，并**新增本次交付的用例**（CLI 双模式、palette、卡片、状态行、桌面三栅、轨迹、模型配置）。
@@ -373,3 +383,4 @@ harness2/
 | 2026-09-14    | 编排会话（本轮）      | P5 完成：视图环（D-31 选择规则）+ composer（D-34 同事务/D-36 主按钮矩阵/D-37 并发 2/D-38 链）+ 真实 provider 回合验证；审查 2 P0（trim 丢失、失败还原覆盖用户输入）与 3 P1（@path 回退、steer turnId、图片伪引用）闭环；全量 3333+5                 |
 | 2026-09-14    | 编排会话（本轮）      | P6 完成：轨迹页（TTFT/解码分段、虚拟化、D-86 定位）+ 模型配置页（不手改文件闭环、密钥只写不回显）+ 设置壳与审批/工具卡；密钥专项零 P0；审查 1 P1 + 8 P2 闭环；归存 D-40~D-59/D-85/D-86                                                              |
 | 2026-09-14    | 编排会话（本轮）      | P7 完成：H-11~H-46 核心能力（索引检索/分层压缩/可移植/标题/记忆自进化/工具集/并行扇出/**零开销轮次 23.8×**/特权流/自然语言 cron）+ 命令面与双装配接线；审查 1 P0（dist 过期证据）经编排者源码复核为已修；flows/cron 三壳渲染归存 P8/P9；H-47 待拍板 |
+| 2026-09-14    | 编排会话（本轮）      | P8 完成：抽 `@harness2/ui-shared` 共享包（desktop 无复制粘贴）+ `packages/web` 最小壳；浏览器真机一轮真实对话（真实模型+工具调用+停止）通过；审查无 P0，2 P1 闭环；CI 补两包测试步骤；全量 4033+5                                                   |

@@ -7,7 +7,11 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 
-const stylesCss = readFileSync(fileURLToPath(new URL('../../src/renderer/styles.css', import.meta.url)), 'utf8');
+// P8：桌面基础样式表（含 D-46 的预留高度契约）已下沉 @harness2/ui-shared（web 壳同一份）。
+const stylesCss = readFileSync(
+  fileURLToPath(new URL('../../../ui-shared/src/styles/shell.css', import.meta.url)),
+  'utf8',
+);
 const trajectoryCss = readFileSync(
   fileURLToPath(new URL('../../src/renderer/trajectory/trajectory.css', import.meta.url)),
   'utf8',

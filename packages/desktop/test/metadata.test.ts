@@ -11,7 +11,7 @@ import {
   isDeleted,
   normalizeMetadata,
   type SessionMetadataMap,
-} from '../src/shared/metadata.js';
+} from '@harness2/ui-shared/shared/metadata.js';
 import { readMetadata, writeMetadataPatch } from '../src/main/metadata-file.js';
 
 const homes = new Set<string>();

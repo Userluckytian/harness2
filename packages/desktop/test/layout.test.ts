@@ -11,7 +11,7 @@ import {
   normalizeLayout,
   setPaneCount,
   type DesktopLayout,
-} from '../src/shared/layout.js';
+} from '@harness2/ui-shared/shared/layout.js';
 import { readLayout, writeLayout } from '../src/main/layout-file.js';
 
 const dirs: string[] = [];

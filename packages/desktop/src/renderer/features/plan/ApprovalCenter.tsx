@@ -4,7 +4,7 @@
 // P6-C：卡片正文收敛到 `renderer/approval`（ApprovalCard）—— 与对话内联审批条同一实现，
 // 本文件只保留「取数 → 装饰 → 分组」与动作回传（controller.respondApproval）。
 import { controller, store, useAppState } from '../../app-shared.js';
-import { ApprovalCard } from '../../approval/index.js';
+import { ApprovalCard } from '@harness2/ui-shared/renderer/approval/index.js';
 import { decorateApprovals, groupApprovals, type ApprovalCard as ApprovalCardModel } from './plan-model.js';
 
 export function ApprovalCenter() {
