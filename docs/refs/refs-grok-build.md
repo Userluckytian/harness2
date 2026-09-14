@@ -116,11 +116,11 @@ Rust 工作区，产物二进制 `xai-grok-pager`，官方以 `grok` 名称分�
 
 | ID   | 卡片              | 来源                     | 交互                                         | 等级 | 状态 |
 | ---- | ----------------- | ------------------------ | -------------------------------------------- | ---- | ---- |
-| G-21 | permission prompt | 工具/命令权限请求        | 优先级最高，遮盖其他卡片                     | 必刻 | ⬜   |
-| G-22 | cancel-turn panel | 取消确认                 | 优先级次于 permission                        | 必刻 | ⬜   |
-| G-23 | question card     | `ask_user_question` 工具 | 选项 + 自由文本                              | 必刻 | ⬜   |
-| G-24 | MCP elicitation   | `x.ai/mcp/elicit`        | 优先级最低                                   | 必刻 | ⬜   |
-| G-25 | 卡片内焦点        | 四类共用                 | `Tab` / `Shift+Tab` 卡内环走（不泄漏到全局） | 必刻 | ⬜   |
+| G-21 | permission prompt | 工具/命令权限请求        | 优先级最高，遮盖其他卡片                     | 必刻 | ✅   |
+| G-22 | cancel-turn panel | 取消确认                 | 优先级次于 permission                        | 必刻 | 🟡   |
+| G-23 | question card     | `ask_user_question` 工具 | 选项 + 自由文本                              | 必刻 | 🟡   |
+| G-24 | MCP elicitation   | `x.ai/mcp/elicit`        | 优先级最低                                   | 必刻 | 🟡   |
+| G-25 | 卡片内焦点        | 四类共用                 | `Tab` / `Shift+Tab` 卡内环走（不泄漏到全局） | 必刻 | ✅   |
 
 优先级固定：`permission > cancel-turn > question > elicitation`。
 
@@ -128,40 +128,40 @@ Rust 工作区，产物二进制 `xai-grok-pager`，官方以 `grok` 名称分�
 
 | ID   | 条目           | 行为要点                                                                                                | 等级 | 状态 |
 | ---- | -------------- | ------------------------------------------------------------------------------------------------------- | ---- | ---- |
-| G-26 | 普通 Enter     | 回合运行中 `Enter` **入队**（不打断）；`[ui].follow_up_behavior = queue \| steer` 切换为队列或实时转向  | 必刻 | ⬜   |
-| G-27 | 空输入再 Enter | composer 为空时再 `Enter` 发送队首一条                                                                  | 必刻 | ⬜   |
-| G-28 | send-now 和弦  | `Ctrl+Enter` / `Ctrl+I` = **取消当前回合并立即发送**；Apple Terminal 用 `Ctrl+O`，VS Code 族用 `Ctrl+L` | 必刻 | ⬜   |
-| G-29 | 队列面板       | `Ctrl+;`（备用 `Ctrl+'`，macOS VS Code 系 `Ctrl+4`）打开；`↑` 在队列/历史间转焦点                       | 必刻 | ⬜   |
-| G-30 | 阻塞等待中     | 卡片等待时 `Enter` 直送（不入队）                                                                       | 必刻 | ⬜   |
+| G-26 | 普通 Enter     | 回合运行中 `Enter` **入队**（不打断）；`[ui].follow_up_behavior = queue \| steer` 切换为队列或实时转向  | 必刻 | ✅   |
+| G-27 | 空输入再 Enter | composer 为空时再 `Enter` 发送队首一条                                                                  | 必刻 | ✅   |
+| G-28 | send-now 和弦  | `Ctrl+Enter` / `Ctrl+I` = **取消当前回合并立即发送**；Apple Terminal 用 `Ctrl+O`，VS Code 族用 `Ctrl+L` | 必刻 | ✅   |
+| G-29 | 队列面板       | `Ctrl+;`（备用 `Ctrl+'`，macOS VS Code 系 `Ctrl+4`）打开；`↑` 在队列/历史间转焦点                       | 必刻 | ✅   |
+| G-30 | 阻塞等待中     | 卡片等待时 `Enter` 直送（不入队）                                                                       | 必刻 | ✅   |
 
 ## G-6x Agent 级键位
 
 | ID   | 键位                | 功能                                                                                                                                        | 等级 | 状态 |
 | ---- | ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- | ---- | ---- |
-| G-31 | `Ctrl+P` / `?`      | 命令面板（palette）                                                                                                                         | 必刻 | ⬜   |
-| G-32 | `Ctrl+M`            | 模型选择器；**prompt 聚焦时改为多行切换**（双语义）                                                                                         | 必刻 | ⬜   |
-| G-33 | `Shift+Tab`         | 模式循环 Normal → Plan → Auto → Always-approve；`Ctrl+O` 直切 always-approve                                                                | 必刻 | ⬜   |
-| G-34 | `Ctrl+R`            | 会话选择器（2026-09-13 修正：原键位 `F3` 已废除，改为 `Ctrl+R`；welcome 屏与会话内皆开；scrollback 聚焦时该和弦可被 G-91 鼠标上报开关借用） | 必刻 | ⬜   |
-| G-35 | `Ctrl+T` / `Ctrl+G` | todos 面板 / tasks 面板（minimal 下 `Ctrl+G` 改为外部编辑器）                                                                               | 必刻 | ⬜   |
-| G-36 | `Ctrl+L`            | extensions 模态（VS Code 族下改为 interject）                                                                                               | 必刻 | ⬜   |
-| G-37 | `Ctrl+B`            | 当前回合转后台                                                                                                                              | 必刻 | ⬜   |
-| G-38 | `Ctrl+C`            | 取消/退出——回合取消的唯一键（与 Esc 语义不同，见 G-14～G-19；取消中再按升级为退出）                                                         | 必刻 | ⬜   |
-| G-39 | `Ctrl+.` / `Ctrl+X` | 快捷键帮助                                                                                                                                  | 必刻 | ⬜   |
-| G-40 | `F2` / `Ctrl+,`     | 设置面板                                                                                                                                    | 必刻 | ⬜   |
-| G-41 | `Ctrl+\`            | agents dashboard（`GROK_AGENT_DASHBOARD=0` 可关）                                                                                           | 参考 | ⬜   |
+| G-31 | `Ctrl+P` / `?`      | 命令面板（palette）                                                                                                                         | 必刻 | ✅   |
+| G-32 | `Ctrl+M`            | 模型选择器；**prompt 聚焦时改为多行切换**（双语义）                                                                                         | 必刻 | 🟡   |
+| G-33 | `Shift+Tab`         | 模式循环 Normal → Plan → Auto → Always-approve；`Ctrl+O` 直切 always-approve                                                                | 必刻 | ✅   |
+| G-34 | `Ctrl+R`            | 会话选择器（2026-09-13 修正：原键位 `F3` 已废除，改为 `Ctrl+R`；welcome 屏与会话内皆开；scrollback 聚焦时该和弦可被 G-91 鼠标上报开关借用） | 必刻 | ✅   |
+| G-35 | `Ctrl+T` / `Ctrl+G` | todos 面板 / tasks 面板（minimal 下 `Ctrl+G` 改为外部编辑器）                                                                               | 必刻 | 🟡   |
+| G-36 | `Ctrl+L`            | extensions 模态（VS Code 族下改为 interject）                                                                                               | 必刻 | 🟡   |
+| G-37 | `Ctrl+B`            | 当前回合转后台                                                                                                                              | 必刻 | 🟡   |
+| G-38 | `Ctrl+C`            | 取消/退出——回合取消的唯一键（与 Esc 语义不同，见 G-14～G-19；取消中再按升级为退出）                                                         | 必刻 | ✅   |
+| G-39 | `Ctrl+.` / `Ctrl+X` | 快捷键帮助                                                                                                                                  | 必刻 | ✅   |
+| G-40 | `F2` / `Ctrl+,`     | 设置面板                                                                                                                                    | 必刻 | 🟡   |
+| G-41 | `Ctrl+\`            | agents dashboard（`GROK_AGENT_DASHBOARD=0` 可关）                                                                                           | 参考 | 🟡   |
 
 ## G-7x 状态行契约（`[ui.status_line]`）
 
 | ID   | 条目       | 行为要点                                                                                                                                                                            | 等级 | 状态 |
 | ---- | ---------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---- | ---- |
-| G-42 | 三种类型   | `type = builtin / command / disabled`，默认 `disabled`（`off` `none` `hidden` 同义）                                                                                                | 必刻 | ⬜   |
-| G-43 | builtin 项 | `items` 默认 `[cwd, model, context]`；可选 `cost`（低于 $0.005 隐藏）、`turn-timer`、`session-name`                                                                                 | 必刻 | ⬜   |
-| G-44 | 省略规则   | 目录与会话名在 40 列以下省略；模型名在 30 列以下省略                                                                                                                                | 必刻 | ⬜   |
-| G-45 | command 型 | 外部命令走 stdin JSON：`workspace.repo_root`、`context_window.context_tokens`、`context_window.session_usage`、`transcript_path`、`prompt_id`、`trigger = state / refresh_interval` | 必刻 | ⬜   |
-| G-46 | 刷新策略   | 事件驱动 + 300ms 防抖（紧急 100ms）；`refresh_interval` 1–86400 秒；`padding` 上限 16                                                                                               | 必刻 | ⬜   |
-| G-47 | 输出限额   | 最多 5 行、每行 1024 字符、stdout 超 64KiB 截断、超时 10s 显示 `[status line: timed out]`                                                                                           | 必刻 | ⬜   |
-| G-48 | 失败降级   | 失败写 `~/.grok/logs/unified.jsonl`；**连续三次失败**才在状态行画错误                                                                                                               | 必刻 | ⬜   |
-| G-49 | 子进程环境 | `COLUMNS` / `LINES` 给的是状态行自身尺寸；`GIT_OPTIONAL_LOCKS=0`；清空 `BASH_ENV` / `ENV`                                                                                           | 必刻 | ⬜   |
+| G-42 | 三种类型   | `type = builtin / command / disabled`，默认 `disabled`（`off` `none` `hidden` 同义）                                                                                                | 必刻 | ✅   |
+| G-43 | builtin 项 | `items` 默认 `[cwd, model, context]`；可选 `cost`（低于 $0.005 隐藏）、`turn-timer`、`session-name`                                                                                 | 必刻 | ✅   |
+| G-44 | 省略规则   | 目录与会话名在 40 列以下省略；模型名在 30 列以下省略                                                                                                                                | 必刻 | ✅   |
+| G-45 | command 型 | 外部命令走 stdin JSON：`workspace.repo_root`、`context_window.context_tokens`、`context_window.session_usage`、`transcript_path`、`prompt_id`、`trigger = state / refresh_interval` | 必刻 | ✅   |
+| G-46 | 刷新策略   | 事件驱动 + 300ms 防抖（紧急 100ms）；`refresh_interval` 1–86400 秒；`padding` 上限 16                                                                                               | 必刻 | ✅   |
+| G-47 | 输出限额   | 最多 5 行、每行 1024 字符、stdout 超 64KiB 截断、超时 10s 显示 `[status line: timed out]`                                                                                           | 必刻 | ✅   |
+| G-48 | 失败降级   | 失败写 `~/.grok/logs/unified.jsonl`；**连续三次失败**才在状态行画错误                                                                                                               | 必刻 | ✅   |
+| G-49 | 子进程环境 | `COLUMNS` / `LINES` 给的是状态行自身尺寸；`GIT_OPTIONAL_LOCKS=0`；清空 `BASH_ENV` / `ENV`                                                                                           | 必刻 | ✅   |
 
 ## G-8x 斜杠命令全集（依据 `04-slash-commands.md`）
 
@@ -169,61 +169,61 @@ Rust 工作区，产物二进制 `xai-grok-pager`，官方以 `grok` 名称分�
 
 | ID   | 条目         | 行为要点                                                              | 状态 |
 | ---- | ------------ | --------------------------------------------------------------------- | ---- |
-| G-50 | 命令来源分裂 | shell builtins 与 pager builtins 两类，**合并进同一个菜单**，模糊匹配 | ⬜   |
-| G-51 | 菜单行为     | 输入 `/` 弹菜单，模糊筛选，回车直执行                                 | ⬜   |
-| G-52 | 技能升为命令 | skill 可声明 `user-invocable`，自动出现在菜单                         | ⬜   |
-| G-53 | 名字冲突     | 冲突时用 `/plugin-name:login` 形式限定，并在菜单打 badge 区分来源     | ⬜   |
+| G-50 | 命令来源分裂 | shell builtins 与 pager builtins 两类，**合并进同一个菜单**，模糊匹配 | ✅   |
+| G-51 | 菜单行为     | 输入 `/` 弹菜单，模糊筛选，回车直执行                                 | ✅   |
+| G-52 | 技能升为命令 | skill 可声明 `user-invocable`，自动出现在菜单                         | 🟡   |
+| G-53 | 名字冲突     | 冲突时用 `/plugin-name:login` 形式限定，并在菜单打 badge 区分来源     | 🟡   |
 
 ### 会话与历史
 
 | ID   | 命令                                            | 要点                                                                         | 等级 | 状态 |
 | ---- | ----------------------------------------------- | ---------------------------------------------------------------------------- | ---- | ---- |
-| G-54 | `/new`（`/clear`）                              | 新会话                                                                       | 必刻 | ⬜   |
-| G-55 | `/resume`                                       | 恢复会话选择器                                                               | 必刻 | ⬜   |
-| G-56 | `/dashboard`（`/agents-dashboard` `/sessions`） | agents 仪表盘，`Ctrl+\` 开，仅 fullscreen                                    | 参考 | ⬜   |
-| G-57 | `/compact [说明]`                               | 人工压缩；**自动压缩阈值 85%**（`[session] auto_compact_threshold_percent`） | 必刻 | ⬜   |
-| G-58 | `/context`                                      | 上下文分类占用明细                                                           | 必刻 | ⬜   |
-| G-59 | `/session-info`（`/status` `/info`）            | 会话详情；`c` 复制会话 id，`y` 复制整块                                      | 必刻 | ⬜   |
-| G-60 | `/fork`                                         | 分叉会话                                                                     | 必刻 | ⬜   |
-| G-61 | `/rewind`（`/undo`）                            | 回退选择器（与双击 Esc 同入口，见 G-18）                                     | 必刻 | ⬜   |
-| G-62 | `/copy [n 或 path]`                             | 复制回复；备份到 `~/.grok/last-copy.txt`，`GROK_COPY_FILE` 可改              | 必刻 | ⬜   |
-| G-63 | `/export`                                       | 导出会话                                                                     | 必刻 | ⬜   |
-| G-64 | `/delete`                                       | 删会话；选择器内 `d` 后 `y` 确认，仪表盘 `Ctrl+X` 两次                       | 必刻 | ⬜   |
-| G-65 | `/rename`（`/title`）                           | 重命名，支持 `--auto`                                                        | 必刻 | ⬜   |
-| G-66 | `/history`                                      | 历史浏览                                                                     | 必刻 | ⬜   |
-| G-67 | `/home`（`/welcome`） · `/quit`（`/exit`）      | 首屏与退出                                                                   | 必刻 | ⬜   |
+| G-54 | `/new`（`/clear`）                              | 新会话                                                                       | 必刻 | ✅   |
+| G-55 | `/resume`                                       | 恢复会话选择器                                                               | 必刻 | ✅   |
+| G-56 | `/dashboard`（`/agents-dashboard` `/sessions`） | agents 仪表盘，`Ctrl+\` 开，仅 fullscreen                                    | 参考 | 🟡   |
+| G-57 | `/compact [说明]`                               | 人工压缩；**自动压缩阈值 85%**（`[session] auto_compact_threshold_percent`） | 必刻 | ✅   |
+| G-58 | `/context`                                      | 上下文分类占用明细                                                           | 必刻 | ✅   |
+| G-59 | `/session-info`（`/status` `/info`）            | 会话详情；`c` 复制会话 id，`y` 复制整块                                      | 必刻 | ✅   |
+| G-60 | `/fork`                                         | 分叉会话                                                                     | 必刻 | ✅   |
+| G-61 | `/rewind`（`/undo`）                            | 回退选择器（与双击 Esc 同入口，见 G-18）                                     | 必刻 | ✅   |
+| G-62 | `/copy [n 或 path]`                             | 复制回复；备份到 `~/.grok/last-copy.txt`，`GROK_COPY_FILE` 可改              | 必刻 | 🟡   |
+| G-63 | `/export`                                       | 导出会话                                                                     | 必刻 | ✅   |
+| G-64 | `/delete`                                       | 删会话；选择器内 `d` 后 `y` 确认，仪表盘 `Ctrl+X` 两次                       | 必刻 | 🟡   |
+| G-65 | `/rename`（`/title`）                           | 重命名，支持 `--auto`                                                        | 必刻 | 🟡   |
+| G-66 | `/history`                                      | 历史浏览                                                                     | 必刻 | 🟡   |
+| G-67 | `/home`（`/welcome`） · `/quit`（`/exit`）      | 首屏与退出                                                                   | 必刻 | 🟡   |
 
 ### 模型与模式
 
 | ID   | 命令                            | 要点                                                   | 等级 | 状态 |
 | ---- | ------------------------------- | ------------------------------------------------------ | ---- | ---- |
-| G-68 | `/model`（`/m`）                | 模型选择器，可带 effort 参数                           | 必刻 | ⬜   |
-| G-69 | `/effort low/medium/high/xhigh` | 推理强度（按模型能力）                                 | 必刻 | ⬜   |
-| G-70 | `/auto` · `/always-approve`     | **真开关**（非一次性命令），与 `Shift+Tab` 循环同源    | 必刻 | ⬜   |
-| G-71 | `/plan [描述]` · `/view-plan`   | 计划模式与计划查看（`/show-plan` `/plan-view`）        | 必刻 | ⬜   |
-| G-72 | `/multiline`（`/ml`）           | 多行输入开关                                           | 必刻 | ⬜   |
-| G-73 | `/vim-mode` · `/compact-mode`   | 输入模式与紧凑渲染                                     | 必刻 | ⬜   |
-| G-74 | `/edit-prompt`                  | 外部编辑器写 prompt，顺序 `$VISUAL` → `$EDITOR` → `vi` | 必刻 | ⬜   |
-| G-75 | `/minimal` · `/fullscreen`      | 渲染模式切换（见 G-02）                                | 必刻 | ⬜   |
-| G-76 | `/timestamps`                   | 时间戳显示开关                                         | 必刻 | ⬜   |
+| G-68 | `/model`（`/m`）                | 模型选择器，可带 effort 参数                           | 必刻 | 🟡   |
+| G-69 | `/effort low/medium/high/xhigh` | 推理强度（按模型能力）                                 | 必刻 | 🟡   |
+| G-70 | `/auto` · `/always-approve`     | **真开关**（非一次性命令），与 `Shift+Tab` 循环同源    | 必刻 | ✅   |
+| G-71 | `/plan [描述]` · `/view-plan`   | 计划模式与计划查看（`/show-plan` `/plan-view`）        | 必刻 | 🟡   |
+| G-72 | `/multiline`（`/ml`）           | 多行输入开关                                           | 必刻 | 🟡   |
+| G-73 | `/vim-mode` · `/compact-mode`   | 输入模式与紧凑渲染                                     | 必刻 | 🟡   |
+| G-74 | `/edit-prompt`                  | 外部编辑器写 prompt，顺序 `$VISUAL` → `$EDITOR` → `vi` | 必刻 | 🟡   |
+| G-75 | `/minimal` · `/fullscreen`      | 渲染模式切换（见 G-02）                                | 必刻 | ✅   |
+| G-76 | `/timestamps`                   | 时间戳显示开关                                         | 必刻 | 🟡   |
 
 ### 记忆 · 扩展 · 调度 · 其他
 
 | ID   | 命令                                                                                                    | 要点                                                                                                                                                                                                                                                                                                                                                                                                                      | 等级   | 状态 |
 | ---- | ------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------ | ---- |
-| G-77 | `/memory`（`/mem` on/off） · `/remember` · `/flush` · `/dream`                                          | 记忆子系；需 `GROK_MEMORY=1` 或 `[memory] enabled`                                                                                                                                                                                                                                                                                                                                                                        | 补齐   | ⬜   |
-| G-78 | `/hooks` `/plugins` `/marketplace` `/skills` `/workflows`                                               | **同一个 extensions 模态的 5 个 tab**（不是 5 个独立窗口）                                                                                                                                                                                                                                                                                                                                                                | 必刻   | ⬜   |
-| G-79 | `/loop [间隔] <prompt>`                                                                                 | 定时自循环；间隔 `Ns`（≥60）/`Nm`/`Nh`/`Nd`，7 天过期；每次触发在**独立后台子代理**中运行（看不到会话上下文，prompt 必须自含，仅结果返回；2026-09-13 修正：原「每次触发创建新回合」已失真）                                                                                                                                                                                                                               | 补齐   | ⬜   |
-| G-80 | `/goal <目标> [--budget tokens]` + `status/pause/resume/clear`                                          | 长期目标与预算                                                                                                                                                                                                                                                                                                                                                                                                            | 补齐   | ⬜   |
-| G-81 | `/workflow <name>` + `runs/pause/resume/stop/save`                                                      | `.grok/workflows/*.rhai` 与 `~/.grok/workflows/*.rhai`；`agent_budget` 默认 128、范围 1–1024、并发上限 32；详情页 `p`/`r`/`x`/`s`                                                                                                                                                                                                                                                                                         | 补齐   | ⬜   |
-| G-82 | `/deep-research <query>`                                                                                | 深度研究流                                                                                                                                                                                                                                                                                                                                                                                                                | 补齐   | ⬜   |
+| G-77 | `/memory`（`/mem` on/off） · `/remember` · `/flush` · `/dream`                                          | 记忆子系；需 `GROK_MEMORY=1` 或 `[memory] enabled`                                                                                                                                                                                                                                                                                                                                                                        | 补齐   | 🟡   |
+| G-78 | `/hooks` `/plugins` `/marketplace` `/skills` `/workflows`                                               | **同一个 extensions 模态的 5 个 tab**（不是 5 个独立窗口）                                                                                                                                                                                                                                                                                                                                                                | 必刻   | 🟡   |
+| G-79 | `/loop [间隔] <prompt>`                                                                                 | 定时自循环；间隔 `Ns`（≥60）/`Nm`/`Nh`/`Nd`，7 天过期；每次触发在**独立后台子代理**中运行（看不到会话上下文，prompt 必须自含，仅结果返回；2026-09-13 修正：原「每次触发创建新回合」已失真）                                                                                                                                                                                                                               | 补齐   | 🟡   |
+| G-80 | `/goal <目标> [--budget tokens]` + `status/pause/resume/clear`                                          | 长期目标与预算                                                                                                                                                                                                                                                                                                                                                                                                            | 补齐   | 🟡   |
+| G-81 | `/workflow <name>` + `runs/pause/resume/stop/save`                                                      | `.grok/workflows/*.rhai` 与 `~/.grok/workflows/*.rhai`；`agent_budget` 默认 128、范围 1–1024、并发上限 32；详情页 `p`/`r`/`x`/`s`                                                                                                                                                                                                                                                                                         | 补齐   | 🟡   |
+| G-82 | `/deep-research <query>`                                                                                | 深度研究流                                                                                                                                                                                                                                                                                                                                                                                                                | 补齐   | 🟡   |
 | G-83 | `/imagine` · `/imagine-video`                                                                           | 图像/视频生成                                                                                                                                                                                                                                                                                                                                                                                                             | 不采纳 | ➖   |
-| G-84 | `/theme`（`/t`）                                                                                        | 主题切换（仅 fullscreen）；picker 支持键入按**任意 config 名/别名**实时过滤排名（如 `transparent` 排到 `terminal` 行，回车仍插入规范名）                                                                                                                                                                                                                                                                                  | 必刻   | ⬜   |
-| G-85 | `/doctor [fix]`                                                                                         | 终端自检；别名 `/terminal-setup` `/terminal-check` `/terminal-info`                                                                                                                                                                                                                                                                                                                                                       | 必刻   | ⬜   |
-| G-86 | `/docs`（`/howto` `/guides`） · `/tutorial`（`/tour` `/onboarding`） · `/release-notes`（`/changelog`） | 内置文档与引导                                                                                                                                                                                                                                                                                                                                                                                                            | 参考   | ⬜   |
-| G-87 | `/settings`（`/config` `/preferences` `/prefs`）                                                        | 设置面板（与 `F2` 同源）                                                                                                                                                                                                                                                                                                                                                                                                  | 必刻   | ⬜   |
-| G-88 | `/mcps` · `/config-agents`（`/agents`） · `/personas`                                                   | MCP 与子代理/人格配置                                                                                                                                                                                                                                                                                                                                                                                                     | 补齐   | ⬜   |
-| G-89 | `/btw` · `/feedback`                                                                                    | `/feedback` 重写（2026-09-13 修正）：裸命令在 full TUI 打开**独立反馈模态**（`Write`/`Drafts` 双 tab、类型/任务类别/失败模式枚举 picker、图片粘贴、草稿本地持久化、trace 同意卡、可被更高优先级阻塞卡片让位且归位恢复）；`/feedback <text>` 变为模型回合（先存本地草稿，让模型调 `send_feedback` 分类，禁止自称已发送）；minimal 无模态渲染器，只接受 `/feedback <text>` 并对裸命令给出可见拒绝；voice 占用输入时同样拒绝 | 参考   | ⬜   |
+| G-84 | `/theme`（`/t`）                                                                                        | 主题切换（仅 fullscreen）；picker 支持键入按**任意 config 名/别名**实时过滤排名（如 `transparent` 排到 `terminal` 行，回车仍插入规范名）                                                                                                                                                                                                                                                                                  | 必刻   | ✅   |
+| G-85 | `/doctor [fix]`                                                                                         | 终端自检；别名 `/terminal-setup` `/terminal-check` `/terminal-info`                                                                                                                                                                                                                                                                                                                                                       | 必刻   | ✅   |
+| G-86 | `/docs`（`/howto` `/guides`） · `/tutorial`（`/tour` `/onboarding`） · `/release-notes`（`/changelog`） | 内置文档与引导                                                                                                                                                                                                                                                                                                                                                                                                            | 参考   | 🟡   |
+| G-87 | `/settings`（`/config` `/preferences` `/prefs`）                                                        | 设置面板（与 `F2` 同源）                                                                                                                                                                                                                                                                                                                                                                                                  | 必刻   | 🟡   |
+| G-88 | `/mcps` · `/config-agents`（`/agents`） · `/personas`                                                   | MCP 与子代理/人格配置                                                                                                                                                                                                                                                                                                                                                                                                     | 补齐   | 🟡   |
+| G-89 | `/btw` · `/feedback`                                                                                    | `/feedback` 重写（2026-09-13 修正）：裸命令在 full TUI 打开**独立反馈模态**（`Write`/`Drafts` 双 tab、类型/任务类别/失败模式枚举 picker、图片粘贴、草稿本地持久化、trace 同意卡、可被更高优先级阻塞卡片让位且归位恢复）；`/feedback <text>` 变为模型回合（先存本地草稿，让模型调 `send_feedback` 分类，禁止自称已发送）；minimal 无模态渲染器，只接受 `/feedback <text>` 并对裸命令给出可见拒绝；voice 占用输入时同样拒绝 | 参考   | 🟡   |
 | G-90 | `/login` `/logout` `/usage`（`/cost`） `/privacy` `/import-claude`                                      | xAI 账号/计费/导入专有；本轮 `/usage` 在会话内改为打开 tab 式 usage 模态（账户额度 + 会话上下文/token 合计），dashboard 上 `/usage` 同样可开该模态（仅 Usage limit tab 有数据）——仍属 xAI 计费面，维持不采纳                                                                                                                                                                                                              | 不采纳 | ➖   |
 
 ## G-9x 基线刷新新增条目（37949780，2026-09-13）
