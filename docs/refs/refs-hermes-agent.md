@@ -67,10 +67,10 @@ Python 内核 + React/Ink TUI + web，MIT，Nous Research。**与我们最接近
 | ID   | 能力          | 要点                                                                                                       | 等级 | 状态 |
 | ---- | ------------- | ---------------------------------------------------------------------------------------------------------- | ---- | ---- |
 | H-10 | 会话存储      | 专用状态层（sessions / messages / schema / registry / holders / readpool），**WAL + repair + maintenance** | 补齐 | ⬜   |
-| H-11 | **FTS5 搜索** | 会话全文检索（`hermes_state_fts.py` + `_search.py` 71KB）+ LLM 摘要                                        | 补齐 | ⬜   |
-| H-12 | 上下文压缩    | `hermes_state_compression.py` + `/compress`；轨迹压缩器独立（`trajectory_compressor.py`）                  | 补齐 | ⬜   |
-| H-13 | 会话可移植    | `hermes_state_portability.py`：导出/导入/迁移                                                              | 补齐 | ⬜   |
-| H-14 | 自动标题      | `hermes_state_titles.py`（与 grok `/rename --auto` 同类）                                                  | 补齐 | ⬜   |
+| H-11 | **FTS5 搜索** | 会话全文检索（`hermes_state_fts.py` + `_search.py` 71KB）+ LLM 摘要                                        | 补齐 | ✅   |
+| H-12 | 上下文压缩    | `hermes_state_compression.py` + `/compress`；轨迹压缩器独立（`trajectory_compressor.py`）                  | 补齐 | 🟡   |
+| H-13 | 会话可移植    | `hermes_state_portability.py`：导出/导入/迁移                                                              | 补齐 | ✅   |
+| H-14 | 自动标题      | `hermes_state_titles.py`（与 grok `/rename --auto` 同类）                                                  | 补齐 | ✅   |
 | H-15 | 启动看护      | `hermes_startup_watchdog.py`：启动例行体检与自修                                                           | 参考 | ⬜   |
 | H-16 | 迁移诊断      | `hermes claw migrate [--dry-run / --preset user-data / --overwrite]`、`hermes doctor`                      | 参考 | ⬜   |
 
@@ -78,9 +78,9 @@ Python 内核 + React/Ink TUI + web，MIT，Nous Research。**与我们最接近
 
 | ID   | 能力           | 要点                                                                                                                                                                                                                                      | 等级   | 状态 |
 | ---- | -------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------ | ---- |
-| H-20 | 记忆文件       | `MEMORY.md`（事实）+ `USER.md`（用户模型）；记忆目录由 `HERMES_HOME` / `get_memory_dir()`（`<hermes_home>/memories`）定位。2026-09-13 P0 审查修正：`/sethome` 实为网关「投递主频道」指令（`gateway_only=True`，TUI 隐藏），与记忆定位无关 | 补齐   | ⬜   |
-| H-21 | 主动持久化     | 无需提醒即自行写入记忆（我们现为 `mode off/ask/auto`，默认 off）                                                                                                                                                                          | 补齐   | ⬜   |
-| H-22 | **经验造技能** | 从会话中提炼可复用 skill，写回 `skills/`；使用中自改进                                                                                                                                                                                    | 补齐   | ⬜   |
+| H-20 | 记忆文件       | `MEMORY.md`（事实）+ `USER.md`（用户模型）；记忆目录由 `HERMES_HOME` / `get_memory_dir()`（`<hermes_home>/memories`）定位。2026-09-13 P0 审查修正：`/sethome` 实为网关「投递主频道」指令（`gateway_only=True`，TUI 隐藏），与记忆定位无关 | 补齐   | ✅   |
+| H-21 | 主动持久化     | 无需提醒即自行写入记忆（我们现为 `mode off/ask/auto`，默认 off）                                                                                                                                                                          | 补齐   | ✅   |
+| H-22 | **经验造技能** | 从会话中提炼可复用 skill，写回 `skills/`；使用中自改进                                                                                                                                                                                    | 补齐   | 🟡   |
 | H-23 | 技能生态       | 兼容 agentskills.io；`optional-skills/` 可选装                                                                                                                                                                                            | 参考   | ⬜   |
 | H-24 | 用户建模       | Honcho 辩证式用户建模 + `/insights [--days N]`                                                                                                                                                                                            | 参考   | ⬜   |
 | H-25 | 人格           | `/personality` + `SOUL.md`                                                                                                                                                                                                                | 参考   | ⬜   |
@@ -90,8 +90,8 @@ Python 内核 + React/Ink TUI + web，MIT，Nous Research。**与我们最接近
 
 | ID   | 能力         | 要点                                                                                            | 等级 | 状态 |
 | ---- | ------------ | ----------------------------------------------------------------------------------------------- | ---- | ---- |
-| H-30 | **40+ 工具** | 文件/搜索/编辑/执行/网络/记忆/会话/调度/子代理等，均可单独启禁                                  | 补齐 | ⬜   |
-| H-31 | 工具集系统   | `toolsets.py` + `toolset_distributions.py`：按场景成套分发（而非逐工具配）；`hermes tools` 管理 | 补齐 | ⬜   |
+| H-30 | **40+ 工具** | 文件/搜索/编辑/执行/网络/记忆/会话/调度/子代理等，均可单独启禁                                  | 补齐 | ✅   |
+| H-31 | 工具集系统   | `toolsets.py` + `toolset_distributions.py`：按场景成套分发（而非逐工具配）；`hermes tools` 管理 | 补齐 | ✅   |
 | H-32 | MCP 双向     | 既做 MCP 客户端，也能 `mcp_serve.py` 把自己当服务端；`optional-mcps/` 可选装                    | 补齐 | ⬜   |
 | H-33 | 模型侧工具   | `model_tools.py`：模型直接调用另一个模型作为工具                                                | 参考 | ⬜   |
 | H-34 | 插件         | `plugins/` 目录式接入                                                                           | 补齐 | ⬜   |
@@ -101,12 +101,12 @@ Python 内核 + React/Ink TUI + web，MIT，Nous Research。**与我们最接近
 | ID   | 能力             | 要点                                                                                                    | 等级   | 状态 |
 | ---- | ---------------- | ------------------------------------------------------------------------------------------------------- | ------ | ---- |
 | H-40 | **六种终端后端** | local / Docker / SSH / Daytona / Singularity / Modal（Daytona 与 Modal 支持休眠唤醒）                   | 参考   | ⬜   |
-| H-41 | 隐离子代理       | 委派给独立上下文的子代理，主会话不被污染                                                                | 补齐   | ⬜   |
-| H-42 | **并行扇出**     | 一次派多个子代理并行；`spawnHistoryStore` 缓最近 10 次 fan-out 供 `/replay`                             | 补齐   | ⬜   |
-| H-43 | **零开销轮次**   | Python 脚本经 RPC 直调工具（工具结果不进模型上下文）——**这是 hermes 最值得学的一条**                    | 补齐   | ⬜   |
-| H-44 | 审批与安全       | 命令审批、DM 配对、容器隔离、`sudo.request`、`secret.request`                                           | 补齐   | ⬜   |
+| H-41 | 隐离子代理       | 委派给独立上下文的子代理，主会话不被污染                                                                | 补齐   | ✅   |
+| H-42 | **并行扇出**     | 一次派多个子代理并行；`spawnHistoryStore` 缓最近 10 次 fan-out 供 `/replay`                             | 补齐   | 🟡   |
+| H-43 | **零开销轮次**   | Python 脚本经 RPC 直调工具（工具结果不进模型上下文）——**这是 hermes 最值得学的一条**                    | 补齐   | ✅   |
+| H-44 | 审批与安全       | 命令审批、DM 配对、容器隔离、`sudo.request`、`secret.request`                                           | 补齐   | 🟡   |
 | H-45 | 批量与评测       | `batch_runner.py`、`mini_swe_runner.py`、`evals/`                                                       | 参考   | ⬜   |
-| H-46 | 内置 cron        | 自然语言定时任务，可投递到任意平台（`cron/`）                                                           | 补齐   | ⬜   |
+| H-46 | 内置 cron        | 自然语言定时任务，可投递到任意平台（`cron/`）                                                           | 补齐   | 🟡   |
 | H-47 | **多平台网关**   | 单进程同时跑 Telegram / Discord / Slack / WhatsApp / Signal / Email / CLI + 语音转写 + 跳平台会话连续性 | 待定   | ⬜   |
 | H-48 | Nous 专有链路    | Portal 计费、`contributors/`、`website/`                                                                | 不采纳 | ➖   |
 
@@ -137,9 +137,9 @@ Python 内核 + React/Ink TUI + web，MIT，Nous Research。**与我们最接近
 | H-63 | 补全           | `Tab` 补全；`Up/Down` 优先级 **补全 → 队列 → 历史**；防抖 60ms；`complete.slash` / `complete.path`（`./` `../` `~/` `/` `@`） | 参考 | ⬜   |
 | H-64 | 行编辑键       | `Home`/`Ctrl+A`、`End`/`Ctrl+E`、`Ctrl+W`/`Ctrl+U`/`Ctrl+K`、`Meta+B`/`Meta+F`                                                | 参考 | ⬜   |
 | H-65 | 历史持久       | `~/.hermes/.hermes_history`                                                                                                   | 参考 | ⬜   |
-| H-66 | 审批 flow      | `approval.request`：`o` 一次 / `s` 会话内永久 / `a` 全局 / `d` 拒绝                                                           | 补齐 | ⬜   |
-| H-67 | 澄清 flow      | `clarify.request`：数字选项 + Other 自由文本（对应 grok G-21）                                                                | 补齐 | ⬜   |
-| H-68 | 特权 flow      | `sudo.request` / `secret.request`（机密不回显，不写日志）                                                                     | 补齐 | ⬜   |
+| H-66 | 审批 flow      | `approval.request`：`o` 一次 / `s` 会话内永久 / `a` 全局 / `d` 拒绝                                                           | 补齐 | 🟡   |
+| H-67 | 澄清 flow      | `clarify.request`：数字选项 + Other 自由文本（对应 grok G-21）                                                                | 补齐 | 🟡   |
+| H-68 | 特权 flow      | `sudo.request` / `secret.request`（机密不回显，不写日志）                                                                     | 补齐 | 🟡   |
 | H-69 | 会话选择器     | `session.list` → SessionPicker，`1-9` 直选                                                                                    | 参考 | ⬜   |
 
 ## H-7x 命令面（CLI 子命令 + TUI 斜杠）

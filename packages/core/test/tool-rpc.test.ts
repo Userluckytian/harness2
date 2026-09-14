@@ -248,7 +248,7 @@ describe('H-43 run_script 工具（独立子进程执行边界）', () => {
   // 只能是**子进程自己**的 realm（拿不到宿主 globalThis/process/registry/审批缝）。
   const HOST_SENTINEL = '__h2HostSentinel__';
 
-  it('逃逸手法（≥4 种构造器链）拿不到宿主 global/process：命中的是子进程自己的 realm', async () => {
+  it('逃逸手法（constructor.constructor / Function / console.log.constructor / __proto__ 原型链等 ≥4 种）拿不到宿主 global/process：命中的是子进程自己的 realm', async () => {
     const host = globalThis as Record<string, unknown>;
     host[HOST_SENTINEL] = 'HOST-ONLY';
     try {
@@ -276,6 +276,9 @@ describe('H-43 run_script 工具（独立子进程执行边界）', () => {
           (function () {}).constructor('return this')(),
           Function('return globalThis')(),
           Object.constructor('return this')(),
+          // 任务点名的另两种：注入对象的方法构造器链（console.log.constructor）与原型链（__proto__）
+          console.log.constructor.constructor('return this')(),
+          ({}).__proto__.constructor.constructor('return this')(),
         ];
         // 异步函数构造器返回的是 Promise，await 后同样是子进程自己的 global
         cheats.push(await Object.getPrototypeOf(async function () {}).constructor('return this')());
@@ -292,7 +295,7 @@ describe('H-43 run_script 工具（独立子进程执行边界）', () => {
         escaped: string;
         myPid: number;
       };
-      expect(parsed.seen).toHaveLength(7);
+      expect(parsed.seen).toHaveLength(9);
       for (const got of parsed.seen) {
         // 宿主 global 上的哨兵不可见（旧 node:vm 形态下这里是 'string'）
         expect(got['sentinel']).toBe('undefined');
@@ -315,18 +318,31 @@ describe('H-43 run_script 工具（独立子进程执行边界）', () => {
     try {
       const registry = new ToolRegistry();
       const service = new ToolRpcService({ registry, cwd: process.cwd() });
-      // 旧形态：宿主 realm 的 client 函数被直接注入 vm context（P0-1 的漏洞成因）
+      // 旧形态：宿主 realm 的 client 函数与 console 被直接注入 vm context（P0-1 的漏洞成因）
       const sandbox = {
         harness: Object.freeze({ protocol: TOOL_RPC_PROTOCOL, tools: createInProcessRpcClient(service) }),
+        console,
       };
       const got = runInContext(
-        "(function () { const g = harness.tools.call.constructor.constructor('return this')();" +
-          ` return { sentinel: typeof g.${HOST_SENTINEL}, pid: g.process.pid }; })()`,
+        '(function () {' +
+          ' const vmGlobal = globalThis;' +
+          ' const chains = [' +
+          "   harness.tools.call.constructor.constructor('return this')()," +
+          "   console.log.constructor.constructor('return this')()," +
+          "   harness.__proto__.constructor.constructor('return this')()," +
+          ' ];' +
+          ` return chains.map((g) => ({ sentinel: typeof g.${HOST_SENTINEL}, pid: g.process.pid, isVmGlobal: g === vmGlobal }));` +
+          '})()',
         createContext(sandbox),
-      ) as { sentinel: string; pid: number };
-      // 逃逸在旧形态下是真的：拿到宿主 global（哨兵可见）与宿主进程 pid
-      expect(got.sentinel).toBe('string');
-      expect(got.pid).toBe(process.pid);
+      ) as Array<{ sentinel: string; pid: number; isVmGlobal: boolean }>;
+      // 逃逸在旧形态下是真的：三种链都拿到宿主 global（哨兵可见）与宿主进程 pid；
+      // isVmGlobal=false 反证拿到的是**宿主** global，而非 vm realm 自己的 globalThis（非空转）。
+      expect(got).toHaveLength(3);
+      for (const g of got) {
+        expect(g.sentinel).toBe('string');
+        expect(g.pid).toBe(process.pid);
+        expect(g.isVmGlobal).toBe(false);
+      }
     } finally {
       delete host[HOST_SENTINEL];
     }
