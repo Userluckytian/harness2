@@ -1,0 +1,134 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`G-21 permission prompt 呈现 > 呈现快照 1`] = `
+{
+  "body": [
+    "{"path":"/tmp/a.txt"}",
+    "cwd: /work",
+  ],
+  "cardId": "snap-perm",
+  "hints": [
+    "Tab/Shift+Tab 卡内环走（G-25，不落全局）",
+    "Enter 确认高亮项",
+    "Esc 逐级退出，退完 park（G-20）",
+  ],
+  "items": [
+    {
+      "id": "y",
+      "kind": "action",
+      "label": "y 允许（本次）",
+    },
+    {
+      "id": "a",
+      "kind": "action",
+      "label": "a 总是允许（本会话）",
+    },
+    {
+      "id": "n",
+      "kind": "action",
+      "label": "n 拒绝",
+    },
+  ],
+  "kind": "permission",
+  "notes": [],
+  "title": "Approval · write",
+}
+`;
+
+exports[`G-22 cancel-turn panel 呈现 > 呈现快照 1`] = `
+{
+  "body": [
+    "模型仍在流式输出中",
+  ],
+  "cardId": "snap-cancel",
+  "hints": [
+    "Tab/Shift+Tab 卡内环走（G-25，不落全局）",
+    "Enter 确认高亮项",
+    "Esc 逐级退出，退完 park（G-20）",
+  ],
+  "items": [
+    {
+      "id": "cancel-turn:confirm",
+      "kind": "action",
+      "label": "取消当前回合",
+    },
+    {
+      "id": "cancel-turn:resume",
+      "kind": "action",
+      "label": "继续运行",
+    },
+  ],
+  "kind": "cancel-turn",
+  "notes": [],
+  "title": "Cancel turn",
+}
+`;
+
+exports[`G-23 question card 呈现 > 呈现快照 1`] = `
+{
+  "body": [
+    "选择实现方案",
+  ],
+  "cardId": "snap-question",
+  "hints": [
+    "Tab/Shift+Tab 卡内环走（G-25，不落全局）",
+    "Enter 确认高亮项",
+    "Esc 逐级退出，退完 park（G-20）",
+  ],
+  "items": [
+    {
+      "id": "opt-a",
+      "kind": "option",
+      "label": "方案 A —— 最小改动",
+    },
+    {
+      "id": "opt-b",
+      "kind": "option",
+      "label": "方案 B",
+    },
+    {
+      "id": "question:free-text",
+      "kind": "text-input",
+      "label": "自由文本…（选中后输入）",
+    },
+  ],
+  "kind": "question",
+  "notes": [],
+  "title": "Question",
+}
+`;
+
+exports[`G-24 MCP elicitation 呈现 > 呈现快照 1`] = `
+{
+  "body": [
+    "请提供访问令牌",
+    "schema: {"type":"string"}",
+  ],
+  "cardId": "snap-elicit",
+  "hints": [
+    "Tab/Shift+Tab 卡内环走（G-25，不落全局）",
+    "Enter 确认高亮项",
+    "Esc 逐级退出，退完 park（G-20）",
+  ],
+  "items": [
+    {
+      "id": "elicit:accept",
+      "kind": "action",
+      "label": "提交（accept）",
+    },
+    {
+      "id": "elicit:decline",
+      "kind": "action",
+      "label": "拒绝（decline）",
+    },
+    {
+      "id": "elicit:cancel",
+      "kind": "action",
+      "label": "取消（cancel）",
+    },
+  ],
+  "kind": "elicitation",
+  "notes": [],
+  "title": "MCP Elicitation · x.ai",
+}
+`;

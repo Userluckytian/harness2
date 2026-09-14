@@ -396,15 +396,33 @@ describe('G-01～G-03 渲染模式命令与状态机', () => {
     h.dispose();
   });
 
-  it('/minimal 跨模式切换 → G-02 🟡 降级指引（会话保留、重进 REPL），不落假状态', () => {
+  it('/minimal 跨模式切换 → G-02 实体化真切换（P3-D）：状态落盘 + 换基座 + 会话/草稿保留', () => {
+    // 规格迁移（P3-D）：P2-C 的「降级指引、不落假状态」断言废止——minimal 基座已实体化
+    // （minimal-view.ts 追加式管线），跨模式切换为真·进程内切换（不重启）。
     const { h } = makeHarness();
     h.submit('/minimal');
     h.flushUi();
     const all = h.logicalLines().join('\n');
-    expect(all).toContain('G-02'); // 降级登记可见
-    expect(all).toContain('重新进入 REPL'); // 重进 REPL 指引（会话保留）
-    expect(all).toContain('未发生切换'); // 如实声明未切换
-    expect(h.renderMode()).toBe('fullscreen'); // 状态未变（不做假切换）
+    expect(all).toContain('已切换渲染模式: minimal（进程内切换，不重启）'); // 壳表 switched 文案
+    expect(h.renderMode()).toBe('minimal'); // 状态机真实提交（G-02 不重启）
+    expect(h.state.overlays.length).toBe(0); // 基座切换不残留浮层
+    h.dispose();
+  });
+
+  it('/fullscreen 切回 fullscreen（往返）：状态往返 + 同模式幂等保持', () => {
+    // P3-D：minimal 基座实体化后 /fullscreen 从「同模式幂等」扩展出「minimal→fullscreen
+    // 真回切」路径；往返后状态回到 fullscreen。
+    const { h } = makeHarness();
+    h.submit('/minimal');
+    h.flushUi();
+    expect(h.renderMode()).toBe('minimal');
+    h.submit('/fullscreen');
+    h.flushUi();
+    expect(h.renderMode()).toBe('fullscreen');
+    h.submit('/full'); // 同模式幂等（无事件、不重放）
+    h.flushUi();
+    expect(h.renderMode()).toBe('fullscreen');
+    expect(h.logicalLines().join('\n')).toContain('当前已是 fullscreen 渲染模式');
     h.dispose();
   });
 

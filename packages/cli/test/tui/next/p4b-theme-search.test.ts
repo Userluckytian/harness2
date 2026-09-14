@@ -24,6 +24,7 @@ import { FG, projectTranscript } from '../../../src/tui/next/projection.js';
 import { SELECTION_FG, Scrollback, drawScrollback } from '../../../src/tui/next/scrollback.js';
 import { layoutChat, renderChat, statusLineFor } from '../../../src/tui/next/chat-screen.js';
 import type { ChatScreenState } from '../../../src/tui/next/chat-screen.js';
+import { paletteBadge } from '../../../src/tui/commands/palette-model.js';
 import {
   SPINNER_FRAMES,
   SPINNER_INTERVAL_MS,
@@ -123,7 +124,10 @@ interface Fixture {
   runtime: ChatRuntime;
 }
 
-function makeHarness(runtime: ChatRuntime = makeRuntime(), opts: { cwd?: string; home?: string } = {}): Fixture {
+function makeHarness(
+  runtime: ChatRuntime = makeRuntime(),
+  opts: { cwd?: string; home?: string; initialRenderMode?: 'fullscreen' | 'minimal' } = {},
+): Fixture {
   const out = new MemOut();
   const gate = createApprovalGate();
   const h = createNextChatHarness(runtime, {
@@ -133,6 +137,7 @@ function makeHarness(runtime: ChatRuntime = makeRuntime(), opts: { cwd?: string;
     gate,
     ...(opts.cwd !== undefined ? { cwd: opts.cwd } : {}),
     ...(opts.home !== undefined ? { home: opts.home } : {}),
+    ...(opts.initialRenderMode !== undefined ? { initialRenderMode: opts.initialRenderMode } : {}),
     exit: () => undefined,
   });
   return { h, out, gate, runtime };
@@ -493,6 +498,34 @@ describe('P4-2 /theme 命令', () => {
     expect(linesOf(h).join('\n')).toContain(textBefore.split('\n')[errIdx] ?? '');
     h.dispose();
   });
+
+  it('G-84：/t 别名与 /theme 同效（无参列出可用主题并提示当前）', async () => {
+    const { h } = makeHarness();
+    await run(h, '/t');
+    const joined = linesOf(h).join('\n');
+    expect(joined).toContain('dark（当前）');
+    expect(joined).toContain('light');
+    expect(joined).toContain('/theme'); // 用法提示仍指向规范命令名
+    h.dispose();
+  });
+
+  it('G-84：/t light 带参别名同效——切换主题并重投影（失败工具行 fg → light 值）', async () => {
+    const { h } = makeHarness(failedToolRuntime());
+    await run(h, '读文件');
+    const errIdx = linesOf(h).findIndex((l) => l.includes('└ ✗'));
+    expect(fgOf(h, errIdx)).toBe(FG.red);
+    await run(h, '/t light');
+    expect(linesOf(h).join('\n')).toContain('已切换主题: light');
+    expect(fgOf(h, errIdx)).toBe(LIGHT_THEME.fg.toolResultFailed);
+    h.dispose();
+  });
+
+  it('G-84：/t 未知名同样报错（别名不绕过主题名校验）', async () => {
+    const { h } = makeHarness();
+    await run(h, '/t neon');
+    expect(linesOf(h).join('\n')).toContain('未知主题 neon');
+    h.dispose();
+  });
 });
 
 // —— /search 命令（harness 集成）——
@@ -645,6 +678,38 @@ describe('P4-2 /search 命令', () => {
     await run(h, '/search needle');
     // 命中计数保持 2（echo '> /search needle' 与 '搜索 "needle"…' 状态行均排除）
     expect(linesOf(h).join('\n')).toContain('搜索 "needle"：2 处命中');
+    h.dispose();
+  });
+});
+
+// —— P1-2：/search 门控单源（minimal badge 与实际拒绝同源；fullscreen 可用）——
+describe('P1-2 /search 模式门控单源', () => {
+  const CTRL_P = '\x10';
+
+  it('minimal 下 /search 有「仅 fullscreen」badge，且执行被 G-03 谓词拒绝', () => {
+    const { h } = makeHarness(makeRuntime(), { initialRenderMode: 'minimal' });
+    h.feed(CTRL_P);
+    h.flushUi();
+    const row = (h.state.palette?.rows ?? []).find((r) => r.kind === 'command' && r.entry.name === 'search');
+    expect(row, 'minimal 面板缺 /search 条目').toBeDefined();
+    if (row?.kind === 'command') {
+      expect(row.entry.modeSupport).toBe('unavailable-fullscreen-only'); // badge 与门控同源派生
+      expect(paletteBadge(row.entry)).toBe('仅 fullscreen');
+    }
+    h.feed(CTRL_P); // 关面板
+    h.submit('/search needle');
+    h.flushUi();
+    expect(linesOf(h).join('\n')).toContain('当前渲染模式（minimal）下不可用：/search');
+    h.dispose();
+  });
+
+  it('fullscreen 下 /search 可用（不再被壳内硬编码拒绝）', () => {
+    const { h } = makeHarness(makeRuntime(), { initialRenderMode: 'fullscreen' });
+    h.submit('/search');
+    h.flushUi();
+    const all = linesOf(h).join('\n');
+    expect(all).toContain('用法: /search'); // 无历史无参 → 用法提示 = 命令可达
+    expect(all).not.toContain('下不可用：/search');
     h.dispose();
   });
 });

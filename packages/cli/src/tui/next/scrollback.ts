@@ -16,6 +16,8 @@
 // - 绘制分两级：drawScrollback（纯 buffer 绘制，接受 CellBuffer，可与其他层在同一次
 //   screen.render 回调内组合）与 renderScrollback（薄壳 = screen.render(buf => drawScrollback)，
 //   经 diff-presenter 产生差量帧）。整帧装配（chat-screen）应使用 drawScrollback。
+// - G-09 turn 粒度导航（P3-D）：markTurn/clearTurns/turnAnchors/jumpTurn——锚点由投影层
+//   （next-shell）按「用户回合首逻辑行」注册，jumpTurn 四向跳转（见方法注释）。
 //
 // 数据结构：每行断行结果按 lineIndex 惰性缓存（Map），prefix[i] = 前 i 个逻辑行的物理
 // 行总数（惰性增长，append 增量扩展不重算）——与 spike scrollback 同思路。
@@ -383,6 +385,98 @@ export class Scrollback {
   goToBottom(): void {
     this.followFlag = true;
     this.scrollTopValue = this.maxScrollRow;
+  }
+
+  // —— G-09 turn 粒度导航（P3-D 接线；锚点 = 用户回合首逻辑行，投影层注册）——
+  // 依据 refs-grok-build.md G-09（2026-09-13 修正版）：
+  // - Shift+L/Shift+→（turn-next）/ Shift+H/Shift+←（turn-prev）：按 turn 前进/后退
+  //   （相对视口顶所在 turn）；
+  // - Shift+K（viewport-turn-above）/ Shift+J（viewport-turn-below）：跳视口顶上方 /
+  //   底下方的 turn（与 timeline 箭头同目标）。
+  // 锚点语义：markTurn 注册「turn 首逻辑行」；跳转目标 = 锚点所在物理行贴视口顶
+  // （钳到底部），跳转即脱开 follow（与 goToTop 同语义）。
+  private turnMarks: number[] = []; // 升序去重的逻辑行下标
+
+  /** 注册 turn 锚点（逻辑行下标；越界/重复忽略，保持升序） */
+  markTurn(lineIndex: number): void {
+    const i = Math.floor(lineIndex);
+    if (i < 0 || i >= this.lines.length || this.turnMarks.includes(i)) return;
+    // 插入排序（锚点数量 = 用户回合数，量级小；投影层按序注册，尾部插入为主）
+    let lo = 0;
+    let hi = this.turnMarks.length;
+    while (lo < hi) {
+      const mid = (lo + hi) >> 1;
+      if ((this.turnMarks[mid] ?? 0) < i) lo = mid + 1;
+      else hi = mid;
+    }
+    this.turnMarks.splice(lo, 0, i);
+  }
+
+  /** 清空锚点（转录整体重建时调用；投影层重放后重新注册） */
+  clearTurns(): void {
+    this.turnMarks = [];
+  }
+
+  /** 锚点快照（逻辑行下标，升序；测试断言面） */
+  turnAnchors(): number[] {
+    return [...this.turnMarks];
+  }
+
+  /** 最近一次注册的锚点行数（O(1)；投影层增量注册时可跳过重放） */
+  get turnCount(): number {
+    return this.turnMarks.length;
+  }
+
+  /**
+   * turn 跳转（G-09）。dir 四向：
+   * - 'next'：第一个起始行 > 视口顶的 turn（视口顶恰在某 turn 首行时 = 下一 turn）；
+   * - 'prev'：视口顶所在 turn 的前一个 turn（视口顶已在首个 turn → 不动）；
+   * - 'above'：最后一个起始行 < 视口顶的 turn（视口顶上方最近的 turn——含视口顶
+   *   停在 turn 中间时回到该 turn 首行的情形）；
+   * - 'below'：第一个起始行 > 视口底的 turn。
+   * 命中 = 脱开 follow、锚点物理行贴视口顶（钳到底部），返回 true；
+   * 无锚点/无目标 = 状态不变，返回 false。viewportRows 缺省用最近一次 visibleWindow 值。
+   */
+  jumpTurn(dir: 'next' | 'prev' | 'above' | 'below', viewportRows?: number): boolean {
+    if (this.turnMarks.length === 0) return false;
+    const vp = Math.max(1, Math.floor(viewportRows ?? this.viewportRows));
+    const starts = this.turnMarks.map((li) => this.lineStart(li));
+    const top = this.followFlag ? Math.max(0, this.totalRows - vp) : this.scrollTopValue;
+    let target: number | null = null;
+    switch (dir) {
+      case 'next': {
+        target = starts.find((s) => s > top) ?? null;
+        break;
+      }
+      case 'prev': {
+        // 视口顶所在 turn = 最后一个 start ≤ top 的锚点；取它的前一个
+        let idx = -1;
+        for (let i = 0; i < starts.length; i += 1) {
+          if ((starts[i] ?? 0) <= top) idx = i;
+          else break;
+        }
+        if (idx > 0) target = starts[idx - 1] ?? null;
+        break;
+      }
+      case 'above': {
+        let idx = -1;
+        for (let i = 0; i < starts.length; i += 1) {
+          if ((starts[i] ?? 0) < top) idx = i;
+          else break;
+        }
+        if (idx >= 0) target = starts[idx] ?? null;
+        break;
+      }
+      case 'below': {
+        const bottom = top + vp - 1;
+        target = starts.find((s) => s > bottom) ?? null;
+        break;
+      }
+    }
+    if (target === null) return false;
+    this.followFlag = false;
+    this.scrollTopValue = Math.min(target, this.maxScrollRow);
+    return true;
   }
 
   /**

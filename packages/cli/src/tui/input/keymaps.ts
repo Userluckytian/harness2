@@ -10,6 +10,10 @@
 //  - Ctrl+C（G-38 取消/退出的唯一键）属 G-6x Agent 级键位，不在本表（本表范围 G-07～G-13）。
 //  - G-05 块折叠键族（h/l/e/E…）属渲染层既有实现（next-shell），不是 G-2x 键位。
 //  - G-26～G-30（Enter 入队 / send-now 和弦等）属 G-5x 运行中回合，不在本表。
+//  - G-31～G-41 属 G-6x Agent 级键位，**不进 G-07～G-13 的动作解析表**（语义面不同：
+//    这些键是 Agent 级模态/开关，不是焦点/滚动动作）——但它们的**和弦占用**登记在本文件
+//    末尾的 `AGENT_CHORD_TABLE`（P3-F）：一处集中声明「这个和弦归谁、接没接、没接的为什么」，
+//    防止未来批次撞键（如 Ctrl+X 曾同时被队列面板与快捷键帮助占用）。
 //
 // ── 和弦编码口径（与本仓库统一输入层 src/input/parser.ts 对齐）────────────────
 //  - 字母和统一写**小写** + `shift: true`：legacy 终端不置 shift 位（shift 体现在字符
@@ -249,4 +253,262 @@ export function resolveKeyAction(mode: InputModeId, ev: KeyEvent, pane?: KeymapP
     if (binding.chords.some((chord) => chordMatches(chord, ev))) return binding;
   }
   return null;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// G-6x Agent 级键位归属表（G-31～G-41，P3-F 逐条归存）
+// ═══════════════════════════════════════════════════════════════════════════
+//
+// 规格依据：docs/refs/refs-grok-build.md「G-6x Agent 级键位」表（2026-09-13 基线 37949780）
+// 与上游 `crates/codegen/xai-grok-pager/src/actions/defaults.rs`（`ActionDef.default_key`）。
+//
+// 本表回答三个问题（**唯一事实来源**，接线层与快捷键帮助都从这里取数据）：
+//   1. 这个和弦归谁（避免未来批次撞键——历史事故：Ctrl+X 同时被队列面板与快捷键帮助占用）；
+//   2. 接了没有、落在哪（`owner: 'wired'` + `target`）；
+//   3. 没接的为什么、什么时候接（`owner: 'deferred'` + `p7` 理由，如实登记不谎称已实现）。
+//
+// 边界（与 G-2x 表的分工）：本表**只登记**，不参与 `resolveKeyAction` 的 G-07～G-13 动作
+// 解析；Esc 依旧一律不进任何表（G-08，语义归 esc-machine.ts）。
+// 编码口径与上文一致：字母小写 + `ctrl`；标点用字符本体（`;` `'` `.` `,` `\`）；
+// 注意这类和弦**无 C0 控制字节**，legacy 终端收不到，只有 kitty keyboard protocol
+// （或等价扩展）能送达——逐条在 `note` 里如实标注。
+
+/** 和弦归属状态：wired = 已接线（有真实落点）；deferred = 归存 P7（当前无落点） */
+export type AgentChordOwner = 'wired' | 'deferred';
+
+/** Agent 级动作 id（本表内部键；与 G 条目一一对应） */
+export type AgentChordActionId =
+  | 'palette.open'
+  | 'model.picker'
+  | 'mode.cycle'
+  | 'mode.always-approve'
+  | 'session.picker'
+  | 'pane.todos'
+  | 'pane.tasks'
+  | 'extensions.open'
+  | 'turn.background'
+  | 'cancel-or-exit'
+  | 'help.shortcuts'
+  | 'settings.open'
+  | 'agent.dashboard';
+
+export interface AgentChordEntry {
+  /** G 条目号（G-31～G-41）；一个条目多和弦时逐条列出（同 id 可出现多行） */
+  readonly id: string;
+  readonly action: AgentChordActionId;
+  /** 展示名（快捷键帮助 / 报告直引） */
+  readonly label: string;
+  readonly chords: readonly Chord[];
+  readonly owner: AgentChordOwner;
+  /** 功能一句话（快捷键帮助的正文） */
+  readonly summary: string;
+  /** wired：落点（装配层函数名，便于审查核对） */
+  readonly target?: string;
+  /** deferred：归存 P7 的理由 / 边界（wired 时写差异与终端可达性） */
+  readonly note?: string;
+  /** 复刻等级（G 表「等级」列）：必刻 / 参考 */
+  readonly tier: '必刻' | '参考';
+}
+
+/**
+ * G-6x Agent 级键位归属表（2026-09-14 P3-F 逐条归存）。
+ * 行序 = G 条目序；同一 G 条目多和弦拆多行（label 区分主/备）。
+ */
+export const AGENT_CHORD_TABLE: readonly AgentChordEntry[] = [
+  {
+    id: 'G-31',
+    action: 'palette.open',
+    label: 'Ctrl+P',
+    chords: [{ key: 'p', ctrl: true }],
+    owner: 'wired',
+    summary: '命令面板（模糊搜索动作与斜杠命令）',
+    target: 'next-shell.ts extraKeyHandler → togglePalette / paletteLayer',
+    note: 'P3-A/P3-E 已接线；备用和弦 `?`（空草稿时）见同处分支',
+    tier: '必刻',
+  },
+  {
+    id: 'G-32',
+    action: 'model.picker',
+    label: 'Ctrl+M',
+    chords: [{ key: 'm', ctrl: true }],
+    owner: 'deferred',
+    summary: '模型选择器（prompt 聚焦时改为多行切换）',
+    note: '归存 P7：harness2 无模型选择器（模型经 config/provider 装配期确定，运行期无切换句柄）；多行切换亦未实现（`/multiline` 属 G-72，同未接）。双语义都不具备 → 不建假面板；和弦在此登记占用，未来接驳不得改口径',
+    tier: '必刻',
+  },
+  {
+    id: 'G-33',
+    action: 'mode.cycle',
+    label: 'Shift+Tab',
+    chords: [{ key: 'tab', shift: true }],
+    owner: 'wired',
+    summary: '模式循环 Normal → Plan → Auto → Always-approve',
+    target: 'next-shell.ts extraKeyHandler → cycleMode（MODE_CYCLE 四态）',
+    note: 'P3-B 已接线；审批卡接管期该和弦被卡内焦点环消费（dispatcher 层级，卡片反向走行）',
+    tier: '必刻',
+  },
+  {
+    id: 'G-33',
+    action: 'mode.always-approve',
+    label: 'Ctrl+O',
+    chords: [{ key: 'o', ctrl: true }],
+    owner: 'wired',
+    summary: '直切 / 关闭 always-approve（与 Shift+Tab 循环共享同一单态）',
+    target: 'next-shell.ts extraKeyHandler → toggleAlwaysApprove；审批卡上亦有同键分支',
+    note: 'P3-B 已接线。上游为 toggle（Ctrl+O 直接翻转 YOLO），harness2 同口径；与 G-28 的 Apple Terminal send-now 和弦 Ctrl+O 冲突已在 SEND_NOW_FAMILY 裁决中登记（本壳固定 default 族）',
+    tier: '必刻',
+  },
+  {
+    id: 'G-34',
+    action: 'session.picker',
+    label: 'Ctrl+R',
+    chords: [{ key: 'r', ctrl: true }],
+    owner: 'wired',
+    summary: '会话选择器（历史会话列表 → Enter 切换）',
+    target: 'next-shell.ts extraKeyHandler → openSessionPicker / sessionLayer',
+    note: 'P3-F 新增接线：列表取自 runtime.sessionManager.list(root)（mtime 倒序），Enter 经既有 `/resume <id>` 命令管线切换（同 rewindPicker 模式，不新造切换语义）。F3 为已废除旧键位，仓内无残留（parser 只保留 f3 键名本身，无绑定）。差异：G-91 的「scrollback 聚焦时 Ctrl+R 借做鼠标上报开关」未接（配置项 `[ui] mouse_reporting_toggle` 不在 P3 范围），故本壳 Ctrl+R 在两窗格皆为会话选择器——登记，接 G-91 时须按规格加窗格限定',
+    tier: '必刻',
+  },
+  {
+    id: 'G-35',
+    action: 'pane.todos',
+    label: 'Ctrl+T',
+    chords: [{ key: 't', ctrl: true }],
+    owner: 'deferred',
+    summary: 'todos 面板开关',
+    note: '归存 P7：本壳无 todos 数据源（core 无 todo 列表契约，转录里也没有「agent 当前待办清单」这一投影）→ 不造假面板；和弦在此登记占用',
+    tier: '必刻',
+  },
+  {
+    id: 'G-35',
+    action: 'pane.tasks',
+    label: 'Ctrl+G',
+    chords: [{ key: 'g', ctrl: true }],
+    owner: 'deferred',
+    summary: 'tasks 面板开关（minimal 下改为外部编辑器）',
+    note: '归存 P7：next 壳无任务数据源（`/tasks` 在 core 需 cron 存储句柄，ChatRuntime 未注入，只出降级文案；ink 的 taskPanelCounts 只服务 ink 面板，两壳不共享数据）→ 两条语义（fullscreen 面板 / minimal 外部编辑器）都无落点；和弦在此登记占用。与 G-37 同批（都在等 TaskCoordinator / cron 句柄装配）',
+    tier: '必刻',
+  },
+  {
+    id: 'G-36',
+    action: 'extensions.open',
+    label: 'Ctrl+L',
+    chords: [{ key: 'l', ctrl: true }],
+    owner: 'deferred',
+    summary: 'extensions 模态（VS Code 族下改为 interject）',
+    note: '归存 P7：本壳无 extensions 模态（MCP/插件只读面走 `/mcps` `/plugins` 命令，无模态浮层）→ 不建假面板；和弦在此登记占用（capability.ts 已记 VS Code 族改 interject 的差异）',
+    tier: '必刻',
+  },
+  {
+    id: 'G-37',
+    action: 'turn.background',
+    label: 'Ctrl+B',
+    chords: [{ key: 'b', ctrl: true }],
+    owner: 'deferred',
+    summary: '当前回合转后台',
+    note: '归存 P7：CLI 从未装配 core 的 TaskCoordinator（见 OPEN.md 已知项），「转后台」无落点（既无后台任务表也无 attach 通道）→ 不谎称转后台；和弦在此登记占用。与 G-35 同批（TaskCoordinator 装配时一起接）',
+    tier: '必刻',
+  },
+  {
+    id: 'G-38',
+    action: 'cancel-or-exit',
+    label: 'Ctrl+C',
+    chords: [{ key: 'c', ctrl: true }],
+    owner: 'wired',
+    summary: '取消当前回合（唯一取消键）；取消中再按升级为退出',
+    target: 'next-shell.ts extraKeyHandler（复制优先）+ createCtrlCGuard 退出协议；审批卡上 = 取消审批',
+    note: 'P2-C/P4-1 已接线（G-14～G-19 同源）；有选择时优先复制（OSC52），无选择走 guard 双击退出。Esc 永不取消（G-14）',
+    tier: '必刻',
+  },
+  {
+    id: 'G-39',
+    action: 'help.shortcuts',
+    label: 'Ctrl+.',
+    chords: [{ key: '.', ctrl: true }],
+    owner: 'wired',
+    summary: '快捷键帮助（主键；Ctrl+X 为备用）',
+    target: 'next-shell.ts extraKeyHandler → toggleShortcutsHelp / helpLayer',
+    note: '与 Ctrl+X 同动作（上游 ctrl_dot_unreliable 同源：一个主键一个备用）。**Ctrl+. 无 C0 控制字节**，legacy/Windows Terminal 收不到，仅 kitty keyboard protocol 可达——真机清单项',
+    tier: '必刻',
+  },
+  {
+    id: 'G-39',
+    action: 'help.shortcuts',
+    label: 'Ctrl+X',
+    chords: [{ key: 'x', ctrl: true }],
+    owner: 'wired',
+    summary: '快捷键帮助（本壳可滚动 cheatsheet 浮层）',
+    target: 'next-shell.ts extraKeyHandler → toggleShortcutsHelp / helpLayer',
+    note: "P3-F 新增接线 + 冲突修复：Ctrl+X 原为队列面板的壳侧附加别名（G-29 的键位是 Ctrl+; / Ctrl+' / Ctrl+4），与 G-39 撞键 → 已从面板打开路径移除；面板内取消高亮行改用裸 `x`（Ctrl+X 在面板打开期 = 关面板并开帮助，模态让位于全局帮助键）。Ctrl+X 在 legacy 终端可达（C0 0x18）",
+    tier: '必刻',
+  },
+  {
+    id: 'G-40',
+    action: 'settings.open',
+    label: 'F2',
+    chords: [{ key: 'f2' }],
+    owner: 'deferred',
+    summary: '设置面板',
+    note: '归存 P7：本壳无设置面板（配置经 config.json / `/mode` `/theme` 等单点命令改，无统一设置模态）→ 不建假面板；F2 与 Ctrl+, 两个和弦在此登记占用',
+    tier: '必刻',
+  },
+  {
+    id: 'G-40',
+    action: 'settings.open',
+    label: 'Ctrl+,',
+    chords: [{ key: ',', ctrl: true }],
+    owner: 'deferred',
+    summary: '设置面板（备用和弦）',
+    note: '同 G-40 主键：无落点归存 P7；Ctrl+, 亦无 C0 字节，legacy 不可达',
+    tier: '必刻',
+  },
+  {
+    id: 'G-41',
+    action: 'agent.dashboard',
+    label: 'Ctrl+\\',
+    chords: [{ key: '\\', ctrl: true }],
+    owner: 'deferred',
+    summary: 'agents dashboard（多 agent 监控/派发；`GROK_AGENT_DASHBOARD=0` 可关）',
+    note: '归存 P7：复刻等级为**参考**（G 表「参考」列），且本壳无多 agent 运行时（无 dashboard 数据源、无派发通道）→ 不建假 dashboard；和弦在此登记占用（上游主键 Ctrl+\\，macOS VS Code 族备用 Ctrl+4——该备用位与本仓 G-29 的 macOS VS Code 族主键 Ctrl+4 撞位，接驳时须先裁决）',
+    tier: '参考',
+  },
+];
+
+// ── ink（legacy 渲染壳）侧的差异登记（同批条目在另一壳的现状，供审查/接手对齐）──────
+//  - G-31：命令面板未接（ink 的 `/` 补全 + Ctrl+P 无 palette；登记差异）。
+//  - G-33：Shift+Tab 模式循环未接（ink 模式切换走 `/mode` 选择浮层）；Ctrl+O 在 ink 是 T3
+//    「展开最近工具卡」（真实 shell 能力）——与 always-approve 同键不同义，**登记冲突**：
+//    往 ink 接 G-33 前必须先裁决该和弦（禁止静默覆盖既有能力）。
+//  - G-34：空闲态 Ctrl+R = 会话选择器（P3-F 已接，复用 `/sessions` 无参浮层，见
+//    runInkChat.tsx）；busy 期仍是 T8「推理折叠块」键位（同键不同义，已登记）。
+//  - G-35～G-37/G-40/G-41：ink 侧同样无落点（与 next 同批归存 P7）。
+//  - G-38：Ctrl+C 取消/退出已接（T0/Composer guard 协议）。
+//  - G-39：Ctrl+X 在 ink 被 T4 队列面板的「取消队首」占用（panels/queue-panel.tsx；
+//    本轮允许改动集不含该文件）→ ink 侧快捷键帮助归存 P7；Ctrl+. 亦未接（需新增 Modal）。
+
+/** 取某 Agent 级动作的全部和弦（主键 + 备用；顺序即登记序） */
+export function agentChordsFor(action: AgentChordActionId): readonly Chord[] {
+  return AGENT_CHORD_TABLE.filter((e) => e.action === action).flatMap((e) => e.chords);
+} /** 某 Agent 级动作是否**已接线**（deferred 动作即使和弦命中也不得消费按键） */
+export function agentActionWired(action: AgentChordActionId): boolean {
+  return AGENT_CHORD_TABLE.some((e) => e.action === action && e.owner === 'wired');
+}
+
+/** 键事件是否命中某 Agent 级动作的和弦（编码口径同 chordMatches） */
+export function matchesAgentChord(ev: KeyEvent, action: AgentChordActionId): boolean {
+  if (!agentActionWired(action)) return false; // 未接线动作不消费按键（防「登记了就当接了」）
+  return agentChordsFor(action).some((chord) => chordMatches(chord, ev));
+}
+
+/** G-39 快捷键帮助和弦（Ctrl+. 主键 / Ctrl+X 备用，顺序即展示序） */
+export const SHORTCUTS_HELP_CHORDS: readonly Chord[] = agentChordsFor('help.shortcuts');
+
+/** G-39 判定：键事件是否请求快捷键帮助（两和弦任一命中） */
+export function matchesShortcutsHelp(ev: KeyEvent): boolean {
+  return matchesAgentChord(ev, 'help.shortcuts');
+}
+
+/** G-34 判定：键事件是否为会话选择器入口 */
+export function matchesSessionPicker(ev: KeyEvent): boolean {
+  return matchesAgentChord(ev, 'session.picker');
 }

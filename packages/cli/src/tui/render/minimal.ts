@@ -9,8 +9,8 @@
 //   renderer.line 同语义），不重绘、不擦除、不动画。
 //
 // G-03 模式限定命令（清单即数据，谓词即接口）：
-// - 仅 fullscreen：/find /jump /timeline /theme /tutorial /dashboard
-//   （这些命令依赖全屏交互面：查找条/时间线面板/主题预览/教程/仪表盘）
+// - 仅 fullscreen：/find /jump /search /timeline /theme /tutorial /dashboard
+//   （这些命令依赖全屏交互面：查找条/搜索定位/时间线面板/主题预览/教程/仪表盘）
 // - 仅 minimal：/expand（在全屏接管下无原生 scrollback 可展开，语义不存在）
 // - /workflow runs 在 minimal 降级为纯文本输出（命令可用，渲染降级——不列入不可用）
 //
@@ -40,10 +40,15 @@ export type MinimalModeContract = typeof MINIMAL_CONTRACT;
  */
 export const MINIMAL_STATUS_LINE_DEFAULT = false;
 
-/** 仅 fullscreen 可用的命令（G-03 第一份清单；不含前导斜杠，小写规范形） */
+/**
+ * 仅 fullscreen 可用的命令（G-03 第一份清单；不含前导斜杠，小写规范形）。
+ * /search 为 next 层 /find 替代（定位作用于应用内视口，minimal 原生滚动区无视口）——
+ * P1-2 同源门控：面板 badge 与实际拒绝都由本谓词派生，壳层不再自持第二份判断。
+ */
 export const FULLSCREEN_ONLY_COMMANDS: readonly string[] = [
   'find',
   'jump',
+  'search',
   'timeline',
   'theme',
   'tutorial',

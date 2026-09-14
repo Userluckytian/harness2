@@ -10,10 +10,11 @@
 //       同一 core 文案与其 /mode UI 四态 override（登记的收敛差异）。
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ApprovalMode, SessionManager, TurnResult } from '@harness2/core';
-import { getContextUsage, HELP_TEXT, parseCoreCommand, runCoreCommand } from '@harness2/core';
+import { CORE_COMMAND_META, getContextUsage, HELP_TEXT, parseCoreCommand, runCoreCommand } from '@harness2/core';
 import type { ChatRuntime } from '../src/chat-setup.js';
 import { handleCommand, parseCommand, type CommandContext } from '../src/commands.js';
 import { createShellCommandDispatcher, type ShellCommandContext } from '../src/shell-commands.js';
+import { runPaletteShellCommand } from '../src/tui/commands/shell-command-impls.js';
 import { runSharedCommand, type InkCommandIo } from '../src/tui/ink-commands.js';
 import { createApprovalGate, createNextChatHarness, type NextChatHarness } from '../src/tui/next/next-shell.js';
 import { createTestRuntime, type TestRuntime } from './tui/shell-runtime.js';
@@ -42,13 +43,19 @@ function makeShellRuntime() {
   return { runtime: runtime as unknown as ChatRuntime, calls };
 }
 
-/** 壳侧命令 ctx（print 收集到 lines；缝可注入） */
+/** 壳侧命令 ctx（print 收集到 lines；缝可注入；P1-1 起 io 缝有缺省值） */
 function makeShellCtx(
   runtime: ChatRuntime,
   lines: string[],
   seams: Partial<ShellCommandContext> = {},
 ): ShellCommandContext {
-  return { print: (t) => lines.push(t), runtime, ...seams };
+  return {
+    print: (t) => lines.push(t),
+    runtime,
+    currentSessionDir: () => null,
+    root: '/tmp/harness2-routing-test',
+    ...seams,
+  };
 }
 
 /** core 命令 ctx（内存 manager + 状态记录；缝缺省不注入） */
@@ -213,6 +220,52 @@ describe('shellOnly 命令（mode/reasoning）经壳侧分发表', () => {
   it('未注册命令 id 分发返回 false（调用方回落 core）', () => {
     const { runtime } = makeShellRuntime();
     expect(createShellCommandDispatcher()('sessions', '', makeShellCtx(runtime, []))).toBe(false);
+  });
+});
+
+// —— (a2) P1-1：默认壳全命令枚举——shellOnly 命令全部被壳表接管，无「假入口」 ——
+// 机器证据：core catalog 里每一条 shellOnly 命令，默认壳（legacy/ink 用的同一份
+// createShellCommandDispatcher）都必须接管；否则会落 core runCoreCommand 的
+// 「由界面层实现（shellOnly）」兜底 = 用户一执行就撞假入口（P1-1 回归面）。
+
+describe('P1-1 默认壳全命令枚举：无 shellOnly 假入口', () => {
+  const SHELL_ONLY_IDS = CORE_COMMAND_META.filter((m) => m.shellOnly === true).map((m) => m.id);
+
+  it('core 全部 shellOnly 命令都被默认壳表接管（含 P3-A 八条只读命令）', () => {
+    const { runtime } = makeShellRuntime();
+    const dispatch = createShellCommandDispatcher();
+    expect(SHELL_ONLY_IDS).toHaveLength(12); // 4 条壳语义 + 8 条 P3-A 只读
+    for (const id of SHELL_ONLY_IDS) {
+      const lines: string[] = [];
+      expect(dispatch(id, '', makeShellCtx(runtime, lines)), `/${id} 未被默认壳表接管`).toBe(true);
+      expect(lines.join('\n'), `/${id} 落 core「由界面层实现」兜底`).not.toContain('由界面层实现');
+    }
+    // 全命令枚举（/help 列出的每一条）：非 shellOnly 有 core run 体，不经壳表——不存在
+    // 「既不被壳表接管、core 又无 run 体」的假入口。
+    for (const meta of CORE_COMMAND_META) {
+      if (meta.shellOnly === true) continue;
+      expect(dispatch(meta.id, '', makeShellCtx(runtime, [])), `/${meta.id} 不应被壳表接管`).toBe(false);
+    }
+  });
+
+  it('P3-A 八条只读命令在默认壳有真实输出（空会话/空插件目录也可观测，非静默）', async () => {
+    const ids = ['session-info', 'export', 'timeline', 'doctor', 'memory', 'skills', 'plugins', 'mcps'] as const;
+    for (const id of ids) {
+      const lines: string[] = [];
+      const handled = await runPaletteShellCommand(
+        id,
+        {
+          print: (t) => lines.push(t),
+          currentSessionDir: () => null,
+          root: '/tmp/h2-p1-1-missing-root',
+          home: '/tmp/h2-p1-1-missing-home',
+        },
+        '',
+      );
+      expect(handled, `/${id} 未接管`).toBe(true);
+      expect(lines.length, `/${id} 无输出（真实输出是 P1-1 验收面）`).toBeGreaterThan(0);
+      expect(lines.join('\n')).not.toContain('由界面层实现');
+    }
   });
 });
 
