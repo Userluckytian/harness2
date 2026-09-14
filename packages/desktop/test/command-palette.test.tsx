@@ -388,10 +388,10 @@ describe('App 集成：Ctrl+K 命令面板 + 命令清单完整性', () => {
     expect(labels.some((t) => t.includes('新建会话'))).toBe(true);
     expect(labels.some((t) => t.includes('打开设置'))).toBe(true);
     expect(labels.some((t) => t.includes('跳转到会话'))).toBe(true);
-    // 分栏数 1/2/3
-    expect(labels.some((t) => t.includes('单栏'))).toBe(true);
-    expect(labels.some((t) => t.includes('双栏'))).toBe(true);
-    expect(labels.some((t) => t.includes('三栏'))).toBe(true);
+    // 三栅面板开关（P4-A 迁移依据：旧的分栏数命令随 PaneArea 拆除，改为侧栏/右栏/复位三条真实动作）
+    expect(labels.some((t) => t.includes('侧栏'))).toBe(true);
+    expect(labels.some((t) => t.includes('右栏'))).toBe(true);
+    expect(labels.some((t) => t.includes('复位面板'))).toBe(true);
     // 上下会话 / 归档 / 主题 / 搜索 / 帮助
     expect(labels.some((t) => t.includes('下一个会话'))).toBe(true);
     expect(labels.some((t) => t.includes('上一个会话'))).toBe(true);

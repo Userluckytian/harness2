@@ -1,0 +1,527 @@
+/* 侧栏外壳样式（D-13 / D-16 / D-20～D-25）。
+   颜色全部走 renderer 既有 CSS 变量（styles.css 的暖纸 token），不新增调色板。
+   收起是「滑动 + 交叉淡出」而非形变：内容冻结在展开宽度就地淡出（.h2-sidebar-fading），
+   落定后才套轨道布局（.h2-sidebar-rail），滑动途中不重排。 */
+
+.h2-sidebar {
+  --h2-sidebar-inline-padding: 12px;
+  /* 展开态侧栏浮在中栏之上，滑块用次级描边色；.h2-sidebar-quiet 只改颜色不改布局。 */
+  --h2-sidebar-thumb: var(--border2);
+  --h2-sidebar-thumb-hover: var(--fg-dim);
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  padding: 6px var(--h2-sidebar-inline-padding);
+  box-sizing: border-box;
+  background: var(--panel);
+  color: var(--fg);
+  border-right: 1px solid var(--border);
+  font-size: 14px;
+  overflow: hidden;
+  scrollbar-color: var(--h2-sidebar-thumb) transparent;
+  scrollbar-width: thin;
+}
+
+/* D-24：指针不在列内（或容器未溢出）时滑块透明。
+   用 transparent 而不是 display:none —— 滚动区的 scrollbar-gutter: stable
+   仍然生效，所以显隐滑块不会推动任何一行。 */
+.h2-sidebar-quiet {
+  --h2-sidebar-thumb: transparent;
+  --h2-sidebar-thumb-hover: transparent;
+}
+
+/* —— 品牌行（D-20）—— */
+.h2-sidebar-brand-row {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  height: 60px;
+  padding: 8px 0 8px 4px;
+  margin-bottom: 8px;
+  box-sizing: border-box;
+  overflow: hidden;
+}
+
+/* 品牌行只作行为入口（新会话快捷方式）：不加悬停底色，指针形状就是唯一可供性 */
+.h2-sidebar-brand {
+  flex: 1;
+  min-width: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  height: 24px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  overflow: hidden;
+}
+
+.h2-sidebar-brand-mark {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--accent-2);
+}
+
+.h2-sidebar-mark-svg {
+  display: block;
+}
+
+.h2-sidebar-brand-name {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  height: 24px;
+  font-size: 18px;
+  font-weight: 600;
+  line-height: 24px;
+  letter-spacing: 0.04em;
+}
+
+.h2-sidebar-brand-local {
+  font-size: 17px;
+  white-space: nowrap;
+}
+
+/* D-25：完整构建（有版本元数据）时品牌名下方徐标；无元数据时只有回落文字 */
+.h2-sidebar-brand-build {
+  flex: none;
+  display: inline-flex;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: center;
+  gap: 1px;
+  height: 24px;
+  white-space: nowrap;
+}
+
+.h2-sidebar-version {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  height: 12px;
+  padding: 0 4px;
+  border-radius: 2px;
+  background: var(--ink);
+  color: var(--surface);
+  font-family: ui-monospace, SFMono-Regular, Consolas, 'Liberation Mono', monospace;
+  font-size: 9px;
+  font-weight: 500;
+  line-height: 12px;
+  white-space: nowrap;
+}
+
+/* 轨道静止态是品牌标记，悬停换成面板图标（展开入口） */
+.h2-sidebar-toggle {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--fg-muted);
+  cursor: pointer;
+}
+
+.h2-sidebar-toggle:hover {
+  background: var(--surface2);
+}
+
+.h2-sidebar-toggle-glyph {
+  font-size: 13px;
+  line-height: 1;
+}
+
+.h2-sidebar-rail-mark {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--accent-2);
+}
+
+/* —— 新会话（D-21）—— */
+.h2-sidebar-new {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  height: 38px;
+  padding: 8px 16px;
+  margin: 0 2px 8px;
+  box-sizing: border-box;
+  border: 1px solid var(--border2);
+  border-radius: 12px;
+  background: var(--surface);
+  color: var(--fg);
+  font: inherit;
+  font-weight: 500;
+  cursor: pointer;
+  overflow: hidden;
+}
+
+.h2-sidebar-new:hover {
+  background: var(--surface2);
+}
+
+.h2-sidebar-new:disabled {
+  background: var(--muted);
+  color: var(--fg-dim);
+  border-color: var(--border);
+  cursor: not-allowed;
+}
+
+.h2-sidebar-new-label {
+  max-width: 200px;
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+/* —— 区域席位（D-23）：外壳只给区域留位，内部排版归占用方 —— */
+.h2-sidebar-region-area {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  /* 抵消外壳内边距，让滚动条贴到栏边；占用方在自己的行里补回内边距 */
+  margin-left: -4px;
+  margin-right: calc(-1 * var(--h2-sidebar-inline-padding));
+  padding-left: 4px;
+  overflow: hidden;
+}
+
+.h2-sidebar-region {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.h2-sidebar-region-head {
+  flex: none;
+  display: flex;
+  align-items: center;
+  padding: 4px 8px 8px;
+  color: var(--fg-muted);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+}
+
+.h2-sidebar-search {
+  flex: none;
+  margin: 0 4px 8px;
+  padding: 6px 8px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--fg);
+  font: inherit;
+  font-size: 13px;
+}
+
+.h2-sidebar-list {
+  flex: 1;
+  min-height: 0;
+  list-style: none;
+  margin: 0;
+  padding: 0 6px 4px;
+  overflow-y: auto;
+  /* 预留滚动条宽度：滑块显隐都不重排（D-24） */
+  scrollbar-gutter: stable;
+  scrollbar-color: var(--h2-sidebar-thumb) transparent;
+  scrollbar-width: thin;
+}
+
+.h2-sidebar-list::-webkit-scrollbar {
+  width: 8px;
+}
+
+.h2-sidebar-list::-webkit-scrollbar-thumb {
+  background: var(--h2-sidebar-thumb);
+  border-radius: 4px;
+}
+
+.h2-sidebar-list::-webkit-scrollbar-thumb:hover {
+  background: var(--h2-sidebar-thumb-hover);
+}
+
+.h2-sidebar-row {
+  margin-bottom: 2px;
+}
+
+.h2-sidebar-session {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  width: 100%;
+  padding: 8px;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.h2-sidebar-session:hover {
+  background: var(--surface2);
+}
+
+/* 当前会话高亮：填充 + 左缘强调条（不只靠颜色深浅一个通道） */
+.h2-sidebar-session[data-selected='true'] {
+  background: var(--accent-soft);
+  box-shadow: inset 2px 0 0 var(--accent);
+  font-weight: 600;
+}
+
+.h2-sidebar-session[data-archived='true'] {
+  color: var(--fg-muted);
+}
+
+.h2-sidebar-session-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.h2-sidebar-session-meta {
+  font-size: 12px;
+  color: var(--fg-muted);
+}
+
+.h2-sidebar-running {
+  flex: none;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--ok);
+}
+
+.h2-sidebar-unread {
+  flex: none;
+  min-width: 16px;
+  padding: 0 4px;
+  border-radius: 8px;
+  background: var(--accent);
+  color: var(--on-accent);
+  font-size: 11px;
+  line-height: 16px;
+  text-align: center;
+}
+
+.h2-sidebar-empty {
+  padding: 12px 8px;
+  color: var(--fg-muted);
+  font-size: 13px;
+}
+
+.h2-sidebar-archived {
+  flex: none;
+  padding: 4px 6px 0;
+  border-top: 1px solid var(--border);
+}
+
+.h2-sidebar-archived-toggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  padding: 6px 8px;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--fg-muted);
+  font: inherit;
+  font-size: 12px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.h2-sidebar-archived-toggle:hover {
+  background: var(--surface2);
+}
+
+.h2-sidebar-caret {
+  display: inline-block;
+  transition: transform 150ms ease-in-out;
+}
+
+.h2-sidebar-caret-open {
+  transform: rotate(90deg);
+}
+
+.h2-sidebar-archived-list {
+  max-height: 200px;
+  padding-bottom: 4px;
+}
+
+/* —— 底部设置席位（D-23）：会话列表滚动区之外，永不被列表顶走 —— */
+.h2-sidebar-foot {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  margin-top: 4px;
+}
+
+.h2-sidebar-settings-area {
+  flex: none;
+  min-width: 0;
+  width: 100%;
+}
+
+/* —— 收起动画（D-22）：冻结宽度就地淡出 → 落定切轨道 → 控件向左位移淘入 —— */
+.h2-sidebar-fading > * {
+  opacity: 0;
+  transition: opacity 150ms ease-in-out;
+}
+
+/* 轨道几何：36×36 控件盒在 56px 轨道内居中（左右各 10px），顶部留 18px */
+.h2-sidebar-rail {
+  padding: 18px 10px 6px;
+}
+
+.h2-sidebar-rail .h2-sidebar-brand-row {
+  height: 36px;
+  padding: 0;
+  margin-bottom: 12px;
+  justify-content: flex-start;
+}
+
+.h2-sidebar-rail .h2-sidebar-toggle {
+  width: 36px;
+  height: 36px;
+  color: var(--fg);
+}
+
+/* 静止态显示品牌标记，悬停才露出面板图标 */
+.h2-sidebar-rail .h2-sidebar-toggle-glyph {
+  display: none;
+}
+
+.h2-sidebar-rail .h2-sidebar-toggle:hover .h2-sidebar-rail-mark {
+  display: none;
+}
+
+.h2-sidebar-rail .h2-sidebar-toggle:hover .h2-sidebar-toggle-glyph {
+  display: inline;
+}
+
+.h2-sidebar-rail .h2-sidebar-new {
+  align-self: flex-start;
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  margin: 0 0 12px;
+  gap: 0;
+  border-color: transparent;
+  background: transparent;
+}
+
+.h2-sidebar-rail .h2-sidebar-new:hover {
+  background: var(--surface2);
+}
+
+.h2-sidebar-rail .h2-sidebar-new-label {
+  max-width: 0;
+}
+
+.h2-sidebar-rail .h2-sidebar-region-area {
+  margin-left: 0;
+  margin-right: 0;
+  padding-left: 0;
+  align-items: center;
+}
+
+.h2-sidebar-rail-icon {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--fg);
+  font-size: 16px;
+  cursor: pointer;
+}
+
+.h2-sidebar-rail-icon:hover {
+  background: var(--surface2);
+}
+
+.h2-sidebar-rail .h2-sidebar-foot {
+  align-items: center;
+}
+
+.h2-sidebar-rail .h2-sidebar-settings-area {
+  display: flex;
+  justify-content: center;
+  width: auto;
+}
+
+/* 实时收起落定后，上方控件从原轨道右缘进画（同一段淘入），底部设置席位只淡入 */
+.h2-sidebar-rail-in .h2-sidebar-toggle,
+.h2-sidebar-rail-in .h2-sidebar-new,
+.h2-sidebar-rail-in .h2-sidebar-region-area {
+  animation: h2-sidebar-rail-in 150ms ease-in-out backwards;
+}
+
+.h2-sidebar-rail-in .h2-sidebar-foot {
+  animation: h2-sidebar-rail-fade-in 150ms ease-in-out backwards;
+}
+
+@keyframes h2-sidebar-rail-in {
+  from {
+    opacity: 0;
+    transform: translateX(49px);
+  }
+}
+
+@keyframes h2-sidebar-rail-fade-in {
+  from {
+    opacity: 0;
+  }
+}
+
+/* —— 降动效（D-16 / D-22）——
+   类名分支：hook 在同一次渲染里让收起即时落定；媒体查询兜底：
+   系统偏好或装配层加类名的任一路径都禁用过渡与动画。 */
+.h2-sidebar-reduced-motion .h2-sidebar-fading > *,
+.h2-sidebar-reduced-motion .h2-sidebar-rail-in .h2-sidebar-toggle,
+.h2-sidebar-reduced-motion .h2-sidebar-rail-in .h2-sidebar-new,
+.h2-sidebar-reduced-motion .h2-sidebar-rail-in .h2-sidebar-region-area,
+.h2-sidebar-reduced-motion .h2-sidebar-rail-in .h2-sidebar-foot,
+.h2-sidebar-reduced-motion .h2-sidebar-caret {
+  transition: none;
+  animation: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .h2-sidebar-fading > *,
+  .h2-sidebar-rail-in .h2-sidebar-toggle,
+  .h2-sidebar-rail-in .h2-sidebar-new,
+  .h2-sidebar-rail-in .h2-sidebar-region-area,
+  .h2-sidebar-rail-in .h2-sidebar-foot,
+  .h2-sidebar-caret {
+    transition: none;
+    animation: none;
+  }
+}

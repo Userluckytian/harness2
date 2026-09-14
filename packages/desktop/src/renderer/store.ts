@@ -25,14 +25,7 @@ import type {
 import { acceptDelta, type DeltaWatermark } from './delivery.js';
 import { getDraftValue, normalizeDrafts, setDraftValue, type DraftsMap } from '../shared/drafts.js';
 import type { FileRefSkipReason, FileRefSource } from '../shared/file-ref.js';
-import * as layoutFns from '../shared/layout.js';
-import {
-  assignSession as assignPaneInLayout,
-  boundSessionIds,
-  defaultLayout,
-  normalizeLayout,
-  type DesktopLayout,
-} from '../shared/layout.js';
+import { defaultLayout, normalizeLayout, type DesktopLayout } from '../shared/layout.js';
 import {
   applyEvent,
   emptyLive,
@@ -144,7 +137,9 @@ export interface AppState {
   statusDetail?: StatusDetail;
   sessions: SessionMeta[];
   selectedId: string | null;
-  /** 分屏布局（1..3 栏；渲染端唯一事实来自这里，持久化经主进程落盘） */
+  /** 分屏布局（1..3 栏）。
+   * @deprecated P4-C 裁决：三栅（AppFrame）取代分栏后，pane 绑定**已无渲染出口**；
+   * 仍随旧持久化文件（desktop-layout.json）读取/写回以兼容历史数据，但不再参与后台判定或视图渲染。 */
   layout: DesktopLayout;
   /** 会话展示态覆层（B3：desktop-metadata.json；title/archived 覆盖层，不碰事件日志） */
   metadata: SessionMetadataMap;
@@ -308,38 +303,32 @@ export class AppStore {
   removeSessionFromView(id: string): void {
     this.set({
       sessions: this.state.sessions.filter((s) => s.id !== id),
+      // 分栏绑定已无渲染出口与写出口（P4-C 裁决 + P1-3）：这里只为让「只读兼容的旧文件绑定」
+      // 与已删会话保持一致（避免重连时按旧绑定重订阅已删会话），不影响任何视图。
       layout: { panes: this.state.layout.panes.map((p) => (p.sessionId === id ? { sessionId: null } : { ...p })) },
       ...(this.state.selectedId === id ? { selectedId: null } : {}),
     });
   }
 
-  // —— 分屏布局 ——
+  // —— 分屏布局（P1-3：只读兼容，无写出口） ——
 
-  /** 应用外部布局（磁盘/IPC 未知来源）：normalizeLayout 统一校验，非法回落默认 */
+  /**
+   * 应用外部布局（旧 desktop-layout.json 经主进程读入）：normalizeLayout 统一校验，非法回落默认。
+   * P1-3 裁决（2026-09-14）：分栏状态已无渲染出口，**写出口已删除**（无 applyPaneCount/assignToPane、
+   * controller 侧无 setPaneCount/assignToPane/persistLayout）—— 本方法是唯一的入口，且只读。
+   */
   applyLayout(raw: unknown): void {
     this.set({ layout: normalizeLayout(raw) });
   }
 
-  /** 改分栏数（1..3）：布局纯函数处理绑定去重/裁剪 */
-  applyPaneCount(count: number): void {
-    const { setPaneCount } = layoutFns;
-    this.set({ layout: setPaneCount(this.state.layout, count) });
-  }
-
-  /** 拖拽/点击分配会话到分栏：清该会话未读（进入视野）；null = 清空该栏 */
-  assignToPane(paneIndex: number, sessionId: string | null): void {
-    const layout = assignPaneInLayout(this.state.layout, paneIndex, sessionId);
-    if (sessionId !== null) {
-      const stream = this.streams.get(sessionId);
-      if (stream !== undefined) stream.unread = 0;
-    }
-    this.set({ layout });
-  }
-
-  /** 会话是否处于"后台"（已订阅但不在任何分栏、也非当前选中） */
+  /**
+   * 会话是否处于"后台"（后台徽标累计的判定）。
+   * P4-C 修复：分栏状态已无渲染出口，原实现用「是否绑定到某个分栏」判非后台，
+   * 导致一旦经旧路径入栏（点过多个会话）后，切走也不再累计未读。
+   * 现在语义 = **不是当前选中的会话**（选中即在前台，离开视野即后台）。
+   */
   isBackground(id: string): boolean {
-    if (this.state.selectedId === id) return false;
-    return !boundSessionIds(this.state.layout).has(id);
+    return this.state.selectedId !== id;
   }
 
   // —— 会话流 ——

@@ -1,0 +1,148 @@
+/* 三栅布局（D-10～D-13）样式。
+   与既有 styles.css 的关系：只补帧/席位容器的盒子，皮肤沿用 / 侧栏皮肤（.h2-sidebar）/
+   .side-panel / .pane-header；用后代选择器（.app-frame .h2-sidebar）覆盖既有固定宽度，
+   保证不依赖样式表加载顺序。
+   降动效（D-16）：media query + [data-reduced-motion='true'] 双保险，过渡一律关掉。 */
+
+.app-frame {
+  display: flex;
+  flex-direction: row;
+  min-width: 0;
+}
+
+/* slot 容器不参与布局（只为断言/调试留归属标记） */
+.slot-entry {
+  display: contents;
+}
+
+/* —— 左栏（D-11 拖宽 264～420 / D-13 收起 56px 轨道） —— */
+.app-frame-sidebar {
+  position: relative;
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  background: var(--panel);
+  border-right: 1px solid var(--border);
+  transition: width 0.16s ease;
+}
+/* 侧栏皮肤沿用 SidebarRoot 的 .h2-sidebar（P4-C：旧 .sidebar 皮肤已随死样式清理删除，
+   席位容器已画分隔线，内容侧不再重复画一条，避免 1px 双边框）。宽度由内容内联给。 */
+.app-frame-sidebar .h2-sidebar {
+  border-right: none;
+}
+.app-frame-seat-body {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+/* P4-C 轨道归属裁决：帧只给容器宽度（收起 56px，见 .app-frame-sidebar 宽度由几何给）；
+   轨道内容不在此另画 —— SidebarRoot 在 rail 态渲染（品牌标记/展开按钮/区域图标），
+   故收起态只有一条 56px 轨道，不存在「帧轨道 + 侧栏轨道」两条。 */
+.app-frame-seat-empty {
+  margin: 8px;
+  color: var(--fg-muted);
+  font-size: 12px;
+}
+
+/* —— 中栏（保 400px 让步目标 / D-12） —— */
+.app-frame-main {
+  flex-direction: column;
+  position: relative;
+}
+
+/* —— 右栏（D-11 拖宽手柄仅普通展开态显示 / D-12 让步对象） —— */
+.app-frame-rightbar {
+  position: relative;
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  border-left: 1px solid var(--border);
+  transition: width 0.16s ease;
+}
+/* 右栏皮肤沿用既有 .side-panel（从固定宽度改成填满席位容器） */
+.app-frame-rightbar .side-panel {
+  width: 100%;
+  flex: 1 1 auto;
+  min-width: 0;
+  border-left: none;
+}
+/* 关闭态：hidden 必须真的不占布局（类选择器的 display:flex 会盖掉 UA 的 [hidden]） */
+.app-frame-rightbar[hidden] {
+  display: none;
+}
+
+/* P2-2：拖动期间暂停宽度过渡（上游 AppFrame.module.css:15 `.frame[data-dragging]{transition:none}`）——
+   过渡会让列边跟不上指针（读出延迟）；带 data-dragging 的手柄所在席位容器整段手势无过渡。 */
+.app-frame-sidebar[data-dragging='true'],
+.app-frame-rightbar[data-dragging='true'] {
+  transition: none;
+}
+
+/* —— 拖宽手柄（指针 + 键盘；role=separator） —— */
+.app-frame-resizer {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 6px;
+  cursor: col-resize;
+  z-index: 2;
+  background: transparent;
+}
+.app-frame-resizer-right {
+  right: -3px;
+}
+.app-frame-resizer-left {
+  left: -3px;
+}
+.app-frame-resizer:hover,
+.app-frame-resizer-dragging {
+  background: var(--accent);
+  opacity: 0.5;
+}
+.app-frame-resizer:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+/* —— 覆层席位 —— */
+.app-frame-overlay {
+  display: contents;
+}
+
+/* —— 顶栏的三栅开关（App 顶栏用；与 .btn-settings 同风格） —— */
+.app-frame-btn {
+  background: transparent;
+  border: none;
+  color: var(--fg-muted);
+  font-size: 14px;
+  cursor: pointer;
+  padding: 0 6px;
+  -webkit-app-region: no-drag;
+}
+.app-frame-btn:hover,
+.app-frame-btn[aria-pressed='true'] {
+  color: var(--accent);
+}
+
+/* —— 降动效（D-16）：系统偏好 + 帧根属性两条路都关过渡 —— */
+@media (prefers-reduced-motion: reduce) {
+  .app-frame,
+  .app-frame * {
+    transition: none !important;
+    animation: none !important;
+  }
+}
+.app-frame[data-reduced-motion='true'],
+.app-frame[data-reduced-motion='true'] * {
+  transition: none !important;
+  animation: none !important;
+}

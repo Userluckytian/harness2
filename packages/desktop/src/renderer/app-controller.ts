@@ -69,7 +69,7 @@ export interface Controller {
   refreshChangeReview(id: string): Promise<void>;
   /** D0：能力盘点（serve 就绪 + 实测端点缺失） */
   refreshCapabilities(id?: string): Promise<void>;
-  /** 启动时读取持久化布局（~/.harness2/desktop-layout.json 经主进程） */
+  /** 启动时读取持久化布局（~/.harness2/desktop-layout.json 经主进程）—— **只读兼容**，不写回 */
   initLayout(): Promise<void>;
   /** 启动时读取会话展示态覆层（~/.harness2/desktop-metadata.json；重命名/归档的展示源） */
   initMetadata(): Promise<void>;
@@ -83,9 +83,9 @@ export interface Controller {
   archiveSession(id: string, archived: boolean): Promise<void>;
   /** 物理删除（serve 无 delete API；本轮 = 覆层 deleted 标记 + 从侧栏移除，不伪造删除） */
   deleteSession(id: string): Promise<void>;
-  /** 分栏数变化 / 会话分配：更新 store 并持久化；绑定的会话自动订阅+重放 */
-  setPaneCount(count: number): Promise<void>;
-  assignToPane(paneIndex: number, sessionId: string | null): Promise<void>;
+  // P1-3 裁决（2026-09-14）：分栏（pane）状态已无渲染出口，**写出口一并删除** ——
+  // 不再提供 setPaneCount / assignToPane / persistLayout（→ IPC saveLayout）。
+  // 旧 desktop-layout.json 仍由 initLayout() 读取（只读兼容历史文件，不写回）。
   /** P2-4：审批模式切换落地 —— 写全局 config.json 的 approval.mode（settings:updateConfig 白名单深合并） */
   setApprovalMode(sessionId: string, mode: 'default' | 'plan'): Promise<{ ok: boolean; message: string }>;
 }
@@ -297,14 +297,6 @@ export function createController(store: AppStore, api: Harness2Api): Controller 
     refreshAuthoritativeState(id);
   };
 
-  const persistLayout = async (): Promise<void> => {
-    try {
-      await api.saveLayout(store.getState().layout);
-    } catch {
-      // 持久化失败不影响使用
-    }
-  };
-
   /** D1：草稿落盘去抖（500ms 合并；关闭/切换期间不丢——内存即时生效，落盘尽力而为） */
   let draftsTimer: ReturnType<typeof setTimeout> | null = null;
   const persistDraftsSoon = (): void => {
@@ -368,15 +360,14 @@ export function createController(store: AppStore, api: Harness2Api): Controller 
     async newSession(): Promise<void> {
       try {
         const created = await api.createSession(); // cwd 由主进程补齐（渲染进程零 Node/零文件系统）
+        // P4-C：本方法无作用域入参（本仓也无 Workspace 概念），调用方只能给空白作用域；
+        // 选择/订阅/重放已完成，会话页占 main 的 conversation key（无需再「打入分栏」）。
         await subscribeSession(created.id);
         await refreshSessions();
         store.select(created.id);
         await replaySession(created.id);
-        // 自动打入首个空分栏：否则只出现在侧栏，用户会感觉「新建没反应」
-        // （2026-09-07 用户报告：点新建无变化）
-        const empty = store.getState().layout.panes.findIndex((p) => p.sessionId === null);
-        store.assignToPane(empty >= 0 ? empty : 0, created.id);
-        await persistLayout();
+        // P4-C 残留清理：原先自动打入首个空分栏并持久化 —— 分栏状态已无渲染出口，
+        // P1-3 起连写出口（setPaneCount/assignToPane/persistLayout）一并删除，不再写这份无用状态。
       } catch (e) {
         // 避免「点击无反应」：失败也反馈到状态栏（此前为未处理 rejection）
         store.applyFrame({ type: 'error', error: (e as Error).message });
@@ -548,6 +539,8 @@ export function createController(store: AppStore, api: Harness2Api): Controller 
       }
     },
     async initLayout(): Promise<void> {
+      // P1-3：只读兼容 —— 旧 desktop-layout.json 仍被读取（normalizeLayout 校验后进 store），
+      // 但渲染端不再有任何写回路径（无 setPaneCount/assignToPane/persistLayout）。
       try {
         store.applyLayout((await api.loadLayout()) as Parameters<AppStore['applyLayout']>[0]);
       } catch {
@@ -601,24 +594,6 @@ export function createController(store: AppStore, api: Harness2Api): Controller 
         store.applyFrame({ type: 'error', error: `删除标记保存失败: ${(e as Error).message}` });
       }
       store.removeSessionFromView(id);
-    },
-    async setPaneCount(count: number): Promise<void> {
-      store.applyPaneCount(count);
-      await persistLayout();
-    },
-    async assignToPane(paneIndex: number, sessionId: string | null): Promise<void> {
-      store.assignToPane(paneIndex, sessionId);
-      if (sessionId !== null) {
-        await subscribeSession(sessionId);
-        await replaySession(sessionId);
-        // P1-1：SidePanel 六页签以 selectedId 取数（SidePanel.tsx），拖拽/分叉入栏的主路径是
-        // 本方法——必须与 selectSession 同口径：选中 + 拉齐只读视图 + 权威重订阅，
-        // 否则分屏右侧数据源永不写入（恒为空）。desktop-workspace-switch.test.ts 已锁死。
-        store.select(sessionId);
-        if (store.getState().status === 'connected') refreshAllViews(sessionId);
-        refreshAuthoritativeState(sessionId);
-      }
-      await persistLayout();
     },
     async setApprovalMode(sessionId, mode) {
       // P2-4：把「切到 default/plan」真正写下去 —— 走 settings:updateConfig 白名单深合并
