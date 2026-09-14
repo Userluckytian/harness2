@@ -7,7 +7,7 @@ import { autoHeightFor, composeQueueView, shouldSubmitOnKey } from '../features/
 import { CommandLog } from '../features/timeline/CommandLog.js';
 import { buildToolRow, isAtBottom, nextScrollTop } from '../features/timeline/execution-log.js';
 import { DiffCard } from './DiffCard.js';
-import { controller, store, targetPaneFor, useAppState } from '../app-shared.js';
+import { controller, store, useAppState } from '../app-shared.js';
 
 /** 参数摘要（工具行/审批按钮用；单行 ≤80 字） */
 function argsSummary(args: unknown): string {
@@ -25,16 +25,17 @@ function diffTargetFile(args: unknown): string | undefined {
   return undefined;
 }
 
-/** 子会话跳转按钮（阶段 8）：在空分栏（缺省第一栏）打开子会话轨迹 */
+/** 子会话跳转按钮（阶段 8 / P4-C）：打开子会话（选中 + 全量重放 + 拉齐只读视图） */
 function SubagentJump({ childSessionId }: { childSessionId: string }) {
-  const state = useAppState();
   return (
     <button
       type="button"
       className="subagent-jump"
       title={`打开子会话 ${childSessionId} 轨迹`}
       onClick={() => {
-        void controller.assignToPane(targetPaneFor(state), childSessionId);
+        // P4-C：分栏（PaneArea）已拆除，分栏状态无渲染出口 → 走「选会话」同一路径，
+        // 不再经 assignToPane 写已废弃的 pane 绑定。
+        void controller.selectSession(childSessionId);
       }}
     >
       子会话 {childSessionId} ↗

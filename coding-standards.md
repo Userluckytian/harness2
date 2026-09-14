@@ -102,7 +102,7 @@
 
 - **packages/core**（npm `@harness2/core`，会话内核）：`server/`（HTTP+WS 服务端装配与 `sessions-*.ts` 会话 hub/恢复/任务协调）、`interaction/`（**公共契约**：`runtime-journal` 事件溯源日志、`retry-policy` 有界重试、`approval-queue`、`run-config`、`steer-sink` 等，冻结改动需同步 parser/projector/export/replay/fixture）、`agent/`（loop / compaction / subagent）、`tools/`（工具系统 + `predefined/`）、`provider/`（openai / anthropic / factory）、`plugins/`、`mcp/`、`memory/`、`skills/`、`session/`、`trajectory/`、`config/`、`doctor/`。**导出面由 `packages/core/test/fixtures/api-surface-baseline.json` 快照锁定**——改 `core/src/index.ts` 导出必须在同一提交同步快照：`H2_UPDATE_API_SNAPSHOT=1 pnpm --filter @harness2/core exec vitest run test/api-surface.test.ts`
 - **packages/cli**（npm `harness2`）：`index.ts` 只做**命令注册**（program 装配 + parseAsync），各子命令拆在 **`commands/` 模块**（traj / export-replay / config / doctor / chat / memory / skill / serve / browser / cron / plugin / mcp / gateway）；TUI 组件在 `tui/`（ink）
-- **packages/desktop**（npm `@harness2/desktop`，Electron）：`main/`（主进程：spawn 本地 serve + 窗口）、`preload/`、`renderer/`（**React 视图，组件在 `renderer/components/`**：ChatView / SessionList / PaneArea / SettingsDialog / CommandPalette 等；渲染进程零 Node）、`shared/`
+- **packages/desktop**（npm `@harness2/desktop`，Electron）：`main/`（主进程：spawn 本地 serve + 窗口）、`preload/`、`renderer/`（**React 视图**：四席位骨架在 `renderer/layout/`、侧栏在 `renderer/sidebar/`、既有组件在 `renderer/components/`（ChatView / SidePanel / SettingsDialog / CommandPalette 等）；渲染进程零 Node）、`shared/`
 - **packages/gateway**（npm `@harness2/gateway`，IM 网关）：QQ / 飞书消息桥接到本地 serve，`platforms/`
 
 ### 前端约定（desktop renderer / cli TUI）

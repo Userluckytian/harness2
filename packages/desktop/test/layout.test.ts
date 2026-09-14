@@ -67,7 +67,9 @@ describe('布局纯函数', () => {
     expect(assignSession(base, -1, 's1')).toEqual(base);
   });
 
-  it('boundSessionIds：已绑定会话集合（后台判定用）', () => {
+  // P4-C 裁决：后台判定已改为「非当前选中」（store.isBackground），不再看分栏绑定；
+  // boundSessionIds 仅作为 shared/layout 的纯函数回归保留（旧持久化文件形态），无生产调用点。
+  it('boundSessionIds：已绑定会话集合（纯函数回归；P4-C 起不再用于后台判定）', () => {
     const layout = assignSession(setPaneCount(defaultLayout(), 2), 1, 's2');
     expect(boundSessionIds(layout)).toEqual(new Set(['s2']));
   });

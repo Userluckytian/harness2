@@ -1,6 +1,7 @@
 // app-shared（B3-2 拆分产物）：渲染端共享状态与跨组件纯逻辑。
-// store/controller 单例在此构造，App 根与 SessionList/ChatView/PaneArea 都从这取；
+// store/controller 单例在此构造，App 根与 ChatView / SidePanel / 侧栏装配点都从这取；
 // App.tsx 保持对外再导出（main.tsx / 测试仍从 './App.js' 引）。
+// P4-C：旧 components/SessionList 已删除（侧栏改由 renderer/sidebar 的 SidebarRoot 承担）。
 import { useSyncExternalStore } from 'react';
 import type { ConnectionStatus, SettingsTheme } from '../shared/protocol.js';
 import { AppStore, type AppState } from './store.js';
@@ -11,7 +12,8 @@ export const THEME_CYCLE: readonly SettingsTheme[] = ['warmPaper', 'dark', 'syst
 export const store = new AppStore();
 export const controller = createController(store, window.harness2);
 
-/** 拖拽载荷：jsdom 无 dataTransfer，模块级回退（优先 dataTransfer） */
+/** 拖拽载荷：jsdom 无 dataTransfer，模块级回退（优先 dataTransfer）。
+ * @deprecated P4-C：分栏拖拽（旧 SessionList）已随三栅拆除，当前无调用点；保留仅为对外导出面兼容。 */
 export const dragState: { sessionId: string | null } = { sessionId: null };
 
 export function useAppState() {
@@ -35,7 +37,8 @@ export function StatusBadge({ status, error }: { status: ConnectionStatus; error
   );
 }
 
-/** 点击会话时目标分栏：优先空栏，其次第一栏 */
+/** 点击会话时目标分栏：优先空栏，其次第一栏
+ * @deprecated P4-C：分栏状态已无渲染出口（三栅取代分栏），无调用点；后台判定改看选中态。 */
 export function targetPaneFor(state: AppState): number {
   const empty = state.layout.panes.findIndex((p) => p.sessionId === null);
   return empty >= 0 ? empty : 0;
