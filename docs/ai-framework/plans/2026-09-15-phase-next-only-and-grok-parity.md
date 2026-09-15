@@ -824,3 +824,36 @@ A1 零引用盘点 → A2 删旧壳代码 → A3 装配收敛（只剩 next / pi
 | 全量测试     | `pnpm --filter harness2 test`                                                                          | `Test Files 91 passed \| 1 skipped (92)`；`Tests 1524 passed \| 2 skipped (1526)` **全绿** ✅ |
 | 残留开关检索 | `grep -rn "HARNESS2_RENDERER\|shouldUseNextRenderer\|shouldUseInk" packages/cli/test packages/cli/src` | 仅 `tui-gate.test.ts:1` 注释中的历史说明（A6 处理），代码零命中 ✅                            |
 | 用例数对账   | 基线 JSON vs A4 后                                                                                     | 1526 = 1532 − 12（keyboard pending）− 2（next-shell 开关）+ 8（tui-gate 迁移）✅              |
+
+### 十二、A5 追加：`step-order.test.ts` 覆盖迁移（第 21 个被删测试文件，2026-09-15）
+
+> A5 解阻塞删除 `useTurnStream.ts`（React hook 死代码）后，测试侧仅剩 `test/tui/step-order.test.ts`
+> 与 `test/tui/harness.tsx` 仍引用 `ink`/`react`，随之删除。本节是这两个文件的覆盖迁移登记。
+>
+> **`test/tui/harness.tsx`（测试辅助件，非 `.test`，不被 vitest 收集）**：虚拟 TTY ink 挂载助手，
+> 唯一消费者是 `step-order.test.ts`（`grep -rn "tui/harness" packages/cli` 零命中）。二者同删，
+> **无覆盖损失**（其能力无独立断言，仅为旧壳用例提供 mount/flush 手段）。
+
+#### 覆盖迁移表（4 用例：1 ✅ / 0 ➖ / 3 ⚠️）
+
+| 用例                                                                        | 分类 | 落点 / 理由                                                                                                                                                                                                                                                |
+| --------------------------------------------------------------------------- | ---- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| text(A) → tool-call → text(B) → turn-final ⇒ assistant(A)→tool→assistant(B) | ⚠️   | 缺口 #8：next 的 `next-shell.ts` turn 流桥有等价 flush-on-tool-boundary 实现（`flushStep`），但无测试在同一回合内先 text-delta 再 tool-call 再 text-delta；`test/tui/transcript.test.ts:67` 只覆盖**磁盘重投影**顺序，非 live 桥                           |
+| tool-call 前无文本：不产生空 assistant 气泡                                 | ⚠️   | 缺口 #9：next 的 `emitStep` 有「有正文/推理才发」守卫（`next-shell.ts:786`），但 `test/tui/next/next-shell.test.ts:271`（首事件即 tool-call）只断言工具行存在，未断言无空 assistant item；`projection.test.ts:60` 反而证明空 `assistant/step` 会渲染成空行 |
+| 纯 reducer：assistant/step 保留 turnId+step 作用域稳定 id                   | ✅   | `test/tui/next/next-shell.test.ts:249`（同 step 二次增长原地替换，依赖 id 稳定幂等）；`test/tui/next/p3d-wiring.test.ts:428,444`（`f:assistant:t1:step:0` 经折叠块 id 断言，id 格式/作用域可核）                                                           |
+| 卸载清理：挂起中的 50ms flush timer 随 unmount 被 clearTimeout              | ⚠️   | 缺口 #10：next 侧等价实现为 `createTurnStreamBridge.dispose()` → `clearTimer()`（`next-shell.ts:876`），但无 `vi.getTimerCount`/clearTimeout 断言；既有定时器用例（`p3d-subagent.test.ts:263`、`p3cd-review-fixes.test.ts:477`）均针对 spinner，不是本桥   |
+
+#### 追加缺口（接续 §九 编号，#8～#10，本批不补）
+
+| #   | 缺口                                                                      | 来源用例                | 数量 | 严重度 | 说明                                                                 |
+| --- | ------------------------------------------------------------------------- | ----------------------- | ---- | ------ | -------------------------------------------------------------------- |
+| 8   | 流式桥 `解释→工具→解释` **实时交错顺序**（tool 边界 flushStep 先落 step） | `step-order.test.ts` #1 | 1    | P2     | next 有实现无断言；回归（文本攒到末尾塌成一块）可静默复现            |
+| 9   | 流式桥 `emitStep` **空内容守卫**（不产空 assistant item）                 | `step-order.test.ts` #2 | 1    | P3     | 守卫在 `next-shell.ts`，无直接断言；仅在投影层有空块渲染行为（反向） |
+| 10  | 流式桥 `dispose()` **清挂起 50ms flush timer**                            | `step-order.test.ts` #4 | 1    | P3     | 实现存在（`clearTimer`），无 timer 计数/取消断言                     |
+
+#### 用例数对账（A4 后 → A5 后）
+
+| 项         | A4 后                           | A5 后                           | 变化 | 解释                                                         |
+| ---------- | ------------------------------- | ------------------------------- | ---- | ------------------------------------------------------------ |
+| Test Files | 91 passed \| 1 skipped (92)     | 90 passed \| 1 skipped (91)     | −1   | 删 `test/tui/step-order.test.ts`（`harness.tsx` 本就不计入） |
+| Tests      | 1524 passed \| 2 skipped (1526) | 1520 passed \| 2 skipped (1522) | −4   | 恰为该文件 4 个 `it`（原全部通过），无其它增减               |

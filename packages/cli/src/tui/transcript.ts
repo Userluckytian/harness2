@@ -345,8 +345,8 @@ function argsToString(args: unknown): string | undefined {
  * 前面的解释被静默丢弃，且最终答案渲染在工具卡之前（验收 4 重投影 / T3 顺序保真被破坏）。
  * 因此重投影按事件 seq 派生唯一 id（seq 在日志内严格单调），保证顺序与完整性。
  *
- * 不能在 scopedId 里全局改成 seq 优先：live 事件可能带 `seq:0`/缺省（如 useTurnStream 的
- * 流式事件），会互相碰撞，破坏真实流式的 turn 级稳定 id（assistant:<turnId>:step:N / turn-final）。
+ * 不能在 scopedId 里全局改成 seq 优先：live 事件可能带 `seq:0`/缺省（如流式增量事件，
+ * 见 next 壳的 createTurnStreamBridge），会互相碰撞，破坏真实流式的 turn 级稳定 id（assistant:<turnId>:step:N / turn-final）。
  * tool/call、tool/result 仍按 callId 键控（本就在日志内唯一，且是 call↔result 原地合并所必需）。
  */
 export function sessionEventToTranscript(event: AnySessionEvent): TranscriptEvent | null {

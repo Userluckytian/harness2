@@ -18,7 +18,7 @@ import { SnapshotStore, findCoreCommand, getContextUsage, runCoreCommand } from 
 import type { CoreCommandContext, SessionWriter } from '@harness2/core';
 import type { ChatRuntime } from '../chat-setup.js';
 
-export interface InkCommandIo {
+export interface CommandIo {
   /** 追加一条系统转录条目 */
   print(text: string): void;
   /** 用 projectSession 重新投影当前会话（rewind/切换后） */
@@ -43,7 +43,7 @@ const REPROJECT_COMMANDS = new Set(['/undo', '/redo']);
 export async function runSharedCommand(
   parsed: { name: string; rest: string },
   runtime: ChatRuntime,
-  io: InkCommandIo,
+  io: CommandIo,
 ): Promise<{ reprojected: boolean }> {
   const lines: string[] = [];
   const collect = (t: string): void => {

@@ -2,7 +2,7 @@
 // 覆盖 /undo（错误路径仍触发 rewind 重投影）、/new（会话切换触发重投影）、/help、未知命令、/exit。
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { HELP_TEXT } from '../../src/commands.js';
-import { runSharedCommand, type InkCommandIo } from '../../src/tui/command-impls.js';
+import { runSharedCommand, type CommandIo } from '../../src/tui/command-impls.js';
 import { createTestRuntime, type TestRuntime } from './shell-runtime.js';
 
 const running: TestRuntime[] = [];
@@ -11,7 +11,7 @@ afterEach(async () => {
 });
 
 function makeIo(): {
-  io: InkCommandIo;
+  io: CommandIo;
   lines: string[];
   reproject: ReturnType<typeof vi.fn>;
   requestExit: ReturnType<typeof vi.fn>;

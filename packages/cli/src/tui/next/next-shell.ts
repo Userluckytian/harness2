@@ -6,8 +6,8 @@
 // shouldUseTui（chat.ts 调用）；非 TTY 走 piped readline，不经本文件。
 //
 // 装配对照（与旧壳 Shell 的对齐面与取舍，均如实钉死）：
-// - 转录流式：复用 useTurnStream 导出的 terminalEvent 纯函数；handler 的 50ms 缓冲逻辑为
-//   等价复刻（useTurnStream 是 React hook，不可直接复用），见 createTurnStreamBridge。
+// - 转录流式：复用 turn-events.ts 导出的 terminalEvent 纯函数；handler 的 50ms 节流缓冲
+//   逻辑由本文件的 createTurnStreamBridge 自持（判别/构造为纯函数，缓冲留在消费侧）。
 //   差异：旧壳的 live 快照渲染在转录底部、不产生转录项；next 的 Scrollback 无原地更新能力，
 //   live 文本以 `assistant/step`（turnId+stepIndex 稳定 id，reducer put 原地替换）承载，
 //   每次替换触发全量重投影（取舍：换增量追加的简单性；长会话下 50ms 全量重投影是已知开销）。
@@ -256,7 +256,7 @@ import {
   type AnySessionEvent,
   type ParsedCoreCommand,
 } from '@harness2/core';
-import { runSharedCommand, type InkCommandIo } from '../command-impls.js';
+import { runSharedCommand, type CommandIo } from '../command-impls.js';
 import { createShellCommandDispatcher } from '../../shell-commands.js';
 // —— P3-E 接线1（palette，G-31/G-50~G-53；A 棒模块五步缝消费）——
 import {
@@ -422,7 +422,7 @@ import {
   type AttachedInput,
   type ChatController,
 } from './chat-controller.js';
-import { terminalEvent } from '../useTurnStream.js';
+import { terminalEvent } from '../turn-events.js';
 
 /** P4-1 选择开关：HARNESS2_SELECT=0 时鼠标拖选/键盘复制完全旁路（默认开启） */
 export function selectionEnabledForEnv(env: Record<string, string | undefined>): boolean {
@@ -431,7 +431,7 @@ export function selectionEnabledForEnv(env: Record<string, string | undefined>):
 
 // —— 常量（对齐既有装配的口径）——
 const CTRL_C_WINDOW_MS = 2000; // Composer.CTRL_C_WINDOW_MS
-const LIVE_FLUSH_MS = 50; // useTurnStream.FLUSH_MS
+const LIVE_FLUSH_MS = 50; // live 流式合并节流（沿用既有口径）
 const IDLE_FLUSH_MS = 50; // chat-controller 文件头建议的空闲冲刷周期
 const HINT_CLEAR_MS = 2000; // Composer 瞬时提示展示时长
 const BRACKETED_PASTE_ON = '\x1b[?2004h'; // ansi.ts 无此常量（既有文件只读），本层自定义
@@ -445,7 +445,7 @@ const MOUSE_ALL_MOTION_OFF = '\x1b[?1003l';
 
 const SHORTCUTS: readonly string[] = ['Enter 发送', 'Shift+Enter 换行', 'Ctrl+C 停止', 'Ctrl+C 退出', 'PgUp/PgDn 滚动'];
 
-// —— P3-E 重试预算快照（对齐旧壳 panels/retry-panel.tsx 的信息量；该模块是旧壳/React 组件，
+// —— P3-E 重试预算快照（对齐旧壳重试面板的信息量；其为旧壳/React 组件，
 // next 层不可跨用（会引入 React/旧壳 依赖进 headless 装配），故按其冻结文案做纯函数等价复刻；
 // 契约类型从 core TurnResult 派生，不复制 core 定义）——
 
@@ -464,7 +464,7 @@ const RETRY_STOP_REASON_LABEL: Record<RetryBudgetSnapshot['stopReason'], string>
   'retry-after': 'Retry-After 超预算',
 };
 
-/** 预算快照 → 单行可读文本（纯函数；文案与旧壳 panels/retry-panel.formatRetryBudget 一致） */
+/** 预算快照 → 单行可读文本（纯函数；文案与旧壳重试面板的 formatRetryBudget 一致） */
 export function formatRetryBudget(budget: RetryBudgetSnapshot): string {
   const waitSec = Math.round(budget.waitMs / 1000);
   const maxSec = Math.round(budget.maxWaitMs / 1000);
@@ -734,7 +734,7 @@ export function createApprovalGate(): ApprovalGate & { bind(bindings: ApprovalGa
   };
 }
 
-// —— turn 流桥（useTurnStream 的非 React 等价复刻；terminalEvent 纯函数直接复用）——
+// —— turn 流桥（自持 50ms 节流缓冲；terminalEvent 纯函数复用 turn-events.ts）——
 
 interface TurnStreamBridge {
   handler: TurnStreamHandler;
@@ -745,14 +745,14 @@ interface TurnStreamBridge {
    * 后一次性写出。null = 无开口 step。
    */
   openStepId(): string | null;
-  /** turn 结束：清 timer 并产出终态事件（final/partial/empty；与 useTurnStream.finalize 同语义） */
+  /** turn 结束：清 timer 并产出终态事件（final/partial/empty） */
   finalize(result: TurnResult | undefined): TranscriptEvent | null;
   reset(): void;
   dispose(): void;
 }
 
 /**
- * 差异说明（与 useTurnStream 对照）：旧壳的 live 快照只驱动 React 重渲、不产生转录项；
+ * 差异说明：live 快照只驱动重渲、不产生转录项的做法在 next 的 Scrollback 下不可行；
  * next 的 Scrollback 无法原地更新，live 文本以 assistant/step（turnId+stepIndex 稳定 id）
  * 承载——50ms flush 用当前 stepIndex 原地替换（reducer put 幂等），工具边界 flushStep
  * 递增 stepIndex 另起新段。终态 turn-final 与末段 step 文本重复时由装配层去重跳过
@@ -802,7 +802,7 @@ function createTurnStreamBridge(onEvent: (event: TranscriptEvent) => void): Turn
     return true;
   }
 
-  /** 工具边界 flushStep（对齐 useTurnStream：发了才递增 stepIndex 并清空缓冲） */
+  /** 工具边界 flushStep（发了才递增 stepIndex 并清空缓冲） */
   function flushStep(): void {
     clearTimer();
     if (emitStep()) {
@@ -1202,7 +1202,7 @@ export function createNextChatHarness(runtime: ChatRuntime, deps: NextChatHarnes
 
   // —— P3-D G-05 折叠规格机接线（folds.ts）——
   // 块种类映射（钉死）：tool → 'tool'（edit/write 产 diff 卡 → 'diff'）；assistant 带推理
-  // → 'thinking'。defaultCollapsed 恒 true（对齐 TranscriptView/projection 默认折叠规则）。
+  // → 'thinking'。defaultCollapsed 恒 true（对齐旧壳转录区/projection 默认折叠规则）。
   function foldKindOf(item: TranscriptItem): FoldableBlockKind | null {
     if (item.kind === 'tool') return item.tool === 'edit' || item.tool === 'write' ? 'diff' : 'tool';
     if (item.kind === 'assistant' && item.reasoning !== undefined) return 'thinking';
@@ -2996,7 +2996,7 @@ export function createNextChatHarness(runtime: ChatRuntime, deps: NextChatHarnes
   }
 
   /** 共享命令执行缝（委托 command-impls.runSharedCommand；print/reproject/requestExit 对齐旧壳 Shell） */
-  const commandIo: InkCommandIo = {
+  const commandIo: CommandIo = {
     print: (t) => sendSystem(t),
     reproject: () => reprojectFromDisk(),
     requestExit: () => requestExit('exit'),

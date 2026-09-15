@@ -15,7 +15,7 @@ import type { ChatRuntime } from '../src/chat-setup.js';
 import { handleCommand, parseCommand, type CommandContext } from '../src/commands.js';
 import { createShellCommandDispatcher, type ShellCommandContext } from '../src/shell-commands.js';
 import { runPaletteShellCommand } from '../src/tui/commands/shell-command-impls.js';
-import { runSharedCommand, type InkCommandIo } from '../src/tui/command-impls.js';
+import { runSharedCommand, type CommandIo } from '../src/tui/command-impls.js';
 import { createApprovalGate, createNextChatHarness, type NextChatHarness } from '../src/tui/next/next-shell.js';
 import { createTestRuntime, type TestRuntime } from './tui/shell-runtime.js';
 
@@ -415,7 +415,7 @@ describe('三处入口分发结果一致（同一输入同输出）', () => {
       },
     };
     const inkLines: string[] = [];
-    const io: InkCommandIo = {
+    const io: CommandIo = {
       print: (t) => inkLines.push(t),
       reproject: () => undefined,
       requestExit: () => undefined,

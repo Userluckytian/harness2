@@ -5,7 +5,7 @@
 // scrollback.wrapLine 负责，本层不做 wrap）。每行带 lineIndex（TranscriptItem 数组
 // 下标）与 kind，供后续交互（点击定位/展开态切换）反查。
 //
-// 视觉对齐 TranscriptView.tsx / ReasoningBlock.tsx / DiffCard.tsx 的语义，按 next 库
+// 视觉对齐旧壳转录区（推理块 / diff 卡）的语义，按 next 库
 // 约束降级：字符网格只有前景色（无背景色/反色/边框），diff 卡用 `+ `/`- `/`@@ ` 行前缀
 // 近似；每行单一前景色（旧壳版可对一行内分段着色，此处整行一色，见各规则注释）。
 //

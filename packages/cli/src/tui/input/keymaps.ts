@@ -483,7 +483,7 @@ export const AGENT_CHORD_TABLE: readonly AgentChordEntry[] = [
 //    旧壳入口）；busy 期仍是 T8「推理折叠块」键位（同键不同义，已登记）。
 //  - G-35～G-37/G-40/G-41：旧壳侧同样无落点（与 next 同批归存 P7）。
 //  - G-38：Ctrl+C 取消/退出已接（T0/Composer guard 协议）。
-//  - G-39：Ctrl+X 在旧壳 被 T4 队列面板的「取消队首」占用（panels/queue-panel.tsx；
+//  - G-39：Ctrl+X 在旧壳被 T4 队列面板的「取消队首」占用（旧壳队列面板；
 //    本轮允许改动集不含该文件）→ 旧壳侧快捷键帮助归存 P7；Ctrl+. 亦未接（需新增 Modal）。
 
 /** 取某 Agent 级动作的全部和弦（主键 + 备用；顺序即登记序） */
