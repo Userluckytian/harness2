@@ -7,7 +7,7 @@
 // 断言原则：版面类断言按**显示列**（CellBuffer.chars 下标）校验，不做 `.length` 当宽度；
 // 数据类断言验证「无数据 = 降级/省略」，绝不接受伪造值。
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { SteerResult, TurnResult } from '@harness2/core';
+import type { TurnResult } from '@harness2/core';
 import type { ChatRuntime } from '../../../src/chat-setup.js';
 import { formatTurnDuration, turnSummaryLine } from '../../../src/render.js';
 import { CellBuffer } from '../../../src/tui/renderer/cell-buffer.js';
@@ -249,6 +249,75 @@ describe('P11-T4 每轮耗时与 token 用量', () => {
   });
 });
 
+// ────────────── P11-T4 修复（P1-2）：用量不跨会话残留 ──────────────
+//
+// 症状：lastUsage 只在收到 usage 事件时写入；`/new` `/resume` `/fork` 经 reprojectFromDisk
+// 换会话时只清了子会话瞬时状态，**没清 lastUsage/usageThisTurn**，而状态行的 tokenUsage
+// 优先于 core 新鲜算出的用量比例 → 新会话状态行仍显示上一会话的 `ctx 15.3k/128k`（数据不实）。
+// 修复：会话 id 变化分支一并 `lastUsage = undefined; usageThisTurn = false;`。
+// 变异验证：删掉这两行重置 → 用例 1 必红（红/绿输出见提交说明）。
+// 注：/undo /redo 不换会话（id 不变），不清 lastUsage——同会话上下文占用仍然有效。
+describe('P11-T4 用量跨会话不残留（会话切换重置 lastUsage）', () => {
+  /** 可切换会话的 runtime（对齐 p3cd-review-fixes 的 sessionRuntime：id 可变、dir 不存在） */
+  function sessionRuntime(scripted: Partial<ChatRuntime>): ChatRuntime {
+    let current: { id: string; dir: string } | null = { id: 's1', dir: '/nonexistent-p11-s1' };
+    return makeRuntime({
+      getCurrent: (() => current) as unknown as ChatRuntime['getCurrent'],
+      switchSession: ((id: string | null) => {
+        current = id === null ? null : { id, dir: `/nonexistent-p11-${id}` };
+      }) as unknown as ChatRuntime['switchSession'],
+      ...scripted,
+    });
+  }
+
+  it('/new 后状态行不得残留上一会话 token 数字（降级为 ctx —）', async () => {
+    const { h } = makeHarness(
+      sessionRuntime({
+        runUserTurn: async (_text, onStream) => {
+          onStream({ type: 'usage', usage: { inputTokens: 15000, outputTokens: 700 }, turnId: 't1' });
+          return result('答');
+        },
+      }),
+    );
+    h.submit('hi');
+    await settle(h);
+    expect(h.state.statusline).toContain('ctx 15.3k/128k'); // 先证明旧会话确有真实用量显示
+    h.submit('/new'); // s1 → null：会话 id 变化 → 重投影路径
+    await settle(h);
+    expect(h.state.statusline).not.toContain('15.3k'); // 不得残留旧会话数字
+    expect(h.state.statusline).not.toMatch(/ctx \d/); // 任何 token 数字都不许有
+    expect(h.state.statusline).toContain('ctx —'); // 如实降级
+    h.dispose();
+  });
+
+  it('重置不误伤：切换后的新回合用量照常写入并显示', async () => {
+    let turns = 0;
+    const { h } = makeHarness(
+      sessionRuntime({
+        runUserTurn: async (_text, onStream) => {
+          turns += 1;
+          onStream({
+            type: 'usage',
+            usage: turns === 1 ? { inputTokens: 15000, outputTokens: 700 } : { inputTokens: 2048, outputTokens: 0 },
+            turnId: 't1',
+          });
+          return result('答');
+        },
+      }),
+    );
+    h.submit('hi');
+    await settle(h);
+    expect(h.state.statusline).toContain('ctx 15.3k/128k');
+    h.submit('/new');
+    await settle(h);
+    h.submit('再来');
+    await settle(h);
+    expect(h.state.statusline).toContain('ctx 2.0k/128k'); // 新会话自己的真实用量
+    expect(h.state.statusline).not.toContain('15.3k');
+    h.dispose();
+  });
+});
+
 // ─────────────────────────── T5：工具行人类化 ───────────────────────────
 
 describe('P11-T5 工具行动词注册表', () => {
@@ -337,7 +406,14 @@ describe('P11-T5 工具行动词注册表', () => {
 describe('P11-T6 忙碌态反馈', () => {
   it('statusLineFor：busy 带真实已用时长与 ↓token；缺失则省略（不猜）', () => {
     expect(
-      statusLineFor({ cwd: '/w', home: '/home/me', model: 'm', busy: true, busyElapsedMs: 12300, busyDownTokens: 3277 }),
+      statusLineFor({
+        cwd: '/w',
+        home: '/home/me',
+        model: 'm',
+        busy: true,
+        busyElapsedMs: 12300,
+        busyDownTokens: 3277,
+      }),
     ).toBe('/w · m · ctx — · ⏺ 运行中… 已用 12s ↓3.2k');
     expect(statusLineFor({ cwd: '/w', home: '/home/me', model: 'm', busy: true })).toBe('/w · m · ctx — · ⏺ 运行中…');
     expect(formatElapsed(95000)).toBe('1m35s');

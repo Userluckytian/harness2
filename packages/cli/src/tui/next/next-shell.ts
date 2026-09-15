@@ -706,8 +706,9 @@ export function commandSummaryOf(name: string): string | undefined {
 
 /**
  * P11-T7 引导卡开关：`HARNESS2_NO_WELCOME` 取值 1/true/yes/on（大小写不敏感）= 关闭；
- * 其余（含未设） = 显示。开关登记位置：本函数注释 + `--help`（chat 命令的 --no-welcome）
- * + `docs/tui-parity/README.md`。默认只在**冷启动首帧**显示一次（本会话内不重复）。
+ * 其余（含未设） = 显示。开关的**唯一登记处** = 本函数（环境变量）——未接 CLI 选项
+ * （`chat --help` 无 `--no-welcome`），`docs/tui-parity/README.md` 也未登记该开关；
+ * 此处如实说明，不写虚假登记点。默认只在**冷启动首帧**显示一次（本会话内不重复）。
  */
 export function welcomeEnabled(env: Record<string, string | undefined> | undefined): boolean {
   const raw = env?.HARNESS2_NO_WELCOME;
@@ -1216,7 +1217,9 @@ export function createNextChatHarness(runtime: ChatRuntime, deps: NextChatHarnes
   let statusPaintLines: readonly string[] | null = null;
   let turnStartedAt: number | undefined; // builtin turn-timer / payload.turn 数据源
   // P11-T4：最近一次 provider 真实用量（由 chat-setup 写入口转发 assistant/message.usage）。
-  // 跨 turn 保留（它是**上下文占用**的下界，不是单回合消耗）；无数据 = undefined，UI 降级。
+  // 跨 turn 保留（它是**上下文占用**的下界，不是单回合消耗）；**跨会话不保留**——会话 id 变化
+  // 时随 reprojectFromDisk 一并重置（否则新会话状态行会残留上一会话的 token 数字，数据不实）。
+  // 无数据 = undefined，UI 降级。
   let lastUsage: { inputTokens?: number; outputTokens?: number } | undefined;
   // P11-T4：本回合是否已收到真实用量（busy 的 `↓N` 只展示本回合数据，不拿上回合残留冒充）
   let usageThisTurn = false;
@@ -1686,8 +1689,7 @@ export function createNextChatHarness(runtime: ChatRuntime, deps: NextChatHarnes
           : lastUsage.inputTokens !== undefined || lastUsage.outputTokens !== undefined
             ? (lastUsage.inputTokens ?? 0) + (lastUsage.outputTokens ?? 0)
             : undefined;
-      const tokenUsage =
-        usedTokens !== undefined ? { used: usedTokens, total: DEFAULT_CONTEXT_WINDOW } : undefined;
+      const tokenUsage = usedTokens !== undefined ? { used: usedTokens, total: DEFAULT_CONTEXT_WINDOW } : undefined;
       // P11-T6：busy 耗时用真实计时（turn 开始时间在壳内记）；↓ 只取本回合已到达的输出 token
       const busyElapsedMs = busy && turnStartedAt !== undefined ? Date.now() - turnStartedAt : undefined;
       const busyDownTokens =
@@ -2718,7 +2720,13 @@ export function createNextChatHarness(runtime: ChatRuntime, deps: NextChatHarnes
     userSeq += 1;
     // 输入优先：user 回显立即落定（对齐旧壳 Shell dispatchInputNow）
     scheduler.setInputPriority(true);
-    scheduler.push({ type: 'user/message', seq: 0, id: `user:live:${userSeq}`, text, ts: new Date(turnStartedAt ?? Date.now()).toISOString() });
+    scheduler.push({
+      type: 'user/message',
+      seq: 0,
+      id: `user:live:${userSeq}`,
+      text,
+      ts: new Date(turnStartedAt ?? Date.now()).toISOString(),
+    });
     scheduler.flushNow();
     scheduler.setInputPriority(false);
     invalidate();
@@ -3072,6 +3080,9 @@ export function createNextChatHarness(runtime: ChatRuntime, deps: NextChatHarnes
    * user/assistant 条目消失、恢复时再现）。先落定待处理事件；清空折叠覆盖集（对齐旧壳 清
    * expandedIds，避免旧 item 下标残留）；磁盘读取失败保底重投影内存转录（不伪造）。
    * P2-1：检测到会话 id 变化时一并清空子会话瞬时状态（见 clearChildSessionState）。
+   * P11-T4 修复：会话 id 变化时**同时重置用量记账**（lastUsage/usageThisTurn）——它们是「上一
+   * 会话的上下文占用」，跨会话残留会让新会话状态行显示旧会话的 token 数字（伪造数据）。
+   * /undo /redo 不换会话（id 不变）→ 保留 lastUsage（同会话上下文占用仍然有效）。
    */
   let reprojectSessionId: string | null = runtime.getCurrent()?.id ?? null;
   function reprojectFromDisk(): void {
@@ -3080,6 +3091,9 @@ export function createNextChatHarness(runtime: ChatRuntime, deps: NextChatHarnes
     const currentId = current?.id ?? null;
     if (currentId !== reprojectSessionId) {
       clearChildSessionState();
+      // P11-T4：用量记账属旧会话（新会话尚无 provider 用量）→ 归零，状态行回到「ctx —/比例估算」
+      lastUsage = undefined;
+      usageThisTurn = false;
       reprojectSessionId = currentId;
     }
     // G-05：重投影后的折叠账本按 respect_manual_folds 裁决——true（缺省）按稳定 item id
