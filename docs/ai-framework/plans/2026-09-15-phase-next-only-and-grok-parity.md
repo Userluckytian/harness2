@@ -857,3 +857,29 @@ A1 零引用盘点 → A2 删旧壳代码 → A3 装配收敛（只剩 next / pi
 | ---------- | ------------------------------- | ------------------------------- | ---- | ------------------------------------------------------------ |
 | Test Files | 91 passed \| 1 skipped (92)     | 90 passed \| 1 skipped (91)     | −1   | 删 `test/tui/step-order.test.ts`（`harness.tsx` 本就不计入） |
 | Tests      | 1524 passed \| 2 skipped (1526) | 1520 passed \| 2 skipped (1522) | −4   | 恰为该文件 4 个 `it`（原全部通过），无其它增减               |
+
+---
+
+## 编排者验收记录（2026-09-15，逐批回填）
+
+### 第一批（A1～A3）✅ 通过 —— `6b45ccc` / `a1c7c92` / `0f1bb9e`
+
+- 我方独立复核：`git diff main --name-only -- packages/{core,gateway,ui-shared,desktop,web}` = **0 文件**；`packages/cli/src` 已无 `.tsx`/`panels/`/`runInkChat`；`pnpm --filter harness2 build` = 0 error。
+- **批准扩删**：`tui/terminal-events.ts`、`tui/input-bridge.ts`、`tui/paste.ts` 三个桥接模块（超出计划字面清单）。裁决依据：三者在 `packages/cli/src` **零引用**（grep 0），且 next 壳自带等价实现（鼠标 `1000/1002/1003/1006`、bracketed paste `2004`）。
+- **附加要求（已转 A4）**：三件原有测试断言必须登记为 ⚠️ 覆盖缺口，不得静默丢失。
+
+### 第二批（A4/A6）✅ 通过；A5 阻塞并已裁决 —— `93bce85` / `aee4881`
+
+- 我方独立复核：`pnpm --filter harness2 typecheck` **0 error**；`pnpm --filter harness2 test` **91 files / 1524 passed + 2 skipped 全绿**；`grep -rniE "\bink\b|ink-|runInkChat|shouldUseInk|HARNESS2_RENDERER" packages/cli/src` = **0**；`packages/ui-shared` diff = **0 行**（`--ink` CSS token 未误伤）。
+- A4 覆盖迁移评估：20 文件 / 177 条 `it` → ✅81 / ➖13 / ⚠️83（缺口逐条登记于计划附录）。
+- **A5 阻塞裁决**：`react` 仍在生产依赖图（`useTurnStream.ts` 的 hook，经 `next-shell.ts` 间接引入），且 `ink` 被 `test/tui/{harness.tsx,step-order.test.ts}` 引用。**裁决：该 hook 属旧壳死代码 → 拆出纯函数后连同 hook 与两测试文件一并删除，再清依赖。**
+
+### 第三批（A5 解阻塞 + 去痕改名 + A7）✅ 通过（附两项编排者裁定）—— `d73304b` / `edcaf19` / `fb8e5b9`
+
+- 我方独立复核（实跑）：`pnpm --filter harness2 typecheck` 0 error；cli 测试 **90 files / 1520 passed + 2 skipped 全绿**；`pnpm -r build` 六包全绿；`pnpm lint` 0 error / 46 warning；`packages/cli` 零 `.tsx` / 零 `react` / 零 `ink`；core **仅两处注释**且 `api-surface-baseline.json` diff = **0 行**。
+- **裁定 1（批准）**：删除 `packages/cli/scripts/tui-spike.tsx` 与 `run-spike.mjs`（P0 遗留的实验脚本，含旧壳依赖；不删则「零 .tsx / 零 react」不成立）。
+- **裁定 2（接受）**：`pnpm install` 顺带把 desktop/web 的 **传递 devDependency** `@testing-library/dom` 由 `10.4.1` → `10.4.2`。已核 `pnpm-lock.yaml` 中 **vite / vitest 版本零变化**；属 pnpm 重新解析的 patch 级副作用，非手工编辑，接受并登记。
+- **验收口径修正（重要）**：本机 `packages/desktop` 存在**预存环境红灯**，与本次改动无关（已用 `git checkout main` 同环境对照取证，红点完全相同）：
+  1. `test/serve-manager.test.ts` 4 例失败 —— 固定端口 `127.0.0.1:46213` 被遗留 `node` 进程占用（OPEN.md 已登记的技术债）。**杀掉占用进程后实测 17/17 全绿**。
+  2. `test/settings/models/*.test.tsx` 2 文件失败（`Error: No such built-in module: node:`，jsdom 环境下 `node:fs/os/path` 被 externalize）——`main` 分支同环境同样失败，预存问题。
+     → 因此 **A8 的全量闸门口径为**：`pnpm -r build` + `pnpm -r typecheck` + `pnpm lint` 全绿；`cli/core/gateway/ui-shared/web` 测试全绿；`desktop` 除上述 2 个预存红文件外全绿（须贴证据并先释放 46213 端口占用）。
