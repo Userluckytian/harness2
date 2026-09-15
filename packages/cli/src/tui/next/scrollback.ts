@@ -162,9 +162,24 @@ function sliceByCols(text: string, colStart: number, colEnd: number, rowWidth: n
  * 来源：移植 P0 spike selfdraw/scrollback.mjs 的 wrapLine；宽度判定用 renderer/cell-buffer.ts
  * 的 charWidth。cols ≤ 0 按 1 列兜底；零宽字符（组合符/VS16/ZWJ）跟随当前行；
  * 宽字符在行尾放不下时提前断行（绝不切半边）；行首放不下不产生空前导行（spike 版会）。
+ *
+ * P11-T1（P0 修复）：**硬换行优先**——`\n` / `\r\n` / `\r` 一律作行分隔，绝不当可打印
+ * 字符进网格（charWidth('\n') = 1，旧行为会把它当 1 列字符写入单元格，presenter 逐格
+ * 原样发射后终端在行中换行 → 整屏错位）。与 composer.ts 的 splitLogicalLines 同语义；
+ * 每个硬换行段至少产出一条物理行（`'a\n'` → ['a', '']）。
  */
 export function wrapLine(text: string, cols: number): string[] {
   const maxCols = Math.max(1, Math.floor(cols));
+  if (text.length === 0) return [''];
+  const out: string[] = [];
+  for (const segment of text.split(/\r\n|\r|\n/)) {
+    out.push(...wrapSegment(segment, maxCols));
+  }
+  return out;
+}
+
+/** 单个硬换行段内的显示宽度断行（不含控制字符；空段 = 一条空物理行） */
+function wrapSegment(text: string, maxCols: number): string[] {
   if (text.length === 0) return [''];
   const out: string[] = [];
   let cur = '';
@@ -191,7 +206,7 @@ export function wrapLine(text: string, cols: number): string[] {
     cur += ch;
     curW += w;
   }
-  if (cur.length > 0 || out.length === 0) out.push(cur);
+  out.push(cur);
   return out;
 }
 

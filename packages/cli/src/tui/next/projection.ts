@@ -86,7 +86,10 @@ function oneLine(text: string): string {
 }
 
 function splitLines(text: string): string[] {
-  return text.split('\n');
+  // 硬换行：'\n' / '\r\n' / '\r' 一律作行分隔（P11-T1 P0 修复：多行文本必须拆成多条
+  // 逻辑行——ProjectionLine 契约是「一条逻辑行」；内嵌换行若整段下传，renderer 会把它当
+  // 可打印字符写进网格单元格，presenter 逐格原样发射后终端在行中换行 → 面板错位）。
+  return text.split(/\r\n|\r|\n/);
 }
 
 /** 按 cols 截断超宽行（宽字符整字取舍，留 1 列给省略号）；cols ≤ 0 不截断 */
@@ -423,7 +426,11 @@ export function projectTranscript(items: readonly TranscriptItem[], opts: Projec
         break;
       case 'system':
       case 'status':
-        out.push({ text: item.text, lineIndex: i, kind: 'system', fg: theme.fg.system });
+        // 逐行投影（与 user/assistant 分支同构）：多行文本（如 core /help 的 HELP_TEXT、
+        // 命令输出的多行报告）必须展开为多条逻辑行，否则换行符会被当成可打印字符进网格。
+        for (const line of splitLines(item.text)) {
+          out.push({ text: line, lineIndex: i, kind: 'system', fg: theme.fg.system });
+        }
         break;
     }
   }

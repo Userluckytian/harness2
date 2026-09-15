@@ -1,0 +1,30 @@
+  /skills         列 出 可 用  skills（ 两 级 扫 描 合 并 ， 只 读 ）                                                       │
+  /plugins        列 出 插 件 目 录 与 装 载 审 批 状 态 （ 只 读 ）                                                          │
+  /mcps           列 出 配 置 的  MCP 服 务 器 （ 只 读 配 置 ， 不 探 测 连 接 ）                                               │
+  /tools          查 看 /切 换 工 具 面 （ 工 具 清 单 、 工 具 集  list/show/select）                                        │
+  /mode           切 换 审 批 模 式 （ /mode [normal|allow-approve|auto|plan]）                                      │
+  /reasoning      查 看 /切 换 推 理 过 程 展 示 （ on|off， 默 认  off）                                                   │
+  /minimal        切 换  minimal 渲 染 模 式 （ 终 端 原 生 滚 动 ， 不 接 管 屏 幕 ）                                           │
+  /fullscreen     切 换  fullscreen 渲 染 模 式 （ 接 管 屏 幕 ； 缩 写  /full）                                            │
+  /context        查 看 当 前 上 下 文 占 用 （ 状 态 栏 常 驻 显 示 ）                                                        │
+  /compact        手 动 触 发 上 下 文 压 缩 （ /compact [说 明 文 字 ]）                                                   │
+  /compact-layers 按 分 层 压 缩 （ turn → session） 执 行 一 次 压 缩 并 展 示 分 层 产 物                                      │
+  /memory         查 看 长 期 记 忆 条 目 与 用 量 （ MEMORY.md/USER.md， 只 读 ）                                           █
+  /tasks          列 出  cron 任 务 （ 只 读 ）                                                                      █
+说 明 ：                                                                                                        █
+  - write/edit 工 具 的 文 件 改 动 会 进 文 件 快 照 ， 可 被  /undo 恢 复 （ 创 建 的 文 件 将 被 删 除 ） ；                            █
+    bash 命 令 造 成 的 改 动 不 进 快 照 ， /undo 无 法 恢 复 它 （ 如 实 声 明 ） 。                                               █
+  - run_script 在 独 立  Node 子 进 程 里 执 行 代 码 （ 与  bash 同 级 的 代 码 执 行 ， 审 批 在 工 具 级 ） ；                         █
+    脚 本 内 经  harness.tools 的  write/edit 改 动 同 样 不 进 快 照 、 /undo 无 法 恢 复 ， 内 层 调 用 也 不 进                     █
+    会 话 日 志 与 执 行 观 察 面 ——需 要 可 回 滚 的 写 入 请 直 接 调  write/edit。                                               █
+  - redo 会 恢 复 到 撤 销 前 状 态 ， 撤 销 之 后 新 输 入 的 消 息 将 被 移 出 当 前 上 下 文                                           █
+    （ 仍 保 留 在 日 志 中 ， 可 用  traj 查 看 ） 。                                                                      █
+  - 撤 回 /重 做 只 追 加  rewind 标 记 （ append-only） ， 会 话 日 志 永 不 回 改 。                                            █
+  - 分 叉 （ /fork） = 复 制 当 前 会 话 的 活 动 事 件 到 新 会 话 （ 血 缘 入  header） ；                                          █
+    原 会 话 零 改 动 ， 新 会 话  undo 从 零 开 始 （ 文 件 快 照 不 复 制 ） 。                                                    █
+  - 审 批 提 示 中 的  [a] 本 会 话 总 是  = 该 工 具 后 续 所 有 调 用 不 再 询 问 （ 仅 进 程 内 会 话 级 ， 不 落 盘 ） 。                      █
+  - 以  / 开 头 的 普 通 消 息 会 被 当 作 命 令 ， 无 法 直 接 发 送 。                                                           █
+
+
+D:\AI_Projects\harness2 · mock · ctx 0%
+/ 命 令  · Tab 焦 点  · Ctrl+C 退 出

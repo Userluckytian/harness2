@@ -4,7 +4,7 @@
 // ChatScreenState（overlays/statusline/indicators）与 mock runtime 的调用记录。
 // 红绿流程：先于 next-shell.ts 实现落盘（红），实现后转绿（日志存 Temp/p2w3-evidence）。
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { SteerResult, TurnResult } from '@harness2/core';
+import { HELP_TEXT, type SteerResult, type TurnResult } from '@harness2/core';
 import type { ChatRuntime } from '../../../src/chat-setup.js';
 import {
   bindEmergencyExitRestore,
@@ -849,10 +849,18 @@ describe('steer 观察', () => {
 
 // —— 命令 ——
 describe('斜杠命令（next 模式最小集）', () => {
-  it('/help 输出帮助文本进转录', () => {
+  it('/help 输出帮助文本进转录（逐行版面：逻辑行不得内嵌换行）', () => {
     const { h } = makeHarness();
     h.feed('/help\r');
-    expect(linesOf(h).join('\n')).toContain('命令：');
+    const lines = linesOf(h);
+    // P11-T1 P0：旧实现把整段 HELP_TEXT（43 行）当成**一条**逻辑行（内嵌 42 个 \n，
+    // renderer 当可打印字符写进网格 → 面板错位）。弱断言 `toContain('命令：')` 对此恒真，
+    // 所以此处断言逻辑行粒度与逐行相等。
+    expect(lines.every((l) => !l.includes('\n'))).toBe(true);
+    const helpLines = HELP_TEXT.split('\n');
+    const start = lines.indexOf(helpLines[0] ?? '');
+    expect(start).toBeGreaterThan(0);
+    expect(lines.slice(start, start + helpLines.length)).toEqual(helpLines);
     h.dispose();
   });
 
