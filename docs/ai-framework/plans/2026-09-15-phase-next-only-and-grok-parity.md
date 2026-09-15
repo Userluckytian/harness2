@@ -500,3 +500,327 @@ A1 零引用盘点 → A2 删旧壳代码 → A3 装配收敛（只剩 next / pi
 - **非报错但语义已变**：`test/command-routing.test.ts:435`（`HARNESS2_RENDERER=next` 分支——开关已删，用例前提消失）。
 
 即 A4 目标集合 = **24 个测试文件**（22 + 1 + 1）。
+
+---
+
+## 附录：A4 测试清理与覆盖迁移评估（2026-09-15 实施）
+
+> 证据命令（全部在 `D:/AI_Projects/harness2`、分支 `feat/phase-p10-next-only` 上实跑）：
+>
+> 1. 删除前基线（stash 回 A3 态）：`npx vitest run --reporter=json` → `numTotalTests 1532 = 1511 passed + 7 failed + 14 pending`；
+>    其中「22 个 tsc 报错文件」里 **19 个 import 缺失模块 → 收集失败（assertions=0）**，仅 `keyboard.test.tsx` 因 esbuild 命名导入互操作「部分收集」，12 个用例被计入 pending。
+> 2. 删除后：`pnpm --filter harness2 typecheck` → **0 error**；`pnpm --filter harness2 test` → `Test Files 91 passed | 1 skipped (92)`、`Tests 1524 passed | 2 skipped (1526)`。
+
+### 六、处置清单（24 文件逐一，不漏）
+
+| #   | 文件                                       | 处置                                                                          | 依据                                                                          |
+| --- | ------------------------------------------ | ----------------------------------------------------------------------------- | ----------------------------------------------------------------------------- |
+| 1   | `test/tui-render.test.tsx`                 | 删                                                                            | 仅测已删 `DiffCard.tsx`/`ReasoningBlock.tsx`                                  |
+| 2   | `test/tui/DialogController.test.ts`        | 删                                                                            | 仅测已删 `runInkChat.tsx` 内 `createDialogController`                         |
+| 3   | `test/tui/approvals.test.tsx`              | 删                                                                            | 仅测已删旧壳 `ConfirmDialog`/`runInkChat` 审批链                              |
+| 4   | `test/tui/composer.test.tsx`               | 删                                                                            | 仅测已删旧壳 `Composer.tsx`                                                   |
+| 5   | `test/tui/input-bridge.test.ts`            | 删                                                                            | 测已删 `terminal-events.ts`/`input-bridge.ts`（编排者裁决 17）                |
+| 6   | `test/tui/keyboard.test.tsx`               | 删                                                                            | 仅测已删旧壳 `Composer.tsx` 键位                                              |
+| 7   | `test/tui/notify-shell.test.tsx`           | 删                                                                            | 仅测旧壳接线（`terminal-events` + `runInkChat`）                              |
+| 8   | `test/tui/overlay-position.test.tsx`       | 删                                                                            | 仅测旧壳浮层定位（`runInkChat`/`ConfirmDialog`）                              |
+| 9   | `test/tui/p3f-ink-session-picker.test.tsx` | 删                                                                            | 仅测旧壳 `runInkChat` 会话选择浮层（文件名去痕随删）                          |
+| 10  | `test/tui/panels.test.tsx`                 | 删                                                                            | 仅测已删 `panels/{queue,retry}-panel.tsx`                                     |
+| 11  | `test/tui/paste-integration.test.tsx`      | 删                                                                            | 仅测已删旧壳 `Composer.tsx`（chip 路径）                                      |
+| 12  | `test/tui/paste.test.ts`                   | 删                                                                            | 测已删 `paste.ts`（编排者裁决 17）                                            |
+| 13  | `test/tui/shell-lifecycle.test.tsx`        | 删                                                                            | 仅测旧壳在进程内生命周期（`runInkChat`）；进程级 piped 由 `chat.test.ts` 承接 |
+| 14  | `test/tui/steer-composer.test.tsx`         | 删                                                                            | 仅测旧壳 `Composer.tsx` 的 Ctrl+S steer                                       |
+| 15  | `test/tui/task-panel.test.tsx`             | 删                                                                            | 仅测已删 `panels/task-panel.tsx`（next 无任务数据源）                         |
+| 16  | `test/tui/terminal-events.test.ts`         | 删                                                                            | 测已删 `terminal-events.ts`（编排者裁决 17）                                  |
+| 17  | `test/tui/tui-subagent.test.tsx`           | 删                                                                            | 测已删 `TranscriptView`/`SubagentView`/`runInkChat`                           |
+| 18  | `test/tui/tui-terminal-mouse.test.tsx`     | 删                                                                            | 测已删 `terminal-events` + 旧壳 `runInkChat` 鼠标链                           |
+| 19  | `test/tui/tui-transcript.test.tsx`         | 删                                                                            | 测已删 `TranscriptView.tsx`                                                   |
+| 20  | `test/tui/undo-redo-shell.test.tsx`        | 删                                                                            | 测旧壳 `runInkChat` 的 /undo /redo 重投影                                     |
+| 21  | `test/tui/tui-gate.test.ts`                | **迁**（`shouldUseInk`→`shouldUseTui`，改从 `terminal-capabilities.js` 导入） | 门控函数 **保留**（A3 迁入 `terminal-capabilities.ts:142`），非旧壳专有       |
+| 22  | `test/tui/next/next-shell.test.ts`         | **改**（删 `HARNESS2_RENDERER 开关` describe + import）                       | `shouldUseNextRenderer` 已在 A3 删除，开关无意义                              |
+| 23  | `test/tui/terminal-capabilities.test.ts`   | **改**（5 个用例标题 + 7 处 `toBe('ink')` → `'tui'`）                         | A3 已把 `TuiMode` 改为 `'tui' \| 'legacy'`（tsc 不报、运行必红）              |
+| 24  | `test/command-routing.test.ts`             | **改**（`describe` 标题去 `HARNESS2_RENDERER=next`）                          | 开关已删，用例前提消失（语义已变）                                            |
+
+### 七、覆盖迁移评估表（三分类，逐条可核）
+
+图例：✅ = next 侧等价测试（给 `文件:行`）；➖ = 已过时（功能/交互不存在，说明理由）；⚠️ = **缺口**（next 侧无等价覆盖，**本阶段不补**，登记于 C4 改进清单）。
+
+#### 1. `test/tui-render.test.tsx`（6 用例：6 ✅ / 0 ➖ / 0 ⚠️）
+
+| 用例                                    | 分类 | 落点                                                                                |
+| --------------------------------------- | ---- | ----------------------------------------------------------------------------------- |
+| DiffCard edit：删 `-` / 增 `+` / 未变灰 | ✅   | `test/tui/next/projection.test.ts:291`（展开态：`+ `绿 / `- `红 / 上下文灰）        |
+| DiffCard write：全为新增行              | ✅   | `test/tui/next/projection.test.ts:337`                                              |
+| DiffCard 超出默认最大行数：省略提示     | ✅   | `test/tui/next/projection.test.ts:341`（超 20 行折叠为 `… 还有 N 行`）              |
+| ReasoningBlock 折叠态：灰标题 + 预览    | ✅   | `test/tui/next/projection.test.ts:70`；`test/tui/next/p4b-theme-search.test.ts:270` |
+| ReasoningBlock 展开态：全文可见         | ✅   | `test/tui/next/projection.test.ts:81`；`test/tui/next/next-shell.test.ts:383,428`   |
+| ReasoningBlock 空文本：不渲染           | ✅   | `test/tui/next/projection.test.ts:88`（纯空白 reasoning 不产推理行）                |
+
+#### 2. `test/tui/DialogController.test.ts`（4 用例：4 ✅）
+
+| 用例                                           | 分类 | 落点                                                                                               |
+| ---------------------------------------------- | ---- | -------------------------------------------------------------------------------------------------- |
+| open 挂起 + 通知订阅者 + getPending            | ✅   | `test/tui/cards/cards-queue.test.ts:16,31`（四卡队列 + 插队）；`test/tui/next/overlay.test.ts:373` |
+| clear 清空挂起并通知                           | ✅   | `test/tui/cards/cards-queue.test.ts:87`（resolve 收缩）                                            |
+| open 新请求前 resolve 旧挂起（同一时刻仅一个） | ✅   | `test/tui/cards/cards-queue.test.ts:47`（依次结算/顶出）                                           |
+| clear 后 open 可再次进入（多轮复用）           | ✅   | `test/tui/cards/cards-queue.test.ts:69`（同级 FIFO）                                               |
+
+#### 3. `test/tui/approvals.test.tsx`（3 用例：3 ✅）
+
+| 用例                                      | 分类 | 落点                                                                                                                    |
+| ----------------------------------------- | ---- | ----------------------------------------------------------------------------------------------------------------------- |
+| 一个 turn 内两次顺序审批各自 resolve      | ✅   | `test/tui/next/next-shell.test.ts:536`（第二次审批自动/手动应答路径）                                                   |
+| 第二次审批到来时首个未决挂起 resolve 哨兵 | ✅   | `test/tui/cards/cards-queue.test.ts:31,47,61`（迟到插队 + nextCardAfter 只窥视）                                        |
+| 审批卡渲染在输入行上方，Esc 拒绝并关闭    | ✅   | `test/tui/next/overlay.test.ts:58,63`；`test/tui/next/next-shell.test.ts:920`；`test/tui/input/esc-machine.test.ts:284` |
+
+#### 4. `test/tui/composer.test.tsx`（13 用例：9 ✅ / 3 ➖ / 1 ⚠️）
+
+| 用例                                       | 分类 | 落点 / 理由                                                                                                                         |
+| ------------------------------------------ | ---- | ----------------------------------------------------------------------------------------------------------------------------------- |
+| (a) 忙时输入仍编辑草稿                     | ✅   | `test/tui/next/chat-controller.test.ts:89`（可打印字符插入光标处）                                                                  |
+| (b) 忙时 Esc 调用 onAbort                  | ➖   | P2-C 改语义：**忙时 Esc 永不取消**（`test/tui/next/next-shell.test.ts:711` G-14），取消改走 Ctrl+C（G-38）                          |
+| (c) 忙时 Enter 以草稿 onSend（排队）       | ✅   | `test/tui/queue/wiring-contract.test.ts:33`（G-26 running+Enter → 入队）                                                            |
+| (d) 空闲首次 Ctrl+C 只提示、不污染草稿     | ✅   | `test/tui/next/next-shell.test.ts:631`；`test/tui/next/chat-controller.test.ts:103`                                                 |
+| (e) 空闲窗口内两次 Ctrl+C onExit           | ✅   | `test/tui/next/next-shell.test.ts:638`（窗口内二按退出码 130）                                                                      |
+| 忙时页脚：取消/排队文案与队列长度          | ✅   | `test/tui/next/chat-screen.test.ts:138`（指示行）；`test/tui/next/composer.test.ts:361`；`test/tui/queue/panel.test.ts:146`（计数） |
+| 空闲 Esc 仍清空草稿（不触发 onAbort）      | ➖   | P2-C 改语义：**单击 Esc 不清稿**，G-17 双击才清稿+stash（`test/tui/next/next-shell.test.ts:746`）                                   |
+| 行尾反斜杠续行不发送                       | ⚠️   | 见下「⚠️ 缺口清单」#4（next 仅 Shift+Enter 硬换行，无 `\` 续行实现）                                                                |
+| Shift+Enter（kitty CSI-u）插入换行而不发送 | ✅   | `test/tui/next/chat-controller.test.ts:238`；`test/tui/next/next-shell.test.ts:765`                                                 |
+| 空草稿 Ctrl+D 调用 onExit（eof）           | ➖   | next 改语义：**空草稿 Ctrl+D 不退出**，走半页下滚（`test/tui/next/next-shell.test.ts:689`；退出只走 Ctrl+C 双击与 /exit）           |
+| T5 `/` 候选列表渲染在输入行上方            | ✅   | `test/tui/next/chat-screen.test.ts:83`；`test/tui/next/composer.test.ts:254`                                                        |
+| T5 继续输入过滤候选：仍在输入行上方且收窄  | ✅   | `test/tui/next/slash-commands.test.ts:261`（逐字实时缩小）                                                                          |
+| T5 候选出现时结构化高度随之增长            | ✅   | `test/tui/next/chat-screen.test.ts:83`（3 items → candidateRows 3）                                                                 |
+
+> 勘误：上表「行尾反斜杠续行」计入 ⚠️（缺口 #4），故本文件为 **9 ✅ / 3 ➖ / 1 ⚠️**（合计 13）。
+
+#### 5. `test/tui/input-bridge.test.ts`（36 用例：0 ✅ / 0 ➖ / 36 ⚠️）
+
+全部 36 条断言测「统一解析器（`createUnifiedEventParser`）→ ink 可消费字节序列」的**逐字节等价性**，模块已删（编排者裁决 17）。next 壳自持输入链（`input/parser.ts` + `next/chat-controller.ts`）的**行为**有覆盖，但**「与旧统一解析器逐字节等价」这一契约**无 next 等价断言 → 整体登记为 ⚠️ 缺口 #1（见下）。
+
+#### 6. `test/tui/keyboard.test.tsx`（12 用例：9 ✅ / 0 ➖ / 3 ⚠️）
+
+| 用例                                           | 分类 | 落点 / 理由                                                                                                     |
+| ---------------------------------------------- | ---- | --------------------------------------------------------------------------------------------------------------- |
+| 多字符输入 + 视觉光标（反显）                  | ✅   | `test/tui/next/chat-controller.test.ts:89`；`test/tui/next/composer.test.ts:127`                                |
+| 左右键移动光标后插入                           | ✅   | `test/tui/next/chat-controller.test.ts:201,208`                                                                 |
+| backspace 一次删除整个 ZWJ emoji（grapheme）   | ✅   | `test/tui/next/chat-controller.test.ts:96,188`                                                                  |
+| Home/End 作用于当前逻辑行                      | ✅   | `test/tui/next/chat-controller.test.ts:215,223`                                                                 |
+| End 回到当前逻辑行行尾                         | ✅   | `test/tui/next/chat-controller.test.ts:215`                                                                     |
+| Ctrl+Left 词移动                               | ✅   | `test/tui/next/chat-controller.test.ts:229`                                                                     |
+| Alt+Left（meta）同样词移动                     | ⚠️   | next `chat-controller` 对 `left/right && alt` 不处理（`:234`），无 Alt+Left 词移动 → 缺口 #5                    |
+| Shift+Enter 换行不发送 + 替代键提示            | ✅   | `test/tui/next/chat-controller.test.ts:238`；`test/tui/next/next-shell.test.ts:765`                             |
+| 行尾反斜杠回车作为替代换行键                   | ⚠️   | 同 #4（next 无 `\` 续行）                                                                                       |
+| 历史 up/up/down/down 恢复原 draft 与 selection | ✅   | `test/tui/next/chat-controller.test.ts:287,301`                                                                 |
+| Up/Down 跨软折行视觉行移动（就近列）           | ⚠️   | next `chat-controller.ts:15,244` 明确「Infinity 宽 = 仅硬换行逻辑行，软折行视觉行属 W3」→ 无实现/无测 → 缺口 #6 |
+| 软折行按显示宽度渲染成多视觉行                 | ✅   | `test/tui/next/composer.test.ts:44,48`                                                                          |
+
+#### 7. `test/tui/notify-shell.test.tsx`（3 用例：3 ✅）
+
+| 用例                                  | 分类 | 落点                                                                 |
+| ------------------------------------- | ---- | -------------------------------------------------------------------- |
+| always：回合正常结束 → 发 bel         | ✅   | `test/tui/notify.test.ts:75`；`test/tui/next/next-shell.test.ts:892` |
+| never：回合结束不发                   | ✅   | `test/tui/notify.test.ts:94`                                         |
+| unfocused：聚焦不发；失焦后回合结束发 | ✅   | `test/tui/notify.test.ts:82,115`                                     |
+
+> 附注：该用例依赖的「终端失焦 DECSET 1004 聚焦桥」随 `terminal-events.ts` 删除，桥本身无 next 等价 → 并入 ⚠️ 缺口 #3。
+
+#### 8. `test/tui/overlay-position.test.tsx`（5 用例：4 ✅ / 1 ➖）
+
+| 用例                                              | 分类 | 落点 / 理由                                                                                                                   |
+| ------------------------------------------------- | ---- | ----------------------------------------------------------------------------------------------------------------------------- |
+| T3 /mode 弹层在输入框上方（转录让出等量行）       | ✅   | `test/tui/next/overlay.test.ts:58,63`；`test/tui/next/chat-screen.test.ts:209`                                                |
+| T3 Esc 关闭弹层、焦点回 Composer                  | ✅   | `test/tui/input/esc-machine.test.ts:284`；`test/tui/next/p2c-wiring.test.ts:309`                                              |
+| T3 Enter 应用选中模式并关闭                       | ✅   | `test/tui/commands/palette-model.test.ts:159`（Enter 直执行）；`test/tui/next/slash-commands.test.ts:462`（/mode 四态）       |
+| T3 /sessions 弹层位置且含会话计数                 | ➖   | next 的 `/sessions` 以**转录文本**呈现（`test/tui/next/slash-commands.test.ts:421` 明记「浮层化登记暂缺」）→ 旧浮层形态不存在 |
+| T3 审批确认框经 dialog 渲染在输入框上方，Esc 关闭 | ✅   | `test/tui/next/overlay.test.ts:58`；`test/tui/next/next-shell.test.ts:920`；`test/tui/input/esc-machine.test.ts:284`          |
+
+#### 9. `test/tui/p3f-ink-session-picker.test.tsx`（1 用例：1 ✅）
+
+| 用例                                            | 分类 | 落点                                                                                                            |
+| ----------------------------------------------- | ---- | --------------------------------------------------------------------------------------------------------------- |
+| Ctrl+R 拉起「会话（/sessions）」浮层 + Esc 关闭 | ✅   | `test/tui/next/p3f-agent-keys.test.ts:428`（G-34 Ctrl+R 列表 + Enter 切换）；`:483`（审批优先）；`:232`（键位） |
+
+#### 10. `test/tui/panels.test.tsx`（11 用例：9 ✅ / 1 ➖ / 1 ⚠️）
+
+| 用例                                                      | 分类 | 落点 / 理由                                                                                                                                                                                                   |
+| --------------------------------------------------------- | ---- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| queuePreview：折单行并截断（不改原文本）                  | ✅   | `test/tui/queue/panel.test.ts:126`（preview 折行合一 + 截断）                                                                                                                                                 |
+| cancelQueueItem：无 id 队首 / 有 id 精确移除 / 不改原数组 | ✅   | `test/tui/queue/queue.test.ts:63`（removeFollowUpById）                                                                                                                                                       |
+| 渲染排队条数、下一条预览与取消键提示                      | ✅   | `test/tui/queue/panel.test.ts:146`；`test/tui/next/p3e-wiring.test.ts:504`                                                                                                                                    |
+| 空队列渲染 null（不占行）                                 | ✅   | `test/tui/queue/panel.test.ts:62,146`                                                                                                                                                                         |
+| 虚拟 TTY：Ctrl+X 取消队首回调                             | ⚠️   | 旧 ink 面板 Ctrl+X 键位随面板删除，next 面板无取消键（G-29 仅 `Ctrl+;` 开面板 / Enter 发送 / e 编辑，`test/tui/queue/wiring-contract.test.ts:187`）；数据层 `removeFollowUpById` 有覆盖但无 UI 落点 → 缺口 #7 |
+| retry-panel：stopReason 标签引用冻结枚举                  | ✅   | `test/tui/next/p3e-chrome.test.ts:283`（formatRetryBudget）                                                                                                                                                   |
+| 预算耗尽快照如实展示停因                                  | ✅   | `test/tui/next/p3e-chrome.test.ts:296`                                                                                                                                                                        |
+| 纯倒计时模型：剩余秒数                                    | ✅   | `test/tui/next/p3e-chrome.test.ts:301`                                                                                                                                                                        |
+| 无预算且无倒计时：不可见                                  | ✅   | `test/tui/next/p3e-chrome.test.ts:260`（空闲无重试段）                                                                                                                                                        |
+| retryBudgetHasActivity：仅重试/明确停因占行               | ✅   | `test/tui/next/p3e-chrome.test.ts:295,297`                                                                                                                                                                    |
+| 虚拟 TTY：Esc 触发停止（映射 abortTurn）                  | ➖   | P2-C 改语义：回合中 Esc 永不取消（`test/tui/next/next-shell.test.ts:719`），取消改走 Ctrl+C（`:643,657`）                                                                                                     |
+
+#### 11. `test/tui/paste-integration.test.tsx`（6 用例：0 ✅ / 0 ➖ / 6 ⚠️）
+
+多行 CRLF→单 chip、短单行原子插入、粘贴 `/exit` 不自动执行、两次粘贴 `#1`/`#2`、超 1MB 拒绝——均依赖已删 `Composer.tsx` + `paste.ts` 的 chip 语义。next bracketed paste 只覆盖「CRLF 归一入草稿、绝不提交」（`test/tui/next/chat-controller.test.ts:443`）→ chip/原子插入/1MiB 拒绝无 next 等价 → 缺口 #2。
+
+#### 12. `test/tui/paste.test.ts`（16 用例：0 ✅ / 0 ➖ / 16 ⚠️）
+
+`normalizePaste`（CRLF/CR/LF 归一）、`classifyPaste`（inline/chip/rejected、1MiB 边界、UTF-8 字节计数）、`renderChipLabel`（`#`/行数/字节单位）、chip 全文保真——模块已删，next 无等价 → 缺口 #2。
+
+#### 13. `test/tui/shell-lifecycle.test.tsx`（2 用例：2 ✅）
+
+| 用例                                                               | 分类 | 落点                                                                                                               |
+| ------------------------------------------------------------------ | ---- | ------------------------------------------------------------------------------------------------------------------ |
+| in-process：跑一轮 → /exit，单例 finish/exit、code 0、无残留 timer | ✅   | `test/tui/next/next-shell.test.ts:873`（/exit 退出码 0）；`:995`（process exit 兜底）；`test/tui/shutdown.test.ts` |
+| process 级：真实 CLI piped 跑一轮 /exit，退出码 0、无残留子进程    | ✅   | `test/chat.test.ts:170,201,234`（piped /exit 退出码 0）                                                            |
+
+#### 14. `test/tui/steer-composer.test.tsx`（2 用例：0 ✅ / 2 ➖）
+
+| 用例                                              | 分类 | 理由                                                                                                                                                               |
+| ------------------------------------------------- | ---- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Ctrl+S 调用 onSteer(草稿)，页脚返回文案，草稿保留 | ➖   | 键位迁移：next `Ctrl+S` = G-17 stash 恢复（`test/tui/next/next-shell.test.ts:746`）；「草稿→steer」能力由 G-26 承载（`test/tui/queue/wiring-contract.test.ts:44`） |
+| 未提供 onSteer：Ctrl+S 无副作用                   | ➖   | 同上（键位已不存在）                                                                                                                                               |
+
+#### 15. `test/tui/task-panel.test.tsx`（8 用例：2 ✅ / 6 ➖）
+
+| 用例                                        | 分类 | 落点 / 理由                                                                                                                 |
+| ------------------------------------------- | ---- | --------------------------------------------------------------------------------------------------------------------------- |
+| 非法迁移被拒（queued→running / 终态无出边） | ✅   | `packages/core/test/runtime-journal-crash.test.ts:315`（canTaskTransition 写入口拒）；`packages/core/test/flows.test.ts:66` |
+| 合法迁移写入 updatedAt，不改原对象          | ✅   | `packages/core/test/flows.test.ts:66`；`packages/core/src/interaction/types.ts:288`                                         |
+| formatTaskState：终态显式标注               | ➖   | next 壳无任务面板数据源（已登记 `src/tui/input/keymaps.ts:389`，G-35/G-37 归存 P7）                                         |
+| sortTasks：进行中在前、同组按 id 稳定       | ➖   | 同上                                                                                                                        |
+| taskPanelCounts：区分进行中/终态            | ➖   | 同上                                                                                                                        |
+| 空列表渲染 null                             | ➖   | 同上                                                                                                                        |
+| 渲染多个状态（终态/父任务/后台）            | ➖   | 同上                                                                                                                        |
+| 超过 maxRows 时提示省略数量                 | ➖   | 同上                                                                                                                        |
+
+#### 16. `test/tui/terminal-events.test.ts`（20 用例：0 ✅ / 0 ➖ / 20 ⚠️）
+
+`parseSgrMouse`（滚轮/点击/释放/畸形）、`TerminalEventParser`（增量解析/回注/挂起超时/焦点 I/O）、`attachTerminalEvents`（写 SGR+焦点 enable 序列、dispose 还原、退订）——模块已删。next 自写 SGR mouse（`next/next-shell.ts` selectionPointFromMouse/wheel）的**行为**有覆盖（`test/tui/next/next-selection.test.ts:100`、`test/tui/next/chat-controller.test.ts:417`），但**「桥接层解析/回注/写序列等价」契约**无 next 等价 → 缺口 #3。
+
+#### 17. `test/tui/tui-subagent.test.tsx`（14 用例：14 ✅）
+
+| 用例                                                        | 分类 | 落点                                                                                  |
+| ----------------------------------------------------------- | ---- | ------------------------------------------------------------------------------------- |
+| reducer：`subagent_start`+JSON → 挂载 childSessionId        | ✅   | `test/tui/next/projection.test.ts:244`（childSessionId → `↳ 子会话` 灰行）            |
+| reducer：`subagent_continue`+JSON → 挂载 childSessionId     | ✅   | `test/tui/next/projection.test.ts:253`；`test/tui/next/p3cd-review-fixes.test.ts:411` |
+| 非 subagent 工具即使 output 含 childSessionId 也不解析      | ✅   | `test/tui/next/projection.test.ts:244` 段（仅 subagent 工具产入口）                   |
+| subagent 工具但 output 非 JSON / 无 childSessionId → 不挂载 | ✅   | 同上                                                                                  |
+| 有 childSessionId → 显示「子会话 <id>」入口                 | ✅   | `test/tui/next/projection.test.ts:244`                                                |
+| 无 childSessionId → 不显示入口                              | ✅   | 同上                                                                                  |
+| SubagentView：正常目录重投影子会话文本                      | ✅   | `test/tui/next/p3d-subagent.test.ts:366`（打开视图，磁盘重放）                        |
+| SubagentView：坏目录 → 如实错误文案                         | ✅   | `test/tui/next/p3d-subagent.test.ts:428`                                              |
+| SubagentView：dir=undefined → 定位失败原因                  | ✅   | `test/tui/next/p3d-subagent.test.ts:428`；`:528`（磁盘缺失降级）                      |
+| SubagentView：空目录（有目录无日志）→ 如实报错              | ✅   | `test/tui/next/p3d-subagent.test.ts:428`                                              |
+| InkShell：Ctrl+K 打开子会话转录，Esc 关闭回 Composer        | ✅   | `test/tui/next/p3d-subagent.test.ts:353,366`（键位改为 `v`，见下注）                  |
+| kitty CSI-u 的 Ctrl+J 同样打开浮层                          | ✅   | 同上（旧 Ctrl+J 键位迁移，next `Ctrl+J` = G-10 行滚）                                 |
+| 无子会话入口时 Ctrl+K 不打开任何浮层（不抛错）              | ✅   | `test/tui/next/p3d-subagent.test.ts:440`（无子会话 v：瞬时提示不开视图）              |
+| 坏目录的子会话 → 打开浮层显示如实错误                       | ✅   | `test/tui/next/p3d-subagent.test.ts:428`                                              |
+
+> 键位变更登记：旧壳子会话浮层键为 `Ctrl+K/Ctrl+J`；next 改为**滚动区焦点下 `v`**（`test/tui/next/p3d-subagent.test.ts:353`，G-08 焦点环），`Ctrl+K/J` 改作 G-10 行滚（`test/tui/input/keymaps.test.ts:133`）。能力面等价，键位差异已登记。
+
+#### 18. `test/tui/tui-terminal-mouse.test.tsx`（3 用例：3 ✅）
+
+| 用例                                           | 分类 | 落点                                                                                        |
+| ---------------------------------------------- | ---- | ------------------------------------------------------------------------------------------- |
+| 滚轮上暂停跟随（锚定横幅）；滚轮下回底恢复跟随 | ✅   | `test/tui/next/chat-controller.test.ts:379,417,424`；`test/tui/next/next-shell.test.ts:793` |
+| 鼠标事件后键入普通字符不污染草稿               | ✅   | `test/tui/next/chat-controller.test.ts:434`（非滚轮鼠标事件不消费）                         |
+| Ctrl+G 鼠标滚动后仍恢复跟随                    | ✅   | `test/tui/next/chat-controller.test.ts:409`                                                 |
+
+> 附注：用例依赖的「SGR 序列 → 事件桥」本身（写 enable 序列/回注）无 next 等价 → 并入 ⚠️ 缺口 #3。
+
+#### 19. `test/tui/tui-transcript.test.tsx`（9 用例：9 ✅）
+
+| 用例                                                | 分类 | 落点                                                                                                                        |
+| --------------------------------------------------- | ---- | --------------------------------------------------------------------------------------------------------------------------- |
+| expandedIds 含 id → 渲染 DiffCard 真实变更          | ✅   | `test/tui/next/projection.test.ts:291`；`test/tui/next/next-shell.test.ts:383`                                              |
+| 未展开 → 不渲染 diff，仅工具名与摘要                | ✅   | `test/tui/next/projection.test.ts:275`（默认折叠不产 diff 行）                                                              |
+| 展开态显示真实 tool output                          | ✅   | `test/tui/next/projection.test.ts:104`                                                                                      |
+| 虚拟 TTY：Ctrl+O 仍可展开已落定卡片                 | ✅   | 键位迁移：next 折叠族 = `e/E/h/l`（`test/tui/next/next-shell.test.ts:383,453`）；`Ctrl+O` 改作 always-approve（`:508,556`） |
+| partial：标注「未完成/已中断」+ stopReason/error    | ✅   | `test/tui/next/projection.test.ts:184,198`                                                                                  |
+| empty：不渲染空白气泡，只给 stopReason/error 与标签 | ✅   | `test/tui/next/projection.test.ts:206`                                                                                      |
+| empty 无 error 时也给出可读占位（禁止静默）         | ✅   | `test/tui/next/projection.test.ts:198`（两者皆缺 → 占位文案）                                                               |
+| final：普通正文 + 保留 reasoning 展开行为           | ✅   | `test/tui/next/projection.test.ts:69,81`                                                                                    |
+| 会话重投影替换 items（B 会话不含 A 会话文本）       | ✅   | `test/tui/next/p3cd-review-fixes.test.ts:411,442`                                                                           |
+
+#### 20. `test/tui/undo-redo-shell.test.tsx`（3 用例：3 ✅）
+
+| 用例                                                           | 分类 | 落点                                                                                                                                        |
+| -------------------------------------------------------------- | ---- | ------------------------------------------------------------------------------------------------------------------------------------------- |
+| 跑一轮 → /undo 条目消失 → /redo 恢复；输出经共享 handleCommand | ✅   | `test/chat.test.ts:87,238`（REPL /undo /redo 文件复原）；`test/tui/next/slash-commands.test.ts:394`；`test/tui/next/p2c-wiring.test.ts:276` |
+| 重投影清掉冻结的重试面板（/undo 后不残留）                     | ✅   | `test/tui/next/p3e-chrome.test.ts:340`（重试标记随 turn 清除）；`test/tui/next/p3cd-review-fixes.test.ts:442`（重投影）                     |
+| 共享 /help 文本与本地浮层同源（含 /undo /redo 说明）           | ✅   | `test/command-routing.test.ts:458`（/help 与 core 同一份输出）；`test/tui/next/slash-commands.test.ts:866`                                  |
+
+### 八、分类总计与用例数对账
+
+| 分类                                  | 用例数  |
+| ------------------------------------- | ------- |
+| ✅ next 侧等价                        | **81**  |
+| ➖ 已过时（含理由）                   | **13**  |
+| ⚠️ **缺口**（登记，不补）             | **83**  |
+| 合计（20 个被删文件的 `it` 静态计数） | **177** |
+
+**用例数变化对账**（`npx vitest run --reporter=json` 基线 vs 删除后）：
+
+| 项                             | 基线（A3 态）                             | A4 后                                   | 变化 | 解释                                                                                   |
+| ------------------------------ | ----------------------------------------- | --------------------------------------- | ---- | -------------------------------------------------------------------------------------- |
+| Test Files                     | 23 failed \| 88 passed \| 1 skipped (112) | 0 failed \| 91 passed \| 1 skipped (92) | −20  | 删除 20 个仅测旧壳文件；3 个红文件（next-shell/terminal-capabilities/tui-gate）转绿    |
+| Tests（合计）                  | 1532                                      | 1526                                    | −6   | 见下三行分解                                                                           |
+| ├ passed                       | 1511                                      | 1524                                    | +13  | tui-gate 迁移后可收集 +8；terminal-capabilities 5 红转绿 +5                            |
+| ├ failed                       | 7                                         | 0                                       | −7   | terminal-capabilities 5 + next-shell 2 修复                                            |
+| └ pending                      | 14                                        | 2                                       | −12  | `keyboard.test.tsx` 部分收集的 12 条（依赖已删模块）随文件删除；余 2 条为 e2e 环境闸门 |
+| 其中：删 `keyboard.test.tsx`   | 12（pending）                             | —                                       | −12  | 该文件因 esbuild 命名导入互操作「部分收集」，12 用例计入 pending                       |
+| 其中：删 `next-shell` 开关用例 | 2（failed）                               | —                                       | −2   | `HARNESS2_RENDERER` 开关已于 A3 删除                                                   |
+| 其中：迁 `tui-gate.test.ts`    | 0（收集失败）                             | 8                                       | +8   | `shouldUseTui` 门控保留，改导入后 8 用例恢复执行                                       |
+| 其余 19 个被删文件             | 0（import 缺失模块 → 收集失败）           | —                                       | 0    | 其 165 条断言**未被执行**，但已全部登记于 §七                                          |
+
+**结论：** 删除动作本身未减少任何**曾被执行**的断言；唯一减少的 2 条来自 A3 已删开关的用例，另有 12 条来自 `keyboard.test.tsx` 的「部分收集」pending。177 条静态断言 100% 登记，无静默丢覆盖。
+
+### 九、⚠️ 缺口清单（C4 改进清单登记，本阶段不补）
+
+| #   | 缺口                                                                | 来源用例                                                        | 数量 | 严重度 | 说明                                                                                                          |
+| --- | ------------------------------------------------------------------- | --------------------------------------------------------------- | ---- | ------ | ------------------------------------------------------------------------------------------------------------- |
+| 1   | `input-bridge.ts` **统一解析器 → ink 字节序列逐字节等价性**         | `input-bridge.test.ts` 全 36 条                                 | 36   | P2     | next 输入链（`input/parser.ts` + `chat-controller.ts`）行为有覆盖，但「与旧统一解析器字节等价」契约无等价测试 |
+| 2   | `paste.ts` **归一/分类/1MiB 边界/chip 语义/全文保真**               | `paste.test.ts` 16 条 + `paste-integration.test.tsx` 6 条       | 22   | P2     | next bracketed paste 仅覆盖「CRLF 归一入草稿、绝不提交」；无 chip、无 1MiB 拒绝、无字节计数                   |
+| 3   | `terminal-events.ts` **SGR 鼠标/焦点桥 + 写 enable 序列/回注/退订** | `terminal-events.test.ts` 20 条（含 `notify-shell` 焦点桥附注） | 20   | P2     | next 自写 SGR mouse 行为有覆盖（selection/wheel），但桥接层解析/回注/写序列契约无等价                         |
+| 4   | 输入：**行尾反斜杠续行**（终端无法区分 Shift+Enter 时的替代键）     | `composer.test.tsx` 1 条 + `keyboard.test.tsx` 1 条             | 2    | P3     | next 仅 kitty `Shift+Enter` 硬换行；无 `\` 续行实现（`chat-controller.ts`/`next-shell.ts` 均无）              |
+| 5   | 输入：**Alt+Left 词移动**（ink meta 编码）                          | `keyboard.test.tsx` 1 条                                        | 1    | P3     | next `chat-controller.ts:234` 对 `left/right && alt` 不处理；主键 `Ctrl+←` 有覆盖                             |
+| 6   | 输入：**Up/Down 跨软折行视觉行移动**（就近列）                      | `keyboard.test.tsx` 1 条                                        | 1    | P3     | next 明确「Infinity 宽 = 仅硬换行逻辑行，软折行视觉行属 W3」（`chat-controller.ts:15,244`）                   |
+| 7   | 交互：**旧 ink 面板 `Ctrl+X` 取消队首键位**                         | `panels.test.tsx` 1 条                                          | 1    | P3     | 键位随旧面板删除；next 面板键位另定（G-29），数据层 `removeFollowUpById` 有覆盖                               |
+
+> 上述 7 项合计 **83** 条（36+22+20+2+1+1+1 = 83），与 §八「⚠️ 83」逐条一致：④ 的 2 条即 `composer` 与 `keyboard` 各 1 行，⑤⑥ 即 `keyboard` 另 2 行，⑦ 即 `panels` 1 行。
+
+### 十、计数口径统一（以本表为准）
+
+§七 的分文件小计与本节汇总如有出入，**以本表为准**（按「文件内 `it`」逐条计）：
+
+| 文件                              | `it` 总数 | ✅     | ➖     | ⚠️     |
+| --------------------------------- | --------- | ------ | ------ | ------ |
+| `tui-render.test.tsx`             | 6         | 6      | 0      | 0      |
+| `DialogController.test.ts`        | 4         | 4      | 0      | 0      |
+| `approvals.test.tsx`              | 3         | 3      | 0      | 0      |
+| `composer.test.tsx`               | 13        | 9      | 3      | 1      |
+| `input-bridge.test.ts`            | 36        | 0      | 0      | 36     |
+| `keyboard.test.tsx`               | 12        | 9      | 0      | 3      |
+| `notify-shell.test.tsx`           | 3         | 3      | 0      | 0      |
+| `overlay-position.test.tsx`       | 5         | 4      | 1      | 0      |
+| `p3f-ink-session-picker.test.tsx` | 1         | 1      | 0      | 0      |
+| `panels.test.tsx`                 | 11        | 9      | 1      | 1      |
+| `paste-integration.test.tsx`      | 6         | 0      | 0      | 6      |
+| `paste.test.ts`                   | 16        | 0      | 0      | 16     |
+| `shell-lifecycle.test.tsx`        | 2         | 2      | 0      | 0      |
+| `steer-composer.test.tsx`         | 2         | 0      | 2      | 0      |
+| `task-panel.test.tsx`             | 8         | 2      | 6      | 0      |
+| `terminal-events.test.ts`         | 20        | 0      | 0      | 20     |
+| `tui-subagent.test.tsx`           | 14        | 14     | 0      | 0      |
+| `tui-terminal-mouse.test.tsx`     | 3         | 3      | 0      | 0      |
+| `tui-transcript.test.tsx`         | 9         | 9      | 0      | 0      |
+| `undo-redo-shell.test.tsx`        | 3         | 3      | 0      | 0      |
+| **合计**                          | **177**   | **81** | **13** | **83** |
+
+> 说明：`composer` 的「行尾反斜杠续行」与 `keyboard` 的「行尾反斜杠回车」为**同一缺口 #4 的两个测点**，各计 1 行；`panels` 的「Ctrl+X 取消队首」为缺口 #7（旧面板键位不存在，next 面板无取消键）；`keyboard` 的「Alt+Left 词移动」「Up/Down 跨软折行视觉行移动」为缺口 #5/#6。命中：**✅ 81 / ➖ 13 / ⚠️ 83 = 177**，与 §七 各文件小计及 §九 缺口表逐条相加一致。
+
+### 十一、A4 验证证据（2026-09-15 实跑）
+
+| 验证         | 命令                                                                                                   | 结果                                                                                          |
+| ------------ | ------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------- |
+| 类型闸门     | `pnpm --filter harness2 typecheck`                                                                     | **0 error**（`tsc -p tsconfig.json --noEmit` 无输出）✅                                       |
+| 全量测试     | `pnpm --filter harness2 test`                                                                          | `Test Files 91 passed \| 1 skipped (92)`；`Tests 1524 passed \| 2 skipped (1526)` **全绿** ✅ |
+| 残留开关检索 | `grep -rn "HARNESS2_RENDERER\|shouldUseNextRenderer\|shouldUseInk" packages/cli/test packages/cli/src` | 仅 `tui-gate.test.ts:1` 注释中的历史说明（A6 处理），代码零命中 ✅                            |
+| 用例数对账   | 基线 JSON vs A4 后                                                                                     | 1526 = 1532 − 12（keyboard pending）− 2（next-shell 开关）+ 8（tui-gate 迁移）✅              |

@@ -11,7 +11,6 @@ import {
   createApprovalGate,
   createNextChatHarness,
   emergencyTerminalRestore,
-  shouldUseNextRenderer,
   type ApprovalGate,
   type NextChatHarness,
 } from '../../../src/tui/next/next-shell.js';
@@ -143,19 +142,6 @@ beforeEach(() => {
 
 afterEach(() => {
   vi.useRealTimers();
-});
-
-// —— 开关分支 ——
-describe('HARNESS2_RENDERER 开关', () => {
-  it('HARNESS2_RENDERER=next 时启用 next 渲染路径', () => {
-    expect(shouldUseNextRenderer({ HARNESS2_RENDERER: 'next' })).toBe(true);
-  });
-
-  it('未设置或其他值时保持 legacy ink 路径（开关默认关闭）', () => {
-    expect(shouldUseNextRenderer({})).toBe(false);
-    expect(shouldUseNextRenderer({ HARNESS2_RENDERER: 'ink' })).toBe(false);
-    expect(shouldUseNextRenderer({ HARNESS2_RENDERER: 'NEXT' })).toBe(false);
-  });
 });
 
 // —— 生命周期与初始帧 ——

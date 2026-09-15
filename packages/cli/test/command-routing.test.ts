@@ -432,7 +432,7 @@ describe('三处入口分发结果一致（同一输入同输出）', () => {
     }
   });
 
-  describe('next harness（HARNESS2_RENDERER=next 路径）', () => {
+  describe('next harness（唯一交互壳路径）', () => {
     let h: NextChatHarness;
     beforeEach(() => {
       vi.useFakeTimers();
