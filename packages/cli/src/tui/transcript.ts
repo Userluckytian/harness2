@@ -1,4 +1,4 @@
-// T3 typed transcript（纯模型，无 ink/react 依赖）：
+// T3 typed transcript（纯模型，无旧壳/React 依赖）：
 // - 结构事件身份：稳定 id（由 seq / callId / turnId 派生，重投影幂等）
 // - transcriptReducer：消费 core 会话事件与流式/终态事件；tool call↔result 按 callId 原地合并
 // - projectSession：从磁盘会话日志重投影（只读 core 的 loadSession/computeProjection）

@@ -330,7 +330,7 @@ describe('parser：bracketed paste 空闲超时（终止符永不到达的流损
   });
 });
 
-describe('parser：ink keyName 表补齐（rxvt / Linux console / putty / SS3 小写，P1-2）', () => {
+describe('parser：旧壳 keyName 表补齐（rxvt / Linux console / putty / SS3 小写，P1-2）', () => {
   it('rxvt Home/End：CSI 7~ / 8~', () => {
     const p = createInputParser();
     expect(keyOf(p.feed(enc('\x1b[7~'))).key).toBe('home');
@@ -358,7 +358,7 @@ describe('parser：ink keyName 表补齐（rxvt / Linux console / putty / SS3 �
     expect(keyOf(p.feed(enc('A'))).key).toBe('f1');
   });
 
-  it('SS3 小写方向（rxvt，ink isCtrlKey 口径）：Oa/Ob/Oc/Od → 方向键 + ctrl', () => {
+  it('SS3 小写方向（rxvt，旧壳 isCtrlKey 口径）：Oa/Ob/Oc/Od → 方向键 + ctrl', () => {
     const p = createInputParser();
     const up = keyOf(p.feed(enc('\x1bOa')));
     expect(up.key).toBe('up');

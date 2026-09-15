@@ -1,4 +1,4 @@
-// shutdown：退出/取消的幂等控制器 + Ctrl+C 协议状态机（纯逻辑，无 ink/React 依赖，可单测）。
+// shutdown：退出/取消的幂等控制器 + Ctrl+C 协议状态机（纯逻辑，无旧壳/React 依赖，可单测）。
 // 设计约束（T0）：
 //  - request() 只第一次生效；并发重复调用不得重复 finish/exit。
 //  - finish() 即使 reject，awaitDone() 也须以 1 收敛，且不产生 unhandled rejection。

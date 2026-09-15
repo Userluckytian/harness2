@@ -307,7 +307,7 @@ export function statusLineFor(ctx: StatusLineContext): string {
   return parts.join(SHORTCUTS_SEPARATOR);
 }
 
-/** 队列面板条目预览列宽（对齐 ink queue-panel 的 PREVIEW_MAX=42） */
+/** 队列面板条目预览列宽（对齐旧壳 queue-panel 的 PREVIEW_MAX=42） */
 export const QUEUE_PREVIEW_MAX = 42;
 
 /** 队列条目单行预览：折行合一 + 超长截断加省略号（仅展示用，不改队列原文） */

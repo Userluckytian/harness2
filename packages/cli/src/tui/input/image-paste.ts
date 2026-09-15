@@ -9,7 +9,7 @@
 // 本阶段不做假入口：不读剪贴板、不发 ANSI 图片序列。
 //
 // 与 keymaps.ts 的关系：Alt+V 和弦已登记在 SIMPLE_KEYMAP / VIM_KEYMAP（action 'paste.image'）；
-// 本文件导出同一和弦的常量副本供不走键位表的装配层（如 Ink 通道）直接引用，两处必须一致
+// 本文件导出同一和弦的常量副本供不走键位表的装配层（如旧壳通道）直接引用，两处必须一致
 // （一致性有测试锁住）。
 import type { Chord } from './keymaps.js';
 

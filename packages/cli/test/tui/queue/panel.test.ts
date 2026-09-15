@@ -123,7 +123,7 @@ describe('G-29 面板内行导航', () => {
 });
 
 describe('G-29 条目渲染结构（预览 42 列约定；高亮按焦点/下标）', () => {
-  it('preview 折行合一 + 超长截断加省略号（不改队列原文；42 列约定与 ink/next 层同源）', () => {
+  it('preview 折行合一 + 超长截断加省略号（不改队列原文；42 列约定与旧壳/next 层同源）', () => {
     expect(queueEntryPreview('a\n b\t c')).toBe('a b c');
     const long = 'x'.repeat(50);
     const p = queueEntryPreview(long);

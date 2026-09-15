@@ -1,5 +1,5 @@
 // P3-C 斜杠命令全集 + 模糊补全 单测（headless）。
-// 覆盖：命令注册表完整性（对照 ink COMMAND_REGISTRY 全集）、前缀优先+子序列模糊过滤排序、
+// 覆盖：命令注册表完整性（对照旧壳 COMMAND_REGISTRY 全集）、前缀优先+子序列模糊过滤排序、
 // 逐字过滤实时更新、Tab/Enter 接受写回 '/cmd '、悬停 move 改选、滚轮在候选上改选、
 // 接真实行为的命令（mock runtime 调用断言）、未知命令不静默（共享 '未知命令' 文案）。
 // 红绿流程：先于 next-shell.ts / composer.ts 实现落盘（红），实现后转绿（日志存
@@ -149,7 +149,7 @@ afterEach(() => {
   vi.useRealTimers();
 });
 
-// —— 命令注册表完整性（对照 ink COMMAND_REGISTRY 全集）——
+// —— 命令注册表完整性（对照旧壳 COMMAND_REGISTRY 全集）——
 describe('P3-C 命令注册表完整性', () => {
   // P3-E 接线迁移：P3-A 的 8 条 shellOnly 命令（session-info/export/timeline/doctor/
   // memory/skills/plugins/mcps）已迁入 NEXT_COMMANDS 正式表（wiring 'shell'，真实现 =
@@ -157,7 +157,7 @@ describe('P3-C 命令注册表完整性', () => {
   // PENDING 差异集合随之清空。
   const P3A_SHELL_ONLY_PENDING_WIRING = new Set<string>([]);
 
-  it('ink COMMAND_REGISTRY 全集逐条都在 next 命令表中（或显式登记差异）', () => {
+  it('旧壳 COMMAND_REGISTRY 全集逐条都在 next 命令表中（或显式登记差异）', () => {
     const nextNames = NEXT_COMMANDS.map((c) => c.name);
     for (const c of COMMAND_REGISTRY) {
       if (P3A_SHELL_ONLY_PENDING_WIRING.has(c.name)) continue; // P3-A 差异登记（见上）
@@ -181,7 +181,7 @@ describe('P3-C 命令注册表完整性', () => {
     }
   });
 
-  it('过滤结果带 / 前缀（候选渲染格式与 ink matchCommands 一致）', () => {
+  it('过滤结果带 / 前缀（候选渲染格式与旧壳 matchCommands 一致）', () => {
     for (const item of filterCommands('/u')) {
       expect(item.startsWith('/')).toBe(true);
     }
@@ -281,7 +281,7 @@ describe('逐字过滤与候选状态', () => {
     expect(h.state.candidates).toBeNull();
   });
 
-  it('含空格退出命令名阶段（ink commandNameActive 语义）', () => {
+  it('含空格退出命令名阶段（旧壳 commandNameActive 语义）', () => {
     const { h } = makeHarness();
     typeText(h, '/');
     expect(h.state.candidates).not.toBeNull();
@@ -426,14 +426,14 @@ describe('命令真实行为（共享/本地接线）', () => {
     expect(hasLine(h, '3 条')).toBe(true);
   });
 
-  it('/context（无活动会话）→ 占位文案（与 ink 同源）', () => {
+  it('/context（无活动会话）→ 占位文案（与旧壳同源）', () => {
     const { h } = makeHarness();
     h.submit('/context');
     h.flushUi();
     expect(hasLine(h, '上下文占用: —（无活动会话）')).toBe(true);
   });
 
-  it('/compact → 自动压缩提示（与 ink 同文案，不静默）', () => {
+  it('/compact → 自动压缩提示（与旧壳同文案，不静默）', () => {
     const { h } = makeHarness();
     h.submit('/compact');
     h.flushUi();
@@ -452,7 +452,7 @@ describe('命令真实行为（共享/本地接线）', () => {
     expect(hasLine(h, '推理展示: 开启')).toBe(true);
   });
 
-  it('/tasks → cron 只读提示（与 ink 同文案）', () => {
+  it('/tasks → cron 只读提示（与旧壳同文案）', () => {
     const { h } = makeHarness();
     h.submit('/tasks');
     h.flushUi();

@@ -1,4 +1,4 @@
-// regions.ts — G-04 fullscreen 八布局区域管理器（纯逻辑，headless 可测，零 ink）。
+// regions.ts — G-04 fullscreen 八布局区域管理器（纯逻辑，headless 可测，零旧壳）。
 //
 // 八区域（refs-grok-build.md G-04）：scrollback（主区）· prompt（输入）·
 // status line（可选）· shortcuts bar（焦点提示）· queue pane · todos pane ·

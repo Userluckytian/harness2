@@ -1,4 +1,4 @@
-// T2 门控接线测试：shouldUseTui 基于纯决策函数实现（P10-A4 由 shouldUseInk 迁移改名，
+// T2 门控接线测试：shouldUseTui 基于纯决策函数实现（P10-A4 由旧门控函数迁移改名，
 // 函数实体移至 tui/terminal-capabilities.ts），
 // 覆盖 HARNESS2_NO_TUI=1 / --no-tui / HARNESS2_TUI=1 / 非 TTY / Windows 四场景。
 import { describe, expect, it } from 'vitest';

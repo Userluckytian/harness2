@@ -183,7 +183,7 @@ export function useTurnStream(onTranscriptEvent: (event: TranscriptEvent) => voi
   }, [clearTimer]);
 
   // 卸载清理（审查 P2）：挂起中的 50ms flush timer 必须随组件卸载取消，
-  // 否则 ink 卸载后仍会 setLive 一次（悬挂 timer + 无效重渲）。
+  // 否则旧壳卸载后仍会 setLive 一次（悬挂 timer + 无效重渲）。
   useEffect(() => () => clearTimer(), [clearTimer]);
 
   return { live, handler, finalize, reset };

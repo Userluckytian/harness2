@@ -1,4 +1,4 @@
-// W1 projection 单测（headless，零 ink/react）：TranscriptItem → next 渲染库文本行。
+// W1 projection 单测（headless，零旧壳/React）：TranscriptItem → next 渲染库文本行。
 // - 每类 item 的行数 / 前缀 / 颜色断言（颜色用 FG 常量，不钉 magic number）
 // - 折叠/展开（collapsed 覆盖集 + toggleCollapse 纯函数）
 // - lineIndex 反查 item 下标；10k item 投影性能冒烟（<200ms 报警级）

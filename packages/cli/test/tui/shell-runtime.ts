@@ -1,5 +1,5 @@
 // T5 测试助手（非 .test，不会被收集）：用 mock provider 建一个真实 ChatRuntime（隔离 --home/--root），
-// 供 ink shell 集成测试（命令对齐 / 重投影 / 无残留）复用。无第三方依赖。
+// 供旧壳 shell 集成测试（命令对齐 / 重投影 / 无残留）复用。无第三方依赖。
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -69,7 +69,7 @@ export async function createTestRuntime(mockScript: MockScript = SINGLE_TEXT_SCR
 
 /**
  * 轮询等待条件（配合 mountTui 的 flush）。
- * CI 加固（P0-CI 窗口）：2 核 runner 会被几十个 vitest worker 分摊，ink 的渲染 timer
+ * CI 加固（P0-CI 窗口）：2 核 runner 会被几十个 vitest worker 分摊，旧壳的渲染 timer
  * （ESC 消歧 20ms / 渲染节流 ~34ms）可能被饿死，固定节奏的紧凑轮询反而加剧抢占。
  * 因此每轮 flush 之间按指数退避让出事件循环（25ms 起 ×2、封顶 200ms），给渲染 timer 让路。
  * 默认超时 8000 → 20000：CI 实测 8s 不够（overlay-position「T3 审批确认框」Esc 关闭

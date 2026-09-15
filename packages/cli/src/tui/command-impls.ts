@@ -1,4 +1,4 @@
-// ink 侧共享命令执行（T5 → P1-Dev-2 内核下沉第二棒）：命令业务实现已下沉 core，
+// 旧壳侧共享命令执行（T5 → P1-Dev-2 内核下沉第二棒）：命令业务实现已下沉 core，
 // 本文件用 ChatRuntime 构建真实 CoreCommandContext（cli 旧 CommandContext 的超集）并
 // 委托 core `runCoreCommand` 执行——legacy（runCoreCommand 直调）与 next（本文件）走同一
 // 份 core 实现，不再有壳内第二份命令语义。

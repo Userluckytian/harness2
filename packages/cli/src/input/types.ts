@@ -1,4 +1,4 @@
-// types.ts — P1 统一输入层事件类型（渲染引擎无关：不依赖 ink/react/DOM/Node 特有 API）。
+// types.ts — P1 统一输入层事件类型（渲染引擎无关：不依赖旧壳/React/DOM/Node 特有 API）。
 //
 // 设计要点：
 //  - 每个事件都带 `consumed` 字段：分发器（dispatcher.ts）在某个层级消费事件时置 true。

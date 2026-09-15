@@ -9,7 +9,7 @@
 //    PageUp/PageDown（5~/6~ 与 putty 的 [[5~/[[6~）、F1-F12（P..S 与 11~..24~）、
 //    Shift+Tab（Z）、Linux console [[A..[[E → f1..f5；
 //  - SS3（ESC O 前缀）功能键：OA-OD 方向、OP-S F1-F4、小写 Oa-Oe（ctrl+方向/clear，
-//    ink isCtrlKey 口径）与 Oh/Of（home/end）；
+//    旧壳 isCtrlKey 口径）与 Oh/Of（home/end）；
 //  - kitty CSI-u（CSI code[:shifted][:base];mods[:event] u），含 press/repeat/release；
 //  - SGR 鼠标（CSI < b;x;y M/m）：含滚轮（bit6）、修饰位（shift=4/alt=8/ctrl=16）、
 //    motion（bit5）；坐标减一归一为 0 基；
@@ -113,7 +113,7 @@ const TILDE_KEYS: Record<number, string> = {
   5: 'pageup',
   6: 'pagedown',
   7: 'home', // rxvt
-  8: 'end', // rxvt（ink keyName 表同款：'[7~': 'home'、'[8~': 'end'）
+  8: 'end', // rxvt（旧壳 keyName 表同款：'[7~': 'home'、'[8~': 'end'）
   11: 'f1',
   12: 'f2',
   13: 'f3',
@@ -240,7 +240,7 @@ export function createInputParser(options: InputParserOptions = {}): InputParser
   }
 
   /**
-   * CSI [[ 前缀（Linux console / putty，ink keyName 表同款）：
+   * CSI [[ 前缀（Linux console / putty，旧壳 keyName 表同款）：
    * \x1b[[A..[[E → f1..f5、\x1b[[5~/[[6~ → pageup/pagedown。
    * 不走通用 CSI 解析（'[' 本身落在 final 字节区，通用路径会把 [[A 吞成未知 final）。
    */
@@ -342,14 +342,14 @@ export function createInputParser(options: InputParserOptions = {}): InputParser
       events.push(keyEvent(fn, mods));
       return;
     }
-    // SS3 小写 final（rxvt；ink keyName 表 Oa-De 属 isCtrlKey → ctrl 修饰，实测 7.1.1 一致）
+    // SS3 小写 final（rxvt；旧壳 keyName 表 Oa-De 属 isCtrlKey → ctrl 修饰，实测 7.1.1 一致）
     const ctrlKey = { a: 'up', b: 'down', c: 'right', d: 'left', e: 'clear' }[final];
     if (ctrlKey !== undefined) {
       events.push(keyEvent(ctrlKey, { shift: false, alt: false, ctrl: true }));
       return;
     }
-    // SS3 小写 Oh/Of → home/end（ink 表为 OH/OF 大写；部分终端发小写形式，
-    // 桥接层把 home/end 改写为 CSI 等价 \x1b[H / \x1b[F，ink 两形式同键）
+    // SS3 小写 Oh/Of → home/end（旧壳表为 OH/OF 大写；部分终端发小写形式，
+    // 桥接层把 home/end 改写为 CSI 等价 \x1b[H / \x1b[F，旧壳两形式同键）
     if (final === 'h') return void events.push(keyEvent('home', noModifiers()));
     if (final === 'f') return void events.push(keyEvent('end', noModifiers()));
     // 未识别的 SS3 final：序列已完整，静默吞掉（终端私有序列，不产垃圾事件）

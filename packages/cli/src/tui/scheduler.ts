@@ -1,4 +1,4 @@
-// T4 有界 UI 调度器（纯逻辑，无 ink/react 依赖）：
+// T4 有界 UI 调度器（纯逻辑，无旧壳/React 依赖）：
 //   - 合并：push 后在 flushMs 窗口内合并为一批 onFlush，长流不逐事件重绘；
 //   - 有界：单次 flush 最多 maxBatch 条，溢出留队并重新排期（不长时间独占主线程）；
 //   - 输入优先：setInputPriority(true) 挂起后台（timer 驱动）flush，队列保留；解除后立即补发；

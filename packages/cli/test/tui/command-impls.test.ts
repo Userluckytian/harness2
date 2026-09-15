@@ -1,8 +1,8 @@
-// T5 ink 命令委托单测：runSharedCommand 用 ChatRuntime 构建真实 CommandContext，
+// T5 旧壳命令委托单测：runSharedCommand 用 ChatRuntime 构建真实 CommandContext，
 // 覆盖 /undo（错误路径仍触发 rewind 重投影）、/new（会话切换触发重投影）、/help、未知命令、/exit。
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { HELP_TEXT } from '../../src/commands.js';
-import { runSharedCommand, type InkCommandIo } from '../../src/tui/ink-commands.js';
+import { runSharedCommand, type InkCommandIo } from '../../src/tui/command-impls.js';
 import { createTestRuntime, type TestRuntime } from './shell-runtime.js';
 
 const running: TestRuntime[] = [];
@@ -60,7 +60,7 @@ describe('T5 runSharedCommand：委托共享 handleCommand', () => {
     expect(lines.join('\n')).toContain('/redo');
   });
 
-  it('未知命令 → 共享「未知命令」文案（不是 ink 的旧「未实现」）', async () => {
+  it('未知命令 → 共享「未知命令」文案（不是旧壳的旧「未实现」）', async () => {
     const tr = await createTestRuntime();
     running.push(tr);
     const { io, lines, reproject } = makeIo();

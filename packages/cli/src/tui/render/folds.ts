@@ -1,4 +1,4 @@
-// folds.ts — G-05 块折叠与视图状态机（纯 reducer，headless 可测，零 ink/零渲染）。
+// folds.ts — G-05 块折叠与视图状态机（纯 reducer，headless 可测，零旧壳/零渲染）。
 //
 // 规格键位（refs-grok-build.md G-05）：
 // - h / l（或 ← / →）：折叠 / 展开当前聚焦块（方向性：h 收、l 开，不是 toggle）

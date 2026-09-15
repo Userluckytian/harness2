@@ -1,5 +1,5 @@
 // T3 transcript 纯 reducer 测试：稳定 id / tool call↔result 合并 / final|partial|empty 映射 /
-// 影子事件排除 / 顺序。无 ink/react，无 I/O（projectSession 读临时会话目录）。
+// 影子事件排除 / 顺序。无旧壳/React，无 I/O（projectSession 读临时会话目录）。
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
