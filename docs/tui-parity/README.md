@@ -68,6 +68,8 @@ scripts/tui-parity/.venv/Scripts/python.exe scripts/tui-parity/run.py \
   （如 `essio s`、重复的 `计；别名 /status /info）`），grok 同类面板对齐良好。
   见 [`images/C2-help-ours-BUG.png`](images/C2-help-ours-BUG.png) 与 grok 对照图。
   已判定为**真实渲染缺陷**（用"空白屏首次渲染"实验排除"未擦除上一帧"解释），非抓屏失真。
+- **P1：输入区没有任何视觉提示**——空态下无边框、无 `>` 提示符、无占位符、光标不可见；
+  而 P10 之前默认进的是**旧壳**（顶部状态条 + 带边框的输入框），删掉后默认 UI 变成 next，此处相对旧壳是**明显退步**。
 - **P1：命令候选列表缺描述**——grok 两列（命令 + 说明），我方仅单列命令名。
 - **P1：缺用量与耗时**——grok 每条消息带时间戳、每轮带 `Worked for 9.9s`、右上角 `15K / 1.0M`；
   我方只有一个 `[end_turn · steps · toolCalls]` 汇总行。
