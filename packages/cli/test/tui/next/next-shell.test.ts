@@ -286,8 +286,8 @@ describe('转录流式投影到 scrollback', () => {
     h.submit('写文件');
     await settle(h);
     const joined = linesOf(h).join('\n');
-    expect(joined).toContain('⏺ write(');
-    expect(joined).toContain('a.txt');
+    // P11-T5：已知工具主行人类化（工具名+JSON 进展开态）
+    expect(joined).toContain('⏺ 写入 a.txt');
     expect(joined).toContain('└ ✓');
     h.dispose();
   });
@@ -462,7 +462,7 @@ describe('折叠键族（G-05 规格机 folds.ts：h/l/←/→/e/Shift+E/Ctrl+E/
     const { h } = makeHarness(foldRuntime());
     await submitFoldTurn(h);
     const normal = linesOf(h).join('\n');
-    expect(normal).toContain('⏺ write(a.txt)'); // 摘要提炼（file_path）
+    expect(normal).toContain('⏺ 写入 a.txt'); // P11-T5：主行人类化（file_path）
     h.feed(TAB);
     h.feed('r');
     const raw = linesOf(h).join('\n');
@@ -556,7 +556,7 @@ describe('投影 fg 落进 scrollback 物理行', () => {
     const { h } = makeHarness(foldRuntime());
     await submitFoldTurn(h);
     const win = h.state.scrollback.visibleWindow(24);
-    const call = win.rows.find((r) => r.text.startsWith('⏺ write('));
+    const call = win.rows.find((r) => r.text.startsWith('⏺ 写入 '));
     expect(call?.fg).toBe(FG.green);
   });
 
@@ -577,7 +577,7 @@ describe('投影 fg 落进 scrollback 物理行', () => {
     h.submit('跑');
     await settle(h);
     const win = h.state.scrollback.visibleWindow(24);
-    const row = win.rows.find((r) => r.text.startsWith('⏺ bash('));
+    const row = win.rows.find((r) => r.text.startsWith('⏺ 运行命令 '));
     expect(row?.fg).toBe(FG.red);
   });
 });
@@ -815,14 +815,14 @@ describe('终端 resize', () => {
     );
     h.submit('写长文件');
     await settle(h);
-    const fullLine = `⏺ write(${longPath})`;
+    const fullLine = `⏺ 写入 ${longPath}`;
     // 初始 cols=100 → 内容区 99：投影截断 ≤99 宽
-    const initial = linesOf(h).find((l) => l.startsWith('⏺ write('));
+    const initial = linesOf(h).find((l) => l.startsWith('⏺ 写入 '));
     expect(initial).toBeDefined();
     expect(displayWidth(initial ?? '')).toBeLessThanOrEqual(99);
     // 窄化到 40 → 内容区 39：重投影后调用行按新宽度重排（旧 99 宽截断不得滞留）
     h.resize(40, 20);
-    const narrowed = linesOf(h).find((l) => l.startsWith('⏺ write('));
+    const narrowed = linesOf(h).find((l) => l.startsWith('⏺ 写入 '));
     expect(narrowed).toBeDefined();
     expect(displayWidth(narrowed ?? '')).toBeLessThanOrEqual(39);
     expect(narrowed?.endsWith('…')).toBe(true);

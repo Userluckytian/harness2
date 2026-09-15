@@ -41,6 +41,13 @@ export interface ProjectionLine {
   fg?: number;
   lineIndex: number;
   kind: ProjectionLineKind;
+  /**
+   * P11-T4：右侧对齐的弱化附属文本（消息时间戳）。**不在 text 里**——保证复制/搜索/
+   * 选区只拿到正文；由 Scrollback.drawScrollback 在首物理行右端绘制。
+   */
+  right?: string;
+  /** 右侧文本前景色（主题弱化色；undefined = 继承行 fg） */
+  rightFg?: number;
 }
 
 export interface ProjectOptions {
@@ -76,6 +83,11 @@ export interface ProjectOptions {
    * 不传 = false（正常渲染投影，零变化契约）。
    */
   rawMarkdown?: boolean;
+  /**
+   * P11-T4：消息时间戳 12/24 小时制覆盖（缺省 = 系统偏好，见 formatClock）。
+   * 仅测试注入确定性；生产装配不传。
+   */
+  hour12?: boolean;
 }
 
 // --- 小工具 ---
@@ -90,6 +102,27 @@ function splitLines(text: string): string[] {
   // 逻辑行——ProjectionLine 契约是「一条逻辑行」；内嵌换行若整段下传，renderer 会把它当
   // 可打印字符写进网格单元格，presenter 逐格原样发射后终端在行中换行 → 面板错位）。
   return text.split(/\r\n|\r|\n/);
+}
+
+/**
+ * P11-T4：消息时间戳文案（消息行右侧弱化显示）。
+ *
+ * 格式取舍（登记）：**跟随系统 12/24 小时制**——`Intl.DateTimeFormat().resolvedOptions().hour12`
+ * 为 true 时用 `h:MM AM/PM`（如 `2:05 PM`），否则用 `HH:MM`（如 `14:05`）；时区取本地。
+ * `hour12` 参数供测试注入确定性（缺省 = 系统偏好）。只接受能解析的 ISO 时间戳，
+ * 无法解析返回 undefined（调用方不显示，绝不拿当前时间顶替）。
+ */
+export function formatClock(iso: string | undefined, hour12?: boolean): string | undefined {
+  if (iso === undefined || iso.length === 0) return undefined;
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return undefined;
+  const h = d.getHours();
+  const m = String(d.getMinutes()).padStart(2, '0');
+  const use12 = hour12 ?? Intl.DateTimeFormat().resolvedOptions().hour12 === true;
+  if (!use12) return `${String(h).padStart(2, '0')}:${m}`;
+  const period = h < 12 ? 'AM' : 'PM';
+  const h12 = h % 12 === 0 ? 12 : h % 12;
+  return `${h12}:${m} ${period}`;
 }
 
 /** 按 cols 截断超宽行（宽字符整字取舍，留 1 列给省略号）；cols ≤ 0 不截断 */
@@ -155,6 +188,97 @@ export function subagentDescription(item: ToolItem): string {
  */
 function rawArgsOf(item: ToolItem): string {
   return item.args !== undefined && item.args.length > 0 ? item.args : item.summary;
+}
+
+// ── P11-T5：工具行人类化（动词注册表 + 未知/缺参回退） ──────────────────────────
+//
+// 目标（docs/tui-parity/matrix.md 改进清单 #5）：主行给「做了什么」（`写入 harness2-demo.txt`），
+// 不再暴露 `tool({"file_path":…})`；参数 JSON 移入**展开态**（Tab 焦点 + 展开键），
+// 工具名保留在展开态与原始视图（`r`）。
+//
+// 注册表逐条覆盖**内置工具**（core builtin 6：bash/read/write/edit/glob/grep；browser 6；
+// 以及 memory/skill/skill_author/run_script/subagent_fanout）。
+// **未知工具回退现状** = `工具名(摘要)`——绝不硬编码失败，也不编造能力；已知工具但
+// 必需参数缺失/无法解析时同样回退现状（宁可显示原文，不显示 `写入 undefined`）。
+// 新增工具只需在此表补一条；遗漏 = 自动走回退，无副作用。
+// 说明：`subagent_start`/`subagent_continue` 走既有 isSub 分支（`Subagent "…" 完成`），
+// 不进本表。
+
+/** 从解析后的 args 取第一个非空字符串值（与 toolSummaryOf 同口径） */
+function argOf(args: Record<string, unknown>, ...keys: readonly string[]): string | undefined {
+  return firstString(...keys.map((k) => args[k]));
+}
+
+/** 工具名 → 人类动词短语构造器（无参工具返回固定短语；必填参数缺失返回 undefined 由调用方回退） */
+const TOOL_ACTIONS: Readonly<Record<string, (args: Record<string, unknown>) => string | undefined>> = {
+  write: (a) => {
+    const f = argOf(a, 'file_path', 'path', 'file');
+    return f !== undefined ? `写入 ${f}` : undefined;
+  },
+  edit: (a) => {
+    const f = argOf(a, 'file_path', 'path', 'file');
+    return f !== undefined ? `编辑 ${f}` : undefined;
+  },
+  read: (a) => {
+    const f = argOf(a, 'file_path', 'path', 'file');
+    return f !== undefined ? `读取 ${f}` : undefined;
+  },
+  bash: (a) => {
+    const c = argOf(a, 'command', 'cmd');
+    return c !== undefined ? `运行命令 ${oneLine(c)}` : undefined;
+  },
+  glob: (a) => {
+    const p = argOf(a, 'pattern');
+    return p !== undefined ? `查找文件 ${p}` : undefined;
+  },
+  grep: (a) => {
+    const p = argOf(a, 'pattern');
+    return p !== undefined ? `搜索 ${p}` : undefined;
+  },
+  browser_navigate: (a) => {
+    const u = argOf(a, 'url');
+    return u !== undefined ? `打开网页 ${u}` : undefined;
+  },
+  browser_click: (a) => {
+    const r = argOf(a, 'ref');
+    return r !== undefined ? `点击页面元素 ${r}` : '点击页面元素';
+  },
+  browser_type: (a) => {
+    const t = argOf(a, 'text');
+    return t !== undefined ? `页面输入 ${oneLine(t)}` : '在页面输入文本';
+  },
+  browser_snapshot: () => '读取页面快照',
+  browser_screenshot: () => '页面截图',
+  browser_close: () => '关闭浏览器',
+  memory: (a) => {
+    const op = argOf(a, 'operation');
+    const target = argOf(a, 'target');
+    if (op !== undefined) return `记忆操作 ${op}${target !== undefined ? `（${target}）` : ''}`;
+    return '更新长期记忆';
+  },
+  skill: (a) => {
+    const n = argOf(a, 'name');
+    return n !== undefined ? `调用技能 ${n}` : '调用技能';
+  },
+  skill_author: (a) => {
+    const n = argOf(a, 'name');
+    return n !== undefined ? `编写技能 ${n}` : '编写技能';
+  },
+  run_script: (a) => {
+    const s = argOf(a, 'script');
+    return s !== undefined ? `运行脚本（${oneLine(s).length} 字符）` : '运行脚本';
+  },
+  subagent_fanout: () => '派发并行子任务',
+};
+
+/**
+ * 工具 → 人类动词短语（P11-T5）。未知工具 / args 非 JSON / 必需参数缺失 → undefined，
+ * 调用方回退到现状模板 `工具名(摘要)`（绝不抛错、绝不编造能力）。
+ */
+function toolActionPhrase(item: ToolItem): string | undefined {
+  const build = TOOL_ACTIONS[item.tool];
+  if (build === undefined) return undefined;
+  return build(parseJsonObject(item.args));
 }
 
 /**
@@ -284,6 +408,8 @@ function projectTool(
   const isSub = isSubagentTool(item.tool);
   // G-05 rawMarkdown（r）：调用行不做摘要提炼，直接展示 args 原文（映射见 ProjectOptions 注）
   const callSummary = opts.rawMarkdown === true ? rawArgsOf(item) : toolSummaryOf(item);
+  // P11-T5：人类动词短语；rawMarkdown（r）/未知工具/缺参 = undefined → 回退现状模板
+  const phrase = opts.rawMarkdown === true ? undefined : toolActionPhrase(item);
   const statusFg =
     item.status === 'pending' ? theme.fg.toolPending : item.status === 'ok' ? theme.fg.toolOk : theme.fg.toolFailed;
   if (isSub) {
@@ -308,11 +434,20 @@ function projectTool(
     }
   } else {
     out.push({
-      text: clipLine(`⏺ ${item.tool}(${callSummary})`, cols),
+      text: clipLine(phrase !== undefined ? `⏺ ${phrase}` : `⏺ ${item.tool}(${callSummary})`, cols),
       lineIndex,
       kind: 'tool',
       fg: statusFg,
     });
+    // P11-T5：参数 JSON 移入展开态（工具名保留；仅主行已被人类化时才需要，避免与回退行重复）
+    if (expanded && phrase !== undefined) {
+      out.push({
+        text: clipLine(`  ⚙ ${item.tool}(${rawArgsOf(item)})`, cols),
+        lineIndex,
+        kind: 'tool',
+        fg: theme.fg.toolResultDetail,
+      });
+    }
   }
   // T1：子会话只读入口提示（解析不到不显示；旧壳版还带 Ctrl+J/K 键位提示，键位归接线层）
   if (item.childSessionId !== undefined) {
@@ -375,6 +510,11 @@ export function projectTranscript(items: readonly TranscriptItem[], opts: Projec
         ? Math.floor(opts.cols)
         : undefined;
   const theme = opts.theme ?? DARK_THEME; // P4-2：缺省 dark = 现状默认色（零变化契约）
+  // P11-T4：消息时间戳字段只从真实 ts 产出（formatClock 不可解析 → 空对象，不显示）
+  const stamp = (ts: string | undefined): Pick<ProjectionLine, 'right' | 'rightFg'> => {
+    const clock = formatClock(ts, opts.hour12);
+    return clock === undefined ? {} : { right: clock, rightFg: theme.fg.system };
+  };
   const out: ProjectionLine[] = [];
   for (let i = 0; i < items.length; i += 1) {
     const item = items[i];
@@ -384,15 +524,23 @@ export function projectTranscript(items: readonly TranscriptItem[], opts: Projec
     switch (item.kind) {
       case 'user': {
         const lines = splitLines(item.text);
-        out.push({ text: `❯ ${lines[0] ?? ''}`, lineIndex: i, kind: 'user', fg: theme.fg.user });
+        out.push({ text: `❯ ${lines[0] ?? ''}`, lineIndex: i, kind: 'user', fg: theme.fg.user, ...stamp(item.ts) });
         for (let k = 1; k < lines.length; k += 1) {
           out.push({ text: lines[k] ?? '', lineIndex: i, kind: 'user', fg: theme.fg.user });
         }
         break;
       }
       case 'assistant': {
-        for (const line of splitLines(item.text)) {
-          out.push({ text: line, lineIndex: i, kind: 'assistant', fg: theme.fg.assistant });
+        const lines = splitLines(item.text);
+        for (let k = 0; k < lines.length; k += 1) {
+          out.push({
+            text: lines[k] ?? '',
+            lineIndex: i,
+            kind: 'assistant',
+            fg: theme.fg.assistant,
+            // P11-T4：时间戳只挂首行（多行消息不在每行重复）
+            ...(k === 0 ? stamp(item.ts) : {}),
+          });
         }
         if (item.reasoning !== undefined) {
           projectReasoning(item.reasoning, i, expanded, cols, out, theme);
@@ -400,8 +548,15 @@ export function projectTranscript(items: readonly TranscriptItem[], opts: Projec
         break;
       }
       case 'partial': {
-        for (const line of splitLines(item.text)) {
-          out.push({ text: line, lineIndex: i, kind: 'assistant', fg: theme.fg.assistant });
+        const lines = splitLines(item.text);
+        for (let k = 0; k < lines.length; k += 1) {
+          out.push({
+            text: lines[k] ?? '',
+            lineIndex: i,
+            kind: 'assistant',
+            fg: theme.fg.assistant,
+            ...(k === 0 ? stamp(item.ts) : {}),
+          });
         }
         out.push({
           text: `${EXPAND_HINT} ${reasonLine(item.stopReason, item.error)}`,

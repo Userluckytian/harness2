@@ -214,6 +214,13 @@ function wrapSegment(text: string, maxCols: number): string[] {
 export interface ScrollbackLine {
   text: string;
   fg?: number;
+  /**
+   * P11-T4：右侧对齐的弱化附属文本（消息时间戳）。**不属于 text**——复制/选区/
+   * 搜索只拿正文；只在首物理行（segIndex 0）绘制，放不下时不画（不重叠）。
+   */
+  right?: string;
+  /** 右侧文本前景色（缺省回退行 fg / opts.fg） */
+  rightFg?: number;
 }
 
 /** append/appendLines/构造函数的行输入：字符串（fg 缺省）或行对象 */
@@ -229,6 +236,9 @@ export interface PhysicalRow {
   lineIndex: number;
   segIndex: number;
   fg?: number;
+  /** P11-T4：右侧文本仅挂在首物理行（segIndex 0）；续行不带 */
+  right?: string;
+  rightFg?: number;
 }
 
 /** visibleWindow 结果：scrollTop 为钳制后的物理行偏移；rows 恒等于 viewportRows 长度（不足补空行） */
@@ -319,7 +329,9 @@ export class Scrollback {
    */
   lineAt(lineIndex: number): ScrollbackLine | undefined {
     const l = this.lines[lineIndex];
-    return l !== undefined ? { text: l.text, fg: l.fg } : undefined;
+    return l !== undefined
+      ? { text: l.text, fg: l.fg, ...(l.right !== undefined ? { right: l.right } : {}), ...(l.rightFg !== undefined ? { rightFg: l.rightFg } : {}) }
+      : undefined;
   }
 
   /** 逻辑行 i 的起始物理行号 */
@@ -529,12 +541,18 @@ export class Scrollback {
     while (need > 0 && lineIdx < this.lines.length) {
       const segs = this.rowOf(lineIdx);
       const lineFg = this.lines[lineIdx]?.fg;
+      const lineRight = this.lines[lineIdx]?.right;
+      const lineRightFg = this.lines[lineIdx]?.rightFg;
       for (let s = skip; s < segs.length && need > 0; s += 1) {
-        rows.push(
-          lineFg === undefined
-            ? { text: segs[s] ?? '', lineIndex: lineIdx, segIndex: s }
-            : { text: segs[s] ?? '', lineIndex: lineIdx, segIndex: s, fg: lineFg },
-        );
+        rows.push({
+          text: segs[s] ?? '',
+          lineIndex: lineIdx,
+          segIndex: s,
+          ...(lineFg !== undefined ? { fg: lineFg } : {}),
+          // P11-T4：右侧文本只挂首物理行
+          ...(s === 0 && lineRight !== undefined ? { right: lineRight } : {}),
+          ...(s === 0 && lineRightFg !== undefined ? { rightFg: lineRightFg } : {}),
+        });
         need -= 1;
       }
       skip = 0;
@@ -734,6 +752,22 @@ export function writeRowClipped(buf: CellBuffer, y: number, text: string, maxCol
 }
 
 /**
+ * 从指定显示列 x0 起写文本（右对齐附属文本用；P11-T4）。
+ * 宽度判定走 charWidth（铁律 2），宽字符放不下整字丢弃；x0 ≤ 0 / 越界行不画。
+ */
+function writeTextAtCol(buf: CellBuffer, y: number, x0: number, text: string, maxCols: number, fg: number): void {
+  if (x0 < 0 || x0 >= maxCols || y < 0 || y >= buf.rows) return;
+  let x = x0;
+  for (const ch of text) {
+    const w = charWidth(ch.codePointAt(0) ?? 0);
+    if (w === 0) continue;
+    if (x + w > maxCols) break;
+    buf.setCell(x, y, ch, w, fg);
+    x += w;
+  }
+}
+
+/**
  * 纯 buffer 绘制：把 scrollback 可见窗口写入给定 cell buffer（右侧滚动条轨道列）。
  * renderScrollback 的绘制体（不做 screen.render，可与同帧其他层组合绘制）。
  * opts 尺寸缺省相对 buf：top=0、height=buf.rows-top、width=buf.cols。
@@ -767,6 +801,15 @@ export function drawScrollback(buf: CellBuffer, sb: Scrollback, opts: Scrollback
     const absRow = win.scrollTop + i;
     if (linksOn && row.lineIndex >= 0) markLinkSegments(buf, top + i, row.text, contentCols);
     if (sel !== null) applySelectionHighlight(buf, top + i, absRow, sel, contentCols, selFg);
+    // P11-T4：消息时间戳右对齐（弱化色）。仅首物理行；与正文至少留 1 列间隔，
+    // 放不下就不画（宁可缺失也不与正文重叠——如实降级，不猜不截）
+    if (row.segIndex === 0 && row.right !== undefined && row.right.length > 0) {
+      const rightWidth = displayWidth(row.right);
+      const x0 = contentCols - rightWidth;
+      if (x0 > displayWidth(row.text) + 1) {
+        writeTextAtCol(buf, top + i, x0, row.right, contentCols, row.rightFg ?? row.fg ?? fg);
+      }
+    }
   }
   if (useScrollbar) {
     const bar = scrollbarInfo(win.totalRows, win.viewportRows, win.scrollTop);

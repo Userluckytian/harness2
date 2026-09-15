@@ -174,7 +174,10 @@ export async function runLegacyReadlineChat(options: ChatOptions = {}): Promise<
       else if (event.type === 'reasoning-delta') {
         // reasoning 增量：默认不渲染（折叠）；/reasoning on 时由 setup 仅在该态转发到此
         if (event.type === 'reasoning-delta' && runtime.reasoning()) renderer.reasoning(event.text);
-      } else renderer.toolResult(event.callId, event.ok, event.error);
+      } else if (event.type === 'tool-result') {
+        renderer.toolResult(event.callId, event.ok, event.error);
+      }
+      // P11-T4：usage 事件（加性）只服务 TUI 用量展示；piped/legacy 无用量界面，忽略。
     });
     renderer.turnEnd(result);
   }

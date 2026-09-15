@@ -202,7 +202,12 @@ export function shortcutsFor(ctx: ShortcutContext): readonly string[] {
   if (ctx.modal === 'session-picker') return ['↑↓ 选择', 'Enter 切换', 'Esc 取消'];
   if (ctx.subviewOpen) return ['q 返回', 'PgUp/PgDn 滚动'];
   if (ctx.busy) {
-    const keys = ['Ctrl+C 取消'];
+    // P11-T6：真实存在的忙碌键位如实呈现——`Ctrl+C 取消`（中断当前回合）、
+    // `Ctrl+Enter 立即发送`（G-28 cancel-and-send：取消当前回合并发出草稿/队首，已接线）；
+    // 队列非空时补 `Ctrl+; 队列(N)`。注：Enter 在忙碌时是入队还是转向取决于
+    // [ui].follow_up_behavior（queue/steer），本纯函数拿不到该配置，故**不写 Enter 语义**
+    // （不伪造单一含义）；队列状态已由 Ctrl+; 段体现。
+    const keys = ['Ctrl+C 取消', 'Ctrl+Enter 立即发送'];
     if (ctx.queueCount > 0) keys.push(`Ctrl+; 队列(${ctx.queueCount})`);
     return keys;
   }
@@ -330,6 +335,37 @@ export function formatContextUsage(usage: number | undefined): string {
   return usage === undefined ? '—' : `${Math.round(usage * 100)}%`;
 }
 
+/**
+ * P11-T4：token 量人类化。
+ * 口径：≥1M → `1.2M`；≥1024 → `15.3k`（≥100k 时取整为 `128k`，对齐 grok 的 `1.0M` 观感）；
+ * <1024 → 原值。非数/负数返回 `—`（调用方不伪造）。
+ */
+export function formatTokenCount(n: number): string {
+  if (!Number.isFinite(n) || n < 0) return '—';
+  if (n >= 1024 * 1024) return `${(n / 1048576).toFixed(1)}M`;
+  if (n >= 1024) {
+    const k = n / 1024;
+    return k >= 100 ? `${Math.round(k)}k` : `${k.toFixed(1)}k`;
+  }
+  return String(Math.round(n));
+}
+
+/** P11-T4：busy 已用时（真实计时毫秒）→ `12s` / `1m35s`；非法值 0s 兜底（仍为真实下界） */
+export function formatElapsed(ms: number): string {
+  if (!Number.isFinite(ms) || ms < 0) return '0s';
+  const totalSec = Math.floor(ms / 1000);
+  if (totalSec < 60) return `${totalSec}s`;
+  return `${Math.floor(totalSec / 60)}m${String(totalSec % 60).padStart(2, '0')}s`;
+}
+
+/** P11-T4：ctx 段——有真实 provider token 用量时 `ctx 15.3k/128k`，否则退回比例 `ctx 42%`/`ctx —` */
+function contextSegment(ctx: StatusLineContext): string {
+  if (ctx.tokenUsage !== undefined) {
+    return `ctx ${formatTokenCount(ctx.tokenUsage.used)}/${formatTokenCount(ctx.tokenUsage.total)}`;
+  }
+  return `ctx ${formatContextUsage(ctx.usage)}`;
+}
+
 /** 状态行上下文（P3-E：cwd · model · ctx% · 模式(非 normal) · 重试标记 · 运行中标记） */
 export interface StatusLineContext {
   /** 装配期工作目录（原始路径，本函数内做 ~ 短化） */
@@ -340,12 +376,26 @@ export interface StatusLineContext {
   model: string;
   /** 上下文占用 0..1（core getContextUsage；undefined = 未知 → ctx —） */
   usage?: number;
+  /**
+   * P11-T4：provider 报告的真实 token 用量（used/total）——来源 `assistant/message.usage`
+   * （input+output）。有值时 ctx 段渲染成 `15.3k/128k`；无值退回 usage 比例/`—`（不伪造）。
+   */
+  tokenUsage?: { used: number; total: number };
   /** UI 模式（四态；normal/缺省省略） */
   mode?: string;
   /** 上一 turn 的重试预算标记（used/max；无重试史省略） */
   retry?: { used: number; max: number };
   /** turn 运行中 */
   busy?: boolean;
+  /**
+   * P11-T4：busy 已用时（毫秒，壳内 `Date.now() - turnStartedAt` 真实计时）。
+   * 缺失 = 不显示耗时（不猜）。
+   */
+  busyElapsedMs?: number;
+  /**
+   * P11-T4：busy 本回合已产生的输出 token（真实 usage；缺失 = 不显示 ↓ 段）。
+   */
+  busyDownTokens?: number;
   /**
    * P4-2：busy 且无运行中子代理时的 spinner 帧字符（装配层 150ms 传入当前帧）。
    * 传入 = 替换「⏺ 运行中…」的 ⏺ 前缀；缺省保持 ⏺（既有调用零变化）。
@@ -355,10 +405,17 @@ export interface StatusLineContext {
 
 /** 状态行上下文 → 行文本（纯函数；段序固定：cwd · model · ctx · mode · retry · busy） */
 export function statusLineFor(ctx: StatusLineContext): string {
-  const parts = [shortenCwd(ctx.cwd, ctx.home), ctx.model, `ctx ${formatContextUsage(ctx.usage)}`];
+  const parts = [shortenCwd(ctx.cwd, ctx.home), ctx.model, contextSegment(ctx)];
   if (ctx.mode !== undefined && ctx.mode !== 'normal') parts.push(ctx.mode);
   if (ctx.retry !== undefined) parts.push(`重试 ${ctx.retry.used}/${ctx.retry.max}`);
-  if (ctx.busy === true) parts.push(`${ctx.spinnerFrame ?? '⏺'} 运行中…`);
+  if (ctx.busy === true) {
+    // P11-T4/T6：忙碌段 = spinner + 运行中 + 真实已用时长 +（有真实用量时）本轮输出 token。
+    // `Ctrl+C 取消` 由提示行（shortcutsFor busy 分支）承担，不在此重复。
+    const segs = [`${ctx.spinnerFrame ?? '⏺'} 运行中…`];
+    if (ctx.busyElapsedMs !== undefined) segs.push(`已用 ${formatElapsed(ctx.busyElapsedMs)}`);
+    if (ctx.busyDownTokens !== undefined) segs.push(`↓${formatTokenCount(ctx.busyDownTokens)}`);
+    parts.push(segs.join(' '));
+  }
   return parts.join(SHORTCUTS_SEPARATOR);
 }
 

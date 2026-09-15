@@ -125,7 +125,18 @@ export type StreamEvent =
   | { type: 'text-delta'; text: string; turnId: string }
   | { type: 'tool-call'; call: { id: string; name: string; arguments: string }; turnId: string }
   | { type: 'reasoning-delta'; text: string; turnId: string }
-  | { type: 'tool-result'; callId: string; ok: boolean; error?: string; turnId: string };
+  | { type: 'tool-result'; callId: string; ok: boolean; error?: string; turnId: string }
+  | {
+      /**
+       * P11-T4（加性）：真实 provider 用量。core 的 TurnStreamEvent 不含 usage，但 loop 会把
+       * provider 的 usage 块写进 `assistant/message.usage`（每 step 末落盘）。本层在**写入口**
+       * （turnWriter.append 观察缝）读到该事件后转发给渲染层——**只转发，不改 core、不落第二份**。
+       * mock 剧本不写 usage 时不会有本事件（渲染层必须如实降级，不得伪造）。
+       */
+      type: 'usage';
+      usage: { inputTokens?: number; outputTokens?: number };
+      turnId: string;
+    };
 
 export type { TurnResult } from '@harness2/core';
 
@@ -499,20 +510,30 @@ export async function setupChatSession(options: ChatOptions, hooks: ChatSetupHoo
       text = `${PLAN_MODE_SYSTEM_PREFIX}\n${text}`;
     }
     const snapshots = new SnapshotStore(session.dir);
-    const turnWriter: SessionWriter | SessionAppender =
-      pluginBus === undefined
-        ? session.writer
-        : {
-            dir: session.writer.dir,
-            get lastSeq(): number {
-              return session.writer.lastSeq;
-            },
-            append: <T extends SessionEventType>(type: T, payload: SessionEventMap[T]) => {
-              const event = session.writer.append(type, payload);
-              pluginBus.emitSessionEvent(session.id, event as AnySessionEvent);
-              return event;
-            },
-          };
+    // P11-T4：写入口观察缝——**始终包裹** writer（不再只在 pluginBus 存在时包裹）。
+    // 理由：provider usage 只出现在落盘事件 `assistant/message.payload.usage`（core loop
+    // 每 step 末写入），TurnStreamEvent 不含 usage；渲染层要拿到真实用量，唯一合法途径是
+    // 在此只读观察后转发（core 冻结零改动、不落第二份日志）。
+    const turnWriter: SessionWriter | SessionAppender = {
+      dir: session.writer.dir,
+      get lastSeq(): number {
+        return session.writer.lastSeq;
+      },
+      append: <T extends SessionEventType>(type: T, payload: SessionEventMap[T]) => {
+        const event = session.writer.append(type, payload);
+        const anyEvent = event as AnySessionEvent;
+        if (pluginBus !== undefined) pluginBus.emitSessionEvent(session.id, anyEvent);
+        // P11-T4：assistant/message 携带 provider usage 时转发（无 usage = 不产出事件，不伪造）
+        if (anyEvent.type === 'assistant/message' && anyEvent.payload.usage !== undefined) {
+          onStream({
+            type: 'usage',
+            usage: anyEvent.payload.usage,
+            turnId: anyEvent.payload.turnId ?? activeTurnId ?? '',
+          });
+        }
+        return event;
+      },
+    };
     try {
       const result = await runTurn(turnWriter, {
         provider,

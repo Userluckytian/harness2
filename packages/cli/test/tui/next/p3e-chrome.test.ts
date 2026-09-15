@@ -160,17 +160,20 @@ describe('shortcutsFor 四态', () => {
     ]);
   });
 
-  it('busy 且队列空：只显示 Ctrl+C 取消', () => {
+  it('busy 且队列空：Ctrl+C 取消 · Ctrl+Enter 立即发送', () => {
     expect(shortcutsFor({ busy: true, queueCount: 0, approvalActive: false, subviewOpen: false })).toEqual([
       'Ctrl+C 取消',
+      'Ctrl+Enter 立即发送',
     ]);
   });
 
-  it('busy 且队列非空：Ctrl+C 取消 · Ctrl+; 队列(N)', () => {
+  it('busy 且队列非空：Ctrl+C 取消 · Ctrl+Enter 立即发送 · Ctrl+; 队列(N)', () => {
     // 接线迁移（G-29）：队列段主键按 panel.ts QUEUE_PANEL_OPEN_KEYS 更新为 Ctrl+;
     // （「Toggle the prompt queue pane」上游键位表）；Ctrl+X 保留为壳侧附加入口，不在条内展示。
+    // P11-T6：补真实存在的 send-now 键位 Ctrl+Enter（G-28 cancel-and-send，已接线）。
     expect(shortcutsFor({ busy: true, queueCount: 3, approvalActive: false, subviewOpen: false })).toEqual([
       'Ctrl+C 取消',
+      'Ctrl+Enter 立即发送',
       'Ctrl+; 队列(3)',
     ]);
   });
@@ -399,9 +402,9 @@ describe('P3-E 快捷键条（harness 集成）', () => {
     );
     h.submit('first');
     await vi.advanceTimersByTimeAsync(0);
-    expect(h.state.shortcuts).toEqual(['Ctrl+C 取消']);
+    expect(h.state.shortcuts).toEqual(['Ctrl+C 取消', 'Ctrl+Enter 立即发送']);
     h.submit('second');
-    expect(h.state.shortcuts).toEqual(['Ctrl+C 取消', 'Ctrl+; 队列(1)']);
+    expect(h.state.shortcuts).toEqual(['Ctrl+C 取消', 'Ctrl+Enter 立即发送', 'Ctrl+; 队列(1)']);
     release();
     await settle(h);
     expect(h.state.shortcuts).toEqual(['/ 命令', 'Tab 焦点', 'Ctrl+C 退出']);

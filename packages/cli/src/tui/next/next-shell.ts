@@ -249,6 +249,7 @@ import {
   type TurnStreamHandler,
 } from '../../chat-setup.js';
 import {
+  DEFAULT_CONTEXT_WINDOW,
   describeCapabilities,
   getContextUsage,
   loadConfig,
@@ -897,6 +898,9 @@ function createTurnStreamBridge(onEvent: (event: TranscriptEvent) => void): Turn
       return;
     }
     // tool-result
+    // tool-result（usage 事件由 runUserTurn 包装器在本函数之前拦截，不会到这里；
+    // 仍显式判型，避免将来新增事件类型被误当 tool-result）
+    if (event.type !== 'tool-result') return;
     buffer.turnId = event.turnId;
     onEvent({
       type: 'tool/result',
@@ -976,6 +980,8 @@ export interface NextChatHarnessDeps {
    * 严格布尔，非法回退缺省——解析在 runNextChat）；headless 测试直接注入。
    */
   respectManualFolds?: boolean;
+  /** P11-T4：消息时间戳 12/24 小时制覆盖（缺省 = 系统偏好；测试注入确定性） */
+  clock12h?: boolean;
   /**
    * P3-D G-01：minimal 的 status line 开关（缺省 = MINIMAL_STATUS_LINE_DEFAULT false，
    * 最接近 legacy readline 形态）。true 时状态行画在 prompt 块顶（1 行）。
@@ -1209,6 +1215,11 @@ export function createNextChatHarness(runtime: ChatRuntime, deps: NextChatHarnes
   // command 型当前绘制行（null = 尚无输出——builtin/disabled 不走此路径）
   let statusPaintLines: readonly string[] | null = null;
   let turnStartedAt: number | undefined; // builtin turn-timer / payload.turn 数据源
+  // P11-T4：最近一次 provider 真实用量（由 chat-setup 写入口转发 assistant/message.usage）。
+  // 跨 turn 保留（它是**上下文占用**的下界，不是单回合消耗）；无数据 = undefined，UI 降级。
+  let lastUsage: { inputTokens?: number; outputTokens?: number } | undefined;
+  // P11-T4：本回合是否已收到真实用量（busy 的 `↓N` 只展示本回合数据，不拿上回合残留冒充）
+  let usageThisTurn = false;
   const statusTimers = new Set<ReturnType<typeof setTimeout>>();
   // steer 回帧 → 队列展示行的映射（core submitSteer id → 本队列 entry.id）
   const steerRowByCoreId = new Map<string, string>();
@@ -1247,6 +1258,8 @@ export function createNextChatHarness(runtime: ChatRuntime, deps: NextChatHarnes
       collapsed: collapsedIndices(), // G-05：由 folds 状态机派生（P3-A 旧覆盖集废止）
       theme, // P4-2：主题色板（缺省 dark；/theme 切换走 reprojectAll 全量重投影）
       rawMarkdown: foldsState.rawMarkdown, // G-05 r：原始视图（工具行 args 原文 + 不截断）
+      // P11-T4：时间戳 12/24 小时制（缺省 = 系统偏好；测试注入）
+      ...(deps.clock12h !== undefined ? { hour12: deps.clock12h } : {}),
       // P3-D：耗时命中才随行显示；spinner 仅在动画定时器活动时传当前帧
       ...(subagentDurations.size > 0 ? { durations: subagentDurations } : {}),
       ...(spinnerTimer !== null ? { spinner: SPINNER_FRAMES[spinnerFrame % SPINNER_FRAMES.length] } : {}),
@@ -1664,14 +1677,32 @@ export function createNextChatHarness(runtime: ChatRuntime, deps: NextChatHarnes
       state.statusline = '';
       state.statusLines = statusPaintLines ?? [];
     } else {
+      // P11-T4：真实 provider token 用量（input+output）。分母 @ DEFAULT_CONTEXT_WINDOW ——
+      // 与 core getContextUsage/压缩兜底同一常量（CLI 当前不传模型声明的 contextWindow，
+      // 登记为已知近似）；两侧 token 都无值 = 不产出 tokenUsage（状态行退回比例/—，不伪造）。
+      const usedTokens =
+        lastUsage === undefined
+          ? undefined
+          : lastUsage.inputTokens !== undefined || lastUsage.outputTokens !== undefined
+            ? (lastUsage.inputTokens ?? 0) + (lastUsage.outputTokens ?? 0)
+            : undefined;
+      const tokenUsage =
+        usedTokens !== undefined ? { used: usedTokens, total: DEFAULT_CONTEXT_WINDOW } : undefined;
+      // P11-T6：busy 耗时用真实计时（turn 开始时间在壳内记）；↓ 只取本回合已到达的输出 token
+      const busyElapsedMs = busy && turnStartedAt !== undefined ? Date.now() - turnStartedAt : undefined;
+      const busyDownTokens =
+        busy && usageThisTurn && lastUsage?.outputTokens !== undefined ? lastUsage.outputTokens : undefined;
       state.statusline = statusLineFor({
         cwd,
         home,
         model: runtime.provider.name,
         ...(usage !== undefined ? { usage } : {}),
+        ...(tokenUsage !== undefined ? { tokenUsage } : {}),
         ...(uiMode !== 'normal' ? { mode: uiMode } : {}),
         ...(lastRetry !== null ? { retry: lastRetry } : {}),
         ...(busy ? { busy: true } : {}),
+        ...(busyElapsedMs !== undefined ? { busyElapsedMs } : {}),
+        ...(busyDownTokens !== undefined ? { busyDownTokens } : {}),
         ...(spinFrame !== undefined ? { spinnerFrame: spinFrame } : {}),
       });
       state.statusLines = undefined;
@@ -1763,7 +1794,10 @@ export function createNextChatHarness(runtime: ChatRuntime, deps: NextChatHarnes
   });
 
   function dispatch(event: TranscriptEvent): void {
-    scheduler.push(event);
+    // P11-T4：live 转录事件不带会话事件 ts（core onStream 不产出 ts）——在**落帧时刻**补真实
+    // 墙上时钟（该行确实是在此刻出现的）。这不是伪造：值就是事件发生时刻；与磁盘重放的
+    // 会话事件 ts（writer 在 append 时生成，同一秒内通常一致）差异在毫秒级，磁盘权威。
+    scheduler.push(event.ts !== undefined ? event : { ...event, ts: new Date().toISOString() });
   }
 
   function flushUi(): void {
@@ -2677,13 +2711,14 @@ export function createNextChatHarness(runtime: ChatRuntime, deps: NextChatHarnes
     busy = true;
     turnState = 'running'; // P2-C：回合运行中（G-14 Esc 提示通道；收尾回 idle）
     lastRetry = null; // P3-E：新 turn 清上一 turn 的重试标记（状态行不残留旧值）
+    usageThisTurn = false; // P11-T4：本回合用量重新累计（busy ↓ 不用上回合残留代替）
     turnStartedAt = Date.now(); // P3-E 接线4：builtin turn-timer / payload.turn 数据源
     notifyStatusLineStateChanged(false); // P3-E 接线4：会话状态变化 → command 型状态行防抖刷新
     updateSpinner(); // P4-2：turn 开始即启动 spinner 定时器（无运行中子代理时驱动状态行帧动画）
     userSeq += 1;
     // 输入优先：user 回显立即落定（对齐旧壳 Shell dispatchInputNow）
     scheduler.setInputPriority(true);
-    scheduler.push({ type: 'user/message', seq: 0, id: `user:live:${userSeq}`, text });
+    scheduler.push({ type: 'user/message', seq: 0, id: `user:live:${userSeq}`, text, ts: new Date(turnStartedAt ?? Date.now()).toISOString() });
     scheduler.flushNow();
     scheduler.setInputPriority(false);
     invalidate();
@@ -2695,7 +2730,17 @@ export function createNextChatHarness(runtime: ChatRuntime, deps: NextChatHarnes
         const ref = expandContextRefs(text, { cwd: runtime.root, root: runtime.root });
         if (ref.hasRefs && ref.header.length > 0) sendText = `${ref.header}\n\n${text}`;
       }
-      result = await runtime.runUserTurn(sendText, bridge.handler);
+      result = await runtime.runUserTurn(sendText, (event) => {
+        // P11-T4：usage 事件不进转录（core 写入口转发而来）；只更新状态行数据。
+        // 无 usage 事件的 provider/mock 剧本 → lastUsage 保持 undefined → UI 如实降级 `—`。
+        if (event.type === 'usage') {
+          lastUsage = event.usage;
+          usageThisTurn = true;
+          invalidate(); // 立即刷新状态行（每 step 末至多一次，低频）
+          return;
+        }
+        bridge.handler(event);
+      });
       const terminal = bridge.finalize(result);
       if (terminal !== null && !isDuplicateFinal(terminal)) dispatch(terminal);
       if (result !== undefined) {

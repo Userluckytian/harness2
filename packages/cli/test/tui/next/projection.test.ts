@@ -92,11 +92,11 @@ describe('projectTranscript：reasoning（默认折叠）', () => {
 });
 
 describe('projectTranscript：tool 调用行与结果', () => {
-  it('pending：`⏺ tool(摘要)` 黄色，无结果行（args 含 file_path 时提炼紧凑摘要）', () => {
+  it('pending：`⏺ 动词短语` 黄色，无结果行（已知工具按注册表人类化；args 缺必需参数时回退 tool(摘要)）', () => {
     const items = build({ type: 'tool/call', seq: 3, callId: 'c1', tool: 'read', args: '{"file_path":"a.ts"}' });
     const lines = projectTranscript(items);
     expect(lines).toHaveLength(1);
-    expect(lines[0]?.text).toBe('⏺ read(a.ts)');
+    expect(lines[0]?.text).toBe('⏺ 读取 a.ts');
     expect(lines[0]?.fg).toBe(FG.yellow);
     expect(lines[0]?.kind).toBe('tool');
   });
@@ -107,6 +107,7 @@ describe('projectTranscript：tool 调用行与结果', () => {
       { type: 'tool/result', callId: 'c1', ok: true, output: '内容' },
     );
     const lines = projectTranscript(items);
+    // args 无 file_path（仅 summary）→ P11-T5 回退现状模板
     expect(texts(lines)).toEqual(['⏺ read(a.ts)', '  └ ✓ 内容']);
     expect(lines[0]?.fg).toBe(FG.green);
     expect(lines[1]?.kind).toBe('tool-result');
@@ -164,10 +165,10 @@ describe('projectTranscript：tool 调用行与结果', () => {
     expect(texts(projectTranscript(ok))).toEqual(['⏺ read(b.ts)', '  └ ✓']);
   });
 
-  it('summary 为空时从 args 提炼（file_path 优先）', () => {
+  it('summary 为空时从 args 提炼（file_path 优先；已知工具直接人类化）', () => {
     const items = build({ type: 'tool/call', seq: 3, callId: 'c1', tool: 'write', args: '{"file_path":"src/x.ts"}' });
     const lines = projectTranscript(items);
-    expect(lines[0]?.text).toBe('⏺ write(src/x.ts)');
+    expect(lines[0]?.text).toBe('⏺ 写入 src/x.ts');
   });
 
   it('cols 提供时超宽摘要行截断为不超过 cols 且以 … 结尾', () => {
@@ -272,7 +273,7 @@ describe('projectTranscript：subagent', () => {
 });
 
 describe('projectTranscript：diff（edit/write 展开态）', () => {
-  it('默认折叠：edit 不产 diff 行', () => {
+  it('默认折叠：edit 不产 diff 行；主行人类化、展开态才见工具名+参数', () => {
     const items = build(
       {
         type: 'tool/call',
@@ -285,7 +286,8 @@ describe('projectTranscript：diff（edit/write 展开态）', () => {
     );
     const lines = projectTranscript(items);
     expect(kinds(lines).includes('diff')).toBe(false);
-    expect(texts(lines)).toEqual(['⏺ edit(a.ts)', '  └ ✓ written']);
+    // P11-T5：折叠态主行不暴露 JSON，也不显示工具名（工具名在展开态/轨迹）
+    expect(texts(lines)).toEqual(['⏺ 编辑 a.ts', '  └ ✓ written']);
   });
 
   it('展开态：文件头 `── a.ts ──` + `+ `绿 / `- `红 / 上下文灰', () => {
@@ -301,7 +303,9 @@ describe('projectTranscript：diff（edit/write 展开态）', () => {
     );
     const lines = projectTranscript(items, { collapsed: new Set([0]) });
     expect(texts(lines)).toEqual([
-      '⏺ edit(a.ts)',
+      '⏺ 编辑 a.ts',
+      // P11-T5：展开态 = 工具名 + 原始参数 JSON（折叠态隐藏的信息在这里可见）
+      '  ⚙ edit({"file_path":"a.ts","old_text":"foo\\nbar","new_text":"foo\\nbaz"})',
       '  └ ✓',
       '── a.ts ──',
       'foo',
@@ -310,15 +314,15 @@ describe('projectTranscript：diff（edit/write 展开态）', () => {
       '+ baz',
       '  │ written',
     ]);
-    const header = lines[2];
+    const header = lines[3];
     expect(header?.kind).toBe('diff');
     expect(header?.fg).toBe(FG.gray);
-    expect(lines[3]?.fg).toBe(FG.gray); // 上下文
-    expect(lines[4]?.text).toBe('@@ -2 +2 @@');
-    expect(lines[5]?.text).toBe('- bar');
-    expect(lines[5]?.fg).toBe(FG.red);
-    expect(lines[6]?.text).toBe('+ baz');
-    expect(lines[6]?.fg).toBe(FG.green);
+    expect(lines[4]?.fg).toBe(FG.gray); // 上下文
+    expect(lines[5]?.text).toBe('@@ -2 +2 @@');
+    expect(lines[6]?.text).toBe('- bar');
+    expect(lines[6]?.fg).toBe(FG.red);
+    expect(lines[7]?.text).toBe('+ baz');
+    expect(lines[7]?.fg).toBe(FG.green);
   });
 
   it('write 展开态：before 为空 → 全部 `+ ` 行', () => {
@@ -586,7 +590,7 @@ describe('projectTranscript：subagent 耗时（P3-D）', () => {
       ),
       { durations: new Map([['r1', 43]]) },
     );
-    expect(lines[0]?.text).toBe('⏺ read(a.txt)');
+    expect(lines[0]?.text).toBe('⏺ 读取 a.txt');
     expect(lines[1]?.text).not.toContain('43');
   });
 });
