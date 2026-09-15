@@ -330,7 +330,12 @@ export class Scrollback {
   lineAt(lineIndex: number): ScrollbackLine | undefined {
     const l = this.lines[lineIndex];
     return l !== undefined
-      ? { text: l.text, fg: l.fg, ...(l.right !== undefined ? { right: l.right } : {}), ...(l.rightFg !== undefined ? { rightFg: l.rightFg } : {}) }
+      ? {
+          text: l.text,
+          fg: l.fg,
+          ...(l.right !== undefined ? { right: l.right } : {}),
+          ...(l.rightFg !== undefined ? { rightFg: l.rightFg } : {}),
+        }
       : undefined;
   }
 

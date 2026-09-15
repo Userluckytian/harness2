@@ -86,7 +86,15 @@ function findItemIndex(items: TranscriptItem[], id: string): number {
  */
 export type TranscriptEvent =
   | { type: 'user/message'; seq: number; text: string; turnId?: string; id?: string; ts?: string }
-  | { type: 'assistant/message'; seq: number; text: string; reasoning?: string; turnId?: string; id?: string; ts?: string }
+  | {
+      type: 'assistant/message';
+      seq: number;
+      text: string;
+      reasoning?: string;
+      turnId?: string;
+      id?: string;
+      ts?: string;
+    }
   | {
       type: 'assistant/attempt';
       seq: number;
@@ -97,7 +105,16 @@ export type TranscriptEvent =
       id?: string;
       ts?: string;
     }
-  | { type: 'tool/call'; seq: number; callId: string; tool: string; args?: string; summary?: string; turnId?: string; ts?: string }
+  | {
+      type: 'tool/call';
+      seq: number;
+      callId: string;
+      tool: string;
+      args?: string;
+      summary?: string;
+      turnId?: string;
+      ts?: string;
+    }
   | {
       type: 'tool/result';
       seq?: number;
@@ -119,7 +136,15 @@ export type TranscriptEvent =
       ts?: string;
     }
   | { type: 'turn-final'; turnId?: string; seq?: number; text: string; reasoning?: string; ts?: string }
-  | { type: 'turn-partial'; turnId?: string; seq?: number; text: string; error?: string; stopReason?: string; ts?: string }
+  | {
+      type: 'turn-partial';
+      turnId?: string;
+      seq?: number;
+      text: string;
+      error?: string;
+      stopReason?: string;
+      ts?: string;
+    }
   | { type: 'turn-empty'; turnId?: string; seq?: number; error?: string; stopReason?: string; ts?: string }
   | { type: 'system'; text: string; id?: string; ts?: string }
   | { type: 'status'; text: string; id?: string; ts?: string };

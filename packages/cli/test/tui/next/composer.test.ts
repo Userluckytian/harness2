@@ -466,11 +466,7 @@ describe('P11-T2 promptGutter / truncateToWidth（宽度判定）', () => {
 describe('P11-T2 drawComposer 锚点与空态占位（版面级）', () => {
   it('开 prompt：每行行首 = 锚点 + 草稿；光标右移锚点列', () => {
     const buf = new CellBuffer(20, 2);
-    drawComposer(
-      buf,
-      { draft: 'ab\ncd', cursor: 5 },
-      { top: 0, height: 2, prompt: '❯ ' },
-    );
+    drawComposer(buf, { draft: 'ab\ncd', cursor: 5 }, { top: 0, height: 2, prompt: '❯ ' });
     expect(buf.rowText(0)).toBe('❯ ab' + ' '.repeat(16));
     expect(buf.rowText(1)).toBe('❯ cd' + ' '.repeat(16));
     // 光标在第二行行尾：2（锚点）+ 2 = x4
@@ -496,7 +492,11 @@ describe('P11-T2 drawComposer 锚点与空态占位（版面级）', () => {
 
   it('有草稿时不画占位（互斥）', () => {
     const buf = new CellBuffer(30, 1);
-    drawComposer(buf, { draft: 'hi', cursor: 2 }, { top: 0, height: 1, prompt: '❯ ', placeholder: '输入消息，/ 查看命令' });
+    drawComposer(
+      buf,
+      { draft: 'hi', cursor: 2 },
+      { top: 0, height: 1, prompt: '❯ ', placeholder: '输入消息，/ 查看命令' },
+    );
     expect(buf.rowText(0).startsWith('❯ hi')).toBe(true);
     expect(buf.rowText(0)).not.toContain('输入消息');
   });
@@ -560,7 +560,11 @@ describe('P11-T3 drawComposer 候选两列（版面级）', () => {
         top: 2,
         height: 1,
         cursorVisible: false,
-        candidates: { items: ['/always-approve'], summaries: ['开关 always-approve（新审批自动代答 a）'], activeIndex: 0 },
+        candidates: {
+          items: ['/always-approve'],
+          summaries: ['开关 always-approve（新审批自动代答 a）'],
+          activeIndex: 0,
+        },
       },
     );
     // 24 - (15+2) = 7 < 12 → 单列：命令名完整，说明不出现（candCount=1 → 候选在 y=top-1=1）

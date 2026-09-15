@@ -290,7 +290,9 @@ export function shortcutsHelpLines(ctx: ShortcutContext): string[] {
   const out: string[] = [];
   const push = (text: string): void => {
     // 宽度判定走 displayWidth（铁律 2）；结果 = max-1 列前缀 + '…'（≤ maxCols，保持旧结构）
-    out.push(displayWidth(text) <= SHORTCUTS_HELP_MAX_COLS ? text : `${clipPrefixDisplay(text, SHORTCUTS_HELP_MAX_COLS - 1)}…`);
+    out.push(
+      displayWidth(text) <= SHORTCUTS_HELP_MAX_COLS ? text : `${clipPrefixDisplay(text, SHORTCUTS_HELP_MAX_COLS - 1)}…`,
+    );
   };
   for (const section of shortcutsHelpSections(ctx)) {
     push(`── ${section.title} ──`);
@@ -494,8 +496,7 @@ function buildRegionInputs(state: ChatScreenState, chat: ChatLayerMeasure): Read
     const paletteH = state.palette?.state.open === true ? paletteNaturalHeight(state.palette.rows.length) : 0;
     const welcomeSpec = welcomeOverlaySpec(state.welcome);
     const welcomeH = welcomeSpec !== null ? overlayNaturalHeight(welcomeSpec) : 0;
-    const natural =
-      paletteH + welcomeH + state.overlays.reduce((sum, spec) => sum + overlayNaturalHeight(spec), 0);
+    const natural = paletteH + welcomeH + state.overlays.reduce((sum, spec) => sum + overlayNaturalHeight(spec), 0);
     inputs.set('overlayModal', { naturalHeight: natural });
   }
   return inputs;
