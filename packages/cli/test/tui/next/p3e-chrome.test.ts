@@ -12,6 +12,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { AnySessionEvent, SteerResult, TurnResult } from '@harness2/core';
 import type { ChatRuntime } from '../../../src/chat-setup.js';
 import { shortcutsFor, statusLineFor, shortenCwd, queueEntryPreview } from '../../../src/tui/next/chat-screen.js';
+import { displayWidth } from '../../../src/tui/renderer/cell-buffer.js';
 import {
   formatRetryBudget,
   retryBudgetHasActivity,
@@ -272,6 +273,14 @@ describe('queueEntryPreview（队列条目预览，对齐旧壳 queuePreview）'
   it('超长截断加省略号（42 列）', () => {
     const long = 'x'.repeat(50);
     expect(queueEntryPreview(long)).toBe(`${'x'.repeat(42)}…`);
+  });
+
+  it('CJK 超长按显示宽截断（不按字符数溢出；铁律 2）', () => {
+    const out = queueEntryPreview('中'.repeat(60));
+    expect(out).toBe(`${'中'.repeat(21)}…`); // 21 中 = 42 显示列；再加一个会超
+    expect(out.endsWith('…')).toBe(true);
+    expect(out.length).toBe(22); // 反面：旧 .length 实现会留 42 个汉字（43 字符）
+    expect(displayWidth(out)).toBe(43); // 前缀 ≤ 42 显示列 + …（旧实现 = 85 列）
   });
 
   it('短文本原样', () => {

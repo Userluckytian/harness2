@@ -11,33 +11,38 @@ import {
   renderPromptBlock,
 } from '../../../src/tui/next/minimal-view.js';
 import { CellBuffer } from '../../../src/tui/renderer/cell-buffer.js';
+import { DEFAULT_PLACEHOLDER, DEFAULT_PROMPT } from '../../../src/tui/next/composer.js';
+
+/** P11-T2：草稿行锚点显示宽（'❯ ' = 2） */
+const GUTTER = DEFAULT_PROMPT.length;
 
 describe('composeMinimalPrompt', () => {
   it('空草稿 = 单行 prompt 块（readline 同构）', () => {
     const block = composeMinimalPrompt({ draft: '', cursor: 0, cols: 80 });
-    expect(block.rows).toEqual(['']);
+    // P11-T2：空态显示锚点 + 弱化占位（占位只呈现，不进提交内容）
+    expect(block.rows).toEqual([`${DEFAULT_PROMPT}${DEFAULT_PLACEHOLDER}`]);
     expect(block.cursorRow).toBe(0);
-    expect(block.cursorCol).toBe(0);
+    expect(block.cursorCol).toBe(GUTTER); // 光标落在草稿处（占位右侧不动）
   });
 
-  it('草稿文本进块，光标定位在文本末（cursorCol = 显示宽）', () => {
+  it('草稿文本进块，光标定位在文本末（cursorCol = 锚点 + 显示宽）', () => {
     const block = composeMinimalPrompt({ draft: 'hello', cursor: 5, cols: 80 });
-    expect(block.rows).toEqual(['hello']);
+    expect(block.rows).toEqual([`${DEFAULT_PROMPT}hello`]);
     expect(block.cursorRow).toBe(0);
-    expect(block.cursorCol).toBe(5);
+    expect(block.cursorCol).toBe(GUTTER + 5);
   });
 
   it('宽字符光标列按显示宽度计（CJK = 2 列/字）', () => {
     const block = composeMinimalPrompt({ draft: '你好', cursor: 2, cols: 80 });
-    expect(block.rows).toEqual(['你好']);
-    expect(block.cursorCol).toBe(4);
+    expect(block.rows).toEqual([`${DEFAULT_PROMPT}你好`]);
+    expect(block.cursorCol).toBe(GUTTER + 4);
   });
 
   it('多行草稿（\n 硬换行）逐物理行，光标行随换行下移', () => {
     const block = composeMinimalPrompt({ draft: 'ab\ncd', cursor: 5, cols: 80 });
-    expect(block.rows).toEqual(['ab', 'cd']);
+    expect(block.rows).toEqual([`${DEFAULT_PROMPT}ab`, `${DEFAULT_PROMPT}cd`]);
     expect(block.cursorRow).toBe(1);
-    expect(block.cursorCol).toBe(2);
+    expect(block.cursorCol).toBe(GUTTER + 2);
   });
 
   it('候选行画在草稿上方（block 顶 = 候选）', () => {
@@ -47,13 +52,13 @@ describe('composeMinimalPrompt', () => {
       candidates: { items: ['/aa', '/bb', '/cc'], activeIndex: 1 },
       cols: 80,
     });
-    expect(block.rows).toEqual(['/aa', '/bb', '/cc', 'x']);
+    expect(block.rows).toEqual(['/aa', '/bb', '/cc', `${DEFAULT_PROMPT}x`]);
     expect(block.cursorRow).toBe(3); // 光标在草稿行（块底）
   });
 
   it('statusline 占块顶行（minimalStatusLine 开启时的可选层）', () => {
     const block = composeMinimalPrompt({ draft: 'x', cursor: 1, statusline: '~/p · mock', cols: 80 });
-    expect(block.rows).toEqual(['~/p · mock', 'x']);
+    expect(block.rows).toEqual(['~/p · mock', `${DEFAULT_PROMPT}x`]);
     expect(block.cursorRow).toBe(1);
   });
 
@@ -64,19 +69,20 @@ describe('composeMinimalPrompt', () => {
       overlays: [{ title: 'Approval', items: ['y 允许', 'n 拒绝'], activeIndex: 0 }],
       cols: 80,
     });
-    // 标题 + 分隔线 + 2 条目 + 草稿空行
+    // 标题 + 分隔线 + 2 条目 + 草稿空行（空态 = 锚点 + 占位）
     expect(block.rows.length).toBe(5);
     expect(block.rows[0]).toContain('Approval');
     expect(block.rows[1]).toContain('──');
     expect(block.rows[2]).toContain('y 允许');
-    expect(block.rows[4]).toBe('');
+    expect(block.rows[4]).toBe(`${DEFAULT_PROMPT}${DEFAULT_PLACEHOLDER}`);
   });
 
   it('超宽草稿按 cols 折行（与 wrapLine 同语义；光标列行满钳制到 cols-1）', () => {
+    // cols=10、锚点 2 列 → 草稿区 8 列：15 个 a = 8 + 7
     const block = composeMinimalPrompt({ draft: 'a'.repeat(15), cursor: 15, cols: 10 });
-    expect(block.rows).toEqual(['a'.repeat(10), 'a'.repeat(5)]);
+    expect(block.rows).toEqual([`${DEFAULT_PROMPT}${'a'.repeat(8)}`, `${DEFAULT_PROMPT}${'a'.repeat(7)}`]);
     expect(block.cursorRow).toBe(1);
-    expect(block.cursorCol).toBe(5);
+    expect(block.cursorCol).toBe(9); // GUTTER + 7 = 9（= cols-1 行满钳制）
   });
 });
 
@@ -135,7 +141,7 @@ describe('MinimalView（写出口径）', () => {
     // 再画 prompt：无残留擦除（printLines 已把 prevRows 归零）
     out.buffer = '';
     view.renderPrompt(composeMinimalPrompt({ draft: 'd', cursor: 1, cols: 80 }));
-    expect(out.buffer.startsWith('d\r')).toBe(true);
+    expect(out.buffer.startsWith(`${DEFAULT_PROMPT}d\r`)).toBe(true);
   });
 
   it('行内 CR 剥离（转录文本不干扰列定位）', () => {

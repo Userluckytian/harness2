@@ -6,7 +6,16 @@
 // - 差量性：同状态重复渲染 0 字节、光标移动帧字节量小
 // - 边界：空草稿 / 光标行首行尾中间 / 超宽断行 / cols 极小 / 候选滚动 / 指示器截断
 import { describe, expect, it } from 'vitest';
-import { candidateRows, measureComposer, renderComposer } from '../../../src/tui/next/composer.js';
+import {
+  candidateRows,
+  DEFAULT_ACTIVE_FG,
+  drawComposer,
+  measureComposer,
+  promptGutter,
+  renderComposer,
+  truncateToWidth,
+} from '../../../src/tui/next/composer.js';
+import { CellBuffer, displayWidth } from '../../../src/tui/renderer/cell-buffer.js';
 import { Screen } from '../../../src/tui/renderer/screen.js';
 
 class MemOut {
@@ -421,5 +430,152 @@ describe('renderComposer 底边指示', () => {
     const buf = screen.buffer;
     expect(buf.rowText(22)).toBe('/aa' + ' '.repeat(77));
     expect(buf.rowText(23)).toBe('hello' + ' '.repeat(71) + 'plan');
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════
+// P11-T2 输入区可见性：草稿行锚点（prompt）+ 空态占位（placeholder）
+// ═══════════════════════════════════════════════════════════════════════
+describe('P11-T2 promptGutter / truncateToWidth（宽度判定）', () => {
+  it('promptGutter：按 displayWidth 计；空/放不下 = 0', () => {
+    expect(promptGutter(80, '❯ ')).toBe(2);
+    expect(promptGutter(2, '❯ ')).toBe(0); // cols 不大于锚点宽 → 不让草稿区变 0
+    expect(promptGutter(1, '❯ ')).toBe(0);
+    expect(promptGutter(80, '')).toBe(0);
+    expect(promptGutter(80, null)).toBe(0);
+    expect(promptGutter(80, undefined)).toBe(2); // 缺省 = DEFAULT_PROMPT
+    expect(promptGutter(80, '中')).toBe(2); // CJK 锚点按显示宽（.length 会是 1 → 变异可查）
+  });
+
+  it('truncateToWidth：按显示宽右截断 + 省略号（宽字符不切半）', () => {
+    expect(truncateToWidth('abcdef', 6)).toBe('abcdef');
+    expect(truncateToWidth('abcdef', 4)).toBe('abc…');
+    expect(truncateToWidth('', 4)).toBe('');
+    expect(truncateToWidth('中'.repeat(10), 5)).toBe('中中…');
+    expect(displayWidth(truncateToWidth('中'.repeat(10), 5))).toBeLessThanOrEqual(5);
+  });
+
+  it('measureComposer 的 gutter 扣减草稿区宽（与 drawComposer 同口径）', () => {
+    // 无 gutter：100 字符 30 列 → 4 行，光标列 100 - 90 = 10
+    expect(measureComposer('a'.repeat(100), 30)).toEqual({ rows: 4, cursorRow: 3, cursorCol: 10 });
+    // gutter=2：草稿区 28 列 → 4 行，光标列 100 - 84 = 16（变异：忽略 gutter → 仍 10）
+    expect(measureComposer('a'.repeat(100), 30, undefined, 2)).toEqual({ rows: 4, cursorRow: 3, cursorCol: 16 });
+  });
+});
+
+describe('P11-T2 drawComposer 锚点与空态占位（版面级）', () => {
+  it('开 prompt：每行行首 = 锚点 + 草稿；光标右移锚点列', () => {
+    const buf = new CellBuffer(20, 2);
+    drawComposer(
+      buf,
+      { draft: 'ab\ncd', cursor: 5 },
+      { top: 0, height: 2, prompt: '❯ ' },
+    );
+    expect(buf.rowText(0)).toBe('❯ ab' + ' '.repeat(16));
+    expect(buf.rowText(1)).toBe('❯ cd' + ' '.repeat(16));
+    // 光标在第二行行尾：2（锚点）+ 2 = x4
+    expect(buf.chars[1 * 20 + 4]).toBe(' ');
+    expect(buf.fg[1 * 20 + 4]).toBe(0x00ff87);
+  });
+
+  it('空草稿 + 占位：占位画在锚点右侧、弱化色；不改写 state.draft', () => {
+    const buf = new CellBuffer(30, 1);
+    const state = { draft: '', cursor: 0 };
+    drawComposer(buf, state, {
+      top: 0,
+      height: 1,
+      prompt: '❯ ',
+      placeholder: '输入消息，/ 查看命令',
+      placeholderFg: 0x666666,
+      cursorVisible: false,
+    });
+    expect(buf.rowText(0).startsWith('❯ 输入消息，/ 查看命令')).toBe(true);
+    expect(buf.fg[2]).toBe(0x666666); // 占位首字弱化色
+    expect(state.draft).toBe(''); // 占位绝不进草稿（提交内容纯净）
+  });
+
+  it('有草稿时不画占位（互斥）', () => {
+    const buf = new CellBuffer(30, 1);
+    drawComposer(buf, { draft: 'hi', cursor: 2 }, { top: 0, height: 1, prompt: '❯ ', placeholder: '输入消息，/ 查看命令' });
+    expect(buf.rowText(0).startsWith('❯ hi')).toBe(true);
+    expect(buf.rowText(0)).not.toContain('输入消息');
+  });
+
+  it('cols 放不下锚点：退化不画锚点（不与草稿抢列、不崩）', () => {
+    const buf = new CellBuffer(1, 1);
+    drawComposer(buf, { draft: 'x', cursor: 1 }, { top: 0, height: 1, prompt: '❯ ' });
+    expect(buf.rowText(0)).toBe('x');
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════
+// P11-T3 候选列表两列化（命令 + 灰说明；窄画布退化为单列）
+// ═══════════════════════════════════════════════════════════════════════
+describe('P11-T3 drawComposer 候选两列（版面级）', () => {
+  it('宽画布：命令列对齐 + 说明列起点 = 命令最大显示宽 + 2', () => {
+    const buf = new CellBuffer(60, 3);
+    drawComposer(
+      buf,
+      { draft: '', cursor: 0 },
+      {
+        top: 2,
+        height: 1,
+        cursorVisible: false,
+        candidateDescFg: 0x666666,
+        candidates: { items: ['/help', '/new'], summaries: ['显示本帮助', '新建会话'], activeIndex: 0 },
+      },
+    );
+    // 命令最大宽 = 5（/help）→ 说明列 x = 7（rowText 跳过宽字符续列，故用 startsWith + 逐格）
+    expect(buf.rowText(0).startsWith('/help  显示本帮助')).toBe(true);
+    expect(buf.rowText(1).startsWith('/new   新建会话')).toBe(true);
+    expect(buf.chars[6]).toBe(' '); // 间隔列
+    expect(buf.chars[7]).toBe('显'); // 说明列起点 = 5 + 2
+    expect(buf.fg[0]).toBe(DEFAULT_ACTIVE_FG); // 选中行命令列高亮
+    expect(buf.fg[7]).toBe(0x666666); // 说明列灰（选中行说明仍灰）
+    expect(buf.fg[1 * 60 + 0]).toBe(0); // 非选中行命令列默认色
+  });
+
+  it('CJK 命令/说明按显示宽对齐（.length 当宽度 → 红）', () => {
+    const buf = new CellBuffer(40, 3);
+    drawComposer(
+      buf,
+      { draft: '', cursor: 0 },
+      {
+        top: 2,
+        height: 1,
+        cursorVisible: false,
+        candidates: { items: ['/ab', '/中文'], summaries: ['一', '二'], activeIndex: 0 },
+      },
+    );
+    // 命令最大显示宽 = displayWidth('/中文') = 5（'.length' 会是 3）→ 说明列 x = 7
+    expect(buf.rowText(1).startsWith('/中文  二')).toBe(true);
+  });
+
+  it('窄画布：退化为单列（不画说明、命令名完整不重叠）', () => {
+    const buf = new CellBuffer(24, 3);
+    drawComposer(
+      buf,
+      { draft: '', cursor: 0 },
+      {
+        top: 2,
+        height: 1,
+        cursorVisible: false,
+        candidates: { items: ['/always-approve'], summaries: ['开关 always-approve（新审批自动代答 a）'], activeIndex: 0 },
+      },
+    );
+    // 24 - (15+2) = 7 < 12 → 单列：命令名完整，说明不出现（candCount=1 → 候选在 y=top-1=1）
+    expect(buf.rowText(1).startsWith('/always-approve')).toBe(true);
+    expect(buf.rowText(1)).not.toContain('开关');
+  });
+
+  it('无 summaries（缺省）：保持单列旧行为（既有调用零变化）', () => {
+    const buf = new CellBuffer(40, 3);
+    drawComposer(
+      buf,
+      { draft: '', cursor: 0 },
+      { top: 2, height: 1, cursorVisible: false, candidates: { items: ['/help', '/new'], activeIndex: 1 } },
+    );
+    expect(buf.rowText(0)).toBe('/help' + ' '.repeat(35));
+    expect(buf.rowText(1)).toBe('/new' + ' '.repeat(36));
   });
 });

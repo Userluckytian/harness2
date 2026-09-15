@@ -23,7 +23,16 @@
 // - prompt 块重绘依赖「两次写之间光标停在 prompt 块内」：本模块是唯一的底部写入者
 //   （next-shell 装配保证），外部进程不并发写同一终端。
 import { CellBuffer, charWidth, type CellBuffer as CellBufferT } from '../renderer/cell-buffer.js';
-import { candidateRows, drawComposer, fitIndicator, measureComposer, type ComposerCandidates } from './composer.js';
+import {
+  candidateRows,
+  DEFAULT_PLACEHOLDER,
+  DEFAULT_PROMPT,
+  drawComposer,
+  fitIndicator,
+  measureComposer,
+  promptGutter,
+  type ComposerCandidates,
+} from './composer.js';
 import { drawOverlay, overlayNaturalHeight, overlayStackLayout, type OverlaySpec } from './overlay.js';
 // P3-E 接线1（G-31）：命令面板进 minimal prompt 块（与 fullscreen 同一 drawPalette 绘制体）
 import { drawPalette, paletteNaturalHeight } from '../commands/palette-view.js';
@@ -99,7 +108,9 @@ export function extractRows(buf: CellBufferT): string[] {
  */
 export function composeMinimalPrompt(input: MinimalPromptInput, maxRows = 1000): MinimalPromptBlock {
   const cols = Math.max(1, Math.floor(input.cols));
-  const draftRows = measureComposer(input.draft, cols, input.cursor).rows;
+  // P11-T2：草稿区宽度 = 块宽 - 草稿行锚点（drawComposer 同一口径 promptGutter）
+  const gutter = promptGutter(cols);
+  const draftRows = measureComposer(input.draft, cols, input.cursor, gutter).rows;
   const candRows = input.candidates == null ? 0 : candidateRows(input.candidates.items.length);
   const hasStatus = typeof input.statusline === 'string' && input.statusline.length > 0;
   const statusRows = hasStatus ? 1 : 0;
@@ -129,6 +140,9 @@ export function composeMinimalPrompt(input: MinimalPromptInput, maxRows = 1000):
       top: draftTop,
       height: draftRows,
       cursorVisible: false,
+      // P11-T2：与 fullscreen 同口径的锚点 + 空态占位（minimal 直写不带 SGR，占位色不生效）
+      prompt: DEFAULT_PROMPT,
+      placeholder: DEFAULT_PLACEHOLDER,
       ...(input.candidates != null ? { candidates: input.candidates } : {}),
       ...(input.indicators !== undefined && input.indicators.length > 0 ? { indicators: input.indicators } : {}),
     },
@@ -154,11 +168,12 @@ export function composeMinimalPrompt(input: MinimalPromptInput, maxRows = 1000):
   // 状态行（minimal 可选层，画在块顶）
   if (hasStatus) writeStatusRow(buf, input.statusline ?? '', cols);
 
-  const measure = measureComposer(input.draft, cols, input.cursor);
+  const measure = measureComposer(input.draft, cols, input.cursor, gutter);
   return {
     rows: extractRows(buf),
     cursorRow: Math.min(statusRows + overlayTotal + candRows + measure.cursorRow, Math.max(0, rows - 1)),
-    cursorCol: Math.min(measure.cursorCol, cols - 1), // 行满行尾钳制（与 drawComposer 同规则）
+    // 行满行尾钳制（与 drawComposer 同规则）；草稿区右移了锚点列，光标列同步平移
+    cursorCol: Math.min(gutter + measure.cursorCol, cols - 1),
   };
 }
 

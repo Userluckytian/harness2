@@ -24,6 +24,10 @@
 //   最后一列的字符格（不新增物理行，避免测量与渲染不一致）。
 // - emoji 代理对中间的非法光标偏移钳制到所在码点首列。
 // - 指示器与草稿在同一底行重叠时指示器后画获胜（覆盖草稿尾部字符）。
+// - P11-T2：草稿行锚点（prompt）与空态占位（placeholder）为**可选项**（缺省不画，装配层
+//   开启）——保留「只接受状态、画出结果」的中立性，既有单测零改动。开启后草稿区宽度 =
+//   区域宽 - 锚点显示宽（每物理行都缩进同一列，measureComposer 的 gutter 参数与其一致）；
+//   占位文本只在草稿为空时绘制，**永不进入 state.draft**（呈现层语义）。
 import { charWidth, displayWidth } from '../renderer/cell-buffer.js';
 import type { CellBuffer } from '../renderer/cell-buffer.js';
 import { Screen } from '../renderer/screen.js';
@@ -34,6 +38,20 @@ export const DEFAULT_CURSOR_FG = 0x00ff87;
 export const DEFAULT_ACTIVE_FG = 0x00ff87;
 /** 候选窗口默认最大行数 */
 export const DEFAULT_MAX_CANDIDATES = 6;
+/** 草稿行默认视觉锚点（与转录里已提交消息的 `❯` 呼应；装配层开启 prompt 后生效） */
+export const DEFAULT_PROMPT = '❯ ';
+/** 空态默认占位提示（弱化色由调用方给，见 placeholderFg） */
+export const DEFAULT_PLACEHOLDER = '输入消息，/ 查看命令';
+/** 候选两列布局：命令列与说明列之间的间隔（显示列） */
+export const CANDIDATE_COLUMN_GAP = 2;
+/**
+ * 候选两列布局的最小说明列宽：可用说明宽 < 本值即退化为单列。
+ * 取 12 的理由：窄于 12 列的说明只剩几个字（如 CJK 6 字以内），信息量低于「命令名本身」
+ * ——退化为单列比塞半截说明更可读；同时保证窄画布下命令名**完整不截断、不重叠**。
+ */
+export const CANDIDATE_MIN_DESC_COLS = 12;
+/** 候选说明默认前景色（灰；主题装配层覆盖为 theme.fg.system） */
+export const DEFAULT_CANDIDATE_DESC_FG = 0x666666;
 
 /** measureComposer 结果：草稿所需物理行数 + 光标物理位置（layout 据此做高度让位） */
 export interface ComposerMeasure {
@@ -51,8 +69,11 @@ export interface ComposerMeasure {
  * @param cols 区域宽度（≤0 按 1 列兜底）
  * @param cursor 逻辑光标（UTF-16 码元偏移；缺省 = 草稿末尾；越界钳制）
  */
-export function measureComposer(draft: string, cols: number, cursor?: number): ComposerMeasure {
-  const layout = layoutDraft(draft, cols);
+export function measureComposer(draft: string, cols: number, cursor?: number, gutter = 0): ComposerMeasure {
+  // P11-T2：gutter = 草稿行锚点占宽（缺省 0 = 既有行为）。草稿区宽 = 区域宽 - 锚点宽，
+  // 与 drawComposer 内的折行口径**必须一致**（装配层两处都传 promptGutter(cols)）。
+  const inside = Math.max(1, Math.floor(cols) - Math.max(0, Math.floor(gutter)));
+  const layout = layoutDraft(draft, inside);
   const loc = locateCursor(layout, cursor ?? draft.length);
   return { rows: layout.segments.length, cursorRow: loc.segIndex, cursorCol: loc.col };
 }
@@ -65,6 +86,12 @@ export function candidateRows(itemCount: number, max: number = DEFAULT_MAX_CANDI
 /** 候选列表状态（画在输入区上方，activeIndex 高亮 + 滚动窗口） */
 export interface ComposerCandidates {
   items: readonly string[];
+  /**
+   * P11-T3：与 items 平行的说明文案（缺省/单项 undefined = 该行单列）。
+   * 并行数组而非对象数组——items 的既有调用方（acceptCandidate / candidateItemAt /
+   * 既有单测）零改动。
+   */
+  summaries?: readonly (string | undefined)[];
   activeIndex: number;
 }
 
@@ -101,6 +128,19 @@ export interface ComposerRenderOptions {
   indicators?: readonly string[];
   /** 指示器前景色（默认 0） */
   indicatorFg?: number;
+  /**
+   * P11-T2：草稿行视觉锚点（如 '❯ '）。undefined/null/'' = 不画（缺省不画，装配层开启）。
+   * 锚点占宽走 displayWidth（promptGutter），每条草稿物理行都缩进该列。
+   */
+  prompt?: string | null;
+  /** 锚点前景色（默认 = fg） */
+  promptFg?: number;
+  /** P11-T2：空草稿占位提示（仅草稿为空时画；undefined/null/'' = 不画） */
+  placeholder?: string | null;
+  /** 占位提示前景色（默认 0 = 终端默认色；装配层传弱化灰） */
+  placeholderFg?: number;
+  /** P11-T3：候选说明前景色（默认 DEFAULT_CANDIDATE_DESC_FG 灰） */
+  candidateDescFg?: number;
 }
 
 // --- 草稿排版（带码元偏移的断行，供光标映射） ---
@@ -273,6 +313,40 @@ export function candidateItemAt(
 }
 
 /**
+ * 草稿行锚点占宽：prompt 的显示宽度；空/放不下（cols ≤ 锚点宽）= 0（不与草稿抢列）。
+ * 宽度判定走 displayWidth（铁律 2）——CJK 锚点不会按字符数算错列。
+ */
+export function promptGutter(cols: number, prompt: string | null | undefined = DEFAULT_PROMPT): number {
+  if (prompt === null || prompt === undefined || prompt.length === 0) return 0;
+  const w = displayWidth(prompt);
+  return Math.max(1, Math.floor(cols)) > w ? w : 0;
+}
+
+/**
+ * 按显示宽右截断（超宽 = 从**尾部**丢弃 + '…' 结尾），保证显示宽 ≤ cols。
+ * 与 fitIndicator（左截断）互补：说明/占位文案的阅读顺序在头部，故右截断。
+ * 宽度计算走 charWidth（宽字符放不下整字丢弃，绝不切半边）。
+ */
+export function truncateToWidth(text: string, cols: number): string {
+  if (cols <= 0) return '';
+  if (displayWidth(text) <= cols) return text;
+  const target = cols >= 2 ? cols - 1 : 0; // '…' 占 1 列
+  let out = '';
+  let w = 0;
+  for (const ch of text) {
+    const cw = charWidth(ch.codePointAt(0) ?? 0);
+    if (cw === 0) {
+      out += ch;
+      continue;
+    }
+    if (w + cw > target) break;
+    out += ch;
+    w += cw;
+  }
+  return cols >= 2 ? `${out}…` : out;
+}
+
+/**
  * 指示器右对齐适配：超宽时从左丢弃码点 + '…' 前缀，保证显示宽 ≤ cols。
  * 导出供整帧装配层（chat-screen）等外部复用同一截断语义。
  */
@@ -307,7 +381,11 @@ export function drawComposer(buf: CellBuffer, state: ComposerState, opts: Compos
   if (opts.top !== undefined && Math.floor(opts.top) >= buf.rows) return;
   const width = Math.max(1, Math.min(Math.floor(opts.width ?? buf.cols), buf.cols));
   const draft = state.draft ?? '';
-  const layout = layoutDraft(draft, width);
+  // P11-T2：锚点占宽（缺省不画）；草稿区宽 = 区域宽 - 锚点宽（measureComposer 同参一致性）
+  const gutter = opts.prompt === undefined || opts.prompt === null ? 0 : promptGutter(width, opts.prompt);
+  const promptText = gutter > 0 ? (opts.prompt ?? '') : '';
+  const draftWidth = Math.max(1, width - gutter);
+  const layout = layoutDraft(draft, draftWidth);
   const cursor = Math.min(Math.max(0, Math.floor(state.cursor ?? draft.length)), draft.length);
   const loc = locateCursor(layout, cursor);
   const totalRows = layout.segments.length;
@@ -336,6 +414,10 @@ export function drawComposer(buf: CellBuffer, state: ComposerState, opts: Compos
   const candFg = opts.candidateFg ?? 0;
   const candActiveFg = opts.candidateActiveFg ?? DEFAULT_ACTIVE_FG;
   const indFg = opts.indicatorFg ?? 0;
+  const promptFg = opts.promptFg ?? fg;
+  const placeholder = opts.placeholder ?? null;
+  const placeholderFg = opts.placeholderFg ?? 0;
+  const candDescFg = opts.candidateDescFg ?? DEFAULT_CANDIDATE_DESC_FG;
   const drawCursor = opts.cursorVisible ?? true;
   const items = opts.candidates?.items ?? [];
   const activeIndex = Math.floor(opts.candidates?.activeIndex ?? 0);
@@ -343,21 +425,40 @@ export function drawComposer(buf: CellBuffer, state: ComposerState, opts: Compos
   const candCount = candidateRows(items.length, maxCand);
   const indicators = opts.indicators ?? [];
 
-  // 草稿物理行
+  // 草稿物理行（每行行首先画锚点，再画该物理段；宽度已扣掉锚点列）
   for (let i = 0; i < height; i += 1) {
     const seg = layout.segments[offset + i];
     if (seg === undefined) break;
-    writeRowAt(buf, top + i, 0, seg.text, width, fg);
+    if (promptText.length > 0) writeRowAt(buf, top + i, 0, promptText, width, promptFg);
+    writeRowAt(buf, top + i, gutter, seg.text, width, fg);
+  }
+  // P11-T2：空态占位（弱化色）——只在草稿为空时画；不写 state.draft，永不被提交
+  if (draft.length === 0 && placeholder !== null && placeholder.length > 0 && offset === 0) {
+    writeRowAt(buf, top, gutter, truncateToWidth(placeholder, draftWidth), width, placeholderFg);
   }
   // 候选列表：输入区上方，底部锚定（最后一行 = top-1），越出屏顶裁剪
+  // P11-T3：有说明时两列（命令 + 灰说明）；可用说明宽 < CANDIDATE_MIN_DESC_COLS 退化为单列
   if (candCount > 0) {
     const startIdx = candidateWindowStart(items.length, activeIndex, candCount);
+    const summaries = opts.candidates?.summaries;
+    // 命令列宽 = 可见行内最大显示宽（对齐列）；不用 .length（铁律 2）
+    let cmdCols = 0;
+    for (let k = 0; k < candCount; k += 1) {
+      cmdCols = Math.max(cmdCols, displayWidth(items[startIdx + k] ?? ''));
+    }
+    const descX = Math.min(width, cmdCols + CANDIDATE_COLUMN_GAP);
+    const twoCol = summaries !== undefined && width - descX >= CANDIDATE_MIN_DESC_COLS;
     for (let k = 0; k < candCount; k += 1) {
       const y = top - candCount + k;
       if (y < 0) continue;
-      const item = items[startIdx + k] ?? '';
-      const isActive = startIdx + k === activeIndex;
+      const idx = startIdx + k;
+      const item = items[idx] ?? '';
+      const isActive = idx === activeIndex;
       writeRowAt(buf, y, 0, item, width, isActive ? candActiveFg : candFg);
+      if (!twoCol) continue;
+      const desc = summaries?.[idx];
+      if (desc === undefined || desc.length === 0) continue;
+      writeRowAt(buf, y, descX, truncateToWidth(desc, width - descX), width, candDescFg);
     }
   }
   // 底边指示：区域底行右侧右对齐；与草稿重叠时后画获胜
@@ -371,7 +472,8 @@ export function drawComposer(buf: CellBuffer, state: ComposerState, opts: Compos
   // 光标高亮格：逻辑光标经断行映射后的物理位置
   if (drawCursor && loc.segIndex >= offset && loc.segIndex < offset + height) {
     const y = top + loc.segIndex - offset;
-    let x = Math.min(loc.col, width - 1); // 行满且光标在行尾：钳制高亮最后一列
+    // P11-T2：光标落在草稿区（区右移了锚点列）；钳制到区域最后一列
+    let x = Math.min(gutter + loc.col, width - 1); // 行满且光标在行尾：钳制高亮最后一列
     const idx = y * buf.cols + x;
     if (buf.widths[idx] === 0 && (buf.chars[idx] ?? '') === '') {
       // 钳制列恰为宽字符续列：改高亮其首列，避免半宽空格破坏首列/续列配对

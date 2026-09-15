@@ -144,7 +144,7 @@ describe('renderChat 整帧装配', () => {
     });
     expect(renderChat(screen, state)).toBeGreaterThan(0);
     const g = gridOf(screen);
-    expect(g[21]).toBe('hi' + ' '.repeat(78)); // 草稿行（composer 顶层）
+    expect(g[21]).toBe('❯ hi' + ' '.repeat(76)); // 草稿行（composer 顶层；P11-T2 锚点）
     expect(g[22]).toBe(' '.repeat(70) + 'plan · 40%'); // 提示行：指示器右对齐
     expect(g[23]).toBe('a · b' + ' '.repeat(75)); // 快捷键条：左对齐（设计决定，快照钉死）
   });
@@ -163,10 +163,10 @@ describe('renderChat 整帧装配', () => {
     const state = makeState({ draft: 'hello', cursor: 2 });
     renderChat(screen, state);
     const buf = screen.buffer;
-    const idx = 21 * 80 + 2; // composer top=21（无候选/状态行），草稿行 y=21
+    const idx = 21 * 80 + 4; // composer top=21；P11-T2 锚点 '❯ ' 占 2 列 → 逻辑列 2 = x4
     expect(buf.chars[idx]).toBe('l');
     expect(buf.fg[idx]).toBe(DEFAULT_CURSOR_FG);
-    expect(buf.fg[21 * 80 + 4]).toBe(0); // 其余字符不受影响
+    expect(buf.fg[21 * 80 + 6]).toBe(0); // 其余字符不受影响（x6 = 'o'）
   });
 
   it('光标高亮：行尾光标（col=行宽）高亮行尾后的空白格（与 renderComposer 同语义）', () => {
@@ -174,17 +174,17 @@ describe('renderChat 整帧装配', () => {
     const state = makeState({ draft: 'hello' });
     renderChat(screen, state);
     const buf = screen.buffer;
-    expect(buf.chars[21 * 80 + 5]).toBe(' ');
-    expect(buf.fg[21 * 80 + 5]).toBe(DEFAULT_CURSOR_FG);
+    expect(buf.chars[21 * 80 + 7]).toBe(' '); // 2（锚点）+ 5（文本末）
+    expect(buf.fg[21 * 80 + 7]).toBe(DEFAULT_CURSOR_FG);
   });
 
-  it('光标高亮：行首光标格 x=0', () => {
+  it('光标高亮：行首光标格 x=锚点宽（草稿仍在锚点右侧）', () => {
     const { screen } = makeScreen();
     const state = makeState({ draft: 'hello', cursor: 0 });
     renderChat(screen, state);
     const buf = screen.buffer;
-    expect(buf.fg[21 * 80 + 0]).toBe(DEFAULT_CURSOR_FG);
-    expect(buf.chars[21 * 80 + 0]).toBe('h');
+    expect(buf.fg[21 * 80 + 2]).toBe(DEFAULT_CURSOR_FG);
+    expect(buf.chars[21 * 80 + 2]).toBe('h');
   });
 
   it('候选列表：画在草稿区上方，active 行 fg 高亮，其余默认色', () => {
@@ -200,7 +200,7 @@ describe('renderChat 整帧装配', () => {
     expect(g[18]).toBe('plan' + ' '.repeat(76));
     expect(g[19]).toBe('auto' + ' '.repeat(76));
     expect(g[20]).toBe('read-only' + ' '.repeat(71));
-    expect(g[21]).toBe('>' + ' '.repeat(79));
+    expect(g[21]).toBe('❯ >' + ' '.repeat(77));
     expect(buf.fg[18 * 80 + 0]).toBe(0);
     expect(buf.fg[19 * 80 + 0]).toBe(DEFAULT_ACTIVE_FG);
     expect(buf.fg[20 * 80 + 0]).toBe(0);
@@ -220,7 +220,7 @@ describe('renderChat 整帧装配', () => {
     expect(g[18]?.startsWith('❯ grok-4')).toBe(true);
     expect(g[19]?.startsWith('  claude-x')).toBe(true);
     expect(g[20]?.startsWith('  gpt-5')).toBe(true);
-    expect(g[21]).toBe('hello' + ' '.repeat(75)); // 浮层不侵占 composer
+    expect(g[21]).toBe('❯ hello' + ' '.repeat(73)); // 浮层不侵占 composer
   });
 
   it('多浮层栈：自下而上，第 2 层贴第 1 层上方', () => {
@@ -253,7 +253,7 @@ describe('renderChat 整帧装配', () => {
     expect(g[0]?.startsWith(' T ')).toBe(true);
     expect(g[1]).toBe('─'.repeat(40));
     expect(g[2]?.startsWith('  i1')).toBe(true);
-    expect(g[3]).toBe('x' + ' '.repeat(39));
+    expect(g[3]).toBe('❯ x' + ' '.repeat(37));
     expect(g[4]).toBe(' '.repeat(40)); // 提示行（无指示器留空）
     expect(g[5]).toBe('q' + ' '.repeat(39));
   });
@@ -306,7 +306,7 @@ describe('renderChat 整帧装配', () => {
     expect(g).toHaveLength(20);
     for (const row of g) expect(row).toHaveLength(60);
     expect(g[19]).toBe('q' + ' '.repeat(59));
-    expect(g[17]).toBe('hi' + ' '.repeat(58)); // composer top=17（scrollback 0..16）
+    expect(g[17]).toBe('❯ hi' + ' '.repeat(56)); // composer top=17（scrollback 0..16）
   });
 
   it('差量性：同状态连续两次 renderChat，第二次 0 字节', () => {
@@ -453,5 +453,82 @@ describe('截断渲染路径钉死（审查 P2-1）', () => {
     expect(() => renderChat(screen, state)).not.toThrow();
     const text = gridOf(screen).join('\n');
     expect(text).not.toContain('x');
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════
+// P11-T2 输入区可见性（整帧）
+// ═══════════════════════════════════════════════════════════════════════
+describe('P11-T2 输入区可见性（整帧）', () => {
+  it('空态帧：锚点 + 弱化占位；占位不进草稿', () => {
+    const { screen } = makeScreen();
+    const state = makeState({ draft: '', cursor: 0 });
+    renderChat(screen, state);
+    const g = gridOf(screen);
+    expect(g[21]?.startsWith('❯ 输入消息，/ 查看命令')).toBe(true);
+    // 占位弱化色 = theme.fg.system（dark 0x8b949e）；x2/x3 被光标格覆盖，取 x4
+    expect(screen.buffer.fg[21 * 80 + 4]).toBe(0x8b949e);
+    expect(state.draft).toBe(''); // 占位是纯呈现，绝不进入提交内容
+  });
+
+  it('有草稿帧：锚点 + 草稿原文；光标在草稿处', () => {
+    const { screen } = makeScreen();
+    const state = makeState({ draft: 'hello', cursor: 2 });
+    renderChat(screen, state);
+    const g = gridOf(screen);
+    expect(g[21]?.startsWith('❯ hello')).toBe(true);
+    expect(screen.buffer.chars[21 * 80 + 4]).toBe('l'); // 光标逻辑列 2 = 锚点 2 + 2
+    expect(screen.buffer.fg[21 * 80 + 4]).toBe(DEFAULT_CURSOR_FG);
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════
+// P11-T3 候选两列化（整帧）
+// ═══════════════════════════════════════════════════════════════════════
+describe('P11-T3 候选两列化（整帧）', () => {
+  it('宽画布：命令行同列含灰说明；选中高亮保持', () => {
+    const { screen } = makeScreen(80, 24);
+    const state = makeState({
+      draft: '/',
+      candidates: {
+        items: ['/help', '/new'],
+        summaries: ['显示本帮助', '新建会话'],
+        activeIndex: 0,
+      },
+    });
+    renderChat(screen, state);
+    const g = gridOf(screen);
+    const helpRow = g.findIndex((r) => r.startsWith('/help'));
+    expect(helpRow).toBeGreaterThanOrEqual(0);
+    expect(g[helpRow]?.startsWith('/help  显示本帮助')).toBe(true);
+    expect(screen.buffer.fg[helpRow * 80 + 0]).toBe(DEFAULT_ACTIVE_FG); // 选中行
+    expect(screen.buffer.fg[helpRow * 80 + 7]).toBe(0x8b949e); // 说明灰（theme.fg.system）
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════
+// P11-T7 冷启动引导卡（整帧）
+// ══════════════════════════════════════════════════════════════════════
+describe('P11-T7 冷启动引导卡（整帧）', () => {
+  const CARD = {
+    title: 'harness2 1.0.0 · 欢迎（按任意键收起）',
+    lines: ['/help 查看全部命令', 'Enter 发送 · Shift+Enter 换行', 'Ctrl+C 退出'],
+  };
+
+  it('有引导卡：标题 + 行画在 composer 上方（不侵占输入区）', () => {
+    const { screen } = makeScreen();
+    const state = makeState({ draft: 'hi', welcome: CARD });
+    renderChat(screen, state);
+    const g = gridOf(screen);
+    const joined = g.join('\n');
+    expect(joined).toContain('欢迎（按任意键收起）');
+    expect(joined).toContain('/help 查看全部命令');
+    expect(g[21]).toBe('❯ hi' + ' '.repeat(76)); // composer 仍在自己的行
+  });
+
+  it('无引导卡：帧内不含欢迎文案', () => {
+    const { screen } = makeScreen();
+    renderChat(screen, makeState({ draft: 'hi', welcome: null }));
+    expect(gridOf(screen).join('\n')).not.toContain('欢迎');
   });
 });
