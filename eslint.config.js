@@ -64,10 +64,9 @@ module.exports = tseslint.config(
       // no-undef 本身已降为 warn，不会误伤。
       globals: { ...globals.node, ...globals.browser },
       parserOptions: {
-        projectService: {
-          // 不在任何 tsconfig include 内的独立脚本（B2 实测：projectService 找不到会报 parsing error）
-          allowDefaultProject: ['packages/cli/scripts/tui-spike.tsx'],
-        },
+        // 类型感知（no-floating-promises 等）。当前无 tsconfig include 之外的 TS 脚本；
+        // 若以后新增独立 .ts 脚本，需在此登记（否则 projectService 报 parsing error）。
+        projectService: true,
         tsconfigRootDir: __dirname,
       },
     },
@@ -92,7 +91,7 @@ module.exports = tseslint.config(
     },
   },
   {
-    // React（desktop renderer / cli ink TUI）：注册 plugin 让存量 eslint-disable react-hooks/* 注释可解析；
+    // React（desktop renderer）：注册 plugin 让存量 eslint-disable react-hooks/* 注释可解析；
     // 首轮两条规则均 warn（v7 recommended 新增的编译器类规则不启用，避免误标红存量组件）
     name: 'harness2/react-hooks',
     files: ['**/*.ts', '**/*.tsx'],
