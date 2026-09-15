@@ -1,7 +1,8 @@
-// chat REPL 分流入口：TTY/现代终端 → ink 全屏 TUI；其余（piped/CI/逃生舱）→ 原 readline 路径。
-// legacy 完整实现与装配在 legacy-chat.ts（字符级搬迁，零行为改动）；ink 路径在 tui/runInkChat.ts。
+// chat REPL 分流入口（P10-A3 双路收敛）：TTY/现代终端 → next TUI（唯一交互壳）；其余（piped/CI/逃生舱）→ readline 路径。
+// legacy 完整实现与装配在 legacy-chat.ts（字符级搬迁，零行为改动）；next TUI 路径在 tui/next/next-shell.ts。
 // 两路径共享同一套会话装配（chat-setup.ts）与命令注册表/模式别名/@file 协议，避免分叉。
-import { runInkChat, shouldUseInk } from './tui/runInkChat.js';
+import { runNextChat } from './tui/next/next-shell.js';
+import { shouldUseTui } from './tui/terminal-capabilities.js';
 import { runLegacyReadlineChat, type ChatOptions } from './legacy-chat.js';
 
 export { runLegacyReadlineChat } from './legacy-chat.js';
@@ -11,8 +12,8 @@ export type { ChatOptions } from './legacy-chat.js';
 export { MOCK_DEMO_SCRIPT, MOCK_CHILD_DEMO_SCRIPT } from './chat-setup.js';
 
 export async function runChat(options: ChatOptions = {}): Promise<void> {
-  if (shouldUseInk()) {
-    await runInkChat(options);
+  if (shouldUseTui()) {
+    await runNextChat(options);
   } else {
     await runLegacyReadlineChat(options);
   }

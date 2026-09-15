@@ -17,11 +17,11 @@
 
 ## 前置阅读（必须）
 
-| 优先级 | 文件                                             |
-| ------ | ------------------------------------------------ |
-| P0     | `docs/ai-framework/phased-plan-driven.md`        |
-| P0     | 本文件                                           |
-| P0     | `docs/HANDOFF.md`、`docs/issue-log/OPEN.md`      |
+| 优先级 | 文件                                                 |
+| ------ | ---------------------------------------------------- |
+| P0     | `docs/ai-framework/phased-plan-driven.md`            |
+| P0     | 本文件                                               |
+| P0     | `docs/HANDOFF.md`、`docs/issue-log/OPEN.md`          |
 | P1     | `AGENTS.md`、`CODE_REVIEW.md`、`coding-standards.md` |
 
 **仓库路径：** `D:/AI_Projects/harness2`
@@ -43,8 +43,8 @@
 
 ## 阶段开头：上阶段遗留（必填小节）
 
-| 上阶段遗留项                                                                  | 来源              | 未通过原因 | 状态                                |
-| ----------------------------------------------------------------------------- | ----------------- | ---------- | ----------------------------------- |
+| 上阶段遗留项                                                                        | 来源               | 未通过原因 | 状态                                                                                      |
+| ----------------------------------------------------------------------------------- | ------------------ | ---------- | ----------------------------------------------------------------------------------------- |
 | 「终端 grok 复刻 P0～P4 真机验收」+「P2 双渲染模式真机验收（`HARNESS2_RENDERER`）」 | OPEN.md 2026-09-13 | 需真机     | 🔄 本阶段**改变形态**：双渲染不复存在，该两项合并为「next 壳真机验收」，A8 后更新 OPEN.md |
 
 其余 OPEN.md 未关闭项（真机/key/发布动作/技术尾巴）与本阶段无交集，不动。
@@ -53,38 +53,38 @@
 
 ## 跳过项（因档位未做，非缺陷）
 
-| 跳过项                             | 原因                                        | 待补做            |
-| ---------------------------------- | ------------------------------------------- | ----------------- |
-| 真机（Windows Terminal）观感与 IME | ConPTY 抓屏无法覆盖鼠标/IME/系统字体度量    | ⬜ 待用户真机一轮 |
+| 跳过项                             | 原因                                         | 待补做            |
+| ---------------------------------- | -------------------------------------------- | ----------------- |
+| 真机（Windows Terminal）观感与 IME | ConPTY 抓屏无法覆盖鼠标/IME/系统字体度量     | ⬜ 待用户真机一轮 |
 | 旧壳测试断言的**全量**迁移         | 删旧壳后部分断言已无对应实现，只保留迁移评估 | ⬜ 见 A4 缺口清单 |
 
 ---
 
 ## 与前后阶段
 
-| 阶段          | 状态 | 交付                                                              |
-| ------------- | ---- | ----------------------------------------------------------------- |
-| P9 收口       | ✅   | 归存补齐 / 上层文档 / 冒烟用例（`83f2e9b`）                       |
-| **本阶段 P10** | ⬜   | 旧壳零残留 + 双 TUI 抓屏对照台 + 差异报告与改进清单               |
-| 下阶段        |      | 按 C4 产出的改进清单另立计划（本阶段不顺手改 next 功能）          |
+| 阶段           | 状态 | 交付                                                     |
+| -------------- | ---- | -------------------------------------------------------- |
+| P9 收口        | ✅   | 归存补齐 / 上层文档 / 冒烟用例（`83f2e9b`）              |
+| **本阶段 P10** | ⬜   | 旧壳零残留 + 双 TUI 抓屏对照台 + 差异报告与改进清单      |
+| 下阶段         |      | 按 C4 产出的改进清单另立计划（本阶段不顺手改 next 功能） |
 
 ---
 
 ## File Structure（预期变更）
 
-| 文件 / 目录                                                                  | 动作 | 职责                                                     |
-| ---------------------------------------------------------------------------- | ---- | -------------------------------------------------------- |
-| `packages/cli/src/tui/*.tsx`（14 个，见 A1 清单）                             | 删   | 旧壳 React 组件                                          |
-| `packages/cli/src/tui/panels/*.tsx`（3 个）                                   | 删   | 旧壳面板                                                 |
-| `packages/cli/src/tui/runInkChat.tsx`                                        | 删   | 旧壳入口 + `shouldUseInk` 门控（门控迁往 A3）             |
-| `packages/cli/test/tui/**`（7 个含旧壳依赖的文件，见 A1）                      | 删/迁 | 旧壳测试                                                 |
-| `packages/cli/src/chat.ts`、`index.ts`、`tui/terminal-capabilities.ts`         | 改   | 装配收敛为「next / piped」二选一；门控函数改名            |
-| `packages/cli/src/tui/ink-commands.ts`                                        | 改名 | → `tui/command-impls.ts`（内容零改动）                    |
-| `packages/cli/package.json` + `pnpm-lock.yaml`                                | 改   | 移除 `ink` / `react` / `@types/react`                     |
-| `packages/core/src/commands/types.ts`、`src/session/capabilities.ts`           | 改   | 仅注释去痕（导出面零变化）                                |
-| 现行文档（README / HANDOFF / SMOKE-TEST / ROADMAP / MASTER-PLAN / refs / …）   | 改   | 去痕 + 更新「单轨」事实                                   |
-| `scripts/tui-parity/`                                                         | 新建 | 抓屏对照台（ptycap.py + scenarios/ + README）             |
-| `docs/tui-parity/`                                                            | 新建 | 对照报告（README + matrix.md + images/）                  |
+| 文件 / 目录                                                                  | 动作  | 职责                                           |
+| ---------------------------------------------------------------------------- | ----- | ---------------------------------------------- |
+| `packages/cli/src/tui/*.tsx`（14 个，见 A1 清单）                            | 删    | 旧壳 React 组件                                |
+| `packages/cli/src/tui/panels/*.tsx`（3 个）                                  | 删    | 旧壳面板                                       |
+| `packages/cli/src/tui/runInkChat.tsx`                                        | 删    | 旧壳入口 + `shouldUseInk` 门控（门控迁往 A3）  |
+| `packages/cli/test/tui/**`（7 个含旧壳依赖的文件，见 A1）                    | 删/迁 | 旧壳测试                                       |
+| `packages/cli/src/chat.ts`、`index.ts`、`tui/terminal-capabilities.ts`       | 改    | 装配收敛为「next / piped」二选一；门控函数改名 |
+| `packages/cli/src/tui/ink-commands.ts`                                       | 改名  | → `tui/command-impls.ts`（内容零改动）         |
+| `packages/cli/package.json` + `pnpm-lock.yaml`                               | 改    | 移除 `ink` / `react` / `@types/react`          |
+| `packages/core/src/commands/types.ts`、`src/session/capabilities.ts`         | 改    | 仅注释去痕（导出面零变化）                     |
+| 现行文档（README / HANDOFF / SMOKE-TEST / ROADMAP / MASTER-PLAN / refs / …） | 改    | 去痕 + 更新「单轨」事实                        |
+| `scripts/tui-parity/`                                                        | 新建  | 抓屏对照台（ptycap.py + scenarios/ + README）  |
+| `docs/tui-parity/`                                                           | 新建  | 对照报告（README + matrix.md + images/）       |
 
 ---
 
@@ -245,20 +245,20 @@
 
 **场景组（至少覆盖）：**
 
-| 组 | 场景                                                                     |
-| -- | ------------------------------------------------------------------------ |
-| A 启动     | 冷启动 / 恢复上次会话 / 空目录 vs git 仓库                              |
-| B 对话     | 流式中截图 / 完成后 / 长回答 / 代码块                                   |
-| C 命令     | 敲 `/` 出候选列表 / `/help` / 未知命令                                  |
-| D 工具     | 读文件 / 写文件 / 跑命令（卡片形态与折叠）                              |
-| E 审批     | ask 弹窗 / 允许 / 拒绝 / 总是允许                                       |
-| F 子任务   | 派发子代理 → 运行中 → 完成 → 查看子会话                                 |
-| G 状态行   | 模型名 / 模式 / ctx% / token 用量 / 耗时                                |
-| H 打断     | 回合中 Esc / Ctrl+C / 双击                                             |
-| I 撤销     | `/undo` `/redo` / 分叉                                                  |
-| J 队列     | 忙碌时回车排队 / steer                                                  |
-| K 外观     | fullscreen vs minimal / 110 列 vs 160 列                                |
-| L 失败     | 模型报错 / 工具失败                                                     |
+| 组       | 场景                                       |
+| -------- | ------------------------------------------ |
+| A 启动   | 冷启动 / 恢复上次会话 / 空目录 vs git 仓库 |
+| B 对话   | 流式中截图 / 完成后 / 长回答 / 代码块      |
+| C 命令   | 敲 `/` 出候选列表 / `/help` / 未知命令     |
+| D 工具   | 读文件 / 写文件 / 跑命令（卡片形态与折叠） |
+| E 审批   | ask 弹窗 / 允许 / 拒绝 / 总是允许          |
+| F 子任务 | 派发子代理 → 运行中 → 完成 → 查看子会话    |
+| G 状态行 | 模型名 / 模式 / ctx% / token 用量 / 耗时   |
+| H 打断   | 回合中 Esc / Ctrl+C / 双击                 |
+| I 撤销   | `/undo` `/redo` / 分叉                     |
+| J 队列   | 忙碌时回车排队 / steer                     |
+| K 外观   | fullscreen vs minimal / 110 列 vs 160 列   |
+| L 失败   | 模型报错 / 工具失败                        |
 
 **Steps:**
 
@@ -280,14 +280,14 @@
 
 **审查方：** 独立只读子代理（非本阶段实现者）
 
-| 审查项         | 结论 | 问题清单 |
-| -------------- | ---- | -------- |
-| 删除完整性     |      | 有无孤儿文件/死代码残留、有无被删断言未登记 |
-| 覆盖迁移评估   |      | 评估表是否逐条可核（不得「静默丢覆盖」） |
-| 依赖与架构红线 |      | cli 依赖是否真的清了、core/gateway 是否越界 |
+| 审查项         | 结论 | 问题清单                                      |
+| -------------- | ---- | --------------------------------------------- |
+| 删除完整性     |      | 有无孤儿文件/死代码残留、有无被删断言未登记   |
+| 覆盖迁移评估   |      | 评估表是否逐条可核（不得「静默丢覆盖」）      |
+| 依赖与架构红线 |      | cli 依赖是否真的清了、core/gateway 是否越界   |
 | 误伤检查       |      | `--ink` CSS token 是否被误改、link/think 误伤 |
-| 文档一致性     |      | 单 TUI 事实是否同步、有无自相矛盾            |
-| 零残留         |      | A8 白名单外命中是否为 0                      |
+| 文档一致性     |      | 单 TUI 事实是否同步、有无自相矛盾             |
+| 零残留         |      | A8 白名单外命中是否为 0                       |
 
 **结论：** ✅ 通过 / ⚠️ 有条件通过（问题进验收表）/ ❌ 不通过（阻塞合入）
 
@@ -295,32 +295,32 @@
 
 ## 验收标准总表
 
-| # | 标准                     | 通过条件                                                        | 验证责任人 |
-| - | ------------------------ | --------------------------------------------------------------- | ---------- |
-| 1 | 旧壳代码零残留           | A8 grep 白名单外命中 0                                          | 自动化     |
-| 2 | 依赖清理                 | `packages/cli/package.json` 无 `ink`/`react`/`@types/react`      | 自动化     |
-| 3 | 覆盖不静默丢失           | 覆盖迁移评估表逐条可核，⚠️ 缺口已登记                            | 独立审查   |
-| 4 | 冻结区未越界             | core 仅两处注释改动；`api-surface-baseline.json` diff = 0 行     | 自动化     |
-| 5 | 误伤零发生               | `--ink` CSS token 原样；无 link/think 误改                       | 独立审查   |
-| 6 | 全量闸门                 | `pnpm -r build` + `pnpm test` + `pnpm -r typecheck` + `pnpm lint` exit 0 | 自动化 |
-| 7 | 冒烟                     | next 壳 `/help` → 对话 → `/undo` → `/exit` 正常；piped 模式文本输出正常 | 编排者 |
-| 8 | 对照台可用               | `scripts/tui-parity` 单场景冒烟出图（中文/边框无误）            | 编排者     |
-| 9 | 对照报告                 | `docs/tui-parity/matrix.md` 覆盖 12 组场景，逐项有差异结论与改进建议 | 编排者 |
-| 10| 文档同步                 | OPEN.md 双渲染项已合并；HANDOFF/README/SMOKE 表述与单 TUI 一致  | 编排者     |
-| 11| 真机项                   | 人眼确认鼠标/IME/真机观感（**本阶段不做**，留手工清单）         | 用户       |
+| #   | 标准           | 通过条件                                                                 | 验证责任人 |
+| --- | -------------- | ------------------------------------------------------------------------ | ---------- |
+| 1   | 旧壳代码零残留 | A8 grep 白名单外命中 0                                                   | 自动化     |
+| 2   | 依赖清理       | `packages/cli/package.json` 无 `ink`/`react`/`@types/react`              | 自动化     |
+| 3   | 覆盖不静默丢失 | 覆盖迁移评估表逐条可核，⚠️ 缺口已登记                                    | 独立审查   |
+| 4   | 冻结区未越界   | core 仅两处注释改动；`api-surface-baseline.json` diff = 0 行             | 自动化     |
+| 5   | 误伤零发生     | `--ink` CSS token 原样；无 link/think 误改                               | 独立审查   |
+| 6   | 全量闸门       | `pnpm -r build` + `pnpm test` + `pnpm -r typecheck` + `pnpm lint` exit 0 | 自动化     |
+| 7   | 冒烟           | next 壳 `/help` → 对话 → `/undo` → `/exit` 正常；piped 模式文本输出正常  | 编排者     |
+| 8   | 对照台可用     | `scripts/tui-parity` 单场景冒烟出图（中文/边框无误）                     | 编排者     |
+| 9   | 对照报告       | `docs/tui-parity/matrix.md` 覆盖 12 组场景，逐项有差异结论与改进建议     | 编排者     |
+| 10  | 文档同步       | OPEN.md 双渲染项已合并；HANDOFF/README/SMOKE 表述与单 TUI 一致           | 编排者     |
+| 11  | 真机项         | 人眼确认鼠标/IME/真机观感（**本阶段不做**，留手工清单）                  | 用户       |
 
 ---
 
 ## 风险与降级
 
-| 风险                                          | 缓解                                                          |
-| --------------------------------------------- | ------------------------------------------------------------- |
-| 删除时误伤共享件（next 依赖父目录多个模块）    | A1 反向依赖证明 + 逐文件 `git rm` + typecheck 报错清单驱动     |
-| 删测试导致覆盖静默下降                        | A4 强制「覆盖迁移评估表」，⚠️ 缺口登记为下阶段改进项           |
-| core 冻结区被误改                              | 仅授权两处注释；用导出面基线 diff 断言                          |
-| `--ink` CSS token 被全局替换误伤               | 明确红线 + 独立审查专项 + 禁止 `sed` 批量替换                   |
-| grok 侧对照消耗额度 / 时序 flaky               | 我方 mock 零成本；grok 用最小 prompt；抓屏改「等屏幕稳定」      |
-| ConPTY 抓屏与真机观感有差异                    | 报告首页如实声明；真机项留在手工清单                            |
+| 风险                                        | 缓解                                                       |
+| ------------------------------------------- | ---------------------------------------------------------- |
+| 删除时误伤共享件（next 依赖父目录多个模块） | A1 反向依赖证明 + 逐文件 `git rm` + typecheck 报错清单驱动 |
+| 删测试导致覆盖静默下降                      | A4 强制「覆盖迁移评估表」，⚠️ 缺口登记为下阶段改进项       |
+| core 冻结区被误改                           | 仅授权两处注释；用导出面基线 diff 断言                     |
+| `--ink` CSS token 被全局替换误伤            | 明确红线 + 独立审查专项 + 禁止 `sed` 批量替换              |
+| grok 侧对照消耗额度 / 时序 flaky            | 我方 mock 零成本；grok 用最小 prompt；抓屏改「等屏幕稳定」 |
+| ConPTY 抓屏与真机观感有差异                 | 报告首页如实声明；真机项留在手工清单                       |
 
 ---
 
@@ -393,30 +393,30 @@ A1 零引用盘点 → A2 删旧壳代码 → A3 装配收敛（只剩 next / pi
 
 **A. 旧壳 React/ink 组件（14 个，均直接 `from 'ink'` 或被旧壳树独占）**
 
-| # | 文件 | 生产侧引用者 | 依据 |
-| - | ---- | ------------ | ---- |
-| 1 | `src/tui/runInkChat.tsx` | `src/chat.ts:4`（A3 收敛点） | 旧壳入口 + `shouldUseInk` 门控 + `HARNESS2_RENDERER` 改道分支 |
-| 2 | `src/tui/Composer.tsx` | runInkChat | 旧壳输入框 |
-| 3 | `src/tui/ConfirmDialog.tsx` | runInkChat | 旧壳审批卡 |
-| 4 | `src/tui/DiffCard.tsx` | TranscriptView | 旧壳 diff 卡 |
-| 5 | `src/tui/Modal.tsx` | ConfirmDialog / runInkChat | 旧壳浮层外框 |
-| 6 | `src/tui/OverlayHost.tsx` | runInkChat | 旧壳浮层宿主 |
-| 7 | `src/tui/ReasoningBlock.tsx` | TranscriptView | 旧壳推理块 |
-| 8 | `src/tui/SelectList.tsx` | runInkChat | 旧壳选择列表 |
-| 9 | `src/tui/StatusBar.tsx` | runInkChat | 旧壳状态栏 |
-| 10 | `src/tui/SubagentView.tsx` | runInkChat | 旧壳子会话浮层 |
-| 11 | `src/tui/TranscriptView.tsx` | SubagentView / runInkChat | 旧壳转录区 |
-| 12 | `src/tui/panels/queue-panel.tsx` | runInkChat | 旧壳队列面板 |
-| 13 | `src/tui/panels/retry-panel.tsx` | runInkChat | 旧壳重试面板 |
-| 14 | `src/tui/panels/task-panel.tsx` | runInkChat | 旧壳任务面板 |
+| #   | 文件                             | 生产侧引用者                 | 依据                                                          |
+| --- | -------------------------------- | ---------------------------- | ------------------------------------------------------------- |
+| 1   | `src/tui/runInkChat.tsx`         | `src/chat.ts:4`（A3 收敛点） | 旧壳入口 + `shouldUseInk` 门控 + `HARNESS2_RENDERER` 改道分支 |
+| 2   | `src/tui/Composer.tsx`           | runInkChat                   | 旧壳输入框                                                    |
+| 3   | `src/tui/ConfirmDialog.tsx`      | runInkChat                   | 旧壳审批卡                                                    |
+| 4   | `src/tui/DiffCard.tsx`           | TranscriptView               | 旧壳 diff 卡                                                  |
+| 5   | `src/tui/Modal.tsx`              | ConfirmDialog / runInkChat   | 旧壳浮层外框                                                  |
+| 6   | `src/tui/OverlayHost.tsx`        | runInkChat                   | 旧壳浮层宿主                                                  |
+| 7   | `src/tui/ReasoningBlock.tsx`     | TranscriptView               | 旧壳推理块                                                    |
+| 8   | `src/tui/SelectList.tsx`         | runInkChat                   | 旧壳选择列表                                                  |
+| 9   | `src/tui/StatusBar.tsx`          | runInkChat                   | 旧壳状态栏                                                    |
+| 10  | `src/tui/SubagentView.tsx`       | runInkChat                   | 旧壳子会话浮层                                                |
+| 11  | `src/tui/TranscriptView.tsx`     | SubagentView / runInkChat    | 旧壳转录区                                                    |
+| 12  | `src/tui/panels/queue-panel.tsx` | runInkChat                   | 旧壳队列面板                                                  |
+| 13  | `src/tui/panels/retry-panel.tsx` | runInkChat                   | 旧壳重试面板                                                  |
+| 14  | `src/tui/panels/task-panel.tsx`  | runInkChat                   | 旧壳任务面板                                                  |
 
 **B. 旧壳专供的邻接模块（3 个，非 tsx；删掉旧壳后生产零引用，且文件头即 ink 行为契约）**
 
-| # | 文件 | 生产侧引用者（全部在删除清单内） | 旧壳证据 |
-| - | ---- | -------------------------------- | -------- |
-| 15 | `src/tui/terminal-events.ts` | `runInkChat.tsx`、`input-bridge.ts` | 文件头：拦截 stdin 再回注给 **ink**（mouse/focus SGR）；ink 之后无消费者 |
-| 16 | `src/tui/input-bridge.ts` | `terminal-events.ts` | 文件头：统一解析器 → **ink** stdin 逐字节回注适配层 |
-| 17 | `src/tui/paste.ts` | `Composer.tsx` | 文件头：**ink 7** `usePaste` 的 CRLF 归一/短长分流内核；next 壳自持 paste 解析（`next-shell.ts` bracketed paste + chat-controller 空闲冲刷） |
+| #   | 文件                         | 生产侧引用者（全部在删除清单内）    | 旧壳证据                                                                                                                                     |
+| --- | ---------------------------- | ----------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
+| 15  | `src/tui/terminal-events.ts` | `runInkChat.tsx`、`input-bridge.ts` | 文件头：拦截 stdin 再回注给 **ink**（mouse/focus SGR）；ink 之后无消费者                                                                     |
+| 16  | `src/tui/input-bridge.ts`    | `terminal-events.ts`                | 文件头：统一解析器 → **ink** stdin 逐字节回注适配层                                                                                          |
+| 17  | `src/tui/paste.ts`           | `Composer.tsx`                      | 文件头：**ink 7** `usePaste` 的 CRLF 归一/短长分流内核；next 壳自持 paste 解析（`next-shell.ts` bracketed paste + chat-controller 空闲冲刷） |
 
 > 判定口径：三者均为「为 ink 的 stdin/粘贴语义服务」，next 壳已有自持等价路径（`next/next-shell.ts` 自写 SGR mouse：
 > `selectionPointFromMouse`/wheel、`BRACKETED_PASTE_ON` + `chat-controller` 空闲冲刷）。留之即死代码，
@@ -438,25 +438,25 @@ A1 零引用盘点 → A2 删旧壳代码 → A3 装配收敛（只剩 next / pi
 
 **零引用观察项（本次保留、不动，非 ink，登记供编排者裁决）**：
 
-| 文件 | 现状 | 备注 |
-| ---- | ---- | ---- |
-| `src/tui/commands/index.ts` | `src` 内 0 引用、`test` 内 0 引用 | 命令面板接线缝文档 + barrel 再导出；保留以免动 next 接线 |
-| `src/tui/input/capability.ts` | `src` 内 0 引用，仅 `test/tui/input/capability.test.ts` | kitty 键盘和弦差异数据表，与 TUI 闸门分工不同 |
+| 文件                           | 现状                                                                  | 备注                                                                                |
+| ------------------------------ | --------------------------------------------------------------------- | ----------------------------------------------------------------------------------- |
+| `src/tui/commands/index.ts`    | `src` 内 0 引用、`test` 内 0 引用                                     | 命令面板接线缝文档 + barrel 再导出；保留以免动 next 接线                            |
+| `src/tui/input/capability.ts`  | `src` 内 0 引用，仅 `test/tui/input/capability.test.ts`               | kitty 键盘和弦差异数据表，与 TUI 闸门分工不同                                       |
 | `src/tui/input/image-paste.ts` | `src` 内 0 引用，仅 `test/tui/input/{capability,image-paste}.test.ts` | G-12 图片粘贴键位契约，**已登记下放 P7**；next 壳以注释引用（`next-shell.ts:3739`） |
 
 ### 三、门控与命名去痕清单（A3 本批 / A5–A7 后续批）
 
-| # | 对象 | 处理 | 批次 |
-| - | ---- | ---- | ---- |
-| 1 | `shouldUseInk` → `shouldUseTui`（`runInkChat.tsx` 删除后迁入 `tui/terminal-capabilities.ts`） | 改名 + 迁址，语义不变（`HARNESS2_NO_TUI=1` / `--no-tui` / `HARNESS2_TUI=1` / 非 TTY 四场景） | A3 |
-| 2 | `TuiMode = 'ink' \| 'legacy'` → `'tui' \| 'legacy'`，`decideTuiMode` / `decideWindowsTuiMode` 返回字面量与注释 | 同步全部引用点 | A3 |
-| 3 | `HARNESS2_RENDERER` 开关（`shouldUseNextRenderer`，`next/next-shell.ts:428`） | **删除**（next 已是唯一渲染器） | A3 |
-| 4 | `isModernTerminal`（`runInkChat.tsx:55`，`src` 内 0 引用） | 随文件删除 | A2 |
-| 5 | 测试侧：`test/tui/tui-gate.test.ts`（`shouldUseInk`）、`test/tui/terminal-capabilities.test.ts`（`.mode === 'ink'`）、`test/tui/next/next-shell.test.ts:149-157`（`shouldUseNextRenderer`）、`test/command-routing.test.ts:435`（`HARNESS2_RENDERER=next`） | 改/删 + 覆盖登记 | A4 |
-| 6 | `src/tui/ink-commands.ts` → `src/tui/command-impls.ts`（内容零改动）+ `test/tui/ink-commands.test.ts` 同名跟随；`test/tui/p3f-ink-session-picker.test.tsx` 文件名去痕 | `git mv` + 引用点更新 | A6 |
-| 7 | 保留件注释去痕（`grep -ciE "\bink\b\|ink-\|HARNESS2_RENDERER"` 命中行数）：`next/next-shell.ts` 66、`terminal-capabilities.ts` 10、`input/keymaps.ts` 9、`next/chat-controller.ts` 6、`input/parser.ts` 6、`next/projection.ts` 5、`chat.ts` 5、`chat-setup.ts` 5、`shell-commands.ts` 11、`input.ts` 3、`next/minimal-view.ts` 2、`serve-entry.ts` 2、`legacy-chat.ts` 2，以及 `useTurnStream/transcript/shutdown/scheduler/notify`、`render/{regions,mode,folds}`、`queue/{queue,panel}`、`next/{composer,chat-screen}`、`input/{capability,image-paste}`、`commands/{index,shell-command-impls}`、`command-registry`、`input/{types,dispatcher}` 各 1 | 注释改中性表述，**不删「为什么这么设计」的信息** | A6 |
-| 8 | 依赖 `ink` / `react` / `@types/react`（`packages/cli/package.json`）+ `tsconfig*.json` 的 `jsx`/`types:["react"]` + `vitest` 的 `.tsx` include | 移除/按需清理 | A5 |
-| 9 | 现行文档（`grep -ciE` 命中行数）：`docs/SMOKE-TEST.md` 3（含 `HARNESS2_RENDERER=next` 两处、F 节入口）、`docs/refs/refs-grok-build.md` 1、`docs/refs/refs-hermes-agent.md` 3、`coding-standards.md` 2、`CODE_REVIEW.md` 2、`docs/HANDOFF.md`（「CLI 双渲染模式」×3 处语义）、`docs/ROADMAP.md`（双渲染 ×4）、`README.md` 0 命中（但渲染模式表述待同步） | 去痕 + 同步「CLI 只有一个 TUI」新事实 | A7 |
+| #   | 对象                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     | 处理                                                                                         | 批次 |
+| --- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------- | ---- |
+| 1   | `shouldUseInk` → `shouldUseTui`（`runInkChat.tsx` 删除后迁入 `tui/terminal-capabilities.ts`）                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            | 改名 + 迁址，语义不变（`HARNESS2_NO_TUI=1` / `--no-tui` / `HARNESS2_TUI=1` / 非 TTY 四场景） | A3   |
+| 2   | `TuiMode = 'ink' \| 'legacy'` → `'tui' \| 'legacy'`，`decideTuiMode` / `decideWindowsTuiMode` 返回字面量与注释                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           | 同步全部引用点                                                                               | A3   |
+| 3   | `HARNESS2_RENDERER` 开关（`shouldUseNextRenderer`，`next/next-shell.ts:428`）                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            | **删除**（next 已是唯一渲染器）                                                              | A3   |
+| 4   | `isModernTerminal`（`runInkChat.tsx:55`，`src` 内 0 引用）                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               | 随文件删除                                                                                   | A2   |
+| 5   | 测试侧：`test/tui/tui-gate.test.ts`（`shouldUseInk`）、`test/tui/terminal-capabilities.test.ts`（`.mode === 'ink'`）、`test/tui/next/next-shell.test.ts:149-157`（`shouldUseNextRenderer`）、`test/command-routing.test.ts:435`（`HARNESS2_RENDERER=next`）                                                                                                                                                                                                                                                                                                                                                                                              | 改/删 + 覆盖登记                                                                             | A4   |
+| 6   | `src/tui/ink-commands.ts` → `src/tui/command-impls.ts`（内容零改动）+ `test/tui/ink-commands.test.ts` 同名跟随；`test/tui/p3f-ink-session-picker.test.tsx` 文件名去痕                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    | `git mv` + 引用点更新                                                                        | A6   |
+| 7   | 保留件注释去痕（`grep -ciE "\bink\b\|ink-\|HARNESS2_RENDERER"` 命中行数）：`next/next-shell.ts` 66、`terminal-capabilities.ts` 10、`input/keymaps.ts` 9、`next/chat-controller.ts` 6、`input/parser.ts` 6、`next/projection.ts` 5、`chat.ts` 5、`chat-setup.ts` 5、`shell-commands.ts` 11、`input.ts` 3、`next/minimal-view.ts` 2、`serve-entry.ts` 2、`legacy-chat.ts` 2，以及 `useTurnStream/transcript/shutdown/scheduler/notify`、`render/{regions,mode,folds}`、`queue/{queue,panel}`、`next/{composer,chat-screen}`、`input/{capability,image-paste}`、`commands/{index,shell-command-impls}`、`command-registry`、`input/{types,dispatcher}` 各 1 | 注释改中性表述，**不删「为什么这么设计」的信息**                                             | A6   |
+| 8   | 依赖 `ink` / `react` / `@types/react`（`packages/cli/package.json`）+ `tsconfig*.json` 的 `jsx`/`types:["react"]` + `vitest` 的 `.tsx` include                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           | 移除/按需清理                                                                                | A5   |
+| 9   | 现行文档（`grep -ciE` 命中行数）：`docs/SMOKE-TEST.md` 3（含 `HARNESS2_RENDERER=next` 两处、F 节入口）、`docs/refs/refs-grok-build.md` 1、`docs/refs/refs-hermes-agent.md` 3、`coding-standards.md` 2、`CODE_REVIEW.md` 2、`docs/HANDOFF.md`（「CLI 双渲染模式」×3 处语义）、`docs/ROADMAP.md`（双渲染 ×4）、`README.md` 0 命中（但渲染模式表述待同步）                                                                                                                                                                                                                                                                                                  | 去痕 + 同步「CLI 只有一个 TUI」新事实                                                        | A7   |
 
 ### 四、A2/A3 的已知后果（预先登记，避免误判为回归）
 
@@ -464,3 +464,39 @@ A1 零引用盘点 → A2 删旧壳代码 → A3 装配收敛（只剩 next / pi
 2. A3 完成后 `src`（`tsconfig.build.json`）应 0 error；但 `tsconfig.json` 含 `test`，而「引用已删模块的 21 个旧壳测试」
    属 A4 处理 → **全量 `pnpm --filter harness2 typecheck` 在 A4 之前仍会红**，红点应全部落在 `test/**`。
 3. `pnpm --filter harness2 test` 同理：A4 之前会有旧壳测试收集失败，**本批不做「全绿」承诺**。
+
+### 五、A2 / A3 施工留痕与验证证据（2026-09-15 实跑）
+
+**A2（`a1c7c92`，17 files / −2824 行）**——`pnpm --filter harness2 typecheck` 预期红，实得 **51 error**，
+分布：`src/chat.ts` 1 处（`Cannot find module './tui/runInkChat.js'`）+ `test/**` 21 文件 50 处（均为 `TS2307`
+找不到已删模块，另有少量因模块缺失而 `implicitly has an 'any' type` 的连锁 `TS7006`）。**src 侧无其他红点。**
+
+**A3（本提交）**：
+
+| 验证                   | 命令                                                                                                | 结果                                                                                                                                                                                                                            |
+| ---------------------- | --------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| src 编译闸门           | `pnpm --filter harness2 build`（= `tsc -p tsconfig.build.json`）                                    | **0 error** ✅                                                                                                                                                                                                                  |
+| 全量 typecheck         | `pnpm --filter harness2 typecheck`（含 `test`）                                                     | `src/**` **0 error**；`test/**` **22 文件 / 51 处**（均为旧壳测试，A4 输入）                                                                                                                                                    |
+| 门控语义不变           | `node -e` 直接调 `dist/tui/terminal-capabilities.js` 的 `shouldUseTui` 八场景                       | 非 TTY→false / `HARNESS2_NO_TUI=1`→false / `--no-tui`→false / `HARNESS2_TUI=1`(非TTY)→true / Linux TTY→true / Win TTY+WT_SESSION→true / Win TTY 无标记→false / `TERM=dumb`→false ✅（与改前 `shouldUseInk` 一致）               |
+| TTY 路径真机（ConPTY） | `pywinpty` 起 pty 跑 `node packages/cli/dist/index.js chat --provider mock` 并送 `hi\r` → `/exit\r` | 进 **next 壳**（alt-screen、`❯ hi`、`⏺ write(harness2-demo.txt)`、`[end_turn · steps 3 · toolCalls 2]`、状态行 `… · mock · ctx 0%`）；`/exit` 后 0.5s 内进程退出 **exitstatus 0**，拆屏序列（`?1049l`/`?2000…l`/`?25h`）完整 ✅ |
+| piped 路径             | `printf 'hi\n/exit\n' \| node packages/cli/dist/index.js chat --provider mock`                      | readline 文本输出，**exit 0**，无 ink 报错 ✅                                                                                                                                                                                   |
+| cli 测试（A2/A3 后）   | `pnpm --filter harness2 test`                                                                       | `Test Files 23 failed \| 88 passed \| 1 skipped`、`Tests 7 failed \| 1511 passed \| 14 skipped`；**失败面闭合 = tsc 红的 22 文件 + `terminal-capabilities.test.ts`（仅运行期红），无第三个文件回归** ✅                         |
+| 开关删除               | `grep -rn "HARNESS2_RENDERER" packages/cli/src packages/cli/dist`                                   | **0 命中** ✅（`shouldUseNextRenderer` 已删）                                                                                                                                                                                   |
+| 构建产物清净           | `rm -rf packages/cli/dist && pnpm --filter harness2 build`                                          | `dist` 无 `from 'ink'`/`runInkChat`/`shouldUseInk`/`HARNESS2_RENDERER` **代码**命中（仅 2 处注释措辞，A6 处理）                                                                                                                 |
+
+> 注：`dist/` 为 `.gitignore` 内产物，先前 `tsc` 不清理 `outDir` 会留旧壳产物，已做一次干净重建（对齐 OPEN.md「禁止对过期 dist 下结论」口径）。
+
+**A2 与 A3 的错误面差异**：A2 时 51 处 = `src/chat.ts` 1 处 + `test/**` 50 处；A3 修掉 src 那处后，
+`test/tui/next/next-shell.test.ts` 因 `shouldUseNextRenderer` 删除新增 1 处 → `test/**` 51 处。
+另有一处 **tsc 不报但运行必红**：`test/tui/terminal-capabilities.test.ts` 的 `.mode` 断言仍写 `'ink'`
+（`toBe('ink')` 类型上合法，运行期与实际 `'tui'` 不等）——A4 必须一并改。
+
+**A4 输入（必须逐条登记覆盖迁移）**：
+
+- **`tsc` 报错的 22 个测试文件（51 处）**：本附录「一」节测试侧引用的 21 个文件 + `test/tui/next/next-shell.test.ts`；
+  按 `tsc` 汇总即 `test/tui-render.test.tsx`、`test/tui/next/next-shell.test.ts`、
+  `test/tui/{DialogController,approvals,composer,input-bridge,keyboard,notify-shell,overlay-position,p3f-ink-session-picker,panels,paste-integration,paste,shell-lifecycle,steer-composer,task-panel,terminal-events,tui-gate,tui-subagent,tui-terminal-mouse,tui-transcript,undo-redo-shell}`。
+- **`tsc` 不报但运行必红**：`test/tui/terminal-capabilities.test.ts`（`.mode` 断言仍写 `'ink'`）。
+- **非报错但语义已变**：`test/command-routing.test.ts:435`（`HARNESS2_RENDERER=next` 分支——开关已删，用例前提消失）。
+
+即 A4 目标集合 = **24 个测试文件**（22 + 1 + 1）。

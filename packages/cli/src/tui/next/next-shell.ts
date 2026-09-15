@@ -1,9 +1,9 @@
-// next-shell.ts — W3：next 渲染层接入 chat 命令（HARNESS2_RENDERER=next 开关，默认关闭）。
+// next-shell.ts — next 渲染层接入 chat 命令（P10 起为唯一交互壳，TTY 下默认启用）。
 //
-// 职责：与 runInkChat 平行的第二条 chat 装配——复用 setupChatSession（同一 runtime/审批/
-// 会话语义，禁止两套装配），渲染与输入改走 next 库：Screen + createInputParser +
-// createChatController + renderChat 画帧。开关在 runInkChat.tsx 入口分支
-// （process.env.HARNESS2_RENDERER === 'next' → runNextChat），其余路径一行不动。
+// 职责：chat 命令的 TTY 装配——复用 setupChatSession（同一 runtime/审批/
+// 会话语义，禁止两套装配），渲染与输入走 next 库：Screen + createInputParser +
+// createChatController + renderChat 画帧。入口门控在 terminal-capabilities.ts 的
+// shouldUseTui（chat.ts 调用）；非 TTY 走 piped readline，不经本文件。
 //
 // 装配对照（与 InkShell 的对齐面与取舍，均如实钉死）：
 // - 转录流式：复用 useTurnStream 导出的 terminalEvent 纯函数；handler 的 50ms 缓冲逻辑为
@@ -423,11 +423,6 @@ import {
   type ChatController,
 } from './chat-controller.js';
 import { terminalEvent } from '../useTurnStream.js';
-
-/** next 渲染开关（runInkChat 入口分支用；默认关闭 → legacy ink 不变） */
-export function shouldUseNextRenderer(env: Record<string, string | undefined>): boolean {
-  return env.HARNESS2_RENDERER === 'next';
-}
 
 /** P4-1 选择开关：HARNESS2_SELECT=0 时鼠标拖选/键盘复制完全旁路（默认开启） */
 export function selectionEnabledForEnv(env: Record<string, string | undefined>): boolean {
@@ -4446,7 +4441,7 @@ export function createNextChatHarness(runtime: ChatRuntime, deps: NextChatHarnes
   };
 }
 
-// —— 真机装配（HARNESS2_RENDERER=next 分支入口；由 runInkChat.tsx 调用）——
+// —— 真机装配（chat.ts 的 TTY 路径入口）——
 
 /**
  * 进程退出兜底还原（审查 P1）：同步写出关鼠标上报 + 显示光标 + 退 alt-screen 到 stdout，
