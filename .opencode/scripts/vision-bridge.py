@@ -3,8 +3,8 @@
 """
 vision-bridge.py — 本地图片 → 视觉模型（OpenAI 兼容端点）文字描述桥。
 
-供 OpenCode 子代理 vision-analyst 使用：主力模型（通常无视觉能力）把图片
-分析任务交给子代理，子代理运行本脚本把图片发给视觉模型，拿回文字描述。
+供 OpenCode 子代理 vision-analyst 使用：主模型先用 read 自测视觉能力，**自测无视觉或用户点名时**才交给子代理，
+子代理运行本脚本把图片发给视觉模型，拿回文字描述。
 
 用法:
     python vision-bridge.py <image_path> [--prompt "问题"] [--max-tokens 500]
