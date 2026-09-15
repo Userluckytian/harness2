@@ -6,7 +6,7 @@
 //   ① SESSION_CAPABILITY_COMMANDS —— 会话域能力命令的元数据 + 核心落点（供壳注册与
 //      `/capabilities` 对账；与 commands/catalog.ts 的 CoreCommandMeta 同形态，壳一行映射）；
 //   ② runSessionCapability —— 各命令的 core 实现（纯文本输出，与 commands/handlers.ts 同风格，
-//      不 import 任何 Ink/ANSI/终端概念）。
+//      不 import 任何 UI/ANSI/终端概念）。
 //
 // 分工：命令编排（读取参数、打印、错误行 'error: ' 前缀）在本文件；能力实现留在各自模块
 // （searchIndex / layeredCompaction / portability / titles），本文件不含第二套算法。

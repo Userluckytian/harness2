@@ -17,11 +17,11 @@
 
 ## 定位与仓库结构
 
-Python 内核 + React/Ink TUI + web，MIT，Nous Research。**与我们最接近的形态：一个内核多个壳。**
+Python 内核 + React TUI + web，MIT，Nous Research。**与我们最接近的形态：一个内核多个壳。**
 
 - 内核层：`cli.py`(212KB)、`run_agent.py`(85KB)、`hermes_constants.py`(48KB)、`hermes_state_*.py`（~25 个：`sessions` 81KB、`messages` 74KB、`search` 71KB、`schema` 64KB、`repair` 62KB、`common` 51KB、`gateway` 39KB、`compression` 36KB、`portability` 28KB、`wal` 28KB、`maintenance` 25KB、`usage` 23KB、`fts` 19KB、`dbfile` 19KB、`telegram` 18KB、`titles`、`registry`、`holders`、`readpool`、`errors`、`guard`）。
 - 能力层：`toolsets.py`、`model_tools.py`、`trajectory_compressor.py`、`batch_runner.py`、`mcp_serve.py`、`hermes_startup_watchdog.py`。
-- 壳层：`ui-tui/`（TS + Ink）、`tui_gateway/`（Python 侧网关）、`web/`、`gateway/`（多平台）、`hermes_cli/`。
+- 壳层：`ui-tui/`（TS TUI）、`tui_gateway/`（Python 侧网关）、`web/`、`gateway/`（多平台）、`hermes_cli/`。
 - 资产层：`skills/`、`optional-skills/`、`optional-mcps/`、`plugins/`、`providers/`、`tools/`、`cron/`、`locales/`、`evals/`。
 - 契约文档：`AGENTS.md`(29KB)、`CONTRIBUTING.md`(49KB)、`COMPAT_MANIFEST.md`(157KB) + `compat_manifest.json`(284KB)、`cli-config.yaml.example`(113KB)、`.env.example`(27KB)。
 
@@ -127,7 +127,7 @@ Python 内核 + React/Ink TUI + web，MIT，Nous Research。**与我们最接近
 | H-55 | 状态店拆分     | `turnStore` `overlayStore` `uiStore` `delegationStore` `spawnHistoryStore` `inputSelectionStore`                          | 参考 | ⬜（归存：后续阶段未排期——桌面按本仓分域（`renderer/{layout,conversation,settings,trajectory}`），不按 hermes 六店拆分）      |
 | H-56 | 配置同步       | `useConfigSync`：`config.get full` + **5 秒 mtime 轮询**                                                                  | 参考 | ⬜（归存：后续阶段未排期——配置变更走 IPC/事件（P6 设置域通道），无 5 秒 mtime 轮询）                                          |
 | H-57 | 长工具提示     | `useLongRunToolCharms`：超 **8 秒**才出现安抚动画                                                                         | 参考 | ⬜（归存：后续阶段未排期——工具卡有运行态渲染，无 8 秒阈值安抚动画）                                                           |
-| H-58 | 渲染树         | Ink `Static` transcript + 流式助手行 + overlay + 队列预览 + status rule + 输入行 + 补全列表                               | 参考 | ⬜（归存：后续阶段未排期——CLI 渲染树按 grok G-04 八区域实现（P2/P3），不按 hermes Ink 树重排）                                |
+| H-58 | 渲染树         | 追加式 `Static` transcript + 流式助手行 + overlay + 队列预览 + status rule + 输入行 + 补全列表                            | 参考 | ⬜（归存：后续阶段未排期——CLI 渲染树按 grok G-04 八区域实现（P2/P3），不按 hermes 渲染树重排）                                |
 | H-59 | ANSI 分流      | 含 ANSI 走 `messageLine.tsx` 原样输出，否则走 `components/markdown.tsx`（标题/列表/引用/表格/围栏/diff 着色/行内码/链接） | 参考 | ⬜（归存：后续阶段未排期——CLI 走自有 markdown→ANSI 渲染（`cli/src/render.ts`、`tui/render/`），无「含 ANSI 则原样输出」分流） |
 
 ## H-6x 输入、支线与 prompt flows

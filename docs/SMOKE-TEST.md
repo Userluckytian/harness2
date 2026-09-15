@@ -1,6 +1,6 @@
 # 冒烟测试手册（手工验收）
 
-> 适用版本：main `c7c76a0`（2026-09-14，含 P0～P8 全量交付：CLI 双渲染模式/palette/卡片/状态行、桌面 slot 三栅/轨迹页/模型配置、core 会话能力与工具面、`@harness2/ui-shared` 共享包与 `packages/web` 壳）。
+> 适用版本：main `c7c76a0`（2026-09-14，含 P0～P8 全量交付：CLI 单一 TUI（P10 起旧壳已删）/palette/卡片/状态行、桌面 slot 三栅/轨迹页/模型配置、core 会话能力与工具面、`@harness2/ui-shared` 共享包与 `packages/web` 壳）。
 > 本手册的命令、选项、端点、输出文案**全部取自源码与 `--help` 实测**，不含推测；来源见文末 §9。
 > 用途：一名验收人按本手册独立完成一轮端到端冒烟，逐条记录实际结果。自动化测试见 §3。
 > **真机项标注**：CLI 的 next 渲染层（`/minimal` `/fullscreen` / palette / 卡片 / 状态行）在 `stdin` 非 TTY（管道/重定向）时**按设计不启用**，只能真机交互验收；桌面/web 的 GUI 交互同为真机项，本手册在这些条目上注明「真机项」并给出**已由自动化用例覆盖**的用例文件引用（不得用「自动化绿」冒充真机通过）。
@@ -143,7 +143,7 @@ pnpm --filter @harness2/web dev            # 默认 http://localhost:5173
 
 别名：`/?`（= `/help`）、`/quit`（= `/exit`）、`/clear`（= `/new`）、`/rewind`（= `/undo`）、`/status` `/info`（= `/session-info`）、`/full`（= `/fullscreen`）、`/terminal-setup` `/terminal-check` `/terminal-info`（= `/doctor`）。
 
-next 渲染层另有壳自持命令（不在 core catalog，仅 `HARNESS2_RENDERER=next` 生效）：`/plan` `/auto` `/always-approve` `/theme`（`/t`）`/search`（转录文本搜索，与 core `/search` 同名、本壳路由优先 local）`/expand`。
+next 渲染层另有壳自持命令（不在 core catalog，TTY 进 TUI 时生效；非 TTY 回退 piped 文本）：`/plan` `/auto` `/always-approve` `/theme`（`/t`）`/search`（转录文本搜索，与 core `/search` 同名、本壳路由优先 local）`/expand`。
 标注 `shellOnly` 的命令（`/session-info` `/export` `/timeline` `/doctor` `/skills` `/plugins` `/mcps` `/mode` `/reasoning` `/minimal` `/fullscreen` `/memory`）由壳侧同一份实现承接，core 只注册元数据——**不存在「core 的降级兜底文案冒充真实输出」**（P3 P1-1 已收口）。
 
 ---
@@ -281,9 +281,9 @@ printf 'hello\n/search hello\n/title --auto\n/exit\n' | node packages/cli/dist/i
 | SM-35 | 带 `x-harness2-token: <serve.lock 里的 token>` 再请求 | 2xx + JSON                                                                                                      |
 | SM-36 | 用一个过期/错误 token 请求                            | 401，且错误信息指向 token 不匹配（桌面端对应文案：`serve 健康检查 401：token 无效（serve.lock 与实例不匹配）`） |
 
-### F. CLI 双渲染模式 / 命令面板 / 阻塞卡片 / 状态行（P2～P3）
+### F. CLI 单一 TUI / 命令面板 / 阻塞卡片 / 状态行（P2～P3）
 
-> 本组为 next 渲染层交互 → **真机项**（启动：`$env:HARNESS2_RENDERER="next"` 后用真实 TTY 跑 `harness2 chat --provider mock --home D:\tmp\h2-smoke-home --root D:\tmp\h2-smoke-root`；管道/重定向 stdin 非 TTY，next 层按设计不启用）。每条的自动化等价覆盖见「自动化」列，**不得用自动化结果冒充真机通过**。
+> 本组为 next 渲染层交互 → **真机项**（启动：真实 TTY 跑 `harness2 chat --provider mock --home D:\tmp\h2-smoke-home --root D:\tmp\h2-smoke-root`；TTY 自动进 TUI，无开关，`--no-tui` / `HARNESS2_NO_TUI=1` 可强制回退 piped；管道/重定向 stdin 非 TTY 按设计不进 TUI）。每条的自动化等价覆盖见「自动化」列，**不得用自动化结果冒充真机通过**。
 
 | 编号  | 步骤                                                                                                   | 正确结果                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
 | ----- | ------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -423,7 +423,7 @@ CLI 侧管道触发真实回合的可行写法（**stdin 必须在回合结束�
 | `api-surface` 用例红                       | 碰了冻结区导出面；走 `fix/*` 解冻窗口 + 三平台 CI 绿 + `--no-ff` 合并，并用 `H2_UPDATE_API_SNAPSHOT=1 pnpm --filter @harness2/core exec vitest run test/api-surface.test.ts` 同步基线 |
 | 单文件复测报 `No test files found`         | 必须进包目录再跑：`cd packages\cli ; pnpm exec vitest run <文件>`                                                                                                                     |
 | TUI 显示异常                               | 用 `--no-tui`（或 `HARNESS2_NO_TUI=1`）退回 legacy readline 路径对比，判断是渲染层还是逻辑层问题                                                                                      |
-| next 渲染层「看不到新 UI」                 | next 层需 `HARNESS2_RENDERER=next` **且**真实 TTY；管道/重定向 stdin（非 TTY）按设计不启用 → 换真实终端跑                                                                             |
+| next 渲染层「看不到新 UI」                 | next 层需真实 TTY（P10 起 TTY 即进 TUI，无开关）；管道/重定向 stdin（非 TTY）按设计回退 piped 文本 → 换真实终端跑                                                                     |
 | web 页「未连接」/ 401                      | URL 缺 `?token=`，或 `VITE_HARNESS2_PROXY` 未指向实际 serve 端口；serve 默认严格鉴权，token 在数据根 `serve.lock`                                                                     |
 | 模型配置「发现模型」失败                   | 本实现 `discoverModelsFor` 读 `auth.json`/env，**须先保存密钥**再发现（与上游「表单草稿密钥直接探测」的已知差异 D-55）                                                                |
 | `skill` 子命令报 `unknown option '--home'` | `skill pending/approve/reject/propose` 只收 `--root`（提案暂存在项目根）；`--home` 仅 `list` 支持                                                                                     |
