@@ -56,11 +56,14 @@ scripts/tui-parity/.venv/Scripts/python.exe scripts/tui-parity/run.py \
 | F 子任务 | `F1-subagent-dispatch`                        | ✅ 双方（grok 重抓，等 75s）                         |
 | G 状态行 | `G1-status-line`                              | ✅ 双方                                              |
 | H 打断   | `H1-esc-mid-turn`                             | ✅ 双方（grok 忙碌帧受时序限制）                     |
-| I 撤销   | `I1-undo-redo`                                | 🟡 我方 ✅ / grok 未取到有效帧（额度与配额控制）     |
-| J 队列   | `J1-busy-queue`                               | 我方 ✅ / grok 未取到                                |
-| K 外观   | `K1-canvas-110x30` / `K2-canvas-160x40`       | ✅ 我方双尺寸 / grok 110×30                          |
-| L 失败   | `L1-tool-failure`                             | 我方 ✅（grok 未触发失败路径）                       |
+| I 撤销   | `I1-undo-redo`                                | ✅ 双方（grok 帧已补）                               |
+| J 队列   | `J1-busy-queue`                               | ✅ 双方（grok 帧已补）                               |
+| K 外观   | `K1-canvas-110x30` / `K2-canvas-160x40`       | ✅ 双方双尺寸                                        |
+| L 失败   | `L1-tool-failure`                             | 🟡 我方 ✅ / grok 未复现（剧本需重写）               |
 |          | `L2-model-error`                              | ⬜ `defined_only`                                    |
+
+> **grok 侧模型**：补抓时用的默认模型为本地 40080 端点的 **`big-pickle`**（单轮约 3~4s，实测 `grok -p` 3.7s），
+> 大幅降低了“按 mock 调的等待窗口抓到空帧”的概率；状态行会显示模型名 `Big Pickle · always-approve`。
 
 ## 5. 本轮最重要的发现（详见 matrix.md）
 
@@ -82,5 +85,5 @@ scripts/tui-parity/.venv/Scripts/python.exe scripts/tui-parity/run.py \
 ## 6. 下一步
 
 1. P0/P1 修复另立阶段计划（本阶段不动 next 功能逻辑，见 `docs/ai-framework/plans/2026-09-15-phase-next-only-and-grok-parity.md` 段 C4）。
-2. 补齐本轮未取到的组：I 撤销 / J 队列 / L 失败（grok 侧）、A2 恢复会话、E 审批、L2 模型报错。
+2. 补齐剩余未覆盖：A2 恢复会话、E 审批、L2 模型报错（`defined_only`），L1 失败（grok 侧需重写剧本：直接让它读不存在的文件）；K 组逐格折行核对。
 3. 真机验收：鼠标/IME/粘贴 + 上述 PNG 与真机观感差异（人眼一轮）。
