@@ -276,6 +276,111 @@
 
 ---
 
+## 附录 A：T0 定位结果（2026-09-15，只读盘点）
+
+**盘点方式：** 逐项走「症状 → 复现 → 代码位置（`文件:行`）→ 现有测试 → 根因判断」。
+基线：`packages/cli` 已 build（`pnpm --filter harness2 build`），抓屏画布固定 110×30，
+mock provider，临时 `--home/--root`。
+
+**通用抓屏命令模板**（`<KEYS>` / `<SHOT>` 按项替换；临时目录用系统 TEMP，避免污染工作树）：
+
+```bash
+mkdir -p "C:/Users/ASUS/AppData/Local/Temp/p11cap/home" "C:/Users/ASUS/AppData/Local/Temp/p11cap/work"
+scripts/tui-parity/.venv/Scripts/python.exe scripts/tui-parity/ptycap.py \
+  --cmd "node packages/cli/dist/index.js chat --provider mock --home C:/Users/ASUS/AppData/Local/Temp/p11cap/home --root C:/Users/ASUS/AppData/Local/Temp/p11cap/work" \
+  --cols 110 --rows 30 \
+  --steps '[{"keys":"<KEYS>","settle":true,"timeout":25,"shot":"<SHOT>"}]' \
+  --outdir docs/tui-parity/images/p11
+```
+
+### A.1 七项定位表
+
+| #   | 症状（matrix.md 口径）                                                                  | 复现 keys            | 代码位置（`文件:行`）                                                                                                                                                                                                                                                                            | 现有测试                                                                                                             | 根因判断                                                                                       |
+| --- | --------------------------------------------------------------------------------------- | -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------- |
+| 1   | **P0**：`/help` 面板文字互相覆盖、碎片（`essio s`）、重复行                              | `/help\r`            | `projection.ts:424-426`（system/status 整段不拆行）→ `scrollback.ts:166-199`（`wrapLine` 把 `\n` 当 1 列可打印字符）→ `diff-presenter.ts:119`（逐格原样 `out.push(ch)`）→ 打印入口 `command-impls.ts:90` + `next-shell.ts:1712/3000`；文本源 `core/commands/help.ts:29-35`（core 冻结不改） | `next-shell.test.ts:852`（只 `.toContain('命令：')`）、`projection.test.ts:216`（system 单行用例，未覆盖多行）              | **确定**：多行文本被当**一条**逻辑行，`\n` 落成 CellBuffer 单元格，presenter 把控制字符写进终端 → 行内换行，后续格错位（详见 A.2） |
+| 2   | 输入区无边框/无提示符；空态光标与占位都不可见                                          | 直接看首帧（无需按键） | `composer.ts:346-351`（草稿逐段 `writeRowAt(buf, top+i, 0, seg.text, …)`，无前缀无占位）；`chat-screen.ts:401-424`（drawComposerLayer）；无 placeholder 概念（全仓无实现）                                                                                                                            | `composer.test.ts:32`（空草稿=1 行）、`:119`（空草稿只有光标格）、`chat-screen.test.ts` 帧快照                    | 功能缺失：草稿原样画在 x=0；空草稿段为空串 → 整行只有光标高亮格（默认色近似反色，视觉不可辨） |
+| 3   | `/` 候选列表单列纯命令名（grok 为命令+灰色说明两列）                                    | `/`                  | `composer.ts:352-362`（`writeRowAt(buf, y, 0, item, width, …)` 单列）；`next-shell.ts:1662-1685`（syncCandidates）+ `:671-687`（`filterCommands` 返回 `string[]` 仅名字）；说明文案已有源：`NEXT_COMMANDS` 的 `summary`/`note` 与 core `describeCapabilities()`                                 | `composer.test.ts:245-…`（候选位置/高亮/滚动/截断）、`p2-coverage-gaps.test.ts:275`（过滤与钳位）                     | 功能缺失 + 数据窄化：候选数据面只有名字，渲染面无第二列                                              |
+| 4   | 缺时间戳 / 每轮耗时 / token 用量                                                        | `hi\r` 看一帧         | 投影：`projection.ts`（无时间字段）；数据模型 `transcript.ts:17-31`（`TranscriptItem` 无 timestamp）；状态行 `chat-screen.ts:302-308`（`statusLineFor` 仅 cwd·model·ctx%·mode·retry·busy）+ `:274-276`（`formatContextUsage` 只出百分比）；可用数据：`TurnResult.durationMs`（core `agent/types.ts:155+`）、`turnStartedAt`（`next-shell.ts:2610`）、usage 事件落 `assistant/message`（`core/agent/loop.ts:537`）但壳层 `chat-setup.ts:529-543` 未转发 | `p3e-chrome.test.ts`（状态行四态断言，均无耗时/用量字段）                                                             | 功能缺失（数据部分可得）：耗时可直接用既有 `durationMs`；token 需从会话事件 `assistant/message.usage` 取，mock 剧本不写时**必须降级 `—`** |
+| 5   | 工具行暴露 `⏺ write({"file_path":…})`                                                   | `hi\r` 后看工具卡   | `projection.ts:283`（`toolSummaryOf` 提炼摘要）+ `:308`（主行模板 `⏺ ${item.tool}(${callSummary})`）；展开态 `:270-350`（diff/输出）                                                                                                                                | `projection.test.ts` 工具段（断言含工具名 + `(` 参数；**正因如此才锁死了现状**）、`d1-*` 抓屏                | 模板耦合：主行同时含工具名与参数；参数另有 `rawMarkdown` 原始视图通道可承载                    |
+| 6   | 忙碌态无耗时/消耗；matrix 称「提示行恒定」                                              | `hi\r`               | 状态行 `chat-screen.ts:306`（busy 只加 `⏺ 运行中…`，无秒数/消耗）；提示行 `chat-screen.ts:171-176`（`shortcutsFor` **已有** busy 分支 → `Ctrl+C 取消`）；装配 `next-shell.ts:1585-1625`（refreshChrome 传入 busy）                                                     | `p3f-agent-keys.test.ts:282+`（shortcutsFor 各态）、`p3e-chrome.test.ts`                                              | **部分缺失 + 一处报告口径修正**：提示行其实随状态改写（代码有 busy 分支）；matrix 的「恒定」是被 mock 回合太快导致的抓屏时序假象（见 A.6）。真实缺口 = 状态行无耗时/消耗（grok 的 `20s ↓15.6k [stop]`） |
+| 7   | 冷启动无引导卡                                                                          | 冷启动首帧           | `next-shell.ts:1042-1045`（bootLines → system item）、`:4492-4498` / `:4563`（runNextChat 组装 bootLines = 装配行 + bootNotes）；无 `show_welcome` / `HARNESS2_NO_WELCOME`（全仓无实现）                                                                                 | `next-shell.test.ts:156`（bootLines 进 scrollback）                                                                  | 功能缺失：boot 只有 `会话: …（新建）` + 告警/模式提示，无引导内容与开关                          |
+
+### A.2 P0 根因（确定结论，非「可能」）
+
+> **根因：多行文本（内嵌 `\n`）被投影成「一条」逻辑行；`wrapLine` 不把 `\n` 当硬换行，
+> 而是按 `charWidth('\n')=1` 当作可打印字符计入折行；该 `\n` 随后被写入 CellBuffer 单元格，
+> `DiffPresenter` 逐格原样写出 → 终端在行中执行换行（LF），该行剩余单元格全部落到下一行
+> 同一列起点，与下一物理行叠加 → 抓屏所见「文字互相覆盖 / 碎片 / 重复行」。**
+
+**证据链（三条，均可复跑）：**
+
+1. **端到端复现（最小、无需 TUI）：**
+
+   ```bash
+   cd packages/cli && node --input-type=module -e "
+   import { HELP_TEXT } from '@harness2/core';
+   import { projectTranscript } from './dist/tui/next/projection.js';
+   import { Scrollback, drawScrollback } from './dist/tui/next/scrollback.js';
+   import { CellBuffer } from './dist/tui/renderer/cell-buffer.js';
+   const lines = projectTranscript([{ kind:'system', id:'s1', text: HELP_TEXT }], { cols: 109 });
+   console.log('projected lines:', lines.length, 'embedded \\n:', (lines[0].text.match(/\\n/g)||[]).length);
+   const sb = new Scrollback(lines.map((l) => l.text), 109);
+   const buf = new CellBuffer(110, 30);
+   drawScrollback(buf, sb, { top: 0, height: 28, width: 110, scrollbar: true });
+   console.log('control chars in cells:', buf.chars.filter((c) => c === '\\n' || c === '\\r').length);
+   console.log(buf.rowText(0));
+   "
+   ```
+
+   实测输出：`projected lines: 1` / `embedded \n: 42` / `control chars in cells: 42`；
+   `rowText(0)` 起首即 `命令：\n  /new …` —— 与抓屏 `C2-help-before.txt` 第 2 行逐字一致。
+
+2. **宽度表交叉验证的反向印证**：把 `HELP_TEXT` 全部 316 个唯一字符逐字符比对
+   `charWidth()`（我方）与 `string-width`（独立实现），**唯一不一致就是 `\n`**
+   （charWidth 1 / string-width 0）。`\n` 正是被当宽度 1 写入网格的那个字符。
+
+3. **presenter 无屏障**：`diff-presenter.ts:117-131` 对单元格 `ch` 不做控制字符过滤，
+   直接 `out.push(ch)`；`CellBuffer.setCell`（`cell-buffer.ts:157-168`）同样不校验。
+
+**排除的替代假设（已证伪）：**
+
+| 假设                                                             | 结论         | 证伪证据                                                                                                                                             |
+| ---------------------------------------------------------------- | ------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
+| (a) 多列拼装用错宽度函数（`.length`/`padEnd` 当显示宽度）        | **不是本因** | `/help` 文本由 core `buildHelpText` 生成，`padEnd(16)` 只作用于**纯 ASCII** 命令名（`help.ts:35`），全部行 `displayWidth` ≤ 89 < 109，无列拼装参与 |
+| (b) 超宽行折行时切断宽字符                                       | **不是本因** | `writeRowClipped`/`wrapLine` 均「整字丢弃/整体移行」，且 `HELP_TEXT` 最长行 89 列 < 内容区 109 列，**根本不触发折行**（43 逻辑行应 = 43 物理行，实测却被压成 24 行） |
+| (c) 写入 CellBuffer 时列推进错                                   | **不是本因** | 列推进 `x += w` 在 `writeRowClipped`/`setCell`/presenter 三处一致；错位来自**行维度**（`\n` 触发的终端换行），不是列推进 |
+
+> 即：P0 是**第 4 类**根因（行拆分缺失 + 控制字符无过滤），不属于计划预设的 (a)(b)(c)；
+> 三条假设均已用证据排除，结论唯一确定。
+
+### A.3 修复方向（T1 范围，均落在 `packages/cli/src/tui/next/**`，core 零改动）
+
+1. **主修（数据模型）**：`projection.ts` 的 `system`/`status` 分支按 `splitLines(item.text)` 逐行 push
+   （与既有 `user`/`assistant` 分支同构）——`ProjectionLine` 契约本就是「一条逻辑行」。
+2. **加固（渲染库边界）**：`scrollback.ts` 的 `wrapLine` 把 `\n`/`\r\n` 当**硬换行**、控制字符永不进格
+   （与 `composer.ts:141-160` 的 `splitLogicalLines` 语义对齐），使任何直接 `new Scrollback([...多行文本])`
+   的调用方也不再污染网格。
+3. **回归断言**：新增 `packages/cli/test/tui/next/help-panel-layout.test.ts`，走真实装配路径
+   （`/help` → transcript → projection → Scrollback → `renderChat` 帧），做**逐格版面断言**
+   （无控制字符 / 行归属与顺序 / 每格宽度与独立宽度表 `string-width` 一致）+ 变异验证。
+
+### A.4 latent 风险（登记，不在 T1 改）
+
+- `chat-screen.ts:254`（`shortcutsHelpLines`）用 `text.length <= SHORTCUTS_HELP_MAX_COLS` 截断——
+  对 CJK 是**按字符数当显示宽度**，`Ctrl+.` 快捷键面板可能超宽（未被本次 P0 暴露，因该面板走
+  overlay 裁剪）。属铁律 2 的违规点，建议 T2+ 顺手改 `displayWidth`。
+- `chat-screen.ts:316`（`queueEntryPreview`）同样用 `.length` 截断（仅展示用，风险低）。
+
+### A.5 与 matrix.md 的一处口径修正（诚实登记）
+
+matrix.md「H/G 组」称我方**提示行恒定不随状态改写**。T0 代码走查 + 抓屏复核后确认：
+`shortcutsFor`（`chat-screen.ts:171-176`）**已有** busy/approval/subview/modal 四态分支，
+G1 的 `02-busy-status.txt` 之所以仍是空闲提示，是因为该步骤未用 `wait` 而用「等屏幕稳定」，
+mock 回合在稳定前已结束（帧内显示的是回合结束后的空闲态）。**这是抓屏时序假象，不是渲染缺口**；
+改进清单 #6 的真实缺口收窄为「状态行无耗时/消耗」。
+
+---
+
 ## 编排者验收记录
 
 （每批完成后回填：复核命令、结论、裁定）
