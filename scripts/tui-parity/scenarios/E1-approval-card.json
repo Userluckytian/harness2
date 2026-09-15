@@ -1,0 +1,29 @@
+{
+  "id": "E1-approval-card",
+  "group": "E 审批",
+  "watch": "审批弹窗：边框、选项（允许/拒绝/总是允许）、键位提示；允许/拒绝后的回填",
+  "canvas": { "cols": 110, "rows": 30 },
+  "defined_only": true,
+  "note": "mock 模式对全部工具自动放行（实测 write/bash 都不弹审批），本场景需真 provider 或带审批策略的装配；先定义，编排者后续跑。",
+  "sides": {
+    "ours": {
+      "argv": [
+        "node",
+        "${REPO}/packages/cli/dist/index.js",
+        "chat",
+        "--provider",
+        "mock",
+        "--home",
+        "${TMP_HOME}/home",
+        "--root",
+        "${TMP_HOME}/work"
+      ]
+    },
+    "grok": { "argv": ["${GROK}", "--cwd", "${TMP_HOME}/work"] }
+  },
+  "steps": [
+    { "keys": "hi\r", "shot": "01-approval-card", "timeout": 30 },
+    { "keys": "y", "shot": "02-allowed", "timeout": 15 },
+    { "keys": "/exit\r" }
+  ]
+}

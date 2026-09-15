@@ -1,0 +1,27 @@
+{
+  "id": "C2-help-and-unknown",
+  "group": "C 命令",
+  "watch": "/help 输出形态（列表/分组/对齐）与未知命令的报错文案",
+  "canvas": { "cols": 110, "rows": 30 },
+  "sides": {
+    "ours": {
+      "argv": [
+        "node",
+        "${REPO}/packages/cli/dist/index.js",
+        "chat",
+        "--provider",
+        "mock",
+        "--home",
+        "${TMP_HOME}/home",
+        "--root",
+        "${TMP_HOME}/work"
+      ]
+    },
+    "grok": { "argv": ["${GROK}", "--cwd", "${TMP_HOME}/work"] }
+  },
+  "steps": [
+    { "keys": "/help\r", "shot": "01-help", "timeout": 25 },
+    { "keys": "/no-such-command\r", "shot": "02-unknown", "timeout": 20 },
+    { "keys": "/exit\r" }
+  ]
+}

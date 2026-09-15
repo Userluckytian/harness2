@@ -1,0 +1,28 @@
+{
+  "id": "I1-undo-redo",
+  "group": "I 撤销",
+  "watch": "/undo 后转录收缩与提示、/redo 恢复；文件是否真的回滚",
+  "canvas": { "cols": 110, "rows": 30 },
+  "sides": {
+    "ours": {
+      "argv": [
+        "node",
+        "${REPO}/packages/cli/dist/index.js",
+        "chat",
+        "--provider",
+        "mock",
+        "--home",
+        "${TMP_HOME}/home",
+        "--root",
+        "${TMP_HOME}/work"
+      ]
+    },
+    "grok": { "argv": ["${GROK}", "--cwd", "${TMP_HOME}/work"] }
+  },
+  "steps": [
+    { "keys": "hi\r", "shot": "01-before-undo", "timeout": 30 },
+    { "keys": "/undo\r", "shot": "02-after-undo", "timeout": 20 },
+    { "keys": "/redo\r", "shot": "03-after-redo", "timeout": 20 },
+    { "keys": "/exit\r" }
+  ]
+}

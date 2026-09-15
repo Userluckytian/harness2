@@ -1,0 +1,23 @@
+{
+  "id": "D1-tool-cards",
+  "group": "D 工具",
+  "watch": "工具卡片： 图标、名称+摘要、结果行（└ ✓）缩进与配色",
+  "canvas": { "cols": 110, "rows": 30 },
+  "sides": {
+    "ours": {
+      "argv": [
+        "node",
+        "${REPO}/packages/cli/dist/index.js",
+        "chat",
+        "--provider",
+        "mock",
+        "--home",
+        "${TMP_HOME}/home",
+        "--root",
+        "${TMP_HOME}/work"
+      ]
+    },
+    "grok": { "argv": ["${GROK}", "--cwd", "${TMP_HOME}/work"] }
+  },
+  "steps": [{ "keys": "hi\r", "shot": "01-tool-cards", "timeout": 30 }, { "keys": "/exit\r" }]
+}

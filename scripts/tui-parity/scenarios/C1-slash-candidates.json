@@ -1,0 +1,27 @@
+{
+  "id": "C1-slash-candidates",
+  "group": "C 命令",
+  "watch": "敲 / 出候选列表：位置（输入行上方）、列数、选中态；Esc 后是否收起。实测我方单击 Esc **不**收起候选（P2-C 改语义），若 grok 收起即为差异点",
+  "canvas": { "cols": 110, "rows": 30 },
+  "sides": {
+    "ours": {
+      "argv": [
+        "node",
+        "${REPO}/packages/cli/dist/index.js",
+        "chat",
+        "--provider",
+        "mock",
+        "--home",
+        "${TMP_HOME}/home",
+        "--root",
+        "${TMP_HOME}/work"
+      ]
+    },
+    "grok": { "argv": ["${GROK}", "--cwd", "${TMP_HOME}/work"] }
+  },
+  "steps": [
+    { "keys": "/", "shot": "01-slash-candidates", "timeout": 15 },
+    { "keys": "\u001b", "shot": "02-after-esc", "timeout": 15 },
+    { "keys": "/exit\r" }
+  ]
+}

@@ -1,0 +1,25 @@
+{
+  "id": "A2-resume-session",
+  "group": "A 启动",
+  "watch": "第二次进入同一 HOME：应显示「已恢复最近会话」并重放上轮转录",
+  "canvas": { "cols": 110, "rows": 30 },
+  "defined_only": true,
+  "note": "恢复态需要同一 HOME 跑两轮，单次进程内无法自证；编排者用 --tmp-home 复用同一目录连跑两次即可。",
+  "sides": {
+    "ours": {
+      "argv": [
+        "node",
+        "${REPO}/packages/cli/dist/index.js",
+        "chat",
+        "--provider",
+        "mock",
+        "--home",
+        "${TMP_HOME}/home",
+        "--root",
+        "${TMP_HOME}/work"
+      ]
+    },
+    "grok": { "argv": ["${GROK}", "--cwd", "${TMP_HOME}/work"] }
+  },
+  "steps": [{ "keys": "hi\r", "shot": "01-first-run", "timeout": 25 }, { "keys": "/exit\r" }]
+}

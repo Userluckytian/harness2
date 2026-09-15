@@ -22,3 +22,9 @@ dist-bundle/
 
 # 临时目录（如 .tmp-head-check：断链 node_modules 的 head 检查工作区）
 .tmp-*/
+
+# TUI 抓屏对照台：venv、字节码缓存与抓屏产物不入库
+scripts/tui-parity/.venv/
+scripts/tui-parity/out/
+scripts/tui-parity/__pycache__/
+scripts/tui-parity/**/__pycache__/

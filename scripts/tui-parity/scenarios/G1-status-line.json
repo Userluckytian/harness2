@@ -1,0 +1,27 @@
+{
+  "id": "G1-status-line",
+  "group": "G 状态行",
+  "watch": "状态行：模型名/模式/ctx%/token 用量/耗时；忙碌态与空闲态字段差",
+  "canvas": { "cols": 110, "rows": 30 },
+  "sides": {
+    "ours": {
+      "argv": [
+        "node",
+        "${REPO}/packages/cli/dist/index.js",
+        "chat",
+        "--provider",
+        "mock",
+        "--home",
+        "${TMP_HOME}/home",
+        "--root",
+        "${TMP_HOME}/work"
+      ]
+    },
+    "grok": { "argv": ["${GROK}", "--cwd", "${TMP_HOME}/work"] }
+  },
+  "steps": [
+    { "shot": "01-idle-status", "timeout": 30, "stable_seconds": 3.0 },
+    { "keys": "hi\r", "shot": "02-busy-status", "timeout": 30 },
+    { "keys": "/exit\r" }
+  ]
+}

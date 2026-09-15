@@ -1,0 +1,13 @@
+[
+  {
+    "textChunks": ["派发一个子任务："],
+    "toolCalls": [
+      {
+        "id": "demo-sub-1",
+        "name": "subagent_start",
+        "arguments": "{\"prompt\":\"统计当前目录下的文件数量并回报\"}"
+      }
+    ]
+  },
+  { "textChunks": ["子任务已返回，结果见上。"] }
+]
