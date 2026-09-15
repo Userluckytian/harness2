@@ -253,6 +253,7 @@ import {
   getContextUsage,
   loadConfig,
   parseCoreCommand,
+  CORE_VERSION,
   type AnySessionEvent,
   type ParsedCoreCommand,
 } from '@harness2/core';
@@ -408,7 +409,9 @@ import {
   SHORTCUTS_HELP_TITLE,
   SHORTCUTS_HELP_HINT,
   statusLineFor,
+  welcomeOverlaySpec,
   type ChatScreenState,
+  type WelcomeCard,
 } from './chat-screen.js';
 import { projectTranscript, subagentDescription, type ProjectionLine } from './projection.js';
 import { Scrollback, type SelectionPoint } from './scrollback.js';
@@ -678,6 +681,55 @@ export function filterCommands(input: string): string[] {
   const prefixHits = names.filter((n) => n.startsWith(prefix) || aliasHits.has(n));
   const subHits = names.filter((n) => !prefixHits.includes(n) && isSubsequence(prefix, n));
   return [...prefixHits, ...subHits].map((n) => `/${n}`);
+}
+
+/**
+ * 命令说明文案源（P11-T3 候选第二列）：**不新造文案**——壳侧 NEXT_COMMANDS.summary
+ * （遮蔽/本地命令，如 /search 的 local 转录搜索）优先，其余用 core `describeCapabilities()`
+ * 的 summary 单源兜底。惰性建表缓存（候选逐字过滤高频调用，不必每次重算 catalog）。
+ */
+let candidateSummaryCache: Map<string, string> | null = null;
+export function commandSummaryOf(name: string): string | undefined {
+  if (candidateSummaryCache === null) {
+    const cache = new Map<string, string>();
+    for (const c of NEXT_COMMANDS) {
+      if (c.summary !== undefined && c.summary.length > 0) cache.set(c.name, c.summary);
+    }
+    for (const c of describeCapabilities().commands) {
+      if (!cache.has(c.id)) cache.set(c.id, c.summary);
+    }
+    candidateSummaryCache = cache;
+  }
+  return candidateSummaryCache.get(name);
+}
+
+/**
+ * P11-T7 引导卡开关：`HARNESS2_NO_WELCOME` 取值 1/true/yes/on（大小写不敏感）= 关闭；
+ * 其余（含未设） = 显示。开关登记位置：本函数注释 + `--help`（chat 命令的 --no-welcome）
+ * + `docs/tui-parity/README.md`。默认只在**冷启动首帧**显示一次（本会话内不重复）。
+ */
+export function welcomeEnabled(env: Record<string, string | undefined> | undefined): boolean {
+  const raw = env?.HARNESS2_NO_WELCOME;
+  if (raw === undefined) return true;
+  const v = raw.trim().toLowerCase();
+  return !(v === '1' || v === 'true' || v === 'yes' || v === 'on');
+}
+
+/**
+ * P11-T7 引导卡内容：版本 + 5 条最常用键/命令 + `/help` 指引。
+ * 全部键位均为本壳**已接线**的键（与 shortcutsFor/FIXED_SHORTCUT_SECTIONS 同口径），不虚构。
+ */
+export function buildWelcomeCard(version: string): WelcomeCard {
+  return {
+    title: `harness2 ${version} · 欢迎（按任意键收起）`,
+    lines: [
+      '/help 查看全部命令',
+      'Enter 发送 · Shift+Enter 换行',
+      'Tab 输入框 ⇄ 转录区',
+      'Ctrl+P 命令面板',
+      'Ctrl+C 退出',
+    ],
+  };
 }
 
 // —— 审批 gate（createDialogController 的非 React 等价，见文件头取舍说明）——
@@ -1058,6 +1110,8 @@ export function createNextChatHarness(runtime: ChatRuntime, deps: NextChatHarnes
     statusline: '',
     indicators: [],
     theme,
+    // P11-T7：冷启动引导卡（一次性；HARNESS2_NO_WELCOME=1 关闭）。任意按键在 feed 首行清除。
+    welcome: welcomeEnabled(deps.env) ? buildWelcomeCard(CORE_VERSION) : null,
   };
 
   // G-01 minimal 基座实例（追加式转录 + 底部 prompt 块；宽随 viewCols 动态取）
@@ -1400,6 +1454,8 @@ export function createNextChatHarness(runtime: ChatRuntime, deps: NextChatHarnes
       state.statusLines !== undefined && state.statusLines.length > 0
         ? state.statusLines[state.statusLines.length - 1]
         : state.statusline;
+    // P11-T7：引导卡进 minimal prompt 块（与 fullscreen 同一 drawOverlay 形态）
+    const welcomeSpecForMinimal = welcomeOverlaySpec(state.welcome);
     minimalView.renderPrompt(
       composeMinimalPrompt({
         draft: state.draft ?? '',
@@ -1409,7 +1465,10 @@ export function createNextChatHarness(runtime: ChatRuntime, deps: NextChatHarnes
         ...(deps.minimalStatusLine === true && typeof statusRowText === 'string' && statusRowText.length > 0
           ? { statusline: statusRowText }
           : {}),
-        overlays: state.overlays, // 阻塞卡（审批等）在 minimal 画进 prompt 块上方——不可隐形
+        overlays: [
+          ...(welcomeSpecForMinimal !== null ? [welcomeSpecForMinimal] : []),
+          ...state.overlays, // 阻塞卡（审批等）在 minimal 画进 prompt 块上方——不可隐形
+        ],
         // P3-E 接线1：palette 进 minimal prompt 块（与 fullscreen 同一 drawPalette 绘制体）
         ...(paletteState.open
           ? { palette: { state: paletteState, rows: filterPaletteRows(paletteState.query, paletteEntries) } }
@@ -1677,7 +1736,9 @@ export function createNextChatHarness(runtime: ChatRuntime, deps: NextChatHarnes
     const activeIndex = keep
       ? (prev?.activeIndex ?? 0)
       : Math.min(Math.max(0, prev?.activeIndex ?? 0), items.length - 1);
-    state.candidates = { items, activeIndex };
+    // P11-T3：第二列说明从既有文案源派生（core catalog + 壳 summary；见 commandSummaryOf）
+    const summaries = items.map((it) => commandSummaryOf(it.replace(/^\//, '')));
+    state.candidates = { items, summaries, activeIndex };
   }
 
   /** 接受当前高亮候选：草稿写回 `/cmd `（含尾随空格 = 退出候选态；再 Enter 才发送） */
@@ -4296,14 +4357,27 @@ export function createNextChatHarness(runtime: ChatRuntime, deps: NextChatHarnes
   const attached: AttachedInput = attachInput(parser, controller, dispatcher);
 
   function feed(bytes: Uint8Array | string): number {
+    // P11-T7：任意按键先收起引导卡（不拦截按键——输入照常被消化，卡只是消失）
+    const dismissed = bytes.length > 0 ? dismissWelcome() : false;
     const n = attached.feed(bytes);
-    if (n > 0) invalidate();
+    if (n > 0 || dismissed) invalidate();
     return n;
+  }
+
+  /** P11-T7：清除引导卡（幂等；返回是否发生清除，供渲染失效判定） */
+  function dismissWelcome(): boolean {
+    if (state.welcome == null) return false;
+    state.welcome = null;
+    return true;
   }
 
   function flushIdle(now?: number): number {
     const n = attached.flushIdle(now);
-    if (n > 0) invalidate();
+    if (n > 0) {
+      // 孤立 ESC / 断流 paste 兜底也是「一次按键」——同样收起引导卡
+      dismissWelcome();
+      invalidate();
+    }
     return n;
   }
 

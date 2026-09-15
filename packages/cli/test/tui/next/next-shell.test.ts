@@ -8,6 +8,7 @@ import { HELP_TEXT, type SteerResult, type TurnResult } from '@harness2/core';
 import type { ChatRuntime } from '../../../src/chat-setup.js';
 import {
   bindEmergencyExitRestore,
+  commandSummaryOf,
   createApprovalGate,
   createNextChatHarness,
   emergencyTerminalRestore,
@@ -1522,6 +1523,70 @@ describe('审批卡数字序号与焦点复位', () => {
     await vi.advanceTimersByTimeAsync(80);
     h.flushUi();
     expect((h.state.indicators ?? []).join(' ')).not.toContain('scrollback');
+    h.dispose();
+  });
+});
+
+// —— P11-T3：候选说明文案源（core catalog + 壳 summary 单源，不新造）——
+describe('P11-T3 候选说明文案（commandSummaryOf）', () => {
+  it('core 命令：取 describeCapabilities().commands 的 summary', () => {
+    expect(commandSummaryOf('help')).toBeTruthy();
+    expect(commandSummaryOf('new')).toBe('新建会话');
+  });
+
+  it('壳本地命令：取 NEXT_COMMANDS.summary（/theme）', () => {
+    expect(commandSummaryOf('theme')).toContain('主题');
+  });
+
+  it('输入 / 后候选对象携带 summaries（与 items 平行、非空）', () => {
+    const { h } = makeHarness();
+    h.feed('/');
+    h.flushUi();
+    const c = h.state.candidates;
+    expect(c).not.toBeNull();
+    expect(c?.summaries?.length).toBe(c?.items.length);
+    const i = c?.items.indexOf('/help') ?? -1;
+    expect(i).toBeGreaterThanOrEqual(0);
+    expect(c?.summaries?.[i]).toBe(commandSummaryOf('help'));
+    h.dispose();
+  });
+});
+
+// —— P11-T7：冷启动引导卡（一次性、可关、任意键收起、不阻塞输入）——
+describe('P11-T7 冷启动引导卡', () => {
+  it('默认冷启动：引导卡就绪（版本 + 常用键/命令 + /help 指引）', () => {
+    const { h } = makeHarness();
+    const card = h.state.welcome;
+    expect(card).not.toBeNull();
+    expect(card?.title).toContain('欢迎');
+    expect(card?.lines.length ?? 0).toBeGreaterThanOrEqual(4);
+    expect(card?.lines.length ?? 0).toBeLessThanOrEqual(6);
+    const joined = card?.lines.join('\n') ?? '';
+    expect(joined).toContain('/help');
+    expect(joined).toContain('Ctrl+C');
+    h.dispose();
+  });
+
+  it('HARNESS2_NO_WELCOME=1：不显示', () => {
+    const { h } = makeHarness(undefined, { env: { HARNESS2_NO_WELCOME: '1' } });
+    expect(h.state.welcome).toBeNull();
+    h.dispose();
+  });
+
+  it('任意按键立即收起，且不阻塞输入（按键照常生效）', () => {
+    const { h } = makeHarness();
+    expect(h.state.welcome).not.toBeNull();
+    h.feed('a');
+    expect(h.state.welcome).toBeNull();
+    expect(h.state.draft).toBe('a'); // 输入未被拦截
+    h.dispose();
+  });
+
+  it('本会话内不重复（收起后再按键/渲染不再出现）', () => {
+    const { h } = makeHarness();
+    h.feed('a');
+    h.feed('b');
+    expect(h.state.welcome).toBeNull();
     h.dispose();
   });
 });
