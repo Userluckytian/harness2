@@ -15,9 +15,12 @@
 //   3) 每条帮助行**独占一行且按序**，整行逐字相等（同行混入别的帮助行片段 = 交叉/覆盖）；
 //   4) 每行显示宽度 ≤ 画布内容宽（不溢出、不折行）。
 //
-// 变异验证（红/绿证据见提交说明）：
-//   ① 把 projection 的 system/status 分支改回整段下传 → 用例 1、3 变红；
-//   ② 把 cell-buffer 的 charWidth 改成「一律 1 列」 → 用例 2 变红。
+// 变异验证（2026-09-15 实跑记录，红/绿证据见提交说明）：
+//   ① 把 projection 的 system/status 分支改回整段下传（不拆行）→ **仅**「帮助文本不被折行：
+//      逻辑行数 == 物理行数」变红（5 passed / 1 failed）；「网格内无任何控制字符」仍绿——
+//      wrapLine 的硬换行加固拦住了控制字符进网格（两层防御各自独立生效，非互相替代）；
+//   ② 把 cell-buffer 的 charWidth 改成「一律 1 列」→ 宽度类两条变红：「逐格宽度契约」与
+//      「硬换行段各自按显示宽度断行」（4 passed / 2 failed）。
 import { describe, expect, it } from 'vitest';
 import stringWidth from 'string-width';
 import { HELP_TEXT } from '@harness2/core';

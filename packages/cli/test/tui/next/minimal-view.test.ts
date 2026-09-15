@@ -10,11 +10,11 @@ import {
   MinimalView,
   renderPromptBlock,
 } from '../../../src/tui/next/minimal-view.js';
-import { CellBuffer } from '../../../src/tui/renderer/cell-buffer.js';
+import { CellBuffer, displayWidth } from '../../../src/tui/renderer/cell-buffer.js';
 import { DEFAULT_PLACEHOLDER, DEFAULT_PROMPT } from '../../../src/tui/next/composer.js';
 
-/** P11-T2：草稿行锚点显示宽（'❯ ' = 2） */
-const GUTTER = DEFAULT_PROMPT.length;
+/** P11-T2：草稿行锚点显示宽（'❯ ' = 2；按 displayWidth 计，不用 .length 当宽度） */
+const GUTTER = displayWidth(DEFAULT_PROMPT);
 
 describe('composeMinimalPrompt', () => {
   it('空草稿 = 单行 prompt 块（readline 同构）', () => {

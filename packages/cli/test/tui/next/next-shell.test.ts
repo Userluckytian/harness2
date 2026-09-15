@@ -1589,4 +1589,49 @@ describe('P11-T7 冷启动引导卡', () => {
     expect(h.state.welcome).toBeNull();
     h.dispose();
   });
+
+  it('minimal 基座：引导卡进 prompt 块（首帧含欢迎文案），按键收起且块行数回收', () => {
+    // 首帧在构造期写出，所以自建录制型 out（makeHarness 的 FakeOut 无法回放构造期写入）
+    const chunks: string[] = [];
+    const out = {
+      columns: 100,
+      rows: 30,
+      write(s: string): unknown {
+        chunks.push(s);
+        return s.length;
+      },
+    };
+    const h = createNextChatHarness(makeRuntime(), {
+      out,
+      bootLines: [],
+      env: {},
+      gate: createApprovalGate(),
+      initialRenderMode: 'minimal',
+      exit: () => undefined,
+    });
+    h.flushUi();
+    expect(h.renderMode()).toBe('minimal');
+    // 本次会话无引导卡以外的转录输出：下面记录的块即 prompt 块本身
+    expect(h.minimalPrintedLines()).toEqual([]);
+    const first = chunks.join('');
+    expect(first).toContain('欢迎'); // 引导卡标题画进 minimal prompt 块
+    expect(first).toContain('/help');
+    expect(first).toContain('Ctrl+C');
+    /** 本次 renderPrompt 画出的行数：LF 总数 − 擦除段分隔 LF + 1 */
+    const drawnRows = (chunk: string, erasedRows: number): number =>
+      (chunk.match(/\n/g) ?? []).length - Math.max(0, erasedRows - 1) + 1;
+    const initialRows = drawnRows(first, 0); // 首帧 prevRows=0 → 无擦除段
+    expect(initialRows).toBeGreaterThan(1); // 引导卡行 + 草稿行（空草稿仍占 1 行）
+
+    const seen = chunks.length;
+    h.feed('a');
+    const afterKey = chunks.slice(seen).join('');
+    expect(h.state.welcome).toBeNull(); // 任意键收起
+    expect(afterKey).not.toContain('欢迎'); // 收起后不再渲染引导卡
+    // 行数回收：重绘前光标上移 initialRows-1（擦掉整个引导卡块），新块只剩草稿 1 行
+    expect(afterKey.startsWith(`\x1b[${initialRows - 1}A`)).toBe(true);
+    expect(drawnRows(afterKey, initialRows)).toBe(1);
+    expect(afterKey).toContain('a'); // 按键未被引导卡拦截，输入照常消化
+    h.dispose();
+  });
 });
