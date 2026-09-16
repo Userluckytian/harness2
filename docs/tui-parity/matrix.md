@@ -127,7 +127,7 @@
 
 ## K 画布适配
 
-- 110×30 与 160×40 **双方均已抓帧**（我方 `out/K{1,2}-*/ours`；grok `out/K{1,2}-*/grok`）。
+- 110×30 与 160×40 **双方均已抓帧**（入库证据：我方 `images/p11/evidence/ours-canvas-110x30.*`、`ours-canvas-160x40.*`；grok `evidence/grok-canvas-160x40.*`；同名 `.txt` 为权威网格）。
 - 160×40（grok，已于 big-pickle 模型下补抓）：输入框与提示行随宽度伸缩、长行不折；
   我方 160×40 同步抓帧。**逐格折行核对仍待办**（已登记）。
 
@@ -165,7 +165,7 @@
 | 8   | 缺模型名、缺 git 分支                       | P2     | `A1`/`G1`                                                                                          | ⬜ 待排期（P12）                                                                                                    |
 | 9   | 会话 id 常显                                | P2     | `A1`                                                                                               | ⬜ 待排期（P12）                                                                                                    |
 | 10  | 未知命令语义（grok 交给技能/命令路由）      | P2     | `C2`、`images/p11/evidence/grok-undo-redo.txt`                                                     | ⬜ 待定性                                                                                                           |
-| 11  | `/rewind <prompt>` 别名                     | P2     | grok README + `out/I1-*/grok`                                                                      | ⬜ 待排期（P12）                                                                                                    |
+| 11  | `/rewind <prompt>` 别名                     | P2     | grok README + `images/p11/evidence/grok-undo-redo.*`                                               | ⬜ 待排期（P12）                                                                                                    |
 | 12  | 子任务卡片补耗时/步数（**优势项保持**）     | P2     | `images/F1-subagent-ours.png`                                                                      | 待排期（P12）                                                                                                       |
 | 13  | live 帧时间戳用「落帧墙上时钟」而非事件 ts  | P2     | 审查 P2-2                                                                                          | 📌 已登记技术债                                                                                                     |
 | 14  | 忙碌态 `↓N` 为「本步输出」非回合累计        | P2     | 审查 P2-3                                                                                          | 📌 已登记技术债                                                                                                     |
