@@ -1,6 +1,6 @@
 # 阶段 P10：next 单轨化清场 + 与 grok 的终端逐场景抓屏对照
 
-> **状态：** 实施中（计划已就绪）
+> **状态：** ✅ 已完成（2026-09-15，本地分支 `feat/phase-p10-next-only`，未合 main；段 C 的对照报告见 `docs/tui-parity/`）
 > **For agentic workers:** 按 Task 顺序执行；每 Task 验证通过再进下一 Task，每 Task 一次 commit。
 > **交接提示词**见文末「给接手 AI 的完整提示词」。
 > **元规范:** `docs/ai-framework/phased-plan-driven.md`

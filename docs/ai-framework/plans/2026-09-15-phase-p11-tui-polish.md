@@ -1,6 +1,6 @@
 # 阶段 P11：终端界面拉齐（修 P0 + P1 对照发现项）
 
-> **状态：** 计划已就绪 · 实施中
+> **状态：** ✅ 已完成（2026-09-15，本地分支 `feat/phase-p11-tui-polish`，未合 main）
 > **For agentic workers:** 严格按 Task 顺序执行，每 Task 通过验证并 commit 后再进下一 Task。
 > **交接提示词**见文末「给接手 AI 的完整提示词」。
 > **元规范：** `docs/ai-framework/phased-plan-driven.md`
