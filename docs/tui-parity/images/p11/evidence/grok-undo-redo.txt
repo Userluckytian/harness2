@@ -1,0 +1,30 @@
+ ≡ feat/phase-p10-next-only D:\AI_Projects\harness2\scripts\tui-parity\out\_tmp-home\20260916-001… 28K / 200K
+    hi/undo                                                                                        12:10 AM
+
+    ♦ Listed 1 dir
+    ♦ Run Inspect recent git history and status
+    ♦ Listed 6 dirs, Read 4 files
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+   | Waiting for response… 1.2s                                                             39s ↓28.8k [stop]
+ ╭──────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+ │ > /subagent-driven-development                                                                           │
+ ╰──────────────────────────────────────────────────────────────────────────── Big Pickle · always-approve ─╯
+ Enter:queue  │  Alt+Enter:newline  │  Shift+Tab:mode  │  Esc:cancel  │  Ctrl+Enter:send now  │  Ctrl+x:
