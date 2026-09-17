@@ -36,7 +36,7 @@
 > ## 🎯 当前主推进方向：视觉复刻总纲 V0–V6
 > 计划：`docs/ai-framework/plans/2026-09-17-visual-parity-program.md`（含铁律与六道闸门）；当前阶段 V0 `…-phase-V0-baseline.md`。
 > **第一节 = 与本总纲相关的开放项（有归属阶段、按阶段推进）；第二节「其他开放项」在本总纲期间挂账，勿自行开工。**
-> 归整由 2026-09-17 阶段 V0 执行：**只重排与加标注，未删除任何条目**（归整前 40 条 → 归整后 44 条，新增 4 条为 V0 当日查得）。
+> 归整由 2026-09-17 阶段 V0 执行：**只重排与加标注，未删除任何条目**（归整前 40 条 → 归整后 46 条，新增 6 条为 V0 当日查得）。
 
 ## 一、视觉复刻总纲（V0–V6）相关开放项
 
@@ -54,6 +54,8 @@
 | 2026-09-17 | **总纲 §4 闸门 2 的测试基线数字是 2026-09-11 的旧口径，照它判绿会误判** —— 总纲写「当前 1120 passed + 2 skipped，cli 包 281 passed + 2 skipped」；2026-09-17 本机 `pnpm test` 实测为 core **1232 + 2** · gateway **40** · ui-shared **70** · web **36** · cli **1575 + 2** · desktop **930 + 1** = **全仓 3883 passed + 5 skipped**（另有 2 个收集期红文件，见下行），与 `docs/HANDOFF.md` 的 P11 收口记录逐项一致。此后各阶段闸门 2 应以「不低于 `HANDOFF.md` 当轮记录」为准 | 口径登记（已更正，V0 实测） | [2026-09-17.md](2026-09-17.md) V0-1 | → 每阶段闸门 2 |
 | 2026-09-17 | **desktop 2 个测试文件收集期红，使 `pnpm test` 退出码非 0 ⇒ 每阶段闸门 2 无法「全绿」** —— `packages/desktop/test/settings/models/models-page.test.tsx` 与 `models-section-wiring.test.tsx`：`Error: No such built-in module: node:`（文件级 `@vitest-environment jsdom` + 顶层 `node:fs`/`node:os`/`node:path` 被 vite 按浏览器兼容 externalize，套件 0 test 直接失败）。V0 独立取证：`git diff --stat main..HEAD -- packages/desktop packages/ui-shared` **输出为空** ⇒ 与 `main` 同文件同环境，预存问题非 P10~P12 引入（P10/P11 收口时已各自登记：`2026-09-15-phase-next-only-and-grok-parity.md:884`、`2026-09-15-p12-backlog.md:38`，均判「已用 main 同环境对照证明与本阶段无关」）。**V0 明令禁改 `packages/**`，故本阶段只登记不修**。修法候选（V1 择一，**禁止 `.skip` 或删用例**）：① 两文件回落 `@vitest-environment node` + 把 DOM 断言拆到独立 jsdom 文件；② 用 `vi.mock('node:fs')` 之类的 inline 桩替代真 `node:` 导入；③ 在 `vitest.config.mts` 给 `server.deps.inline`/`resolve.alias` 处理 `node:` 前缀。改完须按 §4.1 做变异验证，证明用例仍会红 | 待处理（P1，测试侧；**V1 开工第一件**） | [2026-09-17.md](2026-09-17.md) V0-1 | → V1 前置（闸门 2 依赖） |
 
+| 2026-09-17 | **V0 新发现（`matrix.md` 未记）：next 壳与 grok 的版面结构差在两处「一屏到底画多少」** —— 用记分卡「结构指纹」实测（逐帧 `.txt` 去空白统计）：① **屏幕填充度**：我方几乎每帧都画满整个画布（110×30 下 29 行非空、160×40 下 39 行非空，主要因最右列常驻竖线逐行占位），grok 空闲帧只画 5~21 行；② **框线用量差一个数量级**：grok 每帧 178~561 个框线/制表字符，我方 11~195 个（A1 为 135 对 407）。P11 第 #2 项修的是 `❯` 锚点 + 空态占位，**并没有真的加输入框边框**，所以 `matrix.md` §A「grok 是完整输入框 `╭─╮ │ > │ ╰─╯`」这一条至今仍未对齐。另需判定常驻竖线（滚动条）是否该保留——grok 无整屏边框。数据出处 `docs/tui-parity/PARITY-SCORECARD.md` §结构指纹基线 | 待处理（V0 只登记，未改任何渲染代码） | [2026-09-17.md](2026-09-17.md) V0-5 | → V2-E（边框/分隔线体系）+ V3（滚动条与填充策略） |
+| 2026-09-17 | **三处抓屏帧是全空的，正在冒充证据；`matrix.md` §B 有一句与现行帧不符** —— 实测 `.txt` 字节数=2（即全空白）：① `B1-stream-midshot` 我方 `01-stream-mid`（**grok 侧同帧有 7 行**，只差我方）；② `H1-esc-mid-turn` 双侧 `01-mid-turn`；③ `J1-busy-queue` 双侧 `01-queued`。后果：`matrix.md` §B 写「B1 流式中间帧我方为打字机增量 + 光标」，但那是 09-15 23:54 那轮帧的结论，P11-T8 于 09-16 02:07 重抓的我方帧已经是空网格——**句子与库内证据脱节**。根因是抓帧时机：mock 回合太快 / 排队瞬间未等到目标内容。修法：按场景写 `ptycap.py` 的 `require_content` 目标文本（字段已存在，默认 `True`），并给 B1 我方侧加流式期间的多次采样。**V0 不改 `packages/**` 也不改脚本，只登记** | 待处理（P1，对照台侧） | [2026-09-17.md](2026-09-17.md) V0-5 | → V1-A（`diff.py` 与逐帧判据同批做） |
 ## 二、其他开放项（本总纲期间保持挂账，不推进）
 
 | 日期 | 事项 | 状态 | 详情 |
