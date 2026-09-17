@@ -37,6 +37,8 @@
 V0 登记了两条属于 R 程序领地、但卡着 V1 闸门 2 的阻塞项，**本计划接过来当 R0-0 做**：
 
 - **desktop 2 个测试文件收集期红**：`models-page.test.tsx` / `models-section-wiring.test.tsx` 报 `No such built-in module: node:`。已被独立复现三次（P10/P11/V0），属 `main` 既有。**禁止 `.skip` 绕过**。
+  - **【2026-09-17 10:54 实测纠正】在当前 `main`（`2477b97`）上不可复现。** 六条独立路径（单文件 ×2 / `test/settings/` 目录 / 包全量 / 仓库根 `pnpm test` / 清缓存冷跑）**全部绿**；根级六包合计 **3905 passed + 5 skipped**，日志 0 处 `No such built-in` ⇒ **闸门 2 已恢复可用**。差额 22 恰等于这两个文件的 21+1 个用例，证明当时是整文件收集失败而非断言失败。机制性脆弱点（文件级 `jsdom` + 顶层 `node:` 内建被 externalize）**仍然存在**，只是当前依赖解析下不触发。
+  - ⇒ **R0-0 降级为 R1-D 的加固项**：fixture 挪到 node 环境测试文件，或在 desktop vitest 配置显式声明这些内建不 externalize，并补「externalize 回归即变红」的守卫用例。完整取证见 `docs/issue-log/2026-09-17.md` §四。
 - **P10/P11 停在本地分支**：V 程序的 V1 需要对照台（`scripts/tui-parity/`），而它只活在未合入的分支上。**本计划 §8 启动前置已含此项，完成后即解除双方阻塞。**
 
 ---
@@ -88,7 +90,7 @@ V0 登记了两条属于 R 程序领地、但卡着 V1 闸门 2 的阻塞项，*
 
 | 编号 | 缺陷 | 现象 |
 | --- | --- | --- |
-| D-a | 启动期 `serve 未就绪` invoke 竞态 | 每次启动控制台 5~8 条错误，**根因未定位** |
+| D-a | 启动期 `serve 未就绪` invoke 竞态 | 每次启动控制台 5~8 条错误。**根因已定位（2026-09-17）**：`bridge.ts:417` 的 `const base = deps.serve.baseUrl` 在 `switch` 前无条件执行，而该 getter 同步抛错 ⇒ 48 条 invoke 命令（含 **27 条不需 serve 的本地命令**，甚至包括用来探测就绪的 `getStatus`）全部连坐 |
 | D-b | 图片/附件字节通道不存在 | `IMAGE_TRANSPORT_MISSING`，`SubmitMessagePayloadShape` 无图片字段，附件如实标 failed |
 | D-c | `steeringAvailable` 恒 `true`、`pendingInteraction` 无数据源 | composer 的忙碌态与可转向态**是假的** |
 | D-d | `subagent_continue` schema 恒带 `taskId` | CLI 未装配 TaskCoordinator，**向模型暴露不存在的字段**，模型必踩误导性报错（`packages/core/src/agent/subagent.ts:284`） |
@@ -173,15 +175,15 @@ R0 现状取证 ──→ R1 核心补强 ──→ R2 壳重做 ──→ R3 �
 | --- | --- |
 | R0-1 真机跑通桌面端 | `pnpm --filter @harness2/desktop dev` 启动，**全窗口截图 ≥8 张**（冷启动、空会话、对话中、工具卡、审批、轨迹页、模型配置页、设置页），落 `docs/screenshots/2026-09-17-baseline/` |
 | R0-2 复现 D-a~D-f 六条 | 每条一份复现记录：操作步骤 + 控制台日志原文 + 截图。**不能复现的要明确标注「未复现」并说明尝试过程**，不许含糊 |
-| R0-3 D-a 根因定位 | OPEN.md 登记「归因未定」。要求给出确定结论：竞态发生在 `backend-ready` 探测、IPC 注册顺序、还是 renderer 首帧 invoke。**附调用时序** |
-| R0-4 基线数据 | 全量 `pnpm test` 通过数、`pnpm -r build` 耗时、桌面冷启动到可交互毫秒数、一轮真实对话的 token 用量与延迟（用可用 provider，无 key 则记录阻塞） |
-| R0-5 hermes 壳契约提取 | 把 `apps/desktop/AGENTS.md`（11KB）与 `apps/desktop/DESIGN.md`（18.5KB）复制到 `docs/refs/hermes-desktop/`，**保留 MIT LICENSE 与出处说明**，并写一份 2 页中文提要《hermes 桌面壳的 7 条不变量》 |
+| R0-3 D-a 根因定位 | ✅ **已完成（2026-09-17）**。结论：三项候选里命中**后两项的叠加**—— `main.ts` 先同步 `registerBridgeIpc()` + `win.loadFile()`，**再**异步 `serve.start()`（IPC 面先于就绪开放）；叠加 `bridge.ts:417` switch 前的无条件 `const base = deps.serve.baseUrl`（同步抛错 getter）。就绪窗口 3~18s（采纳 3s + 健康检查 15s）。调用时序与 27 条被连坐命令清单见 `docs/issue-log/2026-09-17.md` §R0-3 |
+| R0-4 基线数据 | 🟡 **部分完成（2026-09-17）**。✅ 全量 `pnpm test` = **3905 passed + 5 skipped，六包全绿**（ui-shared 70 / core 1232+2 / web 36 / gateway 40 / desktop 952+1 / cli 1575+2）；✅ renderer 构建 159 modules / **125ms**，产物 js 425.24kB（gzip 131.70）+ css 42.00kB（gzip 8.21）；✅ 无头冡烟 `{ok:true,rendererLoaded:true,bridgeReady:true,port:58285}`。⛔ **真实对话 token/延迟阻塞**：本地 40080 网关 `/v1/chat/completions` 对三个模型均 **502 upstream error**（`/v1/models` 为 200），故障在 `opencode2api` 背后的上游，**非 harness2 侧**。⚪ 待补：`pnpm -r build` 单独耗时、桌面冷启动到可交互毫秒数（需真机 GUI） |
+| R0-5 hermes 壳契约提取 | ✅ **已完成（2026-09-17）**。`docs/refs/hermes-desktop/` 下落四件：`AGENTS.md`（原文副本）、`DESIGN.md`（原文副本）、`LICENSE`（MIT 全文）、**`PRIMER-zh.md`**（中文提要：7 条架构不变量 + 7 条设计原则 + z-index 梯子/取消语义/键盘所有权 + 「搬什么/不搬什么」落地表）。基线 commit `79445a4` |
 
 #### R0 验收闸门（编排者执行）
 
-- [ ] 截图 ≥8 张且能看清真实内容（非空白窗口、非 mock）
+- [ ] 截图 ≥8 张且能看清真实内容（非空白窗口、非 mock）—— **阻塞中**：需真机 GUI 会话，且「非 mock」要求被上游 502 卡住
 - [ ] 六条缺陷每条有明确「已复现 / 未复现 + 理由」
-- [ ] D-a 根因有确定结论，不接受「疑似」
+- [x] D-a 根因有确定结论，不接受「疑似」—— 已定位到行（`bridge.ts:417` + `main.ts` 注册时序）
 - [ ] hermes 契约提要准确（编排者抽查 3 条不变量对原文）
 
 **R0 不通过则整个计划暂停重评。**
@@ -227,7 +229,7 @@ R0 现状取证 ──→ R1 核心补强 ──→ R2 壳重做 ──→ R3 �
 
 | 缺陷 | 修复要求 |
 | --- | --- |
-| D-a | 按 R0-3 根因修。**验收标准：连续 10 次冷启动，控制台 0 条 `serve 未就绪` 错误** |
+| D-a | 按 R0-3 根因修，**三层缺一不可**：① 删掉 switch 前的 `const base`，改为只在走 HTTP 的分支内惰求；② 需 serve 的分支改 `await serve.whenReady(timeout)`（新增，复用现有 status/退避链），超时返回**带类型的** not-ready 结果而非抛错；③ `getStatus` 永不抛错，UI 走 connecting 态（红线 10）。**验收：连续 10 次冷启动 0 条 `serve 未就绪`；`port === null` 时 27 条本地命令逐条可用；变异验证（`const base` 改回 switch 前）必须变红** |
 | D-b | 打通图片字节通道：`SubmitMessagePayloadShape` 加图片字段 → serve → provider 多模态。**核心红线：不得伪造成功**，provider 不支持视觉时须明示拒绝 |
 | D-c | `steeringAvailable` 接真实来源；`pendingInteraction` 接 approval-queue。**恒真的假状态必须消灭** |
 | D-d | `subagent.ts:284` schema 按是否装配 TaskCoordinator 条件化 `taskId`。CLI 路径下该字段不得出现在给模型的 schema 里 |
