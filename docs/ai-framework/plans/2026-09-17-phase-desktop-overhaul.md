@@ -93,9 +93,9 @@ V0 登记了两条属于 R 程序领地、但卡着 V1 闸门 2 的阻塞项，*
 | D-a | 启动期 `serve 未就绪` invoke 竞态 | 每次启动控制台 5~8 条错误。**根因已定位（2026-09-17）**：`bridge.ts:417` 的 `const base = deps.serve.baseUrl` 在 `switch` 前无条件执行，而该 getter 同步抛错 ⇒ 48 条 invoke 命令（含 **27 条不需 serve 的本地命令**，甚至包括用来探测就绪的 `getStatus`）全部连坐 |
 | D-b | 图片/附件字节通道不存在 | `IMAGE_TRANSPORT_MISSING`，`SubmitMessagePayloadShape` 无图片字段，附件如实标 failed |
 | D-c | `steeringAvailable` 恒 `true`、`pendingInteraction` 无数据源 | composer 的忙碌态与可转向态**是假的** |
-| D-d | `subagent_continue` schema 恒带 `taskId` | CLI 未装配 TaskCoordinator，**向模型暴露不存在的字段**，模型必踩误导性报错（`packages/core/src/agent/subagent.ts:284`） |
-| D-e | 跨进程配置写入无锁 TOCTOU | 第二实例或 CLI 并发写 `config.json` 会丢更新 |
-| D-f | 新会话作用域四级降级恒落「空白」 | `resolveNewSessionScope` 已就位但未接线（D-21） |
+| D-d | `subagent_continue` schema 恒带 `taskId` | **【2026-09-17 取证纠正：原述不准。`subagent.ts:297` 已有 `anyOf` 多选一必填（P1-1 已修），`:310` 执行期也如实报「后台任务协调器未装配」；真实缺陷应重述为「能力面声明与装配状态脉络」，**轻度、非阻塞级**】** 原登记：CLI 未装配 TaskCoordinator，**向模型暴露不存在的字段**，模型必踩误导性报错（`packages/core/src/agent/subagent.ts:284`） |
+| D-e | 跨进程配置写入无锁 TOCTOU | **【2026-09-17 取证：确实存在，但 `models-config.ts:590-596` 已如实登记并发边界与影响面（仅覆盖对方配置、不丢 `auth.json` 密钥），修法只能是文件锁（core 冻结区）。**非隐瞒，不入 R1-D**】** 第二实例或 CLI 并发写 `config.json` 会丢更新 |
+| D-f | **【2026-09-17 取证纠正：「未接线」不准—— `SidebarRoot.tsx:152` 已调用且有完整优先级表测试；缺口在上游数据源：`shell-seat-contents.tsx:65-71` 写死 `newSessionScope={{}}`（本仓无 Workspace 概念）。**不入 R1-D**】** 新会话作用域四级降级恒落「空白」 | `resolveNewSessionScope` 已就位但未接线（D-21） |
 
 ### 1.3 壳的体量差距（结构性事实）
 
@@ -227,14 +227,25 @@ R0 现状取证 ──→ R1 核心补强 ──→ R2 壳重做 ──→ R3 �
 
 #### R1-D 桌面阻塞级修复（D-a ~ D-f）
 
+> **【2026-09-17 R0-2 取证后的范围收窄（权威，以此为准）】** 六条逐条做完代码级复现后：
+>
+> | 分批 | 项 | 理由 |
+> | --- | --- | --- |
+> | **首批（阻塞级）** | **D-a**、**D-c** | D-a 根因已定位到行；D-c 的能力**已实现、只缺接线**（`submit-policy` 已有 `steeringAvailable:false` 完整用例，但 `packages/desktop/src/**` 零处传该 prop），性价比最高且直接违反红线 10 |
+> | **次批** | **D-b** | 需改提交协议 shape ⇒ 走 core 解冻窗口；验收必须真机一轮，**现被上游 502 阻塞** |
+> | **加固项** | **D-d**、**R0-0** | 不影响用户可用性；D-d 改动在 core，性价比不如 D-c |
+> | **不入 R1-D** | **D-e**（需文件锁，core 冻结区，已如实登记）、**D-f**（需先引入工作区概念，属 R3/P7） |
+>
+> **收益：** 按原登记会把三条「已如实登记 / 已修过 / 需前置概念」的项当成阻塞缺陷去改，会白耗一个子代理轮次并白动两次 core 解冻窗口。完整取证见 `docs/issue-log/2026-09-17.md` §R0-2。
+
 | 缺陷 | 修复要求 |
 | --- | --- |
 | D-a | 按 R0-3 根因修，**三层缺一不可**：① 删掉 switch 前的 `const base`，改为只在走 HTTP 的分支内惰求；② 需 serve 的分支改 `await serve.whenReady(timeout)`（新增，复用现有 status/退避链），超时返回**带类型的** not-ready 结果而非抛错；③ `getStatus` 永不抛错，UI 走 connecting 态（红线 10）。**验收：连续 10 次冷启动 0 条 `serve 未就绪`；`port === null` 时 27 条本地命令逐条可用；变异验证（`const base` 改回 switch 前）必须变红** |
 | D-b | 打通图片字节通道：`SubmitMessagePayloadShape` 加图片字段 → serve → provider 多模态。**核心红线：不得伪造成功**，provider 不支持视觉时须明示拒绝 |
 | D-c | `steeringAvailable` 接真实来源；`pendingInteraction` 接 approval-queue。**恒真的假状态必须消灭** |
-| D-d | `subagent.ts:284` schema 按是否装配 TaskCoordinator 条件化 `taskId`。CLI 路径下该字段不得出现在给模型的 schema 里 |
-| D-e | 配置写入加跨进程文件锁（复用已有锁文件 0600 方案），读-改-写原子化 |
-| D-f | 接线 `resolveNewSessionScope`，四级降级至少前两级要有真实数据源 |
+| D-d | `subagent.ts:284` **【降级为加固项，非阻塞级】** schema 按是否装配 TaskCoordinator 条件化 `taskId`。CLI 路径下该字段不得出现在给模型的 schema 里 |
+| D-e | 配置写入加跨进程文件锁（**【已移出 R1-D ⇒ 顺延至 R4：需 core 冻结区的文件锁，且源码已如实登记边界与影响面】**（复用已有锁文件 0600 方案），读-改-写原子化 |
+| D-f | 接线 `resolveNewSessionScope`，四级降级至少前两级（**【已移出 R1-D ⇒ 归 R3/P7：实测已接线，真正缺的是工作区概念作为上游数据源】**）要有真实数据源 |
 
 #### R1-X 派生索引（并行子轨，可与 R1-A/B/C 同时进行）
 
