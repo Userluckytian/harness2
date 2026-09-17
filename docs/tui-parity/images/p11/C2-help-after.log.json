@@ -1,0 +1,34 @@
+{
+  "engine": "scripts/tui-parity/ptycap.py",
+  "boundary": "PNG 为 ConPTY 抓屏 + 本地重绘，非系统级窗口截图",
+  "argv": [
+    "node",
+    "packages/cli/dist/index.js",
+    "chat",
+    "--provider",
+    "mock",
+    "--home",
+    "C:/Users/ASUS/AppData/Local/Temp/p11cap/home",
+    "--root",
+    "C:/Users/ASUS/AppData/Local/Temp/p11cap/work"
+  ],
+  "cols": 110,
+  "rows": 30,
+  "shots": [
+    {
+      "shot": "C2-help-after",
+      "png": "docs/tui-parity/images/p11\\C2-help-after.png",
+      "txt": "docs/tui-parity/images/p11\\C2-help-after.txt",
+      "font": "mono:C:\\Windows\\Fonts\\consola.ttf + cjk:C:\\Windows\\Fonts\\msyh.ttc + symbol:C:\\Windows\\Fonts\\seguisym.ttf",
+      "cols": 110,
+      "rows": 30,
+      "bytes_png": 331172,
+      "text_preview": "  /skills         列 出 可 用  skills（ 两 级 扫 描 合 并 ， 只 读 ）                                                       │\n  /plugins        列 出 插 件 目 录 与 装 载 审 批 状 态 （ 只 读 ）                                                          │\n  /mcps           列 出 配 置 的  MCP 服 务 器 （ 只 读 配 置 ， 不 探 测 连 接 ）                                               │\n  /tools          查 看 /切 换 工 具 面 （ 工 具 清 单 、 工 具 集  list/show/selec",
+      "step": 1,
+      "settled": true,
+      "elapsed": 4.974,
+      "quiet": 1.207,
+      "ticks": 6
+    }
+  ]
+}

@@ -15,10 +15,10 @@ import { displayWidth } from './input.js';
 
 /** 已落定的结构条目（判别联合；id 稳定，供展开态/高度缓存按 id 引用） */
 export type TranscriptItem =
-  | { kind: 'user'; id: string; seq: number; text: string }
-  | { kind: 'assistant'; id: string; seq: number; text: string; outcome: 'final'; reasoning?: string }
-  | { kind: 'partial'; id: string; seq: number; text: string; error: string; stopReason?: string }
-  | { kind: 'empty'; id: string; seq: number; error?: string; stopReason?: string }
+  | { kind: 'user'; id: string; seq: number; text: string; ts?: string }
+  | { kind: 'assistant'; id: string; seq: number; text: string; outcome: 'final'; reasoning?: string; ts?: string }
+  | { kind: 'partial'; id: string; seq: number; text: string; error: string; stopReason?: string; ts?: string }
+  | { kind: 'empty'; id: string; seq: number; error?: string; stopReason?: string; ts?: string }
   | {
       kind: 'tool';
       id: string;
@@ -31,9 +31,11 @@ export type TranscriptItem =
       error?: string;
       /** T1：subagent_start/subagent_continue 的结果 JSON 中可解析出的子会话 id（解析不到就不存在） */
       childSessionId?: string;
+      /** P11-T4：真实事件时间戳（ISO8601，来自会话事件 ts；仅展示用，不参与语义） */
+      ts?: string;
     }
-  | { kind: 'system'; id: string; text: string }
-  | { kind: 'status'; id: string; text: string };
+  | { kind: 'system'; id: string; text: string; ts?: string }
+  | { kind: 'status'; id: string; text: string; ts?: string };
 
 export type ToolItem = Extract<TranscriptItem, { kind: 'tool' }>;
 
@@ -83,8 +85,16 @@ function findItemIndex(items: TranscriptItem[], id: string): number {
  * - shell 文本（system/status；显式 id 时幂等 upsert）
  */
 export type TranscriptEvent =
-  | { type: 'user/message'; seq: number; text: string; turnId?: string; id?: string }
-  | { type: 'assistant/message'; seq: number; text: string; reasoning?: string; turnId?: string; id?: string }
+  | { type: 'user/message'; seq: number; text: string; turnId?: string; id?: string; ts?: string }
+  | {
+      type: 'assistant/message';
+      seq: number;
+      text: string;
+      reasoning?: string;
+      turnId?: string;
+      id?: string;
+      ts?: string;
+    }
   | {
       type: 'assistant/attempt';
       seq: number;
@@ -93,8 +103,18 @@ export type TranscriptEvent =
       turnId?: string;
       stopReason?: string;
       id?: string;
+      ts?: string;
     }
-  | { type: 'tool/call'; seq: number; callId: string; tool: string; args?: string; summary?: string; turnId?: string }
+  | {
+      type: 'tool/call';
+      seq: number;
+      callId: string;
+      tool: string;
+      args?: string;
+      summary?: string;
+      turnId?: string;
+      ts?: string;
+    }
   | {
       type: 'tool/result';
       seq?: number;
@@ -104,6 +124,7 @@ export type TranscriptEvent =
       output?: string;
       error?: string;
       turnId?: string;
+      ts?: string;
     }
   | {
       /** T4：step 边界的完整正文（工具/推理分隔出的中间 assistant 段）；id = turnId+stepIndex 稳定 */
@@ -112,12 +133,21 @@ export type TranscriptEvent =
       stepIndex: number;
       text: string;
       reasoning?: string;
+      ts?: string;
     }
-  | { type: 'turn-final'; turnId?: string; seq?: number; text: string; reasoning?: string }
-  | { type: 'turn-partial'; turnId?: string; seq?: number; text: string; error?: string; stopReason?: string }
-  | { type: 'turn-empty'; turnId?: string; seq?: number; error?: string; stopReason?: string }
-  | { type: 'system'; text: string; id?: string }
-  | { type: 'status'; text: string; id?: string };
+  | { type: 'turn-final'; turnId?: string; seq?: number; text: string; reasoning?: string; ts?: string }
+  | {
+      type: 'turn-partial';
+      turnId?: string;
+      seq?: number;
+      text: string;
+      error?: string;
+      stopReason?: string;
+      ts?: string;
+    }
+  | { type: 'turn-empty'; turnId?: string; seq?: number; error?: string; stopReason?: string; ts?: string }
+  | { type: 'system'; text: string; id?: string; ts?: string }
+  | { type: 'status'; text: string; id?: string; ts?: string };
 
 function scopedId(
   kind: string,
@@ -128,6 +158,11 @@ function scopedId(
   if (explicit !== undefined && explicit.length > 0) return explicit;
   if (turnId !== undefined && turnId.length > 0) return `${kind}:${turnId}`;
   return `${kind}:${seq ?? 0}`;
+}
+
+/** P11-T4：真实事件时间戳透传（仅当事件带 ts 时产出字段，不造假值） */
+function tsOf(event: { ts?: string }): { ts?: string } {
+  return event.ts !== undefined && event.ts.length > 0 ? { ts: event.ts } : {};
 }
 
 /** 按 id 追加或原地替换（惰性 byId 见 stateWith；未变化时复用 items） */
@@ -185,6 +220,7 @@ export function transcriptReducer(state: TranscriptState, event: TranscriptEvent
         id: scopedId('user', event.seq, event.turnId, event.id),
         seq: event.seq,
         text: event.text,
+        ...tsOf(event),
       });
     case 'assistant/message': {
       const item: TranscriptItem = {
@@ -194,6 +230,7 @@ export function transcriptReducer(state: TranscriptState, event: TranscriptEvent
         text: event.text,
         outcome: 'final',
         ...(event.reasoning !== undefined && event.reasoning.length > 0 ? { reasoning: event.reasoning } : {}),
+        ...tsOf(event),
       };
       return put(state, item);
     }
@@ -207,6 +244,7 @@ export function transcriptReducer(state: TranscriptState, event: TranscriptEvent
           text: event.text,
           error: event.error,
           ...(event.stopReason !== undefined ? { stopReason: event.stopReason } : {}),
+          ...tsOf(event),
         });
       }
       return put(state, {
@@ -215,6 +253,7 @@ export function transcriptReducer(state: TranscriptState, event: TranscriptEvent
         seq: event.seq,
         error: event.error,
         ...(event.stopReason !== undefined ? { stopReason: event.stopReason } : {}),
+        ...tsOf(event),
       });
     }
     case 'tool/call': {
@@ -228,6 +267,7 @@ export function transcriptReducer(state: TranscriptState, event: TranscriptEvent
         ...(args !== undefined ? { args } : {}),
         summary: toolSummary(args, event.summary),
         status: 'pending',
+        ...tsOf(event),
       });
     }
     case 'tool/result': {
@@ -254,6 +294,7 @@ export function transcriptReducer(state: TranscriptState, event: TranscriptEvent
         ...(output !== undefined ? { output } : {}),
         ...(event.error !== undefined ? { error: event.error } : {}),
         ...(childSessionId !== undefined ? { childSessionId } : {}),
+        ...tsOf(event),
       });
     }
     case 'assistant/step': {
@@ -269,6 +310,7 @@ export function transcriptReducer(state: TranscriptState, event: TranscriptEvent
         text: event.text,
         outcome: 'final',
         ...(event.reasoning !== undefined && event.reasoning.length > 0 ? { reasoning: event.reasoning } : {}),
+        ...tsOf(event),
       });
     }
     case 'turn-final':
@@ -279,6 +321,7 @@ export function transcriptReducer(state: TranscriptState, event: TranscriptEvent
         text: event.text,
         outcome: 'final',
         ...(event.reasoning !== undefined && event.reasoning.length > 0 ? { reasoning: event.reasoning } : {}),
+        ...tsOf(event),
       });
     case 'turn-partial': {
       const id = scopedId('attempt', event.seq, event.turnId, undefined);
@@ -290,6 +333,7 @@ export function transcriptReducer(state: TranscriptState, event: TranscriptEvent
           text: event.text,
           error: event.error ?? '（未提供错误信息）',
           ...(event.stopReason !== undefined ? { stopReason: event.stopReason } : {}),
+          ...tsOf(event),
         });
       }
       return put(state, {
@@ -298,6 +342,7 @@ export function transcriptReducer(state: TranscriptState, event: TranscriptEvent
         seq: event.seq ?? 0,
         error: event.error,
         ...(event.stopReason !== undefined ? { stopReason: event.stopReason } : {}),
+        ...tsOf(event),
       });
     }
     case 'turn-empty':
@@ -307,18 +352,21 @@ export function transcriptReducer(state: TranscriptState, event: TranscriptEvent
         seq: event.seq ?? 0,
         ...(event.error !== undefined ? { error: event.error } : {}),
         ...(event.stopReason !== undefined ? { stopReason: event.stopReason } : {}),
+        ...tsOf(event),
       });
     case 'system':
       return put(state, {
         kind: 'system',
         id: scopedId('system', state.items.length, undefined, event.id),
         text: event.text,
+        ...tsOf(event),
       });
     case 'status':
       return put(state, {
         kind: 'status',
         id: scopedId('status', state.items.length, undefined, event.id),
         text: event.text,
+        ...tsOf(event),
       });
     default:
       return state;
@@ -350,6 +398,8 @@ function argsToString(args: unknown): string | undefined {
  * tool/call、tool/result 仍按 callId 键控（本就在日志内唯一，且是 call↔result 原地合并所必需）。
  */
 export function sessionEventToTranscript(event: AnySessionEvent): TranscriptEvent | null {
+  // P11-T4：会话事件 ts（ISO8601）逐事件透传——磁盘重放/子会话视图的时间戳唯一真实来源。
+  const ts = event.ts;
   switch (event.type) {
     case 'user/message':
       return {
@@ -357,6 +407,7 @@ export function sessionEventToTranscript(event: AnySessionEvent): TranscriptEven
         id: `user:${event.seq}`,
         seq: event.seq,
         text: event.payload.text,
+        ts,
         ...(event.payload.turnId !== undefined ? { turnId: event.payload.turnId } : {}),
       };
     case 'assistant/message':
@@ -365,6 +416,7 @@ export function sessionEventToTranscript(event: AnySessionEvent): TranscriptEven
         id: `assistant:${event.seq}`,
         seq: event.seq,
         text: event.payload.text,
+        ts,
         ...(event.payload.reasoning !== undefined ? { reasoning: event.payload.reasoning } : {}),
         ...(event.payload.turnId !== undefined ? { turnId: event.payload.turnId } : {}),
       };
@@ -374,6 +426,7 @@ export function sessionEventToTranscript(event: AnySessionEvent): TranscriptEven
         id: `attempt:${event.seq}`,
         seq: event.seq,
         error: event.payload.error,
+        ts,
         ...(event.payload.text !== undefined ? { text: event.payload.text } : {}),
         ...(event.payload.turnId !== undefined ? { turnId: event.payload.turnId } : {}),
       };
@@ -383,6 +436,7 @@ export function sessionEventToTranscript(event: AnySessionEvent): TranscriptEven
         seq: event.seq,
         callId: event.payload.callId,
         tool: event.payload.tool,
+        ts,
         ...(argsToString(event.payload.args) !== undefined ? { args: argsToString(event.payload.args) } : {}),
         ...(event.payload.turnId !== undefined ? { turnId: event.payload.turnId } : {}),
       };
@@ -393,6 +447,7 @@ export function sessionEventToTranscript(event: AnySessionEvent): TranscriptEven
         callId: event.payload.callId,
         ...(event.payload.tool !== undefined ? { tool: event.payload.tool } : {}),
         ok: event.payload.ok,
+        ts,
         ...(event.payload.output !== undefined ? { output: event.payload.output } : {}),
         ...(event.payload.error !== undefined ? { error: event.payload.error } : {}),
         ...(event.payload.turnId !== undefined ? { turnId: event.payload.turnId } : {}),

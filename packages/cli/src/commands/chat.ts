@@ -9,7 +9,9 @@ import { type MockScript } from '@harness2/core';
 export function registerChatCommand(program: Command): void {
   program
     .command('chat')
-    .description('交互式 chat REPL（流式渲染 / 会话管理 / /undo /redo / /fork / 审批交互）')
+    .description(
+      '交互式 chat REPL（流式渲染 / 会话管理 / /undo /redo / /fork / 审批交互）；冷启动引导卡可用 HARNESS2_NO_WELCOME=1 关闭',
+    )
     .option('--session <id>', '恢复指定会话（缺省：恢复 cwd 最新会话或新建）')
     .option('--fork <id>', '从指定会话分叉新会话并继续（--at 截取事件序号）')
     .option('--at <seq>', '--fork 的截取上界（事件 seq，含）；缺省 = 全部活动事件')

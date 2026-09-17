@@ -391,7 +391,7 @@ describe('P4-2 绘制层 theme 接线', () => {
     };
     renderChat(screen, state);
     const layout = layoutChat(24, 80, state);
-    expect(screen.buffer.fg[layout.composer.top * 80 + 0]).toBe(DEFAULT_CURSOR_FG);
+    expect(screen.buffer.fg[layout.composer.top * 80 + 2]).toBe(DEFAULT_CURSOR_FG); // +2 = 草稿行锚点 '❯ '（P11-T2）
     screen.stop();
   });
 
@@ -410,8 +410,8 @@ describe('P4-2 绘制层 theme 接线', () => {
     };
     renderChat(screen, state);
     const layout = layoutChat(24, 80, state);
-    expect(screen.buffer.fg[layout.composer.top * 80 + 0]).toBe(LIGHT_THEME.fg.cursor);
-    expect(screen.buffer.fg[layout.composer.top * 80 + 0]).not.toBe(DEFAULT_CURSOR_FG);
+    expect(screen.buffer.fg[layout.composer.top * 80 + 2]).toBe(LIGHT_THEME.fg.cursor); // +2 = 草稿行锚点（P11-T2）
+    expect(screen.buffer.fg[layout.composer.top * 80 + 2]).not.toBe(DEFAULT_CURSOR_FG);
     screen.stop();
   });
 

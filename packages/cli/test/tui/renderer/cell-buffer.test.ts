@@ -150,3 +150,29 @@ describe('CellBuffer 基本操作', () => {
     expect(b.chars[1]).toBe('');
   });
 });
+
+describe('C0 控制字符降级（P11 同类残留 2）', () => {
+  it('writeText：\t / \x1b / \n / \r / DEL 一律写成空格（列数不变）', () => {
+    const b = new CellBuffer(16, 1);
+    b.writeText(0, 'a\tb\x1bc\nd\re\x7ff');
+    expect(b.rowText(0)).toBe('a b c d e f' + ' '.repeat(5));
+    expect(displayWidth(b.rowText(0))).toBe(16);
+    const ctrl = b.chars.filter((ch) => ch !== '' && (ch.codePointAt(0) ?? 0x20) < 0x20);
+    expect(ctrl).toEqual([]);
+  });
+
+  it('setCell：控制字符降级为空格（宽度按调用方传入保留）', () => {
+    const b = new CellBuffer(3, 1);
+    b.setCell(0, 0, '\t', 1, 0);
+    b.setCell(1, 0, '\x1b', 1, 0);
+    b.setCell(2, 0, '\n', 1, 0);
+    expect(b.rowText(0)).toBe('   ');
+  });
+
+  it('续列空串原样放行（宽字符右半不被当成控制字符）', () => {
+    const b = new CellBuffer(2, 1);
+    b.writeText(0, '中');
+    expect(b.chars[1]).toBe('');
+    expect(b.widths[1]).toBe(0);
+  });
+});

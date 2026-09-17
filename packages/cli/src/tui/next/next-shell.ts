@@ -249,10 +249,12 @@ import {
   type TurnStreamHandler,
 } from '../../chat-setup.js';
 import {
+  DEFAULT_CONTEXT_WINDOW,
   describeCapabilities,
   getContextUsage,
   loadConfig,
   parseCoreCommand,
+  CORE_VERSION,
   type AnySessionEvent,
   type ParsedCoreCommand,
 } from '@harness2/core';
@@ -408,7 +410,9 @@ import {
   SHORTCUTS_HELP_TITLE,
   SHORTCUTS_HELP_HINT,
   statusLineFor,
+  welcomeOverlaySpec,
   type ChatScreenState,
+  type WelcomeCard,
 } from './chat-screen.js';
 import { projectTranscript, subagentDescription, type ProjectionLine } from './projection.js';
 import { Scrollback, type SelectionPoint } from './scrollback.js';
@@ -680,6 +684,56 @@ export function filterCommands(input: string): string[] {
   return [...prefixHits, ...subHits].map((n) => `/${n}`);
 }
 
+/**
+ * 命令说明文案源（P11-T3 候选第二列）：**不新造文案**——壳侧 NEXT_COMMANDS.summary
+ * （遮蔽/本地命令，如 /search 的 local 转录搜索）优先，其余用 core `describeCapabilities()`
+ * 的 summary 单源兜底。惰性建表缓存（候选逐字过滤高频调用，不必每次重算 catalog）。
+ */
+let candidateSummaryCache: Map<string, string> | null = null;
+export function commandSummaryOf(name: string): string | undefined {
+  if (candidateSummaryCache === null) {
+    const cache = new Map<string, string>();
+    for (const c of NEXT_COMMANDS) {
+      if (c.summary !== undefined && c.summary.length > 0) cache.set(c.name, c.summary);
+    }
+    for (const c of describeCapabilities().commands) {
+      if (!cache.has(c.id)) cache.set(c.id, c.summary);
+    }
+    candidateSummaryCache = cache;
+  }
+  return candidateSummaryCache.get(name);
+}
+
+/**
+ * P11-T7 引导卡开关：`HARNESS2_NO_WELCOME` 取值 1/true/yes/on（大小写不敏感）= 关闭；
+ * 其余（含未设） = 显示。开关的**唯一登记处** = 本函数（环境变量）——未接 CLI 选项
+ * （`chat --help` 无 `--no-welcome`），`docs/tui-parity/README.md` 也未登记该开关；
+ * 此处如实说明，不写虚假登记点。默认只在**冷启动首帧**显示一次（本会话内不重复）。
+ */
+export function welcomeEnabled(env: Record<string, string | undefined> | undefined): boolean {
+  const raw = env?.HARNESS2_NO_WELCOME;
+  if (raw === undefined) return true;
+  const v = raw.trim().toLowerCase();
+  return !(v === '1' || v === 'true' || v === 'yes' || v === 'on');
+}
+
+/**
+ * P11-T7 引导卡内容：版本 + 5 条最常用键/命令 + `/help` 指引。
+ * 全部键位均为本壳**已接线**的键（与 shortcutsFor/FIXED_SHORTCUT_SECTIONS 同口径），不虚构。
+ */
+export function buildWelcomeCard(version: string): WelcomeCard {
+  return {
+    title: `harness2 ${version} · 欢迎（按任意键收起）`,
+    lines: [
+      '/help 查看全部命令',
+      'Enter 发送 · Shift+Enter 换行',
+      'Tab 输入框 ⇄ 转录区',
+      'Ctrl+P 命令面板',
+      'Ctrl+C 退出',
+    ],
+  };
+}
+
 // —— 审批 gate（createDialogController 的非 React 等价，见文件头取舍说明）——
 
 export interface ApprovalGate {
@@ -845,6 +899,9 @@ function createTurnStreamBridge(onEvent: (event: TranscriptEvent) => void): Turn
       return;
     }
     // tool-result
+    // tool-result（usage 事件由 runUserTurn 包装器在本函数之前拦截，不会到这里；
+    // 仍显式判型，避免将来新增事件类型被误当 tool-result）
+    if (event.type !== 'tool-result') return;
     buffer.turnId = event.turnId;
     onEvent({
       type: 'tool/result',
@@ -924,6 +981,8 @@ export interface NextChatHarnessDeps {
    * 严格布尔，非法回退缺省——解析在 runNextChat）；headless 测试直接注入。
    */
   respectManualFolds?: boolean;
+  /** P11-T4：消息时间戳 12/24 小时制覆盖（缺省 = 系统偏好；测试注入确定性） */
+  clock12h?: boolean;
   /**
    * P3-D G-01：minimal 的 status line 开关（缺省 = MINIMAL_STATUS_LINE_DEFAULT false，
    * 最接近 legacy readline 形态）。true 时状态行画在 prompt 块顶（1 行）。
@@ -1058,6 +1117,8 @@ export function createNextChatHarness(runtime: ChatRuntime, deps: NextChatHarnes
     statusline: '',
     indicators: [],
     theme,
+    // P11-T7：冷启动引导卡（一次性；HARNESS2_NO_WELCOME=1 关闭）。任意按键在 feed 首行清除。
+    welcome: welcomeEnabled(deps.env) ? buildWelcomeCard(CORE_VERSION) : null,
   };
 
   // G-01 minimal 基座实例（追加式转录 + 底部 prompt 块；宽随 viewCols 动态取）
@@ -1155,6 +1216,13 @@ export function createNextChatHarness(runtime: ChatRuntime, deps: NextChatHarnes
   // command 型当前绘制行（null = 尚无输出——builtin/disabled 不走此路径）
   let statusPaintLines: readonly string[] | null = null;
   let turnStartedAt: number | undefined; // builtin turn-timer / payload.turn 数据源
+  // P11-T4：最近一次 provider 真实用量（由 chat-setup 写入口转发 assistant/message.usage）。
+  // 跨 turn 保留（它是**上下文占用**的下界，不是单回合消耗）；**跨会话不保留**——会话 id 变化
+  // 时随 reprojectFromDisk 一并重置（否则新会话状态行会残留上一会话的 token 数字，数据不实）。
+  // 无数据 = undefined，UI 降级。
+  let lastUsage: { inputTokens?: number; outputTokens?: number } | undefined;
+  // P11-T4：本回合是否已收到真实用量（busy 的 `↓N` 只展示本回合数据，不拿上回合残留冒充）
+  let usageThisTurn = false;
   const statusTimers = new Set<ReturnType<typeof setTimeout>>();
   // steer 回帧 → 队列展示行的映射（core submitSteer id → 本队列 entry.id）
   const steerRowByCoreId = new Map<string, string>();
@@ -1193,6 +1261,8 @@ export function createNextChatHarness(runtime: ChatRuntime, deps: NextChatHarnes
       collapsed: collapsedIndices(), // G-05：由 folds 状态机派生（P3-A 旧覆盖集废止）
       theme, // P4-2：主题色板（缺省 dark；/theme 切换走 reprojectAll 全量重投影）
       rawMarkdown: foldsState.rawMarkdown, // G-05 r：原始视图（工具行 args 原文 + 不截断）
+      // P11-T4：时间戳 12/24 小时制（缺省 = 系统偏好；测试注入）
+      ...(deps.clock12h !== undefined ? { hour12: deps.clock12h } : {}),
       // P3-D：耗时命中才随行显示；spinner 仅在动画定时器活动时传当前帧
       ...(subagentDurations.size > 0 ? { durations: subagentDurations } : {}),
       ...(spinnerTimer !== null ? { spinner: SPINNER_FRAMES[spinnerFrame % SPINNER_FRAMES.length] } : {}),
@@ -1400,6 +1470,8 @@ export function createNextChatHarness(runtime: ChatRuntime, deps: NextChatHarnes
       state.statusLines !== undefined && state.statusLines.length > 0
         ? state.statusLines[state.statusLines.length - 1]
         : state.statusline;
+    // P11-T7：引导卡进 minimal prompt 块（与 fullscreen 同一 drawOverlay 形态）
+    const welcomeSpecForMinimal = welcomeOverlaySpec(state.welcome);
     minimalView.renderPrompt(
       composeMinimalPrompt({
         draft: state.draft ?? '',
@@ -1409,7 +1481,10 @@ export function createNextChatHarness(runtime: ChatRuntime, deps: NextChatHarnes
         ...(deps.minimalStatusLine === true && typeof statusRowText === 'string' && statusRowText.length > 0
           ? { statusline: statusRowText }
           : {}),
-        overlays: state.overlays, // 阻塞卡（审批等）在 minimal 画进 prompt 块上方——不可隐形
+        overlays: [
+          ...(welcomeSpecForMinimal !== null ? [welcomeSpecForMinimal] : []),
+          ...state.overlays, // 阻塞卡（审批等）在 minimal 画进 prompt 块上方——不可隐形
+        ],
         // P3-E 接线1：palette 进 minimal prompt 块（与 fullscreen 同一 drawPalette 绘制体）
         ...(paletteState.open
           ? { palette: { state: paletteState, rows: filterPaletteRows(paletteState.query, paletteEntries) } }
@@ -1605,14 +1680,31 @@ export function createNextChatHarness(runtime: ChatRuntime, deps: NextChatHarnes
       state.statusline = '';
       state.statusLines = statusPaintLines ?? [];
     } else {
+      // P11-T4：真实 provider token 用量（input+output）。分母 @ DEFAULT_CONTEXT_WINDOW ——
+      // 与 core getContextUsage/压缩兜底同一常量（CLI 当前不传模型声明的 contextWindow，
+      // 登记为已知近似）；两侧 token 都无值 = 不产出 tokenUsage（状态行退回比例/—，不伪造）。
+      const usedTokens =
+        lastUsage === undefined
+          ? undefined
+          : lastUsage.inputTokens !== undefined || lastUsage.outputTokens !== undefined
+            ? (lastUsage.inputTokens ?? 0) + (lastUsage.outputTokens ?? 0)
+            : undefined;
+      const tokenUsage = usedTokens !== undefined ? { used: usedTokens, total: DEFAULT_CONTEXT_WINDOW } : undefined;
+      // P11-T6：busy 耗时用真实计时（turn 开始时间在壳内记）；↓ 只取本回合已到达的输出 token
+      const busyElapsedMs = busy && turnStartedAt !== undefined ? Date.now() - turnStartedAt : undefined;
+      const busyDownTokens =
+        busy && usageThisTurn && lastUsage?.outputTokens !== undefined ? lastUsage.outputTokens : undefined;
       state.statusline = statusLineFor({
         cwd,
         home,
         model: runtime.provider.name,
         ...(usage !== undefined ? { usage } : {}),
+        ...(tokenUsage !== undefined ? { tokenUsage } : {}),
         ...(uiMode !== 'normal' ? { mode: uiMode } : {}),
         ...(lastRetry !== null ? { retry: lastRetry } : {}),
         ...(busy ? { busy: true } : {}),
+        ...(busyElapsedMs !== undefined ? { busyElapsedMs } : {}),
+        ...(busyDownTokens !== undefined ? { busyDownTokens } : {}),
         ...(spinFrame !== undefined ? { spinnerFrame: spinFrame } : {}),
       });
       state.statusLines = undefined;
@@ -1677,7 +1769,9 @@ export function createNextChatHarness(runtime: ChatRuntime, deps: NextChatHarnes
     const activeIndex = keep
       ? (prev?.activeIndex ?? 0)
       : Math.min(Math.max(0, prev?.activeIndex ?? 0), items.length - 1);
-    state.candidates = { items, activeIndex };
+    // P11-T3：第二列说明从既有文案源派生（core catalog + 壳 summary；见 commandSummaryOf）
+    const summaries = items.map((it) => commandSummaryOf(it.replace(/^\//, '')));
+    state.candidates = { items, summaries, activeIndex };
   }
 
   /** 接受当前高亮候选：草稿写回 `/cmd `（含尾随空格 = 退出候选态；再 Enter 才发送） */
@@ -1702,7 +1796,10 @@ export function createNextChatHarness(runtime: ChatRuntime, deps: NextChatHarnes
   });
 
   function dispatch(event: TranscriptEvent): void {
-    scheduler.push(event);
+    // P11-T4：live 转录事件不带会话事件 ts（core onStream 不产出 ts）——在**落帧时刻**补真实
+    // 墙上时钟（该行确实是在此刻出现的）。这不是伪造：值就是事件发生时刻；与磁盘重放的
+    // 会话事件 ts（writer 在 append 时生成，同一秒内通常一致）差异在毫秒级，磁盘权威。
+    scheduler.push(event.ts !== undefined ? event : { ...event, ts: new Date().toISOString() });
   }
 
   function flushUi(): void {
@@ -2616,13 +2713,20 @@ export function createNextChatHarness(runtime: ChatRuntime, deps: NextChatHarnes
     busy = true;
     turnState = 'running'; // P2-C：回合运行中（G-14 Esc 提示通道；收尾回 idle）
     lastRetry = null; // P3-E：新 turn 清上一 turn 的重试标记（状态行不残留旧值）
+    usageThisTurn = false; // P11-T4：本回合用量重新累计（busy ↓ 不用上回合残留代替）
     turnStartedAt = Date.now(); // P3-E 接线4：builtin turn-timer / payload.turn 数据源
     notifyStatusLineStateChanged(false); // P3-E 接线4：会话状态变化 → command 型状态行防抖刷新
     updateSpinner(); // P4-2：turn 开始即启动 spinner 定时器（无运行中子代理时驱动状态行帧动画）
     userSeq += 1;
     // 输入优先：user 回显立即落定（对齐旧壳 Shell dispatchInputNow）
     scheduler.setInputPriority(true);
-    scheduler.push({ type: 'user/message', seq: 0, id: `user:live:${userSeq}`, text });
+    scheduler.push({
+      type: 'user/message',
+      seq: 0,
+      id: `user:live:${userSeq}`,
+      text,
+      ts: new Date(turnStartedAt ?? Date.now()).toISOString(),
+    });
     scheduler.flushNow();
     scheduler.setInputPriority(false);
     invalidate();
@@ -2634,7 +2738,17 @@ export function createNextChatHarness(runtime: ChatRuntime, deps: NextChatHarnes
         const ref = expandContextRefs(text, { cwd: runtime.root, root: runtime.root });
         if (ref.hasRefs && ref.header.length > 0) sendText = `${ref.header}\n\n${text}`;
       }
-      result = await runtime.runUserTurn(sendText, bridge.handler);
+      result = await runtime.runUserTurn(sendText, (event) => {
+        // P11-T4：usage 事件不进转录（core 写入口转发而来）；只更新状态行数据。
+        // 无 usage 事件的 provider/mock 剧本 → lastUsage 保持 undefined → UI 如实降级 `—`。
+        if (event.type === 'usage') {
+          lastUsage = event.usage;
+          usageThisTurn = true;
+          invalidate(); // 立即刷新状态行（每 step 末至多一次，低频）
+          return;
+        }
+        bridge.handler(event);
+      });
       const terminal = bridge.finalize(result);
       if (terminal !== null && !isDuplicateFinal(terminal)) dispatch(terminal);
       if (result !== undefined) {
@@ -2966,6 +3080,9 @@ export function createNextChatHarness(runtime: ChatRuntime, deps: NextChatHarnes
    * user/assistant 条目消失、恢复时再现）。先落定待处理事件；清空折叠覆盖集（对齐旧壳 清
    * expandedIds，避免旧 item 下标残留）；磁盘读取失败保底重投影内存转录（不伪造）。
    * P2-1：检测到会话 id 变化时一并清空子会话瞬时状态（见 clearChildSessionState）。
+   * P11-T4 修复：会话 id 变化时**同时重置用量记账**（lastUsage/usageThisTurn）——它们是「上一
+   * 会话的上下文占用」，跨会话残留会让新会话状态行显示旧会话的 token 数字（伪造数据）。
+   * /undo /redo 不换会话（id 不变）→ 保留 lastUsage（同会话上下文占用仍然有效）。
    */
   let reprojectSessionId: string | null = runtime.getCurrent()?.id ?? null;
   function reprojectFromDisk(): void {
@@ -2974,6 +3091,9 @@ export function createNextChatHarness(runtime: ChatRuntime, deps: NextChatHarnes
     const currentId = current?.id ?? null;
     if (currentId !== reprojectSessionId) {
       clearChildSessionState();
+      // P11-T4：用量记账属旧会话（新会话尚无 provider 用量）→ 归零，状态行回到「ctx —/比例估算」
+      lastUsage = undefined;
+      usageThisTurn = false;
       reprojectSessionId = currentId;
     }
     // G-05：重投影后的折叠账本按 respect_manual_folds 裁决——true（缺省）按稳定 item id
@@ -4296,14 +4416,27 @@ export function createNextChatHarness(runtime: ChatRuntime, deps: NextChatHarnes
   const attached: AttachedInput = attachInput(parser, controller, dispatcher);
 
   function feed(bytes: Uint8Array | string): number {
+    // P11-T7：任意按键先收起引导卡（不拦截按键——输入照常被消化，卡只是消失）
+    const dismissed = bytes.length > 0 ? dismissWelcome() : false;
     const n = attached.feed(bytes);
-    if (n > 0) invalidate();
+    if (n > 0 || dismissed) invalidate();
     return n;
+  }
+
+  /** P11-T7：清除引导卡（幂等；返回是否发生清除，供渲染失效判定） */
+  function dismissWelcome(): boolean {
+    if (state.welcome == null) return false;
+    state.welcome = null;
+    return true;
   }
 
   function flushIdle(now?: number): number {
     const n = attached.flushIdle(now);
-    if (n > 0) invalidate();
+    if (n > 0) {
+      // 孤立 ESC / 断流 paste 兜底也是「一次按键」——同样收起引导卡
+      dismissWelcome();
+      invalidate();
+    }
     return n;
   }
 

@@ -227,10 +227,10 @@ describe('G-01 minimal 基座（initialRenderMode=minimal，不进 alt-screen）
     h.feed('run');
     h.feed(ENTER);
     await settle(h, 60);
-    expect(out.buffer).not.toContain('⏺ bash'); // pending 工具未写出
+    expect(out.buffer).not.toContain('⏺ 运行命令 sleep'); // pending 工具未写出
     releaseTurn();
     await settle(h, 60);
-    expect(out.buffer).toContain('⏺ bash'); // 落定后一次性写出
+    expect(out.buffer).toContain('⏺ 运行命令 sleep'); // 落定后一次性写出
     expect(out.buffer).toContain('└ ✗ boom');
     h.dispose();
   });

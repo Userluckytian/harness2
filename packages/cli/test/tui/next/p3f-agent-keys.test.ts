@@ -14,6 +14,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { AnySessionEvent, SessionSummary, SteerResult, TurnResult } from '@harness2/core';
 import type { ChatRuntime } from '../../../src/chat-setup.js';
 import { shortcutsFor, shortcutsHelpLines, shortcutsHelpSections } from '../../../src/tui/next/chat-screen.js';
+import { displayWidth } from '../../../src/tui/renderer/cell-buffer.js';
 import {
   AGENT_CHORD_TABLE,
   agentActionWired,
@@ -275,7 +276,7 @@ describe('P3-F 快捷键帮助内容', () => {
     const lines = shortcutsHelpLines(ctx);
     expect(lines).toContain('── 快捷键条（常用入口） ──');
     expect(lines).toContain('── Agent 级键位（G-31～G-41） ──');
-    expect(lines.every((l) => l.length <= 96)).toBe(true);
+    expect(lines.every((l) => displayWidth(l) <= 96)).toBe(true); // P11 残留 1：按显示宽（非 .length）
   });
 
   it('快捷键条两个新浮层态：帮助 / 会话选择器各给真实键位文案', () => {

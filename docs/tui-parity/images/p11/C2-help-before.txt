@@ -1,0 +1,30 @@
+会 话 : 20260915-162254-d122b2（ 新 建 ）                                                                          │
+> /help                                                                                                      │
+命 令 ： 指 定 会 话 （ /resume  新 建 会 话      essio s       列 出 当 前 目 录 的 会 话 （ 可 选 关 键 字 全 文 搜 索 ）                  │
+  恢 复 指 定 会 话 （ /resume <id>） 新 会 话 （ /fork [seq]） 计 ； 别 名  /status /info）                                   █
+/fork      in   从 当 前 会 话 分 叉 新 会 话 （ /fork [seq]） 计 ； 别 名  /status /info）               ZIP（ 只 读 打 包 ， 含 子  │
+代 理 会 话 ）         导 出 当 前    索 引 化 全 文 检 索 会 话 （ 分 词 命 中 ， 默 认 全 部 命 中 ）                                     │
+（ 派 生 物 ， 可 随 时 重 建 ） 会 话 检 索 索          导 入 会 话 导 出 包 （ zip， 含 子 会 话 ； 版 本 迁 移 与 坏 行 容 错 ）                  │
+  查 看 /设 置 /自 动 生 成 会 话 标 题 （ /title [<标 题 >|--auto]） █                  撤 销 最 近  n 个 用 户  turn（ /undo [n] [-│
+-dry-ron]） reen 模 式 ） 最 近     重 做 最 近 一 次 撤 销 （ 可 连 续 逐 层 恢 复 ）    /timeline       只 读 输 出 当 前 会 话 轨 迹 时 间 线 │
+（ 仅 efullscreen 模 式 ） 本 帮 助 前 会 话 轨 迹 时 间 线 █                         退 出 （ 等 价 ： Ctrl+C 两 次 ， 或 空 行 按  Ctrl+│
+D） help           显 示 本 帮 助 节 报 告 （ node/config/目 录 /MCP 配 置 /会 话 库 /skills）         skills             可 用  │
+skills（ 两 级 扫 描 合 并 ， 只 读 ） 节 报 告 （ node      g列 出 插 件 目 录 与 装 载 审 批 状 态 （ 只 读 ）                    列 出 配 置  │
+的  MCP 服 务 器 （ 只 读 配 置 ， 不 探 测 连 接 ）  [normals          查 看 /切 换 工 具 面 （ 工 具 清 单 、 工 具 集  list/show/select）  █
+  /mode           切 换 审 批 模 式 （ /mode [normal|allow-approve|auto|plan]）                         切 换 推 理 过 程  │
+展 示 （ on|off， 默 认  off） 式 （ 接 管 屏 幕 ； 缩 写  切 换  minimal 渲 染 模 式 （ 终 端 原 生 滚 动 ， 不 接 管 屏 幕 ）                  │
+  切 换  fullscreen 渲 染 模 式 （ 接 管 屏 幕 ； 缩 写  /full）  字 ]）                                                      │
+compact        手 动 触 发 上 下 文 压 缩 （ /compact [说 明 文 字 ]）                                        e sion） 执 行 一 │
+次 压 缩 并 展 示 分 层 产 物 分  /memory u       查 看 长 期 记 忆 条 目 与 用 量 （ MEMORY.md/USER.m ， 只 读 ）                      █
+出  cron 任 务 （ 只 读 ） │                   it 工 具 的 文 件 改 动 会 进 文 件 快 照 ， 可 被  /undo 恢 复 （ 创 建 的 文 件 将 被 删 除 ）  │
+； 明 ：  bash 命 令 造 成 的 改 动 不 进 快 照 ， /undo 无 法 恢 复 它 （ 如 实 声 明 ） 。 文 件 将 被 删 除 ）                   程 里 执 行 代  │
+码 （ 与  bash 同 级 的 代 码 执 行 ， 审 批 在 工 具 级 ） ；  同 样 不 进 快 照 、 /undo█                 dit 改 动 同 样 不 进 快 照 、 /undo│
+ 无 法 恢 复 ， 内 层 调 用 也 不 进 s 的  write/出 当 前 上 下 文 调  write/edit。                                redo 会 恢 复 到 撤 │
+销 前 状 态 ， 撤 销 之 后 新 输 入 的 消 息 将 被 移 出 当 前 上 下 文 调  w （ 仍 保 留 在 日 志 中 ， 可 用  traj 查 看 ） 。                     │
+ rewind 标 记 （ append-only） ， 会 话 日 志 永 不 回 改 。 话 （ 血 缘 入  hea█                                               │
+der） ；  （ /fork） = 复 制 当 前 会 话 的 undo 从 零 开 始 （ 文 件 快 照 不 复 制 ） 。                                            █
+续 所 有 调 用 不 再 询 问 （ 仅 进 程 内 会 话 级 ， 不 落 盘 ） 。  送 。                                                           │
+       / 开 头 的 普 通 消 息 会 被 当 作 命 令 ， 无 法 直 接 发 送 。
+
+D:\AI_Projects\harness2 · mock · ctx 0%
+/ 命 令  · Tab 焦 点  · Ctrl+C 退 出

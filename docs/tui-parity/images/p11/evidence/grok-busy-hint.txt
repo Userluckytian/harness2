@@ -1,0 +1,30 @@
+ ≡ feat/phase-p10-next-only D:\AI_Projects\harness2\scripts\tui-parity\out\_tmp-home\20260916-00… 1.5K / 200K
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+ ╭──────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+ │ > hi第 二 条 排 队 消 息                                                                                        │
+ ╰──────────────────────────────────────────────────────────────────────────── Big Pickle · always-approve ─╯
+ Enter:send  │  Alt+Enter:newline  │  Shift+Tab:mode  │  Ctrl+x:shortcuts

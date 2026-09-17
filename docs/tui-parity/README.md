@@ -28,6 +28,7 @@ scripts/tui-parity/.venv/Scripts/python.exe scripts/tui-parity/run.py \
 ```
 
 产物落在 `scripts/tui-parity/out/<场景>/<方>/`：`.png`（重绘截图）+ `.txt`（屏幕网格）+ `log.json`。
+⚠️ **`out/` 被 `.gitignore` 忽略、不入库**：报告中引用的关键证据已**人工挑选拷贝**到 `docs/tui-parity/images/`（含 `images/p11/evidence/`），改报告时请引用**入库副本**，不要引用 `out/` 路径。
 本报告引用的图已挑选归档到 [`images/`](images/)（文件名 `<场景>-<方>.png`）。
 
 ## 3. 诚实边界（必须先读，别把它当系统截图）

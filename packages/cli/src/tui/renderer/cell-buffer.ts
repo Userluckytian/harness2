@@ -76,6 +76,22 @@ export function codeToFgSgr(code: number): string {
  * **不引入 bg 属性位**——presenter 只发射前景 SGR，bg 方案会动 presenter 属性模型且
  * 既有 67 例 renderer 测试需全改，收益不成比例。
  */
+/**
+ * C0 控制字符降级（P11 残留 2）：写入单元格的控制字符（`\t`/`\x1b`/`\n`/`\r`/DEL…）
+ * 一律替换为**空格**。取舍理由：
+ * - 单元格的列推进由调用方按 charWidth 预先算好（控制字符 cp<0x1100 → charWidth 1）；
+ *   若在此丢弃为 0 列，调用方已推进的列会留下空洞（网格与语义错位）；替换为空格则
+ *   **列数不变**、内容中性，且绝不把控制字符交给 DiffPresenter 逐格发射（P0 教训）。
+ * - `\t` 不按列推进到下一个 tab stop：定位由调用方给出的显式 x 决定，「按列推进」需
+ *   在此改写后续格、破坏「一格一次写入」的幂等契约；空格是安全降级。
+ * - 续列空串（宽字符右半）原样放行。
+ */
+function sanitizeCellChar(ch: string): string {
+  if (ch.length === 0) return ch;
+  const cp = ch.codePointAt(0) ?? 0;
+  return cp < 0x20 || cp === 0x7f ? ' ' : ch;
+}
+
 export class CellBuffer {
   cols: number;
   rows: number;
@@ -161,7 +177,7 @@ export class CellBuffer {
   setCell(x: number, y: number, ch: string, w: 0 | 1 | 2, fg: number): void {
     if (x < 0 || x >= this.cols || y < 0 || y >= this.rows) return;
     const i = y * this.cols + x;
-    this.chars[i] = ch;
+    this.chars[i] = sanitizeCellChar(ch);
     this.widths[i] = w;
     this.fg[i] = fg;
     if (w === 2 && x + 1 < this.cols) {

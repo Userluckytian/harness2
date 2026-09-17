@@ -21,9 +21,28 @@ export function summarizeArgs(rawArguments: string): string {
   return oneLine.length <= ARGS_SUMMARY_MAX ? oneLine : `${oneLine.slice(0, ARGS_SUMMARY_MAX)}…`;
 }
 
-/** turn 结束摘要行（end_turn/error/cancelled 等如实展示） */
+/**
+ * turn 耗时文案（P11-T4）：<60s → `12.3s`；≥60s → `1m35s`。
+ * 数据源 = `TurnResult.durationMs`（core 真实计时，loop 内 `performance.now()` 差值）——
+ * 无该字段/非法值不产出文案（调用方按需省略，绝不补 0 秒假数据）。
+ */
+export function formatTurnDuration(ms: number): string {
+  if (!Number.isFinite(ms) || ms < 0) return '';
+  if (ms < 60_000) return `${(ms / 1000).toFixed(1)}s`;
+  const totalSec = Math.floor(ms / 1000);
+  return `${Math.floor(totalSec / 60)}m${String(totalSec % 60).padStart(2, '0')}s`;
+}
+
+/** turn 结束摘要行（end_turn/error/cancelled 等如实展示；P11-T4 并入真实耗时） */
 export function turnSummaryLine(result: TurnResult): string {
-  const parts = [`[${result.stopReason}`, `steps ${result.steps}`, `toolCalls ${result.toolCalls}`];
+  const duration = formatTurnDuration(result.durationMs);
+  const parts = [
+    `[${result.stopReason}`,
+    // P11-T4：耗时来自 TurnResult.durationMs（真实计时）；非法/缺失值不占位（不伪造）
+    ...(duration.length > 0 ? [duration] : []),
+    `steps ${result.steps}`,
+    `toolCalls ${result.toolCalls}`,
+  ];
   if (result.error !== undefined) parts.push(`error: ${result.error}`);
   if (result.warning !== undefined) parts.push(`warning: ${result.warning}`);
   return parts.join(' · ') + ']';

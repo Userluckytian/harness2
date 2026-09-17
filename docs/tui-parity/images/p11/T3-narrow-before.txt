@@ -1,0 +1,30 @@
+会 话 : 20260915-162254-d122b2（ 已 恢 复 最 近 会 话 ）              │
+                                                           │
+                                                           │
+                                                           │
+                                                           │
+                                                           │
+                                                           │
+                                                           │
+                                                           │
+                                                           │
+                                                           │
+                                                           │
+                                                           │
+                                                           │
+                                                           │
+                                                           │
+                                                           │
+                                                           │
+                                                           │
+                                                           │
+/always-approve
+/auto
+/compact
+/compact-layers
+/context
+/doctor
+/
+
+D:\AI_Projects\harness2 · mock · ctx 0%
+/ 命 令  · Tab 焦 点  · Ctrl+C 退 出

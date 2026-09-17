@@ -28,6 +28,7 @@
 // - 极端小屏 composer 层被 columnLayout 截断时：候选优先、草稿按 drawComposer 的
 //   贴底滚动兜底（offset = clamp(cursorRow - height + 1)，与 renderComposer 同语义），
 //   提示行占层底行（与草稿重叠时后画获胜）。
+import { charWidth, displayWidth } from '../renderer/cell-buffer.js';
 import type { CellBuffer } from '../renderer/cell-buffer.js';
 import type { LayerRect } from '../renderer/layout.js';
 import type { Screen } from '../renderer/screen.js';
@@ -38,7 +39,15 @@ import {
   type RegionInput,
   type RegionLayout,
 } from '../render/regions.js';
-import { candidateRows, drawComposer, measureComposer } from './composer.js';
+import {
+  candidateRows,
+  DEFAULT_CANDIDATE_DESC_FG,
+  DEFAULT_PLACEHOLDER,
+  DEFAULT_PROMPT,
+  drawComposer,
+  measureComposer,
+  promptGutter,
+} from './composer.js';
 import { drawOverlay, overlayNaturalHeight, overlayStackLayout, type OverlaySpec } from './overlay.js';
 import { drawScrollback, writeRowClipped, type Scrollback } from './scrollback.js';
 import { DEFAULT_THEME, type Theme } from './theme.js';
@@ -52,6 +61,8 @@ import type { PaletteRow, PaletteState } from '../commands/palette-model.js';
 /** 候选列表状态（画在 composer 层顶部，activeIndex 高亮 + 滚动窗口） */
 export interface ChatCandidates {
   items: readonly string[];
+  /** P11-T3：与 items 平行的说明文案（透传给 drawComposer 的两列布局） */
+  summaries?: readonly (string | undefined)[];
   activeIndex: number;
 }
 
@@ -97,6 +108,11 @@ export interface ChatScreenState {
    */
   palette?: { state: PaletteState; rows: readonly PaletteRow[] } | null;
   /**
+   * P11-T7：冷启动引导卡（一次性；任意键由装配层清除）。非 null/空行时作为浮层栈顶
+   * 画在 composer 上方（不阻塞输入——不拦截键盘，只在装配层「首次按键」时移除）。
+   */
+  welcome?: WelcomeCard | null;
+  /**
    * P3-E 接线4（G-47）：command 型状态行脚本的多行输出（最多 5 行）。存在时 statusLine
    * 区域按行数取高、逐行绘制；undefined/空 = 单行 statusline 字段语义（P3-E chrome）。
    */
@@ -108,6 +124,23 @@ export interface ChatScreenState {
    * 缺省 = dark（= 旧常量值，零变化契约）；由装配层（next-shell）在 /theme 切换时更新。
    */
   theme?: Theme;
+}
+
+/** P11-T7：冷启动引导卡内容（版本 + 常用键/命令 + /help 指引；文案由装配层给，不在此写死） */
+export interface WelcomeCard {
+  /** 标题行（` 标题 ` 样式，复用 drawOverlay 的标题 chrome） */
+  title: string;
+  /** 引导行（建议 4~6 条） */
+  lines: readonly string[];
+}
+
+/**
+ * 引导卡 → OverlaySpec（fullscreen 与 minimal 同一形态：两基座都用 drawOverlay 画）。
+ * 空/缺省/无行返回 null（不渲染）。
+ */
+export function welcomeOverlaySpec(card: WelcomeCard | null | undefined): OverlaySpec | null {
+  if (card == null || card.lines.length === 0) return null;
+  return { title: card.title, items: card.lines };
 }
 
 /** 各层矩形 + 分层中间量（导出供测试断言） */
@@ -169,7 +202,12 @@ export function shortcutsFor(ctx: ShortcutContext): readonly string[] {
   if (ctx.modal === 'session-picker') return ['↑↓ 选择', 'Enter 切换', 'Esc 取消'];
   if (ctx.subviewOpen) return ['q 返回', 'PgUp/PgDn 滚动'];
   if (ctx.busy) {
-    const keys = ['Ctrl+C 取消'];
+    // P11-T6：真实存在的忙碌键位如实呈现——`Ctrl+C 取消`（中断当前回合）、
+    // `Ctrl+Enter 立即发送`（G-28 cancel-and-send：取消当前回合并发出草稿/队首，已接线）；
+    // 队列非空时补 `Ctrl+; 队列(N)`。注：Enter 在忙碌时是入队还是转向取决于
+    // [ui].follow_up_behavior（queue/steer），本纯函数拿不到该配置，故**不写 Enter 语义**
+    // （不伪造单一含义）；队列状态已由 Ctrl+; 段体现。
+    const keys = ['Ctrl+C 取消', 'Ctrl+Enter 立即发送'];
     if (ctx.queueCount > 0) keys.push(`Ctrl+; 队列(${ctx.queueCount})`);
     return keys;
   }
@@ -251,11 +289,35 @@ export const SHORTCUTS_HELP_MAX_COLS = 96;
 export function shortcutsHelpLines(ctx: ShortcutContext): string[] {
   const out: string[] = [];
   const push = (text: string): void => {
-    out.push(text.length <= SHORTCUTS_HELP_MAX_COLS ? text : `${text.slice(0, SHORTCUTS_HELP_MAX_COLS - 1)}…`);
+    // 宽度判定走 displayWidth（铁律 2）；结果 = max-1 列前缀 + '…'（≤ maxCols，保持旧结构）
+    out.push(
+      displayWidth(text) <= SHORTCUTS_HELP_MAX_COLS ? text : `${clipPrefixDisplay(text, SHORTCUTS_HELP_MAX_COLS - 1)}…`,
+    );
   };
   for (const section of shortcutsHelpSections(ctx)) {
     push(`── ${section.title} ──`);
     for (const line of section.lines) push(line);
+  }
+  return out;
+}
+
+/**
+ * 取**显示宽 ≤ maxCols 的最长前缀**（宽字符放不下整字丢弃，绝不切半边）。
+ * 供 chat-screen 两处截断复用；不在此追加省略号（调用方决定 ellipsis 是否计入预算）。
+ */
+function clipPrefixDisplay(text: string, maxCols: number): string {
+  if (maxCols <= 0) return '';
+  let out = '';
+  let w = 0;
+  for (const ch of text) {
+    const cw = charWidth(ch.codePointAt(0) ?? 0);
+    if (cw === 0) {
+      out += ch;
+      continue;
+    }
+    if (w + cw > maxCols) break;
+    out += ch;
+    w += cw;
   }
   return out;
 }
@@ -275,6 +337,37 @@ export function formatContextUsage(usage: number | undefined): string {
   return usage === undefined ? '—' : `${Math.round(usage * 100)}%`;
 }
 
+/**
+ * P11-T4：token 量人类化。
+ * 口径：≥1M → `1.2M`；≥1024 → `15.3k`（≥100k 时取整为 `128k`，对齐 grok 的 `1.0M` 观感）；
+ * <1024 → 原值。非数/负数返回 `—`（调用方不伪造）。
+ */
+export function formatTokenCount(n: number): string {
+  if (!Number.isFinite(n) || n < 0) return '—';
+  if (n >= 1024 * 1024) return `${(n / 1048576).toFixed(1)}M`;
+  if (n >= 1024) {
+    const k = n / 1024;
+    return k >= 100 ? `${Math.round(k)}k` : `${k.toFixed(1)}k`;
+  }
+  return String(Math.round(n));
+}
+
+/** P11-T4：busy 已用时（真实计时毫秒）→ `12s` / `1m35s`；非法值 0s 兜底（仍为真实下界） */
+export function formatElapsed(ms: number): string {
+  if (!Number.isFinite(ms) || ms < 0) return '0s';
+  const totalSec = Math.floor(ms / 1000);
+  if (totalSec < 60) return `${totalSec}s`;
+  return `${Math.floor(totalSec / 60)}m${String(totalSec % 60).padStart(2, '0')}s`;
+}
+
+/** P11-T4：ctx 段——有真实 provider token 用量时 `ctx 15.3k/128k`，否则退回比例 `ctx 42%`/`ctx —` */
+function contextSegment(ctx: StatusLineContext): string {
+  if (ctx.tokenUsage !== undefined) {
+    return `ctx ${formatTokenCount(ctx.tokenUsage.used)}/${formatTokenCount(ctx.tokenUsage.total)}`;
+  }
+  return `ctx ${formatContextUsage(ctx.usage)}`;
+}
+
 /** 状态行上下文（P3-E：cwd · model · ctx% · 模式(非 normal) · 重试标记 · 运行中标记） */
 export interface StatusLineContext {
   /** 装配期工作目录（原始路径，本函数内做 ~ 短化） */
@@ -285,12 +378,26 @@ export interface StatusLineContext {
   model: string;
   /** 上下文占用 0..1（core getContextUsage；undefined = 未知 → ctx —） */
   usage?: number;
+  /**
+   * P11-T4：provider 报告的真实 token 用量（used/total）——来源 `assistant/message.usage`
+   * （input+output）。有值时 ctx 段渲染成 `15.3k/128k`；无值退回 usage 比例/`—`（不伪造）。
+   */
+  tokenUsage?: { used: number; total: number };
   /** UI 模式（四态；normal/缺省省略） */
   mode?: string;
   /** 上一 turn 的重试预算标记（used/max；无重试史省略） */
   retry?: { used: number; max: number };
   /** turn 运行中 */
   busy?: boolean;
+  /**
+   * P11-T4：busy 已用时（毫秒，壳内 `Date.now() - turnStartedAt` 真实计时）。
+   * 缺失 = 不显示耗时（不猜）。
+   */
+  busyElapsedMs?: number;
+  /**
+   * P11-T4：busy 本回合已产生的输出 token（真实 usage；缺失 = 不显示 ↓ 段）。
+   */
+  busyDownTokens?: number;
   /**
    * P4-2：busy 且无运行中子代理时的 spinner 帧字符（装配层 150ms 传入当前帧）。
    * 传入 = 替换「⏺ 运行中…」的 ⏺ 前缀；缺省保持 ⏺（既有调用零变化）。
@@ -300,20 +407,29 @@ export interface StatusLineContext {
 
 /** 状态行上下文 → 行文本（纯函数；段序固定：cwd · model · ctx · mode · retry · busy） */
 export function statusLineFor(ctx: StatusLineContext): string {
-  const parts = [shortenCwd(ctx.cwd, ctx.home), ctx.model, `ctx ${formatContextUsage(ctx.usage)}`];
+  const parts = [shortenCwd(ctx.cwd, ctx.home), ctx.model, contextSegment(ctx)];
   if (ctx.mode !== undefined && ctx.mode !== 'normal') parts.push(ctx.mode);
   if (ctx.retry !== undefined) parts.push(`重试 ${ctx.retry.used}/${ctx.retry.max}`);
-  if (ctx.busy === true) parts.push(`${ctx.spinnerFrame ?? '⏺'} 运行中…`);
+  if (ctx.busy === true) {
+    // P11-T4/T6：忙碌段 = spinner + 运行中 + 真实已用时长 +（有真实用量时）本轮输出 token。
+    // `Ctrl+C 取消` 由提示行（shortcutsFor busy 分支）承担，不在此重复。
+    const segs = [`${ctx.spinnerFrame ?? '⏺'} 运行中…`];
+    if (ctx.busyElapsedMs !== undefined) segs.push(`已用 ${formatElapsed(ctx.busyElapsedMs)}`);
+    if (ctx.busyDownTokens !== undefined) segs.push(`↓${formatTokenCount(ctx.busyDownTokens)}`);
+    parts.push(segs.join(' '));
+  }
   return parts.join(SHORTCUTS_SEPARATOR);
 }
 
 /** 队列面板条目预览列宽（对齐旧壳 queue-panel 的 PREVIEW_MAX=42） */
 export const QUEUE_PREVIEW_MAX = 42;
 
-/** 队列条目单行预览：折行合一 + 超长截断加省略号（仅展示用，不改队列原文） */
+/** 队列条目单行预览：折行合一 + 超长按显示宽截断加省略号（仅展示用，不改队列原文） */
 export function queueEntryPreview(text: string, max: number = QUEUE_PREVIEW_MAX): string {
   const oneLine = text.replace(/\s+/g, ' ').trim();
-  return oneLine.length <= max ? oneLine : `${oneLine.slice(0, max)}…`;
+  // 旧的 `slice(0, max) + '…'` 形状保留（前缀 ≤ max 显示列，省略号另计）；
+  // 仅把「按字符数」换成「按显示宽」，CJK 不再溢出（铁律 2）
+  return displayWidth(oneLine) <= max ? oneLine : `${clipPrefixDisplay(oneLine, max)}…`;
 }
 
 /**
@@ -355,7 +471,9 @@ function measureChatLayers(state: ChatScreenState, cols: number): ChatLayerMeasu
   // P3-D：视图态 composer 收为 1 行提示行（草稿/候选不参与测量——draftRows 强制 0，
   // 否则 measureComposer 的空草稿仍占 1 行会把提示行顶高）
   const subview = state.subagentView ?? null;
-  const draftRows = subview !== null ? 0 : measureComposer(state.draft ?? '', cols, state.cursor).rows;
+  // P11-T2：草稿区宽度 = 屏宽 - 草稿行锚点（drawComposerLayer 同一口径 promptGutter）
+  const draftRows =
+    subview !== null ? 0 : measureComposer(state.draft ?? '', cols, state.cursor, promptGutter(cols)).rows;
   const candRows = subview !== null || state.candidates === null ? 0 : candidateRows(state.candidates.items.length);
   // P3-E 接线4：statusLines（command 型多行）优先于单行 statusline 字段
   const statusRows =
@@ -374,9 +492,11 @@ function buildRegionInputs(state: ChatScreenState, chat: ChatLayerMeasure): Read
   inputs.set('prompt', { naturalHeight: chat.draftRows + chat.candidateRows + 1 }); // 含提示行
   inputs.set('statusLine', { naturalHeight: chat.statusRows, visible: chat.statusRows > 0 });
   inputs.set('shortcutsBar', { naturalHeight: 1 });
-  if (state.overlays.length > 0 || state.palette?.state.open === true) {
+  if (state.overlays.length > 0 || state.palette?.state.open === true || welcomeOverlaySpec(state.welcome) !== null) {
     const paletteH = state.palette?.state.open === true ? paletteNaturalHeight(state.palette.rows.length) : 0;
-    const natural = paletteH + state.overlays.reduce((sum, spec) => sum + overlayNaturalHeight(spec), 0);
+    const welcomeSpec = welcomeOverlaySpec(state.welcome);
+    const welcomeH = welcomeSpec !== null ? overlayNaturalHeight(welcomeSpec) : 0;
+    const natural = paletteH + welcomeH + state.overlays.reduce((sum, spec) => sum + overlayNaturalHeight(spec), 0);
     inputs.set('overlayModal', { naturalHeight: natural });
   }
   return inputs;
@@ -444,6 +564,12 @@ function drawComposerLayer(buf: CellBuffer, state: ChatScreenState, layout: Chat
       indicators: state.indicators,
       cursorFg: theme.fg.cursor,
       candidateActiveFg: theme.fg.active,
+      // P11-T2：输入区可见性（锚点 + 空态占位；占位取 system 灰）
+      prompt: DEFAULT_PROMPT,
+      placeholder: DEFAULT_PLACEHOLDER,
+      placeholderFg: theme.fg.system,
+      // P11-T3：候选说明灰色（与状态行/系统行同一弱化色）
+      candidateDescFg: theme.fg.system ?? DEFAULT_CANDIDATE_DESC_FG,
     },
   );
 }
@@ -455,7 +581,9 @@ function drawOverlaysInRegion(buf: CellBuffer, state: ChatScreenState, cols: num
   // 高亮与注释色取主题（与 drawOverlay 同源）。
   const palette = state.palette?.state.open === true ? state.palette : undefined;
   const paletteHeight = palette !== undefined ? paletteNaturalHeight(palette.rows.length) : 0;
-  if (state.overlays.length === 0 && paletteHeight === 0) return;
+  // P11-T7：引导卡在栈顶（最上方；冷启动时无其他浮层则独占）
+  const welcomeSpec = welcomeOverlaySpec(state.welcome);
+  if (state.overlays.length === 0 && paletteHeight === 0 && welcomeSpec === null) return;
   // 区域模型下 overlayModal 的可用空间 = 固定区簇之上（clusterTop），即 prompt 顶行
   // （本阶段数据面板隐藏，簇顶 == composer.top）；栈布局在区域内复刻（多浮层自下而上）。
   const composerTop = layout.composer.top;
@@ -465,6 +593,7 @@ function drawOverlaysInRegion(buf: CellBuffer, state: ChatScreenState, cols: num
     overlays: [
       ...(paletteHeight > 0 ? [{ height: paletteHeight }] : []),
       ...state.overlays.map((spec) => ({ height: overlayNaturalHeight(spec) })),
+      ...(welcomeSpec !== null ? [{ height: overlayNaturalHeight(welcomeSpec) }] : []),
     ],
   });
   let offset = 0;
@@ -484,6 +613,11 @@ function drawOverlaysInRegion(buf: CellBuffer, state: ChatScreenState, cols: num
     const spec = state.overlays[i];
     if (rect == null || spec === undefined) continue;
     drawOverlay(buf, spec, rect, { width: cols, activeFg: theme.fg.active, showNumbers: spec.showNumbers === true });
+  }
+  // P11-T7：引导卡（栈顶，全宽；无 activeIndex → 全部行等宽前缀）
+  if (welcomeSpec !== null) {
+    const rect = rects[offset + state.overlays.length];
+    if (rect != null) drawOverlay(buf, welcomeSpec, rect, { width: cols, activeFg: theme.fg.active });
   }
 }
 
@@ -531,7 +665,7 @@ export function renderChat(screen: Screen, state: ChatScreenState): number {
       writeRowClipped(buf, top, shortcutsText(state.shortcuts), cols, 0);
     },
   });
-  if (state.overlays.length > 0 || state.palette?.state.open === true) {
+  if (state.overlays.length > 0 || state.palette?.state.open === true || welcomeOverlaySpec(state.welcome) !== null) {
     manager.setInput('overlayModal', {
       render: ({ buf }) => {
         drawOverlaysInRegion(buf, state, cols, layout);

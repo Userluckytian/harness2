@@ -1,0 +1,30 @@
+会 话 : 20260915-162254-d122b2（ 已 恢 复 最 近 会 话 ）              │
+                                                           │
+                                                           │
+                                                           │
+                                                           │
+                                                           │
+                                                           │
+                                                           │
+                                                           │
+                                                           │
+                                                           │
+                                                           │
+                                                           │
+                                                           │
+                                                           │
+                                                           │
+                                                           │
+                                                           │
+                                                           │
+                                                           │
+/always-approve  开 关  always-approve（ 新 审 批 自 动 代 答  a）
+/auto            声 明  auto 模 式 （ UI 提 示 态 ， 不 自 动 放 行 ）
+/compact         手 动 触 发 上 下 文 压 缩 （ /compact [说 明 文 字 ]）
+/compact-layers  按 分 层 压 缩 （ turn → session） 执 行 一 次 压 缩 并 …
+/context         查 看 当 前 上 下 文 占 用 （ 状 态 栏 常 驻 显 示 ）
+/doctor          环 境 自 检 分 节 报 告
+❯ /
+
+D:\AI_Projects\harness2 · mock · ctx 0%
+/ 命 令  · Tab 焦 点  · Ctrl+C 退 出

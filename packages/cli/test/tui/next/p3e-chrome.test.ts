@@ -12,6 +12,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { AnySessionEvent, SteerResult, TurnResult } from '@harness2/core';
 import type { ChatRuntime } from '../../../src/chat-setup.js';
 import { shortcutsFor, statusLineFor, shortenCwd, queueEntryPreview } from '../../../src/tui/next/chat-screen.js';
+import { displayWidth } from '../../../src/tui/renderer/cell-buffer.js';
 import {
   formatRetryBudget,
   retryBudgetHasActivity,
@@ -159,17 +160,20 @@ describe('shortcutsFor 四态', () => {
     ]);
   });
 
-  it('busy 且队列空：只显示 Ctrl+C 取消', () => {
+  it('busy 且队列空：Ctrl+C 取消 · Ctrl+Enter 立即发送', () => {
     expect(shortcutsFor({ busy: true, queueCount: 0, approvalActive: false, subviewOpen: false })).toEqual([
       'Ctrl+C 取消',
+      'Ctrl+Enter 立即发送',
     ]);
   });
 
-  it('busy 且队列非空：Ctrl+C 取消 · Ctrl+; 队列(N)', () => {
+  it('busy 且队列非空：Ctrl+C 取消 · Ctrl+Enter 立即发送 · Ctrl+; 队列(N)', () => {
     // 接线迁移（G-29）：队列段主键按 panel.ts QUEUE_PANEL_OPEN_KEYS 更新为 Ctrl+;
     // （「Toggle the prompt queue pane」上游键位表）；Ctrl+X 保留为壳侧附加入口，不在条内展示。
+    // P11-T6：补真实存在的 send-now 键位 Ctrl+Enter（G-28 cancel-and-send，已接线）。
     expect(shortcutsFor({ busy: true, queueCount: 3, approvalActive: false, subviewOpen: false })).toEqual([
       'Ctrl+C 取消',
+      'Ctrl+Enter 立即发送',
       'Ctrl+; 队列(3)',
     ]);
   });
@@ -272,6 +276,14 @@ describe('queueEntryPreview（队列条目预览，对齐旧壳 queuePreview）'
   it('超长截断加省略号（42 列）', () => {
     const long = 'x'.repeat(50);
     expect(queueEntryPreview(long)).toBe(`${'x'.repeat(42)}…`);
+  });
+
+  it('CJK 超长按显示宽截断（不按字符数溢出；铁律 2）', () => {
+    const out = queueEntryPreview('中'.repeat(60));
+    expect(out).toBe(`${'中'.repeat(21)}…`); // 21 中 = 42 显示列；再加一个会超
+    expect(out.endsWith('…')).toBe(true);
+    expect(out.length).toBe(22); // 反面：旧 .length 实现会留 42 个汉字（43 字符）
+    expect(displayWidth(out)).toBe(43); // 前缀 ≤ 42 显示列 + …（旧实现 = 85 列）
   });
 
   it('短文本原样', () => {
@@ -390,9 +402,9 @@ describe('P3-E 快捷键条（harness 集成）', () => {
     );
     h.submit('first');
     await vi.advanceTimersByTimeAsync(0);
-    expect(h.state.shortcuts).toEqual(['Ctrl+C 取消']);
+    expect(h.state.shortcuts).toEqual(['Ctrl+C 取消', 'Ctrl+Enter 立即发送']);
     h.submit('second');
-    expect(h.state.shortcuts).toEqual(['Ctrl+C 取消', 'Ctrl+; 队列(1)']);
+    expect(h.state.shortcuts).toEqual(['Ctrl+C 取消', 'Ctrl+Enter 立即发送', 'Ctrl+; 队列(1)']);
     release();
     await settle(h);
     expect(h.state.shortcuts).toEqual(['/ 命令', 'Tab 焦点', 'Ctrl+C 退出']);

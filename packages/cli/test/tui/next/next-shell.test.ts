@@ -4,10 +4,11 @@
 // ChatScreenState（overlays/statusline/indicators）与 mock runtime 的调用记录。
 // 红绿流程：先于 next-shell.ts 实现落盘（红），实现后转绿（日志存 Temp/p2w3-evidence）。
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { SteerResult, TurnResult } from '@harness2/core';
+import { HELP_TEXT, type SteerResult, type TurnResult } from '@harness2/core';
 import type { ChatRuntime } from '../../../src/chat-setup.js';
 import {
   bindEmergencyExitRestore,
+  commandSummaryOf,
   createApprovalGate,
   createNextChatHarness,
   emergencyTerminalRestore,
@@ -285,8 +286,8 @@ describe('转录流式投影到 scrollback', () => {
     h.submit('写文件');
     await settle(h);
     const joined = linesOf(h).join('\n');
-    expect(joined).toContain('⏺ write(');
-    expect(joined).toContain('a.txt');
+    // P11-T5：已知工具主行人类化（工具名+JSON 进展开态）
+    expect(joined).toContain('⏺ 写入 a.txt');
     expect(joined).toContain('└ ✓');
     h.dispose();
   });
@@ -461,7 +462,7 @@ describe('折叠键族（G-05 规格机 folds.ts：h/l/←/→/e/Shift+E/Ctrl+E/
     const { h } = makeHarness(foldRuntime());
     await submitFoldTurn(h);
     const normal = linesOf(h).join('\n');
-    expect(normal).toContain('⏺ write(a.txt)'); // 摘要提炼（file_path）
+    expect(normal).toContain('⏺ 写入 a.txt'); // P11-T5：主行人类化（file_path）
     h.feed(TAB);
     h.feed('r');
     const raw = linesOf(h).join('\n');
@@ -555,7 +556,7 @@ describe('投影 fg 落进 scrollback 物理行', () => {
     const { h } = makeHarness(foldRuntime());
     await submitFoldTurn(h);
     const win = h.state.scrollback.visibleWindow(24);
-    const call = win.rows.find((r) => r.text.startsWith('⏺ write('));
+    const call = win.rows.find((r) => r.text.startsWith('⏺ 写入 '));
     expect(call?.fg).toBe(FG.green);
   });
 
@@ -576,7 +577,7 @@ describe('投影 fg 落进 scrollback 物理行', () => {
     h.submit('跑');
     await settle(h);
     const win = h.state.scrollback.visibleWindow(24);
-    const row = win.rows.find((r) => r.text.startsWith('⏺ bash('));
+    const row = win.rows.find((r) => r.text.startsWith('⏺ 运行命令 '));
     expect(row?.fg).toBe(FG.red);
   });
 });
@@ -814,14 +815,14 @@ describe('终端 resize', () => {
     );
     h.submit('写长文件');
     await settle(h);
-    const fullLine = `⏺ write(${longPath})`;
+    const fullLine = `⏺ 写入 ${longPath}`;
     // 初始 cols=100 → 内容区 99：投影截断 ≤99 宽
-    const initial = linesOf(h).find((l) => l.startsWith('⏺ write('));
+    const initial = linesOf(h).find((l) => l.startsWith('⏺ 写入 '));
     expect(initial).toBeDefined();
     expect(displayWidth(initial ?? '')).toBeLessThanOrEqual(99);
     // 窄化到 40 → 内容区 39：重投影后调用行按新宽度重排（旧 99 宽截断不得滞留）
     h.resize(40, 20);
-    const narrowed = linesOf(h).find((l) => l.startsWith('⏺ write('));
+    const narrowed = linesOf(h).find((l) => l.startsWith('⏺ 写入 '));
     expect(narrowed).toBeDefined();
     expect(displayWidth(narrowed ?? '')).toBeLessThanOrEqual(39);
     expect(narrowed?.endsWith('…')).toBe(true);
@@ -849,10 +850,18 @@ describe('steer 观察', () => {
 
 // —— 命令 ——
 describe('斜杠命令（next 模式最小集）', () => {
-  it('/help 输出帮助文本进转录', () => {
+  it('/help 输出帮助文本进转录（逐行版面：逻辑行不得内嵌换行）', () => {
     const { h } = makeHarness();
     h.feed('/help\r');
-    expect(linesOf(h).join('\n')).toContain('命令：');
+    const lines = linesOf(h);
+    // P11-T1 P0：旧实现把整段 HELP_TEXT（43 行）当成**一条**逻辑行（内嵌 42 个 \n，
+    // renderer 当可打印字符写进网格 → 面板错位）。弱断言 `toContain('命令：')` 对此恒真，
+    // 所以此处断言逻辑行粒度与逐行相等。
+    expect(lines.every((l) => !l.includes('\n'))).toBe(true);
+    const helpLines = HELP_TEXT.split('\n');
+    const start = lines.indexOf(helpLines[0] ?? '');
+    expect(start).toBeGreaterThan(0);
+    expect(lines.slice(start, start + helpLines.length)).toEqual(helpLines);
     h.dispose();
   });
 
@@ -1514,6 +1523,115 @@ describe('审批卡数字序号与焦点复位', () => {
     await vi.advanceTimersByTimeAsync(80);
     h.flushUi();
     expect((h.state.indicators ?? []).join(' ')).not.toContain('scrollback');
+    h.dispose();
+  });
+});
+
+// —— P11-T3：候选说明文案源（core catalog + 壳 summary 单源，不新造）——
+describe('P11-T3 候选说明文案（commandSummaryOf）', () => {
+  it('core 命令：取 describeCapabilities().commands 的 summary', () => {
+    expect(commandSummaryOf('help')).toBeTruthy();
+    expect(commandSummaryOf('new')).toBe('新建会话');
+  });
+
+  it('壳本地命令：取 NEXT_COMMANDS.summary（/theme）', () => {
+    expect(commandSummaryOf('theme')).toContain('主题');
+  });
+
+  it('输入 / 后候选对象携带 summaries（与 items 平行、非空）', () => {
+    const { h } = makeHarness();
+    h.feed('/');
+    h.flushUi();
+    const c = h.state.candidates;
+    expect(c).not.toBeNull();
+    expect(c?.summaries?.length).toBe(c?.items.length);
+    const i = c?.items.indexOf('/help') ?? -1;
+    expect(i).toBeGreaterThanOrEqual(0);
+    expect(c?.summaries?.[i]).toBe(commandSummaryOf('help'));
+    h.dispose();
+  });
+});
+
+// —— P11-T7：冷启动引导卡（一次性、可关、任意键收起、不阻塞输入）——
+describe('P11-T7 冷启动引导卡', () => {
+  it('默认冷启动：引导卡就绪（版本 + 常用键/命令 + /help 指引）', () => {
+    const { h } = makeHarness();
+    const card = h.state.welcome;
+    expect(card).not.toBeNull();
+    expect(card?.title).toContain('欢迎');
+    expect(card?.lines.length ?? 0).toBeGreaterThanOrEqual(4);
+    expect(card?.lines.length ?? 0).toBeLessThanOrEqual(6);
+    const joined = card?.lines.join('\n') ?? '';
+    expect(joined).toContain('/help');
+    expect(joined).toContain('Ctrl+C');
+    h.dispose();
+  });
+
+  it('HARNESS2_NO_WELCOME=1：不显示', () => {
+    const { h } = makeHarness(undefined, { env: { HARNESS2_NO_WELCOME: '1' } });
+    expect(h.state.welcome).toBeNull();
+    h.dispose();
+  });
+
+  it('任意按键立即收起，且不阻塞输入（按键照常生效）', () => {
+    const { h } = makeHarness();
+    expect(h.state.welcome).not.toBeNull();
+    h.feed('a');
+    expect(h.state.welcome).toBeNull();
+    expect(h.state.draft).toBe('a'); // 输入未被拦截
+    h.dispose();
+  });
+
+  it('本会话内不重复（收起后再按键/渲染不再出现）', () => {
+    const { h } = makeHarness();
+    h.feed('a');
+    h.feed('b');
+    expect(h.state.welcome).toBeNull();
+    h.dispose();
+  });
+
+  it('minimal 基座：引导卡进 prompt 块（首帧含欢迎文案），按键收起且块行数回收', () => {
+    // 首帧在构造期写出，所以自建录制型 out（makeHarness 的 FakeOut 无法回放构造期写入）
+    const chunks: string[] = [];
+    const out = {
+      columns: 100,
+      rows: 30,
+      write(s: string): unknown {
+        chunks.push(s);
+        return s.length;
+      },
+    };
+    const h = createNextChatHarness(makeRuntime(), {
+      out,
+      bootLines: [],
+      env: {},
+      gate: createApprovalGate(),
+      initialRenderMode: 'minimal',
+      exit: () => undefined,
+    });
+    h.flushUi();
+    expect(h.renderMode()).toBe('minimal');
+    // 本次会话无引导卡以外的转录输出：下面记录的块即 prompt 块本身
+    expect(h.minimalPrintedLines()).toEqual([]);
+    const first = chunks.join('');
+    expect(first).toContain('欢迎'); // 引导卡标题画进 minimal prompt 块
+    expect(first).toContain('/help');
+    expect(first).toContain('Ctrl+C');
+    /** 本次 renderPrompt 画出的行数：LF 总数 − 擦除段分隔 LF + 1 */
+    const drawnRows = (chunk: string, erasedRows: number): number =>
+      (chunk.match(/\n/g) ?? []).length - Math.max(0, erasedRows - 1) + 1;
+    const initialRows = drawnRows(first, 0); // 首帧 prevRows=0 → 无擦除段
+    expect(initialRows).toBeGreaterThan(1); // 引导卡行 + 草稿行（空草稿仍占 1 行）
+
+    const seen = chunks.length;
+    h.feed('a');
+    const afterKey = chunks.slice(seen).join('');
+    expect(h.state.welcome).toBeNull(); // 任意键收起
+    expect(afterKey).not.toContain('欢迎'); // 收起后不再渲染引导卡
+    // 行数回收：重绘前光标上移 initialRows-1（擦掉整个引导卡块），新块只剩草稿 1 行
+    expect(afterKey.startsWith(`\x1b[${initialRows - 1}A`)).toBe(true);
+    expect(drawnRows(afterKey, initialRows)).toBe(1);
+    expect(afterKey).toContain('a'); // 按键未被引导卡拦截，输入照常消化
     h.dispose();
   });
 });
