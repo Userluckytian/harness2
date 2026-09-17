@@ -1,0 +1,29 @@
+{
+  "id": "D2-tool-expand",
+  "group": "D 工具",
+  "watch": "折叠/展开：默认折叠只给摘要；Tab 切到 scrollback 焦点后按 Shift+E 全展，看 diff/输出行是否与 grok 同构（实测：焦点在输入框时折叠键会被当作普通字符输入）",
+  "canvas": { "cols": 110, "rows": 30 },
+  "note": "next 折叠键族由 G-05 规格机接管（folds.ts）：Shift+E=expandAll（全局）、e/h/l 需滚动区焦点下的 focusedBlockId；旧壳 e=全展已废止。",
+  "sides": {
+    "ours": {
+      "argv": [
+        "node",
+        "${REPO}/packages/cli/dist/index.js",
+        "chat",
+        "--provider",
+        "mock",
+        "--home",
+        "${TMP_HOME}/home",
+        "--root",
+        "${TMP_HOME}/work"
+      ]
+    },
+    "grok": { "argv": ["${GROK}", "--cwd", "${TMP_HOME}/work"] }
+  },
+  "steps": [
+    { "keys": "hi\r", "shot": "01-collapsed", "timeout": 30 },
+    { "keys": "\t", "shot": "02-scroll-focus", "timeout": 15 },
+    { "keys": "E", "shot": "03-expand-all", "timeout": 15 },
+    { "keys": "/exit\r" }
+  ]
+}

@@ -1,6 +1,6 @@
 // chat REPL（legacy readline 路径）：字符级保留原 readline REPL 行为，供 piped / CI /
 // --no-tui / HARNESS2_NO_TUI=1 与非 TTY 场景使用（逃生舱）。装配与会话执行由
-// chat-setup.ts 的 setupChatSession（与 ink 路径共用同一套）提供，本文件只保留
+// chat-setup.ts 的 setupChatSession（与旧壳路径共用同一套）提供，本文件只保留
 // readline 交互循环与渲染交错策略，避免两套装配各写一份。
 // 渲染与输入的交错策略（Windows readline 风险缓解）：turn 期间不写提示符，
 // 渲染器独占输出；审批提问由 REPL 直接写问题文本并拦截下一行输入作答案。
@@ -46,7 +46,7 @@ export async function runLegacyReadlineChat(options: ChatOptions = {}): Promise<
   const isTTY = (input as NodeJS.ReadStream & { isTTY?: boolean }).isTTY === true;
   const renderer = new StreamRenderer({ write: (t) => output.write(t) }, isTTY);
 
-  // —— 共享装配（provider/审批/记忆/压缩/插件/MCP/subagent/会话解析；与 ink 路径同一份） ——
+  // —— 共享装配（provider/审批/记忆/压缩/插件/MCP/subagent/会话解析；与旧壳路径同一份） ——
   let runtime: ChatRuntime;
   try {
     runtime = await setupChatSession(options, {

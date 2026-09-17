@@ -1,0 +1,8 @@
+# scripts/tui-parity —— TUI 抓屏对照台（隔离 venv，**不进 packages/ 依赖**）
+#
+# 安装（Windows / Git Bash）：
+#   python -m venv scripts/tui-parity/.venv
+#   scripts/tui-parity/.venv/Scripts/python.exe -m pip install -r scripts/tui-parity/requirements.txt
+pywinpty==3.0.5
+pyte==0.8.2
+Pillow==12.3.0

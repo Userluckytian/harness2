@@ -63,8 +63,8 @@
 
 ### 红线 3：core 与 UI 解耦
 
-- `@harness2/core` 不依赖任何 UI 层（cli ink / desktop renderer / gateway 界面）；UI 只消费 core 暴露的会话投影、事件流与命令接口。
-- 审查：core 的 import 图不得出现 react / ink / electron；UI 侧不得绕过 core 直接操作会话文件或日志。
+- `@harness2/core` 不依赖任何 UI 层（cli TUI / desktop renderer / gateway 界面）；UI 只消费 core 暴露的会话投影、事件流与命令接口。
+- 审查：core 的 import 图不得出现 UI 框架依赖（react / electron 等；cli 自 P10 起已不依赖 react）；UI 侧不得绕过 core 直接操作会话文件或日志。
 
 ### 红线 4：文件快照独立于 git（bash 副作用不入快照）
 

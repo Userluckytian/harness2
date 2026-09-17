@@ -2,7 +2,7 @@
 // P1-Dev-2 内核下沉第二棒：本文件不再是壳内的元数据清单——命令元数据一律从 core
 // （CORE_COMMAND_META，经 @harness2/core 导出）派生，壳侧只保留展示/匹配工具函数
 // （COMMAND_ORDER / commandNameWithSlash / matchCommands / describeCommand）。
-// ink Composer 的候选下拉与 legacy readline 的 completer 都从这里读，禁止各维护一份。
+// 旧壳 Composer 的候选下拉与 legacy readline 的 completer 都从这里读，禁止各维护一份。
 import { CORE_COMMAND_META } from '@harness2/core';
 
 export interface CommandMeta {

@@ -1,0 +1,25 @@
+{
+  "id": "F1-subagent-dispatch",
+  "group": "F 子任务",
+  "watch": "子任务卡片与完成态：Subagent 摘要行、子会话入口提示、耗时",
+  "canvas": { "cols": 110, "rows": 30 },
+  "sides": {
+    "ours": {
+      "argv": [
+        "node",
+        "${REPO}/packages/cli/dist/index.js",
+        "chat",
+        "--provider",
+        "mock",
+        "--home",
+        "${TMP_HOME}/home",
+        "--root",
+        "${TMP_HOME}/work",
+        "--mock-script",
+        "${REPO}/scripts/tui-parity/scenarios/mock/subagent.json"
+      ]
+    },
+    "grok": { "argv": ["${GROK}", "--cwd", "${TMP_HOME}/work"] }
+  },
+  "steps": [{ "keys": "派个子任务\r", "shot": "01-subagent-done", "timeout": 30 }, { "keys": "/exit\r" }]
+}

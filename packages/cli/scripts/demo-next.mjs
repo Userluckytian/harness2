@@ -7,7 +7,7 @@
 //     （↑↓ / 1-3 / Enter 选择；y 允许 / a 总是 / n 拒绝；Esc 取消）→ 工具结果 → 终稿。
 //   - Ctrl+C：忙时取消 turn；空闲 2s 内双击退出。
 //   - Esc：忙时停止 turn；空闲清空草稿。Ctrl+O 展开/收起最近工具卡。
-// 装配参考：src/commands/chat.ts 的 --provider mock 与 runInkChat.tsx 的 raw mode 做法。
+// 装配参考：src/commands/chat.ts 的 --provider mock 与 next 壳的 raw mode 做法。
 import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
 import { dirname, join, existsSync } from 'node:path';
@@ -26,7 +26,7 @@ try {
   process.exit(2);
 }
 
-// next-shell.ts（TS，import 链含 react/@harness2/core/diff）→ 临时 bundle 后动态 import
+// next-shell.ts（TS，import 链含 @harness2/core/diff）→ 临时 bundle 后动态 import
 const outfile = join(CLI_ROOT, 'scripts', `.next-shell-demo-${process.pid}.mjs`);
 await esbuild.build({
   entryPoints: [join(CLI_ROOT, 'src', 'tui', 'next', 'next-shell.ts')],
@@ -36,7 +36,7 @@ await esbuild.build({
   outfile,
   sourcemap: false,
   logLevel: 'warning',
-  external: ['@harness2/core', 'diff', 'react', 'string-width'],
+  external: ['@harness2/core', 'diff', 'string-width'],
 });
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));

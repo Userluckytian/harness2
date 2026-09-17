@@ -1,5 +1,5 @@
 // core 命令层契约：命令类型 + 执行缝。与渲染完全无关——本目录不 import 任何
-// Ink/React/ANSI/终端概念，输出一律经 ctx.print 产出纯文本行（错误行以 'error: '
+// UI 框架/ANSI/终端概念，输出一律经 ctx.print 产出纯文本行（错误行以 'error: '
 // 前缀开头，与壳既有文案逐字一致）；壳负责把文本行映射到自己的呈现。
 // 主线 P1 授权的加性下沉：11 条命令业务实现进 core；mode/reasoning 只注册元数据
 // （shellOnly，实现留壳——审批模式切换与推理展示开关是壳状态/呈现语义，模式枚举
@@ -21,7 +21,7 @@ export interface CoreCommandArgs {
 }
 
 /**
- * 命令执行缝：由壳（legacy REPL / ink TUI / 桌面 / 未来 web）注入运行时句柄。
+ * 命令执行缝：由壳（piped REPL / TUI / 桌面 / 未来 web）注入运行时句柄。
  * 基础缝对齐 cli commands.ts 的 CommandContext（print/manager/cwd/current/
  * switchSession/requestExit/snapshots/fork），并为 context/compact/tasks 增加最小缝
  * （读上下文占用、触发压缩、读 cron 任务列表）；不注入的可选缝由命令侧如实降级

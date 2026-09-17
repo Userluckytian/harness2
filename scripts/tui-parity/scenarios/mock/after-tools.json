@@ -1,0 +1,13 @@
+[
+  {
+    "textChunks": ["我先创建演示文件。"],
+    "toolCalls": [
+      {
+        "id": "demo-write-2",
+        "name": "write",
+        "arguments": "{\"file_path\":\"parity-demo.txt\",\"content\":\"parity demo\n\"}"
+      }
+    ]
+  },
+  { "textChunks": ["已写入 parity-demo.txt。"] }
+]

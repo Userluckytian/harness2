@@ -1,8 +1,8 @@
-// 共享会话装配：legacy（readline）与 ink（TUI）两条路径共用同一套 provider / 审批 /
+// 共享会话装配：legacy（readline）与旧壳（TUI）两条路径共用同一套 provider / 审批 /
 // 记忆 / 压缩 / 插件 / MCP / subagent / 会话解析 / runTurn 语义，避免两套装配各写一份。
 // 渲染与输入交错策略由调用方（路径专属）决定：本模块只负责装配与 turn 执行，事件经
 // onStream 回调桥接，不直接写 stdout。审批提问经 askApproval 钩子注入（legacy 走 readline
-// 拦截；ink 走弹窗）。"总是允许"仅存进程内会话级缓存，绝不落盘。
+// 拦截；旧壳 走弹窗）。"总是允许"仅存进程内会话级缓存，绝不落盘。
 import {
   applyToolSelection,
   createApprovalPolicy,
@@ -105,7 +105,7 @@ export interface ChatSession {
   writer: SessionWriter;
 }
 
-/** 装配期输出钩子：渲染/打印（legacy=StreamRenderer.line；ink=事件分发） */
+/** 装配期输出钩子：渲染/打印（legacy=StreamRenderer.line；旧壳=事件分发） */
 export interface ChatSetupHooks {
   line: (t: string) => void;
   /** 审批提问（signal 为 turn 取消信号，abort 时应以便利方式结束等待） */
@@ -117,7 +117,7 @@ export interface ChatSetupHooks {
   subagentHooks?: SubagentHooks;
 }
 
-/** 每轮 turn 的流式渲染回调（legacy=直写 stdout；ink=桥接 React state） */
+/** 每轮 turn 的流式渲染回调（legacy=直写 stdout；旧壳=桥接 React state） */
 export type TurnStreamHandler = (event: StreamEvent) => void;
 
 /** 与 legacy onStream 对齐的事件联合（T3 加性：携带 turnId 供 typed transcript 归属；legacy 忽略） */
@@ -532,7 +532,7 @@ export async function setupChatSession(options: ChatOptions, hooks: ChatSetupHoo
           if (event.type === 'text-delta') onStream({ type: 'text-delta', text: event.text, turnId: event.turnId });
           else if (event.type === 'tool-call') onStream({ type: 'tool-call', call: event.call, turnId: event.turnId });
           else if (event.type === 'reasoning-delta') {
-            // reasoning 增量：默认不渲染（legacy 保持折叠）；开启后转给调用方（ink 展示）
+            // reasoning 增量：默认不渲染（legacy 保持折叠）；开启后转给调用方（旧壳展示）
             if (reasoningEnabled) onStream({ type: 'reasoning-delta', text: event.text, turnId: event.turnId });
           } else
             onStream({

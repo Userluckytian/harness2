@@ -1,13 +1,13 @@
-// projection.ts — W1 转录数据投影（P2 接线层，headless 纯函数，零 ink/react）。
+// projection.ts — W1 转录数据投影（P2 接线层，headless 纯函数，零旧壳/React）。
 //
 // 职责：把 transcript.ts 的 TranscriptItem[] 投影为 next 渲染库的**逻辑文本行**
 // （ProjectionLine[]），供调用方批量喂给 Scrollback.appendLines（物理换行由
 // scrollback.wrapLine 负责，本层不做 wrap）。每行带 lineIndex（TranscriptItem 数组
 // 下标）与 kind，供后续交互（点击定位/展开态切换）反查。
 //
-// 视觉对齐 TranscriptView.tsx / ReasoningBlock.tsx / DiffCard.tsx 的语义，按 next 库
+// 视觉对齐旧壳转录区（推理块 / diff 卡）的语义，按 next 库
 // 约束降级：字符网格只有前景色（无背景色/反色/边框），diff 卡用 `+ `/`- `/`@@ ` 行前缀
-// 近似；每行单一前景色（Ink 版可对一行内分段着色，此处整行一色，见各规则注释）。
+// 近似；每行单一前景色（旧壳版可对一行内分段着色，此处整行一色，见各规则注释）。
 //
 // 折叠语义（钉死）：`opts.collapsed` 是**覆盖标记集**——不在集合 = 按默认折叠规则；
 // 在集合 = 与该 item 的默认态取反（toggleCollapse 翻转成员资格）。
@@ -123,7 +123,7 @@ function firstString(...values: readonly unknown[]): string | undefined {
 
 /**
  * 工具摘要：args 可解析且含已知键（文件路径/命令等）时优先提炼紧凑摘要（next 层改进：
- * Ink 版显示 summarizeArgs 的 JSON 串，宽屏下冗长）；否则退回 item.summary（reducer 已用
+ * 旧壳版显示 summarizeArgs 的 JSON 串，宽屏下冗长）；否则退回 item.summary（reducer 已用
  * summarizeArgs 兜底），再退回 args 首个标量值。
  */
 function toolSummaryOf(item: ToolItem): string {
@@ -267,7 +267,7 @@ function projectDiff(item: ToolItem, lineIndex: number, out: ProjectionLine[], t
 
 /**
  * 工具/子代理 item：调用行 + 结果行 +（展开态）diff 块与输出行。
- * 调用行整行取状态色（next 库每行单一前景色；Ink 版只着色 `> icon` 前缀，语义等价降级）。
+ * 调用行整行取状态色（next 库每行单一前景色；旧壳版只着色 `> icon` 前缀，语义等价降级）。
  */
 function projectTool(
   item: ToolItem,
@@ -311,7 +311,7 @@ function projectTool(
       fg: statusFg,
     });
   }
-  // T1：子会话只读入口提示（解析不到不显示；Ink 版还带 Ctrl+J/K 键位提示，键位归接线层）
+  // T1：子会话只读入口提示（解析不到不显示；旧壳版还带 Ctrl+J/K 键位提示，键位归接线层）
   if (item.childSessionId !== undefined) {
     out.push({ text: `  ↳ 子会话 ${item.childSessionId}`, lineIndex, kind: 'subagent', fg: theme.fg.subagentDetail });
   }

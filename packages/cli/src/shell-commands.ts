@@ -4,15 +4,15 @@
 // 执行体）：审批模式切换与推理展示开关是壳状态/呈现语义，渲染模式切换是壳渲染基座语义；
 // 8 条只读命令是 core 能力（loadSession/exportSession/runDoctor/MemoryStore/SkillStore/
 // scanPluginSources/loadConfig）的壳侧接线。以上一律实现留壳——但三处壳（legacy readline /
-// ink / next）不得各写一份，统一收敛到本表，由各入口经 createShellCommandDispatcher 表驱动
+// 旧壳 / next）不得各写一份，统一收敛到本表，由各入口经 createShellCommandDispatcher 表驱动
 // 分发（壳内禁止 switch/case 命令名）。实现与文案以 legacy-chat 为基准逐字统一；各壳的呈现
-// 差异经 ShellCommandContext 可选缝注入（ink 的无参 /mode 选择浮层、/reasoning off 收起推理
+// 差异经 ShellCommandContext 可选缝注入（旧壳的无参 /mode 选择浮层、/reasoning off 收起推理
 // 块），next 的 /mode 为 UI 四态声明态语义（测试锁定 + P3-B 红线 6），经 dispatcher override
 // 注册；next 的 /minimal /fullscreen /full 经 RenderModeControl 缝驱动 tui/render/mode.ts 的
 // RenderMode 状态机（P2-C）。
 //
 // 8 条 shellOnly 命令的实现单一来源 = tui/commands/shell-command-impls.ts（core API + io.print
-// 文本输出，文案与 cli 对应子命令逐字同源）；本表引用注册，故默认壳（legacy/ink）与 next 走
+// 文本输出，文案与 cli 对应子命令逐字同源）；本表引用注册，故默认壳（legacy/旧壳）与 next 走
 // 同一条真实现，不再落 core 的「由界面层实现（shellOnly）」兜底。
 import type { ChatRuntime } from './chat-setup.js';
 import { MODE_ALIAS_LABEL, MODE_ALIAS_ORDER, MODE_ALIAS_TO_CORE, describeMode, parseModeAlias } from './mode-alias.js';
@@ -24,7 +24,7 @@ import {
 } from './tui/commands/shell-command-impls.js';
 
 // 壳上下文注入缝（P1-1 提炼）：print/currentSessionDir/root/home 由各壳注入自己的值——
-// legacy 取 options.home/root，ink 取 InkShell props，next 取 runtime.root + deps.home。
+// legacy 取 options.home/root，旧壳取旧壳 Shell props，next 取 runtime.root + deps.home。
 export type { ShellCommandIo } from './tui/commands/shell-command-impls.js';
 
 /**
@@ -33,12 +33,12 @@ export type { ShellCommandIo } from './tui/commands/shell-command-impls.js';
  */
 export interface ShellCommandContext extends ShellCommandIo {
   runtime: ChatRuntime;
-  /** ink 缝：无参 /mode 打开交互选择浮层（注入后取代基准实现的文本列表呈现；带参仍走基准实现） */
+  /** 旧壳缝：无参 /mode 打开交互选择浮层（注入后取代基准实现的文本列表呈现；带参仍走基准实现） */
   openModePicker?: () => void;
-  /** ink 缝：/reasoning off 后收起已展开的推理块（壳侧呈现附加行为，legacy/next 不注入） */
+  /** 旧壳缝：/reasoning off 后收起已展开的推理块（壳侧呈现附加行为，legacy/next 不注入） */
   onReasoningOff?: () => void;
   /**
-   * P2-C 渲染模式缝（仅 next 注入）：查询当前模式并请求切换。未注入（legacy/ink）时
+   * P2-C 渲染模式缝（仅 next 注入）：查询当前模式并请求切换。未注入（legacy/旧壳）时
    * /minimal /fullscreen 如实声明「当前界面未接入」，绝不静默吞掉。
    */
   renderMode?: RenderModeControl;
@@ -86,7 +86,7 @@ export interface ShellCommand {
 
 /**
  * /mode：审批模式查看/切换（legacy-chat 基准文案，三处壳逐字统一）。
- * 无参：默认列出当前模式与可选模式（ink 注入 openModePicker 缝时改为选择浮层）；
+ * 无参：默认列出当前模式与可选模式（旧壳注入 openModePicker 缝时改为选择浮层）；
  * 带参：parseModeAlias 解析（含 core 值兼容）→ runtime.setMode → 确认文案。
  */
 export const runModeCommand: ShellCommandRun = (ctx, rest) => {
@@ -114,7 +114,7 @@ export const runModeCommand: ShellCommandRun = (ctx, rest) => {
 
 /**
  * /reasoning：推理展示查看/切换（legacy-chat 基准文案，三处壳逐字统一）。
- * off 时若壳注入 onReasoningOff 缝（ink）则先收起已展开的推理块再输出确认行。
+ * off 时若壳注入 onReasoningOff 缝（旧壳）则先收起已展开的推理块再输出确认行。
  */
 export const runReasoningCommand: ShellCommandRun = (ctx, rest) => {
   const arg = rest.trim().toLowerCase();
@@ -139,7 +139,7 @@ export const runReasoningCommand: ShellCommandRun = (ctx, rest) => {
 /**
  * /minimal 与 /fullscreen（含缩写 /full）：渲染模式切换（P2-C）。
  * 表驱动实现：目标模式在工厂里钉死，运行时经 ctx.renderMode 缝驱动 RenderMode 状态机
- * （switchRenderMode 裁决幂等/切换），文案按结果分派；未注入缝的壳（legacy/ink）如实
+ * （switchRenderMode 裁决幂等/切换），文案按结果分派；未注入缝的壳（legacy/旧壳）如实
  * 声明未接入。跨模式切换在 next 的降级路径（degraded-unavailable）给「重进 REPL 不丢
  * 会话」指引，不做假切换（G-02 🟡，登记见 next-shell 装配处与 P2-C 报告）。
  */
@@ -179,7 +179,7 @@ export const SHELL_COMMANDS: readonly ShellCommand[] = [
   { id: 'minimal', run: runRenderModeCommand('minimal') },
   { id: 'fullscreen', run: runRenderModeCommand('fullscreen') },
   // P1-1 收敛：8 条 P3-A shellOnly 命令（session-info/export/timeline/doctor/memory/skills/
-  // plugins/mcps）与上述 4 条同表分发——默认壳（legacy/ink）因此获得真实现，不再落 core 兜底。
+  // plugins/mcps）与上述 4 条同表分发——默认壳（legacy/旧壳）因此获得真实现，不再落 core 兜底。
   ...PALETTE_SHELL_COMMANDS.map((id) => ({ id, run: runPaletteCommand(id) })),
 ];
 

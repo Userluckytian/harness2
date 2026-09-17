@@ -1,6 +1,6 @@
 // mode.ts — G-01/G-02 渲染模式状态机（fullscreen / minimal，进程内切换不重启）。
 //
-// 职责（本层只做纯逻辑，零 ink / 零终端 IO；接线在第三批）：
+// 职责（本层只做纯逻辑，零旧壳 / 零终端 IO；接线在第三批）：
 // - RenderMode 两态：fullscreen（默认，接管屏幕 / alt-screen）与 minimal（终端原生
 //   scrollback，不接管屏幕）——两态各自的完整 UI 形态见 minimal.ts 的契约与本目录
 //   regions.ts 的八区域模型（G-04）。

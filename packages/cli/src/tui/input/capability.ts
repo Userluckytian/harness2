@@ -2,7 +2,7 @@
 //
 // 规格依据：docs/refs/refs-grok-build.md G-13——WezTerm 需 `enable_kitty_keyboard = true`
 // 才能收到全量和弦；终端族差异在上游 21-terminal-support.md（摘要入本表）。
-// 另有 `terminal-capabilities.ts`（tui/ 下既有）：那是「ink vs legacy」TUI 闸门探测，与本表
+// 另有 `terminal-capabilities.ts`（tui/ 下既有）：那是「旧壳 vs legacy」TUI 闸门探测，与本表
 // 分工不同——本表是**和弦级差异知识**（哪些终端要什么配置/有什么键位缺口），纯数据 +
 // 一个 env 检测建议函数，不做进程探测、不做闸门决策。
 //

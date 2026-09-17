@@ -30,7 +30,7 @@
 // 4. 渲染：paletteNaturalHeight(rows.length) → anchorOverlay/overlayStackLayout 得矩形 →
 //    drawPalette(buf, paletteState, rows, rect) 与同帧其他层组合绘制。
 // 5. 命令路由：effect.execute.name 先查 runPaletteShellCommand(id, io, rest)（本表接管），
-//    未接管走壳既有分发（shell-commands 表 / ink-commands.runSharedCommand → core）。
+//    未接管走壳既有分发（shell-commands 表 / command-impls.runSharedCommand → core）。
 //    ShellCommandIo 的 currentSessionDir 取 runtime.getCurrent()?.dir ?? null，root 取
 //    runtime.root，print 送转录系统行。
 //

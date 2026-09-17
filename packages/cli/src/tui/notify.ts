@@ -1,7 +1,7 @@
 // notify.ts — 回合结束提醒（T4）。
 // 策略（HARNESS2_NOTIFY）：always=总是发 / unfocused（缺省）=仅终端失焦时发 / never=不发。
 // 方法（HARNESS2_NOTIFY_METHOD）：bel（缺省，\x07 终端响铃）/ osc9（\x1b]9;…\x07 终端通知）。
-// - 写 stderr 且仅 TTY 时写（生产 sink）：BEL/OSC 不混入 ink 帧、不污染管道；
+// - 写 stderr 且仅 TTY 时写（生产 sink）：BEL/OSC 不混入旧壳帧、不污染管道；
 // - 焦点状态来自 T2 的 DECSET 1004 桥（不支持焦点事件的终端按「未失焦」保守处理 → unfocused 不响）；
 // - Ctrl+C 取消回合（cancelled）不发提醒。
 // 纯逻辑可单测：策略/方法解析、shouldNotify、emitNotify、onTurnComplete 均为纯函数/注入 sink。

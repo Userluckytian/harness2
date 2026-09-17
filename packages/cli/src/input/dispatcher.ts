@@ -1,4 +1,4 @@
-// dispatcher.ts — P1 统一输入层的事件分发器（纯逻辑，零 ink/react 依赖，可单测）。
+// dispatcher.ts — P1 统一输入层的事件分发器（纯逻辑，零旧壳/React 依赖，可单测）。
 //
 // 职责：把 parser 产出的语义事件按**层级优先级**逐层投递；某层返回 true = 消费
 // （事件停止下传，event.consumed 置 true）；返回 false = 未消费（传给下一层）；

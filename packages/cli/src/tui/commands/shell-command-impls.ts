@@ -12,7 +12,7 @@
 // 草稿，对齐上游 SendSlashCommandPreservingDraft）。
 //
 // P1-1 收敛：本文件是这 8 条的**单一实现**，由 shell-commands.ts 的壳表引用注册——legacy/
-// ink/next 三壳共用同一份（ShellCommandIo 即共享执行缝：print + currentSessionDir/root/home），
+// 旧壳/next 三壳共用同一份（ShellCommandIo 即共享执行缝：print + currentSessionDir/root/home），
 // 不再出现「仅 next 有实现、默认壳落 core 兜底」的假入口。
 //
 // 模式限定：/timeline 仅 fullscreen（G-03，'timeline' 已在 render/minimal.ts 的

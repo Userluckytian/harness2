@@ -2,7 +2,7 @@
 //
 // 职责边界（与既有资产的分工）：
 // - 只做渲染与测量，**不做按键处理**（按键由统一输入层在接线任务处理；组件接口只接受
-//   状态、画出结果）。行为参考只读的 Ink 版 `src/tui/Composer.tsx`。
+//   状态、画出结果）。行为参考只读的旧壳版 `src/tui/Composer.tsx`。
 // - 测量 measureComposer：多行草稿（\n 硬换行）+ 各行宽字符断行后的物理行数 + 光标
 //   所在物理行/列——layout 层据此给 scrollback 扣高度（高度让位）。
 // - 渲染分两级：drawComposer（纯 buffer 绘制，接受 CellBuffer，草稿 + 光标 + 可选候选 +

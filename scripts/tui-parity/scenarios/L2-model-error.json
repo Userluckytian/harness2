@@ -1,0 +1,25 @@
+{
+  "id": "L2-model-error",
+  "group": "L 失败",
+  "watch": "模型侧报错：错误气泡形态、重试提示、状态行是否标红",
+  "canvas": { "cols": 110, "rows": 30 },
+  "defined_only": true,
+  "note": "mock provider 恒成功，无法制造模型报错；需真 provider（如 grok 断网/错 key）才能复现。",
+  "sides": {
+    "ours": {
+      "argv": [
+        "node",
+        "${REPO}/packages/cli/dist/index.js",
+        "chat",
+        "--provider",
+        "mock",
+        "--home",
+        "${TMP_HOME}/home",
+        "--root",
+        "${TMP_HOME}/work"
+      ]
+    },
+    "grok": { "argv": ["${GROK}", "--cwd", "${TMP_HOME}/work"] }
+  },
+  "steps": [{ "keys": "hi\r", "shot": "01-model-error", "timeout": 30 }, { "keys": "/exit\r" }]
+}

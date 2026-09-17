@@ -1,4 +1,4 @@
-// panel.ts — G-29 队列面板纯逻辑（headless 可测，零 ink / 零渲染器依赖）。
+// panel.ts — G-29 队列面板纯逻辑（headless 可测，零旧壳 / 零渲染器依赖）。
 //
 // 规格依据：refs-grok-build.md G-29 与上游 03-keyboard-shortcuts.md：
 //  - `Ctrl+;` 打开队列面板（备用 `Ctrl+'`——部分 Windows 控制台在标点键上丢 Ctrl 修饰）；
@@ -17,7 +17,7 @@ import { chordMatches, type Chord } from '../input/keymaps.js';
 import type { KeyEvent } from '../../input/types.js';
 import type { QueuedFollowUp } from './queue.js';
 
-/** 面板条目单行预览列宽（与 ink queue-panel / next chat-screen 的 42 列约定同源） */
+/** 面板条目单行预览列宽（与旧壳 queue-panel / next chat-screen 的 42 列约定同源） */
 export const QUEUE_PREVIEW_MAX = 42;
 
 /** 队列面板条目单行预览：折行合一 + 超长截断加省略号（仅展示用，绝不改队列原文） */

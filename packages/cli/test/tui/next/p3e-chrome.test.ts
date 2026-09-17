@@ -6,7 +6,7 @@
 //   （P3-F 键位冲突修复：Ctrl+X 不再是本面板的壳侧别名——该和弦归 G-39 快捷键帮助；
 //    Ctrl+X 在面板内 = 关面板并开帮助，见 p3f-agent-keys.test.ts）
 // - 重试信息：turn 收尾 retryBudget 快照有活动（usedAttempts>0 或 stopReason≠none）→
-//   转录 system 行（formatRetryBudget，对齐 ink RetryPanel 信息量）+ 状态行「重试 used/max」标记
+//   转录 system 行（formatRetryBudget，对齐旧壳 RetryPanel 信息量）+ 状态行「重试 used/max」标记
 // 红绿流程：先于实现落盘（红），实现后转绿（日志存 Temp/p3e-evidence）。
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { AnySessionEvent, SteerResult, TurnResult } from '@harness2/core';
@@ -264,7 +264,7 @@ describe('statusLineFor（状态行纯函数）', () => {
   });
 });
 
-describe('queueEntryPreview（队列条目预览，对齐 ink queuePreview）', () => {
+describe('queueEntryPreview（队列条目预览，对齐旧壳 queuePreview）', () => {
   it('多行折成单行并去首尾空白', () => {
     expect(queueEntryPreview('  a\nb\tc  ')).toBe('a b c');
   });
@@ -279,7 +279,7 @@ describe('queueEntryPreview（队列条目预览，对齐 ink queuePreview）', 
   });
 });
 
-// —— 纯函数：retryBudget 快照（对齐 ink retry-panel 的信息量）——
+// —— 纯函数：retryBudget 快照（对齐旧壳 retry-panel 的信息量）——
 describe('retryBudget 快照纯函数', () => {
   const active: NonNullable<TurnResult['retryBudget']> = {
     usedAttempts: 2,
@@ -297,7 +297,7 @@ describe('retryBudget 快照纯函数', () => {
     expect(retryBudgetHasActivity({ ...active, usedAttempts: 0 })).toBe(false);
   });
 
-  it('formatRetryBudget：已用/剩余/等待/停因（对齐 ink formatRetryBudget 文案）', () => {
+  it('formatRetryBudget：已用/剩余/等待/停因（对齐旧壳 formatRetryBudget 文案）', () => {
     expect(formatRetryBudget(active)).toBe('重试 已用 2/6 · 剩余 4 次 · 等待 3s/120s · 停因 未停');
     expect(
       formatRetryBudget({ ...active, usedAttempts: 6, remainingAttempts: 0, stopReason: 'budget-exhausted' }),

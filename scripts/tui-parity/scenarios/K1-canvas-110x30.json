@@ -1,0 +1,27 @@
+{
+  "id": "K1-canvas-110x30",
+  "group": "K 外观",
+  "watch": "110x30 画布下的整体观感（区域划分、留白、状态行是否贴底）",
+  "canvas": { "cols": 110, "rows": 30 },
+  "sides": {
+    "ours": {
+      "argv": [
+        "node",
+        "${REPO}/packages/cli/dist/index.js",
+        "chat",
+        "--provider",
+        "mock",
+        "--home",
+        "${TMP_HOME}/home",
+        "--root",
+        "${TMP_HOME}/work"
+      ]
+    },
+    "grok": { "argv": ["${GROK}", "--cwd", "${TMP_HOME}/work"] }
+  },
+  "steps": [
+    { "shot": "01-idle", "timeout": 30, "stable_seconds": 3.0 },
+    { "keys": "hi\r", "shot": "02-after-turn", "timeout": 30 },
+    { "keys": "/exit\r" }
+  ]
+}

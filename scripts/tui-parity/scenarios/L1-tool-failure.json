@@ -1,0 +1,25 @@
+{
+  "id": "L1-tool-failure",
+  "group": "L 失败",
+  "watch": "工具失败态：└ ✗ 图标、错误文案换行/截断、是否影响后续行",
+  "canvas": { "cols": 110, "rows": 30 },
+  "sides": {
+    "ours": {
+      "argv": [
+        "node",
+        "${REPO}/packages/cli/dist/index.js",
+        "chat",
+        "--provider",
+        "mock",
+        "--home",
+        "${TMP_HOME}/home",
+        "--root",
+        "${TMP_HOME}/work",
+        "--mock-script",
+        "${REPO}/scripts/tui-parity/scenarios/mock/tool-failure.json"
+      ]
+    },
+    "grok": { "argv": ["${GROK}", "--cwd", "${TMP_HOME}/work"] }
+  },
+  "steps": [{ "keys": "hi\r", "shot": "01-tool-failure", "timeout": 30 }, { "keys": "/exit\r" }]
+}

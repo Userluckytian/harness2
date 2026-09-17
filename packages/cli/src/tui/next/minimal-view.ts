@@ -1,10 +1,10 @@
 // minimal-view.ts — G-01 minimal 渲染基座（追加式转录 + 底部 prompt 行）。
 //
-// 与 P2-C 否决结论（「ink 内联不可行」）的差异说明（钉死）：
+// 与 P2-C 否决结论（「旧壳内联不可行」）的差异说明（钉死）：
 // - P2-C 的评估对象是「复用整帧 renderChat 呈现 minimal」——renderChat 每帧把转录整体
 //   画进 alt-screen 差量帧，若去掉 alt-screen 直写 stdout，转录会逐帧重复进原生
 //   scrollback，不可行。该结论只否决「整帧复用」一条路。
-// - 本模块走另一条管线（任务规格推荐路线，ink `<Static>` 的非 React 等价）：
+// - 本模块走另一条管线（任务规格推荐路线，旧壳 `<Static>` 的非 React 等价）：
 //   ▸ 转录 = 追加式（append-only）：已落定（settled）的块一次性写进终端原生滚动区
 //     （每行 `text\n`，不重绘不擦除），live 尾部（流式 step / pending 工具）暂扣，
 //     落定后才写——写入序即转录序，绝不重复；

@@ -386,7 +386,7 @@ export const AGENT_CHORD_TABLE: readonly AgentChordEntry[] = [
     chords: [{ key: 'g', ctrl: true }],
     owner: 'deferred',
     summary: 'tasks 面板开关（minimal 下改为外部编辑器）',
-    note: '归存 P7：next 壳无任务数据源（`/tasks` 在 core 需 cron 存储句柄，ChatRuntime 未注入，只出降级文案；ink 的 taskPanelCounts 只服务 ink 面板，两壳不共享数据）→ 两条语义（fullscreen 面板 / minimal 外部编辑器）都无落点；和弦在此登记占用。与 G-37 同批（都在等 TaskCoordinator / cron 句柄装配）',
+    note: '归存 P7：next 壳无任务数据源（`/tasks` 在 core 需 cron 存储句柄，ChatRuntime 未注入，只出降级文案；旧壳的 taskPanelCounts 只服务旧壳面板，两壳不共享数据）→ 两条语义（fullscreen 面板 / minimal 外部编辑器）都无落点；和弦在此登记占用。与 G-37 同批（都在等 TaskCoordinator / cron 句柄装配）',
     tier: '必刻',
   },
   {
@@ -474,17 +474,17 @@ export const AGENT_CHORD_TABLE: readonly AgentChordEntry[] = [
   },
 ];
 
-// ── ink（legacy 渲染壳）侧的差异登记（同批条目在另一壳的现状，供审查/接手对齐）──────
-//  - G-31：命令面板未接（ink 的 `/` 补全 + Ctrl+P 无 palette；登记差异）。
-//  - G-33：Shift+Tab 模式循环未接（ink 模式切换走 `/mode` 选择浮层）；Ctrl+O 在 ink 是 T3
+// ── 旧壳（legacy 渲染壳）侧的差异登记（同批条目在另一壳的现状，供审查/接手对齐）──────
+//  - G-31：命令面板未接（旧壳的 `/` 补全 + Ctrl+P 无 palette；登记差异）。
+//  - G-33：Shift+Tab 模式循环未接（旧壳模式切换走 `/mode` 选择浮层）；Ctrl+O 在旧壳 是 T3
 //    「展开最近工具卡」（真实 shell 能力）——与 always-approve 同键不同义，**登记冲突**：
-//    往 ink 接 G-33 前必须先裁决该和弦（禁止静默覆盖既有能力）。
+//    往旧壳接 G-33 前必须先裁决该和弦（禁止静默覆盖既有能力）。
 //  - G-34：空闲态 Ctrl+R = 会话选择器（P3-F 已接，复用 `/sessions` 无参浮层，见
-//    runInkChat.tsx）；busy 期仍是 T8「推理折叠块」键位（同键不同义，已登记）。
-//  - G-35～G-37/G-40/G-41：ink 侧同样无落点（与 next 同批归存 P7）。
+//    旧壳入口）；busy 期仍是 T8「推理折叠块」键位（同键不同义，已登记）。
+//  - G-35～G-37/G-40/G-41：旧壳侧同样无落点（与 next 同批归存 P7）。
 //  - G-38：Ctrl+C 取消/退出已接（T0/Composer guard 协议）。
-//  - G-39：Ctrl+X 在 ink 被 T4 队列面板的「取消队首」占用（panels/queue-panel.tsx；
-//    本轮允许改动集不含该文件）→ ink 侧快捷键帮助归存 P7；Ctrl+. 亦未接（需新增 Modal）。
+//  - G-39：Ctrl+X 在旧壳被 T4 队列面板的「取消队首」占用（旧壳队列面板；
+//    本轮允许改动集不含该文件）→ 旧壳侧快捷键帮助归存 P7；Ctrl+. 亦未接（需新增 Modal）。
 
 /** 取某 Agent 级动作的全部和弦（主键 + 备用；顺序即登记序） */
 export function agentChordsFor(action: AgentChordActionId): readonly Chord[] {

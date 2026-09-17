@@ -1,0 +1,25 @@
+{
+  "id": "B2-long-code-block",
+  "group": "B 对话",
+  "watch": "长回答与代码块：换行/缩进/滚动跟随、代码块是否有高亮或边框",
+  "canvas": { "cols": 110, "rows": 30 },
+  "sides": {
+    "ours": {
+      "argv": [
+        "node",
+        "${REPO}/packages/cli/dist/index.js",
+        "chat",
+        "--provider",
+        "mock",
+        "--home",
+        "${TMP_HOME}/home",
+        "--root",
+        "${TMP_HOME}/work",
+        "--mock-script",
+        "${REPO}/scripts/tui-parity/scenarios/mock/long-code.json"
+      ]
+    },
+    "grok": { "argv": ["${GROK}", "--cwd", "${TMP_HOME}/work"] }
+  },
+  "steps": [{ "keys": "给我一段示例代码\r", "shot": "01-code-block", "timeout": 25 }, { "keys": "/exit\r" }]
+}

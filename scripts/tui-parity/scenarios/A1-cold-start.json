@@ -1,0 +1,24 @@
+{
+  "id": "A1-cold-start",
+  "group": "A 启动",
+  "watch": "冷启动首屏：欢迎语/会话行/输入框边框/状态行是否与 grok 同构（抓一帧即杀，兼顾 grok 额度）",
+  "canvas": { "cols": 110, "rows": 30 },
+  "timeout": 60,
+  "sides": {
+    "ours": {
+      "argv": [
+        "node",
+        "${REPO}/packages/cli/dist/index.js",
+        "chat",
+        "--provider",
+        "mock",
+        "--home",
+        "${TMP_HOME}/home",
+        "--root",
+        "${TMP_HOME}/work"
+      ]
+    },
+    "grok": { "argv": ["${GROK}", "--cwd", "${TMP_HOME}/work"] }
+  },
+  "steps": [{ "shot": "01-cold-start", "timeout": 30, "stable_seconds": 3.0, "kill": true }]
+}

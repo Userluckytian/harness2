@@ -1,4 +1,4 @@
-// T3 typed transcript（纯模型，无 ink/react 依赖）：
+// T3 typed transcript（纯模型，无旧壳/React 依赖）：
 // - 结构事件身份：稳定 id（由 seq / callId / turnId 派生，重投影幂等）
 // - transcriptReducer：消费 core 会话事件与流式/终态事件；tool call↔result 按 callId 原地合并
 // - projectSession：从磁盘会话日志重投影（只读 core 的 loadSession/computeProjection）
@@ -345,8 +345,8 @@ function argsToString(args: unknown): string | undefined {
  * 前面的解释被静默丢弃，且最终答案渲染在工具卡之前（验收 4 重投影 / T3 顺序保真被破坏）。
  * 因此重投影按事件 seq 派生唯一 id（seq 在日志内严格单调），保证顺序与完整性。
  *
- * 不能在 scopedId 里全局改成 seq 优先：live 事件可能带 `seq:0`/缺省（如 useTurnStream 的
- * 流式事件），会互相碰撞，破坏真实流式的 turn 级稳定 id（assistant:<turnId>:step:N / turn-final）。
+ * 不能在 scopedId 里全局改成 seq 优先：live 事件可能带 `seq:0`/缺省（如流式增量事件，
+ * 见 next 壳的 createTurnStreamBridge），会互相碰撞，破坏真实流式的 turn 级稳定 id（assistant:<turnId>:step:N / turn-final）。
  * tool/call、tool/result 仍按 callId 键控（本就在日志内唯一，且是 call↔result 原地合并所必需）。
  */
 export function sessionEventToTranscript(event: AnySessionEvent): TranscriptEvent | null {

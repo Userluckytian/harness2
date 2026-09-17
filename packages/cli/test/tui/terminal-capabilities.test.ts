@@ -1,4 +1,4 @@
-// T2 终端能力纯决策单测（无 ink/react 依赖）：
+// T2 终端能力纯决策单测（无 TUI 库依赖）：
 // detectTerminalCapabilities（非 TTY / dumb TERM / CI / WT_SESSION / VS Code 等标记）、
 // decideTuiMode（forceNoTui、forceTui、非 TTY、非 Windows TTY、Windows 四场景闸门）。
 import { describe, expect, it } from 'vitest';
@@ -82,10 +82,10 @@ describe('decideTuiMode：闸门规则', () => {
     expect(decideTuiMode(good, { forceNoTui: true }).reason).toContain('禁用');
   });
 
-  it('forceTui 显式覆盖：非 TTY 也 → ink', () => {
+  it('forceTui 显式覆盖：非 TTY 也 → tui', () => {
     const c = caps({}, LINUX, false);
     const d = decideTuiMode(c, { forceTui: true });
-    expect(d.mode).toBe('ink');
+    expect(d.mode).toBe('tui');
     expect(d.reason.length).toBeGreaterThan(0);
   });
 
@@ -95,9 +95,9 @@ describe('decideTuiMode：闸门规则', () => {
     expect(d.reason).toContain('非 TTY');
   });
 
-  it('非 Windows TTY → ink', () => {
+  it('非 Windows TTY → tui', () => {
     const d = decideTuiMode(caps({ TERM: 'xterm-256color' }, LINUX, true));
-    expect(d.mode).toBe('ink');
+    expect(d.mode).toBe('tui');
   });
 
   it('TERM=dumb（任何平台）→ legacy', () => {
@@ -112,14 +112,14 @@ describe('decideTuiMode：闸门规则', () => {
 });
 
 describe('decideTuiMode：Windows 四场景闸门', () => {
-  it('场景 1 Windows Terminal（WT_SESSION）→ ink', () => {
+  it('场景 1 Windows Terminal（WT_SESSION）→ tui', () => {
     const d = decideTuiMode(caps({ WT_SESSION: 'guid' }, WIN, true));
-    expect(d.mode).toBe('ink');
+    expect(d.mode).toBe('tui');
   });
 
-  it('场景 2 VS Code 集成终端（TERM_PROGRAM=vscode）→ ink', () => {
+  it('场景 2 VS Code 集成终端（TERM_PROGRAM=vscode）→ tui', () => {
     const d = decideTuiMode(caps({ TERM_PROGRAM: 'vscode' }, WIN, true));
-    expect(d.mode).toBe('ink');
+    expect(d.mode).toBe('tui');
   });
 
   it('场景 3 传统 cmd.exe（无标记）→ legacy，reason 可读', () => {
@@ -134,9 +134,9 @@ describe('decideTuiMode：Windows 四场景闸门', () => {
     expect(d.reason.length).toBeGreaterThan(0);
   });
 
-  it('ConEmu / ANSICON / xterm（Git Bash）在 Windows 也 → ink', () => {
-    expect(decideTuiMode(caps({ ConEmuANSI: 'ON' }, WIN, true)).mode).toBe('ink');
-    expect(decideTuiMode(caps({ ANSICON: '1' }, WIN, true)).mode).toBe('ink');
-    expect(decideTuiMode(caps({ TERM: 'xterm-256color' }, WIN, true)).mode).toBe('ink');
+  it('ConEmu / ANSICON / xterm（Git Bash）在 Windows 也 → tui', () => {
+    expect(decideTuiMode(caps({ ConEmuANSI: 'ON' }, WIN, true)).mode).toBe('tui');
+    expect(decideTuiMode(caps({ ANSICON: '1' }, WIN, true)).mode).toBe('tui');
+    expect(decideTuiMode(caps({ TERM: 'xterm-256color' }, WIN, true)).mode).toBe('tui');
   });
 });

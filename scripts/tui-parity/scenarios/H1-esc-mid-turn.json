@@ -1,0 +1,27 @@
+{
+  "id": "H1-esc-mid-turn",
+  "group": "H 打断",
+  "watch": "回合中 Esc：提示文案与是否取消；Ctrl+C 的取消/退出语义",
+  "canvas": { "cols": 110, "rows": 30 },
+  "sides": {
+    "ours": {
+      "argv": [
+        "node",
+        "${REPO}/packages/cli/dist/index.js",
+        "chat",
+        "--provider",
+        "mock",
+        "--home",
+        "${TMP_HOME}/home",
+        "--root",
+        "${TMP_HOME}/work"
+      ]
+    },
+    "grok": { "argv": ["${GROK}", "--cwd", "${TMP_HOME}/work"] }
+  },
+  "steps": [
+    { "keys": "hi\r", "wait": 0.6, "shot": "01-mid-turn" },
+    { "keys": "\u001b", "shot": "02-esc-hint", "timeout": 15 },
+    { "keys": "/exit\r" }
+  ]
+}

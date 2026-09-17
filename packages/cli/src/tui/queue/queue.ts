@@ -1,4 +1,4 @@
-// queue.ts — G-26 运行中回合的 follow-up 队列纯 reducer（headless 可测，零 ink / 零时钟依赖）。
+// queue.ts — G-26 运行中回合的 follow-up 队列纯 reducer（headless 可测，零旧壳 / 零时钟依赖）。
 //
 // 规格依据：docs/refs/refs-grok-build.md「G-5x 运行中回合（队列 / 转向）」（2026-09-13 基线
 // 37949780）与上游 03-keyboard-shortcuts.md「Follow-ups mid-turn」节。本文件只做**纯数据层**：

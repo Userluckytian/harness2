@@ -1,0 +1,27 @@
+{
+  "id": "K2-canvas-160x40",
+  "group": "K 外观",
+  "watch": "160x40 宽画布：长行不折行、输出行对齐、边框随宽度伸缩",
+  "canvas": { "cols": 160, "rows": 40 },
+  "sides": {
+    "ours": {
+      "argv": [
+        "node",
+        "${REPO}/packages/cli/dist/index.js",
+        "chat",
+        "--provider",
+        "mock",
+        "--home",
+        "${TMP_HOME}/home",
+        "--root",
+        "${TMP_HOME}/work"
+      ]
+    },
+    "grok": { "argv": ["${GROK}", "--cwd", "${TMP_HOME}/work"] }
+  },
+  "steps": [
+    { "shot": "01-idle", "timeout": 30, "stable_seconds": 3.0 },
+    { "keys": "hi\r", "shot": "02-after-turn", "timeout": 30 },
+    { "keys": "/exit\r" }
+  ]
+}

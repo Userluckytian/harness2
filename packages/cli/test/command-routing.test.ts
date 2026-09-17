@@ -5,7 +5,7 @@
 //   (b) core 命令经 runCoreCommand 执行（/sessions 输出非空；/context /compact /tasks 与
 //       改造前文案逐字一致——compact/tasks 缝未注入时走 core 降级文案）；
 //   (c) 未知命令文案不变（含 commands.ts facade 的兼容转发）；
-//   (d) 三处入口分发结果一致：legacy 路径（runCoreCommand 直调）与 ink/next 路径
+//   (d) 三处入口分发结果一致：legacy 路径（runCoreCommand 直调）与旧壳/next 路径
 //       （runSharedCommand → runCoreCommand）对同一输入产出逐行一致；next 经 harness 验证
 //       同一 core 文案与其 /mode UI 四态 override（登记的收敛差异）。
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -15,7 +15,7 @@ import type { ChatRuntime } from '../src/chat-setup.js';
 import { handleCommand, parseCommand, type CommandContext } from '../src/commands.js';
 import { createShellCommandDispatcher, type ShellCommandContext } from '../src/shell-commands.js';
 import { runPaletteShellCommand } from '../src/tui/commands/shell-command-impls.js';
-import { runSharedCommand, type InkCommandIo } from '../src/tui/ink-commands.js';
+import { runSharedCommand, type CommandIo } from '../src/tui/command-impls.js';
 import { createApprovalGate, createNextChatHarness, type NextChatHarness } from '../src/tui/next/next-shell.js';
 import { createTestRuntime, type TestRuntime } from './tui/shell-runtime.js';
 
@@ -180,7 +180,7 @@ describe('shellOnly 命令（mode/reasoning）经壳侧分发表', () => {
     expect(err).toEqual(['error: 未知模式 xxx（可选: normal, allow-approve, auto, plan）']);
   });
 
-  it('/reasoning on/off → 推理开关真切换；off 触发 ink 收起缝；非法参数报错（legacy 基准文案）', () => {
+  it('/reasoning on/off → 推理开关真切换；off 触发旧壳收起缝；非法参数报错（legacy 基准文案）', () => {
     const { runtime, calls } = makeShellRuntime();
     const dispatch = createShellCommandDispatcher();
     const on: string[] = [];
@@ -204,7 +204,7 @@ describe('shellOnly 命令（mode/reasoning）经壳侧分发表', () => {
     expect(err).toEqual(['error: 未知参数 wat（用 on|off，或留空查看当前状态）']);
   });
 
-  it('ink 呈现缝：注入 openModePicker 后无参 /mode 打开浮层（带参仍走基准实现）', () => {
+  it('旧壳呈现缝：注入 openModePicker 后无参 /mode 打开浮层（带参仍走基准实现）', () => {
     const { runtime } = makeShellRuntime();
     const dispatch = createShellCommandDispatcher();
     const openPicker = vi.fn(() => undefined);
@@ -224,7 +224,7 @@ describe('shellOnly 命令（mode/reasoning）经壳侧分发表', () => {
 });
 
 // —— (a2) P1-1：默认壳全命令枚举——shellOnly 命令全部被壳表接管，无「假入口」 ——
-// 机器证据：core catalog 里每一条 shellOnly 命令，默认壳（legacy/ink 用的同一份
+// 机器证据：core catalog 里每一条 shellOnly 命令，默认壳（legacy/旧壳 用的同一份
 // createShellCommandDispatcher）都必须接管；否则会落 core runCoreCommand 的
 // 「由界面层实现（shellOnly）」兜底 = 用户一执行就撞假入口（P1-1 回归面）。
 
@@ -269,7 +269,7 @@ describe('P1-1 默认壳全命令枚举：无 shellOnly 假入口', () => {
   });
 });
 
-// —— (a3) P7 新命令在默认壳（legacy/ink 共用分发）可执行 ——
+// —— (a3) P7 新命令在默认壳（legacy/旧壳 共用分发）可执行 ——
 // 机器证据：A/B/C 三棒接线进命令面的 6 条新命令都**非 shellOnly**（core 有真执行体），
 // 默认壳表不接管，逐条经 core runCoreCommand 产出真输出（无「由界面层实现」兜底）。
 describe('P7 新命令在默认壳可执行（search/reindex/import/title/compact-layers/tools）', () => {
@@ -396,7 +396,7 @@ describe('未知命令文案不变', () => {
 // —— (d) 三处入口分发结果一致 ——
 
 describe('三处入口分发结果一致（同一输入同输出）', () => {
-  it('legacy 路径（runCoreCommand 直调）与 ink/next 路径（runSharedCommand）逐行一致', async () => {
+  it('legacy 路径（runCoreCommand 直调）与旧壳/next 路径（runSharedCommand）逐行一致', async () => {
     const tr = await createTestRuntime();
     running.push(tr);
     const legacyLines: string[] = [];
@@ -415,7 +415,7 @@ describe('三处入口分发结果一致（同一输入同输出）', () => {
       },
     };
     const inkLines: string[] = [];
-    const io: InkCommandIo = {
+    const io: CommandIo = {
       print: (t) => inkLines.push(t),
       reproject: () => undefined,
       requestExit: () => undefined,
@@ -432,7 +432,7 @@ describe('三处入口分发结果一致（同一输入同输出）', () => {
     }
   });
 
-  describe('next harness（HARNESS2_RENDERER=next 路径）', () => {
+  describe('next harness（唯一交互壳路径）', () => {
     let h: NextChatHarness;
     beforeEach(() => {
       vi.useFakeTimers();
@@ -502,7 +502,7 @@ describe('三处入口分发结果一致（同一输入同输出）', () => {
 // —— (e) 渲染模式命令（P2-C：minimal/fullscreen/full 经壳表 + RenderModeControl 缝）——
 
 describe('渲染模式命令（P2-C）经壳侧分发表', () => {
-  it('未注入 renderMode 缝（legacy/ink 现状）→ 如实声明未接入，不静默吞掉', () => {
+  it('未注入 renderMode 缝（legacy/旧壳 现状）→ 如实声明未接入，不静默吞掉', () => {
     const { runtime } = makeShellRuntime();
     const lines: string[] = [];
     const dispatch = createShellCommandDispatcher();

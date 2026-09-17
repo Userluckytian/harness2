@@ -1,4 +1,4 @@
-// input.ts — 终端多行输入内核（纯函数，零 ink/react 依赖，可单测）。
+// input.ts — 终端多行输入内核（纯函数，零旧壳/React 依赖，可单测）。
 //
 // 契约见 docs/issue-log/2026-09-11-T.md §7。要点：
 //  - grapheme：用 Node 22 内建 Intl.Segmenter 分段，光标恒落在 grapheme 边界；
@@ -9,7 +9,7 @@
 //    CJK 表意文字属 \p{L}，故连续汉字算一个词单位。
 //  - 历史：historyPrev/historyNext 走到头必须恢复进入历史前的原始 draft（含 cursor 与 selection）。
 //
-// IME 诚实说明：ink 7 的 useInput 无法观测真实 OS 的 IME composition 事件（没有 compositionstart/
+// IME 诚实说明：旧壳 7 的 useInput 无法观测真实 OS 的 IME composition 事件（没有 compositionstart/
 // update/end 通道），因此本内核提供 InputState.composing 与 {type:'compose'} action 仅作为
 // 「可被真实 IME 桥接层填充」的纯逻辑挂点；Composer 当前不会伪造 composition 行为。
 // canSubmit() 用于 Enter 优先级判断：composing 非空时不得提交。
@@ -21,7 +21,7 @@ export interface InputState {
   cursor: number;
   /** null=无选区；否则与 cursor 构成 [min,max) */
   selectionAnchor: number | null;
-  /** IME 组合中文本（未提交）；ink 当前无真实来源，见文件头说明 */
+  /** IME 组合中文本（未提交）；旧壳当前无真实来源，见文件头说明 */
   composing: string;
 }
 

@@ -3,7 +3,7 @@
 // 职责：把 P1 统一输入层（input/parser.ts）产出的 KeyEvent / PasteEvent / MouseEvent /
 // FocusEvent 变更为 ChatScreenState（chat-screen.ts）的草稿 / 光标 / 候选 / scrollback
 // 滚动状态，并经回调上报提交（Enter → onSubmit）与中断（Ctrl+C → onInterrupt）。
-// 纯逻辑、headless 可测、零 ink/react 依赖；渲染仍是逐帧拉取（renderChat 读同一 state）。
+// 纯逻辑、headless 可测、零旧壳/React 依赖；渲染仍是逐帧拉取（renderChat 读同一 state）。
 //
 // 状态取舍（钉死）：**受控可变**——controller 原地改写 state.draft / state.cursor /
 // state.candidates，scrollback 经其自身方法变更。理由：Scrollback 本就是可变对象
@@ -24,10 +24,10 @@
 //   Enter 接受并提交（grok 口径，见差异说明）；PageUp / PageDown → scrollback 翻页；
 //   Ctrl+U / Ctrl+D → 半页上 / 下滚（keymap 裁决采纳 grok，Ctrl+D 不再是退出）；
 //   Ctrl+G → 跟随回底；Ctrl+C → onInterrupt（**每次**上报，双击窗口逻辑留给装配层）。
-//   Ctrl+D 显式裁决（2026-09-12 审查 P2-3）：恒为半页下滚，**不做**空草稿退出（Ink
+//   Ctrl+D 显式裁决（2026-09-12 审查 P2-3）：恒为半页下滚，**不做**空草稿退出（旧壳
 //   Composer 的 EOF 退出语义不带入 next 层）；next 模式退出只走 Ctrl+C 双击与 /exit。
 //
-// 粘贴语义（对齐现有 Ink usePaste 通道）：bracketed paste 的文本 CRLF（含裸 CR）归一为
+// 粘贴语义（对齐现有旧壳 usePaste 通道）：bracketed paste 的文本 CRLF（含裸 CR）归一为
 // LF 后在光标处插入，多行合法；**粘贴路径绝不调用 onSubmit**（内嵌 \r 不触发提交，
 // 对齐「粘贴不会伪装成提交」的既有语义）。chip 占位标签是 Composer 渲染层策略，不在本层。
 //
@@ -127,7 +127,7 @@ export function createChatController(initial: ChatScreenState, options: ChatCont
   }
 
   /**
-   * 提交：文本 trim 为空则直接返回（空草稿 Enter 消费但不提交，对齐 Ink）；
+   * 提交：文本 trim 为空则直接返回（空草稿 Enter 消费但不提交，对齐旧壳）；
    * 否则入历史 → 回调 → 清草稿 → 清候选（草稿已空，旧候选必然失效）。
    * overrideText 用于「候选 Enter 接受并提交」：提交的是高亮候选而非原草稿。
    */
@@ -176,7 +176,7 @@ export function createChatController(initial: ChatScreenState, options: ChatCont
       }
       if (plain && ev.key === 'enter' && !ev.modifiers.shift) {
         const chosen = cands.items[clampCandidateIndex(n, cands.activeIndex)] ?? '';
-        submitDraft(chosen); // 接受高亮候选并提交（差异：Ink 提交的是原草稿，见差异表）
+        submitDraft(chosen); // 接受高亮候选并提交（差异：旧壳提交的是原草稿，见差异表）
         return 'consumed';
       }
       // 其余按键（删除 / 移动 / 可打印字符 / Shift+Tab 等）照常进入编辑流
@@ -232,7 +232,7 @@ export function createChatController(initial: ChatScreenState, options: ChatCont
       return 'consumed';
     }
     if ((ev.key === 'left' || ev.key === 'right') && !ev.modifiers.alt) {
-      // Ctrl+←→ 词移动（对齐 Ink：Ctrl 与 Alt+方向都算词移动；本层 Alt 通道留 P3）
+      // Ctrl+←→ 词移动（对齐旧壳：Ctrl 与 Alt+方向都算词移动；本层 Alt 通道留 P3）
       const word = ev.modifiers.ctrl;
       const dir = ev.key === 'left' ? (word ? 'wordLeft' : 'left') : word ? 'wordRight' : 'right';
       applyInput(reduceInput(currentInput(), { type: 'move', dir }));

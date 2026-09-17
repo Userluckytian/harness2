@@ -1,54 +1,54 @@
-// next-shell.ts — W3：next 渲染层接入 chat 命令（HARNESS2_RENDERER=next 开关，默认关闭）。
+// next-shell.ts — next 渲染层接入 chat 命令（P10 起为唯一交互壳，TTY 下默认启用）。
 //
-// 职责：与 runInkChat 平行的第二条 chat 装配——复用 setupChatSession（同一 runtime/审批/
-// 会话语义，禁止两套装配），渲染与输入改走 next 库：Screen + createInputParser +
-// createChatController + renderChat 画帧。开关在 runInkChat.tsx 入口分支
-// （process.env.HARNESS2_RENDERER === 'next' → runNextChat），其余路径一行不动。
+// 职责：chat 命令的 TTY 装配——复用 setupChatSession（同一 runtime/审批/
+// 会话语义，禁止两套装配），渲染与输入走 next 库：Screen + createInputParser +
+// createChatController + renderChat 画帧。入口门控在 terminal-capabilities.ts 的
+// shouldUseTui（chat.ts 调用）；非 TTY 走 piped readline，不经本文件。
 //
-// 装配对照（与 InkShell 的对齐面与取舍，均如实钉死）：
-// - 转录流式：复用 useTurnStream 导出的 terminalEvent 纯函数；handler 的 50ms 缓冲逻辑为
-//   等价复刻（useTurnStream 是 React hook，不可直接复用），见 createTurnStreamBridge。
-//   差异：Ink 的 live 快照渲染在转录底部、不产生转录项；next 的 Scrollback 无原地更新能力，
+// 装配对照（与旧壳 Shell 的对齐面与取舍，均如实钉死）：
+// - 转录流式：复用 turn-events.ts 导出的 terminalEvent 纯函数；handler 的 50ms 节流缓冲
+//   逻辑由本文件的 createTurnStreamBridge 自持（判别/构造为纯函数，缓冲留在消费侧）。
+//   差异：旧壳的 live 快照渲染在转录底部、不产生转录项；next 的 Scrollback 无原地更新能力，
 //   live 文本以 `assistant/step`（turnId+stepIndex 稳定 id，reducer put 原地替换）承载，
 //   每次替换触发全量重投影（取舍：换增量追加的简单性；长会话下 50ms 全量重投影是已知开销）。
 // - 投影增量：记住上次投影的 item 引用数组与行数；item 前缀引用全等（reducer 不改旧 item，
 //   替换必产生新引用）→ 只 appendLines 新增行；否则（tool/result 原地合并、live step 替换、
 //   折叠变化）全量重投影重建 Scrollback（follow/scrollTop 尽力保留，注明取舍）。
-// - 提交路径：对齐 InkShell——Enter → submit(text)；忙时 FIFO 入队、收尾 drain（选对齐面
+// - 提交路径：对齐旧壳 Shell——Enter → submit(text)；忙时 FIFO 入队、收尾 drain（选对齐面
 //   最小者：完整复刻队列语义，但队列取消面板（早批 Ctrl+X 取消）未接，见文件尾「next 模式暂缺项」）。
 // - 审批：askApproval → ApprovalGate → Approval overlay（标题 'Approval' + y/a/n 项，
-//   ↑↓ / 数字 1-3 / Enter 选择，Esc / Ctrl+C 取消）。choice 映射与 Ink 版一致（allow→y、
+//   ↑↓ / 数字 1-3 / Enter 选择，Esc / Ctrl+C 取消）。choice 映射与旧壳版一致（allow→y、
 //   allow-always→a、deny→n；gate 直接产出 y/a/n，由 setupChatSession 归一）。
-//   未复用 runInkChat 的 createDialogController：其 DialogRequest.render 是 React 节点，
-//   与 next 渲染不兼容，且会引入 ink/react 依赖与模块环；gate 为其非 React 等价复刻。
+//   未复用旧壳入口的 createDialogController：其 DialogRequest.render 是 React 节点，
+//   与 next 渲染不兼容，且会引入旧壳/React 依赖与模块环；gate 为其非 React 等价复刻。
 // - Ctrl+C：createCtrlCGuard（忙时取消 / 空闲 2s 窗口双击退出，退出码 130）——对齐 Composer。
 //   Ctrl+D：按 2026-09-12 keymap 裁决 = 半页下滚（chat-controller 内置消费），**不退出**——
-//   退出只走 Ctrl+C 双击与 /exit（Ink Composer 的空草稿 Ctrl+D 退出语义不带入 next 层）。
+//   退出只走 Ctrl+C 双击与 /exit（旧壳 Composer 的空草稿 Ctrl+D 退出语义不带入 next 层）。
 // - 退出：createShutdown + bindShutdownSignals（SIGTERM/SIGHUP 同一幂等路径）；raw mode 由
 //   本层管理（screen.start 后 setRawMode(true)，退出还原）；SIGINT 不绑定（Ctrl+C 走键盘
-//   协议，raw mode 下内核不投递 SIGINT，与 Ink 行为一致）。另有 process 'exit' 兜底还原
+//   协议，raw mode 下内核不投递 SIGINT，与旧壳行为一致）。另有 process 'exit' 兜底还原
 //   （bindEmergencyExitRestore：exit 回调内只能同步写，见函数注释）。
 // - notifier / steer 观察 / resize（screen.resize + resizeChat + 强制全量重投影）/ DECSET
 //   1004 焦点上报（parser 产出 focus 事件 → focused 标记，notifier 策略自然生效）均已接。
 //
-// next 模式暂缺项（对齐 Ink 的差距，诚实登记、不伪造）：
+// next 模式暂缺项（对齐旧壳的差距，诚实登记、不伪造）：
 //   1. 斜杠命令已全集接齐（P3-C；P1-Dev-2 起为表驱动分发）：core 命令（/help /? /exit /quit
 //      /new /resume /fork /undo /redo /sessions /context /compact /tasks 与未知命令）统一经
-//      ink-commands.runSharedCommand → core runCoreCommand（与 legacy/ink 同一份 core 实现，
+//      command-impls.runSharedCommand → core runCoreCommand（与 legacy/旧壳 同一份 core 实现，
 //      磁盘重投影语义不变）；shellOnly 命令（/reasoning /minimal /fullscreen + P3-A 八条
 //      只读命令 session-info/export/timeline/doctor/memory/skills/plugins/mcps）走
 //      shell-commands 分发器（三壳同一份实现）；/mode 以 shell-commands override 注册本壳
 //      UI 四态语义；/plan /auto /always-approve /theme /search 为 next 层本地命令表。
-//      登记差异：/sessions 无参为转录文本列表（ink 为选择浮层）；P3-F 已补 Ctrl+R 会话选择器
+//      登记差异：/sessions 无参为转录文本列表（旧壳为选择浮层）；P3-F 已补 Ctrl+R 会话选择器
 //      浮层（G-34，Enter 经 /resume 切换）；/mode 无参 =
 //      UI 模式循环一次（等价 Shift+Tab）、带参接受四态名 + catalog 别名 allow-approve
-//      （→ always-approve，P2-2；ink/legacy 为 core 审批模式别名，core 契约冻结不改）；
+//      （→ always-approve，P2-2；旧壳/legacy 为 core 审批模式别名，core 契约冻结不改）；
 //      未知命令走共享「未知命令」文案。
 //   2. 队列面板（Ctrl+; 打开；P3-F 起 Ctrl+X 不再是别名）与重试信息已接齐（P3-E）——差异登记：
-//      队列面板 = 浮层列表（Queue · N 项 + 高亮走行），裸 x 取消高亮项（ink 只取消队首）、
-//      q/Esc 关闭、取消回报「已取消排队」system 行（ink 无回报行）；重试信息 = 转录 system 行
-//      （formatRetryBudget 文案与 ink RetryPanel 一致）+ 状态行「重试 used/max」标记
-//      （ink 为结构化底部面板；React 组件不可复用，形态差异如实登记）。
+//      队列面板 = 浮层列表（Queue · N 项 + 高亮走行），裸 x 取消高亮项（旧壳只取消队首）、
+//      q/Esc 关闭、取消回报「已取消排队」system 行（旧壳无回报行）；重试信息 = 转录 system 行
+//      （formatRetryBudget 文案与旧壳 RetryPanel 一致）+ 状态行「重试 used/max」标记
+//      （旧壳为结构化底部面板；React 组件不可复用，形态差异如实登记）。
 //      状态行/快捷键条上下文化（P3-E）：状态行 = cwd(~) · model · ctx% · 模式(非 normal)
 //      · 重试标记 · 运行中标记（数据驱动纯函数 statusLineFor）；快捷键条 = shortcutsFor 多态
 //      （审批接管 > 帮助/会话选择器浮层 > 子视图 > busy > 空闲，busy 组含 Ctrl+; 队列(N)）。旧「core 模式名/已排队 N」
@@ -76,13 +76,13 @@
 //     .onChildEvent 实时追加进该视图（setupChatSession 装配层传参 → runNextChat sink 延迟
 //     转发 → harness；core 零改动）。视图内 ↑↓ 单行 / PgUp/PgDn 翻页 / 滚轮 ±3。
 //
-// P3-C 斜杠命令全集 + 模糊补全（2026-09-12，对齐 grok `/` 内联下拉 + ink matchCommands）：
-//   - 候选触发：draft 以 '/' 开头且不含空格/换行（= ink Composer 的 commandNameActive 语义）；
+// P3-C 斜杠命令全集 + 模糊补全（2026-09-12，对齐 grok `/` 内联下拉 + 旧壳 matchCommands）：
+//   - 候选触发：draft 以 '/' 开头且不含空格/换行（= 旧壳 Composer 的 commandNameActive 语义）；
 //     逐字过滤实时重算（syncCandidates 在 invalidate 内，draft 变化必经 feed → invalidate）。
-//   - 过滤排序 filterCommands：前缀命中 > 子序列命中（isSubsequence），各自按字典序（ink 的
+//   - 过滤排序 filterCommands：前缀命中 > 子序列命中（isSubsequence），各自按字典序（旧壳的
 //     matchCommands 是纯前缀，本层为其模糊超集；空输入 = 全部命令字典序）。
 //   - Tab / Enter 接受候选：草稿写回 `/cmd `（**含尾随空格**，即退出候选态；再按 Enter 才
-//     发送）。差异登记：grok 选中即执行、ink Enter 提交原草稿；本层采用任务规格的两段式
+//     发送）。差异登记：grok 选中即执行、旧壳 Enter 提交原草稿；本层采用任务规格的两段式
 //     （接受 → 可继续补参数 → 再 Enter 发送）。
 //   - 悬停/滚轮改选（grok panes.rs:958）：候选画在 composer 层顶部，命中测试
 //     composer.candidateItemAt（相对候选区顶行 → item 下标，含滚动窗口映射）；next 层在
@@ -92,7 +92,7 @@
 //     1000;1002;1006 叠加；退出对称关闭）。
 //   - /undo /redo /new /resume /fork /sessions /exit 的重投影语义复用 runSharedCommand：
 //     rewind/会话切换后以 projectSession(dir) 整体重建转录（reprojectFromDisk；磁盘读取失败
-//     保底重投影内存转录，不伪造），并清空折叠覆盖集（对齐 ink 重投影清 expandedIds）。
+//     保底重投影内存转录，不伪造），并清空折叠覆盖集（对齐旧壳重投影清 expandedIds）。
 //
 // P3-A 键位（2026-09-12 keymap-parity 裁决落地，next 层）：
 //   - Tab = 输入框/滚动区双态焦点（候选可见时 Tab 仍是接受候选，dispatcher 候选优先）；
@@ -199,7 +199,7 @@
 //     管线（已落定块一次性写进终端原生滚动区、live 尾部落定后追加、底部 statusline/
 //     浮层/候选/草稿构成 prompt 块做擦除重绘；不进 alt-screen、不接管鼠标）。与 P2-C
 //     否决结论的差异：P2-C 否决的是「复用整帧 renderChat 呈现 minimal」（转录会逐帧
-//     重复进原生 scrollback）；本批走 ink `<Static>` 式「追加式转录 + 底部 prompt 行」
+//     重复进原生 scrollback）；本批走旧壳 `<Static>` 式「追加式转录 + 底部 prompt 行」
 //     管线（minimal-view.ts），两基座共享同一份 transcript/草稿/会话运行时。
 //     切换语义：fullscreen→minimal = 退 alt-screen + 全量重放已落定转录 + minimal prompt；
 //     minimal→fullscreen = 擦掉 prompt 块 + 新建 Screen 进 alt-screen + 全帧重画。
@@ -256,7 +256,7 @@ import {
   type AnySessionEvent,
   type ParsedCoreCommand,
 } from '@harness2/core';
-import { runSharedCommand, type InkCommandIo } from '../ink-commands.js';
+import { runSharedCommand, type CommandIo } from '../command-impls.js';
 import { createShellCommandDispatcher } from '../../shell-commands.js';
 // —— P3-E 接线1（palette，G-31/G-50~G-53；A 棒模块五步缝消费）——
 import {
@@ -422,12 +422,7 @@ import {
   type AttachedInput,
   type ChatController,
 } from './chat-controller.js';
-import { terminalEvent } from '../useTurnStream.js';
-
-/** next 渲染开关（runInkChat 入口分支用；默认关闭 → legacy ink 不变） */
-export function shouldUseNextRenderer(env: Record<string, string | undefined>): boolean {
-  return env.HARNESS2_RENDERER === 'next';
-}
+import { terminalEvent } from '../turn-events.js';
 
 /** P4-1 选择开关：HARNESS2_SELECT=0 时鼠标拖选/键盘复制完全旁路（默认开启） */
 export function selectionEnabledForEnv(env: Record<string, string | undefined>): boolean {
@@ -436,7 +431,7 @@ export function selectionEnabledForEnv(env: Record<string, string | undefined>):
 
 // —— 常量（对齐既有装配的口径）——
 const CTRL_C_WINDOW_MS = 2000; // Composer.CTRL_C_WINDOW_MS
-const LIVE_FLUSH_MS = 50; // useTurnStream.FLUSH_MS
+const LIVE_FLUSH_MS = 50; // live 流式合并节流（沿用既有口径）
 const IDLE_FLUSH_MS = 50; // chat-controller 文件头建议的空闲冲刷周期
 const HINT_CLEAR_MS = 2000; // Composer 瞬时提示展示时长
 const BRACKETED_PASTE_ON = '\x1b[?2004h'; // ansi.ts 无此常量（既有文件只读），本层自定义
@@ -450,14 +445,14 @@ const MOUSE_ALL_MOTION_OFF = '\x1b[?1003l';
 
 const SHORTCUTS: readonly string[] = ['Enter 发送', 'Shift+Enter 换行', 'Ctrl+C 停止', 'Ctrl+C 退出', 'PgUp/PgDn 滚动'];
 
-// —— P3-E 重试预算快照（对齐 ink panels/retry-panel.tsx 的信息量；该模块是 ink/React 组件，
-// next 层不可跨用（会引入 react/ink 依赖进 headless 装配），故按其冻结文案做纯函数等价复刻；
+// —— P3-E 重试预算快照（对齐旧壳重试面板的信息量；其为旧壳/React 组件，
+// next 层不可跨用（会引入 React/旧壳 依赖进 headless 装配），故按其冻结文案做纯函数等价复刻；
 // 契约类型从 core TurnResult 派生，不复制 core 定义）——
 
-/** 冻结契约类型（从 TurnResult 派生，与 ink retry-panel 的 RetryBudgetSnapshot 同源） */
+/** 冻结契约类型（从 TurnResult 派生，与旧壳 retry-panel 的 RetryBudgetSnapshot 同源） */
 export type RetryBudgetSnapshot = NonNullable<TurnResult['retryBudget']>;
 
-/** 预算是否有值得展示的活动：发生过重试或明确停因（turn 正常无重试时不占行，对齐 ink） */
+/** 预算是否有值得展示的活动：发生过重试或明确停因（turn 正常无重试时不占行，对齐旧壳） */
 export function retryBudgetHasActivity(budget: RetryBudgetSnapshot): boolean {
   return budget.usedAttempts > 0 || budget.stopReason !== 'none';
 }
@@ -469,7 +464,7 @@ const RETRY_STOP_REASON_LABEL: Record<RetryBudgetSnapshot['stopReason'], string>
   'retry-after': 'Retry-After 超预算',
 };
 
-/** 预算快照 → 单行可读文本（纯函数；文案与 ink panels/retry-panel.formatRetryBudget 一致） */
+/** 预算快照 → 单行可读文本（纯函数；文案与旧壳重试面板的 formatRetryBudget 一致） */
 export function formatRetryBudget(budget: RetryBudgetSnapshot): string {
   const waitSec = Math.round(budget.waitMs / 1000);
   const maxSec = Math.round(budget.maxWaitMs / 1000);
@@ -500,7 +495,7 @@ const MODE_CYCLE: readonly UiMode[] = ['normal', 'plan', 'auto', 'always-approve
 /**
  * /mode 参数 → UI 四态（P2-2）：本壳同时接受 core catalog 声明的 legacy 别名
  * allow-approve（映射 always-approve）与自身四态名——避免「面板提示 allow-approve、
- * 本壳报未知模式」的双源错误；catalog 文案不动（还有 legacy/ink 消费）。
+ * 本壳报未知模式」的双源错误；catalog 文案不动（还有 legacy/旧壳 消费）。
  */
 const MODE_ALIAS_INPUT: Readonly<Record<string, UiMode>> = {
   normal: 'normal',
@@ -516,13 +511,13 @@ const MODE_INPUT_NAMES: readonly string[] = ['normal', 'allow-approve', 'auto', 
 /** plan 态提交消息时打进转录的声明提示（灰色 system 行） */
 const PLAN_MODE_NOTICE = '[plan mode] 下一条消息建议以规划为主：先探索并给出实现计划（UI 声明态：不改变审批/执行行为）';
 
-// —— P3-C 命令注册表（next 层命令全集；wiring = 行为来源，note = 与 ink 的差异登记）——
+// —— P3-C 命令注册表（next 层命令全集；wiring = 行为来源，note = 与旧壳的差异登记）——
 
 /**
- * 命令接线方式：local = 本层实现（与 ink 同文案/语义）；shared = 委托
- * ink-commands.runSharedCommand；shell = P3-A shellOnly 命令的壳侧真实现
+ * 命令接线方式：local = 本层实现（与旧壳同文案/语义）；shared = 委托
+ * command-impls.runSharedCommand；shell = P3-A shellOnly 命令的壳侧真实现
  * （tui/commands/shell-command-impls.ts，经 shell-commands 壳表分发——P1-1 起与
- * legacy/ink 共用同一份，handleCommand 经 createShellCommandDispatcher 路由）。
+ * legacy/旧壳 共用同一份，handleCommand 经 createShellCommandDispatcher 路由）。
  */
 export type NextCommandWiring = 'local' | 'shared' | 'shell';
 
@@ -538,7 +533,7 @@ export interface NextCommandEntry {
   aliases?: readonly string[];
   /** 一句话描述（P3-E 接线：palette 壳条目派生源，禁止第三份清单；缺省回退 wiring 说明） */
   summary?: string;
-  /** 与 ink 的差异登记（缺省 = 无差异） */
+  /** 与旧壳的差异登记（缺省 = 无差异） */
   note?: string;
 }
 
@@ -546,16 +541,16 @@ export interface NextCommandEntry {
  * next 层斜杠命令注册表（P3-C 全集 + P3-A shellOnly 批次）。core catalog 条目（含 8 条
  * shellOnly 新命令）在 palette 由 describeCapabilities 直接取（G-50 单一来源）；本表同时
  * 登记它们是为了 / 模糊补全候选与接线完备性（shell-command-impls 真实现，非 core 降级文案）。
- * quit / ? 为共享实现的别名（不在候选表，与 ink matchCommands 的候选口径一致）。
+ * quit / ? 为共享实现的别名（不在候选表，与旧壳 matchCommands 的候选口径一致）。
  */
 export const NEXT_COMMANDS: readonly NextCommandEntry[] = [
   { name: 'new', wiring: 'shared' },
-  { name: 'sessions', wiring: 'shared', note: '无参 = 转录文本列表（ink 为选择浮层，浮层化登记暂缺）' },
+  { name: 'sessions', wiring: 'shared', note: '无参 = 转录文本列表（旧壳为选择浮层，浮层化登记暂缺）' },
   { name: 'resume', wiring: 'shared' },
   { name: 'fork', wiring: 'shared' },
   { name: 'undo', wiring: 'shared' },
   { name: 'redo', wiring: 'shared' },
-  { name: 'help', wiring: 'shared', note: 'core runCoreCommand（与 ink/legacy 同一份 core 实现）' },
+  { name: 'help', wiring: 'shared', note: 'core runCoreCommand（与旧壳/legacy 同一份 core 实现）' },
   { name: 'exit', wiring: 'shared' },
   { name: 'session-info', wiring: 'shell', summary: '查看当前会话详情（id/事件与消息统计）' },
   { name: 'export', wiring: 'shell', summary: '导出当前会话轨迹为 ZIP（只读打包）' },
@@ -583,7 +578,7 @@ export const NEXT_COMMANDS: readonly NextCommandEntry[] = [
   // —— P7 加性（B/C 棒 core 能力接线）：会话能力命令 + 工具面命令，wiring 'shared'（runSharedCommand
   //    → core runCoreCommand，三壳同一份实现）。注：next 另有 /search（local 转录搜索，P4-2）
   //    与 core /search（会话全文检索）同名——本壳路由优先 local（登记差异：next 用 /reindex /title
-  //    等会话能力可用；会话全文检索在 legacy/ink 可执行，next 面板行执行落到 local 转录搜索）。
+  //    等会话能力可用；会话全文检索在 legacy/旧壳 可执行，next 面板行执行落到 local 转录搜索）。
   //    P2-4：面板行如实标**壳**（source 'shell'，见 shadowedCoreCommands/buildNextPaletteEntries），
   //    不再以 core badge 冒充 core 实现。 ——
   { name: 'reindex', wiring: 'shared', note: 'core 会话检索索引重建（H-11）' },
@@ -607,19 +602,19 @@ export const NEXT_COMMANDS: readonly NextCommandEntry[] = [
     name: 'plan',
     wiring: 'local',
     summary: '声明 plan 模式（UI 提示态，不改执行）',
-    note: 'next 层 UI 声明态（ink 无此命令）',
+    note: 'next 层 UI 声明态（旧壳无此命令）',
   },
   {
     name: 'auto',
     wiring: 'local',
     summary: '声明 auto 模式（UI 提示态，不自动放行）',
-    note: 'next 层 UI 声明态（ink 无此命令）',
+    note: 'next 层 UI 声明态（旧壳无此命令）',
   },
   {
     name: 'always-approve',
     wiring: 'local',
     summary: '开关 always-approve（新审批自动代答 a）',
-    note: 'next 层 always-approve 开关（ink 无此命令）',
+    note: 'next 层 always-approve 开关（旧壳无此命令）',
   },
   {
     name: 'theme',
@@ -669,7 +664,7 @@ export function resolveShellCommandName(word: string): string {
 /**
  * 模糊过滤候选（P3-C）：输入草稿（'/...'）→ 候选列表（带 '/' 前缀）。
  * 前缀命中 > 子序列命中（isSubsequence），各自按字典序；空输入 = 全部命令字典序。
- * ink 的 matchCommands 是纯前缀过滤，本层为其模糊超集（候选口径同源：注册表名 + next 扩展）。
+ * 旧壳的 matchCommands 是纯前缀过滤，本层为其模糊超集（候选口径同源：注册表名 + next 扩展）。
  * G-84：别名命中（如 '/t' → theme 的 't'）计入**前缀命中**；候选仍以规范 name 呈现
  * （候选表 = 规范命令集，别名只影响命中与排序，不新增候选行）。
  */
@@ -739,7 +734,7 @@ export function createApprovalGate(): ApprovalGate & { bind(bindings: ApprovalGa
   };
 }
 
-// —— turn 流桥（useTurnStream 的非 React 等价复刻；terminalEvent 纯函数直接复用）——
+// —— turn 流桥（自持 50ms 节流缓冲；terminalEvent 纯函数复用 turn-events.ts）——
 
 interface TurnStreamBridge {
   handler: TurnStreamHandler;
@@ -750,14 +745,14 @@ interface TurnStreamBridge {
    * 后一次性写出。null = 无开口 step。
    */
   openStepId(): string | null;
-  /** turn 结束：清 timer 并产出终态事件（final/partial/empty；与 useTurnStream.finalize 同语义） */
+  /** turn 结束：清 timer 并产出终态事件（final/partial/empty） */
   finalize(result: TurnResult | undefined): TranscriptEvent | null;
   reset(): void;
   dispose(): void;
 }
 
 /**
- * 差异说明（与 useTurnStream 对照）：Ink 的 live 快照只驱动 React 重渲、不产生转录项；
+ * 差异说明：live 快照只驱动重渲、不产生转录项的做法在 next 的 Scrollback 下不可行；
  * next 的 Scrollback 无法原地更新，live 文本以 assistant/step（turnId+stepIndex 稳定 id）
  * 承载——50ms flush 用当前 stepIndex 原地替换（reducer put 幂等），工具边界 flushStep
  * 递增 stepIndex 另起新段。终态 turn-final 与末段 step 文本重复时由装配层去重跳过
@@ -807,7 +802,7 @@ function createTurnStreamBridge(onEvent: (event: TranscriptEvent) => void): Turn
     return true;
   }
 
-  /** 工具边界 flushStep（对齐 useTurnStream：发了才递增 stepIndex 并清空缓冲） */
+  /** 工具边界 flushStep（发了才递增 stepIndex 并清空缓冲） */
   function flushStep(): void {
     clearTimer();
     if (emitStep()) {
@@ -964,11 +959,11 @@ export interface NextChatHarness {
   flushUi(): void;
   /** 终端尺寸变化（screen.resize + scrollback cols 契约同步） */
   resize(cols: number, rows: number): void;
-  /** 提交入口（对齐 InkShell.submit：忙时入队、空闲执行；命令/turn 同一入口） */
+  /** 提交入口（对齐旧壳 Shell.submit：忙时入队、空闲执行；命令/turn 同一入口） */
   submit(text: string): void;
   /** Ctrl+C 语义入口（guard 协议；测试可直调，键盘路径经 controller.onInterrupt） */
   interrupt(): void;
-  /** 退出请求（忙时先 abort、收尾后收敛；对齐 InkShell commandIo.requestExit） */
+  /** 退出请求（忙时先 abort、收尾后收敛；对齐旧壳 Shell commandIo.requestExit） */
   requestExit(reason?: ExitReason): void;
   /** 审批选择/取消（编程入口；键盘路径经 approval 层） */
   approve(answer: 'y' | 'a' | 'n'): void;
@@ -1207,7 +1202,7 @@ export function createNextChatHarness(runtime: ChatRuntime, deps: NextChatHarnes
 
   // —— P3-D G-05 折叠规格机接线（folds.ts）——
   // 块种类映射（钉死）：tool → 'tool'（edit/write 产 diff 卡 → 'diff'）；assistant 带推理
-  // → 'thinking'。defaultCollapsed 恒 true（对齐 TranscriptView/projection 默认折叠规则）。
+  // → 'thinking'。defaultCollapsed 恒 true（对齐旧壳转录区/projection 默认折叠规则）。
   function foldKindOf(item: TranscriptItem): FoldableBlockKind | null {
     if (item.kind === 'tool') return item.tool === 'edit' || item.tool === 'write' ? 'diff' : 'tool';
     if (item.kind === 'assistant' && item.reasoning !== undefined) return 'thinking';
@@ -1661,7 +1656,7 @@ export function createNextChatHarness(runtime: ChatRuntime, deps: NextChatHarnes
     renderChat(activeScreen, state);
   }
 
-  // —— 候选补全（P3-C：draft 以 '/' 开头且不含空格/换行 = ink commandNameActive 语义）——
+  // —— 候选补全（P3-C：draft 以 '/' 开头且不含空格/换行 = 旧壳 commandNameActive 语义）——
   // controller（冻结）接受候选/编辑后只改 state.draft/candidates.activeIndex，候选重算由本层
   // 在 invalidate 内完成（draft 变化必经 feed → invalidate，天然逐字过滤）。
   function syncCandidates(): void {
@@ -1695,7 +1690,7 @@ export function createNextChatHarness(runtime: ChatRuntime, deps: NextChatHarnes
     state.cursor = state.draft.length;
   }
 
-  // —— UI 调度器（T4 有界合并，对齐 InkShell 的 16ms/64 批）——
+  // —— UI 调度器（T4 有界合并，对齐旧壳 Shell 的 16ms/64 批）——
   const scheduler: UiScheduler<TranscriptEvent> = createUiScheduler<TranscriptEvent>({
     flushMs: 16,
     maxBatch: 64,
@@ -1717,7 +1712,7 @@ export function createNextChatHarness(runtime: ChatRuntime, deps: NextChatHarnes
   function sendSystem(text: string): void {
     sysSeq += 1;
     dispatch({ type: 'system', id: `sys:${sysSeq}`, text });
-    flushUi(); // 低频：立即落定可见（对齐 InkShell 命令输出的即时性）
+    flushUi(); // 低频：立即落定可见（对齐旧壳 Shell 命令输出的即时性）
   }
 
   // —— 提示（Ctrl+C 协议瞬时提示；绝不写入草稿）——
@@ -1839,7 +1834,7 @@ export function createNextChatHarness(runtime: ChatRuntime, deps: NextChatHarnes
     cardQueue = pushCard(cardQueue, card); // 优先级 permission 最高（G-21）；重复 id 幂等（seq 单调不触发）
     cardFocus = reduceCardFocus(cardFocus, { type: 'reset', count: renderCard(card).items.length }); // G-25 开卡归第 0 项
     syncCardOverlay();
-    controller.blur(); // overlay 互斥接管键盘（对齐 InkShell 的 overlayOpen 语义）
+    controller.blur(); // overlay 互斥接管键盘（对齐旧壳 Shell 的 overlayOpen 语义）
     invalidate();
   }
 
@@ -1955,7 +1950,7 @@ export function createNextChatHarness(runtime: ChatRuntime, deps: NextChatHarnes
 
   function interrupt(): void {
     if (gate.pending() !== null) {
-      gate.cancel(); // 审批挂起时 Ctrl+C = 取消审批（对齐 Ink 的 Esc/Ctrl+C 便利取消）
+      gate.cancel(); // 审批挂起时 Ctrl+C = 取消审批（对齐旧壳的 Esc/Ctrl+C 便利取消）
       return;
     }
     // G-38：cancelling 期间 Ctrl+C 升级为退出请求（先 abort 等收尾后收敛——requestExit 语义）
@@ -1994,7 +1989,7 @@ export function createNextChatHarness(runtime: ChatRuntime, deps: NextChatHarnes
   function requestExit(reason: ExitReason = 'exit'): void {
     if (shutdown.isShuttingDown()) return;
     if (busy) {
-      // turn 进行中：先取消，等本轮收尾后由 finally 触发退出（对齐 InkShell requestExit）
+      // turn 进行中：先取消，等本轮收尾后由 finally 触发退出（对齐旧壳 Shell requestExit）
       exitRequested = true;
       pendingExitReason = reason;
       runtime.abortTurn();
@@ -2625,7 +2620,7 @@ export function createNextChatHarness(runtime: ChatRuntime, deps: NextChatHarnes
     notifyStatusLineStateChanged(false); // P3-E 接线4：会话状态变化 → command 型状态行防抖刷新
     updateSpinner(); // P4-2：turn 开始即启动 spinner 定时器（无运行中子代理时驱动状态行帧动画）
     userSeq += 1;
-    // 输入优先：user 回显立即落定（对齐 InkShell dispatchInputNow）
+    // 输入优先：user 回显立即落定（对齐旧壳 Shell dispatchInputNow）
     scheduler.setInputPriority(true);
     scheduler.push({ type: 'user/message', seq: 0, id: `user:live:${userSeq}`, text });
     scheduler.flushNow();
@@ -2633,7 +2628,7 @@ export function createNextChatHarness(runtime: ChatRuntime, deps: NextChatHarnes
     invalidate();
     let result: TurnResult | undefined;
     try {
-      // @file/@dir 引用解析（对齐 InkShell：发送前预处理，回显保持原文）
+      // @file/@dir 引用解析（对齐旧壳 Shell：发送前预处理，回显保持原文）
       let sendText = text;
       if (hasContextRefs(text)) {
         const ref = expandContextRefs(text, { cwd: runtime.root, root: runtime.root });
@@ -2644,9 +2639,9 @@ export function createNextChatHarness(runtime: ChatRuntime, deps: NextChatHarnes
       if (terminal !== null && !isDuplicateFinal(terminal)) dispatch(terminal);
       if (result !== undefined) {
         dispatch({ type: 'status', id: `status:${userSeq}`, text: turnSummaryLine(result) });
-        // P3-E 重试信息（对齐 ink RetryPanel 信息量：used/remaining/等待/stopReason；形态差异
-        // 登记：ink 为结构化面板，本层简化为转录 system 行 + 状态行「重试 used/max」标记——
-        // ink RetryPanel 是 React 组件不可复用，且 retryBudget 快照仅 turn 收尾可得，时机一致）
+        // P3-E 重试信息（对齐旧壳 RetryPanel 信息量：used/remaining/等待/stopReason；形态差异
+        // 登记：旧壳为结构化面板，本层简化为转录 system 行 + 状态行「重试 used/max」标记——
+        // 旧壳 RetryPanel 是 React 组件不可复用，且 retryBudget 快照仅 turn 收尾可得，时机一致）
         const budget = result.retryBudget;
         if (budget !== undefined && retryBudgetHasActivity(budget)) {
           lastRetry = { used: budget.usedAttempts, max: budget.maxExtraAttempts };
@@ -2672,7 +2667,7 @@ export function createNextChatHarness(runtime: ChatRuntime, deps: NextChatHarnes
       // scrollback（pending 行此后不再变化），不重建则冻结帧残留
       reprojectAll();
       invalidate();
-      // 回合结束提醒（cancelled 不发；退出中不发；异常结束照发——对齐 InkShell）
+      // 回合结束提醒（cancelled 不发；退出中不发；异常结束照发——对齐旧壳 Shell）
       if (!shutdown.isShuttingDown()) {
         notifier.onTurnComplete({ focused, cancelled: result?.stopReason === 'cancelled' });
       }
@@ -2849,7 +2844,7 @@ export function createNextChatHarness(runtime: ChatRuntime, deps: NextChatHarnes
 
   /**
    * 壳侧 ShellCommand 分发器（shell-commands.ts 的表 + 本壳 override）。
-   * 差异裁决（登记）：core 的 /mode 是审批模式别名（legacy/ink 语义）；next 的 /mode 是
+   * 差异裁决（登记）：core 的 /mode 是审批模式别名（legacy/旧壳 语义）；next 的 /mode 是
    * UI 四态声明态（P3-B，测试锁定循环/四态语义，红线 6 不改审批行为）——以 override
    * 注册本壳变体，而非在壳里另写一份分发。/minimal /fullscreen（含 /full 别名）来自
    * 壳表本表（P2-C），经 renderMode 缝驱动 RenderMode 状态机。
@@ -2863,10 +2858,10 @@ export function createNextChatHarness(runtime: ChatRuntime, deps: NextChatHarnes
         return;
       }
       // P2-2（不许引入用户可见的新错误）：core catalog 的 /mode argsSpec 声明
-      // [normal|allow-approve|auto|plan]（legacy/ink 的审批模式别名语义），面板提示会引导
+      // [normal|allow-approve|auto|plan]（legacy/旧壳 的审批模式别名语义），面板提示会引导
       // 用户输入 allow-approve——本壳 UI 四态为 normal/plan/auto/always-approve，故把
       // allow-approve 作为 always-approve 的别名（语义同为「审批自动放行」= acceptEdits 的
-      // 壳侧对应态）。catalog 文案不动（它同服务 legacy/ink，改文案会引入反向错误）。
+      // 壳侧对应态）。catalog 文案不动（它同服务 legacy/旧壳，改文案会引入反向错误）。
       const target = MODE_ALIAS_INPUT[arg];
       if (target !== undefined) {
         setMode(target);
@@ -2966,9 +2961,9 @@ export function createNextChatHarness(runtime: ChatRuntime, deps: NextChatHarnes
   }
 
   /**
-   * P3-C 重投影（对齐 ink reprojectTranscript）：/undo /redo 追加 rewind/marker、会话切换
+   * P3-C 重投影（对齐旧壳 reprojectTranscript）：/undo /redo 追加 rewind/marker、会话切换
    * （/new /resume /fork）之后，用 projectSession 从磁盘会话日志整体重建转录（被遮蔽的
-   * user/assistant 条目消失、恢复时再现）。先落定待处理事件；清空折叠覆盖集（对齐 ink 清
+   * user/assistant 条目消失、恢复时再现）。先落定待处理事件；清空折叠覆盖集（对齐旧壳 清
    * expandedIds，避免旧 item 下标残留）；磁盘读取失败保底重投影内存转录（不伪造）。
    * P2-1：检测到会话 id 变化时一并清空子会话瞬时状态（见 clearChildSessionState）。
    */
@@ -3000,8 +2995,8 @@ export function createNextChatHarness(runtime: ChatRuntime, deps: NextChatHarnes
     reprojectAll();
   }
 
-  /** 共享命令执行缝（委托 ink-commands.runSharedCommand；print/reproject/requestExit 对齐 InkShell） */
-  const commandIo: InkCommandIo = {
+  /** 共享命令执行缝（委托 command-impls.runSharedCommand；print/reproject/requestExit 对齐旧壳 Shell） */
+  const commandIo: CommandIo = {
     print: (t) => sendSystem(t),
     reproject: () => reprojectFromDisk(),
     requestExit: () => requestExit('exit'),
@@ -3019,10 +3014,10 @@ export function createNextChatHarness(runtime: ChatRuntime, deps: NextChatHarnes
    * session.）；① next 本地 UI 命令表（plan/auto/always-approve/theme/search/expand）；
    * ② 壳侧 shellOnly 壳表命令（mode/reasoning/minimal/fullscreen + P3-A 八条只读命令
    * session-info/export/timeline/doctor/memory/skills/plugins/mcps）→ shell-commands 分发器
-   * （P1-1：八条与 legacy/ink 共用同一份真实现，mode = 本壳 UI 四态 override，渲染模式经
+   * （P1-1：八条与 legacy/旧壳 共用同一份真实现，mode = 本壳 UI 四态 override，渲染模式经
    * renderMode 缝驱动状态机）；③ 其余（/help /? /exit /quit /new /resume /fork /undo /redo
-   * /sessions /context /compact /tasks 与未知命令）→ ink-commands.runSharedCommand → core
-   * runCoreCommand（与 legacy/ink 同一份 core 实现；/undo /redo /new /resume /fork 的重投影
+   * /sessions /context /compact /tasks 与未知命令）→ command-impls.runSharedCommand → core
+   * runCoreCommand（与 legacy/旧壳 同一份 core 实现；/undo /redo /new /resume /fork 的重投影
    * 语义经 runSharedCommand 保持不变）。
    *
    * G-03 门控（P3-D 起真实生效）：next 有双渲染基座（fullscreen/minimal），谓词按
@@ -3645,7 +3640,7 @@ export function createNextChatHarness(runtime: ChatRuntime, deps: NextChatHarnes
         }
       }
       // 候选可见时 Tab / Enter = 接受高亮候选（P3-C）：草稿写回 `/cmd `（含尾随空格即退出
-      // 候选态，再 Enter 才发送；grok 选中即执行、ink Enter 提交原草稿，差异登记见文件头）。
+      // 候选态，再 Enter 才发送；grok 选中即执行、旧壳 Enter 提交原草稿，差异登记见文件头）。
       // extraKeyHandler 先于 controller 内置候选裁决调用，本层拦截后 controller 的
       // 「Enter 提交高亮候选」不会触发。
       if (
@@ -4332,7 +4327,7 @@ export function createNextChatHarness(runtime: ChatRuntime, deps: NextChatHarnes
     }
   }
 
-  // —— steer 观察（T5：回帧 → 转录报告，对齐 InkShell）——
+  // —— steer 观察（T5：回帧 → 转录报告，对齐旧壳 Shell）——
   // P3-E 接线3：steer 行为队列展示行的回帧同步——accepted = 注入已发生 → 移除展示行
   // （防 turn 收尾 drain 重复执行）；stale/rejected = 未注入 → 行保留（转入下一回合，
   // 对齐 wiring-contract「stale = 草稿保留 = 行留在队列」）。
@@ -4446,7 +4441,7 @@ export function createNextChatHarness(runtime: ChatRuntime, deps: NextChatHarnes
   };
 }
 
-// —— 真机装配（HARNESS2_RENDERER=next 分支入口；由 runInkChat.tsx 调用）——
+// —— 真机装配（chat.ts 的 TTY 路径入口）——
 
 /**
  * 进程退出兜底还原（审查 P1）：同步写出关鼠标上报 + 显示光标 + 退 alt-screen 到 stdout，
@@ -4487,7 +4482,7 @@ export function bindEmergencyExitRestore(
 }
 
 /**
- * next 渲染层的 chat 入口：setupChatSession（与 legacy/ink 共用）→ Screen 全屏帧循环。
+ * next 渲染层的 chat 入口：setupChatSession（与 legacy/旧壳 共用）→ Screen 全屏帧循环。
  * 终端生命周期：进 alt-screen（Screen.start，含鼠标上报）→ DECSET 1004 焦点上报 →
  * bracketed paste 开启 → stdin raw mode；退出经 createShutdown.finish 统一还原（拆屏 /
  * 焦点上报关闭 / paste 关闭 / raw mode 还原 / runtime.finish），SIGTERM/SIGHUP 走
@@ -4557,7 +4552,7 @@ export async function runNextChat(options: ChatOptions = {}): Promise<void> {
       ? new Screen(stdout, Math.max(1, stdout.columns ?? 80), Math.max(1, stdout.rows ?? 24))
       : undefined;
   if (screen !== undefined) screen.start({ mouse: env.HARNESS2_MOUSE !== '0' });
-  stdout.write(BRACKETED_PASTE_ON); // ink usePaste 由 ink 自动开启；next 路径自行开关（parser 只负责解析）
+  stdout.write(BRACKETED_PASTE_ON); // 旧壳的 usePaste 由旧壳自动开启；next 路径自行开关（parser 只负责解析）
   if (canRaw) stdin.setRawMode(true);
 
   // 审查 P1：进程退出兜底（'exit' 回调内同步还原终端；正常路径已还原，序列幂等无副作用）
@@ -4594,7 +4589,7 @@ export async function runNextChat(options: ChatOptions = {}): Promise<void> {
       await runtime.finish({ destroyInput: () => stdin.destroy() });
     },
     exit: (code) => {
-      process.exitCode = code; // 不 abrupt process.exit，让拆屏与锁释放完成（对齐 runInkChat）
+      process.exitCode = code; // 不 abrupt process.exit，让拆屏与锁释放完成（对齐旧壳入口）
     },
   });
 
