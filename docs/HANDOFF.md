@@ -1,5 +1,10 @@
 # HANDOFF — 交接入口（新维护者/AI 从这里开始）
 
+> **🆕 2026-09-17 立项：桌面端改造总纲** —— 外部评审已完成桌面端定性与取证，立项计划见 `docs/ai-framework/plans/2026-09-17-phase-desktop-overhaul.md`，完整取证与结论写在该计划 §1（注：`docs/issue-log/` 被 gitignore，不作为交接载体）。与同日的「视觉复刻总纲 V0–V6」为**两个并行程序**，分工与协调规则见计划 §0.1。
+> 路线：**先修核 → 再换皮 → 后放大特色**（R0 取证 → R1 核心补强 → R2 壳重做 → R3 特色放大），只做桌面形态，`packages/gateway` 零改动。
+> 本轮新增两条红线：⑨缓存边界不得被非压缩路径破坏 ⑩UI 不得显示假状态。
+> **启动阻塞**：P10/P11 两条未 push 分支须先处理，否则 R0 基线不明。
+
 > 更新：2026-09-15（**P10 单轨化 + P11 界面拉齐已完成（本地，未合 main）**：旧终端壳（React/ink）代码/测试/依赖/现行文档**零残留**，CLI 只剩 next TUI + piped readline 两条路；新建可复跑的**双 TUI 抓屏对照台** `scripts/tui-parity/`（ConPTY + pyte + Pillow，18 场景矩阵）与对照报告 `docs/tui-parity/`（含与 grok 1.0.13 的逐场景差异）；据此修掉 **1 项 P0**（`/help` 面板渲染错位——根因是换行符被当作可打印字符写进单元格）与 **6 项 P1**（输入区可见性、候选两列化、时间戳/耗时/token 用量、工具行人类化、忙碌态反馈、冷启动引导卡）；cli 测试 1575 passed、`pnpm lint` 0 error + prettier 全绿、六包 build/typecheck 全绿、冻结区改动 0 文件；**两个分支未 push / 未合并 main —— 接手请先读 `docs/ai-framework/plans/2026-09-15-p12-backlog.md`**）
 > · 2026-09-14（**内核下沉与三壳复刻 P0–P8 已全部合入 main（`c62721d` → `c7c76a0`）**：core 吸走命令注册表与能力面（`describeCapabilities()`）、CLI 单一 TUI（P10 起旧壳已删）与 Esc 新规格、桌面 slot 四席位 + 三栅 + 对话/轨迹/模型配置、新增 `@harness2/ui-shared` 共享包与 `packages/web` 最小壳；**六包结构成型**，测试 4033 passed + 5 skipped、导出面 499→846 纯加性（0 removed / 0 kindChanged）、CI 七 job 全绿；P9 文档收口进行中） · 2026-09-12（**阶段 I1 交互复刻双轨（甲 CLI/TUI · 乙桌面）已各自独立验收并按 D→T 顺序 `--no-ff` 合入 main**；解冻窗口 #1/#2 均已闭环；CI `test` job 改为分包独立步骤，单点红不再掩盖其余包；两条轨道分支已删，本地与远程仅剩 `main`） · 2026-09-11（地基补丁 P0–P4：网关双会话/挂死/测试缺口、serve token 三端贯通与默认严格、401 误判健康、playwright 降级、锁文件权限、turn 终态文本语义已全部闭环，`packages/core` 与 `packages/gateway` 契约冻结） · 2026-09-09（阶段 15 质量收口进行中：A0/A1/A2 自动化/A3/A4/A5 与 B1–B4 已落地——Windows P0 修复、本地网关真机验证、serve 安全加固、大文件拆分、lint/format 基建、规范文档；阶段 9 复审已补；B5 文档部分完成、README 三图与 B6 发布另待） · 本文件是唯一交接入口，保持与实际状态同步。
 
