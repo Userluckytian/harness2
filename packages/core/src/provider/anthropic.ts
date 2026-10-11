@@ -1,9 +1,13 @@
 // Anthropic Messages API provider：SSE（message_*/content_block_* 事件）、
 // tool_use/tool_result 映射、system 顶层参数（v1 ChatMessage 无 system 角色，保留扩展位）、
 // x-api-key + anthropic-version 头。协议手写 fetch；错误出口一律过 redactSecrets。
-import type { ChatMessage, ChatProvider, ChatRequest, StreamChunk } from './types.js';
+// Z6-A03：推理档位 → thinking {type:'enabled', budget_tokens}（provider/reasoning.ts 显式映射表）。
+// Z6-A02：cacheStablePrefix 时 system/工具定义打 cache_control ephemeral（稳定前缀缓存；
+//         绝不打消息体中间——理由见 types.ts ChatRequest.cacheStablePrefix 注释）。
+import type { ChatMessage, ChatProvider, ChatRequest, StreamChunk, ToolSpec } from './types.js';
 import { ProviderError } from './types.js';
 import { redactedSummary } from '../config/redact.js';
+import { reasoningEffortToAnthropicThinking } from './reasoning.js';
 
 export interface AnthropicOptions {
   /** provider 标识（写入 assistant/message.model），如 "anthropic/claude-sonnet-4-5" */
@@ -14,6 +18,12 @@ export interface AnthropicOptions {
   model: string;
   /** Anthropic API 必填；默认 4096（工厂会传模型配置的 maxOutputTokens） */
   maxOutputTokens?: number;
+  /**
+   * Z6-A03：推理档位（已过 resolveReasoningEffort 校验）。经
+   * reasoningEffortToAnthropicThinking 的显式预算映射表换算为 thinking 参数；
+   * 映射表未收录的档位 → 不发 thinking（fail-silent）。
+   */
+  reasoningEffort?: string;
   /** 测试注入用 fetch（缺省全局 fetch） */
   fetchImpl?: typeof fetch;
 }
@@ -68,6 +78,39 @@ function parseInputOrEmpty(argumentsJson: string): Record<string, unknown> {
   }
 }
 
+/** Anthropic 顶层 system 参数：string（默认）或带 cache_control 的单块数组（Z6-A02 缓存） */
+export type AnthropicSystemParam = string | Array<Record<string, unknown>>;
+
+/**
+ * Z6-A02：system 顶层参数组装（纯函数）。
+ * cacheStablePrefix=true 且 system 非空 → `[{type:'text', text, cache_control:{type:'ephemeral'}}]`
+ * （Anthropic 支持数组形态的 system；单文本块 + 末尾断点 = 整个 system 前缀可缓存）。
+ * 其余情况保持 string 形态（旧 wire 完全不变）。
+ */
+export function toAnthropicSystemParam(system: string, cacheStablePrefix: boolean): AnthropicSystemParam {
+  if (cacheStablePrefix && system.length > 0) {
+    return [{ type: 'text', text: system, cache_control: { type: 'ephemeral' } }];
+  }
+  return system;
+}
+
+/**
+ * Z6-A02：tools wire 组装（纯函数）。
+ * cacheStablePrefix=true 且有工具 → **仅最后一个工具**打 cache_control：Anthropic 的
+ * 缓存断点语义是「该块及之前全部前缀」，工具表按声明顺序构成稳定前缀，末块断点即覆盖
+ * 整个工具表；逐个标注会浪费 4 断点配额且收益为零。工具定义在会话内稳定（注册表固定），
+ * 跨 turn 不变 → 一次写入全程命中。绝不在工具之外的 messages[] 上打断点（红线⑨：
+ * 消息体逐 turn 追加，中途断点会让缓存反复失效并放大 cache_creation 计费）。
+ */
+export function toAnthropicTools(tools: readonly ToolSpec[], cacheStablePrefix: boolean): unknown[] {
+  return tools.map((t, i) => ({
+    name: t.name,
+    description: t.description,
+    input_schema: t.parameters,
+    ...(cacheStablePrefix && i === tools.length - 1 ? { cache_control: { type: 'ephemeral' } } : {}),
+  }));
+}
+
 function joinUrl(baseUrl: string, relative: string): string {
   const base = baseUrl.endsWith('/') ? baseUrl : `${baseUrl}/`;
   return new URL(relative, base).toString();
@@ -75,7 +118,15 @@ function joinUrl(baseUrl: string, relative: string): string {
 
 interface WireEvent {
   type?: string;
-  message?: { usage?: { input_tokens?: number; output_tokens?: number } };
+  message?: {
+    usage?: {
+      input_tokens?: number;
+      output_tokens?: number;
+      /** Z6-A02：缓存命中/写入输入 token（message_start 携带） */
+      cache_read_input_tokens?: number;
+      cache_creation_input_tokens?: number;
+    };
+  };
   index?: number;
   content_block?: { type?: string; id?: string; name?: string };
   delta?: {
@@ -85,7 +136,13 @@ interface WireEvent {
     partial_json?: string;
     stop_reason?: string;
   };
-  usage?: { input_tokens?: number; output_tokens?: number };
+  usage?: {
+    input_tokens?: number;
+    output_tokens?: number;
+    /** Z6-A02：message_delta 也可能回带缓存统计（加性解析，缺省忽略） */
+    cache_read_input_tokens?: number;
+    cache_creation_input_tokens?: number;
+  };
   error?: { type?: string; message?: string };
 }
 
@@ -103,6 +160,7 @@ export class AnthropicProvider implements ChatProvider {
   private readonly apiKey: string;
   private readonly model: string;
   private readonly maxOutputTokens: number;
+  private readonly reasoningEffort?: string;
   private readonly fetchImpl: typeof fetch;
 
   constructor(options: AnthropicOptions) {
@@ -111,27 +169,28 @@ export class AnthropicProvider implements ChatProvider {
     this.apiKey = options.apiKey;
     this.model = options.model;
     this.maxOutputTokens = options.maxOutputTokens ?? 4096;
+    this.reasoningEffort = options.reasoningEffort;
     this.fetchImpl = options.fetchImpl ?? fetch;
   }
 
   async *streamChat(req: ChatRequest, opts?: { signal?: AbortSignal }): AsyncIterable<StreamChunk> {
     const signal = opts?.signal;
+    // Z6-A02：稳定前缀缓存开关（对照点在 agent loop 消息组装处）；缺省关闭 = wire 与旧版一致
+    const cacheStablePrefix = req.cacheStablePrefix === true;
+    // Z6-A03：thinking 参数（映射表未收录的档位 → undefined = 不发，fail-silent）
+    const thinking =
+      this.reasoningEffort !== undefined ? reasoningEffortToAnthropicThinking(this.reasoningEffort) : undefined;
     const wireBody: Record<string, unknown> = {
       model: this.model,
       max_tokens: this.maxOutputTokens,
       stream: true,
       messages: toAnthropicWireMessages(req.messages),
       // ChatRequest.system → Anthropic 顶层 system 参数（阶段 6 加性缝；v1 ChatMessage 无 system 角色）
-      ...(req.system !== undefined && req.system.length > 0 ? { system: req.system } : {}),
-      ...(req.tools && req.tools.length > 0
-        ? {
-            tools: req.tools.map((t) => ({
-              name: t.name,
-              description: t.description,
-              input_schema: t.parameters,
-            })),
-          }
+      ...(req.system !== undefined && req.system.length > 0
+        ? { system: toAnthropicSystemParam(req.system, cacheStablePrefix) }
         : {}),
+      ...(req.tools && req.tools.length > 0 ? { tools: toAnthropicTools(req.tools, cacheStablePrefix) } : {}),
+      ...(thinking !== undefined ? { thinking } : {}),
     };
 
     let res: Response;
@@ -182,6 +241,9 @@ export class AnthropicProvider implements ChatProvider {
     let sawStop = false;
     let stopReason: string | undefined;
     let toolCallCount = 0;
+    // Z6-A02：缓存命中/写入 token 捕获（message_start 与 message_delta 的 usage 均可能携带）
+    const cacheRead: { value?: number } = {};
+    const cacheWrite: { value?: number } = {};
     const inputTokens: { value?: number } = {};
     const outputTokens: { value?: number } = {};
     const toolBlocks = new Map<number, ToolBlockBuffer>();
@@ -234,6 +296,8 @@ export class AnthropicProvider implements ChatProvider {
             toolBlocks,
             inputTokens,
             outputTokens,
+            cacheRead,
+            cacheWrite,
             (sr) => (stopReason = sr),
           )) {
             if (chunk.type === 'tool-call') toolCallCount += 1;
@@ -257,13 +321,20 @@ export class AnthropicProvider implements ChatProvider {
       throw new ProviderError('连接在流结束前中断（未收到 message_stop）', 'stream_truncated');
     }
 
-    // usage：合并 message_start 的输入与 message_delta 的输出
-    if (inputTokens.value !== undefined || outputTokens.value !== undefined) {
+    // usage：合并 message_start 的输入与 message_delta 的输出（Z6-A02：加性透出缓存 token）
+    if (
+      inputTokens.value !== undefined ||
+      outputTokens.value !== undefined ||
+      cacheRead.value !== undefined ||
+      cacheWrite.value !== undefined
+    ) {
       yield {
         type: 'usage',
         usage: {
           ...(inputTokens.value !== undefined ? { inputTokens: inputTokens.value } : {}),
           ...(outputTokens.value !== undefined ? { outputTokens: outputTokens.value } : {}),
+          ...(cacheRead.value !== undefined ? { cacheReadTokens: cacheRead.value } : {}),
+          ...(cacheWrite.value !== undefined ? { cacheWriteTokens: cacheWrite.value } : {}),
         },
       };
     }
@@ -279,12 +350,14 @@ function mapStopReason(reason: string | undefined): 'end_turn' | 'max_tokens' | 
   return 'end_turn';
 }
 
-/** 处理单个 SSE 事件：产出 text/reasoning/tool-call 增量，捕获 usage 与 stop_reason */
+/** 处理单个 SSE 事件：产出 text/reasoning/tool-call 增量，捕获 usage（含缓存 token）与 stop_reason */
 function* handleWireEvent(
   event: WireEvent,
   toolBlocks: Map<number, ToolBlockBuffer>,
   inputTokens: { value?: number },
   outputTokens: { value?: number },
+  cacheRead: { value?: number },
+  cacheWrite: { value?: number },
   setStop: (reason: string) => void,
 ): Generator<StreamChunk> {
   switch (event.type) {
@@ -294,6 +367,12 @@ function* handleWireEvent(
       }
       if (typeof event.message?.usage?.output_tokens === 'number' && event.message.usage.output_tokens > 0) {
         outputTokens.value = event.message.usage.output_tokens;
+      }
+      if (typeof event.message?.usage?.cache_read_input_tokens === 'number') {
+        cacheRead.value = event.message.usage.cache_read_input_tokens;
+      }
+      if (typeof event.message?.usage?.cache_creation_input_tokens === 'number') {
+        cacheWrite.value = event.message.usage.cache_creation_input_tokens;
       }
       return;
     case 'content_block_start': {
@@ -335,6 +414,12 @@ function* handleWireEvent(
       if (typeof event.delta?.stop_reason === 'string') setStop(event.delta.stop_reason);
       if (typeof event.usage?.output_tokens === 'number') outputTokens.value = event.usage.output_tokens;
       if (typeof event.usage?.input_tokens === 'number') inputTokens.value = event.usage.input_tokens;
+      if (typeof event.usage?.cache_read_input_tokens === 'number') {
+        cacheRead.value = event.usage.cache_read_input_tokens;
+      }
+      if (typeof event.usage?.cache_creation_input_tokens === 'number') {
+        cacheWrite.value = event.usage.cache_creation_input_tokens;
+      }
       return;
     }
     default:

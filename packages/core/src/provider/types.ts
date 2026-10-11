@@ -50,11 +50,33 @@ export interface ChatRequest {
    * 唯一来源 = 会话日志 memory/snapshot 事件（Model-visible ⟺ logged 扩展到 system）。
    */
   system?: string;
+  /**
+   * Z6-A02 Prompt caching 开关（对照点在 agent loop 消息组装处；加性可选，缺省关闭）：
+   * true 时 provider 对「会话内稳定前缀」打缓存标记——anthropic 协议给 system 参数与
+   * 工具定义加 cache_control: {type:'ephemeral'}；openai 兼容协议无显式开关（服务端
+   * 自动前缀缓存），本标记被忽略。
+   * 红线⑨：缓存边界只允许打在 system / 工具定义 / 稳定前缀——**绝不**打在消息体中间。
+   * 理由：消息体逐 turn 追加变化（日志投影重建），中途断点会把每 turn 的新增内容
+   * 变成缓存写入点，反复失效前缀、放大 cache_creation 计费；而 system+工具定义在
+   * 会话生命周期内字节级稳定，一次标记全程命中。
+   */
+  cacheStablePrefix?: boolean;
 }
 
 export interface ProviderUsage {
   inputTokens?: number;
   outputTokens?: number;
+  /**
+   * Z6-A02 加性：命中缓存的输入 token 数。
+   * anthropic = usage.cache_read_input_tokens；openai 兼容 = prompt_tokens_details.cached_tokens
+   * （服务端自动缓存，无显式开关）。字段缺省 = 上游未报告（不臆造 0）。
+   */
+  cacheReadTokens?: number;
+  /**
+   * Z6-A02 加性：写入缓存的输入 token 数（anthropic = usage.cache_creation_input_tokens；
+   * openai 兼容协议无对应字段）。旧消费者只读 inputTokens/outputTokens，零破坏。
+   */
+  cacheWriteTokens?: number;
 }
 
 /**

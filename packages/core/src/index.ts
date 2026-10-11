@@ -21,6 +21,9 @@ export * from './provider/mock.js';
 export * from './provider/openai.js';
 export * from './provider/anthropic.js';
 export * from './provider/factory.js';
+// Z6 批次2（2026-10-11）加性导出：A01 模型动态发现 + A03 推理档位映射（纯加性新模块）。
+export * from './provider/discover.js';
+export * from './provider/reasoning.js';
 export * from './interaction/types.js';
 export * from './interaction/run-config.js';
 export * from './interaction/plan-state.js';

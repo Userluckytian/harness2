@@ -404,6 +404,12 @@ async function runTurnWithWriter(writer: SessionWriter | SessionAppender, option
       ...(systemText !== undefined ? { system: systemText } : {}),
       messages,
       ...(toolSpecs.length > 0 ? { tools: toolSpecs } : {}),
+      // Z6-A02：稳定前缀缓存开关——对照点在本组装处。system（memory 快照 + Skills 列表，
+      // turn 内冻结的追加式内容）与工具定义在会话内字节级稳定，是仅有的合法缓存边界；
+      // 消息体由日志投影逐 turn 追加重建，绝不在其上打 cache_control（红线⑨，理由见
+      // types.ts ChatRequest.cacheStablePrefix 注释）。openai 兼容 provider 忽略本标记
+      // （服务端自动前缀缓存）；anthropic provider 据此投影 wire。
+      cacheStablePrefix: true,
     };
 
     let text = '';

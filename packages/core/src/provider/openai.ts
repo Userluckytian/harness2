@@ -15,6 +15,12 @@ export interface OpenAICompatOptions {
   model: string;
   /** 提供时发送 max_tokens（OpenAI-compatible 通用字段） */
   maxOutputTokens?: number;
+  /**
+   * Z6-A03：推理档位（已过 resolveReasoningEffort 校验；模型声明 values 才会有值）。
+   * openai 兼容协议直接透传为 reasoning_effort——档位字面量由 per-model values 声明，
+   * 值域合法性归配置层；本层不做协议侧二次枚举（兼容 DeepSeek/GLM 等自定义档位）。
+   */
+  reasoningEffort?: string;
   /** 测试注入用 fetch（缺省全局 fetch） */
   fetchImpl?: typeof fetch;
 }
@@ -73,7 +79,12 @@ interface WireChunk {
     };
     finish_reason?: string | null;
   }>;
-  usage?: { prompt_tokens?: number; completion_tokens?: number } | null;
+  usage?: {
+    prompt_tokens?: number;
+    completion_tokens?: number;
+    /** Z6-A02：服务端自动前缀缓存的命中统计（OpenAI/兼容扩展；缺省视为未报告） */
+    prompt_tokens_details?: { cached_tokens?: number };
+  } | null;
   /** JSON 可解析的错误帧（无 choices），如 {"error":{"message":"Insufficient Balance","type":"..."}} */
   error?: { message?: string; type?: string; code?: string };
 }
@@ -105,6 +116,7 @@ export class OpenAICompatProvider implements ChatProvider {
   private readonly apiKey: string;
   private readonly model: string;
   private readonly maxOutputTokens?: number;
+  private readonly reasoningEffort?: string;
   private readonly fetchImpl: typeof fetch;
 
   constructor(options: OpenAICompatOptions) {
@@ -113,6 +125,7 @@ export class OpenAICompatProvider implements ChatProvider {
     this.apiKey = options.apiKey;
     this.model = options.model;
     this.maxOutputTokens = options.maxOutputTokens;
+    this.reasoningEffort = options.reasoningEffort;
     this.fetchImpl = options.fetchImpl ?? fetch;
   }
 
@@ -135,6 +148,8 @@ export class OpenAICompatProvider implements ChatProvider {
           }
         : {}),
       ...(this.maxOutputTokens !== undefined ? { max_tokens: this.maxOutputTokens } : {}),
+      // Z6-A03：档位透传（未配置 = 字段完全不出现，请求 wire 与旧版一致）
+      ...(this.reasoningEffort !== undefined ? { reasoning_effort: this.reasoningEffort } : {}),
     };
 
     let res: Response;
@@ -271,6 +286,10 @@ function* handleWireChunk(
       ...(chunk.usage.prompt_tokens !== undefined ? { inputTokens: chunk.usage.prompt_tokens } : {}),
       ...(chunk.usage.completion_tokens !== undefined ? { outputTokens: chunk.usage.completion_tokens } : {}),
     };
+    // Z6-A02：openai 兼容协议无显式缓存开关（服务端自动前缀缓存）——usage 里带
+    // prompt_tokens_details.cached_tokens 就加性透出（同 usage 通道，旧消费者零破坏）。
+    const cached = chunk.usage.prompt_tokens_details?.cached_tokens;
+    if (typeof cached === 'number' && Number.isFinite(cached)) usage.cacheReadTokens = cached;
     yield { type: 'usage', usage };
   }
   for (const choice of chunk.choices ?? []) {

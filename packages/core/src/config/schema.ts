@@ -8,10 +8,25 @@ import { PLUGIN_NAME_PATTERN } from '../plugins/types.js';
 import { TOOL_NAME_PATTERN } from '../tools/types.js';
 import { TOOLSET_NAMES } from '../tools/toolsets.js';
 
-/** 模型条目（仅容量元数据；协议行为由 provider 实现决定） */
+/**
+ * 推理档位声明（Z6-A03 加性；每模型各自声明，值域语义对齐上游 ZCode 的
+ * per-model optionSpecs.reasoningLevel——values 按强度从低到高排列，非全局枚举）。
+ * provider 请求组装时：openai 兼容 → reasoning_effort 透传；anthropic → thinking
+ * 预算按 provider/reasoning.ts 的显式映射表换算。未声明 = 该模型不发推理参数。
+ */
+export interface ModelReasoningConfig {
+  /** 档位清单（非空、去重、按语义强度从低到高排列） */
+  values: string[];
+  /** 缺省档位（roles.<role>.effort 未配置时生效）；必须在 values 内 */
+  default?: string;
+}
+
+/** 模型条目（容量元数据 + 可选推理档位声明；协议行为由 provider 实现决定） */
 export interface ModelEntry {
   contextWindow?: number;
   maxOutputTokens?: number;
+  /** 推理档位声明（Z6-A03；缺省 = 模型不发 reasoning_effort / thinking 参数） */
+  reasoning?: ModelReasoningConfig;
 }
 
 /** provider 渠道配置（channel） */
@@ -30,6 +45,12 @@ export interface ProviderConfig {
 export interface RoleConfig {
   channel: string;
   model: string;
+  /**
+   * 当前推理档位（Z6-A03 加性；可选）。必须在所引模型的
+   * providers.<channel>.models.<model>.reasoning.values 内（声明了 values 即校验）；
+   * 模型未声明 reasoning 时本字段不生效（请求不发推理参数，fail-silent）。
+   */
+  effort?: string;
 }
 
 export type ApprovalMode = 'default' | 'acceptEdits' | 'bypass' | 'plan';
@@ -345,8 +366,9 @@ function collectUnknownKeys(obj: Dict, known: ReadonlySet<string>, where: string
 }
 
 const PROVIDER_KNOWN_KEYS = new Set(['protocol', 'baseUrl', 'envKey', 'models']);
-const MODEL_KNOWN_KEYS = new Set(['contextWindow', 'maxOutputTokens']);
-const ROLE_KNOWN_KEYS = new Set(['channel', 'model']);
+const MODEL_KNOWN_KEYS = new Set(['contextWindow', 'maxOutputTokens', 'reasoning']);
+const MODEL_REASONING_KNOWN_KEYS = new Set(['values', 'default']);
+const ROLE_KNOWN_KEYS = new Set(['channel', 'model', 'effort']);
 const APPROVAL_KNOWN_KEYS = new Set(['mode', 'tools']);
 const MEMORY_KNOWN_KEYS = new Set(['mode', 'nudgeInterval']);
 const BROWSER_KNOWN_KEYS = new Set(['enabled', 'idleDestroyMs', 'maxConcurrent']);
@@ -436,6 +458,54 @@ export function parseConfig(raw: unknown): ConfigParseResult {
               entry[field] = num;
             }
           }
+          // —— reasoning（Z6-A03 加性）：values 非空去重字符串数组；default 可选且必须在 values 内 ——
+          const rawReasoning = mv['reasoning'];
+          if (rawReasoning !== undefined) {
+            if (!isPlainObject(rawReasoning)) {
+              errors.push(`providers.${channel}.models.${model}.reasoning 必须是对象`);
+              modelsOk = false;
+            } else {
+              collectUnknownKeys(
+                rawReasoning,
+                MODEL_REASONING_KNOWN_KEYS,
+                `providers.${channel}.models.${model}.reasoning`,
+                warnings,
+              );
+              const rawValues = rawReasoning['values'];
+              const rawDefault = rawReasoning['default'];
+              let values: string[] | undefined;
+              if (
+                !Array.isArray(rawValues) ||
+                rawValues.length === 0 ||
+                !rawValues.every((x) => typeof x === 'string' && x.trim() !== '')
+              ) {
+                errors.push(
+                  `providers.${channel}.models.${model}.reasoning.values 必须是非空字符串的非空数组（按强度从低到高排列）`,
+                );
+                modelsOk = false;
+              } else if (new Set(rawValues as string[]).size !== (rawValues as string[]).length) {
+                errors.push(`providers.${channel}.models.${model}.reasoning.values 不能有重复档位`);
+                modelsOk = false;
+              } else {
+                values = [...(rawValues as string[])];
+              }
+              if (rawDefault !== undefined) {
+                if (typeof rawDefault !== 'string' || rawDefault.trim() === '') {
+                  errors.push(`providers.${channel}.models.${model}.reasoning.default 必须是非空字符串`);
+                  modelsOk = false;
+                } else if (values !== undefined && !values.includes(rawDefault)) {
+                  errors.push(
+                    `providers.${channel}.models.${model}.reasoning.default "${rawDefault}" 不在 values 内（${values.join('、')}）`,
+                  );
+                  modelsOk = false;
+                } else if (values !== undefined) {
+                  entry.reasoning = { values, default: rawDefault };
+                }
+              } else if (values !== undefined) {
+                entry.reasoning = { values };
+              }
+            }
+          }
           if (modelsOk) models[model] = entry;
         }
         if (modelsOk)
@@ -479,7 +549,14 @@ export function parseConfig(raw: unknown): ConfigParseResult {
         errors.push(`roles.${role}.model 必须是非空字符串`);
         continue;
       }
-      roles[role] = { channel, model };
+      // effort（Z6-A03 加性）：形状只校验非空字符串；与所引模型 values 的一致性在
+      // 交叉引用校验段统一做（那里才有 providers 全貌）。
+      const effort = v['effort'];
+      if (effort !== undefined && (typeof effort !== 'string' || effort.trim() === '')) {
+        errors.push(`roles.${role}.effort 必须是非空字符串`);
+        continue;
+      }
+      roles[role] = { channel, model, ...(effort !== undefined ? { effort } : {}) };
     }
   }
 
@@ -1037,6 +1114,18 @@ export function parseConfig(raw: unknown): ConfigParseResult {
     }
     if (provider.models !== undefined && provider.models[rc.model] === undefined) {
       errors.push(`roles.${role}.model "${rc.model}" 未在 providers.${rc.channel}.models 中声明`);
+    }
+    // effort 一致性（Z6-A03）：模型声明了 reasoning.values 时，effort 必须在值域内
+    //（无效档位 → config 校验错误，不做静默降级）；模型未声明 reasoning 时不校验
+    //（provider 侧 fail-silent：不发推理参数）。
+    const effort = rc.effort;
+    if (effort !== undefined) {
+      const reasoning = provider.models?.[rc.model]?.reasoning;
+      if (reasoning !== undefined && !reasoning.values.includes(effort)) {
+        errors.push(
+          `roles.${role}.effort "${effort}" 不在 providers.${rc.channel}.models.${rc.model}.reasoning.values 内（${reasoning.values.join('、')}）`,
+        );
+      }
     }
   }
 

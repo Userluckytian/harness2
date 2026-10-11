@@ -591,3 +591,93 @@ describe('skills.authoring（P7-A 加性配置段）', () => {
     expect(r.config?.skills?.authoring).toBe('off');
   });
 });
+
+// Z6-A03 加性配置字段：providers.<ch>.models.<id>.reasoning（values/default）+ roles.<role>.effort
+describe('A03 推理档位配置（reasoning/effort）', () => {
+  /** 构造带 reasoning/effort 覆盖的最小 config（内联字面量，避开 strict 索引访问） */
+  const cfgWith = (models: unknown, roles: unknown): Record<string, unknown> => ({
+    providers: {
+      deepseek: { protocol: 'openai', baseUrl: 'https://api.deepseek.com/v1', models },
+    },
+    roles,
+  });
+
+  it('合法声明：reasoning.values/default 透出；roles.effort 保留', () => {
+    const r = parseConfig(
+      cfgWith(
+        { 'deepseek-reasoner': { reasoning: { values: ['low', 'high', 'max'], default: 'high' } } },
+        { main: { channel: 'deepseek', model: 'deepseek-reasoner', effort: 'max' } },
+      ),
+    );
+    expect(r.errors).toEqual([]);
+    expect(r.config?.providers['deepseek']?.models?.['deepseek-reasoner']?.reasoning).toEqual({
+      values: ['low', 'high', 'max'],
+      default: 'high',
+    });
+    expect(r.config?.roles['main']?.effort).toBe('max');
+  });
+
+  it('reasoning.values 非法形状：非数组/空数组/含空串/重复 → 报错', () => {
+    const withValues = (values: unknown): Record<string, unknown> =>
+      cfgWith({ m: { reasoning: { values } } }, { main: { channel: 'deepseek', model: 'm' } });
+    expect(parseConfig(withValues('low')).errors.some((e) => e.includes('reasoning.values'))).toBe(true);
+    expect(parseConfig(withValues([])).errors.some((e) => e.includes('reasoning.values'))).toBe(true);
+    expect(parseConfig(withValues(['low', ''])).errors.some((e) => e.includes('reasoning.values'))).toBe(true);
+    expect(parseConfig(withValues(['low', 'low'])).errors.some((e) => e.includes('重复'))).toBe(true);
+    // reasoning 不是对象
+    expect(
+      parseConfig(cfgWith({ m: { reasoning: 'high' } }, { main: { channel: 'deepseek', model: 'm' } })).errors.some(
+        (e) => e.includes('reasoning 必须是对象'),
+      ),
+    ).toBe(true);
+  });
+
+  it('reasoning.default 必须在 values 内；reasoning 未知字段告警（不静默）', () => {
+    const r = parseConfig(
+      cfgWith(
+        { m: { reasoning: { values: ['low', 'high'], default: 'ultra' } } },
+        { main: { channel: 'deepseek', model: 'm' } },
+      ),
+    );
+    expect(r.config).toBeNull();
+    expect(r.errors.some((e) => e.includes('reasoning.default') && e.includes('ultra'))).toBe(true);
+
+    const warn = parseConfig(
+      cfgWith({ m: { reasoning: { values: ['low'], nope: 1 } } }, { main: { channel: 'deepseek', model: 'm' } }),
+    );
+    expect(warn.config).not.toBeNull();
+    expect(warn.warnings.some((w) => w.includes('reasoning'))).toBe(true);
+  });
+
+  it('roles.effort 形状：非空字符串；effort 为已知字段不再告警', () => {
+    const bad = parseConfig(cfgWith(undefined, { main: { channel: 'deepseek', model: 'deepseek-chat', effort: '' } }));
+    expect(bad.errors.some((e) => e.includes('roles.main.effort'))).toBe(true);
+
+    const ok = parseConfig(
+      cfgWith(undefined, { main: { channel: 'deepseek', model: 'deepseek-chat', effort: 'high' } }),
+    );
+    expect(ok.errors).toEqual([]);
+    expect(ok.config?.roles['main']?.effort).toBe('high');
+    expect(ok.warnings.filter((w) => w.includes('roles.main'))).toHaveLength(0);
+  });
+
+  it('交叉校验：effort 不在所引模型 values 内 → 致命错误；模型未声明 reasoning → 不校验（fail-silent）', () => {
+    const mismatch = parseConfig(
+      cfgWith(
+        { 'deepseek-chat': { reasoning: { values: ['low', 'high'] } } },
+        { main: { channel: 'deepseek', model: 'deepseek-chat', effort: 'max' } },
+      ),
+    );
+    expect(mismatch.config).toBeNull();
+    expect(mismatch.errors.some((e) => e.includes('roles.main.effort "max"') && e.includes('reasoning.values'))).toBe(
+      true,
+    );
+
+    // 模型无 reasoning 声明 → effort 保留但不校验值域
+    const ok = parseConfig(
+      cfgWith(undefined, { main: { channel: 'deepseek', model: 'deepseek-chat', effort: 'high' } }),
+    );
+    expect(ok.errors).toEqual([]);
+    expect(ok.config?.roles['main']?.effort).toBe('high');
+  });
+});

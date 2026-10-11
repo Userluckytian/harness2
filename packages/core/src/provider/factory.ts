@@ -10,6 +10,7 @@ import {
 import { readAuthFile } from '../config/auth.js';
 import { AnthropicProvider } from './anthropic.js';
 import { OpenAICompatProvider } from './openai.js';
+import { resolveReasoningEffort } from './reasoning.js';
 import type { ChatProvider } from './types.js';
 
 export interface CreateProviderOptions {
@@ -76,6 +77,12 @@ export function createProvider(config: HarnessConfig, role: string, options: Cre
 
   const name = `${roleCfg.channel}/${roleCfg.model}`;
   const maxOutputTokens = providerCfg.models?.[roleCfg.model]?.maxOutputTokens;
+  // Z6-A03：解析本角色生效的推理档位（模型声明了 reasoning.values 才可能生效；
+  // 无效档位 ConfigError——schema 已拦，此处纵深防御）。openai 透传 / anthropic 映射预算。
+  const reasoningEffort = resolveReasoningEffort({
+    roleEffort: roleCfg.effort,
+    reasoning: providerCfg.models?.[roleCfg.model]?.reasoning,
+  });
   if (providerCfg.protocol === 'openai') {
     return new OpenAICompatProvider({
       name,
@@ -83,6 +90,7 @@ export function createProvider(config: HarnessConfig, role: string, options: Cre
       apiKey: source.key,
       model: roleCfg.model,
       ...(maxOutputTokens !== undefined ? { maxOutputTokens } : {}),
+      ...(reasoningEffort !== undefined ? { reasoningEffort } : {}),
     });
   }
   return new AnthropicProvider({
@@ -91,5 +99,6 @@ export function createProvider(config: HarnessConfig, role: string, options: Cre
     apiKey: source.key,
     model: roleCfg.model,
     ...(maxOutputTokens !== undefined ? { maxOutputTokens } : {}),
+    ...(reasoningEffort !== undefined ? { reasoningEffort } : {}),
   });
 }
