@@ -257,6 +257,12 @@ export interface ConversationSeatProps {
   readonly chain?: ComposerChain;
   /** 会话头（壳注入：不同壳的头部信息面不同；缺省不渲染头部） */
   readonly header?: (info: { readonly sessionId: string; readonly cwd?: string }) => ReactNode;
+  /**
+   * 会话状态面板（Z-17 的 `ConversationStatusPanel`：会话列右上有内容才出现）。
+   * 壳注入（与 header 同一注入口径）；返回 null = 无内容不渲染。缺省不渲染。
+   * 面板自身的容器查询断点（Z-95：<1280 mini 胶囊 / ≥1280 面板）以本槽位包裹行为容器。
+   */
+  readonly statusPanel?: (info: { readonly sessionId: string }) => ReactNode;
   /** 繁忙态 Enter 偏好（缺省 = 默认 queue；壳无配置通道时保持缺省，缺口如实登记） */
   readonly busyEnter?: BusyEnterBehavior;
   readonly maxConcurrentFileUploads?: number;
@@ -395,6 +401,21 @@ export function ConversationSeat(props: ConversationSeatProps): ReactNode {
       {sessionId !== null && session !== undefined ? (
         <>
           {props.header?.({ sessionId, ...(cwd !== undefined ? { cwd } : {}) })}
+          {/* Z-17：状态面板挂在会话列内（头部之下、视图环之上），右对齐；
+              包裹行带 `@container` 供面板的容器查询断点（<1280 mini 胶囊 / ≥1280 面板）。
+              有内容（statusPanel 返回非 null）才渲染包裹行 —— 空面板不留任何占位高度；
+              `empty:hidden` 兜底回调返回「渲染为空」的元素时也不占位（双保险）。 */}
+          {(() => {
+            const statusPanel = props.statusPanel?.({ sessionId });
+            return statusPanel === null || statusPanel === undefined ? null : (
+              <div
+                data-testid="status-panel-slot"
+                className="@container empty:hidden flex flex-none justify-end px-3 pt-2"
+              >
+                {statusPanel}
+              </div>
+            );
+          })()}
           <ConversationViewRing
             registry={registry}
             sessionId={sessionId}

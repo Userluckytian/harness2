@@ -29,9 +29,14 @@ import {
   createConversationViewRegistry as createViewRegistry,
   type ConversationViewRegistry,
 } from '@harness2/ui-shared/renderer/conversation/views/view-registry.js';
+import {
+  ConversationStatusPanel,
+  statusPanelHasContent,
+} from '@harness2/ui-shared/renderer/conversation/status-panel/ConversationStatusPanel.js';
 import { createInMemoryPersistence, type Persistence } from '@harness2/ui-shared/renderer/ports.js';
 import { toolNavigation, type TrajectoryViewConsumer } from '@harness2/ui-shared/renderer/tool/index.js';
 import { ConversationHeader } from '../components/ConversationHeader.js';
+import { store } from '../app-shared.js';
 import {
   TRAJECTORY_VIEW_KEY,
   createComposerOverlayHost,
@@ -163,6 +168,17 @@ function desktopConversationHeader(info: { sessionId: string; cwd?: string }): R
   return <ConversationHeader sessionId={info.sessionId} cwd={info.cwd} />;
 }
 
+/**
+ * Z3-03（Z-17）：桌面会话状态面板（共享席位经 `statusPanel` 缝注入）。
+ * 数据源 = 桌面单例 store 的 S7 只读视图缓存（planState / changeReview）+ 会话流任务表；
+ * 有内容才渲染（statusPanelHasContent 与面板组件同一份数据口径）——无数据返回 null，
+ * seat 的槽位包裹行整个不渲染，不留占位高度。
+ */
+function desktopStatusPanel(info: { sessionId: string }): ReactNode {
+  if (!statusPanelHasContent(store, info.sessionId)) return null;
+  return <ConversationStatusPanel store={store} sessionId={info.sessionId} />;
+}
+
 /** 桌面侧入参：共享席位除 `registry` 外都可省；注册表缺省取桌面单例（测试可显式注入） */
 export type ConversationSeatProps = Omit<SharedConversationSeatProps, 'registry'> & {
   readonly registry?: ConversationViewRegistry<ConversationSession>;
@@ -182,6 +198,8 @@ export function ConversationSeat(props: ConversationSeatProps): ReactNode {
       chain={props.chain ?? conversationComposerChain}
       composerOverlayHost={props.composerOverlayHost ?? conversationComposerOverlay}
       header={props.header ?? desktopConversationHeader}
+      // Z3-03：状态面板（Z-17）——桌面缺省注入；测试可传 statusPanel 覆盖（与其他缝同一口径）
+      statusPanel={props.statusPanel ?? desktopStatusPanel}
       // 桌面缺省文件上传通道：如实失败并给出**桌面侧**原因（主进程未暴露上传 IPC），
       // 与共享包的中性缺省文案不同 —— 保持桌面既有行为与既有测试断言不变。
       transport={props.transport ?? desktopUploadTransport}
