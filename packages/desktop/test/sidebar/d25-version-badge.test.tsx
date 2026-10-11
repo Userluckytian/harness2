@@ -3,7 +3,11 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it } from 'vitest';
 import { cleanup, screen } from '@testing-library/react';
-import { BUILD_VERSION_ENV_KEYS, formatBuildVersion, resolveBuildVersion } from '../../src/renderer/sidebar/brand.js';
+import {
+  BUILD_VERSION_ENV_KEYS,
+  formatBuildVersion,
+  resolveBuildVersion,
+} from '@harness2/ui-shared/renderer/sidebar/brand.js';
 import { renderSidebar } from './harness.js';
 
 afterEach(() => {

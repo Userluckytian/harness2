@@ -1,8 +1,9 @@
-/* 三栅布局（D-10～D-13）样式。
+/* 三栅布局（D-10～D-13）样式 —— 壳无关（Z7 下沉 ui-shared；桌面与 web 共用）。
    与既有 styles.css 的关系：只补帧/席位容器的盒子，皮肤沿用 / 侧栏皮肤（.h2-sidebar）/
    .side-panel / .pane-header；用后代选择器（.app-frame .h2-sidebar）覆盖既有固定宽度，
    保证不依赖样式表加载顺序。
-   降动效（D-16）：media query + [data-reduced-motion='true'] 双保险，过渡一律关掉。 */
+   降动效（D-16）：media query + [data-reduced-motion='true'] 双保险，过渡一律关掉。
+   桌面专属的窗口外壳（圆角 / 自绘窗控）不在此表，见 desktop `layout/desktop-window.css`。 */
 
 .app-frame {
   display: flex;
@@ -158,35 +159,11 @@
 /* —— 顶栏已拆除（Z2-01b / Z-01）：原 .app-frame-btn（顶栏三栅开关）随 topbar 一并删除 —— */
 
 /* ============================================================================
- * Z2-01b 窗口外壳（Z-01～Z-04）：无独立顶栏 —— 平台圆角 + 左上浮层 + 拖拽区。
- * 全部为**桌面专属**类名（-webkit-app-region 是 Electron 语义，web 壳不消费本表）。
+ * Z2-01b 左上浮层与拖拽区（Z-01～Z-04）。
+ * 抬升类名（desktop-top-overlay*）为历史命名，两壳共用同一份契约：
+ * -webkit-app-region 是 Electron 语义，web 浏览器忽略；web 直接用同一浮层组件。
+ * 桌面专属的窗口圆角与自绘窗控见 desktop `layout/desktop-window.css`。
  * ========================================================================== */
-
-/* 窗口根容器（App 根）：浮层定位上下文 + 圆角裁切；平台圆角按类给（Z-02） */
-.desktop-window-frame {
-  position: relative;
-  height: 100%;
-  overflow: hidden;
-}
-.desktop-window-frame-win {
-  border-radius: 5px;
-  background: var(--color-background-win-alt);
-}
-.desktop-window-frame-mac {
-  /* Z-02：Tahoe(≥26) 12px 需 Darwin 版本号，渲染端拿不到 → 先按非 Tahoe 的 6px（如实登记） */
-  border-radius: 6px;
-  background: var(--color-background);
-}
-.desktop-window-frame-linux {
-  border-radius: 16px;
-  /* 合成器会丢圆角 → 同半径 clip-path 固定（Z-02） */
-  clip-path: inset(0 round 16px);
-  background: var(--color-background-win-alt);
-}
-.desktop-window-frame-linux.desktop-window-frame-maximized {
-  border-radius: 0;
-  clip-path: none;
-}
 
 /* —— 拖拽区（Z-03 / Z-07 分区 0）：浮层条 / 左栏顶部 48px / 内容列顶部 4px —— */
 .app-frame-drag-strip {
@@ -202,7 +179,7 @@
   -webkit-app-region: drag;
 }
 
-/* —— DesktopTopOverlay（Z-01）：绝对定位、**不占布局高度** —— */
+/* —— FrameTopOverlay（Z-01）：绝对定位、**不占布局高度** —— */
 .desktop-top-overlay {
   position: absolute;
   left: 0;
@@ -253,56 +230,6 @@
 }
 .desktop-top-overlay-new {
   font-size: var(--text-ui-sm);
-}
-
-/* —— 会话列头右侧动作区（Z-01 / Z-04）：Side Pane 开关 + 自绘窗控 —— */
-.pane-header-actions {
-  display: inline-flex;
-  align-items: center;
-  gap: 2px;
-  margin-left: 8px;
-}
-.pane-header-icon-btn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  padding: 3px 5px;
-  border: none;
-  border-radius: 6px;
-  background: transparent;
-  color: var(--fg-muted);
-  cursor: pointer;
-}
-.pane-header-icon-btn:hover,
-.pane-header-icon-btn[aria-pressed='true'] {
-  background: var(--color-surface-hover);
-  color: var(--fg);
-}
-/* 自绘窗控三键（win/linux）：Z-04 的 136px 量级安全宽度（3 × 45px） */
-.window-controls {
-  display: inline-flex;
-  align-items: stretch;
-  height: 22px;
-  margin-left: 4px;
-}
-.window-controls-btn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 45px;
-  height: 100%;
-  border: none;
-  background: transparent;
-  color: var(--fg-muted);
-  cursor: pointer;
-}
-.window-controls-btn:hover {
-  background: var(--color-surface-hover);
-  color: var(--fg);
-}
-.window-controls-close:hover {
-  background: var(--color-destructive);
-  color: var(--color-destructive-foreground);
 }
 
 /* —— 降动效（D-16）：系统偏好 + 帧根属性两条路都关过渡 —— */

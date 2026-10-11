@@ -2,7 +2,7 @@
 // 覆盖：未声明席位拒绝、重复声明拒绝、keyed 缺 key/重复 key/非法 key 拒绝、保留 key 不可被 clear 卸载、
 //       single 抢占（优先级 → 后注册）、list 按 order 排序、幂等 disposer、快照引用稳定。
 import { describe, expect, it, vi } from 'vitest';
-import { createSlotRegistry, SlotRegistryError } from '../../src/renderer/slots/index.js';
+import { createSlotRegistry, SlotRegistryError } from '@harness2/ui-shared/renderer/slots/index.js';
 
 function Comp(): null {
   return null;

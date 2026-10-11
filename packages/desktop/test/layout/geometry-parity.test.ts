@@ -12,7 +12,7 @@ import {
   clampWidth,
   computeFrameGeometry,
   sidebarMaxWidth as frameSidebarMaxWidth,
-} from '../../src/renderer/layout/geometry.js';
+} from '@harness2/ui-shared/renderer/layout/geometry.js';
 import {
   SIDEBAR_COLLAPSED_WIDTH as SIDEBAR_COLLAPSED,
   SIDEBAR_DEFAULT_WIDTH as SIDEBAR_DEFAULT,
@@ -20,7 +20,7 @@ import {
   SIDEBAR_MIN_WIDTH as SIDEBAR_MIN,
   clampSidebarWidth,
   sidebarMaxWidth as sidebarMaxWidthLocal,
-} from '../../src/renderer/sidebar/geometry.js';
+} from '@harness2/ui-shared/renderer/sidebar/geometry.js';
 
 /** 帧渲染出的侧栏宽度（与 scene 无关的最小入参） */
 function frameSidebarWidth(sidebarWidth: number, sidebarCollapsed = false): number {

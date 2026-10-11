@@ -1,5 +1,6 @@
-// 渲染端根组件（P4-A 骨架）：顶栏 + AppFrame 四席位（sidebar / main / rightbar / shell.overlay）。
-// 三栅几何、让步链、面板即时状态与主题呈现见 renderer/layout/**；席位注册表见 renderer/slots/**；
+// 渲染端根组件（P4-A 骨架）：AppFrame 四席位（sidebar / main / rightbar / shell.overlay）。
+// Z7：三栅几何、让步链、面板即时状态、帧容器与席位注册表已下沉 ui-shared（renderer/layout/** 与
+// renderer/slots/**）；本目录 renderer/layout/** 只留桌面专属（浮层包装 / 覆层开关 / 壳主题 / D-15 主题呈现 / 装配）。
 // 旧的自制分屏（components/PaneArea.tsx + 分栏命令）已随三栅落地拆除（D-10：会话页占 main 的 conversation key）。
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { SettingsNotifyDetails, SettingsPreferencesShape, SettingsTheme } from '../shared/protocol.js';

@@ -21,12 +21,14 @@ import {
   useState,
   useSyncExternalStore,
 } from 'react';
-import type { CSSProperties, ReactNode } from 'react';
-import type { Controller } from '@harness2/ui-shared/renderer/app-controller.js';
-import type { AppStore } from '@harness2/ui-shared/renderer/store.js';
-import { ConversationSeat } from '../../conversation/assembly.js';
-import type { ComposerControls } from '../../conversation/composer-controls-bridge.js';
-import { createComposerOverlayHost, type ComposerOverlayHost } from '../../trajectory/index.js';
+import type { CSSProperties, ComponentType, ReactNode } from 'react';
+import type { Controller } from '../../app-controller.js';
+import type { AppStore } from '../../store.js';
+// Z7：席位组件由壳注入（桌面 = 桌面组装根 ConversationSeat，web = 共享 ConversationSeat 或 web 包装）。
+// 缺省用共享 ConversationSeat（壳无专属 header/statusPanel 注入时即它）。
+import { ConversationSeat as SharedConversationSeat, type ConversationSeatProps } from '../../conversation/seat.js';
+import type { ComposerModeSwitchProps, ComposerModelSelectProps } from '../../conversation/composer/Composer.js';
+import { createComposerOverlayHost, type ComposerOverlayHost } from '../../trajectory/shell-contract.js';
 import { workbenchDrag } from './drag.js';
 import {
   MAX_PANES,
@@ -52,6 +54,12 @@ const SPLITTER_HIT_PX = 8;
 /** 提示停留时长 */
 const HINT_MS = 2200;
 
+/** Z3-04 composer 左右簇控件 props（壳装配；结构等同桌面 composer-controls-bridge 的 ComposerControls） */
+export interface WorkbenchComposerControls {
+  readonly modelSelect?: ComposerModelSelectProps;
+  readonly modeSwitch?: ComposerModeSwitchProps;
+}
+
 interface DropTarget {
   readonly leafId: string;
   readonly side: SplitSide;
@@ -60,6 +68,8 @@ interface DropTarget {
 interface WorkbenchApi {
   readonly store: AppStore;
   readonly controller: Controller;
+  /** 每格渲染的会话席位组件（壳注入；缺省 = 共享 ConversationSeat） */
+  readonly seat: ComponentType<ConversationSeatProps>;
   readonly snapshot: WorkbenchSnapshot;
   readonly selectedId: string | null;
   /** 主格 = 绑定当前 selectedId 的叶（无绑定时的回落：焦点叶 / 首个叶） */
@@ -72,7 +82,7 @@ interface WorkbenchApi {
   readonly onCloseLeaf: (leafId: string) => void;
   readonly onRatioChange: (splitId: string, ratio: number) => void;
   /** Z3-04：composer 左右簇控件 props（壳装配；缺省 = 不渲染控件，测试与旧调用面不变） */
-  readonly composerControls?: ComposerControls;
+  readonly composerControls?: WorkbenchComposerControls;
 }
 
 const WorkbenchContext = createContext<WorkbenchApi | null>(null);
@@ -126,19 +136,22 @@ export interface WorkbenchHostProps {
   readonly controller: Controller;
   /** 测试注入独立仓库；缺省 = 应用级内存单例（不落盘） */
   readonly workbench?: WorkbenchStore;
+  /** 每格渲染的会话席位组件（壳注入；缺省 = 共享 ConversationSeat，无专属壳注入） */
+  readonly seat?: ComponentType<ConversationSeatProps>;
   /** Z3-04：composer 左右簇控件 props（壳经 useComposerControls 装配；缺省不渲染控件） */
-  readonly composerControls?: ComposerControls;
+  readonly composerControls?: WorkbenchComposerControls;
 }
 
 /**
  * 分屏工作台宿主：单格时与旧结构等价（一格会话界面），多格时二叉分割。
- * @param props - 会话数据源（store/controller）、可选状态仓库与可选 composer 控件 props。
+ * @param props - 会话数据源（store/controller）、可选状态仓库、可选席位组件与可选 composer 控件 props。
  * @returns 工作台根元素。
  */
 export function WorkbenchHost({
   store,
   controller,
   workbench = workbenchStore,
+  seat = SharedConversationSeat,
   composerControls,
 }: WorkbenchHostProps): ReactNode {
   const appState = useSyncExternalStore(store.subscribe, store.getState);
@@ -264,6 +277,7 @@ export function WorkbenchHost({
     () => ({
       store,
       controller,
+      seat,
       snapshot,
       selectedId,
       primaryId,
@@ -279,6 +293,7 @@ export function WorkbenchHost({
     [
       store,
       controller,
+      seat,
       snapshot,
       selectedId,
       primaryId,
@@ -493,7 +508,7 @@ function WorkbenchLeaf({ leafId }: { leafId: string }): ReactNode {
       onDrop={(event) => api.onDropLeaf(leafId, event)}
     >
       {/* Z3-04：左右簇控件 props（壳装配经 host 下发；未装配时缺省不渲染） */}
-      <ConversationSeat
+      <api.seat
         store={api.store}
         controller={api.controller}
         sessionId={sessionId}

@@ -12,7 +12,7 @@ import {
   scrollAffordance,
   type ScrollAffordanceEvent,
   type ScrollAffordanceState,
-} from '../../src/renderer/sidebar/scroll-affordance.js';
+} from '@harness2/ui-shared/renderer/sidebar/scroll-affordance.js';
 import { renderSidebar, sessionItem, stubColumnRect, stubOverflow } from './harness.js';
 
 beforeEach(() => {

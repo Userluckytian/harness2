@@ -10,8 +10,8 @@ import type {
   ComposerModeSwitchProps,
   ComposerModelSelectProps,
 } from '@harness2/ui-shared/renderer/conversation/composer/Composer.js';
-import { WorkbenchHost } from '../../src/renderer/layout/workbench/host.js';
-import { WorkbenchStore } from '../../src/renderer/layout/workbench/store.js';
+import { WorkbenchHost } from '@harness2/ui-shared/renderer/layout/workbench/host.js';
+import { WorkbenchStore } from '@harness2/ui-shared/renderer/layout/workbench/store.js';
 
 afterEach(cleanup);
 

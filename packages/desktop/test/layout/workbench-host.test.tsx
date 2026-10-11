@@ -7,10 +7,10 @@ import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
 import type { Harness2Api, SessionEventsPayloadShape } from '../../src/shared/protocol.js';
 import { createController, type Controller } from '@harness2/ui-shared/renderer/app-controller.js';
 import { AppStore } from '@harness2/ui-shared/renderer/store.js';
-import { workbenchDrag } from '../../src/renderer/layout/workbench/drag.js';
-import { WorkbenchHost } from '../../src/renderer/layout/workbench/host.js';
-import { countPanes, type WorkbenchNode } from '../../src/renderer/layout/workbench/model.js';
-import { WorkbenchStore } from '../../src/renderer/layout/workbench/store.js';
+import { workbenchDrag } from '@harness2/ui-shared/renderer/layout/workbench/drag.js';
+import { WorkbenchHost } from '@harness2/ui-shared/renderer/layout/workbench/host.js';
+import { countPanes, type WorkbenchNode } from '@harness2/ui-shared/renderer/layout/workbench/model.js';
+import { WorkbenchStore } from '@harness2/ui-shared/renderer/layout/workbench/store.js';
 
 afterEach(() => {
   cleanup();

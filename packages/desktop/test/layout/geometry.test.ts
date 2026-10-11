@@ -32,7 +32,7 @@ import {
   sidebarMaxWidth,
   terminalMaxHeight,
   type FrameGeometryInput,
-} from '../../src/renderer/layout/geometry.js';
+} from '@harness2/ui-shared/renderer/layout/geometry.js';
 
 function input(over: Partial<FrameGeometryInput> = {}): FrameGeometryInput {
   return {

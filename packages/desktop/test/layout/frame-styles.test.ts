@@ -1,15 +1,21 @@
 // 帧样式表契约测试（D-13 / D-16 / 关闭态）。
-// vitest 不注入 CSS，故这里直接读 layout/app-frame.css 断言关键规则存在 ——
+// vitest 不注入 CSS，故这里直接读样式表断言关键规则存在 ——
 // 「56px 轨道宽度、hidden 真的不占布局、降动效两条路都关过渡」都不能只靠内联样式。
+//
+// Z7：壳无关的帧/席位/浮层样式已下沉 ui-shared（packages/ui-shared/src/styles/app-frame.css），
+// 桌面窗口外壳样式在 packages/desktop/src/renderer/layout/desktop-window.css；本测试合并读取两表。
 import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-const css = readFileSync(
-  join(dirname(fileURLToPath(import.meta.url)), '..', '..', 'src', 'renderer', 'layout', 'app-frame.css'),
-  'utf8',
-);
+const here = dirname(fileURLToPath(import.meta.url));
+const css = [
+  join(here, '..', '..', '..', 'ui-shared', 'src', 'styles', 'app-frame.css'),
+  join(here, '..', '..', 'src', 'renderer', 'layout', 'desktop-window.css'),
+]
+  .map((p) => readFileSync(p, 'utf8'))
+  .join('\n');
 
 describe('app-frame.css 契约', () => {
   it('降动效（D-16）：media query 与帧根属性两条路都关过渡/动画', () => {

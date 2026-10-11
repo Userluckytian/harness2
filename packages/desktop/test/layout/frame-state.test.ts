@@ -8,7 +8,7 @@ import {
   rightbarMaxWidth,
   type FrameAction,
   type FrameState,
-} from '../../src/renderer/layout/frame-state.js';
+} from '@harness2/ui-shared/renderer/layout/frame-state.js';
 import {
   MAIN_CONVERSATION_KEY,
   RIGHTBAR_MIN_PX,

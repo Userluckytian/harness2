@@ -9,6 +9,8 @@ import { createAppShell } from '@harness2/ui-shared/renderer/app-shell.js';
 import '@harness2/ui-shared/styles/styles.css';
 import '@harness2/ui-shared/styles/shell.css';
 import '@harness2/ui-shared/styles/sidebar.css';
+// Z7：四席位骨架（含浮层/拖拽区）样式，与桌面共用同一份。
+import '@harness2/ui-shared/styles/app-frame.css';
 import './web.css';
 import { WebApp } from './app.js';
 import { readWebEnv } from './env.js';

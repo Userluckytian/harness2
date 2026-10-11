@@ -4,7 +4,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import type React from 'react';
-import { createSlotRegistry, SlotHost, type SlotRegistry } from '../../src/renderer/slots/index.js';
+import { createSlotRegistry, SlotHost, type SlotRegistry } from '@harness2/ui-shared/renderer/slots/index.js';
 import {
   declareFrameSeats,
   FRAME_ROOT_SEAT,
@@ -13,17 +13,17 @@ import {
   MAIN_CONVERSATION_KEY,
   registerFrameSeats,
   TERMINAL_SEAT,
-} from '../../src/renderer/layout/frame-seats.js';
-import { FRAME_SEAT_VIEWS } from '../../src/renderer/layout/frame-seat-views.js';
-import { AppFrame } from '../../src/renderer/layout/AppFrame.js';
-import { useFrameState } from '../../src/renderer/layout/use-frame.js';
+} from '@harness2/ui-shared/renderer/layout/frame-seats.js';
+import { FRAME_SEAT_VIEWS } from '@harness2/ui-shared/renderer/layout/frame-seat-views.js';
+import { AppFrame } from '@harness2/ui-shared/renderer/layout/AppFrame.js';
+import { useFrameState } from '@harness2/ui-shared/renderer/layout/use-frame.js';
 import {
   AUTO_COLLAPSE_RESIZE_IDLE_MS,
   TERMINAL_MIN_PX,
   resolveTerminalHeight,
-} from '../../src/renderer/layout/geometry.js';
+} from '@harness2/ui-shared/renderer/layout/geometry.js';
 import { REDUCED_MOTION_QUERY } from '../../src/renderer/layout/theme-presenter.js';
-import type { FrameController } from '../../src/renderer/layout/frame-context.js';
+import type { FrameController } from '@harness2/ui-shared/renderer/layout/frame-context.js';
 
 let latest: FrameController | null = null;
 

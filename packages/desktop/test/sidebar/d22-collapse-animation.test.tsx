@@ -5,8 +5,12 @@
 // @vitest-environment jsdom
 import { cleanup, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { COLLAPSE_TRANSITION_MS, sidebarStateClasses } from '../../src/renderer/sidebar/collapse.js';
-import { SIDEBAR_DEFAULT_WIDTH, SIDEBAR_MIN_WIDTH, clampSidebarWidth } from '../../src/renderer/sidebar/geometry.js';
+import { COLLAPSE_TRANSITION_MS, sidebarStateClasses } from '@harness2/ui-shared/renderer/sidebar/collapse.js';
+import {
+  SIDEBAR_DEFAULT_WIDTH,
+  SIDEBAR_MIN_WIDTH,
+  clampSidebarWidth,
+} from '@harness2/ui-shared/renderer/sidebar/geometry.js';
 import { renderCollapsibleSidebar, renderSidebar, stubMatchMedia, type MediaQueryStub } from './harness.js';
 
 let media: MediaQueryStub | undefined;

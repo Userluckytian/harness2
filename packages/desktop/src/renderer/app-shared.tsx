@@ -6,7 +6,7 @@
 // 旧分栏（pane）相关的兼容导出保留：调用点已随三栅拆除清零，仅为对外导出面兼容。
 import { THEME_CYCLE, createAppShell, sessionTitle, StatusBadge } from '@harness2/ui-shared/renderer/app-shell.js';
 import type { AppState } from '@harness2/ui-shared/renderer/store.js';
-import type { FrameAction } from './layout/frame-state.js';
+import type { FrameAction } from '@harness2/ui-shared/renderer/layout/frame-state.js';
 
 export { THEME_CYCLE, StatusBadge, sessionTitle };
 

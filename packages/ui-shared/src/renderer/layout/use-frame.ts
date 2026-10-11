@@ -16,7 +16,7 @@ import {
   type FrameAction,
   type FrameState,
 } from './frame-state.js';
-import { prefersReducedMotion, resolveMatchMedia, REDUCED_MOTION_QUERY } from './theme-presenter.js';
+import { prefersReducedMotion, resolveMatchMedia, REDUCED_MOTION_QUERY } from './reduced-motion.js';
 import type { FrameController } from './frame-context.js';
 
 /** 视口宽度（window.innerWidth + resize 监听；无 window 环境返回 0） */

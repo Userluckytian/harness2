@@ -5,7 +5,7 @@
 import { describe, expect, it } from 'vitest';
 import { act, cleanup, render, screen } from '@testing-library/react';
 import type React from 'react';
-import { createSlotRegistry, SlotHost } from '../../src/renderer/slots/index.js';
+import { createSlotRegistry, SlotHost } from '@harness2/ui-shared/renderer/slots/index.js';
 
 function Marker({ text }: { text: string }): React.ReactNode {
   return <p>{text}</p>;

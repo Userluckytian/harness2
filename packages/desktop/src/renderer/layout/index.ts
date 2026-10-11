@@ -1,9 +1,12 @@
-// layout 导出面（纯/视图层）：四席位声明与帧容器（D-10）、几何与让步链（D-11～D-13）、
-// 即时状态（D-14）、主题呈现与降动效（D-15/D-16）。
+// layout 导出面（桌面侧）：壳无关部分（帧容器 / 几何 / 即时状态 / 降动效 / 浮层 / 分屏工作台）
+// 已随 Z7 下沉 `@harness2/ui-shared/renderer/layout/*`，本 barrel 原样再导出，既有
+// `./layout/index.js` 引用面不变；桌面专属（窗口外壳浮层包装、覆层开关、壳主题、D-15 主题呈现）
+// 仍由本目录模块提供。
+//
 // 注意：应用装配（shellSlots / assembleFrame）与席位内容（injectShellSeatContents）会 import
 // app-shared（依赖 window.harness2），故**不**经本文件导出 —— 由 App.tsx 直接引对应模块，
 // 纯逻辑测试（node 环境）也能放心 import 本 barrel。
-export { AppFrame } from './AppFrame.js';
+export { AppFrame, FrameTopOverlay, type FrameTopOverlayProps } from '@harness2/ui-shared/renderer/layout/index.js';
 export { DesktopTopOverlay, type DesktopTopOverlayProps } from './DesktopTopOverlay.js';
 export {
   AUTO_COLLAPSE_RESIZE_IDLE_MS,
@@ -41,7 +44,7 @@ export {
   type FrameGeometry,
   type FrameGeometryInput,
   type ShortageOwner,
-} from './geometry.js';
+} from '@harness2/ui-shared/renderer/layout/geometry.js';
 export {
   applyFrameAction,
   contentWidthOf,
@@ -50,8 +53,8 @@ export {
   MAIN_CONVERSATION_KEY,
   type FrameAction,
   type FrameState,
-} from './frame-state.js';
-export { FrameProvider, useFrame, type FrameController } from './frame-context.js';
+} from '@harness2/ui-shared/renderer/layout/frame-state.js';
+export { FrameProvider, useFrame, type FrameController } from '@harness2/ui-shared/renderer/layout/frame-context.js';
 export {
   declareFrameSeats,
   registerFrameSeats,
@@ -62,7 +65,7 @@ export {
   MAIN_PANEL_KEYS,
   TERMINAL_SEAT,
   type FrameSeatId,
-} from './frame-seats.js';
+} from '@harness2/ui-shared/renderer/layout/frame-seats.js';
 export { ShellPaletteProvider, useShellPalette, type ShellPaletteValue } from './shell-context.js';
 export {
   closeAllOverlays,
@@ -90,4 +93,9 @@ export {
   type MatchMediaLike,
   type ThemePresentation,
 } from './theme-presenter.js';
-export { useFrameState, useReducedMotion, useViewportWidth, type UseFrameOptions } from './use-frame.js';
+export {
+  useFrameState,
+  useReducedMotion,
+  useViewportWidth,
+  type UseFrameOptions,
+} from '@harness2/ui-shared/renderer/layout/use-frame.js';

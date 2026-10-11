@@ -1,11 +1,21 @@
-// 主题呈现器（D-15）+ 降动效（D-16）。
+// 主题呈现器（D-15）+ 降动效（D-16）—— 桌面侧。
 // D-15：一次应用写四处 —— html{color-scheme}、body[data-ds-dark-theme]、
 //       html 的 --dsh-content-font-size、<meta name="theme-color">。
-// D-16：prefers-reduced-motion 时禁过渡 —— CSS 侧见 layout/app-frame.css 的 media query，
-//       同时把解析结果写到帧根属性 data-reduced-motion（供测试与调试观测，避免「看不见的开关」）。
+// D-16（降动效）已随 Z7 下沉 `@harness2/ui-shared/renderer/layout/reduced-motion.js`
+//       （帧骨架共用）；本文件**再导出**同口径符号，既有 `layout/theme-presenter.js` 引用面不变。
 // data-theme（既有 B2 主题变量切换）仍由 theme.ts 负责，本模块只补 D-15 的四要素。
 import type { SettingsTheme } from '../../shared/protocol.js';
 import { resolvedTheme } from '../theme.js';
+
+export {
+  REDUCED_MOTION_ATTRIBUTE,
+  REDUCED_MOTION_QUERY,
+  prefersReducedMotion,
+  reducedMotionAttribute,
+  resolveMatchMedia,
+  type MatchMediaLike,
+} from '@harness2/ui-shared/renderer/layout/reduced-motion.js';
+import { resolveMatchMedia, type MatchMediaLike } from '@harness2/ui-shared/renderer/layout/reduced-motion.js';
 
 /** 深色主题在 body 上的属性名（D-15） */
 export const DARK_THEME_ATTRIBUTE = 'data-ds-dark-theme';
@@ -15,17 +25,8 @@ export const CONTENT_FONT_SIZE_VAR = '--dsh-content-font-size';
 export const DEFAULT_CONTENT_FONT_SIZE = 14;
 /** 主题色（与 styles.css 的 Zai 底色 token 对齐：--color-background 亮/暗） */
 export const THEME_COLOR = { light: '#f8f8f8', dark: '#161616' } as const;
-/** 降动效 media query（D-16） */
-export const REDUCED_MOTION_QUERY = '(prefers-reduced-motion: reduce)';
 /** 系统深色 media query（theme.ts 同源） */
 const DARK_QUERY = '(prefers-color-scheme: dark)';
-/** 降动效标记属性（挂在帧根上，D-16） */
-export const REDUCED_MOTION_ATTRIBUTE = 'data-reduced-motion';
-
-/** matchMedia 的最小形状（jsdom 无原生实现 → 测试注入；生产走 window.matchMedia） */
-export type MatchMediaLike = (
-  query: string,
-) => Pick<MediaQueryList, 'matches' | 'addEventListener' | 'removeEventListener'>;
 
 export interface ThemePresentation {
   readonly dark: boolean;
@@ -35,13 +36,6 @@ export interface ThemePresentation {
   readonly contentFontSize: string;
   /** <meta name="theme-color"> 的取值 */
   readonly themeColor: string;
-}
-
-/** 取原生/注入的 matchMedia（保留 window 绑定，避免 detached 调用抛 Illegal invocation） */
-export function resolveMatchMedia(override?: MatchMediaLike): MatchMediaLike | undefined {
-  if (override !== undefined) return override;
-  if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return undefined;
-  return (query) => window.matchMedia(query);
 }
 
 /** theme 偏好 → 四下要写的呈现值（纯函数；system 由 prefers-color-scheme 解析） */
@@ -106,20 +100,4 @@ export function applyThemePresentation(
   if (mq === undefined || typeof mq.addEventListener !== 'function') return () => {};
   mq.addEventListener('change', apply);
   return () => mq.removeEventListener('change', apply);
-}
-
-/** 降动效偏好（D-16；无 matchMedia 环境视为 false） */
-export function prefersReducedMotion(matchMedia?: MatchMediaLike): boolean {
-  const mm = resolveMatchMedia(matchMedia);
-  if (mm === undefined) return false;
-  try {
-    return mm(REDUCED_MOTION_QUERY).matches === true;
-  } catch {
-    return false;
-  }
-}
-
-/** 降动效属性值（true → 'true'，否则 null → 不写属性） */
-export function reducedMotionAttribute(prefersReduced: boolean): 'true' | null {
-  return prefersReduced ? 'true' : null;
 }

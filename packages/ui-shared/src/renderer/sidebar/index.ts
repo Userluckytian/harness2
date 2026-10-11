@@ -1,4 +1,4 @@
-// 侧栏目录对外出口：接线阶段（A 棒 slots/layout 装配）从这里取组件与类型。
+// 侧栏目录对外出口（Z7 下沉 ui-shared）：接线阶段（slots/layout 装配）从这里取组件与类型。
 // 只导出接口与实现，不导出内部细节（hook 仅在包内使用；纯函数导出供装配层直接调用）。
 
 // 外壳与区域席位
@@ -10,12 +10,8 @@ export type {
   SidebarRootProps,
   SidebarSeats,
 } from './SidebarRoot.js';
-export { SessionBrowser } from '@harness2/ui-shared/renderer/sidebar/SessionBrowser.js';
-export type {
-  SessionBrowserProps,
-  SessionRowDrag,
-  WorkspacesOwnerProps,
-} from '@harness2/ui-shared/renderer/sidebar/SessionBrowser.js';
+export { SessionBrowser } from './SessionBrowser.js';
+export type { SessionBrowserProps, SessionRowDrag, WorkspacesOwnerProps } from './SessionBrowser.js';
 
 // 几何（Z-05 / Z-06）
 export {
@@ -44,17 +40,9 @@ export { SCROLLBAR_LINGER_MS, scrollAffordance } from './scroll-affordance.js';
 export type { ScrollAffordanceEvent, ScrollAffordanceState } from './scroll-affordance.js';
 
 // 会话行视图模型（D-23）
-export {
-  UNTITLED_SESSION_LABEL,
-  buildSessionItems,
-  toSessionItem,
-} from '@harness2/ui-shared/renderer/sidebar/session-items.js';
-export type {
-  SidebarSessionFlags,
-  SidebarSessionItem,
-  SidebarSessionSource,
-} from '@harness2/ui-shared/renderer/sidebar/session-items.js';
+export { UNTITLED_SESSION_LABEL, buildSessionItems, toSessionItem } from './session-items.js';
+export type { SidebarSessionFlags, SidebarSessionItem, SidebarSessionSource } from './session-items.js';
 
 // 文案
-export { DEFAULT_SIDEBAR_LABELS } from '@harness2/ui-shared/renderer/sidebar/labels.js';
-export type { SidebarLabels } from '@harness2/ui-shared/renderer/sidebar/labels.js';
+export { DEFAULT_SIDEBAR_LABELS } from './labels.js';
+export type { SidebarLabels } from './labels.js';

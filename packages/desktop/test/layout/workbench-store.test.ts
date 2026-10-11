@@ -1,7 +1,7 @@
 // 分屏工作台状态仓库测试（Z2-06 / Z-19）：投放/去重/上限/关闭塌缩/比例钳制/选择同步。
 import { describe, expect, it } from 'vitest';
-import { countPanes, leafIds, type WorkbenchNode } from '../../src/renderer/layout/workbench/model.js';
-import { WorkbenchStore } from '../../src/renderer/layout/workbench/store.js';
+import { countPanes, leafIds, type WorkbenchNode } from '@harness2/ui-shared/renderer/layout/workbench/model.js';
+import { WorkbenchStore } from '@harness2/ui-shared/renderer/layout/workbench/store.js';
 
 /** 建一个已绑定 a 的两格工作台（pane-0=a 主格；pane-1=b 非主格） */
 function twoPane(): WorkbenchStore {

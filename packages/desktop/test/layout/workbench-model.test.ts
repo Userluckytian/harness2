@@ -20,7 +20,7 @@ import {
   setSplitRatio,
   splitLeafAt,
   type WorkbenchNode,
-} from '../../src/renderer/layout/workbench/model.js';
+} from '@harness2/ui-shared/renderer/layout/workbench/model.js';
 
 const leaf = (id: string): WorkbenchNode => ({ t: 'leaf', id });
 const rect = (width = 100, height = 100) => ({ left: 0, top: 0, width, height });

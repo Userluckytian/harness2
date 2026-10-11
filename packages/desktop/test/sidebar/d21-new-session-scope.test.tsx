@@ -3,7 +3,7 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it } from 'vitest';
 import { cleanup, screen } from '@testing-library/react';
-import { resolveNewSessionScope } from '../../src/renderer/sidebar/new-session-scope.js';
+import { resolveNewSessionScope } from '@harness2/ui-shared/renderer/sidebar/new-session-scope.js';
 import { renderSidebar } from './harness.js';
 
 afterEach(() => {

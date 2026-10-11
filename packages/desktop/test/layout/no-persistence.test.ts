@@ -7,6 +7,28 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const rendererDir = join(dirname(fileURLToPath(import.meta.url)), '..', '..', 'src', 'renderer');
+// Z7：帧骨架（layout / slots）与侧栏已下沉 ui-shared；反向守卫必须覆盖迁出的同一批文件，
+// 否则「移走即漏扫」——这里显式把 ui-shared 的对应目录纳入扫描面（语义不弱化）。
+const sharedRendererDir = join(
+  dirname(fileURLToPath(import.meta.url)),
+  '..',
+  '..',
+  '..',
+  'ui-shared',
+  'src',
+  'renderer',
+);
+const frameSourceDirs = [
+  join(rendererDir, 'layout'),
+  join(sharedRendererDir, 'layout'),
+  join(sharedRendererDir, 'slots'),
+];
+const browserSourceDirs = [
+  rendererDir,
+  join(sharedRendererDir, 'layout'),
+  join(sharedRendererDir, 'slots'),
+  join(sharedRendererDir, 'sidebar'),
+];
 
 function walk(dir: string): string[] {
   const out: string[] = [];
@@ -21,7 +43,7 @@ function walk(dir: string): string[] {
 describe('面板几何不持久化（D-14）', () => {
   it('渲染端源码不出现 localStorage / sessionStorage / indexedDB（Z1-05 主题镜像 + Z-90 字号镜像豁免）', () => {
     const hits: string[] = [];
-    for (const file of walk(rendererDir)) {
+    for (const file of browserSourceDirs.flatMap((dir) => walk(dir))) {
       const text = readFileSync(file, 'utf8');
       if (!/localStorage|sessionStorage|indexedDB/.test(text)) continue;
       // Z1-05：主题偏好镜像 localStorage['harness2-theme'] 是例外 #1（首屏防闪；
@@ -40,7 +62,7 @@ describe('面板几何不持久化（D-14）', () => {
 
   it('layout/ 与 slots/ 不经分屏持久化通道（saveLayout/loadLayout）保存几何', () => {
     const hits: string[] = [];
-    for (const file of [...walk(join(rendererDir, 'layout')), ...walk(join(rendererDir, 'slots'))]) {
+    for (const file of frameSourceDirs.flatMap((dir) => walk(dir))) {
       const text = readFileSync(file, 'utf8');
       if (/saveLayout|loadLayout|draftsSet|metadataSet/.test(text)) hits.push(file);
     }
@@ -49,7 +71,7 @@ describe('面板几何不持久化（D-14）', () => {
 
   it('源平面拆分（D-04）：layout/ 与 slots/ 不 import 宿主侧（main / preload / electron）', () => {
     const hits: string[] = [];
-    for (const file of [...walk(join(rendererDir, 'layout')), ...walk(join(rendererDir, 'slots'))]) {
+    for (const file of frameSourceDirs.flatMap((dir) => walk(dir))) {
       const text = readFileSync(file, 'utf8');
       if (/from '\.\.?\/(main|preload)\//.test(text) || /from 'electron'/.test(text)) hits.push(file);
     }
@@ -57,7 +79,7 @@ describe('面板几何不持久化（D-14）', () => {
   });
 
   it('几何只由 React state 承载：几何纯函数无副作用（同入参同出参）', async () => {
-    const { computeFrameGeometry } = await import('../../src/renderer/layout/geometry.js');
+    const { computeFrameGeometry } = await import('@harness2/ui-shared/renderer/layout/geometry.js');
     const input = {
       viewportWidth: 1000,
       sidebarWidth: 280,

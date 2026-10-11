@@ -8,7 +8,7 @@
 //   （Z2-04 未做）→ 本期只实现「会话列头右侧」这一处，右栏开合时窗控不迁移。
 import { useEffect, useState } from 'react';
 import type { ContextUsageShape } from '../../shared/protocol.js';
-import { useOptionalFrame } from '../layout/frame-context.js';
+import { useOptionalFrame } from '@harness2/ui-shared/renderer/layout/frame-context.js';
 import { desktopPlatform, usesCustomWindowControls } from '../platform.js';
 import { useWindowMaximized } from '../window-state.js';
 

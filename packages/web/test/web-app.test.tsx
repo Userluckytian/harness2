@@ -172,7 +172,7 @@ describe('P2-9 新建会话：无可用 cwd 时置灰并给可行动原因（不
   it('列表有 cwd → 按钮可点、无阻断提示、点击触发动作', async () => {
     const onNewSession = vi.fn();
     const { stop } = await mount({ onNewSession });
-    const button = screen.getByRole('button', { name: '新会话' }) as HTMLButtonElement;
+    const button = screen.getByTestId('sidebar-new-session') as HTMLButtonElement;
     expect(button.disabled).toBe(false);
     expect(screen.queryByTestId('web-new-session-blocked')).toBeNull();
     fireEvent.click(button);
@@ -184,7 +184,7 @@ describe('P2-9 新建会话：无可用 cwd 时置灰并给可行动原因（不
     const onNewSession = vi.fn();
     const noCwd: SessionSummaryShape = { ...SESSION, cwd: undefined };
     const { stop } = await mount({ client: fakeClient([noCwd]), onNewSession });
-    const button = screen.getByRole('button', { name: '新会话' }) as HTMLButtonElement;
+    const button = screen.getByTestId('sidebar-new-session') as HTMLButtonElement;
     expect(button.disabled).toBe(true);
     const blocked = screen.getByTestId('web-new-session-blocked');
     expect(blocked.textContent).toContain('cwd');

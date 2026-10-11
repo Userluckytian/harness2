@@ -15,16 +15,21 @@ import { CommandPalette } from '../components/CommandPalette.js';
 import { SettingsPage } from '../components/SettingsPage.js';
 import { SidePanel } from '../components/SidePanel.js';
 import { controller, store, useAppState, newSessionCollapsingRightbar, StatusBadge } from '../app-shared.js';
-import { SidebarRoot, buildSessionItems, resolveBuildVersion } from '../sidebar/index.js';
-import type { SlotRegistry } from '../slots/index.js';
-import { CONVERSATION_OWNER, FRAME_SEAT, MAIN_CONVERSATION_KEY } from './frame-seats.js';
-import { useFrame } from './frame-context.js';
+import { SidebarRoot, buildSessionItems, resolveBuildVersion } from '@harness2/ui-shared/renderer/sidebar/index.js';
+import type { SlotRegistry } from '@harness2/ui-shared/renderer/slots/index.js';
+import {
+  CONVERSATION_OWNER,
+  FRAME_SEAT,
+  MAIN_CONVERSATION_KEY,
+} from '@harness2/ui-shared/renderer/layout/frame-seats.js';
+import { useFrame } from '@harness2/ui-shared/renderer/layout/frame-context.js';
+import { workbenchDrag } from '@harness2/ui-shared/renderer/layout/workbench/drag.js';
+import { WorkbenchHost } from '@harness2/ui-shared/renderer/layout/workbench/host.js';
+import { workbenchStore } from '@harness2/ui-shared/renderer/layout/workbench/store.js';
+import { ConversationSeat } from '../conversation/assembly.js';
 import { useShellPalette } from './shell-context.js';
 import { setOverlay, takeRequestedSettingsSection, useOverlayOpen } from './shell-overlays.js';
 import { setShellTheme } from './shell-theme.js';
-import { workbenchDrag } from './workbench/drag.js';
-import { WorkbenchHost } from './workbench/host.js';
-import { workbenchStore } from './workbench/store.js';
 
 /**
  * 渲染进程可读的宿主环境表（D-25 构建徐标数据源）。
@@ -125,7 +130,7 @@ function SidebarSeatContent(): React.ReactNode {
  *  Z2-03 的内层 conversation | terminal 分栏在 MainSeatView 层，分屏发生在本内容内部。
  *  Z3-04：composer 左右簇控件（模型选择/模式切换）由壳在此装配一次，经工作台宿主下发到每格。 */
 function ConversationSeatContent(): React.ReactNode {
-  return <WorkbenchHost store={store} controller={controller} />;
+  return <WorkbenchHost store={store} controller={controller} seat={ConversationSeat} />;
 }
 
 /**

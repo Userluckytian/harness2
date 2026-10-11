@@ -2,7 +2,7 @@
 // 提供：默认 props 渲染、可交互的收起/展开宿主、溢出与降动效的桩。
 import { useState } from 'react';
 import { fireEvent, render, screen } from '@testing-library/react';
-import { SidebarRoot, type SidebarRootProps } from '../../src/renderer/sidebar/SidebarRoot.js';
+import { SidebarRoot, type SidebarRootProps } from '@harness2/ui-shared/renderer/sidebar/SidebarRoot.js';
 import type { SidebarSessionItem } from '@harness2/ui-shared/renderer/sidebar/session-items.js';
 
 /** 最小可用 props：收起态由各自宿主控制，回调默认空实现 */

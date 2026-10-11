@@ -3,12 +3,22 @@
 // 宿主侧（main / preload / electron）。既有守门只扫了 layout/ 与 slots/
 // （见 test/layout/no-persistence.test.ts 第 3 条），本用例把 P4 新增的 sidebar/ 也纳入，
 // 避免「新包漏扫」——渲染进程零 Node，越界 import 会在打包后直接炸。
+// Z7：侧栏整体下沉 ui-shared（desktop/sidebar 已删除），扫描面随之指向 ui-shared 的同一批文件。
 import { readFileSync, readdirSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 
-const sidebarDir = join(dirname(fileURLToPath(import.meta.url)), '..', '..', 'src', 'renderer', 'sidebar');
+const sidebarDir = join(
+  dirname(fileURLToPath(import.meta.url)),
+  '..',
+  '..',
+  '..',
+  'ui-shared',
+  'src',
+  'renderer',
+  'sidebar',
+);
 
 function walk(dir: string): string[] {
   const out: string[] = [];

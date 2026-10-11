@@ -7,3 +7,5 @@ export * from './side-pane-model.js';
 export * from './side-pane-store.js';
 export * from './background-tasks-model.js';
 export * from './BackgroundTasksPane.js';
+// Z7：壳无关的右栏标签宿主（零 tab 启器 + 标签条 + 内容槽）——桌面 SidePanel 与 web 共用。
+export { SidePaneHost, type SidePaneHostProps } from './SidePaneHost.js';
