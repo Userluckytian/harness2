@@ -65,6 +65,14 @@
 | V15 | npm 包名占用检查                                            | `npm view harness2` / `npm view @harness2/core`                   | ⬜ **待人类执行**（只读检查，非发布动作）                                                                                                                               |
 | V16 | README 三图 / 真机手工清单                                  | 真机                                                              | ⬜ **待人类**（见 ② M1–M13）                                                                                                                                            |
 
+## ②.9 Z 程序收口核验（2026-10-11，GUI ZCode 化 + 能力补齐）
+
+- **core 公开导出基线**：**1113**（Z 程序起点 846 → +267，全程 **0 removed / 0 kindChanged**，纯加性）；快照测试 `packages/core/test/api-surface.test.ts` 7 passed。
+- **六包测试**（2026-10-11 批 7-A 后）：core 104 文件 / 1519（+2 skipped）· ui-shared 26 / 276 · desktop 113 / 1114（+1 skipped）· web 5 / 43 · gateway 14 / 40 · cli 93 / 1575（+2 skipped）——全绿。
+- **构建与静态检查**：`pnpm -r build` 六包 Done；`pnpm -r --no-bail run typecheck` 干净；`pnpm lint` 0 error 0 format 告警（存量 warning 不计）。
+- **冻结区**：Z 程序期间 `packages/cli` / `packages/gateway` **零改动**；`packages/core` 改动全部经「计划授权 + 基线同步 + 编排者验收」。
+- **未闭合项**：见 `docs/issue-log/OPEN.md` Z 节（真机清单 10 项、拍板项 10 条）——**发布前须人工签收**。
+
 ## ③ 发布动作 checklist（全部待人类授权，物料已就绪）
 
 | #   | 动作                            | 说明                                                                                                                                                                                                                       | 状态                                |

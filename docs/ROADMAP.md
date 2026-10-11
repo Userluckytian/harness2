@@ -136,6 +136,23 @@
 
 ---
 
+## Z 程序（GUI ZCode 化 + 能力补齐，2026-10-10 起）
+
+> 目标：桌面/Web 双端**按 ZCode 完全还原**骨架与视觉；内核按台账补齐能力。总纲 `docs/ai-framework/plans/2026-10-10-phase-zcode-ui-overhaul.md`（Z0–Z7）· 功能总账 `docs/ai-framework/plans/zcode-ui-traceability.md`（逐项状态/证据）· 收口清单 `docs/ai-framework/plans/2026-10-11-phase-Z7-closeout.md`。
+
+| 阶段 | 内容                                                                                              | 状态                                   |
+| ---- | ------------------------------------------------------------------------------------------------- | -------------------------------------- |
+| Z0   | 调研 + 基线文档（`refs-zcode.md` / `refs-zcode-layout.md` / 台账 / 总纲）                         | ✅                                     |
+| Z1   | Tailwind v4 + shadcn/Radix 基建（token 三层 + 双主题 + `cn()`）                                   | ✅                                     |
+| Z2   | 骨架（几何/浮层/分栏/右栏标签体系/主区三视图/分屏/后台任务/矩阵核对）                             | ✅（Z2-07 终端 PTY 改期）              |
+| Z3   | 对话页（审批 dock/思考行/状态面板/Composer 控件/空态/工具卡/行类型补缺）                          | ✅                                     |
+| Z4   | 轨迹页 + 代码面（轨迹收口/行内评论/划词询问；Codemap 改期拍板）                                   | ✅                                     |
+| Z5   | 设置页（Z-88 全屏骨架 + 数据驱动分区 + 界面字号）                                                 | ✅                                     |
+| Z6   | 内核能力补齐（三开放/provider 三件套/压缩断路器/权限 DSL/Hooks/工作流/Teams/符号索引 等，批 1–7） | ✅（A15 沙箱、A19/A20 ACP-LSP 归拍板） |
+| Z7   | 收口（Web 壳与桌面同构、IM 配置面、真机截图、README 与发布清单）                                  | 🔶 进行中                              |
+
+**纪律**：core 公开导出全程**纯加性**（846 → 1113+，0 removed / 0 kindChanged）；每批次独立验收（build/typecheck/六包测试/lint/冻结区核查）；无数据面不摆假入口。
+
 ## GitHub Actions 可行性（用户关注点 5）
 
 **结论：已实证可行**（2026-09-06 论证，2026-09-10 起在远程真实运行；P8 后为七 job——**六包 test**（core/gateway/cli/desktop/ui-shared/web 分包独立步骤）×3 平台 + 三平台 desktop build + pages 部署，站点 https://userluckytian.github.io/harness2/ ；**本地无法代验 run 号/结论（`gh` 未认证）**）。原论证依据：dsh 仓库 19 个 workflows 验证了 TS monorepo 全流程。
