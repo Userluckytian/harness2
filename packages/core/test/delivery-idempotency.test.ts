@@ -237,6 +237,58 @@ describe('D3 派发即出队（dispatchQueueItem）', () => {
   });
 });
 
+describe('D4 已派发标记（queue/dispatched）与恢复判定', () => {
+  it('dispatchQueueItem 落 queue/dispatched 标记；recoverQueue 不再复活已派发项', () => {
+    const dir = tmpDir();
+    const journal = RuntimeJournal.create(dir, { fsync: false });
+    const s = createDeliverySession(journal, 's1');
+    submitDelivery(s, req({ clientMessageId: 'cm1', sessionId: 's1', rawText: 'a' }));
+    expect(dispatchQueueItem(s, 'cm1')).toBe(true);
+    expect(
+      RuntimeJournal.readEntries(dir).entries.some((e) => e.kind === 'queue/dispatched' && e.clientMessageId === 'cm1'),
+    ).toBe(true);
+    journal.close();
+    // 已执行完 → 重启不复活（不显示、不占队列、不要求放行）
+    expect(recoverQueue(dir, { sessionId: 's1' })).toHaveLength(0);
+  });
+
+  it('接受但未派发 → recoverQueue 仍以 paused 返回（fail-closed 不削弱）', () => {
+    const dir = tmpDir();
+    const journal = RuntimeJournal.create(dir, { fsync: false });
+    const s = createDeliverySession(journal, 's1');
+    submitDelivery(s, req({ clientMessageId: 'cm-dispatched', sessionId: 's1', rawText: 'a' }));
+    submitDelivery(s, req({ clientMessageId: 'cm-pending', sessionId: 's1', rawText: 'b' }));
+    dispatchQueueItem(s, 'cm-dispatched');
+    journal.close();
+
+    const recovered = recoverQueue(dir, { sessionId: 's1' });
+    expect(recovered.map((q) => q.id)).toEqual(['cm-pending']);
+    expect(recovered[0]?.state).toBe('paused');
+  });
+
+  it('标记写入失败 → 出队仍成功且不抛错；恢复侧安全复活为 paused（不静默丢提交）', () => {
+    const dir = tmpDir();
+    const journal = RuntimeJournal.create(dir, { fsync: false });
+    const s = createDeliverySession(journal, 's1');
+    submitDelivery(s, req({ clientMessageId: 'cm1', sessionId: 's1', rawText: 'a' }));
+    // 注入 append 必抛的 journal（模拟写失败）
+    s.journal = {
+      append: () => {
+        throw new Error('disk full');
+      },
+    } as unknown as RuntimeJournal;
+
+    expect(() => dispatchQueueItem(s, 'cm1')).not.toThrow();
+    expect(s.queue).toHaveLength(0); // 已出队（D3 语义保持）
+    journal.close();
+
+    // 标记未落 → 恢复侧安全回退为 paused（宁可要求放行，也不静默丢提交）
+    const recovered = recoverQueue(dir, { sessionId: 's1' });
+    expect(recovered.map((q) => q.id)).toEqual(['cm1']);
+    expect(recovered[0]?.state).toBe('paused');
+  });
+});
+
 describe('recoverQueue 恢复（默认 paused）', () => {
   it('重启恢复：已 accepted 项以 state:paused 返回，不自动执行', () => {
     const dir = tmpDir();

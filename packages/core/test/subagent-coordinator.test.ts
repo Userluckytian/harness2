@@ -263,7 +263,8 @@ describe('queue continue 清场（S3c2 carry-over）', () => {
   it('重启恢复 paused 不计 20 上限；continue 出队后 pause 不再占用；新 submit 可受理', async () => {
     const home = tmpDir('h2-subcoord-home-');
     const root = tmpDir('h2-subcoord-root-');
-    // A：提交一个 queue 项并执行（journal 落 durable accept）
+    // A：模拟「durable 接受但进程在派发前崩溃」——直接落 accepted（无 queue/dispatched 标记），
+    // 这样 B 重启才会以 paused 恢复（D4：已派发执行的提交不再复活，故此处不能走 submitAck）
     const A = new SessionHub({
       manager: new SessionManager(defaultSessionsRoot(home)),
       provider: new MockProvider([{ textChunks: ['A 执行'] }]),
@@ -274,10 +275,17 @@ describe('queue continue 清场（S3c2 carry-over）', () => {
       })(),
       cwd: root,
     });
-    const pidA = A.create(root).id;
-    const a = A.submitAck({ clientMessageId: 'cm-p', sessionId: pidA, rawText: '持久队列项', intent: 'queue' });
-    expect(a.state).toBe('accepted');
-    await sleep(200); // 等 A 执行完该 turn
+    const createdA = A.create(root);
+    const pidA = createdA.id;
+    const journalA = RuntimeJournal.create(createdA.dir, { fsync: false });
+    journalA.append({
+      kind: 'queue/accepted',
+      clientMessageId: 'cm-p',
+      sessionId: pidA,
+      intent: 'queue',
+      queueSeq: 0,
+    });
+    journalA.close();
     await A.close();
     // B 重启：同 home/root
     const B = new SessionHub({

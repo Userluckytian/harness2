@@ -22,6 +22,7 @@ import {
   type WsServerMessage,
 } from '../src/index.js';
 import type { CancelRequest, SubmitRequest } from '../src/interaction/types.js';
+import { RuntimeJournal } from '../src/interaction/runtime-journal.js';
 import { WatermarkCursor, type ResumeStateProvider } from '../src/server/ws.js';
 
 const dirs: string[] = [];
@@ -426,7 +427,7 @@ describe('S3c2：submit 幂等接线（durable-then-ack + 按序派发不重复�
 });
 
 describe('S3c2：queue 重启恢复（recoverQueue paused + 不自动执行）', () => {
-  it('durable accepted 重启后恢复为 paused；未重新提交不产生新 turn', async () => {
+  it('durable accepted（未派发）重启后恢复为 paused；未重新提交不产生新 turn', async () => {
     const home = tmpDir('h2-resume-home-');
     const root = tmpDir('h2-resume-root-');
     const A = await startServe({
@@ -438,13 +439,18 @@ describe('S3c2：queue 重启恢复（recoverQueue paused + 不自动执行）',
     });
     handles.push(A);
     const id = await createSession(A);
-    const a = new WsClient(`ws://127.0.0.1:${A.port}/ws`);
-    await a.open;
-    a.send({ op: 'subscribe', sessionId: id });
-    a.send({ op: 'submit', clientMessageId: 'cm-A', sessionId: id, rawText: '持久任务', intent: 'queue' });
-    await a.waitFor((f) => f.type === 'submit-ack' && f.state === 'accepted', 'ack A');
-    await a.waitFor((f) => f.type === 'turn-end', 'turn-end A');
-    a.close();
+    // 模拟「durable 接受但进程在派发前崩溃」：直接落 accepted（无 queue/dispatched 标记），
+    // 这样重启才会以 paused 恢复（D4：已派发执行的提交不再复活，故此处不能走 submit）
+    const dir = A.hub.locate(id);
+    const journal = RuntimeJournal.create(dir, { fsync: false });
+    journal.append({
+      kind: 'queue/accepted',
+      clientMessageId: 'cm-A',
+      sessionId: id,
+      intent: 'queue',
+      queueSeq: 0,
+    });
+    journal.close();
     await A.close();
     // 重启 B：同一 home/root，会话目录按 id 恢复
     const B = await startServe({

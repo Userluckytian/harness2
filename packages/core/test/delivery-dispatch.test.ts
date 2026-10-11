@@ -97,34 +97,104 @@ describe('D3 派发即出队（活队列语义）', () => {
     await hub.close();
   });
 
-  it('paused（重启恢复）项不受派发路径影响：恢复项保留，新提交派发不误清恢复项', async () => {
+  it('paused（durable 接受但未派发）项不受派发路径影响：恢复项保留，新提交派发不误清恢复项', async () => {
     const home = tmpDir();
     const root = tmpDir();
-    // A：提交一项并执行（journal 落 durable accept）
-    const A = makeHub(home, root);
-    const { id } = A.create(root);
-    const a = A.submitAck({ clientMessageId: 'cm-recover', sessionId: id, rawText: '持久项', intent: 'queue' });
-    expect(a.state).toBe('accepted');
-    await sleep(200);
-    await A.close();
+    const hub = makeHub(home, root);
+    const { id, dir } = hub.create(root);
+    // 直接落一条 durable accepted（模拟「进程在派发前崩溃」）——无 queue/dispatched 标记
+    const journal = RuntimeJournal.create(dir, { fsync: false });
+    journal.append({
+      kind: 'queue/accepted',
+      clientMessageId: 'cm-recover',
+      sessionId: id,
+      intent: 'queue',
+      queueSeq: 0,
+    });
+    journal.close();
 
-    // B 重启：durable accepted 恢复为 paused
-    const B = makeHub(home, root);
-    const snapBefore = B.resumeSnapshot({ sessionId: id, lastSeq: 0, epoch: 1 });
+    // hub 首次触达该会话 → deliveryFor 恢复为 paused（fail-closed）
+    const snapBefore = hub.resumeSnapshot({ sessionId: id, lastSeq: 0, epoch: 1 });
     expect(snapBefore?.queue.some((q) => q.id === 'cm-recover' && q.state === 'paused')).toBe(true);
 
     // 新提交触发 dispatchQueued：只应派发新项，paused 恢复项必须原样保留
-    const nb = B.submitAck({ clientMessageId: 'cm-new', sessionId: id, rawText: '新消息', intent: 'queue' });
+    const nb = hub.submitAck({ clientMessageId: 'cm-new', sessionId: id, rawText: '新消息', intent: 'queue' });
     expect(nb.state).toBe('accepted');
-    const snapAfter = B.resumeSnapshot({ sessionId: id, lastSeq: 0, epoch: 2 });
+    const snapAfter = hub.resumeSnapshot({ sessionId: id, lastSeq: 0, epoch: 2 });
     expect(snapAfter?.queue.some((q) => q.id === 'cm-recover' && q.state === 'paused')).toBe(true);
     expect(snapAfter?.queue.some((q) => q.id === 'cm-new')).toBe(false);
+    await hub.close();
+  });
+});
+
+describe('D4 已执行提交重启不复活（queue/dispatched 标记）', () => {
+  it('派发执行后重启：该提交不复活（不显示、不占队列、不要求放行）', async () => {
+    const home = tmpDir();
+    const root = tmpDir();
+    const A = makeHub(home, root);
+    const { id, dir } = A.create(root);
+    const a = A.submitAck({ clientMessageId: 'cm-d4', sessionId: id, rawText: '执行过的消息', intent: 'queue' });
+    expect(a.state).toBe('accepted');
+    await sleep(200); // 等 turn 跑完
+    await A.close();
+
+    // journal 已带 queue/dispatched 标记（已解决）
+    expect(
+      RuntimeJournal.readEntries(dir).entries.some(
+        (e) => e.kind === 'queue/dispatched' && e.clientMessageId === 'cm-d4',
+      ),
+    ).toBe(true);
+
+    // 重启：已执行提交不得复活
+    const B = makeHub(home, root);
+    const snap = B.resumeSnapshot({ sessionId: id, lastSeq: 0, epoch: 1 });
+    expect(snap?.queue.some((q) => q.id === 'cm-d4')).toBe(false);
+    expect(snap?.queue).toHaveLength(0);
+    await B.close();
+  });
+
+  it('durable 接受但未派发（派发前崩溃）→ 重启仍 paused 需显式放行（fail-closed 不削弱）', async () => {
+    const home = tmpDir();
+    const root = tmpDir();
+    const hub = makeHub(home, root);
+    const { id, dir } = hub.create(root);
+    const journal = RuntimeJournal.create(dir, { fsync: false });
+    journal.append({
+      kind: 'queue/accepted',
+      clientMessageId: 'cm-orphan',
+      sessionId: id,
+      intent: 'queue',
+      queueSeq: 0,
+    });
+    journal.close();
+    await hub.close();
+
+    const B = makeHub(home, root);
+    const snap = B.resumeSnapshot({ sessionId: id, lastSeq: 0, epoch: 1 });
+    expect(snap?.queue.some((q) => q.id === 'cm-orphan' && q.state === 'paused')).toBe(true);
+    await B.close();
+  });
+
+  it('旧 journal 兼容：只有 queue/accepted（无 dispatched kind）→ 仍恢复为 paused', async () => {
+    const home = tmpDir();
+    const root = tmpDir();
+    const hub = makeHub(home, root);
+    const { id, dir } = hub.create(root);
+    // 旧格式 journal：仅 accepted，无任何新 kind
+    const journal = RuntimeJournal.create(dir, { fsync: false });
+    journal.append({ kind: 'queue/accepted', clientMessageId: 'cm-legacy', sessionId: id, intent: 'queue' });
+    journal.close();
+    await hub.close();
+
+    const B = makeHub(home, root);
+    const snap = B.resumeSnapshot({ sessionId: id, lastSeq: 0, epoch: 1 });
+    expect(snap?.queue.some((q) => q.id === 'cm-legacy' && q.state === 'paused')).toBe(true);
     await B.close();
   });
 });
 
-describe('D3 journal 恢复账本保留（不因出队而改写）', () => {
-  it('出队不改写 journal：runtime.v1.jsonl 仍含 queue/accepted 行', async () => {
+describe('D4 恢复账本保留（accepted 与 dispatched 并存）', () => {
+  it('派发后 journal 同时含 queue/accepted 与 queue/dispatched 行', async () => {
     const home = tmpDir();
     const root = tmpDir();
     const hub = makeHub(home, root);
@@ -132,8 +202,9 @@ describe('D3 journal 恢复账本保留（不因出队而改写）', () => {
     hub.submitAck({ clientMessageId: 'cm-ledger', sessionId: id, rawText: 'x', intent: 'queue' });
     await sleep(150);
     await hub.close();
-    const raw = RuntimeJournal.readEntries(dir).entries.filter((e) => e.kind === 'queue/accepted');
-    expect(raw.some((e) => e.clientMessageId === 'cm-ledger')).toBe(true);
+    const entries = RuntimeJournal.readEntries(dir).entries;
+    expect(entries.some((e) => e.kind === 'queue/accepted' && e.clientMessageId === 'cm-ledger')).toBe(true);
+    expect(entries.some((e) => e.kind === 'queue/dispatched' && e.clientMessageId === 'cm-ledger')).toBe(true);
     expect(RUNTIME_JOURNAL_FILE.endsWith('.jsonl')).toBe(true);
   });
 });

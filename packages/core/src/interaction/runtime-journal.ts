@@ -57,6 +57,18 @@ export interface QueueRemovedEntry extends RuntimeJournalEntryBase {
   payload?: { reason?: string };
 }
 
+/**
+ * D4（加性 kind）：提交**已派发进 turn 管线（开始执行）**的「已解决」标记。
+ * recoverQueue 依据它把「已执行」的提交从恢复候选中排除——已执行完的提交重启后**不得**以
+ * paused 复活要求放行。与 queue/removed 一样以 clientMessageId 为主键（journal 按会话目录，
+ * 无跨会话歧义）。旧 journal 无此 kind → 行为与今天一致（向后兼容）。
+ */
+export interface QueueDispatchedEntry extends RuntimeJournalEntryBase {
+  kind: 'queue/dispatched';
+  clientMessageId: ClientMessageId;
+  payload?: { reason?: string };
+}
+
 export interface TaskTransitionEntry extends RuntimeJournalEntryBase {
   kind: 'task/transition';
   taskId: TaskId;
@@ -91,6 +103,7 @@ export type RuntimeJournalEntry =
   | QueueAcceptedEntry
   | QueueDuplicateEntry
   | QueueRemovedEntry
+  | QueueDispatchedEntry
   | TaskTransitionEntry
   | CallStartedEntry
   | CallOutcomeEntry;
@@ -108,6 +121,7 @@ export type JournalAppendInput =
     }
   | { kind: 'queue/duplicate'; clientMessageId: ClientMessageId; originalSeq: number }
   | { kind: 'queue/removed'; clientMessageId: ClientMessageId; reason?: string }
+  | { kind: 'queue/dispatched'; clientMessageId: ClientMessageId; reason?: string }
   | {
       kind: 'task/transition';
       taskId: TaskId;
@@ -229,6 +243,7 @@ export function parseEntry(line: string): RuntimeJournalEntry | null {
     (kind !== 'queue/accepted' &&
       kind !== 'queue/duplicate' &&
       kind !== 'queue/removed' &&
+      kind !== 'queue/dispatched' &&
       kind !== 'task/transition' &&
       kind !== 'call/started' &&
       kind !== 'call/outcome')
@@ -275,6 +290,18 @@ export function parseEntry(line: string): RuntimeJournalEntry | null {
       const entry: QueueRemovedEntry = {
         ...base,
         kind: 'queue/removed',
+        clientMessageId: raw['clientMessageId'],
+        payload: p && p['reason'] !== undefined ? { reason: p['reason'] as string } : undefined,
+      };
+      return entry;
+    }
+    case 'queue/dispatched': {
+      if (!isNonEmptyString(raw['clientMessageId'])) return null;
+      const p = payload as Record<string, unknown> | undefined;
+      if (p && p['reason'] !== undefined && typeof p['reason'] !== 'string') return null;
+      const entry: QueueDispatchedEntry = {
+        ...base,
+        kind: 'queue/dispatched',
         clientMessageId: raw['clientMessageId'],
         payload: p && p['reason'] !== undefined ? { reason: p['reason'] as string } : undefined,
       };
@@ -436,6 +463,8 @@ export function queryJournalById(dir: string, kind: RuntimeJournalKind, id: stri
         return e.kind === 'queue/duplicate' && e.clientMessageId === id;
       case 'queue/removed':
         return e.kind === 'queue/removed' && e.clientMessageId === id;
+      case 'queue/dispatched':
+        return e.kind === 'queue/dispatched' && e.clientMessageId === id;
       case 'task/transition':
         return e.kind === 'task/transition' && e.taskId === id;
       case 'call/started':
@@ -707,6 +736,17 @@ function buildAppendEntry(input: JournalAppendInput, seq: number): RuntimeJourna
       const entry: QueueRemovedEntry = {
         ...base,
         kind: 'queue/removed',
+        clientMessageId: input.clientMessageId,
+        payload: input.reason === undefined ? undefined : { reason: input.reason },
+      };
+      return entry;
+    }
+    case 'queue/dispatched': {
+      if (!isNonEmptyString(input.clientMessageId))
+        throw new InvalidJournalAppendError('queue/dispatched: clientMessageId must be a non-empty string');
+      const entry: QueueDispatchedEntry = {
+        ...base,
+        kind: 'queue/dispatched',
         clientMessageId: input.clientMessageId,
         payload: input.reason === undefined ? undefined : { reason: input.reason },
       };

@@ -1,7 +1,7 @@
 // SessionHub 任务协调（A4 拆分自 sessions.ts，纯搬运）：后台任务注册、submit/cancel 接线、
 // queue 派发、任务归属 journal 记录。
 import type { TaskSpec, TaskTransitionRecorder } from '../agent/task-coordinator.js';
-import { continueQueue, dispatchQueueItem, submitDelivery } from '../interaction/delivery.js';
+import { continueQueue, dispatchQueueItem, markQueueDispatched, submitDelivery } from '../interaction/delivery.js';
 import {
   type CancelAck,
   type CancelRequest,
@@ -78,8 +78,10 @@ export abstract class SessionHubTasks extends SessionHubResume {
       if (body.trim().length > 0) {
         try {
           this.sendUserMessage(sessionId, body);
+          // D4：显式放行后已派发执行 → 落「已解决」标记，避免下次重启再次复活要求放行
+          markQueueDispatched(hd.journal, item.id, 'user-release');
         } catch {
-          // 派发失败不阻断 continue；幂等键已出队
+          // 派发失败不阻断 continue；幂等键已出队（下次重启仍可能恢复为 paused，安全侧优先）
         }
       }
     }

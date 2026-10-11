@@ -184,11 +184,38 @@ export function submitDelivery(s: DeliverySession, req: SubmitRequest): SubmitAc
 // —— queue 编辑 / 移除（未启动项可按 id+revision edit/remove；每次变更 revision+1） ——
 
 /**
+ * D4：给 durable journal 写一条「已派发/已解决」标记（加性 kind `queue/dispatched`），
+ * 使 `recoverQueue()` 能区分「已执行」与「durable 接受但未执行」——已派发执行的提交重启后
+ * **不复活**（不显示、不占队列、不要求放行）。
+ *
+ * **失败处理（安全侧优先）**：写入失败不抛出，仅返回 false。`queue/accepted` 早已 durable，
+ * 提交不会因此丢失；最坏情况是下次重启仍把它恢复为 paused（要求显式放行），
+ * **绝不静默丢弃提交**。调用方按 best-effort 处理返回值即可。
+ */
+export function markQueueDispatched(
+  journal: RuntimeJournal,
+  clientMessageId: ClientMessageId,
+  reason?: string,
+): boolean {
+  try {
+    journal.append(
+      reason === undefined
+        ? { kind: 'queue/dispatched', clientMessageId }
+        : { kind: 'queue/dispatched', clientMessageId, reason },
+    );
+    return true;
+  } catch {
+    return false; // 宁可下次恢复成 paused，也不静默丢提交（queue/accepted 仍 durable）
+  }
+}
+
+/**
  * 派发成功后的显式出队（D3）：把已送进 turn 管线的 `queued` 项移出**活队列**。
  * 语义：queue = 「待执行」活队列；提交被派发进 turn（开始执行）后即不再排队。
  * - 只动 `state==='queued'`：`paused`（重启恢复）项**不得**被自动出队（须显式放行，既有语义）；
  * - 幂等：未找到 / 已出队 / 非 queued → 返回 false，不抛错、不误删他人条目；
- * - 不写 journal：`queue/accepted` 是 durable 恢复账本，出队只改活队列（账本保留不动）。
+ * - D4：出队同时经 `markQueueDispatched` 落 `queue/dispatched` 标记（best-effort），
+ *   使恢复期不再把已执行项当「待放行」复活；标记写失败不影响出队（见该函数注释）。
  * 由派发方（hub 的 dispatchQueued）在 `sendUserMessage` 成功时点调用。
  */
 export function dispatchQueueItem(s: DeliverySession, clientMessageId: ClientMessageId): boolean {
@@ -196,6 +223,7 @@ export function dispatchQueueItem(s: DeliverySession, clientMessageId: ClientMes
   if (idx < 0) return false; // 已出队 / 不存在：幂等 no-op
   const item = s.queue[idx]!;
   if (item.state !== 'queued') return false; // paused 恢复项保留（不自动出队）
+  markQueueDispatched(s.journal, clientMessageId);
   s.queue.splice(idx, 1);
   s.contentKeys.delete(clientMessageId);
   return true;
@@ -257,17 +285,23 @@ export interface RecoverQueueOptions {
  * 从 journal 重建 queue。journal 只存操作状态（不含正文），恢复的正文置空由 session.log 投影补全。
  * 顺序 = accepted seq 序；已 removed 的项不再排队；一律 state:'paused'（不惊喜执行）。
  * 崩溃撕裂：accepted 半行（未 \n）不算 durable，不计入。
+ *
+ * D4：已写 `queue/dispatched` 标记（已派发执行）的提交**不复活**——它们已执行完，
+ * 不得再以 paused 要求放行、也不占队列。真正「durable 接受但未执行」（进程在派发前崩溃）
+ * 仍恢复为 paused（fail-closed 安全面）。旧 journal 无该 kind → 行为与今天一致（向后兼容）。
  */
 export function recoverQueue(dir: string, opts: RecoverQueueOptions): QueueEntry[] {
   const { entries } = RuntimeJournal.readEntries(dir);
   const accepted: QueueAcceptedEntry[] = [];
   const removedAll = new Set<ClientMessageId>();
+  const dispatchedAll = new Set<ClientMessageId>();
   for (const e of entries) {
     if (e.kind === 'queue/accepted' && e.sessionId === opts.sessionId) accepted.push(e);
     else if (e.kind === 'queue/removed') removedAll.add(e.clientMessageId);
+    else if (e.kind === 'queue/dispatched') dispatchedAll.add(e.clientMessageId);
   }
   return accepted
-    .filter((a) => !removedAll.has(a.clientMessageId))
+    .filter((a) => !removedAll.has(a.clientMessageId) && !dispatchedAll.has(a.clientMessageId))
     .map((a) => ({
       id: a.clientMessageId,
       revision: 1,
