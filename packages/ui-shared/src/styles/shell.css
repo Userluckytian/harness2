@@ -396,56 +396,9 @@ body,
 .sum-empty {
   color: var(--warn);
 }
-/* D3：右侧工作面板（计划 / 任务 / 审批） */
-.side-panel {
-  width: 300px;
-  flex: 0 0 300px;
-  display: flex;
-  flex-direction: column;
-  border-left: 1px solid var(--border);
-  background: var(--panel);
-  min-height: 0;
-}
-.side-tabs {
-  display: flex;
-  border-bottom: 1px solid var(--border);
-}
-.side-tab {
-  flex: 1;
-  padding: 6px 4px;
-  border: none;
-  background: transparent;
-  color: inherit;
-  cursor: pointer;
-}
-.side-tab-active {
-  border-bottom: 2px solid var(--ok);
-  color: var(--fg);
-}
-.side-badge {
-  margin-left: 4px;
-  border-radius: 8px;
-  padding: 0 5px;
-  background: var(--warn);
-  color: white;
-  font-size: 0.8em;
-}
-.side-body {
-  flex: 1;
-  overflow-y: auto;
-  min-height: 0;
-}
-.side-foot {
-  border-top: 1px solid var(--border);
-  padding: 6px 8px;
-  display: flex;
-  gap: 8px;
-  align-items: center;
-}
-.side-hint {
-  color: var(--muted);
-  font-size: 0.8em;
-}
+/* D3 右侧工作面板的旧 .side-panel/.side-tabs/.side-tab/.side-badge/.side-body/.side-foot/.side-hint
+   已随 Z2-04 标签体系拆除（tab 宿主改用语义 token 的 Tailwind 工具类，见
+   desktop renderer/components/SidePanel.tsx；右栏席位皮肤归 app-frame.css）。 */
 .panel {
   padding: 8px;
   font-size: 0.9em;

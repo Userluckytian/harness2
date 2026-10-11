@@ -98,13 +98,8 @@
   border-left: 1px solid var(--border);
   transition: width 0.2s ease-out;
 }
-/* 右栏皮肤沿用既有 .side-panel（从固定宽度改成填满席位容器） */
-.app-frame-rightbar .side-panel {
-  width: 100%;
-  flex: 1 1 auto;
-  min-width: 0;
-  border-left: none;
-}
+/* Z2-04：旧 .side-panel 皮肤规则已删 —— 右栏内容（标签宿主）自带 Tailwind 工具类
+   （h-full w-full flex-col）撑满席位盒；席位盒契约见 .app-frame-seat-body。 */
 /* 关闭态：hidden 必须真的不占布局（类选择器的 display:flex 会盖掉 UA 的 [hidden]） */
 .app-frame-rightbar[hidden] {
   display: none;

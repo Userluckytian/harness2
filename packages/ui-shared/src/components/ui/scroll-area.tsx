@@ -29,7 +29,15 @@ function ScrollBar({
   );
 }
 
-function ScrollArea({ className, children, ...props }: React.ComponentProps<typeof ScrollAreaPrimitive.Root>) {
+/** 滚动条方向（Z2-04：右栏标签条需要横向滚动 —— 加性扩展，缺省维持原竖向行为） */
+type ScrollbarOrientation = 'vertical' | 'horizontal' | 'both';
+
+function ScrollArea({
+  scrollbarOrientation = 'vertical',
+  className,
+  children,
+  ...props
+}: React.ComponentProps<typeof ScrollAreaPrimitive.Root> & { scrollbarOrientation?: ScrollbarOrientation }) {
   return (
     <ScrollAreaPrimitive.Root data-slot="scroll-area" className={cn('relative overflow-hidden', className)} {...props}>
       <ScrollAreaPrimitive.Viewport
@@ -38,10 +46,14 @@ function ScrollArea({ className, children, ...props }: React.ComponentProps<type
       >
         {children}
       </ScrollAreaPrimitive.Viewport>
-      <ScrollBar />
+      {(scrollbarOrientation === 'vertical' || scrollbarOrientation === 'both') && <ScrollBar />}
+      {(scrollbarOrientation === 'horizontal' || scrollbarOrientation === 'both') && (
+        <ScrollBar orientation="horizontal" />
+      )}
       <ScrollAreaPrimitive.Corner />
     </ScrollAreaPrimitive.Root>
   );
 }
 
 export { ScrollArea, ScrollBar };
+export type { ScrollbarOrientation };

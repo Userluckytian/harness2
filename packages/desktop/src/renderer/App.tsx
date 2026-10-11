@@ -20,7 +20,7 @@ import { shellSlots } from './layout/shell-registry.js';
 import { desktopPlatform, windowFrameClass } from './platform.js';
 import { useWindowMaximized } from './window-state.js';
 import { JUMP_TO_SESSION_ID, type PaletteCommand, type PaletteSession } from './components/CommandPalette.js';
-import { controller, store, useAppState, THEME_CYCLE } from './app-shared.js';
+import { controller, store, useAppState, newSessionCollapsingRightbar, THEME_CYCLE } from './app-shared.js';
 import type { AppState } from '@harness2/ui-shared/renderer/store.js';
 import { filterSessionList } from '@harness2/ui-shared/shared/metadata.js';
 
@@ -165,7 +165,7 @@ export function App(): React.ReactNode {
     const prevId = moveSession(state, -1);
     const archiveId = state.selectedId;
     return [
-      { id: 'newSession', label: '新建会话', hint: 'Ctrl+N', run: () => void controller.newSession() },
+      { id: 'newSession', label: '新建会话', hint: 'Ctrl+N', run: () => newSessionCollapsingRightbar(frameDispatch) },
       {
         id: 'nextSession',
         label: '切到下一个会话',
@@ -243,7 +243,7 @@ export function App(): React.ReactNode {
           sidebarCollapsed={sidebarCollapsed}
           sidebarWidth={frame.geometry.sidebarExpandedWidth}
           onToggleSidebar={() => frameDispatch({ type: 'sidebar/toggle' })}
-          onNewTask={() => void controller.newSession()}
+          onNewTask={() => newSessionCollapsingRightbar(frameDispatch)}
         />
       </div>
     </ShellPaletteProvider>

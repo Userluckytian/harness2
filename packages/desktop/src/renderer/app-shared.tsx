@@ -6,6 +6,7 @@
 // 旧分栏（pane）相关的兼容导出保留：调用点已随三栅拆除清零，仅为对外导出面兼容。
 import { THEME_CYCLE, createAppShell, sessionTitle, StatusBadge } from '@harness2/ui-shared/renderer/app-shell.js';
 import type { AppState } from '@harness2/ui-shared/renderer/store.js';
+import type { FrameAction } from './layout/frame-state.js';
 
 export { THEME_CYCLE, StatusBadge, sessionTitle };
 
@@ -18,6 +19,20 @@ export const shell = createAppShell(window.harness2);
 export const store = shell.store;
 export const controller = shell.controller;
 export const useAppState = shell.useAppState;
+
+/**
+ * 新建会话动作（Z2-04 / Z-13「新建任务会强制收起右栏」）。
+ *
+ * ZCode 侧语义：App.tsx 的 draftFocusVersion 触发新任务时强制收起 Side Pane。本仓没有
+ * draftFocusVersion 钩子，`controller.newSession()` 是新建会话/新任务的唯一入口 ——
+ * 故在动作层收口：三处调用点（浮层 New Task、左栏 New Task、命令面板「新建会话」）
+ * 统一走这里，**先**派发 `rightbar/collapse`（幂等，帧侧纯 reducer）再建会话；
+ * 新会话的 tab 桶本就是空的，重开右栏即见「打开标签页」启动器（与 ZCode 一致）。
+ */
+export function newSessionCollapsingRightbar(dispatch: (action: FrameAction) => void): void {
+  dispatch({ type: 'rightbar/collapse' });
+  void controller.newSession();
+}
 
 /** 点击会话时目标分栏：优先空栏，其次第一栏
  * @deprecated P4-C：分栏状态已无渲染出口（三栅取代分栏），无调用点；后台判定改看选中态。 */

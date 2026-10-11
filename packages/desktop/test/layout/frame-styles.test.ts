@@ -21,8 +21,11 @@ describe('app-frame.css 契约', () => {
     expect(css).toMatch(attribute);
   });
 
-  it('席位容器：右栏皮肤 .side-panel 撑满席位盒；侧栏皮肤用真实类名 .h2-sidebar（空转的 .sidebar 规则已删）', () => {
-    expect(css).toMatch(/\.app-frame-rightbar \.side-panel \{[\s\S]*?width: 100%;/);
+  it('席位容器：席位盒 flex 撑满（右栏内容自带工具类填满，旧 .side-panel 死规则已随 Z2-04 删除）；侧栏皮肤用真实类名 .h2-sidebar', () => {
+    // Z2-04：右栏标签宿主用 Tailwind 工具类撑满席位盒，`.app-frame-rightbar .side-panel` 覆盖规则已删
+    expect(css).not.toMatch(/\.app-frame-rightbar \.side-panel \{/);
+    // 席位盒契约不变：flex 填满 + min-width:0，右栏内容（.slot-entry display:contents）由它撑满
+    expect(css).toMatch(/\.app-frame-seat-body \{[\s\S]*?flex: 1 1 auto;/);
     expect(css).toMatch(/\.app-frame-sidebar \.h2-sidebar \{\s*border-right: none;\s*\}/);
     // P2-1：`.app-frame-sidebar .sidebar` 是 0 引用的空转规则（旧皮肤已随 SidebarRoot 落地删除）
     expect(css).not.toMatch(/\.app-frame-sidebar \.sidebar \{/);

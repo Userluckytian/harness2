@@ -14,7 +14,7 @@ import { useEffect, useMemo, useState, useSyncExternalStore } from 'react';
 import { CommandPalette } from '../components/CommandPalette.js';
 import { SettingsDialog } from '../components/SettingsDialog.js';
 import { SidePanel } from '../components/SidePanel.js';
-import { controller, store, useAppState, StatusBadge } from '../app-shared.js';
+import { controller, store, useAppState, newSessionCollapsingRightbar, StatusBadge } from '../app-shared.js';
 import { SidebarRoot, buildSessionItems, resolveBuildVersion } from '../sidebar/index.js';
 import type { SlotRegistry } from '../slots/index.js';
 import { CONVERSATION_OWNER, FRAME_SEAT, MAIN_CONVERSATION_KEY } from './frame-seats.js';
@@ -74,7 +74,8 @@ function SidebarSeatContent(): React.ReactNode {
       // 于是 resolveNewSessionScope 恒落 { kind: 'blank' }（空白新会话）。
       // 待 P7 引入工作区后，再补齐 explicit / current-session / recent 三档数据源。
       newSessionScope={{}}
-      onNewSession={() => void controller.newSession()}
+      // Z2-04（Z-13）：新建会话强制收起右栏（动作层收口，见 app-shared.newSessionCollapsingRightbar）
+      onNewSession={() => newSessionCollapsingRightbar(frameDispatch)}
       newSessionEnabled={state.status === 'connected'}
       // Z2-02（Z-07 分区 2）：左栏命令中心入口 → 复用既有覆层链路打开命令面板
       // （与 Ctrl+K 的 toggleOverlay('palette') 同一真源，不新开一套面板）。
