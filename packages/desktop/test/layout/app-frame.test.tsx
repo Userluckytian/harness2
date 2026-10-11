@@ -364,13 +364,13 @@ describe('中栏内层纵向分栏 conversation | terminal（Z2-03 / Z-12）', (
   it('展开/收起：分隔条为 horizontal、高度落最小高 140（主列未测量）；收起回 0 并撤掉分隔条', () => {
     mount(1400, withTerminal(testRegistry()));
     const terminal = document.querySelector('[data-panel="terminal"]') as HTMLElement;
-    act(() => fireEvent.click(screen.getByTestId('terminal-toggle')));
+    void act(() => fireEvent.click(screen.getByTestId('terminal-toggle')));
     expect(terminal.getAttribute('data-open')).toBe('true');
     expect(terminal.getAttribute('data-height')).toBe(String(TERMINAL_MIN_PX));
     const separator = screen.getByRole('separator', { name: '调整终端高度' });
     expect(separator.getAttribute('aria-orientation')).toBe('horizontal');
     expect(separator.getAttribute('aria-valuemin')).toBe(String(TERMINAL_MIN_PX));
-    act(() => fireEvent.click(screen.getByTestId('terminal-toggle')));
+    void act(() => fireEvent.click(screen.getByTestId('terminal-toggle')));
     expect(terminal.getAttribute('data-open')).toBe('false');
     expect(terminal.getAttribute('data-height')).toBe('0');
     expect(screen.queryByRole('separator', { name: '调整终端高度' })).toBeNull();
@@ -387,14 +387,14 @@ describe('中栏内层纵向分栏 conversation | terminal（Z2-03 / Z-12）', (
     try {
       mount(1400, withTerminal(testRegistry()));
       const terminal = document.querySelector('[data-panel="terminal"]') as HTMLElement;
-      act(() => fireEvent.click(screen.getByTestId('terminal-toggle')));
+      void act(() => fireEvent.click(screen.getByTestId('terminal-toggle')));
       expect(resolveTerminalHeight(600)).toBe(180); // 纯函数口径（30%）
       expect(terminal.getAttribute('data-height')).toBe('180');
       const separator = screen.getByRole('separator', { name: '调整终端高度' });
       expect(separator.getAttribute('aria-valuemax')).toBe('300'); // 600 × 0.5
       expect(separator.getAttribute('aria-valuenow')).toBe('180');
       // 手柄在终端上沿：↑ = 增高
-      act(() => fireEvent.keyDown(separator, { key: 'ArrowUp' }));
+      void act(() => fireEvent.keyDown(separator, { key: 'ArrowUp' }));
       expect(terminal.getAttribute('data-height')).toBe('196');
       // 连按到顶：钳制在 50%（300）
       for (let i = 0; i < 40; i += 1) fireEvent.keyDown(separator, { key: 'ArrowUp' });

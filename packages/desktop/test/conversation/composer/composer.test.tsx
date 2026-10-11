@@ -180,7 +180,7 @@ describe('D-35 / D-36 投递与主按钮', () => {
       busyEnter: 'queue',
       seed: (s) => s.dispatch({ type: 'insert-text', text: '追问' }),
     });
-    expect(primary().textContent).toBe('排队发送');
+    expect(primary().getAttribute('aria-label')).toBe('排队发送');
     expect(primary().getAttribute('data-kind')).toBe('send');
     fireEvent.keyDown(editor(), { key: 'Enter' });
     expect(submit.mock.calls[0]?.[0]?.placement).toBe('queue-dock');
@@ -194,7 +194,7 @@ describe('D-35 / D-36 投递与主按钮', () => {
       session: { id: 's1', running: true, activeTurnId: 'turn-9' },
       seed: (s) => s.dispatch({ type: 'insert-text', text: '改方向' }),
     });
-    expect(primary().textContent).toBe('插话发送');
+    expect(primary().getAttribute('aria-label')).toBe('插话发送');
     fireEvent.keyDown(editor(), { key: 'Enter' });
     const submission = submit.mock.calls[0]?.[0];
     expect(submission?.intent).toBe('steer');
@@ -220,14 +220,14 @@ describe('D-35 / D-36 投递与主按钮', () => {
       busyEnter: 'steer',
       seed: (s) => s.dispatch({ type: 'insert-text', text: '/plan 做' }),
     });
-    expect(primary().textContent).toBe('发送');
+    expect(primary().getAttribute('aria-label')).toBe('发送');
     expect(primary().getAttribute('data-label-kind')).toBe('input.send');
   });
 
   it('繁忙 + 空草稿：主按钮切到 Stop，点击只停止不提交', () => {
     const { submit, stop } = setup({ running: true });
     expect(primary().getAttribute('data-kind')).toBe('stop');
-    expect(primary().textContent).toBe('■ 停止');
+    expect(primary().getAttribute('aria-label')).toBe('停止');
     fireEvent.click(primary());
     expect(stop).toHaveBeenCalledTimes(1);
     expect(submit).not.toHaveBeenCalled();
@@ -236,7 +236,7 @@ describe('D-35 / D-36 投递与主按钮', () => {
   it('空闲 + 空草稿：Send 禁用且标签仍是「发送」', () => {
     setup({});
     expect(primary().getAttribute('data-kind')).toBe('send');
-    expect(primary().textContent).toBe('发送');
+    expect(primary().getAttribute('aria-label')).toBe('发送');
     expect(primary().disabled).toBe(true);
   });
 

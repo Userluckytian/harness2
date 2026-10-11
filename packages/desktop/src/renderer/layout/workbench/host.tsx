@@ -25,6 +25,7 @@ import type { CSSProperties, ReactNode } from 'react';
 import type { Controller } from '@harness2/ui-shared/renderer/app-controller.js';
 import type { AppStore } from '@harness2/ui-shared/renderer/store.js';
 import { ConversationSeat } from '../../conversation/assembly.js';
+import type { ComposerControls } from '../../conversation/composer-controls-bridge.js';
 import { createComposerOverlayHost, type ComposerOverlayHost } from '../../trajectory/index.js';
 import { workbenchDrag } from './drag.js';
 import {
@@ -70,6 +71,8 @@ interface WorkbenchApi {
   readonly onFocusLeaf: (leafId: string) => void;
   readonly onCloseLeaf: (leafId: string) => void;
   readonly onRatioChange: (splitId: string, ratio: number) => void;
+  /** Z3-04：composer 左右簇控件 props（壳装配；缺省 = 不渲染控件，测试与旧调用面不变） */
+  readonly composerControls?: ComposerControls;
 }
 
 const WorkbenchContext = createContext<WorkbenchApi | null>(null);
@@ -123,14 +126,21 @@ export interface WorkbenchHostProps {
   readonly controller: Controller;
   /** 测试注入独立仓库；缺省 = 应用级内存单例（不落盘） */
   readonly workbench?: WorkbenchStore;
+  /** Z3-04：composer 左右簇控件 props（壳经 useComposerControls 装配；缺省不渲染控件） */
+  readonly composerControls?: ComposerControls;
 }
 
 /**
  * 分屏工作台宿主：单格时与旧结构等价（一格会话界面），多格时二叉分割。
- * @param props - 会话数据源（store/controller）与可选状态仓库。
+ * @param props - 会话数据源（store/controller）、可选状态仓库与可选 composer 控件 props。
  * @returns 工作台根元素。
  */
-export function WorkbenchHost({ store, controller, workbench = workbenchStore }: WorkbenchHostProps): ReactNode {
+export function WorkbenchHost({
+  store,
+  controller,
+  workbench = workbenchStore,
+  composerControls,
+}: WorkbenchHostProps): ReactNode {
   const appState = useSyncExternalStore(store.subscribe, store.getState);
   const snapshot = useSyncExternalStore(workbench.subscribe, workbench.getSnapshot);
   const selectedId = appState.selectedId;
@@ -264,6 +274,7 @@ export function WorkbenchHost({ store, controller, workbench = workbenchStore }:
       onFocusLeaf,
       onCloseLeaf,
       onRatioChange,
+      ...(composerControls !== undefined ? { composerControls } : {}),
     }),
     [
       store,
@@ -278,6 +289,7 @@ export function WorkbenchHost({ store, controller, workbench = workbenchStore }:
       onFocusLeaf,
       onCloseLeaf,
       onRatioChange,
+      composerControls,
     ],
   );
 
@@ -365,7 +377,7 @@ function Splitter({
     return () => stopRef.current?.();
   }, []);
 
-  const startDrag = (event: React.PointerEvent<HTMLDivElement>): void => {
+  const startDrag = (_event: React.PointerEvent<HTMLDivElement>): void => {
     stopRef.current?.();
     const container = containerRef.current;
     if (container === null) return;
@@ -480,12 +492,15 @@ function WorkbenchLeaf({ leafId }: { leafId: string }): ReactNode {
       onDragLeave={(event) => api.onDragLeaveLeaf(leafId, event)}
       onDrop={(event) => api.onDropLeaf(leafId, event)}
     >
+      {/* Z3-04：左右簇控件 props（壳装配经 host 下发；未装配时缺省不渲染） */}
       <ConversationSeat
         store={api.store}
         controller={api.controller}
         sessionId={sessionId}
         {...(header !== undefined ? { header } : {})}
         {...(isPrimary ? {} : { composerOverlayHost: overlayHost })}
+        {...(api.composerControls?.modeSwitch !== undefined ? { modeSwitch: api.composerControls.modeSwitch } : {})}
+        {...(api.composerControls?.modelSelect !== undefined ? { modelSelect: api.composerControls.modelSelect } : {})}
       />
       {isFocused && <div aria-hidden className="pointer-events-none absolute inset-0 z-10 border border-primary/40" />}
       {showClose && (

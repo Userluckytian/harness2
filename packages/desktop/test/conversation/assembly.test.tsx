@@ -388,7 +388,7 @@ describe('composer 装配（D-34～D-37）', () => {
     renderSeat({ store, controller });
 
     inputText('追问');
-    expect(primary().textContent).toBe('排队发送');
+    expect(primary().getAttribute('aria-label')).toBe('排队发送');
     fireEvent.keyDown(editor(), { key: 'Enter', ctrlKey: true });
 
     await waitFor(() => expect(submit).toHaveBeenCalledTimes(1));
@@ -648,7 +648,7 @@ describe('D-35 / D-36 装配级矩阵：繁忙设置 × 主按钮标签 × 组�
 
     inputText('追问');
     expect(primary().getAttribute('data-kind')).toBe('send');
-    expect(primary().textContent).toBe('排队发送');
+    expect(primary().getAttribute('aria-label')).toBe('排队发送');
     expect(primary().getAttribute('data-label-kind')).toBe('input.send.queue');
 
     fireEvent.keyDown(editor(), { key: 'Enter' });
@@ -671,7 +671,7 @@ describe('D-35 / D-36 装配级矩阵：繁忙设置 × 主按钮标签 × 组�
     renderSeat({ store, controller, busyEnter: 'steer', port });
 
     inputText('改方向');
-    expect(primary().textContent).toBe('插话发送');
+    expect(primary().getAttribute('aria-label')).toBe('插话发送');
     expect(primary().getAttribute('data-label-kind')).toBe('input.send.steer');
 
     fireEvent.keyDown(editor(), { key: 'Enter' });
@@ -693,7 +693,7 @@ describe('D-35 / D-36 装配级矩阵：繁忙设置 × 主按钮标签 × 组�
     renderSeat({ store, controller, port });
 
     inputText('你好');
-    expect(primary().textContent).toBe('发送');
+    expect(primary().getAttribute('aria-label')).toBe('发送');
     expect(primary().getAttribute('data-label-kind')).toBe('input.send');
     fireEvent.keyDown(editor(), { key: 'Enter' });
     await waitFor(() => expect(submit).toHaveBeenCalledTimes(1));
@@ -703,7 +703,7 @@ describe('D-35 / D-36 装配级矩阵：繁忙设置 × 主按钮标签 × 组�
     act(() => markRunning(store));
     expect(screen.getAllByTestId('composer-primary')).toHaveLength(1); // 主指针只此一颗
     expect(primary().getAttribute('data-kind')).toBe('stop');
-    expect(primary().textContent).toBe('■ 停止');
+    expect(primary().getAttribute('aria-label')).toBe('停止');
   });
 
   it('繁忙 + `/` 命令行：保留普通「发送」标签（点击走命令裁定，不是插话/排队）', () => {
@@ -711,7 +711,7 @@ describe('D-35 / D-36 装配级矩阵：繁忙设置 × 主按钮标签 × 组�
     markRunning(store);
     renderSeat({ store, controller, busyEnter: 'steer' });
     inputText('/plan 做');
-    expect(primary().textContent).toBe('发送');
+    expect(primary().getAttribute('aria-label')).toBe('发送');
     expect(primary().getAttribute('data-label-kind')).toBe('input.send');
   });
 });

@@ -28,3 +28,23 @@ export function closeAllOverlays(): void {
 export function useOverlayOpen(id: ShellOverlayId): boolean {
   return useShellStore(shellOverlayStore)[id];
 }
+
+// —— 设置弹窗的「直达分区」请求（Z3-04 composer「管理模型」入口）——
+//
+// 覆层开关只存布尔（既有面不变）；分区诉求是**一次性**副作用参数，单独走模块变量：
+// 打开时取走即清（不残留），只存内存（D-14）。入口 = openSettingsAtSection（同时开覆层）。
+
+let requestedSettingsSection: string | undefined;
+
+/** 打开设置弹窗并指定落到的分区 id（如 MODELS_SECTION_ID） */
+export function openSettingsAtSection(sectionId: string): void {
+  requestedSettingsSection = sectionId;
+  setOverlay('settings', true);
+}
+
+/** 取走待落的分区请求（取走即清；undefined = 普通打开，跟随壳的默认分区） */
+export function takeRequestedSettingsSection(): string | undefined {
+  const id = requestedSettingsSection;
+  requestedSettingsSection = undefined;
+  return id;
+}

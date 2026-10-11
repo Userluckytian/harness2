@@ -103,7 +103,8 @@ describe('web 页面装配', () => {
     await waitFor(() => expect(shell.store.getState().selectedId).toBe('s1'));
     shell.store.markSending('s1');
     await waitFor(() =>
-      expect(document.querySelector('[data-testid="composer-primary"]')?.textContent).toContain('停止'),
+      // Z3-04：主按钮图标化（Z-94 Square 图标 + tooltip Esc）→ 文案在 aria-label（tooltip 悬停才渲染）
+      expect(document.querySelector('[data-testid="composer-primary"]')?.getAttribute('aria-label')).toContain('停止'),
     );
     // 同一位置切换：此时不存在并列的 Send 按钮
     expect(screen.queryByText('发送')).toBeNull();
@@ -127,7 +128,8 @@ describe('web 页面装配', () => {
     await waitFor(() => shell.store.peekStream('s1')?.running === true);
     expect(shell.store.peekStream('s1')?.live.text).toBe('写到一半');
     await waitFor(() =>
-      expect(document.querySelector('[data-testid="composer-primary"]')?.textContent).toContain('停止'),
+      // Z3-04：主按钮图标化 → 文案在 aria-label（tooltip 悬停才渲染）
+      expect(document.querySelector('[data-testid="composer-primary"]')?.getAttribute('aria-label')).toContain('停止'),
     );
 
     // 终态帧（用户停止 = cancelled/partial）：流式停止、在途清空、按钮回到发送
@@ -145,7 +147,9 @@ describe('web 页面装配', () => {
     });
     await waitFor(() => shell.store.peekStream('s1')?.running === false);
     expect(shell.store.peekStream('s1')?.live.text).toBe(''); // 在途增量清空（流式已停）
-    await waitFor(() => expect(screen.getByText('发送')).toBeTruthy());
+    await waitFor(() =>
+      expect(document.querySelector('[data-testid="composer-primary"]')?.getAttribute('aria-label')).toBe('发送'),
+    );
     expect(screen.queryByText('停止')).toBeNull();
     expect(shell.store.peekStream('s1')?.turnEnds['t1']).toMatchObject({
       stopReason: 'cancelled',

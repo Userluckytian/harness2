@@ -670,10 +670,16 @@ export function SettingsDialog({
   open,
   onClose,
   onThemeChange,
+  defaultSectionId,
 }: {
   open: boolean;
   onClose: () => void;
   onThemeChange: (t: SettingsTheme) => void;
+  /**
+   * 本次打开要落到的分区 id（Z3-04：composer「管理模型」直达模型配置页）。
+   * 只在**打开时**生效（调用方配 key 重挂载让壳采纳）；undefined = 跟随壳默认分区。
+   */
+  defaultSectionId?: string;
 }) {
   const [prefs, setPrefs] = useState<SettingsPreferencesShape | null>(null);
   const [cfg, setCfg] = useState<SettingsConfigShape | null>(null);
@@ -866,5 +872,12 @@ export function SettingsDialog({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [prefs, cfg, auth, theme, prefsNote, modelsContribution]);
 
-  return <SettingsShell open={open} onClose={onClose} sections={sections} />;
+  return (
+    <SettingsShell
+      open={open}
+      onClose={onClose}
+      sections={sections}
+      {...(defaultSectionId !== undefined ? { defaultSectionId } : {})}
+    />
+  );
 }

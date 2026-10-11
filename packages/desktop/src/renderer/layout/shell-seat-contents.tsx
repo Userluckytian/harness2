@@ -20,7 +20,7 @@ import type { SlotRegistry } from '../slots/index.js';
 import { CONVERSATION_OWNER, FRAME_SEAT, MAIN_CONVERSATION_KEY } from './frame-seats.js';
 import { useFrame } from './frame-context.js';
 import { useShellPalette } from './shell-context.js';
-import { useOverlayOpen, setOverlay } from './shell-overlays.js';
+import { setOverlay, takeRequestedSettingsSection, useOverlayOpen } from './shell-overlays.js';
 import { setShellTheme } from './shell-theme.js';
 import { workbenchDrag } from './workbench/drag.js';
 import { WorkbenchHost } from './workbench/host.js';
@@ -118,7 +118,8 @@ function SidebarSeatContent(): React.ReactNode {
 
 /** 中栏 conversation key 的内容（ui-conversation）：分屏工作台宿主（Z2-06 / Z-19）。
  *  未分屏（单格）时与旧结构等价（一格会话界面）；多格时在 conversation 面板内二叉分割。
- *  Z2-03 的内层 conversation | terminal 分栏在 MainSeatView 层，分屏发生在本内容内部。 */
+ *  Z2-03 的内层 conversation | terminal 分栏在 MainSeatView 层，分屏发生在本内容内部。
+ *  Z3-04：composer 左右簇控件（模型选择/模式切换）由壳在此装配一次，经工作台宿主下发到每格。 */
 function ConversationSeatContent(): React.ReactNode {
   return <WorkbenchHost store={store} controller={controller} />;
 }
@@ -152,11 +153,28 @@ function RightbarSeatContent({ canShow }: RightbarOwnerProps): React.ReactNode {
   return <SidePanel />;
 }
 
-/** 覆层席位内容（ui-settings）：设置弹窗（主题变化即立即呈现，D-15） */
+/** 覆层席位内容（ui-settings）：设置弹窗（主题变化即立即呈现，D-15）。
+ *  Z3-04：composer「管理模型」经 openSettingsAtSection 请求直达分区 —— 打开时取走请求，
+ *  以 key 重挂载让 SettingsShell 采纳 defaultSectionId（壳的激活分区只内存，重挂载即回落）。 */
 function SettingsOverlayContent(): React.ReactNode {
   const open = useOverlayOpen('settings');
+  const [defaultSection, setDefaultSection] = useState<string | undefined>(undefined);
+  useEffect(() => {
+    if (!open) {
+      setDefaultSection(undefined);
+      return;
+    }
+    const requested = takeRequestedSettingsSection();
+    if (requested !== undefined) setDefaultSection(requested);
+  }, [open]);
   return (
-    <SettingsDialog open={open} onClose={() => setOverlay('settings', false)} onThemeChange={(t) => setShellTheme(t)} />
+    <SettingsDialog
+      key={defaultSection ?? 'auto'}
+      open={open}
+      {...(defaultSection !== undefined ? { defaultSectionId: defaultSection } : {})}
+      onClose={() => setOverlay('settings', false)}
+      onThemeChange={(t) => setShellTheme(t)}
+    />
   );
 }
 

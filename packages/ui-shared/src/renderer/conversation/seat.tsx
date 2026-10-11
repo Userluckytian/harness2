@@ -36,7 +36,12 @@ import {
   type ImageReadIO,
   type UploadTransport,
 } from './composer/attachments.js';
-import { Composer, type ComposerIO } from './composer/Composer.js';
+import {
+  Composer,
+  type ComposerIO,
+  type ComposerModeSwitchProps,
+  type ComposerModelSelectProps,
+} from './composer/Composer.js';
 import { ComposerChain } from './composer/composer-chain.js';
 import {
   ComposerStore,
@@ -276,6 +281,13 @@ export interface ConversationSeatProps {
   readonly port?: ConversationComposerPort;
   /** D-46：composer 浮层测量宿主（缺省 = 共享单例） */
   readonly composerOverlayHost?: ComposerOverlayHost;
+  /**
+   * Z3-04（Z-94）左簇模式切换数据面（壳注入）。undefined = 该壳无数据通道（如 web 壳），
+   * 控件整体不渲染 —— 绝不渲染假状态。
+   */
+  readonly modeSwitch?: ComposerModeSwitchProps;
+  /** Z3-04（Z-94）右簇模型选择数据面（壳注入；undefined 同上） */
+  readonly modelSelect?: ComposerModelSelectProps;
 }
 
 /**
@@ -456,6 +468,9 @@ export function ConversationSeat(props: ConversationSeatProps): ReactNode {
           store={composerStore}
           chain={chain}
           io={io}
+          // Z3-04（Z-94）：左右簇控件（壳注入；缺省不渲染，web 壳无数据通道时如实缺省）
+          {...(props.modeSwitch !== undefined ? { modeSwitch: props.modeSwitch } : {})}
+          {...(props.modelSelect !== undefined ? { modelSelect: props.modelSelect } : {})}
           {...(props.imageIO !== undefined ? { imageIO: props.imageIO } : {})}
         />
         {/* Z-18/Z-17：草稿态（会话已加载且无任何条目、非运行中）→ composer 下方建议提示。

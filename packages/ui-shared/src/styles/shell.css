@@ -840,6 +840,18 @@ body,
   justify-content: flex-end;
   gap: 8px;
 }
+/* Z-94 左右簇：左簇（引用/附件/模式切换）贴左，右簇（模型选择/发送停止）贴右 */
+.composer-actions-left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-right: auto;
+}
+.composer-actions-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
 .btn-attach {
   background: transparent;
   border: 1px solid var(--border);
@@ -879,25 +891,7 @@ body,
 .composer-status[data-kind='error'] {
   color: var(--danger);
 }
-.btn-send,
-.btn-stop {
-  align-self: flex-end;
-  border: none;
-  border-radius: 8px;
-  padding: 8px 16px;
-  cursor: pointer;
-  color: white;
-}
-.btn-send {
-  background: var(--accent);
-}
-.btn-send:disabled {
-  background: var(--border2);
-  color: var(--fg-dim);
-}
-.btn-stop {
-  background: var(--danger);
-}
+/* Z3-04：发送/停止主按钮改用 ui-shared Button（Z-75 icon-md + bg-brand），此处旧 .btn-send/.btn-stop 移除 */
 .unread-badge {
   background: var(--accent);
   color: white;

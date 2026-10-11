@@ -10,8 +10,17 @@
 //   D-36 主按钮：单一主指针位置，在 Stop 与 Send 之间切换；标签跟随策略纯函数。
 //   D-37 附件：图片（image/*）走 FileReader data URL；文件走 FIFO 上传队列（并发缺省 2）。
 //   D-38 链：`ComposerChain` takeover 选举；takeover 生效时**默认 composer 保持挂载**（hidden）。
+//   Z3-04（Z-94）：左右簇控件 —— 左簇模式切换、右簇模型选择 + 发送/停止（图标钮 + tooltip）。
+//        数据经 props 注入（`modelSelect` / `modeSwitch`）；缺省不渲染对应控件（web 壳无数据
+//        通道时传 undefined，控件整体不出现 —— 绝不渲染假状态）。
 import { useCallback, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import type { ChangeEvent, ClipboardEvent, FormEvent, KeyboardEvent as ReactKeyboardEvent, ReactNode } from 'react';
+import { ArrowUpIcon, SquareIcon } from 'lucide-react';
+import { Button } from '../../../components/ui/button.js';
+import { Spinner } from '../../../components/ui/spinner.js';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '../../../components/ui/tooltip.js';
+import { ComposerModeSwitch, ComposerModelSelect } from './composer-controls.js';
+import type { ComposerApprovalMode, ComposerModelMenu, ComposerModelRef } from './composer-config.js';
 import {
   browserImageReadIO,
   FileUploadQueue,
@@ -62,6 +71,30 @@ export interface SelectedFileLike {
   readonly size: number;
 }
 
+/**
+ * Z3-04 右簇「模型选择」数据面（壳注入；undefined = 该壳无数据通道，控件整体不渲染）。
+ * ⚠️ 如实差异：这是 **config 级**选择（写 `roles.main`），影响之后的会话；运行中会话是否
+ * 跟进取决于 core 读配置时机 —— 本组件只呈现 config 当前值，不声称「本会话已切换」。
+ */
+export interface ComposerModelSelectProps {
+  /** 菜单模型（壳经 buildModelMenu 构造；roles.main 缺失时壳不传 = 控件不渲染） */
+  readonly menu: ComposerModelMenu;
+  readonly onSelectModel: (target: ComposerModelRef) => void;
+  /** 「管理模型」入口；缺省 = 菜单无该项（壳无设置通道时如实省略，不摆死入口） */
+  readonly onManageModels?: () => void;
+}
+
+/**
+ * Z3-04 左簇「模式切换」数据面（壳注入）。`mode` = config `approval.mode` 原值（未设置 =
+ * undefined，按 core 缺省 default 展示）；回调收到**决策后的最终模式**（Plan↔单选映射与
+ * 回落已在控件内经 composer-config 纯函数完成）。
+ * ⚠️ 如实差异：同为 config 级（写 `approval.mode`），语义同上。
+ */
+export interface ComposerModeSwitchProps {
+  readonly mode: string | undefined;
+  readonly onModeChange: (mode: ComposerApprovalMode) => void;
+}
+
 /** composer 的外部 IO 缝（接线棒注入真实实现；测试注入假实现） */
 export interface ComposerIO {
   readonly createClientMessageId: () => string;
@@ -100,6 +133,10 @@ export interface ComposerProps {
   readonly steeringAvailable?: boolean;
   readonly locked?: boolean;
   readonly stopAvailable?: boolean;
+  /** Z3-04 右簇模型选择（壳注入；undefined = 不渲染该控件） */
+  readonly modelSelect?: ComposerModelSelectProps;
+  /** Z3-04 左簇模式切换（壳注入；undefined = 不渲染该控件） */
+  readonly modeSwitch?: ComposerModeSwitchProps;
   readonly io: ComposerIO;
   /** 注入 store（测试/装配层持久草稿用）；缺省内部自建 */
   readonly store?: ComposerStore;
@@ -135,6 +172,8 @@ export function Composer(props: ComposerProps): ReactNode {
   const imageIO = props.imageIO ?? browserImageReadIO;
   const [attachments, setAttachments] = useState<readonly ComposerAttachment[]>([]);
   const [submitStatus, setSubmitStatus] = useState<SubmitStatus | null>(null);
+  /** 在途提交计数（Z-94：pending 时发送钮显示 Spinner；乐观提交的 await 窗口，如实反映） */
+  const [inFlightSubmits, setInFlightSubmits] = useState(0);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const editorRef = useRef<HTMLDivElement>(null);
   const idRef = useRef(0);
@@ -272,36 +311,41 @@ export function Composer(props: ComposerProps): ReactNode {
     setSubmitStatus({ kind: 'placement', text: placementNotice(submission.placement) });
     submitSeqRef.current += 1;
     const seq = submitSeqRef.current;
-    Promise.resolve(props.io.submit(submission)).then(
-      () => undefined,
-      (error: unknown) => {
-        // 失败还原（P0-2；上游 facade.ts:793-868）：
-        //   - 只在「用户尚未编辑还原内容」时覆盖草稿（草稿为空 或 自上次自动还原以来未编辑）；
-        //   - 多个并发失败按**提交顺序**用 '\n\n' 合并，绝不互相覆盖；
-        //   - 附件总是按提交顺序去重还给用户（且不覆盖用户期间新加的附件）。
-        const message = error instanceof Error ? error.message : String(error);
-        const outcome = settleFailedSubmission(store.getState(), failedLedgerRef.current, {
-          seq,
-          // 台账存**未 trim** 的草稿原文（trim 只作用于发出去的载荷）
-          rawText: submission.rawText,
-          attachments: [...submission.attachments],
-        });
-        failedLedgerRef.current = outcome.ledger;
-        if (outcome.restored && outcome.restoreText !== undefined) {
-          store.dispatch({ type: 'restore-draft', rawText: outcome.restoreText });
-          failedLedgerRef.current = markRestoreRev(failedLedgerRef.current, store.getState().revision);
-        }
-        setAttachments((current) => [...restoreAttachments(outcome.attachments, current)]);
-        // 不静默：失败原因 + 是否覆盖草稿，逐字告知（P1-2/P0-2 的展示面）
-        setSubmitStatus({
-          kind: 'error',
-          text: outcome.restored
-            ? `提交未生效：${message}（草稿与附件已还原）`
-            : `提交未生效：${message}（你之后输入的内容未被覆盖，失败内容在台账中等待合并还原）`,
-        });
-        props.io.onSubmitError?.(submission, error);
-      },
-    );
+    setInFlightSubmits((n) => n + 1);
+    Promise.resolve(props.io.submit(submission))
+      .then(
+        () => undefined,
+        (error: unknown) => {
+          // 失败还原（P0-2；上游 facade.ts:793-868）：
+          //   - 只在「用户尚未编辑还原内容」时覆盖草稿（草稿为空 或 自上次自动还原以来未编辑）；
+          //   - 多个并发失败按**提交顺序**用 '\n\n' 合并，绝不互相覆盖；
+          //   - 附件总是按提交顺序去重还给用户（且不覆盖用户期间新加的附件）。
+          const message = error instanceof Error ? error.message : String(error);
+          const outcome = settleFailedSubmission(store.getState(), failedLedgerRef.current, {
+            seq,
+            // 台账存**未 trim** 的草稿原文（trim 只作用于发出去的载荷）
+            rawText: submission.rawText,
+            attachments: [...submission.attachments],
+          });
+          failedLedgerRef.current = outcome.ledger;
+          if (outcome.restored && outcome.restoreText !== undefined) {
+            store.dispatch({ type: 'restore-draft', rawText: outcome.restoreText });
+            failedLedgerRef.current = markRestoreRev(failedLedgerRef.current, store.getState().revision);
+          }
+          setAttachments((current) => [...restoreAttachments(outcome.attachments, current)]);
+          // 不静默：失败原因 + 是否覆盖草稿，逐字告知（P1-2/P0-2 的展示面）
+          setSubmitStatus({
+            kind: 'error',
+            text: outcome.restored
+              ? `提交未生效：${message}（草稿与附件已还原）`
+              : `提交未生效：${message}（你之后输入的内容未被覆盖，失败内容在台账中等待合并还原）`,
+          });
+          props.io.onSubmitError?.(submission, error);
+        },
+      )
+      .finally(() => {
+        setInFlightSubmits((n) => Math.max(0, n - 1));
+      });
   };
 
   const onEnterGesture = (gesture: ComposerSubmitGesture): void => {
@@ -408,9 +452,10 @@ export function Composer(props: ComposerProps): ReactNode {
           {renderComposerTakeover(takeover, chainProps)}
         </div>
       )}
-      {/* D-38：takeover 生效时默认 composer **保持挂载**（hidden），不卸载 */}
+      {/* D-38：takeover 生效时默认 composer **保持挂载**（hidden），不卸载。
+          `@container/composer`：Z-94 外壳容器查询锚点（模型 trigger 空间不足时退化为图标） */}
       <div className="composer-default" data-testid="composer-default" hidden={takeover !== null}>
-        <div className="composer">
+        <div className="composer @container/composer">
           <div
             className="composer-editor"
             data-testid="composer-editor"
@@ -466,47 +511,80 @@ export function Composer(props: ComposerProps): ReactNode {
             </div>
           )}
           <div className="composer-actions">
-            <button
-              type="button"
-              className="btn-reference"
-              data-testid="composer-reference"
-              disabled={locked}
-              title="引用文件（在光标处插入 @，随后输入路径）"
-              onClick={onInsertReferencePrefix}
-            >
-              引用
-            </button>
-            <button
-              type="button"
-              className="btn-attach"
-              data-testid="composer-attach"
-              disabled={locked}
-              title="附加图片或文件"
-              onClick={() => fileInputRef.current?.click()}
-            >
-              附件
-            </button>
-            <input
-              ref={fileInputRef}
-              type="file"
-              multiple
-              hidden
-              data-testid="composer-file-input"
-              onChange={onFileChange}
-            />
-            <button
-              type="button"
-              className={main.kind === 'stop' ? 'btn-stop' : 'btn-send'}
-              data-testid="composer-primary"
-              data-kind={main.kind}
-              data-label-kind={main.labelKind}
-              disabled={main.disabled}
-              title={main.label}
-              aria-label={main.label}
-              onClick={onPrimary}
-            >
-              {main.kind === 'stop' ? '■ 停止' : main.label}
-            </button>
+            {/* 左簇（Z-94）：引用 / 附件（既有入口）+ 模式切换（数据注入才渲染） */}
+            <div className="composer-actions-left">
+              <button
+                type="button"
+                className="btn-reference"
+                data-testid="composer-reference"
+                disabled={locked}
+                title="引用文件（在光标处插入 @，随后输入路径）"
+                onClick={onInsertReferencePrefix}
+              >
+                引用
+              </button>
+              <button
+                type="button"
+                className="btn-attach"
+                data-testid="composer-attach"
+                disabled={locked}
+                title="附加图片或文件"
+                onClick={() => fileInputRef.current?.click()}
+              >
+                附件
+              </button>
+              <input
+                ref={fileInputRef}
+                type="file"
+                multiple
+                hidden
+                data-testid="composer-file-input"
+                onChange={onFileChange}
+              />
+              {props.modeSwitch !== undefined && (
+                <ComposerModeSwitch mode={props.modeSwitch.mode} onModeChange={props.modeSwitch.onModeChange} />
+              )}
+            </div>
+            {/* 右簇（Z-94）：模型选择 + 发送/停止 */}
+            <div className="composer-actions-right">
+              {props.modelSelect !== undefined && (
+                <ComposerModelSelect
+                  menu={props.modelSelect.menu}
+                  onSelectModel={props.modelSelect.onSelectModel}
+                  {...(props.modelSelect.onManageModels !== undefined
+                    ? { onManageModels: props.modelSelect.onManageModels }
+                    : {})}
+                />
+              )}
+              <TooltipProvider>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      type="button"
+                      size="icon-md"
+                      className="rounded-lg bg-brand text-primary-foreground"
+                      data-testid="composer-primary"
+                      data-kind={main.kind}
+                      data-label-kind={main.labelKind}
+                      disabled={main.disabled}
+                      aria-label={main.label}
+                      onClick={onPrimary}
+                    >
+                      {main.kind === 'stop' ? (
+                        <SquareIcon className="size-4" />
+                      ) : inFlightSubmits > 0 ? (
+                        // Z-94：pending 时显示 Spinner（乐观提交的 await 窗口，如实反映）
+                        <Spinner className="size-4" />
+                      ) : (
+                        <ArrowUpIcon className="size-4" />
+                      )}
+                    </Button>
+                  </TooltipTrigger>
+                  {/* Z-94：停止钮 tooltip 标 Esc；发送钮 tooltip 跟随主指针标签 */}
+                  <TooltipContent>{main.kind === 'stop' ? 'Esc' : main.label}</TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
+            </div>
           </div>
         </div>
       </div>

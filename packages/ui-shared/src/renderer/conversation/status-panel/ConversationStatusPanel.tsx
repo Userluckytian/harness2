@@ -10,9 +10,9 @@
 //   * 断点用 CSS 容器查询（挂载点须有 `@container` 祖先，见 seat 的包裹行），不做 JS 测量。
 //
 // 实现选型：变体菜单**手写**（Trigger + role=menu 浮层 + Escape/外点关闭），不经 radix
-// DropdownMenu —— 渲染端此前零 shadcn ui 原语消费，`components/ui/*` 内部的 `@/lib/utils`
-// 在两壳 vitest 均无 alias，引入即破坏测试面；两项目菜单也不值得背这层依赖（与 ApprovalDock
-// 的手写 listbox 同一口径）。
+// DropdownMenu —— 本文件落地时 `components/ui/*` 内部的 `@/lib/utils` 在两壳 vitest 均无
+// alias，引入即破坏测试面（Z3-04 起两壳 vitest 已补 alias，composer-controls 已改用原语；
+// 本组件维持手写实现，不动已验证的交互与测试）。
 //
 // 扩展缝：子块 = STATUS_SECTIONS 注册表 + hasSectionData/sectionBadge + 本文件的 body 分支；
 // 数据源到位后（todo/goal/terminals/workflows）加注册行即可，见 status-panel-model.ts 文件头。
