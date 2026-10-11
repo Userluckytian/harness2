@@ -12,6 +12,7 @@
 > 批4 ✅ A10 插件消费三开放 / A07 MCP 分区 / A08 技能分区 · 批5 ✅ A09 Hooks 全新建（PreToolUse 真拦截+updatedInput、PostToolUse 回注、扩展事件落账；936）·
 > 批6-A ✅ A14 工作流引擎（声明式步进/审批闸复用/TaskCoordinator 并发闸/断点续跑；989）· 批6-B 🔄 A11 Teams 编排层（执行中）。
 > 批7 待办：重项（A15 沙箱 / A21 多端同步 / A22 语义索引 / A19-A20 SDK-ACP，逐项先核数据面）→ UI 接线批次（模型发现端点/Ctrl+T/扩展事件渲染/bash 警告条/规则编辑器/hooks+workflow+teams GUI）→ Z7 收口（Web 同构/IM QQ·飞书/真机截图/README）。
+> **Z7 收口计划已立**（2026-10-11）：[`2026-10-11-phase-Z7-closeout.md`](ai-framework/plans/2026-10-11-phase-Z7-closeout.md)——验收表 V-Z7-1～10、人工拍板项 10 条、真机清单 10 条、交接提示词。Web 壳同构为主体工作量。
 > **测试基线**（2026-10-11 批6-A 后）：ui-shared 276 / desktop 1107+1skip / core 1472|2 / cli 1575|2 / web 36 / gateway 40，全绿；core 导出基线 989。
 > **⚠️ 子代理额度**：批4 执行中子代理曾 `exceed quota limit` 崩溃（编排者验收收尾）；后续批次可能再现，如遇中断由编排者按验收流程接手。
 > **⚠️ 上游**：refs/ZCode 三次拉取均 `fetch-pack: unexpected disconnect` 失败，仍停 `29628c9`（v3.14.3）——refs 文档继续以该版本为权威。
