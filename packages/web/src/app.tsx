@@ -1,44 +1,19 @@
-// web 壳页面装配：左侧会话列表 + 右侧对话页（视图环 chat + 常驻 composer）。
+// web 壳页面装配：左侧会话列表 + 右侧对话页（转录 + 常驻 composer）。
 //
-// 呈现层**全部来自 `@harness2/ui-shared`**（会话列表、转录、composer、视图环、连接角标、
+// 呈现层**全部来自 `@harness2/ui-shared`**（会话列表、转录、composer、连接角标、
 // 样式表），本文件只做两件 web 特有的事：
 //   1. 用 `WebApp` 组装根把 serve 客户端注入共享应用壳；
-//   2. 决定本壳**有哪些**视图（web 当前只有 `chat`）与**缺哪些**宿主通道（如实提示，不摆假入口）。
+//   2. 决定本壳**缺哪些**宿主通道（如实提示，不摆假入口）。
+// Z2-05（Z-16）：主区事实单一 chat —— 无视图注册表/视图选择持久缝（已随主区视图环退役）；
+// trajectory 是右栏 tab，web 壳暂无右栏宿主，不摆假入口。
 import { useState } from 'react';
 import type { ReactNode } from 'react';
 import { StatusBadge, type AppShell } from '@harness2/ui-shared/renderer/app-shell.js';
-import {
-  ConversationChatView,
-  ConversationSeat,
-  type ConversationSession,
-} from '@harness2/ui-shared/renderer/conversation/seat.js';
-import { CHAT_VIEW_KEY } from '@harness2/ui-shared/renderer/conversation/views/view-selection.js';
-import { createConversationViewRegistry } from '@harness2/ui-shared/renderer/conversation/views/view-registry.js';
-import { createInMemoryPersistence } from '@harness2/ui-shared/renderer/ports.js';
+import { ConversationSeat } from '@harness2/ui-shared/renderer/conversation/seat.js';
 import { useDraftsUnloadGuard } from '@harness2/ui-shared/renderer/drafts-guard.js';
 import { DEFAULT_SIDEBAR_LABELS } from '@harness2/ui-shared/renderer/sidebar/labels.js';
 import { buildSessionItems } from '@harness2/ui-shared/renderer/sidebar/session-items.js';
 import { SessionBrowser } from '@harness2/ui-shared/renderer/sidebar/SessionBrowser.js';
-
-/**
- * web 壳的会话视图注册表：**只注册真实存在的视图**。
- * 未注册的能力（轨迹页、审批中心、模型配置页、工具卡详情、flows 渲染）在本壳不渲染入口 ——
- * 视图环按 D-31 只会选到已注册的 `chat`，缺什么就是缺什么，不摆假 UI（缺口清单见导出文档）。
- */
-export function createWebConversationViewRegistry() {
-  const registry = createConversationViewRegistry<ConversationSession>();
-  registry.register({
-    key: CHAT_VIEW_KEY,
-    title: 'Chat',
-    owner: 'ui-chat',
-    component: ConversationChatView,
-  });
-  return registry;
-}
-
-/** web 壳单例：视图注册表与视图选择持久缝（内存；本壳不落浏览器存储） */
-export const webConversationViewRegistry = createWebConversationViewRegistry();
-export const webViewPersistence = createInMemoryPersistence();
 
 export interface WebAppProps {
   readonly shell: AppShell;
@@ -148,8 +123,6 @@ export function WebApp({ shell, onNewSession, newSessionBlockedReason }: WebAppP
         <ConversationSeat
           store={store}
           controller={controller}
-          registry={webConversationViewRegistry}
-          persistence={webViewPersistence}
           header={({ sessionId }) => (
             <div className="web-conversation-header">
               <span className="web-conversation-title">

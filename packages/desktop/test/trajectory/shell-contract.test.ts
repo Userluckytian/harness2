@@ -1,9 +1,10 @@
-// D-46 契约测试：composer 浮层高度测量 → 记录表预留内边距。
+// D-46 契约测试：composer 浮层高度测量 → 转录滚动叶容器预留内边距。
+// Z2-05：预留只服务 chat 主视图（.messages）；变量从 --trajectory-composer-inset 更名 --composer-inset。
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   COMPOSER_OVERLAY_GAP_PX,
   DEFAULT_COMPOSER_INSET_PX,
-  TRAJECTORY_COMPOSER_INSET_VAR,
+  COMPOSER_INSET_VAR,
   composerInsetCssValue,
   composerOverlayInsetCss,
   composerOverlayInsetPx,
@@ -59,10 +60,10 @@ describe('预留内边距计算', () => {
     expect(composerOverlayInsetCss(100)).toBe('112px');
   });
 
-  it('CSS 变量名与样式对象（壳挂到会话容器上）', () => {
-    expect(TRAJECTORY_COMPOSER_INSET_VAR).toBe('--trajectory-composer-inset');
-    expect(composerOverlayStyle(100)).toEqual({ '--trajectory-composer-inset': '112px' });
-    expect(composerInsetCssValue).toBe('var(--trajectory-composer-inset, 0px)');
+  it('CSS 变量名与样式对象（壳挂到会话容器上；Z2-05 起只服务 chat）', () => {
+    expect(COMPOSER_INSET_VAR).toBe('--composer-inset');
+    expect(composerOverlayStyle(100)).toEqual({ '--composer-inset': '112px' });
+    expect(composerInsetCssValue).toBe('var(--composer-inset, 0px)');
   });
 
   it('parseComposerInsetPx 读回 CSS 值（非法 → 0）', () => {

@@ -172,8 +172,8 @@
   flex: 1 1 auto;
   min-height: 0;
   overflow-y: auto;
-  /* D-46 兜底：壳没写 CSS 变量时预留 0（不假装有浮层） */
-  padding-bottom: var(--trajectory-composer-inset, 0px);
+  /* Z2-05：轨迹已迁右栏 tab —— 不再浮在 composer 之下，无需浮层预留
+     （D-46 的 `--composer-inset` 预留只服务 chat 主视图的 .messages）。 */
 }
 
 .trajectory-spacer {

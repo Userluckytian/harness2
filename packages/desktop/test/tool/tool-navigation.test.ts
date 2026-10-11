@@ -1,6 +1,8 @@
-// 工具卡跳转契约测试（P6-C / D-86）：
+// 工具卡跳转契约测试（P6-C / D-86 / Z2-05 改道）：
 //   ① openFile → 右栏文本预览（真实现：待打开文件状态 + 右栏消费）；
-//   ② inspect → 轨迹视图（A 棒 `ui-trajectory` 注册后才放行；未装配 → 失败且**不渲染入口**）；
+//   ② inspect → 轨迹（消费者注册后才放行；未装配 → 失败且**不渲染入口**）。
+//      Z2-05：落点 = 右栏 trajectory tab（model-trajectory:{sessionId}），不再是主区视图环标签；
+//      消费者的开 tab 行为在 trajectory-wiring.test.tsx 端到端钉住，这里只钉契约本身。
 //   ③ 单视图口径：不存在第二个全高详情视图的状态位。
 // 纯逻辑测试（node 环境，无 DOM）。
 import { describe, expect, it, vi } from 'vitest';
@@ -8,7 +10,6 @@ import {
   TOOL_CARD_SINGLE_VIEW,
   TOOL_INSPECT_TARGET,
   TOOL_OPEN_FILE_TARGET,
-  TRAJECTORY_VIEW_KEY,
   createToolNavigation,
   toolJumpActions,
 } from '@harness2/ui-shared/renderer/tool/index.js';
@@ -67,13 +68,13 @@ describe('D-86 ②：inspect 开轨迹视图', () => {
     expect(actions.inspect).toBeUndefined(); // 轨迹未装配 → 无入口
   });
 
-  it('注册轨迹视图（A 棒契约）→ inspect 投递给消费者并带会话/调用/序号；key 由消费者给出', () => {
+  it('注册轨迹消费者 → inspect 投递给消费者并带会话/调用/序号；key 由消费者给出', () => {
     const nav = createToolNavigation();
     const open = vi.fn();
-    const dispose = nav.registerTrajectoryView({ key: TRAJECTORY_VIEW_KEY, open });
+    const dispose = nav.registerTrajectoryView({ key: TOOL_INSPECT_TARGET, open });
 
     expect(nav.canInspect()).toBe(true);
-    expect(nav.inspectViewKey()).toBe('trajectory'); // 与 A 棒 TRAJECTORY_VIEW_KEY 同 key
+    expect(nav.inspectViewKey()).toBe('trajectory'); // 路由落点名（实际 tab id 由消费者按会话拼装）
     expect(nav.inspect({ sessionId: 's1', callId: 'c1', seq: 42 })).toEqual({
       ok: true,
       target: TOOL_INSPECT_TARGET,
@@ -87,9 +88,9 @@ describe('D-86 ②：inspect 开轨迹视图', () => {
     expect(nav.inspectViewKey()).toBeNull();
   });
 
-  it('缺会话上下文 → 失败（missing-session，无法定位会话视图环）', () => {
+  it('缺会话上下文 → 失败（missing-session，无法定位目标会话的轨迹 tab）', () => {
     const nav = createToolNavigation();
-    nav.registerTrajectoryView({ key: TRAJECTORY_VIEW_KEY, open: () => {} });
+    nav.registerTrajectoryView({ key: TOOL_INSPECT_TARGET, open: () => {} });
     expect(nav.inspect({ sessionId: '' })).toEqual({
       ok: false,
       target: TOOL_INSPECT_TARGET,

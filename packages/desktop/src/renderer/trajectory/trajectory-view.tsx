@@ -1,60 +1,37 @@
-// 轨迹视图（D-40）：`conversation.view` 视图环里的 Trajectory 标签页（**不是弹窗**）。
+// 轨迹内容组件（D-40～D-47）。
 //
-// 本文件只**提供视图定义**（key='trajectory'）+ 内容组件；**不注册进任何装配** ——
-// 视图环是 P5 的产出（`conversation/views/**`），把本定义注册进注册表是接线棒的职责
-// （接线方式见 `createTrajectoryViewDefinition()` 的用法注释）。
+// Z2-05（Z-14 / Z-16）：trajectory 不再是主区视图环的标签页（主区无视图环），而是**右栏 tab**
+// （Z-14 语义 id `model-trajectory:{sessionId}`）。本文件只提供内容组件 `TrajectoryViewContent`，
+// 由壳的右栏宿主（desktop `components/SidePanel.tsx`）挂载；不注册进任何装配。
 //
-// 数据源：会话对象的 `store`（与 Chat 视图同一个 store，绝不另开数据通道）。
+// 数据源：注入的 `store`（与 Chat 同一份 store，绝不另开数据通道）。
 //   * 事件流 → 投影（projection.ts，纯函数）；
-//   * TTFT：core 日志不含首 token 时刻 → 由本视图对 store 的实时输出做**运行时观测**
+//   * TTFT：core 日志不含首 token 时刻 → 由本组件对 store 的实时输出做**运行时观测**
 //     （timing.ts；未观测到就留空，不估算 —— D-47）。
-// D-46：composer 浮层预留高度经 `ComposerOverlayHost` 注入（或退化为读 CSS 变量）。
+// D-46：composer 浮层预留只服务 chat 主视图；右栏 tab 不浮在 composer 之下，本组件不再接收
+// `composerInsetPx`（记录表的缺省兜底解析为 0px，不虚构预留）。
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import type { ReactNode } from 'react';
 import type { SessionImageUrlResolver } from '@harness2/ui-shared/renderer/conversation/views/image-url-cache.js';
-import type {
-  ConversationViewDefinition,
-  ConversationViewProps,
-} from '@harness2/ui-shared/renderer/conversation/views/view-registry.js';
 import type { AppStore } from '@harness2/ui-shared/renderer/store.js';
 import { findFocusRowKey, type TrajectoryFocusStore } from './inspect-focus.js';
 import { projectTrajectory } from './projection.js';
-import {
-  useComposerOverlayInset,
-  type ComposerOverlayHost,
-} from '@harness2/ui-shared/renderer/trajectory/shell-contract.js';
 import { currentStreamingStepId, TrajectoryTimingObserver } from './timing.js';
 import { TrajectoryPanel } from './trajectory-panel.js';
 
-/** 视图 key（D-40；会话内唯一，与 P5 的 'chat' 并列）—— 字面量唯一来源在共享包 */
-import { TRAJECTORY_VIEW_KEY } from '@harness2/ui-shared/renderer/conversation/views/view-keys.js';
-
-export { TRAJECTORY_VIEW_KEY };
-/** 标签标题 */
-export const TRAJECTORY_VIEW_TITLE = 'Trajectory';
-/** 归属包名（D-02 口径：一个 UI 能力一个包名） */
-export const TRAJECTORY_OWNER = 'ui-trajectory';
-
-/** 视图需要的会话对象最小面（装配层传真实 ConversationSession，结构兼容） */
+/** 视图需要的会话对象最小面（右栏宿主传真实数据源；与 Chat 同源） */
 export interface TrajectorySession {
   readonly id: string;
   readonly store: AppStore;
-  /** 可选会话订阅（视图环已订阅；单独使用时退化为 store.subscribe） */
+  /** 可选会话订阅（缺省退化为 store.subscribe） */
   readonly subscribe?: (listener: () => void) => () => void;
 }
-
-/**
- * D-46：订阅壳的 composer 浮层实测高度（**实现已下沉** 共享包 shell-contract，
- * 本模块只再导出，桌面既有引用面不变）。
- */
-export { useComposerOverlayInset };
 
 export interface TrajectoryViewContentProps {
   readonly session: TrajectorySession;
   readonly sessionId: string;
   readonly imageUrl?: SessionImageUrlResolver;
-  readonly composerInsetPx?: number;
-  /** P2-5：D-86 ② inspect 的定位通道（装配层注入；缺省 = 不定位） */
+  /** P2-5：D-86 ② inspect 的定位通道（宿主注入；缺省 = 不定位） */
   readonly focusStore?: TrajectoryFocusStore;
   readonly rowHeightPx?: number;
   readonly viewportHeightPx?: number;
@@ -64,11 +41,11 @@ export interface TrajectoryViewContentProps {
 }
 
 /**
- * 轨迹视图内容：订阅 store → 投影 → 渲染面板。
- * 「换会话不重建」：会话对象由视图环注入且引用稳定；本组件只在 sessionId 变化时清空观测。
+ * 轨迹内容：订阅 store → 投影 → 渲染面板。
+ * 「换会话不重建」：会话对象由宿主注入且引用稳定；本组件只在 sessionId 变化时清空观测。
  */
 export function TrajectoryViewContent(props: TrajectoryViewContentProps): ReactNode {
-  const { session, sessionId, imageUrl, composerInsetPx } = props;
+  const { session, sessionId, imageUrl } = props;
   const focusStore = props.focusStore;
   const store = session.store;
   const subscribe = session.subscribe ?? store.subscribe;
@@ -130,7 +107,6 @@ export function TrajectoryViewContent(props: TrajectoryViewContentProps): ReactN
       model={model}
       focusKey={focusKey}
       {...(imageUrl !== undefined ? { imageUrl } : {})}
-      {...(composerInsetPx !== undefined ? { composerInsetPx } : {})}
       {...(props.rowHeightPx !== undefined ? { rowHeightPx: props.rowHeightPx } : {})}
       {...(props.viewportHeightPx !== undefined ? { viewportHeightPx: props.viewportHeightPx } : {})}
       {...(props.overscan !== undefined ? { overscan: props.overscan } : {})}
@@ -138,53 +114,4 @@ export function TrajectoryViewContent(props: TrajectoryViewContentProps): ReactN
       {...(props.overviewWidthPx !== undefined ? { overviewWidthPx: props.overviewWidthPx } : {})}
     />
   );
-}
-
-export interface TrajectoryViewOptions {
-  readonly owner?: string;
-  readonly title?: string;
-  /** D-46：壳的 composer 浮层测量宿主（注入后按实测高度预留；未注入 → 读 CSS 变量） */
-  readonly composerHost?: ComposerOverlayHost;
-  /** P2-5：D-86 ② inspect 的定位通道（装配层注入；未注入 → 打开轨迹只切换视图，不定位） */
-  readonly focusStore?: TrajectoryFocusStore;
-  readonly rowHeightPx?: number;
-  readonly viewportHeightPx?: number;
-  readonly overscan?: number;
-  readonly pageSize?: number;
-  readonly overviewWidthPx?: number;
-}
-
-/**
- * 生成 Trajectory 视图定义（**只定义、不注册**）。
- * 接线棒用法（伪代码）：
- *   const registry = createDesktopConversationViewRegistry();
- *   registry.register(createTrajectoryViewDefinition<ConversationSession>({ composerHost }));
- */
-export function createTrajectoryViewDefinition<S extends TrajectorySession>(
-  options: TrajectoryViewOptions = {},
-): ConversationViewDefinition<S> {
-  const owner = options.owner ?? TRAJECTORY_OWNER;
-  const title = options.title ?? TRAJECTORY_VIEW_TITLE;
-  const composerHost = options.composerHost;
-  const focusStore = options.focusStore;
-
-  function BoundTrajectoryView(props: ConversationViewProps<S>): ReactNode {
-    const composerInsetPx = useComposerOverlayInset(composerHost);
-    return (
-      <TrajectoryViewContent
-        session={props.session}
-        sessionId={props.sessionId}
-        imageUrl={props.imageUrl}
-        {...(composerInsetPx !== undefined ? { composerInsetPx } : {})}
-        {...(focusStore !== undefined ? { focusStore } : {})}
-        {...(options.rowHeightPx !== undefined ? { rowHeightPx: options.rowHeightPx } : {})}
-        {...(options.viewportHeightPx !== undefined ? { viewportHeightPx: options.viewportHeightPx } : {})}
-        {...(options.overscan !== undefined ? { overscan: options.overscan } : {})}
-        {...(options.pageSize !== undefined ? { pageSize: options.pageSize } : {})}
-        {...(options.overviewWidthPx !== undefined ? { overviewWidthPx: options.overviewWidthPx } : {})}
-      />
-    );
-  }
-
-  return { key: TRAJECTORY_VIEW_KEY, title, owner, component: BoundTrajectoryView };
 }

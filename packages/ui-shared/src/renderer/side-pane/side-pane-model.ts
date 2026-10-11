@@ -10,15 +10,37 @@
 // 引用**，调用方据此免渲染）；不含 React、不含计时、不含浏览器 API。React 桥（useSyncExternalStore
 // 的单例 store）在 ./side-pane-store.tsx，桌面/未来 web 各自只做渲染接线。
 
-/** 右栏 tab 类型（我们真实拥有的七个面板；面板本体在各壳，这里只钉 id 与标签） */
-export type SidePaneTabId = 'plan' | 'tasks' | 'approvals' | 'changes' | 'workspace' | 'file' | 'config';
+/**
+ * Z-14 `model-trajectory:{taskId}` 口径：轨迹 tab 的 id 前缀（后缀 = 会话 id）。
+ * Z2-05：trajectory 不再是主视图（Z-16 主区无视图环），而是右栏 tab——
+ * id 对齐 ZCode 的 `model-trajectory:{taskId}`（我们的任务标识 = 会话 id）。
+ */
+export const MODEL_TRAJECTORY_TAB_PREFIX = 'model-trajectory:';
+
+/** 轨迹 tab id（Z-14 语义 id：`model-trajectory:{sessionId}`） */
+export type TrajectoryTabId = `${typeof MODEL_TRAJECTORY_TAB_PREFIX}${string}`;
+
+/** 由会话 id 折出轨迹 tab id（Z-14：每会话至多一个轨迹 tab） */
+export function trajectoryTabId(sessionId: string): TrajectoryTabId {
+  return `${MODEL_TRAJECTORY_TAB_PREFIX}${sessionId}`;
+}
+
+/** 轨迹 tab id → 会话 id（非轨迹 tab → null；不猜） */
+export function trajectoryTabSessionId(id: SidePaneTabId): string | null {
+  return id.startsWith(MODEL_TRAJECTORY_TAB_PREFIX) ? id.slice(MODEL_TRAJECTORY_TAB_PREFIX.length) : null;
+}
+
+/** 右栏 tab 类型：静态面板 id + 按会话解析的轨迹 tab（Z-14 `model-trajectory:{sessionId}`） */
+export type SidePaneTabId =
+  'plan' | 'tasks' | 'approvals' | 'changes' | 'workspace' | 'file' | 'config' | TrajectoryTabId;
 
 export interface SidePaneTabDescriptor {
   readonly id: SidePaneTabId;
   readonly label: string;
 }
 
-/** 七类 tab 的展示目录（顺序 = Z-14 表意上的固定列举序，与打开顺序无关） */
+/** 静态面板 tab 的展示目录（顺序 = Z-14 表意上的固定列举序，与打开顺序无关）；
+ *  轨迹 tab 不在此列 —— 它的 id 按会话动态拼装，标签由 `sidePaneTabLabel` 按前缀识别。 */
 export const SIDE_PANE_TABS: readonly SidePaneTabDescriptor[] = Object.freeze([
   { id: 'plan', label: '计划' },
   { id: 'tasks', label: '任务' },
@@ -34,18 +56,30 @@ export const SIDE_PANE_TABS: readonly SidePaneTabDescriptor[] = Object.freeze([
  * 「文件」不在其中 —— 它只由 D-86 ① `openFile` 路由按需打开（ZCode 的 code-viewer 同款语义：
  * 打开文件才出现，加号菜单不列）。差异已在 Z2-04 报告登记：ZCode 启动器列的是
  * browser/git/terminal/developer-tools 等我们没有的面板，我们按实际拥有的列。
+ * Z2-05 新增「模型轨迹」项（ZCode 任务右键「查看 Model Trajectory」的等价入口）：
+ * 启动器 item id 是**类型标记** `'model-trajectory'`，打开时经 `sidePaneOpenTarget`
+ * 按当前会话解析成 `model-trajectory:{sessionId}` 后入列。
  */
-export const SIDE_PANE_LAUNCHER_TAB_IDS: readonly SidePaneTabId[] = Object.freeze([
+export type SidePaneLauncherItemId = SidePaneTabId | 'model-trajectory';
+
+export const SIDE_PANE_LAUNCHER_ITEM_IDS: readonly SidePaneLauncherItemId[] = Object.freeze([
   'plan',
   'tasks',
   'approvals',
   'changes',
   'workspace',
   'config',
+  'model-trajectory',
 ]);
+
+/** 启动器项 → 实际打开的 tab id：「模型轨迹」按会话解析，其余原样 */
+export function sidePaneOpenTarget(itemId: SidePaneLauncherItemId, sessionId: string): SidePaneTabId {
+  return itemId === 'model-trajectory' ? trajectoryTabId(sessionId) : itemId;
+}
 
 /** tab 标签（宿主渲染用；未知 id 返回 id 本身，不摆假文案） */
 export function sidePaneTabLabel(id: SidePaneTabId): string {
+  if (id.startsWith(MODEL_TRAJECTORY_TAB_PREFIX)) return '模型轨迹';
   return SIDE_PANE_TABS.find((t) => t.id === id)?.label ?? id;
 }
 

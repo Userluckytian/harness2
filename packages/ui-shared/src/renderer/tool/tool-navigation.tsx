@@ -1,35 +1,30 @@
-// 工具卡 → 右栏 / 轨迹视图的**跳转契约**（D-86 的两条路由 + 注入面）。
+// 工具卡 → 右栏 / 轨迹的**跳转契约**（D-86 的两条路由 + 注入面）。
 //
 // D-86 原文两条：
 //   ① 「文件路径经 owner `openFile` 路由右栏文本预览」→ `openFile()`：路由目标见 `TOOL_OPEN_FILE_TARGET`。
-//   ② 「`inspect` 开轨迹视图」→ `inspect()`：路由目标 = `ui-trajectory`（`TRAJECTORY_VIEW_KEY`）。
+//   ② 「`inspect` 开轨迹视图」→ `inspect()`：路由目标 = `TOOL_INSPECT_TARGET`（'trajectory'）。
+//      Z2-05 改道：落点从「主区视图环的 trajectory 标签」改为**右栏 tab**
+//      （Z-14 `model-trajectory:{sessionId}`，由消费者 `open()` 打开/激活）。
 //
 // 边界与注入（D-6x 原则：通过席位或 ctx 注入，不跨层 import）：
-//   本模块只**登记请求并投递给已装配的消费者**，不自己画右栏、不自己开视图；
-//   右栏消费者 = 右栏内容（SidePanel 的文件预览分区）；轨迹消费者 = A 棒 `ui-trajectory` 通过
+//   本模块只**登记请求并投递给已装配的消费者**，不自己画右栏、不自己开 tab；
+//   右栏消费者 = 右栏内容（SidePanel 的文件预览分区）；轨迹消费者 = 装配层通过
 //   `registerTrajectoryView()` 注册。**未装配的消费者不渲染入口**（不造假按钮）——
 //   `canInspect()` 为 false 时工具卡不显示「查看轨迹」（见 ToolCard）。
 //
 // 只存内存、不落任何浏览器存储（D-14 口径）；快照不可变，无变化时引用稳定。
 import { createContext, useContext, useSyncExternalStore } from 'react';
-import { TRAJECTORY_VIEW_KEY } from '../conversation/views/view-keys.js';
 
 /** D-86 ①：文件打开的路由目标（右栏文本预览） */
 export const TOOL_OPEN_FILE_TARGET = 'rightbar';
-/** D-86 ②：inspect 的路由目标（轨迹视图） */
+/** D-86 ②：inspect 的路由目标（轨迹；Z2-05 起落点 = 右栏 trajectory tab） */
 export const TOOL_INSPECT_TARGET = 'trajectory';
-/**
- * `ui-trajectory`（A 棒 `renderer/trajectory`，D-40）在会话视图环里的 key。
- * P2-3：**唯一来源是轨迹模块自身**（`trajectory-view.tsx` 的 `TRAJECTORY_VIEW_KEY`）——
- * 本模块只**转出**该常量，不再自写一份字面量（两处字面量会漂移，且与本文件此前的注释自相矛盾）。
- */
-export { TRAJECTORY_VIEW_KEY };
 
-/** 轨迹视图消费者（A 棒注册进来的打开回调 + 它的视图 key） */
+/** 轨迹消费者（装配层注册进来的打开回调 + 路由落点名） */
 export interface TrajectoryViewConsumer {
-  /** 会话视图环里的视图 key（A 棒 `TRAJECTORY_VIEW_KEY`） */
+  /** 路由落点名（与 `TOOL_INSPECT_TARGET` 同值；实际 tab id 由消费者按会话拼装） */
   readonly key: string;
-  /** 打开该视图（宿主实现：切视图环选中项 / 记录待选 key） */
+  /** 打开该轨迹（宿主实现：打开/激活右栏该会话的 trajectory tab + 记定位请求） */
   readonly open: (request: ToolInspectRequest) => void;
 }
 
@@ -39,9 +34,9 @@ export type ToolNavigationTarget = typeof TOOL_OPEN_FILE_TARGET | typeof TOOL_IN
 export type ToolNavigationFailureReason =
   /** 工具参数里没有可用文件路径 */
   | 'empty-path'
-  /** 轨迹跳转缺少会话上下文（无法定位会话视图环） */
+  /** 轨迹跳转缺少会话上下文（无法定位目标会话的轨迹 tab） */
   | 'missing-session'
-  /** 轨迹视图消费者未装配（A 棒未落地 / 未注册） */
+  /** 轨迹消费者未装配（装配层未注册 → 工具卡不渲染入口） */
   | 'view-not-assembled';
 
 export type ToolNavigationResult =
@@ -92,7 +87,7 @@ export interface ToolNavigation {
   canInspect(): boolean;
   /** 已装配的轨迹视图 key（未装配 → null） */
   inspectViewKey(): string | null;
-  /** A 棒 `ui-trajectory` 的接入点：注册轨迹视图消费者；返回幂等 disposer */
+  /** 装配层的接入点：注册轨迹消费者（打开右栏 trajectory tab）；返回幂等 disposer */
   registerTrajectoryView(consumer: TrajectoryViewConsumer): () => void;
   /** 清空待打开文件（右栏消费后 / 测试） */
   clearFilePreview(): void;

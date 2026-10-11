@@ -24,7 +24,6 @@ export {
 export {
   TOOL_INSPECT_TARGET,
   TOOL_OPEN_FILE_TARGET,
-  TRAJECTORY_VIEW_KEY,
   ToolNavigationProvider,
   createToolNavigation,
   toolJumpActions,

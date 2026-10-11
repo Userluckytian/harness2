@@ -8,8 +8,8 @@
 // 折叠可见性由 SidebarRoot 用 opacity-0 + pointer-events-none 承担（只隐藏不卸载）。
 //
 // P5-C 装配：会话席位内容 = renderer/conversation/assembly.tsx 的 ConversationSeat
-// （会话头 + ConversationViewRing + 常驻 Composer）。本文件只递 store/controller，
-// 不在这里写对话语义（视图环与 composer 的接线全在 assembly.tsx）。
+// （会话头 + 转录 + 常驻 Composer；Z2-05 起主区事实单一 chat，无视图环）。本文件只递
+// store/controller，不在这里写对话语义（composer 的接线全在 assembly.tsx）。
 import { useEffect, useMemo, useState, useSyncExternalStore } from 'react';
 import { CommandPalette } from '../components/CommandPalette.js';
 import { SettingsDialog } from '../components/SettingsDialog.js';

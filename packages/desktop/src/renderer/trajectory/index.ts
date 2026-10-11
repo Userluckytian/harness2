@@ -12,8 +12,8 @@
 //   timeline-overview.tsx 时间概览（D-42/D-43）
 //   inspector-panel.tsx 局部检查器（D-44）
 //   trajectory-panel.tsx 面板组合（呈现层）
-//   trajectory-view.tsx 视图定义 + 内容组件（D-40；只定义不注册）
-//   shell-contract.ts   D-46 壳义务契约（composer 浮层预留高度）
+//   trajectory-view.tsx 内容组件（D-40；Z2-05 起由右栏宿主挂载，不再注册进主区视图环）
+//   shell-contract.ts   D-46 壳义务契约（composer 浮层预留高度；Z2-05 起只服务 chat 主视图）
 export { BETWEEN_TURNS_LABEL, UNASSIGNED_TURN_ID } from './types.js';
 export type {
   TrajectoryAttachment,
@@ -123,20 +123,15 @@ export type { TrajectoryPanelProps } from './trajectory-panel.js';
 export { HOVER_DETAIL_DELAY_MS, useHoverDetail } from './use-hover-detail.js';
 export type { HoverDetail } from './use-hover-detail.js';
 
-export {
-  TRAJECTORY_OWNER,
-  TRAJECTORY_VIEW_KEY,
-  TRAJECTORY_VIEW_TITLE,
-  TrajectoryViewContent,
-  createTrajectoryViewDefinition,
-  useComposerOverlayInset,
-} from './trajectory-view.js';
-export type { TrajectorySession, TrajectoryViewContentProps, TrajectoryViewOptions } from './trajectory-view.js';
+// Z2-05：TrajectoryViewContent 由壳的右栏宿主（SidePanel）挂载（Z-14 trajectory tab）；
+// 视图环定义（createTrajectoryViewDefinition / TRAJECTORY_VIEW_KEY 等）已随主区视图环退役。
+export { TrajectoryViewContent } from './trajectory-view.js';
+export type { TrajectorySession, TrajectoryViewContentProps } from './trajectory-view.js';
 
 export {
+  COMPOSER_INSET_VAR,
   COMPOSER_OVERLAY_GAP_PX,
   DEFAULT_COMPOSER_INSET_PX,
-  TRAJECTORY_COMPOSER_INSET_VAR,
   composerInsetCssValue,
   composerOverlayInsetCss,
   composerOverlayInsetPx,

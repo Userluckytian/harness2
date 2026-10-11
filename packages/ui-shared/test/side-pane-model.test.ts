@@ -3,7 +3,8 @@
 import { describe, expect, it } from 'vitest';
 import {
   EMPTY_SIDE_PANE_SESSION,
-  SIDE_PANE_LAUNCHER_TAB_IDS,
+  MODEL_TRAJECTORY_TAB_PREFIX,
+  SIDE_PANE_LAUNCHER_ITEM_IDS,
   SIDE_PANE_MEMORY_LIMIT,
   SIDE_PANE_TABS,
   activateSidePaneTab,
@@ -15,7 +16,10 @@ import {
   sidePaneDropIndex,
   sidePaneMoveTarget,
   sidePaneOf,
+  sidePaneOpenTarget,
   sidePaneTabLabel,
+  trajectoryTabId,
+  trajectoryTabSessionId,
   type SidePaneMemory,
   type SidePaneSessionTabs,
   type SidePaneTabId,
@@ -189,8 +193,54 @@ describe('side-pane-model：目录与启动器清单（vs ZCode 启动器差异�
     expect(sidePaneTabLabel('file')).toBe('文件');
   });
 
-  it('启动器不列「文件」（D-86 路由专属，同 ZCode code-viewer 不进加号菜单）', () => {
-    expect(SIDE_PANE_LAUNCHER_TAB_IDS).toEqual(['plan', 'tasks', 'approvals', 'changes', 'workspace', 'config']);
-    expect(SIDE_PANE_LAUNCHER_TAB_IDS).not.toContain('file');
+  it('启动器不列「文件」（D-86 路由专属，同 ZCode code-viewer 不进加号菜单）；列「模型轨迹」', () => {
+    expect(SIDE_PANE_LAUNCHER_ITEM_IDS).toEqual([
+      'plan',
+      'tasks',
+      'approvals',
+      'changes',
+      'workspace',
+      'config',
+      'model-trajectory',
+    ]);
+    expect(SIDE_PANE_LAUNCHER_ITEM_IDS).not.toContain('file');
+  });
+});
+
+describe('side-pane-model：轨迹 tab（Z-14 model-trajectory:{sessionId}，Z2-05）', () => {
+  it('trajectoryTabId 按会话拼装；trajectoryTabSessionId 反解（非轨迹 tab → null）', () => {
+    expect(trajectoryTabId('s1')).toBe('model-trajectory:s1');
+    expect(MODEL_TRAJECTORY_TAB_PREFIX).toBe('model-trajectory:');
+    expect(trajectoryTabSessionId(trajectoryTabId('s1'))).toBe('s1');
+    expect(trajectoryTabSessionId('plan')).toBeNull();
+    expect(trajectoryTabSessionId('file')).toBeNull();
+  });
+
+  it('轨迹 tab 标签「模型轨迹」（不摆英文假文案）', () => {
+    expect(sidePaneTabLabel(trajectoryTabId('s1'))).toBe('模型轨迹');
+  });
+
+  it('sidePaneOpenTarget：「模型轨迹」启动器项按会话解析；静态项原样', () => {
+    expect(sidePaneOpenTarget('model-trajectory', 's1')).toBe('model-trajectory:s1');
+    expect(sidePaneOpenTarget('plan', 's1')).toBe('plan');
+    expect(sidePaneOpenTarget('config', 's9')).toBe('config');
+  });
+
+  it('轨迹 tab 走同一套状态机：打开/激活/关闭回落对 composite id 一视同仁', () => {
+    const t1 = trajectoryTabId('s1');
+    const t2 = trajectoryTabId('s2');
+    let m: SidePaneMemory = new Map();
+    m = openSidePaneTab(m, 's1', 'plan');
+    m = openSidePaneTab(m, 's1', t1);
+    expect(sidePaneOf(m, 's1').openTabs).toEqual(['plan', t1]);
+    expect(sidePaneOf(m, 's1').activeTab).toBe(t1);
+    // 同会话再开 → 幂等激活（每桶至多一个轨迹 tab）
+    expect(openSidePaneTab(m, 's1', t1)).toBe(m);
+    // 轨迹 tab id 按会话不同（s2 的轨迹 tab ≠ s1 的）
+    expect(sidePaneOf(m, 's1').openTabs).not.toContain(t2);
+    // 关闭轨迹 tab：回落左邻 plan
+    m = closeSidePaneTab(m, 's1', t1);
+    expect(sidePaneOf(m, 's1').openTabs).toEqual(['plan']);
+    expect(sidePaneOf(m, 's1').activeTab).toBe('plan');
   });
 });

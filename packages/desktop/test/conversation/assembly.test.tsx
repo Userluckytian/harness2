@@ -1,9 +1,12 @@
 // @vitest-environment jsdom
-// 对话席位装配测试（P5-C）：把视图环（D-30～D-32）与 composer（D-33～D-38）接进桌面对话席位的端到端验收。
+// 对话席位装配测试（P5-C / Z2-05）：把转录（主区唯一视图，Z-16）与 composer（D-33～D-38）
+// 接进桌面对话席位的端到端验收。
 //
 // 手法：**真渲染 ConversationSeat + 真 AppStore + 真 createController(store, 假 bridge)** ——
 // 只有 bridge（window.harness2）是桩，其余全真：store 收敛、controller 投递、composer 状态机、
-// FileUploadQueue、视图环选择规则都是生产代码本身。
+// FileUploadQueue 都是生产代码本身。
+// Z2-05：主区视图环（D-30～D-32）已退役 —— 本文件钉住「主区事实单一 chat」的装配事实；
+// 轨迹迁右栏 tab（见 test/trajectory/trajectory-wiring.test.tsx）。
 //
 // 输入模拟说明：jsdom 下 React 的 onBeforeInput 走的是 keypress/composition 回退路径
 // （react-dom 的 getFallbackBeforeInputChars 对 'beforeinput' 返回 null），无法用合成事件驱动；
@@ -11,7 +14,6 @@
 // 状态转移，避免手改 contentEditable DOM 与 React 托管节点打架。
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
-import type { ComponentType } from 'react';
 import type {
   ConnectionStatus,
   Harness2Api,
@@ -24,27 +26,15 @@ import { createController, type Controller } from '@harness2/ui-shared/renderer/
 import { AppStore } from '@harness2/ui-shared/renderer/store.js';
 import {
   ConversationSeat,
+  conversationComposerOverlay,
   conversationImageUrls,
-  conversationViewRegistry,
   createConversationComposerPort,
-  createDesktopConversationViewRegistry,
-  createInMemoryViewSelectionPersistence,
   desktopConversationImageRead,
   desktopUploadTransport,
   type ConversationComposerPort,
-  type ConversationSession,
 } from '../../src/renderer/conversation/assembly.js';
-import {
-  createConversationViewRegistry,
-  type ConversationImageAttachment,
-  type ConversationViewProps,
-  type ConversationViewRegistry,
-} from '@harness2/ui-shared/renderer/conversation/views/index.js';
-import {
-  createImageUrlCache,
-  type ImageUrlCache,
-} from '@harness2/ui-shared/renderer/conversation/views/image-url-cache.js';
-import type { ViewSelectionPersistence } from '@harness2/ui-shared/renderer/conversation/views/view-ring.js';
+import { createImageUrlCache } from '@harness2/ui-shared/renderer/conversation/views/image-url-cache.js';
+import { COMPOSER_INSET_VAR } from '../../src/renderer/trajectory/index.js';
 import type { FileRefReader } from '@harness2/ui-shared/shared/file-ref.js';
 import type {
   FileReaderLike,
@@ -191,9 +181,6 @@ interface SeatOptions {
   readonly controller: Controller;
   readonly createClientMessageId?: () => string;
   readonly imageIO?: ImageReadIO;
-  readonly imageUrls?: ImageUrlCache;
-  readonly registry?: ConversationViewRegistry<ConversationSession>;
-  readonly persistence?: ViewSelectionPersistence;
   readonly port?: ConversationComposerPort;
   readonly busyEnter?: BusyEnterBehavior;
   readonly chain?: ComposerChain;
@@ -210,9 +197,6 @@ function renderSeat(options: SeatOptions): ReturnType<typeof render> {
       controller={options.controller}
       {...(options.createClientMessageId !== undefined ? { createClientMessageId: options.createClientMessageId } : {})}
       {...(options.imageIO !== undefined ? { imageIO: options.imageIO } : {})}
-      {...(options.imageUrls !== undefined ? { imageUrls: options.imageUrls } : {})}
-      {...(options.registry !== undefined ? { registry: options.registry } : {})}
-      {...(options.persistence !== undefined ? { persistence: options.persistence } : {})}
       {...(options.port !== undefined ? { port: options.port } : {})}
       {...(options.busyEnter !== undefined ? { busyEnter: options.busyEnter } : {})}
       {...(options.chain !== undefined ? { chain: options.chain } : {})}
@@ -244,36 +228,21 @@ beforeEach(() => {
 
 // —— 用例 ——
 
-describe('视图环装配（D-30 / D-31 / D-32）', () => {
-  it('注册表 = 真实存在且已装配的视图：chat + trajectory（P6 起 D-40 接入），默认选中 chat', async () => {
+describe('主区装配（Z-16：主区事实单一 chat，无视图环）', () => {
+  it('转录直接渲染（真会话数据）；主区没有任何 tab/标签条（ZCode 同款：对话主区无视图环）', async () => {
     const { store, controller } = boot();
     renderSeat({ store, controller });
 
-    const tabs = screen.getAllByRole('tab');
-    expect(tabs.map((tab) => tab.getAttribute('data-view-key'))).toEqual(['chat', 'trajectory']);
-    expect(tabs[0]?.getAttribute('data-view-owner')).toBe('ui-chat');
-    expect(tabs[1]?.getAttribute('data-view-owner')).toBe('ui-trajectory');
-    expect(tabs[0]?.getAttribute('aria-selected')).toBe('true');
-    expect(tabs[1]?.getAttribute('aria-selected')).toBe('false');
-    // 转录渲染是 chat 视图内容（真会话数据）
     expect(await screen.findByText('第一句回复')).toBeTruthy();
-    expect(screen.getByTestId('view-ring-session')).toBeTruthy();
+    expect(screen.getByText('第一句')).toBeTruthy();
+    // 无 tablist / tab / tabpanel：Z-16「主区没有视图环」的装配级证据
+    expect(screen.queryByRole('tablist')).toBeNull();
+    expect(screen.queryAllByRole('tab')).toHaveLength(0);
+    expect(document.querySelector('[role="tabpanel"]')).toBeNull();
+    expect(document.querySelector('.view-ring')).toBeNull();
   });
 
-  it('选择规则接线（D-31）：无效持久值回落 chat；点击写注入缝；不落浏览器存储（D-14）', () => {
-    const { store, controller } = boot();
-    const persistence = createInMemoryViewSelectionPersistence();
-    persistence.write('s1', 'ghost'); // 未注册的持久值 → 按规则回落 chat（绝不取首个注册项）
-    renderSeat({ store, controller, persistence });
-
-    const chatTab = screen.getByRole('tab', { name: 'Chat' });
-    expect(chatTab.getAttribute('aria-selected')).toBe('true');
-    fireEvent.click(chatTab);
-    expect(persistence.read('s1')).toBe('chat');
-    expect(window.localStorage.length).toBe(0);
-  });
-
-  it('无会话：composer 常驻挂载但 inert，视图环不渲染', () => {
+  it('无会话：composer 常驻挂载但 inert，主区显示空态', () => {
     const { store, controller } = boot({ select: null });
     renderSeat({ store, controller });
     expect(screen.getByTestId('composer-editor')).toBeTruthy();
@@ -281,6 +250,18 @@ describe('视图环装配（D-30 / D-31 / D-32）', () => {
     expect(primary().disabled).toBe(true);
     expect(screen.queryAllByRole('tab')).toHaveLength(0);
     expect(screen.getByText(/选择左侧会话开始对话/)).toBeTruthy();
+  });
+
+  it('D-46（chat 侧）：composer 浮层实测高度写进 --composer-inset（未测量不写，不虚构预留）', () => {
+    const { store, controller } = boot();
+    renderSeat({ store, controller });
+
+    const seat = screen.getByTestId('conversation-seat');
+    // 未测量 → 不写变量
+    expect(seat.style.getPropertyValue(COMPOSER_INSET_VAR)).toBe('');
+    // 壳测得 88px → 预留 88+12（间距常量）写进 CSS 变量（.messages 滚动叶容器消费）
+    act(() => conversationComposerOverlay.setHeightPx(88));
+    expect(seat.style.getPropertyValue(COMPOSER_INSET_VAR)).toBe('100px');
   });
 });
 
@@ -412,28 +393,12 @@ describe('composer 装配（D-34～D-37）', () => {
   });
 });
 
-describe('图片 URL 缓存接入（D-39）', () => {
-  interface Probe {
-    imageUrl: ((attachment: ConversationImageAttachment) => string | null) | null;
-  }
-  const probe: Probe = { imageUrl: null };
-  const ProbeView: ComponentType<ConversationViewProps<ConversationSession>> = (ctx) => {
-    probe.imageUrl = ctx.imageUrl;
-    return <span data-testid="probe-view">probe</span>;
-  };
-
-  it('视图环拿到的 imageUrl = 注入缓存的已缓存入口（Chat 与未来 Trajectory 共用同一引用）', async () => {
+describe('图片 URL 缓存（D-39）', () => {
+  it('缓存入口按会话取已缓存 URL；无缓存 → null（不伪造 URL）', async () => {
     const cache = createImageUrlCache({ read: (_sessionId, attachment) => `data:image/png;base64,${attachment.id}` });
     await cache.imageUrl('s1', { id: 'a1' });
-    const registry = createConversationViewRegistry<ConversationSession>();
-    registry.register({ key: 'chat', title: 'Chat', owner: 'ui-chat', component: ProbeView });
-
-    const { store, controller } = boot();
-    renderSeat({ store, controller, imageUrls: cache, registry });
-
-    expect(screen.getByTestId('probe-view')).toBeTruthy();
-    expect(probe.imageUrl?.({ id: 'a1' })).toBe('data:image/png;base64,a1');
-    expect(probe.imageUrl?.({ id: 'uncached' })).toBeNull(); // 无缓存 → null（不伪造 URL）
+    expect(cache.peekUrl('s1', { id: 'a1' })).toBe('data:image/png;base64,a1');
+    expect(cache.peekUrl('s1', { id: 'uncached' })).toBeNull();
   });
 
   it('桌面桥暂无图片授权读取通道（缺口登记）：read 恒 null，缓存不伪造 URL', async () => {
@@ -443,12 +408,7 @@ describe('图片 URL 缓存接入（D-39）', () => {
   });
 });
 
-// —— P5-② 补缺：D-30～D-39 装配级覆盖（只加测试，生产代码不动）——
-
-/** 只渲染标记的会话视图组件（观察「视图环吃哪份注册表」） */
-function markerView(testId: string): ComponentType<ConversationViewProps<ConversationSession>> {
-  return () => <span data-testid={testId}>{testId}</span>;
-}
+// —— P5-② 补缺：装配级覆盖 ——
 
 /** 等真实定时器推进（上传并发/落定用） */
 function wait(ms: number): Promise<void> {
@@ -488,120 +448,6 @@ function capturingPort(deps: {
   };
   return { io, pendingSubmissions: real.pendingSubmissions, submissions };
 }
-
-describe('D-30 装配级：视图唯一注册表 / 与渲染目标无关', () => {
-  it('视图集合完全来自注入注册表（自定义 key/title/owner 即刻上签）——装配层不绑定具体渲染目标', () => {
-    const { store, controller } = boot();
-    const registry = createConversationViewRegistry<ConversationSession>();
-    registry.register({ key: 'chat', title: '会话', owner: 'ui-custom-owner', component: markerView('custom-chat') });
-    renderSeat({ store, controller, registry, persistence: createInMemoryViewSelectionPersistence() });
-
-    const tab = screen.getByRole('tab', { name: '会话' });
-    expect(tab.getAttribute('data-view-owner')).toBe('ui-custom-owner');
-    expect(screen.getByTestId('custom-chat')).toBeTruthy();
-  });
-
-  it('默认注册表只注册真实存在的视图：keys()=[chat, trajectory]、owner 各归其包（P6 接线，D-40）', () => {
-    expect(createDesktopConversationViewRegistry().keys()).toEqual(['chat', 'trajectory']);
-    expect(conversationViewRegistry.get('chat')?.owner).toBe('ui-chat');
-    expect(conversationViewRegistry.get('trajectory')?.owner).toBe('ui-trajectory');
-    expect(conversationViewRegistry.get('trajectory')?.title).toBe('Trajectory');
-  });
-});
-
-describe('D-31 分支装配级（真 seat + 真 store/controller，注入注册表与持久缝）', () => {
-  it('分支 1：有效持久选择优先 —— chat 先注册，persisted=trajectory 仍选 trajectory', () => {
-    const { store, controller } = boot();
-    const registry = createConversationViewRegistry<ConversationSession>();
-    registry.register({ key: 'chat', title: 'Chat', owner: 'ui-chat', component: markerView('chat-view') });
-    registry.register({
-      key: 'trajectory',
-      title: 'Trajectory',
-      owner: 'ui-trajectory',
-      component: markerView('trj-view'),
-    });
-    const persistence = createInMemoryViewSelectionPersistence();
-    persistence.write('s1', 'trajectory');
-    renderSeat({ store, controller, registry, persistence });
-
-    expect(screen.getByRole('tab', { name: 'Trajectory' }).getAttribute('aria-selected')).toBe('true');
-    expect(screen.getByRole('tab', { name: 'Chat' }).getAttribute('aria-selected')).toBe('false');
-    expect(document.querySelector('[role="tabpanel"]')?.getAttribute('data-view-key')).toBe('trajectory');
-    expect(screen.getByTestId('trj-view')).toBeTruthy();
-    expect(screen.queryByTestId('chat-view')).toBeNull();
-  });
-
-  it('分支 2：无效持久值 → 回落已注册 chat（trajectory 先注册也不被选中），DOM 无意外标签', () => {
-    const { store, controller } = boot();
-    const registry = createConversationViewRegistry<ConversationSession>();
-    // 先注册 trajectory：若实现取「第一个注册的」，这里就会错误选中它
-    registry.register({
-      key: 'trajectory',
-      title: 'Trajectory',
-      owner: 'ui-trajectory',
-      component: markerView('trj-view'),
-    });
-    registry.register({ key: 'chat', title: 'Chat', owner: 'ui-chat', component: markerView('chat-view') });
-    const persistence = createInMemoryViewSelectionPersistence();
-    persistence.write('s1', 'ghost');
-    renderSeat({ store, controller, registry, persistence });
-
-    expect(screen.getByRole('tab', { name: 'Chat' }).getAttribute('aria-selected')).toBe('true');
-    expect(screen.getByRole('tab', { name: 'Trajectory' }).getAttribute('aria-selected')).toBe('false');
-    expect(document.querySelector('[role="tabpanel"]')?.getAttribute('data-view-key')).toBe('chat');
-    expect(screen.getByTestId('chat-view')).toBeTruthy();
-    expect(screen.queryByTestId('trj-view')).toBeNull();
-    expect(document.querySelector('[data-view-key="ghost"]')).toBeNull();
-  });
-
-  it('分支 3：无有效持久选择且未注册 chat → 不渲染任何视图（空兜底），绝不落首个注册项', () => {
-    const { store, controller } = boot();
-    const registry = createConversationViewRegistry<ConversationSession>();
-    registry.register({
-      key: 'trajectory',
-      title: 'Trajectory',
-      owner: 'ui-trajectory',
-      component: markerView('trj-view'),
-    });
-    const persistence = createInMemoryViewSelectionPersistence();
-    persistence.write('s1', 'ghost');
-    renderSeat({ store, controller, registry, persistence });
-
-    expect(screen.getAllByRole('tab')).toHaveLength(1);
-    expect(screen.getAllByRole('tab')[0]?.getAttribute('aria-selected')).toBe('false');
-    expect(screen.queryByRole('tabpanel')).toBeNull();
-    expect(screen.getByTestId('view-ring-empty')).toBeTruthy();
-    expect(screen.queryByTestId('trj-view')).toBeNull(); // 首个注册项没有被当默认视图
-    expect(screen.getByText(/当前没有可渲染的会话视图/)).toBeTruthy();
-  });
-});
-
-describe('D-32 装配级：切换视图不重建会话', () => {
-  it('切标签只换渲染内容：会话对象引用稳定、会话容器 DOM 引用不变', () => {
-    const { store, controller } = boot();
-    const seen: unknown[] = [];
-    const spyView =
-      (testId: string): ComponentType<ConversationViewProps<ConversationSession>> =>
-      (ctx) => {
-        seen.push(ctx.session);
-        return <span data-testid={testId}>{testId}</span>;
-      };
-    const registry = createConversationViewRegistry<ConversationSession>();
-    registry.register({ key: 'chat', title: 'Chat', owner: 'ui-chat', component: spyView('v-chat') });
-    registry.register({ key: 'trajectory', title: 'Trajectory', owner: 'ui-trajectory', component: spyView('v-trj') });
-    renderSeat({ store, controller, registry, persistence: createInMemoryViewSelectionPersistence() });
-
-    const sessionNode = screen.getByTestId('view-ring-session');
-    const firstSession = seen[0];
-    expect(firstSession).toBeDefined();
-
-    fireEvent.click(screen.getByRole('tab', { name: 'Trajectory' }));
-    expect(screen.getByTestId('v-trj')).toBeTruthy();
-    expect(screen.getByTestId('view-ring-session')).toBe(sessionNode); // 会话容器没被重建
-    expect(seen.length).toBeGreaterThan(1);
-    expect(seen.every((bound) => bound === firstSession)).toBe(true); // 同一会话对象引用
-  });
-});
 
 describe('D-34 装配级：乐观提交「同一事务」的可观测证据', () => {
   it('一次 Enter：草稿空 + 撤销历史同批清空（Ctrl+Z 不复活）+ 订阅回调恰一次 + store 在途队列保序', async () => {

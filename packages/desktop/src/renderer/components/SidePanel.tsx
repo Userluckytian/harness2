@@ -1,14 +1,16 @@
 // 右栏标签宿主（Z2-04 / Z-13 / Z-14）：承载方式从「7 个常驻标签条」改为「tab 按需出现」。
 //   - 右栏打开但零 tab → 「打开标签页」加号启动器（Z-13）；
-//   - tab 从启动器或路由打开（D-86 ① openFile → 「文件」tab；同一 id 复用），可关闭/拖拽排序/
-//     横向滚动（Z-14：tab 最小宽 60、gap 4、标签条 h-12 border-b）；
+//   - tab 从启动器或路由打开（D-86 ① openFile → 「文件」tab；D-86 ②/P2-5 inspect →
+//     「模型轨迹」tab，Z-14 语义 id `model-trajectory:{sessionId}`；同一 id 复用），
+//     可关闭/拖拽排序/横向滚动（Z-14：tab 最小宽 60、gap 4、标签条 h-12 border-b）；
 //   - 状态 = ui-shared side-pane 纯逻辑模块的内存 Map（按会话分桶、LRU 50、不落盘 D-14，
 //     右栏关闭仍挂载所以状态不丢）；
-//   - 七个面板组件本体不动，只换承载；底部「刷新只读视图 / 重新同步」是我们真实的运维入口
+//   - 面板组件本体不动，只换承载；底部「刷新只读视图 / 重新同步」是我们真实的运维入口
 //     （ZCode 无此物，刻意保留）；审批徽章保留在审批 tab 上。
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore, useCallback } from 'react';
 import { controller, store, useAppState } from '../app-shared.js';
 import { useFrame } from '../layout/frame-context.js';
+import type { SessionImageUrlResolver } from '@harness2/ui-shared/renderer/conversation/views/image-url-cache.js';
 import {
   ToolFilePreviewPanel,
   useToolFilePreview,
@@ -16,15 +18,18 @@ import {
   type ToolFilePreview,
 } from '@harness2/ui-shared/renderer/tool/index.js';
 import {
-  SIDE_PANE_LAUNCHER_TAB_IDS,
+  SIDE_PANE_LAUNCHER_ITEM_IDS,
   SIDE_PANE_NO_SESSION_KEY,
   SIDE_PANE_TAB_GAP_PX,
   SIDE_PANE_TAB_MIN_WIDTH_PX,
   sidePaneDropIndex,
   sidePaneMoveTarget,
+  sidePaneOpenTarget,
   sidePaneTabLabel,
   sidePaneStore,
+  trajectoryTabSessionId,
   useSidePaneTabs,
+  type SidePaneLauncherItemId,
   type SidePaneTabId,
 } from '@harness2/ui-shared/renderer/side-pane/index.js';
 import {
@@ -42,6 +47,9 @@ import { ApprovalCenter } from '../features/plan/ApprovalCenter.js';
 import { ChangeReviewPanel } from '../features/workspace/ChangeReviewPanel.js';
 import { WorkspacePanel } from '../features/workspace/WorkspacePanel.js';
 import { EffectiveConfigPanel } from '../features/config/EffectiveConfigPanel.js';
+import { TrajectoryViewContent, type TrajectorySession } from '../trajectory/index.js';
+import { conversationImageUrls, conversationTrajectoryFocus } from '../conversation/assembly.js';
+import type { TrajectoryFocusRequest } from '../trajectory/inspect-focus.js';
 
 /** 未选择会话时的分桶（同 ui-shared 侧常量；避免宿主各自写一份字面量） */
 const NO_SESSION_BUCKET = SIDE_PANE_NO_SESSION_KEY;
@@ -99,14 +107,37 @@ function IconEllipsis({ className }: { className?: string }): React.ReactNode {
 /** 加号菜单条目（启动器与标签条 + 共用同一份清单；已打开的给「已打开」提示，点击=激活） */
 function TabMenuItems({
   openTabs,
+  sessionId,
   onOpen,
 }: {
   openTabs: readonly SidePaneTabId[];
-  onOpen: (id: SidePaneTabId) => void;
+  /** 当前会话 id（null = 未选会话：「模型轨迹」项禁用 —— 轨迹按会话投影，无会话不摆空入口） */
+  sessionId: string | null;
+  onOpen: (id: SidePaneLauncherItemId) => void;
 }): React.ReactNode {
   return (
     <>
-      {SIDE_PANE_LAUNCHER_TAB_IDS.map((id) => {
+      {SIDE_PANE_LAUNCHER_ITEM_IDS.map((id) => {
+        // 「模型轨迹」项：按当前会话解析成 model-trajectory:{sessionId}（Z-14）；无会话 → 禁用
+        if (id === 'model-trajectory') {
+          const target = sessionId !== null ? sidePaneOpenTarget(id, sessionId) : null;
+          return (
+            <DropdownMenuItem
+              key={id}
+              data-side-menu-item={id}
+              disabled={target === null}
+              title={target === null ? '选择会话后可查看模型轨迹' : undefined}
+              onSelect={() => {
+                if (target !== null) onOpen(id);
+              }}
+            >
+              <span>{sidePaneTabLabel(sidePaneOpenTarget(id, sessionId ?? ''))}</span>
+              {target !== null && openTabs.includes(target) && (
+                <span className="ml-auto pl-4 text-ui-xs text-foreground-subtlest">已打开</span>
+              )}
+            </DropdownMenuItem>
+          );
+        }
         const opened = openTabs.includes(id);
         return (
           <DropdownMenuItem key={id} data-side-menu-item={id} onSelect={() => onOpen(id)}>
@@ -122,10 +153,12 @@ function TabMenuItems({
 /** 零 tab 启动器（Z-13：右栏打开但没有任何 tab 时的唯一内容） */
 function SidePaneLauncher({
   openTabs,
+  sessionId,
   onOpen,
 }: {
   openTabs: readonly SidePaneTabId[];
-  onOpen: (id: SidePaneTabId) => void;
+  sessionId: string | null;
+  onOpen: (id: SidePaneLauncherItemId) => void;
 }): React.ReactNode {
   return (
     <div
@@ -142,7 +175,7 @@ function SidePaneLauncher({
           <IconPlus className="size-5" />
         </DropdownMenuTrigger>
         <DropdownMenuContent align="center" data-testid="side-pane-launcher-menu">
-          <TabMenuItems openTabs={openTabs} onOpen={onOpen} />
+          <TabMenuItems openTabs={openTabs} sessionId={sessionId} onOpen={onOpen} />
         </DropdownMenuContent>
       </DropdownMenu>
       <p className="text-ui-sm text-foreground-subtle">打开标签页</p>
@@ -154,6 +187,7 @@ function SidePaneLauncher({
 /** 标签条（Z-14）：h-12 border-b、横向滚动（溢出 tab 最小宽 60 / gap 4）、可关闭、指针拖拽排序 */
 function SidePaneTabBar({
   bucket,
+  sessionId,
   openTabs,
   activeTab,
   approvalCount,
@@ -163,6 +197,8 @@ function SidePaneTabBar({
 }: {
   /** 关闭其他 / 全部关闭直接走 store（本菜单不经过宿主回调） */
   bucket: string;
+  /** 启动器项解析用（= bucket；未选会话时「模型轨迹」项禁用） */
+  sessionId: string;
   openTabs: readonly SidePaneTabId[];
   activeTab: SidePaneTabId | null;
   approvalCount: number;
@@ -305,7 +341,11 @@ function SidePaneTabBar({
             <IconPlus className="size-4" />
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end" data-testid="side-pane-add-menu">
-            <TabMenuItems openTabs={openTabs} onOpen={(id) => sidePaneStore.open(bucket, id)} />
+            <TabMenuItems
+              openTabs={openTabs}
+              sessionId={sessionId}
+              onOpen={(id) => sidePaneStore.open(bucket, sidePaneOpenTarget(id, bucket))}
+            />
           </DropdownMenuContent>
         </DropdownMenu>
         <DropdownMenu>
@@ -342,6 +382,28 @@ function SidePaneTabBar({
   );
 }
 
+/**
+ * 「模型轨迹」tab 内容（Z-14 `model-trajectory:{sessionId}`）：既有轨迹内容组件原样挂载
+ * （数据源与 Chat 同一份 store；定位通道与图片缓存来自桌面装配单例）。右栏没有 composer 浮层，
+ * 不传任何预留参数 —— 记录表缺省兜底解析为 0px，不虚构预留。
+ */
+function TrajectoryPaneTab({ sessionId }: { sessionId: string }): React.ReactNode {
+  const session = useMemo<TrajectorySession>(() => ({ id: sessionId, store, subscribe: store.subscribe }), [sessionId]);
+  // 会话作用域图片解析器（与旧视图环同一手法：缓存入口按会话绑定，附件预览共用一次授权读取）
+  const imageUrl = useCallback<SessionImageUrlResolver>(
+    (attachment) => conversationImageUrls.peekUrl(sessionId, attachment),
+    [sessionId],
+  );
+  return (
+    <TrajectoryViewContent
+      session={session}
+      sessionId={sessionId}
+      imageUrl={imageUrl}
+      focusStore={conversationTrajectoryFocus}
+    />
+  );
+}
+
 export function SidePanel(): React.ReactNode {
   const state = useAppState();
   const sessionId = state.selectedId;
@@ -367,18 +429,41 @@ export function SidePanel(): React.ReactNode {
     if (!frame.state.rightbarOpen) frame.dispatch({ type: 'rightbar/toggle' });
   }, [filePreview, bucket, frame]);
 
+  // P2-5 改道（D-86 ②）：工具卡 inspect → 右栏「模型轨迹」tab。tab 的打开/激活由装配层消费者
+  // （assembly.createTrajectoryInspectConsumer → sidePaneStore）完成；这里只负责**右栏可见性**：
+  // 有新的定位请求且右栏收起 → 展开（不静默丢请求）。请求对象判重同上（新引用 = 新请求）。
+  const focusRequest = useSyncExternalStore(
+    conversationTrajectoryFocus.subscribe,
+    conversationTrajectoryFocus.getSnapshot,
+    () => null,
+  );
+  const routedFocusRef = useRef<TrajectoryFocusRequest | null>(null);
+  useEffect(() => {
+    if (focusRequest === routedFocusRef.current) return;
+    routedFocusRef.current = focusRequest;
+    if (focusRequest === null) return;
+    if (!frame.state.rightbarOpen) frame.dispatch({ type: 'rightbar/toggle' });
+  }, [focusRequest, frame]);
+
   const sessionCwd = sessionId !== null ? state.sessions.find((s) => s.id === sessionId)?.cwd : undefined;
   const activeTab = tabs.activeTab;
+  // 「模型轨迹」tab：id 里的会话 id 决定投影的数据源（tab 属于哪个桶就看哪个会话）
+  const trajectorySessionId = activeTab === null ? null : trajectoryTabSessionId(activeTab);
 
   const closeTab = (id: SidePaneTabId): void => sidePaneStore.close(bucket, id);
 
   return (
     <div className="flex h-full min-h-0 w-full flex-col bg-background" aria-label="工作面板" data-testid="side-pane">
       {tabs.openTabs.length === 0 ? (
-        <SidePaneLauncher openTabs={tabs.openTabs} onOpen={(id) => sidePaneStore.open(bucket, id)} />
+        <SidePaneLauncher
+          openTabs={tabs.openTabs}
+          sessionId={sessionId}
+          onOpen={(id) => sidePaneStore.open(bucket, sidePaneOpenTarget(id, bucket))}
+        />
       ) : (
         <SidePaneTabBar
           bucket={bucket}
+          sessionId={bucket}
           openTabs={tabs.openTabs}
           activeTab={activeTab}
           approvalCount={approvalCount}
@@ -401,6 +486,7 @@ export function SidePanel(): React.ReactNode {
           />
         )}
         {activeTab === 'config' && <EffectiveConfigPanel sessionId={sessionId} />}
+        {trajectorySessionId !== null && <TrajectoryPaneTab sessionId={trajectorySessionId} />}
       </div>
       {sessionId !== null && (
         <div className="flex flex-none items-center gap-2 border-t px-2 py-1.5 text-ui-sm" data-testid="side-pane-foot">

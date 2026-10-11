@@ -1,23 +1,26 @@
-// seat.tsx — 会话席位（ui-conversation 的**宿主无关**装配）：视图环 + 常驻 composer + 提交边界。
+// seat.tsx — 会话席位（ui-conversation 的**宿主无关**装配）：常驻 composer + 提交边界。
 //
-// 本文件是共享包里的唯一「会话页装配点」：数据源（store/controller）与视图注册表、持久缝、
-// 图片缓存、composer 链**全部由壳注入**（不抓全局单例，注入式才可测）。各壳自己的组装根
+// 本文件是共享包里的唯一「会话页装配点」：数据源（store/controller）、图片缓存、composer 链
+// **全部由壳注入**（不抓全局单例，注入式才可测）。各壳自己的组装根
 // （desktop `conversation/assembly.tsx`、web `src/app.tsx`）负责决定注入什么。
 //
-// 语义归属（与桌面 P5-C/P6 完全同一份实现，本阶段只搬不改语义）：
-//   1. 视图环（D-30/D-32）：注册表由壳提供；本组件只渲染 + 切换。
-//   2. 视图选择（D-31）：持久选择走注入缝（`Persistence`）；环外改写（inspect 跳轨迹）可订阅。
-//   3. 会话绑定（D-32）：同一会话内 session 对象引用稳定（切换视图不重建会话、不重订阅）。
-//   4. 图片 URL 缓存（D-39）：`peekUrl` 传给视图环（Chat 与 Trajectory 共用一次授权读取）；
-//      未注入读取器时恒 null（如实占位，绝不伪造 URL）。
-//   5. composer 真实 IO（D-34/D-35/D-36/D-37）：submit 走 controller.submitMessage（finalText 前
+// Z2-05（Z-16）：**主区事实单一 chat** —— ZCode 的主区没有视图环/标签条（切 automations /
+// plugin-store 靠左栏按钮，且不渲染 WorkspaceHeader），对话主区只渲染转录。本组件不再装配
+// ConversationViewRing / 视图注册表 / 视图选择持久缝（那一层已随 Z2-05 退役）；trajectory
+// 改为右栏 tab（Z-14 `model-trajectory:{sessionId}`），由壳的右栏宿主渲染。
+//
+// 语义归属（与桌面 P5-C/P6 同一份实现的存留部分）：
+//   1. 会话绑定（D-32）：同一会话内 session 对象引用稳定（换会话才换引用、重建草稿 store）。
+//   2. 图片 URL 缓存（D-39）：缓存由壳注入并交给**需要它的视图**（轨迹 tab）；本席位自身
+//      不消费图片 URL（转录不嵌图）。未注入读取器时恒 null（如实占位，绝不伪造 URL）。
+//   3. composer 真实 IO（D-34/D-35/D-36/D-37）：submit 走 controller.submitMessage（finalText 前
 //      trim 载荷）、stop 走 controller.cancelTurn、running 取 store 真实运行态、附件走
 //      `FileUploadQueue`（并发上限默认 2）。
-//   6. 提交边界：`@path` → 内容与 references 在此解析（`shared/file-ref.ts` + 注入的读取通道）；
+//   4. 提交边界：`@path` → 内容与 references 在此解析（`shared/file-ref.ts` + 注入的读取通道）；
 //      ack 落定后 rejected → 上抛（Composer 还原草稿 + 附件并显示原因），unknown → 交给可见队列
 //      如实标注（不假报成功、不诱导重发）。
-//   7. D-46 壳的义务：composer 以浮层置于全高内容之上，实测高度经 `ComposerOverlayHost` 给视图，
-//      并写 CSS 变量 `--trajectory-composer-inset`；未测量（0）时不写变量 = 不虚构预留。
+//   5. D-46 壳的义务（chat 侧）：composer 以浮层置于全高转录之上，实测高度写 CSS 变量
+//      `--composer-inset`（`.messages` 滚动叶容器消费）；未测量（0）时不写变量 = 不虚构预留。
 import { useEffect, useMemo, useRef, useSyncExternalStore } from 'react';
 import type { CSSProperties, ReactNode } from 'react';
 import { newClientMessageId } from '../../shared/ids.js';
@@ -55,19 +58,16 @@ import {
 } from './composer/composer-state.js';
 import { DEFAULT_BUSY_ENTER_BEHAVIOR, type BusyEnterBehavior } from './composer/submit-policy.js';
 import { createImageUrlCache, type ImageUrlCache, type ConversationImageReader } from './views/image-url-cache.js';
-import type { ConversationViewRegistry, ConversationViewProps } from './views/view-registry.js';
-import { ConversationViewRing, type ViewSelectionPersistence } from './views/view-ring.js';
 import {
-  TRAJECTORY_COMPOSER_INSET_VAR,
+  COMPOSER_INSET_VAR,
   createComposerOverlayHost,
   useComposerOverlayInset,
   type ComposerOverlayHost,
 } from '../trajectory/shell-contract.js';
-import { createInMemoryPersistence, type Persistence } from '../ports.js';
 
 /**
- * 会话对象（D-32 身份稳定）：视图环只依赖它订阅会话级更新，并把它交给视图作为数据源。
- * 数据源（store/controller）随会话对象一起传给视图 —— 视图不抓全局单例，注入 store 测试才成立。
+ * 会话对象（D-32 身份稳定）：转录与需要会话数据的面板（右栏轨迹 tab）都以它为数据源。
+ * 数据源（store/controller）随会话对象一起传出去 —— 消费方不抓全局单例，注入 store 测试才成立。
  */
 export interface ConversationSession {
   readonly id: string;
@@ -76,22 +76,10 @@ export interface ConversationSession {
   readonly controller: Controller;
 }
 
-/** `chat` 视图的归属包名（D-02 口径：一个 UI 能力一个包名） */
-export const CONVERSATION_CHAT_OWNER = 'ui-chat';
-
 /**
- * `chat` 视图内容：既有转录渲染（`ChatTranscript`）。
- * 数据源从会话对象取（与视图环同一份 store）——会话内数据不因视图切换而换源。
- */
-export function ConversationChatView({ sessionId, session }: ConversationViewProps<ConversationSession>): ReactNode {
-  return <ChatTranscript streamId={sessionId} store={session.store} controller={session.controller} />;
-}
-
-/** 共享缺省：不落任何浏览器存储的视图选择（D-14 口径），壳要持久化须自行注入实现 */
-export const sharedViewPersistence: Persistence = createInMemoryPersistence();
-/** 共享缺省：没有图片授权读取通道 → read 恒 null（视图显示占位，绝不伪造 URL） */
+ * 共享缺省：没有图片授权读取通道 → read 恒 null（视图显示占位，绝不伪造 URL） */
 export const noImageRead: ConversationImageReader = () => null;
-/** 共享缺省图片 URL 缓存（会话内逐附件去重） */
+/** 共享缺省图片 URL 缓存（会话内逐附件去重；壳可注入自己的实例） */
 export const sharedImageUrls: ImageUrlCache = createImageUrlCache({ read: noImageRead });
 /** 共享缺省 composer 链（当前无 takeover 注册项 = 默认 composer 常驻） */
 export const sharedComposerChain: ComposerChain = new ComposerChain();
@@ -254,11 +242,6 @@ export interface ConversationSeatProps {
    * 使非主分屏格也可独立交互。
    */
   readonly sessionId?: string | null;
-  /** 会话视图注册表（壳装配：每个壳至少要注册 `chat`，否则视图环按 D-31 不渲染） */
-  readonly registry: ConversationViewRegistry<ConversationSession>;
-  /** 视图选择持久缝（缺省 = 内存实现，不落存储） */
-  readonly persistence?: ViewSelectionPersistence;
-  readonly imageUrls?: ImageUrlCache;
   readonly chain?: ComposerChain;
   /** 会话头（壳注入：不同壳的头部信息面不同；缺省不渲染头部） */
   readonly header?: (info: { readonly sessionId: string; readonly cwd?: string }) => ReactNode;
@@ -291,7 +274,7 @@ export interface ConversationSeatProps {
 }
 
 /**
- * 会话席位内容（ui-conversation）：会话头（可选）+ 视图环 + **常驻 composer**。
+ * 会话席位内容（ui-conversation）：会话头（可选）+ 转录（主区唯一视图，Z-16）+ **常驻 composer**。
  * D-33：composer 不因「无会话」卸载 —— 无会话时仍然挂载但 inert（由 Composer 内部落实）。
  */
 export function ConversationSeat(props: ConversationSeatProps): ReactNode {
@@ -300,9 +283,6 @@ export function ConversationSeat(props: ConversationSeatProps): ReactNode {
   // Z2-06：显式 sessionId（分屏每格绑定各自会话）优先；缺省跟随全局选中（旧行为不变）
   const selectedId = state.selectedId;
   const sessionId = props.sessionId !== undefined ? props.sessionId : selectedId;
-  const registry = props.registry;
-  const persistence = props.persistence ?? sharedViewPersistence;
-  const imageUrls = props.imageUrls ?? sharedImageUrls;
   const chain = props.chain ?? sharedComposerChain;
 
   // composer IO：controller 真身 + 确定性 id/transport 注入（测试）；台账随 port 存活
@@ -330,7 +310,7 @@ export function ConversationSeat(props: ConversationSeatProps): ReactNode {
     ],
   );
 
-  // D-32：同一会话内会话对象引用稳定（切换视图不重建会话、不重订阅）；换会话才换引用
+  // D-32：同一会话内会话对象引用稳定；换会话才换引用（草稿 store 与订阅随之换绑）
   const session = useMemo<ConversationSession | undefined>(
     () => (sessionId === null ? undefined : { id: sessionId, subscribe: store.subscribe, store, controller }),
     [sessionId, store, controller],
@@ -393,9 +373,9 @@ export function ConversationSeat(props: ConversationSeatProps): ReactNode {
       ? undefined
       : { id: sessionId, running, ...(activeTurnId !== undefined ? { activeTurnId } : {}) };
 
-  // D-46：composer 以浮层置于全高内容之上，并预留**实测**高度。
+  // D-46（chat 侧）：composer 以浮层置于全高转录之上，并预留**实测**高度。
   // 测量源 = ResizeObserver（环境无 RO 时静默不测 → 预留 0，绝不虚构），
-  // 出口两处：具备轨迹/浮层能力的视图经 host 读 props；其余视图读 CSS 变量 `--trajectory-composer-inset`。
+  // 出口 = CSS 变量 `--composer-inset`（`.messages` 滚动叶容器消费）。
   const composerOverlayHost = props.composerOverlayHost ?? sharedComposerOverlay;
   const composerInsetPx = useComposerOverlayInset(composerOverlayHost);
   const composerRef = useRef<HTMLDivElement>(null);
@@ -404,16 +384,14 @@ export function ConversationSeat(props: ConversationSeatProps): ReactNode {
     return () => composerOverlayHost.observe(null);
   }, [composerOverlayHost]);
   const seatStyle: CSSProperties | undefined =
-    composerInsetPx === undefined
-      ? undefined
-      : ({ [TRAJECTORY_COMPOSER_INSET_VAR]: `${composerInsetPx}px` } as CSSProperties);
+    composerInsetPx === undefined ? undefined : ({ [COMPOSER_INSET_VAR]: `${composerInsetPx}px` } as CSSProperties);
 
   return (
     <div className="conversation-seat" data-testid="conversation-seat" style={seatStyle}>
       {sessionId !== null && session !== undefined ? (
         <>
           {props.header?.({ sessionId, ...(cwd !== undefined ? { cwd } : {}) })}
-          {/* Z-17：状态面板挂在会话列内（头部之下、视图环之上），右对齐；
+          {/* Z-17：状态面板挂在会话列内（头部之下、转录之上），右对齐；
               包裹行带 `@container` 供面板的容器查询断点（<1280 mini 胶囊 / ≥1280 面板）。
               有内容（statusPanel 返回非 null）才渲染包裹行 —— 空面板不留任何占位高度；
               `empty:hidden` 兜底回调返回「渲染为空」的元素时也不占位（双保险）。 */}
@@ -428,18 +406,8 @@ export function ConversationSeat(props: ConversationSeatProps): ReactNode {
               </div>
             );
           })()}
-          <ConversationViewRing
-            registry={registry}
-            sessionId={sessionId}
-            session={session}
-            persistence={persistence}
-            imageUrl={imageUrls.peekUrl}
-            emptyFallback={
-              <div className="chat empty-pane">
-                <p>当前没有可渲染的会话视图</p>
-              </div>
-            }
-          />
+          {/* Z-16：主区事实单一 chat —— 转录直接渲染，无视图环/标签条 */}
+          <ChatTranscript streamId={sessionId} store={session.store} controller={session.controller} />
         </>
       ) : (
         <div className="chat empty-pane">

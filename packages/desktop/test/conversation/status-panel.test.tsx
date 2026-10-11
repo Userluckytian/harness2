@@ -8,7 +8,7 @@ import { cleanup, render } from '@testing-library/react';
 import { AppStore } from '@harness2/ui-shared/renderer/store.js';
 import type { Controller } from '@harness2/ui-shared/renderer/app-controller.js';
 import type { PlanStateShape } from '@harness2/ui-shared/shared/protocol.js';
-import { ConversationSeat, conversationViewRegistry } from '../../src/renderer/conversation/assembly.js';
+import { ConversationSeat } from '../../src/renderer/conversation/assembly.js';
 // 桌面单例 store：desktopStatusPanel 的数据源（装配缺省指向它，测试直接播种）
 import { store as singletonStore } from '../../src/renderer/app-shared.js';
 import type { Harness2Api } from '../../src/shared/protocol.js';
@@ -51,9 +51,7 @@ describe('桌面会话席位的状态面板装配（Z3-03）', () => {
   it('有计划数据 → status-panel 槽渲染，面板内容来自单例 store 的视图缓存', () => {
     stubBridge();
     singletonStore.setPlanState('sp-1', plan);
-    const { container } = render(
-      <ConversationSeat store={bootStore('sp-1')} controller={{} as Controller} registry={conversationViewRegistry} />,
-    );
+    const { container } = render(<ConversationSeat store={bootStore('sp-1')} controller={{} as Controller} />);
     const slot = container.querySelector('[data-testid="status-panel-slot"]');
     expect(slot).not.toBeNull();
     // auto 模式双形态都在；面板与胶囊都拿得到 goal（兜底链第一位）
@@ -62,9 +60,7 @@ describe('桌面会话席位的状态面板装配（Z3-03）', () => {
 
   it('无数据 → 槽不渲染（Z-17：空面板不留占位高度）', () => {
     stubBridge();
-    const { container } = render(
-      <ConversationSeat store={bootStore('sp-2')} controller={{} as Controller} registry={conversationViewRegistry} />,
-    );
+    const { container } = render(<ConversationSeat store={bootStore('sp-2')} controller={{} as Controller} />);
     expect(container.querySelector('[data-testid="status-panel-slot"]')).toBeNull();
   });
 
@@ -74,7 +70,6 @@ describe('桌面会话席位的状态面板装配（Z3-03）', () => {
       <ConversationSeat
         store={bootStore('sp-3')}
         controller={{} as Controller}
-        registry={conversationViewRegistry}
         statusPanel={() => <div data-testid="custom-status-panel" />}
       />,
     );

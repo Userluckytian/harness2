@@ -1,21 +1,19 @@
 // assembly.tsx — 桌面**组装根**：把桌面专属能力注入共享会话席位（`@harness2/ui-shared`）。
 //
-// 实现在共享包（`renderer/conversation/seat.tsx`：视图环 + 常驻 composer + 提交边界 + 草稿隔离），
+// 实现在共享包（`renderer/conversation/seat.tsx`：转录 + 常驻 composer + 提交边界 + 草稿隔离），
 // 本文件只剩「桌面侧的决定」，不重新实现任何业务语义：
-//   1. 视图注册表：注册**真实存在**的视图 —— `chat`（共享转录渲染，D-30/D-32）+ `trajectory`
-//      （桌面 P6-A `ui-trajectory`，D-40：视图环里的 Trajectory 标签页，不是弹窗）；
-//   2. 视图选择持久缝（D-31/D-14）：桌面用**内存**实现 —— 不碰任何浏览器端持久化存储
-//      （`test/layout/no-persistence` 有反向守卫）；保留 `subscribe` 让环外改写（D-86 ② inspect
-//      跳轨迹）即时生效，无持久源时按规则回落 `chat`；
-//   3. D-46 浮层测量宿主单例 + D-86 ② 轨迹定位通道单例（桌面专属消费者）；
+//   1. Z2-05（Z-16）：主区事实**单一 chat** —— 不再有视图注册表 / 视图选择持久缝 / trajectory
+//      主视图注册（那一层已退役）；trajectory 是右栏 tab（Z-14 `model-trajectory:{sessionId}`），
+//      由 `components/SidePanel.tsx` 挂载 `TrajectoryViewContent`；
+//   2. D-46 浮层测量宿主单例（chat 转录的 composer 预留）+ P2-5 轨迹定位通道单例；
+//   3. D-86 ② inspect 消费者：工具卡「查看轨迹」→ **打开/激活右栏该会话的 trajectory tab**
+//      （不再切换主视图），定位参数经 `TrajectoryFocusStore` 传递；
 //   4. 桌面缺口的**如实登记**：图片授权读取通道与文件上传通道当前都不存在（恒 null / 如实失败）；
 //   5. 会话头：桌面用 ConversationHeader（`getContextUsage` 等桌面 IPC 面），经共享席位的 `header` 缝注入。
 import type { ReactNode } from 'react';
 import {
-  ConversationChatView,
   ConversationSeat as SharedConversationSeat,
   type ConversationSeatProps as SharedConversationSeatProps,
-  type ConversationSession,
 } from '@harness2/ui-shared/renderer/conversation/seat.js';
 import type { UploadTransport } from '@harness2/ui-shared/renderer/conversation/composer/attachments.js';
 import { ComposerChain } from '@harness2/ui-shared/renderer/conversation/composer/composer-chain.js';
@@ -24,120 +22,38 @@ import {
   type ConversationImageReader,
   type ImageUrlCache,
 } from '@harness2/ui-shared/renderer/conversation/views/image-url-cache.js';
-import { CHAT_VIEW_KEY } from '@harness2/ui-shared/renderer/conversation/views/view-selection.js';
-import {
-  createConversationViewRegistry as createViewRegistry,
-  type ConversationViewRegistry,
-} from '@harness2/ui-shared/renderer/conversation/views/view-registry.js';
 import {
   ConversationStatusPanel,
   statusPanelHasContent,
 } from '@harness2/ui-shared/renderer/conversation/status-panel/ConversationStatusPanel.js';
-import { createInMemoryPersistence, type Persistence } from '@harness2/ui-shared/renderer/ports.js';
 import { toolNavigation, type TrajectoryViewConsumer } from '@harness2/ui-shared/renderer/tool/index.js';
+import { trajectoryTabId, sidePaneStore } from '@harness2/ui-shared/renderer/side-pane/index.js';
 import { ConversationHeader } from '../components/ConversationHeader.js';
 import { store } from '../app-shared.js';
 import {
-  TRAJECTORY_VIEW_KEY,
   createComposerOverlayHost,
   createTrajectoryFocusStore,
-  createTrajectoryViewDefinition,
   type ComposerOverlayHost,
   type TrajectoryFocusStore,
 } from '../trajectory/index.js';
 
 export {
-  CONVERSATION_CHAT_OWNER,
-  ConversationChatView,
   createConversationComposerPort,
   type ConversationComposerPort,
   type ConversationSession,
 } from '@harness2/ui-shared/renderer/conversation/seat.js';
 
-/** 注册表装配可选项（P6 接线棒：D-46 的浮层测量宿主按需注入） */
-export interface DesktopViewRegistryOptions {
-  /** D-46：壳持有的 composer 浮层测量宿主（交给轨迹视图读实测预留高度） */
-  readonly composerHost?: ComposerOverlayHost;
-  /** P2-5：D-86 ② inspect 的定位通道（交给轨迹视图定位 callId/seq 对应记录） */
-  readonly focusStore?: TrajectoryFocusStore;
-}
-
 /**
- * 会话视图注册表：只注册**真实存在**的视图 —— `chat`（共享转录）+ `trajectory`
- * （桌面 `ui-trajectory`，D-40）。注册顺序 = 标签顺序。
- */
-export function createDesktopConversationViewRegistry(
-  options: DesktopViewRegistryOptions = {},
-): ConversationViewRegistry<ConversationSession> {
-  const registry = createViewRegistry<ConversationSession>();
-  registry.register({
-    key: CHAT_VIEW_KEY,
-    title: 'Chat',
-    owner: 'ui-chat',
-    component: ConversationChatView,
-  });
-  registry.register(
-    createTrajectoryViewDefinition<ConversationSession>({
-      ...(options.composerHost !== undefined ? { composerHost: options.composerHost } : {}),
-      ...(options.focusStore !== undefined ? { focusStore: options.focusStore } : {}),
-    }),
-  );
-  return registry;
-}
-
-/**
- * D-46 的壳侧测量宿主（应用单例）：会话席位观察 composer 浮层真实高度，
- * 轨迹视图经 `useComposerOverlayInset` 读同一条状态 —— 一处测量、两处消费。
+ * D-46 的壳侧测量宿主（应用单例）：会话席位观察 composer 浮层真实高度并写 CSS 变量
+ * `--composer-inset`（chat 转录的滚动叶容器消费）—— 一处测量、一处消费。
  */
 export const conversationComposerOverlay: ComposerOverlayHost = createComposerOverlayHost();
 
 /**
- * P2-5（D-86 ②）的定位通道（应用单例）：工具卡 inspect 的 `callId`/`seq` 经此到达轨迹视图，
- * 打开轨迹时选中并滚动到对应记录。一处写入（消费者）、一处读取（轨迹视图），只在内存。
+ * P2-5（D-86 ②）的定位通道（应用单例）：工具卡 inspect 的 `callId`/`seq` 经此到达右栏轨迹 tab，
+ * 打开轨迹时选中并滚动到对应记录。一处写入（消费者）、一处读取（轨迹内容组件），只在内存。
  */
 export const conversationTrajectoryFocus: TrajectoryFocusStore = createTrajectoryFocusStore();
-
-/** 应用级视图注册表（渲染端单例；与 shellSlots 同层） */
-export const conversationViewRegistry = createDesktopConversationViewRegistry({
-  composerHost: conversationComposerOverlay,
-  focusStore: conversationTrajectoryFocus,
-});
-
-/**
- * 视图选择持久缝（D-31 / D-14）：**内存**实现 —— 只在本进程存活期内记住每个会话的选择。
- * 刻意不落浏览器存储（D-14 明令）；要跨重启持久须由宿主另注入实现。实现来自共享包端口工厂。
- */
-export function createInMemoryViewSelectionPersistence(): Persistence {
-  return createInMemoryPersistence();
-}
-
-export const conversationViewPersistence: Persistence = createInMemoryViewSelectionPersistence();
-
-/**
- * D-86 ②：把轨迹视图登记为 `inspect` 的消费者。工具卡的「查看轨迹」由此真实可见并生效：
- *   * 未注册时 `toolNavigation.canInspect()` 为 false → 工具卡不渲染该入口（不摆死按钮）；
- *   * 已注册时点击 → 记下 `callId`/`seq` 定位请求（P2-5）并把**该会话**的视图选择写成 `trajectory`，
- *     视图环经 `subscribe` 即时切过去（不伪造点击、不新开第二个详情视图）。
- */
-export function createTrajectoryInspectConsumer(
-  persistence: Persistence,
-  viewKey: string = TRAJECTORY_VIEW_KEY,
-  focusStore?: TrajectoryFocusStore,
-): TrajectoryViewConsumer {
-  return {
-    key: viewKey,
-    open: (request) => {
-      if (request.sessionId.length === 0) return;
-      focusStore?.request(request);
-      persistence.write(request.sessionId, viewKey);
-    },
-  };
-}
-
-/** 应用级注册（disposer 导出供测试/热重载回收；正常生命周期与进程同寿） */
-export const disposeTrajectoryInspect = toolNavigation.registerTrajectoryView(
-  createTrajectoryInspectConsumer(conversationViewPersistence, TRAJECTORY_VIEW_KEY, conversationTrajectoryFocus),
-);
 
 /**
  * D-39 授权读取（宿主注入）。**缺口登记**：preload 暴露的 IPC 面（`Harness2Api`）没有图片/附件授权
@@ -146,8 +62,10 @@ export const disposeTrajectoryInspect = toolNavigation.registerTrajectoryView(
  */
 export const desktopConversationImageRead: ConversationImageReader = () => null;
 
-/** 应用级图片 URL 缓存（会话内逐附件去重；Chat 与 Trajectory 共用同一入口） */
-export const conversationImageUrls: ImageUrlCache = createImageUrlCache({ read: desktopConversationImageRead });
+/** 应用级图片 URL 缓存（会话内逐附件去重；右栏轨迹 tab 的附件预览走同一入口） */
+export const conversationImageUrls: ImageUrlCache = createImageUrlCache({
+  read: desktopConversationImageRead,
+});
 
 /**
  * 文件上传 transport。**缺口登记**：桌面桥没有上传 IPC（core/gateway 也没有上传端点），
@@ -162,6 +80,29 @@ export const desktopUploadTransport: UploadTransport = {
 
 /** composer 链（D-38）：壳持有唯一实例；当前无 takeover 注册项（无人接管 = 默认 composer 常驻） */
 export const conversationComposerChain = new ComposerChain();
+
+/**
+ * D-86 ②：把轨迹 tab 登记为 `inspect` 的消费者（P2-5 改道）。工具卡的「查看轨迹」由此真实可见并生效：
+ *   * 未注册时 `toolNavigation.canInspect()` 为 false → 工具卡不渲染该入口（不摆死按钮）；
+ *   * 已注册时点击 → 记下 `callId`/`seq` 定位请求（`TrajectoryFocusStore`）并**打开/激活右栏该
+ *     会话的 trajectory tab**（Z-14 `model-trajectory:{sessionId}`；tab 状态在 side-pane 内存
+ *     Map，D-14 不落盘）。右栏若收起，由 `SidePanel` 订阅同一焦点通道自动展开 —— 不静默丢请求。
+ */
+export function createTrajectoryInspectConsumer(focusStore?: TrajectoryFocusStore): TrajectoryViewConsumer {
+  return {
+    key: 'trajectory',
+    open: (request) => {
+      if (request.sessionId.length === 0) return;
+      focusStore?.request(request);
+      sidePaneStore.open(request.sessionId, trajectoryTabId(request.sessionId));
+    },
+  };
+}
+
+/** 应用级注册（disposer 导出供测试/热重载回收；正常生命周期与进程同寿） */
+export const disposeTrajectoryInspect = toolNavigation.registerTrajectoryView(
+  createTrajectoryInspectConsumer(conversationTrajectoryFocus),
+);
 
 /** 桌面会话头（共享席位经 `header` 缝注入；信息来自桌面 IPC 面） */
 function desktopConversationHeader(info: { sessionId: string; cwd?: string }): ReactNode {
@@ -179,22 +120,17 @@ function desktopStatusPanel(info: { sessionId: string }): ReactNode {
   return <ConversationStatusPanel store={store} sessionId={info.sessionId} />;
 }
 
-/** 桌面侧入参：共享席位除 `registry` 外都可省；注册表缺省取桌面单例（测试可显式注入） */
-export type ConversationSeatProps = Omit<SharedConversationSeatProps, 'registry'> & {
-  readonly registry?: ConversationViewRegistry<ConversationSession>;
-};
+/** 桌面侧入参：共享席位全部可省；缺省注入桌面单例（测试可显式覆盖） */
+export type ConversationSeatProps = SharedConversationSeatProps;
 
 /**
- * 会话席位（ui-conversation）：共享实现 + 桌面缺省注入（注册表 / 持久缝 / 图片缓存 / composer 链 /
- * 浮层宿主 / 会话头）。语义零改动：桌面既有调用点与测试的入参面不变。
+ * 会话席位（ui-conversation）：共享实现 + 桌面缺省注入（图片缓存 / composer 链 / 浮层宿主 /
+ * 会话头 / 状态面板）。语义零改动：桌面既有调用点与测试的入参面不变。
  */
 export function ConversationSeat(props: ConversationSeatProps): ReactNode {
   return (
     <SharedConversationSeat
       {...props}
-      registry={props.registry ?? conversationViewRegistry}
-      persistence={props.persistence ?? conversationViewPersistence}
-      imageUrls={props.imageUrls ?? conversationImageUrls}
       chain={props.chain ?? conversationComposerChain}
       composerOverlayHost={props.composerOverlayHost ?? conversationComposerOverlay}
       header={props.header ?? desktopConversationHeader}

@@ -7,9 +7,8 @@
 //
 // 四个端口：
 //   1. `HarnessClient`   —— 会话面（列会话 / 订阅事件 / 提交 / 停止 / 审批应答 / 只读查询）；
-//   2. `Persistence`     —— 纯 UI 偏好持久化（视图选择等；缺省 = 内存）；
-//   3. `AttachmentReader`—— 附件读取与上传（composer 的图片/文件通道）；
-//   4. `HostBridge`      —— 壳侧零星能力（快照 / 文件文本读取），见 ./host-bridge.ts。
+//   2. `AttachmentReader`—— 附件读取与上传（composer 的图片/文件通道）；
+//   3. `HostBridge`      —— 壳侧零星能力（快照 / 文件文本读取），见 ./host-bridge.ts。
 //
 // 「可选」语义：端口里带 `?` 的成员属于**壳可选择提供**的能力。缺失时共享层必须如实降级
 // （显示「此壳未提供该通道」/ 仅内存生效），**绝不**伪造成功、绝不摆假入口。
@@ -31,7 +30,6 @@ import type {
 import type { DraftsMap } from '../shared/drafts.js';
 import type { SessionMetadataMap } from '../shared/metadata.js';
 import type { ImageReadIO, UploadTransport } from './conversation/composer/attachments.js';
-import type { ViewSelectionPersistence } from './conversation/views/view-ring.js';
 
 export type { HostBridge } from './host-bridge.js';
 
@@ -113,36 +111,6 @@ export interface HarnessClient {
   draftsSet?(drafts: DraftsMap): Promise<DraftsMap>;
   /** 写全局配置（桌面走 config.json 白名单深合并；web 未提供时如实拒绝） */
   settingsUpdateConfig?(patch: Record<string, unknown>): Promise<{ ok: boolean; error?: string }>;
-}
-
-/**
- * 纯 UI 偏好持久化端口（D-14 口径：**不落浏览器存储**是壳的自由，但必须经此缝注入）。
- * 默认实现 = `createInMemoryPersistence()`（只在本进程存活期内记住）。
- */
-export type Persistence = ViewSelectionPersistence;
-
-/** 内存实现：只在本进程存活期内记住每个会话的选择；`subscribe` 让环外改写也能即时切换视图 */
-export function createInMemoryPersistence(): Persistence {
-  const bySession = new Map<string, string>();
-  const listeners = new Set<() => void>();
-  const emit = (): void => {
-    for (const listener of [...listeners]) listener();
-  };
-  return {
-    read: (sessionId) => bySession.get(sessionId) ?? null,
-    write: (sessionId, key) => {
-      const before = bySession.get(sessionId) ?? null;
-      if (key === null) bySession.delete(sessionId);
-      else bySession.set(sessionId, key);
-      if ((bySession.get(sessionId) ?? null) !== before) emit();
-    },
-    subscribe: (listener) => {
-      listeners.add(listener);
-      return () => {
-        listeners.delete(listener);
-      };
-    },
-  };
 }
 
 /**
