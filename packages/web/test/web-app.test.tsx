@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import React from 'react';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { createAppShell } from '@harness2/ui-shared/renderer/app-shell.js';
+import { workbenchStore } from '@harness2/ui-shared/renderer/layout/workbench/store.js';
 import type { HarnessClient } from '@harness2/ui-shared/renderer/ports.js';
 import type { ConnectionStatus, SessionSummaryShape, WsFrame } from '@harness2/ui-shared/shared/protocol.js';
 import { WebApp } from '../src/app.js';
@@ -12,6 +13,9 @@ import { WebApp } from '../src/app.js';
 afterEach(() => {
   cleanup();
   frameListeners.clear();
+  // 分屏布局是**模块级单例**（Z2-06：内存态、D-14 不落盘）——测试间显式复位，
+  // 否则上一用例的主格绑定会带进下一用例（主格头部会把会话标题再渲染一遍）。
+  workbenchStore.reset();
 });
 
 /** 假端口的事件帧注入（onEvent 订阅进这里；测试据此驱动流式/终态，走真实 controller 分发） */

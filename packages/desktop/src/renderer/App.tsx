@@ -20,7 +20,11 @@ import {
 import { shellSlots } from './layout/shell-registry.js';
 import { desktopPlatform, windowFrameClass } from './platform.js';
 import { useWindowMaximized } from './window-state.js';
-import { JUMP_TO_SESSION_ID, type PaletteCommand, type PaletteSession } from './components/CommandPalette.js';
+import {
+  JUMP_TO_SESSION_ID,
+  type PaletteCommand,
+  type PaletteSession,
+} from '@harness2/ui-shared/renderer/components/CommandPalette.js';
 import { controller, store, useAppState, newSessionCollapsingRightbar, THEME_CYCLE } from './app-shared.js';
 import type { AppState } from '@harness2/ui-shared/renderer/store.js';
 import { filterSessionList } from '@harness2/ui-shared/shared/metadata.js';

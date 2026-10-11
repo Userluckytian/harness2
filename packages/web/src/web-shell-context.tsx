@@ -21,6 +21,12 @@ export interface WebShellValue {
   readonly onOpenSettings: () => void;
   /** 关闭设置覆层（共享页返回按钮调用） */
   readonly onCloseSettings: () => void;
+  /** 命令面板覆层是否打开（Z7：复用共享 CommandPalette；只内存，D-14） */
+  readonly paletteOpen: boolean;
+  /** 打开命令面板（Ctrl/Cmd+K、侧栏命令中心入口、命令类调用） */
+  readonly onOpenPalette: () => void;
+  /** 关闭命令面板 */
+  readonly onClosePalette: () => void;
 }
 
 const WebShellContext = createContext<WebShellValue | null>(null);

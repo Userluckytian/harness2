@@ -7,7 +7,7 @@
 //   2. 把应用壳（store/controller）与新建会话接线经 `WebShellProvider` 交给席位内容。
 // 左上浮层条（品牌 + 侧栏折叠 + New Task）用壳无关的 `FrameTopOverlay`；web 无窗口控制
 // （桌面 `frame:false` 自绘三键在会话列头，见 desktop components/ConversationHeader.tsx）。
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import type { ReactNode } from 'react';
 import type { AppShell } from '@harness2/ui-shared/renderer/app-shell.js';
 import { useDraftsUnloadGuard } from '@harness2/ui-shared/renderer/drafts-guard.js';
@@ -31,9 +31,24 @@ export function WebApp({ shell, onNewSession, newSessionBlockedReason }: WebAppP
   const frame = useFrameState({ registry });
   // Z7：设置覆层开合（只内存，D-14）；覆层席位内容经 WebShellProvider 读它。
   const [settingsOpen, setSettingsOpen] = useState(false);
+  // Z7：命令面板覆层开合（只内存，D-14）；Ctrl/Cmd+K 与侧栏命令中心入口同一真源。
+  const [paletteOpen, setPaletteOpen] = useState(false);
   // P2-4：web 无草稿落盘通道（draftsPersistence==='memory-only'）——
   // 有未发送草稿时注册 beforeunload 护栏，刷新/关闭前如实提示，不静默丢草稿。
   useDraftsUnloadGuard(shell.controller, store);
+
+  // Ctrl+K / Cmd+K 唤出命令面板（与浏览器默认「地址栏搜索」共存：阻止默认后由壳接管）。
+  // 打开设置覆层的 Ctrl+, 桌面有、web 不设（共享设置页在 web 经侧栏齿轮进入，不新造键位）。
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent): void => {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
+        e.preventDefault();
+        setPaletteOpen((open) => !open);
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, []);
 
   // P2-9：新建会话需要 cwd（serve 强制要求；本壳无目录选择通道）。
   // 列表里一个带 cwd 的会话都没有时，按钮点了必失败 —— 据实置灰并给出可行动原因，
@@ -54,6 +69,9 @@ export function WebApp({ shell, onNewSession, newSessionBlockedReason }: WebAppP
     settingsOpen,
     onOpenSettings: () => setSettingsOpen(true),
     onCloseSettings: () => setSettingsOpen(false),
+    paletteOpen,
+    onOpenPalette: () => setPaletteOpen(true),
+    onClosePalette: () => setPaletteOpen(false),
   };
 
   return (

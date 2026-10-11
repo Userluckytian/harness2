@@ -10,6 +10,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import React from 'react';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { createAppShell } from '@harness2/ui-shared/renderer/app-shell.js';
+import { workbenchStore } from '@harness2/ui-shared/renderer/layout/workbench/store.js';
 import { sidePaneStore } from '@harness2/ui-shared/renderer/side-pane/index.js';
 import type { HarnessClient } from '@harness2/ui-shared/renderer/ports.js';
 import type {
@@ -28,6 +29,8 @@ afterEach(() => {
   // 否则上一用例留在桶里的 tab 会让下一用例没有「零 tab 启动器」。
   sidePaneStore.closeAll('s1');
   sidePaneStore.closeAll('(no-session)');
+  // 分屏布局同为模块级单例（Z2-06：内存态）——测试间复位，避免主格绑定跨用例残留。
+  workbenchStore.reset();
 });
 
 const SESSION: SessionSummaryShape = {
@@ -119,9 +122,10 @@ describe('Z7 四席位骨架（与桌面同构）', () => {
     expect(document.querySelector('[data-seat="main"] [data-testid="conversation-seat"]')).not.toBeNull();
     // 右栏默认收起（hidden 不占布局）
     expect(document.querySelector('[data-seat="rightbar"]')?.hasAttribute('hidden')).toBe(true);
-    // 覆层席位：Z7 起注入 web 设置覆层（复用共享设置页，端口只接 appearance/gateway）；
-    // 默认关闭 → 设置页不渲染（无假入口）。
-    expect(document.querySelectorAll('[data-seat="shell.overlay"] .slot-entry').length).toBe(1);
+    // 覆层席位：Z7 起注入 web 设置覆层（复用共享设置页，端口只接 appearance/gateway）
+    // + 命令面板覆层（复用共享 CommandPalette，命令表/会话候选由 web 壳组装）；
+    // 默认都关闭 → 设置页/命令面板均不渲染（无假入口）。
+    expect(document.querySelectorAll('[data-seat="shell.overlay"] .slot-entry').length).toBe(2);
     expect(document.querySelector('[data-settings-page]')).toBeNull();
     stop();
   });

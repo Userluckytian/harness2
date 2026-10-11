@@ -1,19 +1,24 @@
 // web 席位内容装配（对标桌面 `layout/shell-seat-contents.tsx`，但**只接 web 真实具备的 store/controller**）。
 //
 // 注入 owner 用能力包名（ui-sidebar / ui-conversation / ui-workspace），内容组件复用 ui-shared：
-//   * 侧栏 = SidebarRoot（品牌 / New Task / 命令中心（web 无 → 不注入即不渲染）/ 会话列表 / 折叠 264→4px）；
-//   * 中栏 conversation = 共享 ConversationSeat（转录 + 常驻 composer）+ web 连接/新建阻断提示条；
+//   * 侧栏 = SidebarRoot（品牌 / New Task / 命令中心入口 / 会话列表（可拖进分屏）/ 折叠 264→4px）；
+//   * 中栏 conversation = **分屏工作台** WorkbenchHost（共享，二叉分割树 ≤4 格）+ web 连接/新建阻断提示条，
+//     每格渲染 web 会话席位（共享 ConversationSeat + web 会话头）；布局只存内存（D-14 不落盘）；
 //   * 右栏 = SidePaneHost（零 tab 启器 + 标签条）；Z7-a 起与桌面列**同一套**启动器清单：
 //       计划 / 任务 / 后台任务 / 审批 / 变更 / 工作区 / 配置 / 模型轨迹 —— 全部复用 ui-shared 面板，
 //       数据经共享 controller 走 serve 的 S7 只读端点（run-config / plan-state / execution-view /
 //       change-review）与 WS 事件流，web 真能取数；
 //       「文件」不在启动器清单（桌面亦同：D-86 openFile 路由按需打开）——web 无 openFile 预览通道，
 //       故不列、也不补假入口（红线⑩）。
-//   * 覆层席位：web 无设置页 / 命令面板数据通道 → 不注入（零覆层，如实空）。
-import { useMemo, useState, type ReactNode } from 'react';
+//   * 覆层席位：web 设置覆层（复用共享设置页）+ 命令面板覆层（共享 CommandPalette，
+//     命令表/会话候选由 web 壳组装，见 web-command-palette.tsx）。
+import { useMemo, useState, useSyncExternalStore, type ReactNode } from 'react';
 import { StatusBadge } from '@harness2/ui-shared/renderer/app-shell.js';
-import { ConversationSeat } from '@harness2/ui-shared/renderer/conversation/seat.js';
+import { ConversationSeat, type ConversationSeatProps } from '@harness2/ui-shared/renderer/conversation/seat.js';
 import { useFrame } from '@harness2/ui-shared/renderer/layout/frame-context.js';
+import { workbenchDrag } from '@harness2/ui-shared/renderer/layout/workbench/drag.js';
+import { WorkbenchHost } from '@harness2/ui-shared/renderer/layout/workbench/host.js';
+import { workbenchStore } from '@harness2/ui-shared/renderer/layout/workbench/store.js';
 import {
   CONVERSATION_OWNER,
   FRAME_SEAT,
@@ -39,6 +44,7 @@ import { TrajectoryViewContent } from '@harness2/ui-shared/renderer/trajectory/i
 import { buildSessionItems, resolveBuildVersion, SidebarRoot } from '@harness2/ui-shared/renderer/sidebar/index.js';
 import type { SlotRegistry } from '@harness2/ui-shared/renderer/slots/index.js';
 import { useWebShell } from './web-shell-context.js';
+import { WebPaletteOverlay } from './web-command-palette.js';
 import { WebSettingsOverlay } from './web-settings.js';
 
 /** 渲染进程可读的宿主环境表（web 浏览器无 Node `process` → 空表，版本徐标自然不显示） */
@@ -54,13 +60,16 @@ function hostBuildEnv(): Record<string, string | undefined> {
  */
 const WEB_SIDE_PANE_ITEMS: readonly SidePaneLauncherItemId[] = SIDE_PANE_LAUNCHER_ITEM_IDS;
 
-/** 侧栏席位内容（ui-sidebar）：SidebarRoot + 会话列表接线（web 无命令面板通道 → 不注入该入口） */
+/** 侧栏席位内容（ui-sidebar）：SidebarRoot + 会话列表接线 + 命令中心入口 + 会话行拖拽源（Z-19） */
 function SidebarSeatContent(): ReactNode {
-  const { shell, onNewSession, newSessionEnabled, onOpenSettings } = useWebShell();
+  const { shell, onNewSession, newSessionEnabled, onOpenSettings, onOpenPalette } = useWebShell();
   const state = shell.useAppState();
   const { store, controller } = shell;
   const { geometry, dispatch: frameDispatch } = useFrame();
   const [query, setQuery] = useState('');
+  // Z2-06（Z-19）：已在分屏中的会话禁用拖拽（左栏行可拖进主区分屏）
+  const workbench = useSyncExternalStore(workbenchStore.subscribe, workbenchStore.getSnapshot);
+  const panedSessionIds = useMemo(() => new Set(Object.values(workbench.bindings)), [workbench.bindings]);
 
   // 行数据：store 摘要 + 展示态覆层（复用 shared/metadata；不复制过滤规则）
   const { active, archived } = buildSessionItems({
@@ -91,6 +100,22 @@ function SidebarSeatContent(): ReactNode {
       newSessionScope={{}}
       onNewSession={() => onNewSession?.()}
       newSessionEnabled={newSessionEnabled}
+      // Z2-02（Z-07 分区 2）：左栏命令中心入口 → 打开命令面板覆层（与 Ctrl/Cmd+K 同一真源）。
+      onOpenCommandPalette={() => onOpenPalette()}
+      // Z2-06（Z-19）：会话行可拖进主区分屏。生产写 dataTransfer（真实 DnD 语义），
+      // 模块级 workbenchDrag 作等价回退（jsdom 单测无标准 dataTransfer）。
+      sessionRowDrag={{
+        onDragStart: (id, event) => {
+          workbenchDrag.begin(id);
+          const transfer = event.dataTransfer;
+          if (transfer !== undefined && transfer !== null) {
+            transfer.setData('text/plain', id);
+            transfer.effectAllowed = 'copy';
+          }
+        },
+        onDragEnd: () => workbenchDrag.end(),
+        disabledIds: panedSessionIds,
+      }}
       buildVersion={resolveBuildVersion(hostBuildEnv())}
       // 底部状态角标（与桌面同一 StatusBadge）+ 设置入口（Z7：打开设置覆层，复用共享设置页）
       renderSettings={() => (
@@ -112,25 +137,28 @@ function SidebarSeatContent(): ReactNode {
   );
 }
 
-/** 中栏 conversation 席位内容（ui-conversation）：web 连接/新建阻断提示条 + 共享会话席位 */
-function ConversationSeatContent(): ReactNode {
-  const { shell, newSessionBlockedReason } = useWebShell();
-  const { store, controller } = shell;
+/**
+ * 会话席位内容（web）：共享 ConversationSeat + web 会话头（标题/cwd/右栏开关）。
+ * Z-19（Z2-06）：作为 `WorkbenchHost` 的每格 seat 注入 —— 主格用本头；非主格由 WorkbenchHost
+ * 经 `header` 缝传入轻量 `PaneHeader`（`props.header` 优先，避免多格重复窗控）。
+ */
+function WebConversationSeat(props: ConversationSeatProps): ReactNode {
+  const { shell } = useWebShell();
+  const { store } = shell;
   const state = shell.useAppState();
   const frame = useFrame();
-  const connected = state.status === 'connected';
   const rightbarOpen = frame.state.rightbarOpen;
 
   const header = useMemo(
     () =>
-      ({ sessionId }: { sessionId: string }): ReactNode => {
-        const summary = state.sessions.find((s) => s.id === sessionId);
+      (info: { sessionId: string; cwd?: string }): ReactNode => {
+        const summary = state.sessions.find((s) => s.id === info.sessionId);
         return (
           <div className="web-conversation-header">
             <span className="web-conversation-title">
-              {store.displayTitleFor(sessionId) ?? summary?.firstUserText ?? '(空会话)'}
+              {store.displayTitleFor(info.sessionId) ?? summary?.firstUserText ?? '(空会话)'}
             </span>
-            {summary?.cwd !== undefined ? <span className="web-conversation-cwd">{summary.cwd}</span> : null}
+            {info.cwd !== undefined ? <span className="web-conversation-cwd">{info.cwd}</span> : null}
             {/* 右栏开关（对标桌面会话列头）：web 无窗口控制扩展，只留面板开关 */}
             <button
               type="button"
@@ -149,6 +177,20 @@ function ConversationSeatContent(): ReactNode {
     [state.sessions, store, frame, rightbarOpen],
   );
 
+  // Z-19：非主格由 WorkbenchHost 注入 PaneHeader（props.header 存在）→ 优先用它。
+  return <ConversationSeat {...props} header={props.header ?? header} />;
+}
+
+/**
+ * 中栏 conversation 席位内容（ui-conversation）：web 连接/新建阻断提示条 + **分屏工作台**（Z-19）。
+ * Z2-06（Z2-03）：分屏发生在 conversation 面板**内部**（二叉分割树 ≤4 格）；单格时与旧结构等价。
+ * 布局只存内存（`workbenchStore` 单例，不落盘，D-14）。
+ */
+function ConversationSeatContent(): ReactNode {
+  const { shell, newSessionBlockedReason } = useWebShell();
+  const state = shell.useAppState();
+  const connected = state.status === 'connected';
+
   return (
     <div className="web-main">
       {!connected ? (
@@ -165,7 +207,7 @@ function ConversationSeatContent(): ReactNode {
           {newSessionBlockedReason}
         </div>
       ) : null}
-      <ConversationSeat store={store} controller={controller} header={header} />
+      <WorkbenchHost store={shell.store} controller={shell.controller} seat={WebConversationSeat} />
     </div>
   );
 }
@@ -241,9 +283,11 @@ export function injectWebSeatContents(registry: SlotRegistry): () => void {
       component: ConversationSeatContent,
     }),
     registry.inject({ seat: FRAME_SEAT.rightbar, owner: 'ui-workspace', component: RightbarSeatContent }),
-    // 覆层席位（Z7）：设置页复用共享实现，端口只接 web 真能做到的部分（appearance/gateway）；
-    // 命令面板 web 无数据通道 → 不注入（如实空，不摆假入口）。
+    // 覆层席位（Z7）：设置页复用共享实现（端口只接 web 真能做到的 appearance/gateway）；
+    // 命令面板复用共享 CommandPalette（命令表/会话候选由 web 壳组装，见 web-command-palette.tsx）。
+    // 顺序对齐桌面：设置在下（order 0）、命令面板在上（order 1）。
     registry.inject({ seat: FRAME_SEAT.overlay, owner: 'ui-settings', order: 0, component: WebSettingsOverlay }),
+    registry.inject({ seat: FRAME_SEAT.overlay, owner: 'ui-commands', order: 1, component: WebPaletteOverlay }),
   ];
   return () => {
     for (const d of disposers) d();

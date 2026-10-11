@@ -13,7 +13,7 @@ import {
   stepSelection,
   type PaletteCommand,
   type PaletteSession,
-} from '../src/renderer/components/CommandPalette.js';
+} from '@harness2/ui-shared/renderer/components/CommandPalette.js';
 import { cycleTheme, moveSession } from '../src/renderer/App.js';
 
 /* —— 过滤纯函数 —— */

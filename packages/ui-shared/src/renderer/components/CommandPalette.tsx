@@ -1,11 +1,15 @@
 // 命令面板（B6）：Ctrl+K 全局命令（VSCode/Linear 风格，顶部居中 + 半透明遮罩）。
-// 受控组件：open/onClose/commands 由外层（App）传入；命令表是纯数据 { id,label,hint,run }，
-// 组件只持有「触发」，实际副作用全在 App 注入的 run 回调里（保持可测、渲染进程零 Node）。
+// 受控组件：open/onClose/commands 由外层（壳装配）传入；命令表是纯数据 { id,label,hint,run }，
+// 组件只持有「触发」，实际副作用全在壳注入的 run 回调里（保持可测、渲染进程零 Node）。
 // 二态：default 态过滤命令表；会话跳转命令执行后进入 session 态，按标题过滤会话列表并选中执行。
 // 过滤/键盘导航逻辑抽成纯函数导出（filterCommands / stepSelection），便于单测。
+//
+// Z7：自 desktop `renderer/components/CommandPalette.tsx` 下沉 ui-shared（桌面/web 共享同一实现，
+// 不留两份）。本组件**与壳无关**：数据（commands/sessions/onSelectSession）全由壳的覆层席位装配传入
+// （桌面 = useShellPalette 的 context；web = web 壳自己组装的真命令/会话表）。
 import { useEffect, useMemo, useRef, useState } from 'react';
 
-/** 单条命令：纯数据；run 为可注入回调（副作用由 App 实现） */
+/** 单条命令：纯数据；run 为可注入回调（副作用由壳实现） */
 export interface PaletteCommand {
   id: string;
   label: string;
@@ -13,10 +17,10 @@ export interface PaletteCommand {
   run: () => void;
 }
 
-/** 「跳转到会话…」命令的固定 id：组件识别它后切换为会话选择态（App 用它注册该命令） */
+/** 「跳转到会话…」命令的固定 id：组件识别它后切换为会话选择态（壳用它注册该命令） */
 export const JUMP_TO_SESSION_ID = '__jumpToSession__';
 
-/** 会话跳转条目（App 解析好展示标题后注入） */
+/** 会话跳转条目（壳解析好展示标题后注入） */
 export interface PaletteSession {
   id: string;
   label: string;
@@ -52,7 +56,7 @@ export function stepSelection(current: number, delta: -1 | 1, length: number): n
   return (current + delta + length) % length;
 }
 
-interface CommandPaletteProps {
+export interface CommandPaletteProps {
   open: boolean;
   onClose: () => void;
   commands: PaletteCommand[];
@@ -61,6 +65,11 @@ interface CommandPaletteProps {
   onSelectSession: (id: string) => void;
 }
 
+/**
+ * 渲染命令面板。
+ * @param props - 开合、关闭回调、命令表、会话候选与会话选中回调。
+ * @returns 面板元素；open=false 时返回 null。
+ */
 export function CommandPalette({
   open,
   onClose,

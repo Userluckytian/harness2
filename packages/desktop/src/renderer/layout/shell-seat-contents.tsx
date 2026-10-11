@@ -11,7 +11,7 @@
 // （会话头 + 转录 + 常驻 Composer；Z2-05 起主区事实单一 chat，无视图环）。本文件只递
 // store/controller，不在这里写对话语义（composer 的接线全在 assembly.tsx）。
 import { useEffect, useMemo, useState, useSyncExternalStore } from 'react';
-import { CommandPalette } from '../components/CommandPalette.js';
+import { CommandPalette } from '@harness2/ui-shared/renderer/components/CommandPalette.js';
 import { SettingsPage } from '../components/SettingsPage.js';
 import { SidePanel } from '../components/SidePanel.js';
 import { controller, store, useAppState, newSessionCollapsingRightbar, StatusBadge } from '../app-shared.js';
