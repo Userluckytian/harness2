@@ -7,10 +7,16 @@
 > 按天日志 [`2026-10-10.md`](issue-log/2026-10-10.md) / [`2026-10-11.md`](issue-log/2026-10-11.md)。
 > **进度**：Z0 ✅（两份 refs 文档 + 台账 + 总纲 + 规范修订）· Z1 ✅（Tailwind v4 + shadcn 基建，八项验收全绿）·
 > Z2/Z3/Z4/Z5 **四个阶段全部收口**（Z2 9 项、Z3 7 项、Z4 4 行=01 收口/02·03 完成/04 改期 Z6、Z5 设置页全屏骨架+分区+字号；Z2-07 终端与 Z4-04 Codemap 如实改期 Z6）·
-> **Z6 进行中**：批次1 ✅（D02 内核三开放：扩展事件 opaque 双通道/命令注册开放/服务容器；基线 846→870 纯加性，core 1273 例，`09e94c3`）·
-> 批次2 执行中（A01/A03/A02 provider 三件套：动态拉模型/推理档位/prompt caching；先重调研 ZCode provider 层）·
-> 后续队列：A05 压缩→A06 记忆→A07 MCP→A08 Skills→A09 Hooks→A16 权限 DSL→形态类→重项；B/C 组穿插；Z2-07 终端与 Z4-04 Codemap 在 Z6 拍板。
-> **测试基线**：ui-shared 276 / desktop 1091+1skip / core 1273|2 / cli 1575|2 / web 36 / gateway 40，全绿。
+> **Z6 进行中**（批次1–4 已提交）：
+> 批1 ✅ D02 内核三开放（扩展事件 opaque 双通道/命令注册开放/服务容器；基线 846→870）·
+> 批2 ✅ provider 三件套（A01 动态拉模型/A03 推理档位/A02 prompt caching；887）·
+> 批3 ✅ A05 分层压缩自动路径+断路器 / A16 glob 权限 DSL / A17 bash 清单（901）·
+> 批4 ✅ A10 插件消费三开放（manifest events/commands + ctx.registerCommand/container）/ A07 MCP 设置分区 / A08 技能分区（`cb79106`）·
+> 批5 🔄 执行中：A09 Hooks 全新建（core 钩子事件面+配置节+执行器 + desktop 分区；含 ZCode 调研）·
+> 批6 待办：A11 Teams 编排层 + A14 工作流引擎。
+> 后续队列：UI 接线批次（模型发现端点/Ctrl+T 档位控件/扩展事件渲染/bash 警告条/权限规则编辑器）→ Z7 收口；Z2-07 终端 PTY 与 Z4-04 Codemap 在 Z6 拍板。
+> **测试基线**（2026-10-11 批4 后）：ui-shared 276 / desktop 1101+1skip / core 1354|2 / cli 1575|2 / web 36 / gateway 40，全绿；core 导出基线 901。
+> **⚠️ 子代理额度**：批4 执行中子代理曾 `exceed quota limit` 崩溃（编排者验收收尾）；后续批次可能再现，如遇中断由编排者按验收流程接手。
 > **⚠️ 上游**：refs/ZCode 三次拉取均 `fetch-pack: unexpected disconnect` 失败，仍停 `29628c9`（v3.14.3）——refs 文档继续以该版本为权威。
 > **⚠️ 工作区状态**：Z0–Z3-06 已按子分段拆分提交（`4ccfddc`→ 最新 feat 提交，见 `git log`）；接手时以台账状态列为准。
 > **⚠️ 待人工拍板/核对**：①右栏比例 45%↔52% 口径（OPEN.md Z 节）；②真机核对 5 项（`frame:false` 窗口行为/明暗防闪/折叠 4px/嵌套分栏/浮层覆盖）；③Z1-05 旧偏好归一是否补；④CI Lint 待 push 后复核；⑤radix-ui 伞包 barrel 的全量深路径改造（可选项，见日志 §18）。
