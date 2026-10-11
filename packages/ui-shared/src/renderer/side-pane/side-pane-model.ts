@@ -30,9 +30,11 @@ export function trajectoryTabSessionId(id: SidePaneTabId): string | null {
   return id.startsWith(MODEL_TRAJECTORY_TAB_PREFIX) ? id.slice(MODEL_TRAJECTORY_TAB_PREFIX.length) : null;
 }
 
-/** 右栏 tab 类型：静态面板 id + 按会话解析的轨迹 tab（Z-14 `model-trajectory:{sessionId}`） */
+/** 右栏 tab 类型：静态面板 id + 按会话解析的轨迹 tab（Z-14 `model-trajectory:{sessionId}`）。
+ *  Z2-08：`background-tasks`（后台任务）= 固定 id、跨会话聚合（对齐 approvals 的全局面板口径），
+ *  不引入 composite id —— 任务列表不随选中会话变化，无需按会话分桶。 */
 export type SidePaneTabId =
-  'plan' | 'tasks' | 'approvals' | 'changes' | 'workspace' | 'file' | 'config' | TrajectoryTabId;
+  'plan' | 'tasks' | 'background-tasks' | 'approvals' | 'changes' | 'workspace' | 'file' | 'config' | TrajectoryTabId;
 
 export interface SidePaneTabDescriptor {
   readonly id: SidePaneTabId;
@@ -44,6 +46,7 @@ export interface SidePaneTabDescriptor {
 export const SIDE_PANE_TABS: readonly SidePaneTabDescriptor[] = Object.freeze([
   { id: 'plan', label: '计划' },
   { id: 'tasks', label: '任务' },
+  { id: 'background-tasks', label: '后台任务' },
   { id: 'approvals', label: '审批' },
   { id: 'changes', label: '变更' },
   { id: 'workspace', label: '工作区' },
@@ -59,12 +62,15 @@ export const SIDE_PANE_TABS: readonly SidePaneTabDescriptor[] = Object.freeze([
  * Z2-05 新增「模型轨迹」项（ZCode 任务右键「查看 Model Trajectory」的等价入口）：
  * 启动器 item id 是**类型标记** `'model-trajectory'`，打开时经 `sidePaneOpenTarget`
  * 按当前会话解析成 `model-trajectory:{sessionId}` 后入列。
+ * Z2-08 新增「后台任务」项（ZCode bash-output 的按需语义）：项**常列**（保留可发现性），
+ * 可用性由宿主按「是否存在后台任务」控制（无任务禁用 + title 说明，见桌面 SidePanel）。
  */
 export type SidePaneLauncherItemId = SidePaneTabId | 'model-trajectory';
 
 export const SIDE_PANE_LAUNCHER_ITEM_IDS: readonly SidePaneLauncherItemId[] = Object.freeze([
   'plan',
   'tasks',
+  'background-tasks',
   'approvals',
   'changes',
   'workspace',

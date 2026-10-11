@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 // 会话状态面板（Z-95 / Z-17）：纯模型（子块汇总 / 胶囊兜底链 / 图标归类）+ 组件（有内容才渲染、
 // 子块默认展开、胶囊点击展开、变体菜单）。数据源核实结论见 status-panel-model.ts 文件头。
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import { AppStore } from '../src/renderer/store.js';
 import type { PlanStateShape, ChangeSetShape, TaskContractShape } from '../src/shared/protocol.js';
@@ -382,5 +382,31 @@ describe('ConversationStatusPanel 组件', () => {
         'aria-expanded',
       ),
     ).toBe('true');
+  });
+
+  // —— Z2-08 轻联动：Agents 子块「在右栏打开」入口（壳注入回调缝） ——
+
+  it('Z2-08：Agents 展开后「在右栏打开」入口可见，点击回调壳注入的 onOpenTasksPane', () => {
+    const store = seedStore();
+    seedTask(store);
+    const onOpenTasksPane = vi.fn();
+    const { container } = render(
+      <ConversationStatusPanel store={store} sessionId="s1" variant="auto" onOpenTasksPane={onOpenTasksPane} />,
+    );
+    const wide = widePanel(container);
+    fireEvent.click(wide.querySelector('[data-testid="status-section-agents"] button') as HTMLButtonElement); // 默认收起 → 展开
+    const entry = within(wide).getByTestId('status-agents-open-pane');
+    expect(entry.textContent).toContain('在右栏打开');
+    fireEvent.click(entry);
+    expect(onOpenTasksPane).toHaveBeenCalledTimes(1);
+  });
+
+  it('Z2-08：未注入 onOpenTasksPane → 不渲染入口（不摆死按钮）', () => {
+    const store = seedStore();
+    seedTask(store);
+    const { container } = render(<ConversationStatusPanel store={store} sessionId="s1" variant="auto" />);
+    const wide = widePanel(container);
+    fireEvent.click(wide.querySelector('[data-testid="status-section-agents"] button') as HTMLButtonElement);
+    expect(within(wide).queryByTestId('status-agents-open-pane')).toBeNull();
   });
 });

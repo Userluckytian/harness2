@@ -4,9 +4,10 @@
 //     「模型轨迹」tab，Z-14 语义 id `model-trajectory:{sessionId}`；同一 id 复用），
 //     可关闭/拖拽排序/横向滚动（Z-14：tab 最小宽 60、gap 4、标签条 h-12 border-b）；
 //   - 状态 = ui-shared side-pane 纯逻辑模块的内存 Map（按会话分桶、LRU 50、不落盘 D-14，
-//     右栏关闭仍挂载所以状态不丢）；
-//   - 面板组件本体不动，只换承载；底部「刷新只读视图 / 重新同步」是我们真实的运维入口
+//     右栏关闭仍挂载所以状态不丢）；面板组件本体不动，只换承载；底部「刷新只读视图 / 重新同步」是我们真实的运维入口
 //     （ZCode 无此物，刻意保留）；审批徽章保留在审批 tab 上。
+//   - Z2-08：新增「后台任务」tab（`background-tasks`，跨会话聚合；启动器项无任务时禁用 + title）；
+//     状态面板 Agents 子块的「在右栏打开」经请求通道接到这里（开 tab + 右栏收着就展开）。
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore, useCallback } from 'react';
 import { controller, store, useAppState } from '../app-shared.js';
 import { useFrame } from '../layout/frame-context.js';
@@ -18,6 +19,7 @@ import {
   type ToolFilePreview,
 } from '@harness2/ui-shared/renderer/tool/index.js';
 import {
+  BackgroundTasksPane,
   SIDE_PANE_LAUNCHER_ITEM_IDS,
   SIDE_PANE_NO_SESSION_KEY,
   SIDE_PANE_TAB_GAP_PX,
@@ -32,6 +34,7 @@ import {
   type SidePaneLauncherItemId,
   type SidePaneTabId,
 } from '@harness2/ui-shared/renderer/side-pane/index.js';
+import { backgroundTasksPaneRequests } from '../conversation/background-tasks-requests.js';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -104,15 +107,20 @@ function IconEllipsis({ className }: { className?: string }): React.ReactNode {
   );
 }
 
-/** 加号菜单条目（启动器与标签条 + 共用同一份清单；已打开的给「已打开」提示，点击=激活） */
+/** 加号菜单条目（启动器与标签条 + 共用同一份清单；已打开的给「已打开」提示，点击=激活）
+ *  Z2-08：「后台任务」项常列但对齐 ZCode bash-output 的按需语义 —— 无后台任务时禁用并给
+ *  title 说明（保留可发现性，不摆死入口）；有任务时可点，已打开给「已打开」提示。 */
 function TabMenuItems({
   openTabs,
   sessionId,
+  backgroundTasksAvailable,
   onOpen,
 }: {
   openTabs: readonly SidePaneTabId[];
   /** 当前会话 id（null = 未选会话：「模型轨迹」项禁用 —— 轨迹按会话投影，无会话不摆空入口） */
   sessionId: string | null;
+  /** 是否存在后台任务（store.allTasks() 非空；「后台任务」项的可用开关） */
+  backgroundTasksAvailable: boolean;
   onOpen: (id: SidePaneLauncherItemId) => void;
 }): React.ReactNode {
   return (
@@ -138,6 +146,25 @@ function TabMenuItems({
             </DropdownMenuItem>
           );
         }
+        // 「后台任务」项：按需可用（Z2-08）——无任务禁用 + title 说明；有任务同普通静态项
+        if (id === 'background-tasks') {
+          return (
+            <DropdownMenuItem
+              key={id}
+              data-side-menu-item={id}
+              disabled={!backgroundTasksAvailable}
+              title={backgroundTasksAvailable ? undefined : '暂无后台任务（后台子代理启动后可在此查看）'}
+              onSelect={() => {
+                if (backgroundTasksAvailable) onOpen(id);
+              }}
+            >
+              <span>{sidePaneTabLabel(id)}</span>
+              {backgroundTasksAvailable && openTabs.includes(id) && (
+                <span className="ml-auto pl-4 text-ui-xs text-foreground-subtlest">已打开</span>
+              )}
+            </DropdownMenuItem>
+          );
+        }
         const opened = openTabs.includes(id);
         return (
           <DropdownMenuItem key={id} data-side-menu-item={id} onSelect={() => onOpen(id)}>
@@ -154,10 +181,12 @@ function TabMenuItems({
 function SidePaneLauncher({
   openTabs,
   sessionId,
+  backgroundTasksAvailable,
   onOpen,
 }: {
   openTabs: readonly SidePaneTabId[];
   sessionId: string | null;
+  backgroundTasksAvailable: boolean;
   onOpen: (id: SidePaneLauncherItemId) => void;
 }): React.ReactNode {
   return (
@@ -175,7 +204,12 @@ function SidePaneLauncher({
           <IconPlus className="size-5" />
         </DropdownMenuTrigger>
         <DropdownMenuContent align="center" data-testid="side-pane-launcher-menu">
-          <TabMenuItems openTabs={openTabs} sessionId={sessionId} onOpen={onOpen} />
+          <TabMenuItems
+            openTabs={openTabs}
+            sessionId={sessionId}
+            backgroundTasksAvailable={backgroundTasksAvailable}
+            onOpen={onOpen}
+          />
         </DropdownMenuContent>
       </DropdownMenu>
       <p className="text-ui-sm text-foreground-subtle">打开标签页</p>
@@ -191,6 +225,7 @@ function SidePaneTabBar({
   openTabs,
   activeTab,
   approvalCount,
+  backgroundTasksAvailable,
   onActivate,
   onClose,
   onMove,
@@ -202,6 +237,8 @@ function SidePaneTabBar({
   openTabs: readonly SidePaneTabId[];
   activeTab: SidePaneTabId | null;
   approvalCount: number;
+  /** 「后台任务」启动器项的可用开关（Z2-08） */
+  backgroundTasksAvailable: boolean;
   onActivate: (id: SidePaneTabId) => void;
   onClose: (id: SidePaneTabId) => void;
   onMove: (fromIndex: number, toIndex: number) => void;
@@ -344,6 +381,7 @@ function SidePaneTabBar({
             <TabMenuItems
               openTabs={openTabs}
               sessionId={sessionId}
+              backgroundTasksAvailable={backgroundTasksAvailable}
               onOpen={(id) => sidePaneStore.open(bucket, sidePaneOpenTarget(id, bucket))}
             />
           </DropdownMenuContent>
@@ -411,6 +449,8 @@ export function SidePanel(): React.ReactNode {
   const bucket = sessionId ?? NO_SESSION_BUCKET;
   const tabs = useSidePaneTabs(bucket);
   const approvalCount = store.allApprovals().length;
+  // Z2-08：「后台任务」启动器项的可用开关（跨会话聚合口径——后台任务不随选中会话消失）
+  const backgroundTasksAvailable = store.allTasks().length > 0;
   const planAvailable = sessionId !== null ? store.peekViews(sessionId)?.planState !== undefined : false;
   // D-86 ①：工具卡经 owner openFile 把文件路径路由到这里
   const navigation = useToolNavigation();
@@ -445,6 +485,22 @@ export function SidePanel(): React.ReactNode {
     if (!frame.state.rightbarOpen) frame.dispatch({ type: 'rightbar/toggle' });
   }, [focusRequest, frame]);
 
+  // Z2-08：状态面板 Agents 子块「在右栏打开」→ 开/激活 background-tasks tab；右栏收着就展开
+  //（tab 归属本宿主的会话桶 —— 请求通道不带载荷，桶在这里解析）。请求对象判重同上。
+  const bgTasksRequest = useSyncExternalStore(
+    backgroundTasksPaneRequests.subscribe,
+    backgroundTasksPaneRequests.getSnapshot,
+    () => null,
+  );
+  const routedBgTasksRef = useRef<{ readonly at: number } | null>(null);
+  useEffect(() => {
+    if (bgTasksRequest === routedBgTasksRef.current) return;
+    routedBgTasksRef.current = bgTasksRequest;
+    if (bgTasksRequest === null) return;
+    sidePaneStore.open(bucket, 'background-tasks');
+    if (!frame.state.rightbarOpen) frame.dispatch({ type: 'rightbar/toggle' });
+  }, [bgTasksRequest, bucket, frame]);
+
   const sessionCwd = sessionId !== null ? state.sessions.find((s) => s.id === sessionId)?.cwd : undefined;
   const activeTab = tabs.activeTab;
   // 「模型轨迹」tab：id 里的会话 id 决定投影的数据源（tab 属于哪个桶就看哪个会话）
@@ -458,6 +514,7 @@ export function SidePanel(): React.ReactNode {
         <SidePaneLauncher
           openTabs={tabs.openTabs}
           sessionId={sessionId}
+          backgroundTasksAvailable={backgroundTasksAvailable}
           onOpen={(id) => sidePaneStore.open(bucket, sidePaneOpenTarget(id, bucket))}
         />
       ) : (
@@ -467,6 +524,7 @@ export function SidePanel(): React.ReactNode {
           openTabs={tabs.openTabs}
           activeTab={activeTab}
           approvalCount={approvalCount}
+          backgroundTasksAvailable={backgroundTasksAvailable}
           onActivate={(id) => sidePaneStore.activate(bucket, id)}
           onClose={closeTab}
           onMove={(from, to) => sidePaneStore.move(bucket, from, to)}
@@ -475,6 +533,12 @@ export function SidePanel(): React.ReactNode {
       <div className="min-h-0 flex-1 overflow-y-auto" data-testid="side-pane-body">
         {activeTab === 'plan' && <PlanPanel sessionId={sessionId} />}
         {activeTab === 'tasks' && <TaskPanel sessionId={sessionId} />}
+        {activeTab === 'background-tasks' && (
+          <BackgroundTasksPane
+            store={store}
+            onOpenChildSession={(childSessionId) => void controller.selectSession(childSessionId)}
+          />
+        )}
         {activeTab === 'approvals' && <ApprovalCenter />}
         {activeTab === 'changes' && <ChangeReviewPanel sessionId={sessionId} />}
         {activeTab === 'workspace' && <WorkspacePanel sessionId={sessionId} />}

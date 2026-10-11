@@ -259,3 +259,131 @@ describe('右栏标签体系（Z2-04）', () => {
     expect(screen.queryByTestId('side-pane-tabstrip')).toBeNull();
   });
 });
+
+// —— Z2-08：右栏「后台任务」tab（启动器项按需可用 / 内容 / 跳转 / 空态 / 激活回落） ——
+
+/** 一条会话事件（seq 手工指定：fake 重放占 seq 1..3，增量须更大才不被判重丢弃） */
+function rawEvent(seq: number, type: string, payload: Record<string, unknown>): SessionEventShape {
+  return { v: 1, seq, ts: '2026-10-11T00:00:00Z', type, payload };
+}
+
+/** 服务端权威任务快照帧（stream.tasks 的唯一同步方，resume-snapshot） */
+function snapshotFrame(sessionId: string, tasks: unknown[]): WsFrame {
+  return {
+    type: 'resume-snapshot',
+    sessionId,
+    epoch: 1,
+    snapshot: { epoch: 1, replay: { fromSeq: 0, toSeq: 0 }, tasks, pendingApprovals: [], queue: [] },
+  } as unknown as WsFrame;
+}
+
+describe('右栏「后台任务」tab（Z2-08）', () => {
+  it('启动器项按需可用：无后台任务 → 禁用 + title 说明（对齐 ZCode bash-output 语义，项常列保可发现）', async () => {
+    await openRightbarExpectLauncher(makeFakeApi());
+    fireEvent.keyDown(document.querySelector('[data-testid="side-pane-launcher-trigger"]') as Element, {
+      key: 'Enter',
+    });
+    const item = document.querySelector('[data-side-menu-item="background-tasks"]') as Element;
+    expect(item).not.toBeNull();
+    expect(item.getAttribute('aria-disabled')).toBe('true');
+    expect(item.getAttribute('title')).toContain('暂无后台任务');
+  });
+
+  it('有后台任务 → 项可用；开 tab 渲染任务列表（taskId / 状态中文 chip / 会话归属），关 tab 回启动器', async () => {
+    const api = makeFakeApi();
+    await openRightbarExpectLauncher(api);
+    act(() => {
+      api.emit(
+        snapshotFrame('s1', [
+          { taskId: 'bg-t1', background: true, state: 'running' },
+          { taskId: 'bg-t2', background: true, state: 'waiting-approval', updatedAt: '2026-10-11T00:00:00Z' },
+        ]),
+      );
+    });
+    openTabFromLauncher('background-tasks');
+    expect(document.querySelector('[data-side-tab="background-tasks"]')?.getAttribute('data-side-tab-active')).toBe(
+      'true',
+    );
+    // 列表内容：非终态在前；中文 chip；会话归属
+    await waitFor(() => expect(screen.getAllByTestId('bg-task-row')).toHaveLength(2));
+    const rows = screen.getAllByTestId('bg-task-row');
+    expect(rows[0]?.getAttribute('data-bg-task-state')).toBe('waiting-approval');
+    expect(rows[0]?.textContent).toContain('bg-t2');
+    expect(rows[0]?.textContent).toContain('待审批');
+    expect(rows[0]?.getAttribute('data-bg-task-session')).toBe('s1');
+    expect(rows[1]?.textContent).toContain('运行中');
+    // 关 tab → 回启动器
+    fireEvent.click(document.querySelector('[data-side-tab-close="background-tasks"]') as Element);
+    expect(screen.getByTestId('side-pane-launcher-trigger')).toBeTruthy();
+  });
+
+  it('任务可定位子会话 → 行可点，点击走 ToolCard 同款下钻（selectSession → 拉取子会话重放）；定位不了 → 只读行', async () => {
+    const api = makeFakeApi();
+    await openRightbarExpectLauncher(api);
+    act(() => {
+      // 父会话事件流：subagent_start 的 result 输出 JSON 真实带 { taskId, childSessionId }
+      api.emit({
+        type: 'event',
+        sessionId: 's1',
+        event: rawEvent(10, 'tool/call', { callId: 'c1', tool: 'subagent_start', turnId: 't1' }),
+      } as unknown as WsFrame);
+      api.emit({
+        type: 'event',
+        sessionId: 's1',
+        event: rawEvent(11, 'tool/result', {
+          callId: 'c1',
+          ok: true,
+          output: JSON.stringify({ taskId: 'bg-c1', childSessionId: 'child-9', state: 'running' }),
+        }),
+      } as unknown as WsFrame);
+      api.emit(
+        snapshotFrame('s1', [
+          { taskId: 'bg-c1', background: true, state: 'running' },
+          { taskId: 'bg-lonely', background: true, state: 'queued' },
+        ]),
+      );
+    });
+    openTabFromLauncher('background-tasks');
+    await waitFor(() => expect(screen.getAllByTestId('bg-task-row')).toHaveLength(2));
+    const rows = screen.getAllByTestId('bg-task-row');
+    const jumpRow = rows.find((r) => r.textContent?.includes('bg-c1')) as HTMLElement;
+    const readonlyRow = rows.find((r) => r.textContent?.includes('bg-lonely')) as HTMLElement;
+    // 可定位 → 整行按钮 + 跳转标记；定位不了 → div 只读行（红线⑩：不摆假按钮）
+    expect(jumpRow.tagName).toBe('BUTTON');
+    expect(jumpRow.getAttribute('data-bg-task-jump')).toBe('child-9');
+    expect(jumpRow.getAttribute('title')).toBe('打开子会话 child-9 轨迹');
+    expect(readonlyRow.tagName).toBe('DIV');
+    expect(readonlyRow.hasAttribute('data-bg-task-jump')).toBe(false);
+    // 点击 → 既有下钻通道（selectSession：subscribe + events 重放子会话）
+    fireEvent.click(jumpRow);
+    await waitFor(() => expect(api.events).toHaveBeenCalledWith('child-9'));
+  });
+
+  it('任务清空（resume-snapshot 权威空表）→ 已开的 tab 如实显示「暂无后台任务」空态', async () => {
+    const api = makeFakeApi();
+    await openRightbarExpectLauncher(api);
+    act(() => {
+      api.emit(snapshotFrame('s1', [{ taskId: 'bg-t1', background: true, state: 'running' }]));
+    });
+    openTabFromLauncher('background-tasks');
+    await waitFor(() => expect(screen.getByTestId('bg-tasks-list')).toBeTruthy());
+    act(() => {
+      api.emit(snapshotFrame('s1', []));
+    });
+    await waitFor(() => expect(screen.getByTestId('bg-tasks-empty').textContent).toContain('暂无后台任务'));
+  });
+
+  it('激活回落：background-tasks 与 plan 同开，关 background-tasks → 回落左邻 plan', async () => {
+    const api = makeFakeApi();
+    await openRightbarExpectLauncher(api);
+    act(() => {
+      api.emit(snapshotFrame('s1', [{ taskId: 'bg-t1', background: true, state: 'running' }]));
+    });
+    openTabFromLauncher('plan');
+    openTabFromLauncher('background-tasks');
+    expect(document.querySelectorAll('[data-side-tab]')).toHaveLength(2);
+    fireEvent.click(document.querySelector('[data-side-tab-close="background-tasks"]') as Element);
+    expect(document.querySelectorAll('[data-side-tab]')).toHaveLength(1);
+    expect(document.querySelector('[data-side-tab="plan"]')?.getAttribute('data-side-tab-active')).toBe('true');
+  });
+});

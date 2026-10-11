@@ -45,6 +45,11 @@ export interface ConversationStatusPanelProps {
    * 注意：面板自身也维护同一份偏好（菜单可改，仅内存）；显式传入 = 壳固定形态（测试/分屏用）。
    */
   readonly variant?: StatusVariant;
+  /**
+   * Z2-08 轻联动（可选）：Agents 子块展开态底部的「在右栏打开」入口。壳注入（右栏开合是壳的
+   * 帧/布局职责，共享面板不抓宿主上下文）；缺省 = 不渲染入口（不摆死按钮）。
+   */
+  readonly onOpenTasksPane?: () => void;
 }
 
 export function ConversationStatusPanel(props: ConversationStatusPanelProps): ReactNode {
@@ -82,6 +87,7 @@ export function ConversationStatusPanel(props: ConversationStatusPanelProps): Re
         setExpandedOverride((current) => ({ ...current, [key]: !(current[key] ?? defaultExpandedOf(sections, key)) }))
       }
       menu={menu}
+      onOpenTasksPane={props.onOpenTasksPane}
     />
   );
   const capsule = <StatusCapsule data={data} onOpen={() => setCapsuleOpen(true)} menu={menu} />;
@@ -129,6 +135,8 @@ interface PanelBodyProps {
   readonly expandedOverride: Partial<Record<StatusSectionKey, boolean>>;
   readonly onToggleSection: (key: StatusSectionKey) => void;
   readonly menu: VariantMenuState;
+  /** Z2-08：Agents 子块的「在右栏打开」入口（可选；缺省不渲染） */
+  readonly onOpenTasksPane?: () => void;
 }
 
 function StatusPanelBody(props: PanelBodyProps): ReactNode {
@@ -149,6 +157,7 @@ function StatusPanelBody(props: PanelBodyProps): ReactNode {
             data={props.data}
             expanded={props.expandedOverride[section.key] ?? section.defaultExpanded}
             onToggle={() => props.onToggleSection(section.key)}
+            onOpenTasksPane={props.onOpenTasksPane}
           />
         ))}
       </div>
@@ -257,6 +266,7 @@ function StatusSection(props: {
   readonly data: StatusData;
   readonly expanded: boolean;
   readonly onToggle: () => void;
+  readonly onOpenTasksPane?: () => void;
 }): ReactNode {
   const { section, data, expanded } = props;
   const badge = sectionBadge(data, section.key);
@@ -279,7 +289,7 @@ function StatusSection(props: {
           }`}
         />
       </button>
-      {expanded && <div className="px-2.5 pb-2">{sectionBody(data, section.key)}</div>}
+      {expanded && <div className="px-2.5 pb-2">{sectionBody(data, section.key, props.onOpenTasksPane)}</div>}
     </div>
   );
 }
@@ -295,14 +305,14 @@ function SectionIcon(props: { readonly kind: StatusSectionKey; readonly classNam
   }
 }
 
-function sectionBody(data: StatusData, key: StatusSectionKey): ReactNode {
+function sectionBody(data: StatusData, key: StatusSectionKey, onOpenTasksPane?: () => void): ReactNode {
   switch (key) {
     case 'git':
       return <GitBody data={data} />;
     case 'plan':
       return <PlanBody data={data} />;
     case 'agents':
-      return <AgentsBody data={data} />;
+      return <AgentsBody data={data} onOpenTasksPane={onOpenTasksPane} />;
   }
 }
 
@@ -379,8 +389,17 @@ function PlanBody({ data }: { readonly data: StatusData }): ReactNode {
   );
 }
 
-/** Agents body：非终态任务清单（当前实现 = 后台子代理；bash 无后台模式） */
-function AgentsBody({ data }: { readonly data: StatusData }): ReactNode {
+/** Agents body：非终态任务清单（当前实现 = 后台子代理；bash 无后台模式）。
+ *  Z2-08：壳注入 `onOpenTasksPane` 时在底部给「在右栏打开」入口（计数面板 → 右栏详情列表，
+ *  ZCode 同构：状态面板 Agents 收起块 + side pane 承载详情）。子块头部是整行展开按钮，
+ *  不能嵌套按钮 → 入口放展开态 body 底部（登记：非头部/「…」位）。 */
+function AgentsBody({
+  data,
+  onOpenTasksPane,
+}: {
+  readonly data: StatusData;
+  readonly onOpenTasksPane?: () => void;
+}): ReactNode {
   const agents = data.agents;
   if (agents === null) return null;
   const shown = agents.active.slice(0, MAX_LIST_ROWS);
@@ -400,6 +419,17 @@ function AgentsBody({ data }: { readonly data: StatusData }): ReactNode {
       )}
       {agents.active.length === 0 && (
         <div className="text-ui-2xs text-foreground-subtlest">无进行中的后台任务（终态任务 {agents.total} 个）</div>
+      )}
+      {onOpenTasksPane !== undefined && (
+        <button
+          type="button"
+          data-testid="status-agents-open-pane"
+          title="在右栏「后台任务」标签页查看全部任务详情"
+          onClick={onOpenTasksPane}
+          className="mt-0.5 flex-none cursor-pointer self-start rounded px-1 text-ui-2xs text-foreground-subtlest hover:bg-surface-hover hover:text-foreground"
+        >
+          在右栏打开 ↗
+        </button>
       )}
     </div>
   );

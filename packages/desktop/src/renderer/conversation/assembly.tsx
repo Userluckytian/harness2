@@ -28,6 +28,7 @@ import {
 } from '@harness2/ui-shared/renderer/conversation/status-panel/ConversationStatusPanel.js';
 import { toolNavigation, type TrajectoryViewConsumer } from '@harness2/ui-shared/renderer/tool/index.js';
 import { trajectoryTabId, sidePaneStore } from '@harness2/ui-shared/renderer/side-pane/index.js';
+import { backgroundTasksPaneRequests } from './background-tasks-requests.js';
 import { ConversationHeader } from '../components/ConversationHeader.js';
 import { store } from '../app-shared.js';
 import {
@@ -114,10 +115,18 @@ function desktopConversationHeader(info: { sessionId: string; cwd?: string }): R
  * 数据源 = 桌面单例 store 的 S7 只读视图缓存（planState / changeReview）+ 会话流任务表；
  * 有内容才渲染（statusPanelHasContent 与面板组件同一份数据口径）——无数据返回 null，
  * seat 的槽位包裹行整个不渲染，不留占位高度。
+ * Z2-08 轻联动：Agents 子块的「在右栏打开」接到请求通道，右栏宿主（SidePanel）消费 ——
+ * 打开/激活 background-tasks tab + 右栏收着就展开（不静默丢请求）。
  */
 function desktopStatusPanel(info: { sessionId: string }): ReactNode {
   if (!statusPanelHasContent(store, info.sessionId)) return null;
-  return <ConversationStatusPanel store={store} sessionId={info.sessionId} />;
+  return (
+    <ConversationStatusPanel
+      store={store}
+      sessionId={info.sessionId}
+      onOpenTasksPane={() => backgroundTasksPaneRequests.request()}
+    />
+  );
 }
 
 /** 桌面侧入参：共享席位全部可省；缺省注入桌面单例（测试可显式覆盖） */
