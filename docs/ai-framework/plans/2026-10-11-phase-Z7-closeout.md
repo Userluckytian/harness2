@@ -77,6 +77,23 @@
 | V-Z7-9  | README/ROADMAP/CHANGELOG/RELEASE-CHECKLIST 已同步 Z 程序             | 文档 diff                    |
 | V-Z7-10 | 真机清单（§6）已交付人工并逐项标注状态                               | 清单勾选                     |
 
+## 4.1 验收执行结果（2026-10-11 Z7-1～2c 收口后）
+
+| 编号    | 结果 | 证据（编排者重跑）                                                                                                                         |
+| ------- | ---- | ------------------------------------------------------------------------------------------------------------------------------------------ |
+| V-Z7-1  | ✅   | `pnpm -r build` 六包全 Done                                                                                                                |
+| V-Z7-2  | ✅   | `pnpm -r --no-bail run typecheck` 6/6 干净                                                                                                 |
+| V-Z7-3  | ✅   | 六包全绿：core 104 文件/1519（+2 skip）· ui-shared 28/308 · desktop 113/1114（+1 skip）· web 6/67 · gateway 14/40 · cli 93/1575（+2 skip） |
+| V-Z7-4  | ✅   | `pnpm lint` 0 error + Prettier 全过（存量 warning 不计）                                                                                   |
+| V-Z7-5  | ✅   | core 导出基线 **846 → 1113**，**0 removed / 0 kindChanged**（对比 Z 程序起点 `fe5e522`），+267 纯加性                                      |
+| V-Z7-6  | ✅   | `git diff --stat fe5e522..HEAD -- packages/cli packages/gateway` **零文件**；core 改动全经计划授权                                         |
+| V-Z7-7  | ✅   | web 与桌面同构：布局/侧栏/右栏（8 tab = 桌面启动器）/设置覆层/命令面板/分屏工作台 全部经 ui-shared 同一实现装配；web 6 测试文件覆盖        |
+| V-Z7-8  | ✅   | 「网关 / IM」分区：掩码展示（appSecret 不回显）、连接状态恒「未探测」、未配置给指引——不摆假状态（单测钉住）                                |
+| V-Z7-9  | ✅   | README / CHANGELOG / ROADMAP / RELEASE-CHECKLIST 已同步 Z 程序（含可核验数字）                                                             |
+| V-Z7-10 | ✅   | §6 真机清单 10 项 + §5 拍板项 10 条已写入本文件并登记 `docs/issue-log/OPEN.md` Z 节                                                        |
+
+**未闭合（如实）**：§5 拍板项 10 条、§6 真机项 10 条均**待人工**；Z7 计划内的实现工作已全部完成。
+
 ## 5 人工拍板项汇总（Z 程序累积，需人决定）
 
 | #   | 事项                           | 现状与选项                                                                                                 | 出处          |
