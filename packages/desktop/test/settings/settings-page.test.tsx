@@ -15,7 +15,7 @@ import {
   MODELS_SECTION_ID,
   registerSettingsSection,
   resetSettingsSections,
-} from '../../src/renderer/settings/shell/index.js';
+} from '@harness2/ui-shared/renderer/settings/shell/index.js';
 import { UI_FONT_SIZE_STORAGE_KEY } from '../../src/renderer/ui-font-size.js';
 
 // Radix Select 在 jsdom 下的两个已知前提：滚动定位 API 缺失（高亮时调用）、Item 非触摸 click 即提交
@@ -107,13 +107,13 @@ describe('设置页：分区壳（Z-88/Z-89）', () => {
     expect(await screen.findByRole('combobox', { name: '界面主题' })).toBeTruthy();
   });
 
-  it('切到「凭据」分区：只渲染凭据正文（旧分区卸载）', async () => {
+  it('切到「网关 / IM」分区：只渲染网关正文（旧分区卸载）', async () => {
     (window as unknown as { harness2: Harness2Api }).harness2 = makeApi();
     render(<SettingsPage open onClose={() => {}} onThemeChange={setShellTheme} />);
-    await waitFor(() => expect(document.querySelector('[data-section-nav="credentials"]')).not.toBeNull());
+    await waitFor(() => expect(document.querySelector('[data-section-nav="gateway"]')).not.toBeNull());
 
-    fireEvent.click(document.querySelector('[data-section-nav="credentials"]') as HTMLElement);
-    expect(await screen.findByText(/IM 网关凭据/)).toBeTruthy();
+    fireEvent.click(document.querySelector('[data-section-nav="gateway"]') as HTMLElement);
+    expect((await screen.findAllByText(/IM 网关/)).length).toBeGreaterThan(0);
     expect(screen.queryByRole('combobox', { name: '界面主题' })).toBeNull();
   });
 

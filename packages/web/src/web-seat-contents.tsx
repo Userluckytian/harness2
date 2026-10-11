@@ -39,6 +39,7 @@ import { TrajectoryViewContent } from '@harness2/ui-shared/renderer/trajectory/i
 import { buildSessionItems, resolveBuildVersion, SidebarRoot } from '@harness2/ui-shared/renderer/sidebar/index.js';
 import type { SlotRegistry } from '@harness2/ui-shared/renderer/slots/index.js';
 import { useWebShell } from './web-shell-context.js';
+import { WebSettingsOverlay } from './web-settings.js';
 
 /** 渲染进程可读的宿主环境表（web 浏览器无 Node `process` → 空表，版本徐标自然不显示） */
 function hostBuildEnv(): Record<string, string | undefined> {
@@ -55,7 +56,7 @@ const WEB_SIDE_PANE_ITEMS: readonly SidePaneLauncherItemId[] = SIDE_PANE_LAUNCHE
 
 /** 侧栏席位内容（ui-sidebar）：SidebarRoot + 会话列表接线（web 无命令面板通道 → 不注入该入口） */
 function SidebarSeatContent(): ReactNode {
-  const { shell, onNewSession, newSessionEnabled } = useWebShell();
+  const { shell, onNewSession, newSessionEnabled, onOpenSettings } = useWebShell();
   const state = shell.useAppState();
   const { store, controller } = shell;
   const { geometry, dispatch: frameDispatch } = useFrame();
@@ -91,10 +92,20 @@ function SidebarSeatContent(): ReactNode {
       onNewSession={() => onNewSession?.()}
       newSessionEnabled={newSessionEnabled}
       buildVersion={resolveBuildVersion(hostBuildEnv())}
-      // 底部状态角标（与桌面同一 StatusBadge；web 无设置页 → 不摆设置入口）
+      // 底部状态角标（与桌面同一 StatusBadge）+ 设置入口（Z7：打开设置覆层，复用共享设置页）
       renderSettings={() => (
         <div className="flex items-center justify-between gap-2 px-1">
           <StatusBadge status={state.status} error={state.statusDetail?.error} />
+          <button
+            type="button"
+            className="text-ui-base text-foreground-subtle hover:text-foreground cursor-pointer"
+            data-testid="sidebar-settings"
+            aria-label="设置"
+            title="设置"
+            onClick={() => onOpenSettings()}
+          >
+            ⚙
+          </button>
         </div>
       )}
     />
@@ -230,7 +241,9 @@ export function injectWebSeatContents(registry: SlotRegistry): () => void {
       component: ConversationSeatContent,
     }),
     registry.inject({ seat: FRAME_SEAT.rightbar, owner: 'ui-workspace', component: RightbarSeatContent }),
-    // 覆层席位：web 无设置页 / 命令面板数据通道 → 不注入（零覆层，如实空；不摆假入口）。
+    // 覆层席位（Z7）：设置页复用共享实现，端口只接 web 真能做到的部分（appearance/gateway）；
+    // 命令面板 web 无数据通道 → 不注入（如实空，不摆假入口）。
+    registry.inject({ seat: FRAME_SEAT.overlay, owner: 'ui-settings', order: 0, component: WebSettingsOverlay }),
   ];
   return () => {
     for (const d of disposers) d();

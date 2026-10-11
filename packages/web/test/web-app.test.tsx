@@ -158,12 +158,13 @@ describe('web 页面装配', () => {
     stop();
   });
 
-  it('未实现的能力不摆假入口：web 不注册轨迹/设置等视图，视图环只渲染 chat', async () => {
+  it('能力面如实：设置入口在场（Z7 覆层），轨迹视图不注册（web 无通道不摆假入口）', async () => {
     const { shell, stop } = await mount();
     fireEvent.click(screen.getByText('第一个会话'));
     await waitFor(() => expect(shell.store.getState().selectedId).toBe('s1'));
     expect(screen.queryByText('Trajectory')).toBeNull();
-    expect(screen.queryByText('设置')).toBeNull();
+    // Z7：设置入口（齿轮）在场；点击打开覆层（真实设置页），不再是零覆层
+    expect(screen.getByTestId('sidebar-settings')).toBeTruthy();
     stop();
   });
 });

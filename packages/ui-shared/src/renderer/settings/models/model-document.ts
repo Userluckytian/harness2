@@ -1,5 +1,6 @@
-// 模型配置页的纯逻辑（D-50/D-52/D-53/D-59 的状态与展示映射）+ 窗口 API 取用。
-// 组件只调这些纯函数与 window.harness2，不做文件系统/密钥想象（渲染进程零 Node）。
+// 模型配置页的纯逻辑（D-50/D-52/D-53/D-59 的状态与展示映射）。
+// Z7 下沉 ui-shared 后：**不再自取 window.harness2** —— 通道面由宿主经设置端口（SettingsPorts.modelsApi）
+// 或组件 `api` prop 注入；缺失即如实降级（modelsApiReady=false，不摆假入口）。
 import type {
   CredentialStatusShape,
   ModelsDocumentShape,
@@ -8,15 +9,17 @@ import type {
   ModelsProviderLayerShape,
   ModelsProviderRowShape,
   ModelsSettingsApi,
-} from '../../../shared/protocol.js';
+} from '../../../shared/settings.js';
 
 /** D-59 首运行声明版本（版本升级会让声明确认重新出现） */
 export const MODELS_DECLARATION_VERSION = 1;
 
-/** 取模型配置通道面（缺失 = 该外壳未装配，如实降级不摆假入口） */
-export function getModelsApi(): Partial<ModelsSettingsApi> {
-  const w = window as unknown as { harness2?: Partial<ModelsSettingsApi> };
-  return w.harness2 ?? {};
+/**
+ * 取模型配置通道面：Z7 起**不再读全局 window.harness2**（共享层不碰宿主全局）。
+ * 组件把宿主注入的端口面传入；缺省 = 空面（modelsApiReady=false → 如实降级）。
+ */
+export function getModelsApi(injected?: Partial<ModelsSettingsApi>): Partial<ModelsSettingsApi> {
+  return injected ?? {};
 }
 
 export function modelsApiReady(api: Partial<ModelsSettingsApi>): api is ModelsSettingsApi {

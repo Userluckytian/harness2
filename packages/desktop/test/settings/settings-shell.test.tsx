@@ -15,8 +15,11 @@ import {
   resetSettingsSections,
   sectionFromContribution,
   sortSections,
-} from '../../src/renderer/settings/shell/index.js';
-import type { SettingsSectionDefinition, SettingsSectionGroupId } from '../../src/renderer/settings/shell/index.js';
+} from '@harness2/ui-shared/renderer/settings/shell/index.js';
+import type {
+  SettingsSectionDefinition,
+  SettingsSectionGroupId,
+} from '@harness2/ui-shared/renderer/settings/shell/index.js';
 
 afterEach(() => {
   cleanup();

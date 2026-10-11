@@ -28,6 +28,10 @@ const browserSourceDirs = [
   join(sharedRendererDir, 'layout'),
   join(sharedRendererDir, 'slots'),
   join(sharedRendererDir, 'sidebar'),
+  // Z7：主题/字号运行时（例外 #1/#2）已下沉 ui-shared；反向守卫必须覆盖迁出目录，
+  // 否则「移走即漏扫」（desktop 侧 theme.ts / ui-font-size.ts 现为纯再导出，不含存储读写）。
+  join(sharedRendererDir, 'theme'),
+  join(sharedRendererDir, 'settings'),
 ];
 
 function walk(dir: string): string[] {
@@ -52,7 +56,10 @@ describe('面板几何不持久化（D-14）', () => {
       // （防首帧字号跳变；同一 boot 通道），豁免仅限 renderer/ui-font-size.ts。
       // 两处豁免都不得同时使用 sessionStorage / indexedDB；其余文件仍一律拦截。
       const exempt =
-        (file.endsWith(join('renderer', 'theme.ts')) || file.endsWith(join('renderer', 'ui-font-size.ts'))) &&
+        (file.endsWith(join('renderer', 'theme.ts')) ||
+          file.endsWith(join('renderer', 'theme', 'theme.ts')) ||
+          file.endsWith(join('renderer', 'ui-font-size.ts')) ||
+          file.endsWith(join('renderer', 'theme', 'ui-font-size.ts'))) &&
         !/sessionStorage|indexedDB/.test(text);
       if (exempt) continue;
       hits.push(file);

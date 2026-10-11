@@ -5,7 +5,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import React from 'react';
-import { GeneralSettings, NOTIFY_DETAILS_CHOICES } from '../../src/renderer/settings/general/index.js';
+import { GeneralSettings, NOTIFY_DETAILS_CHOICES } from '@harness2/ui-shared/renderer/settings/general/index.js';
 
 afterEach(cleanup);
 

@@ -15,10 +15,27 @@ import './web.css';
 import { WebApp } from './app.js';
 import { readWebEnv } from './env.js';
 import { createServeClient } from './serve-client.js';
+import { initUiFontSize, setShellTheme, THEME_STORAGE_KEY } from '@harness2/ui-shared/renderer/theme/index.js';
+import type { SettingsTheme } from '@harness2/ui-shared/shared/settings.js';
 
 const env = readWebEnv();
 const client = createServeClient({ origin: env.origin, token: env.token });
 const shell = createAppShell(client);
+
+// Z7 外观双保险（boot 脚本已在首渲染前写 <html>）：把浏览器存储里的主题偏好（D-14 例外 #1）
+// 恢复进壳主题 store，使设置页外观分区显示当前值；字号（例外 #2）恢复根变量。
+setShellTheme(readStoredTheme());
+initUiFontSize();
+
+/** 读浏览器存储的主题偏好（缺省 system；存储不可用 → system，不阻断启动） */
+function readStoredTheme(): SettingsTheme {
+  try {
+    const v = globalThis.localStorage?.getItem(THEME_STORAGE_KEY);
+    return v === 'zai-light' || v === 'zai-dark' || v === 'system' ? v : 'system';
+  } catch {
+    return 'system';
+  }
+}
 
 // 桌面壳的这些启动步骤在本壳**不适用**（端口未提供，调用会安全地不做任何事）：
 //   initLayout / initMetadata / initDrafts —— web 无布局文件、无展示态覆层、草稿仅内存。

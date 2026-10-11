@@ -3,7 +3,7 @@
 //   - 勾选状态属于「全集」，过滤只改可见列表——不清除隐藏项勾选
 //   - 全选仅加可见结果；取消全选清空全部（与「保留隐藏项」相反的重置语义，二者刻意不对称）
 //   - 「添加所选」合并时已有行保留用户调过的值（不覆盖、不重置）
-import type { ModelsDiscoveryModelShape, ModelsModelRowShape } from '../../../shared/protocol.js';
+import type { ModelsDiscoveryModelShape, ModelsModelRowShape } from '../../../shared/settings.js';
 
 /** 搜索匹配：id 或显示名命中即保留（保序） */
 export function filterDiscovery(

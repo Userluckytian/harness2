@@ -31,7 +31,7 @@ import {
   updateModelsProvider,
   writeChannelKey,
 } from '../../../src/main/models-config.js';
-import { ModelsSettings } from '../../../src/renderer/settings/models/ModelsSettings.js';
+import { ModelsSettings } from '@harness2/ui-shared/renderer/settings/models/ModelsSettings.js';
 
 const HARNESS_DIR = '.harness2';
 const KEY_VALUE = 'sk-fixture-secret-abcdef123456';

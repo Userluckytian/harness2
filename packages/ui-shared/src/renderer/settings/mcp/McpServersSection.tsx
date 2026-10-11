@@ -5,7 +5,7 @@
 // 红线⑩（不摆假状态）：serve 无 MCP 连接状态查询端点（McpManager 在 serve 进程内，
 // 未暴露 status() 的 HTTP 面）——**不渲染连接状态列/状态点**，如实登记「状态查看走 CLI
 // harness2 mcp list」（复用内核同一 manager 的 status 快照），后续批次补 serve 端点后再上。
-import type { SettingsConfigShape } from '../../../shared/protocol.js';
+import type { SettingsConfigShape } from '../../../shared/settings.js';
 import { SettingsSectionBlock } from '../shell/index.js';
 
 /** 单行展示串：stdio = command + args；http = url（与 config.json 字段一一对应，只读） */

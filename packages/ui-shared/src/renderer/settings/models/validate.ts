@@ -1,7 +1,7 @@
 // 渲染端校验（就地阻断用户输入，D-57 四类拒绝 + D-85 端点语法）。
 // 权威校验在主进程 src/main/models-config.ts——本地只做即时反馈，不落盘。
 // 两边一致性由 test/settings/models/models-validation-parity.test.ts 交叉断言防漂移。
-import type { ModelsProviderInputShape } from '../../../shared/protocol.js';
+import type { ModelsProviderInputShape } from '../../../shared/settings.js';
 
 export interface FieldIssue {
   field: string;

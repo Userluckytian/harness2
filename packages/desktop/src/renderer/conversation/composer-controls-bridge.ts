@@ -30,7 +30,7 @@ import {
 } from '@harness2/ui-shared/renderer/conversation/composer/composer-config.js';
 import type { SettingsConfigShape } from '../../shared/protocol.js';
 import { openSettingsAtSection } from '../layout/shell-overlays.js';
-import { MODELS_SECTION_ID } from '../settings/shell/contributions.js';
+import { MODELS_SECTION_ID } from '@harness2/ui-shared/renderer/settings/shell/contributions.js';
 
 // —— 模块级 config 缓存（多席位共享一次 IPC；只存内存，D-14） ——
 

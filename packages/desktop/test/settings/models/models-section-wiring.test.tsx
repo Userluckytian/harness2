@@ -22,8 +22,8 @@ import {
   MODELS_SECTION_ID,
   findSettingsSection,
   resetSettingsSections,
-} from '../../../src/renderer/settings/shell/index.js';
-import { registerModelsSettingsSection } from '../../../src/renderer/settings/models/index.js';
+} from '@harness2/ui-shared/renderer/settings/shell/index.js';
+import { registerModelsSettingsSection } from '@harness2/ui-shared/renderer/settings/models/index.js';
 
 const PREFS: SettingsPreferencesShape = {
   theme: 'system',

@@ -54,7 +54,8 @@ export interface SettingsSectionMeta {
  * 全部分区（导航显示顺序 = 组顺序 × 组内 order）。
  * 差异登记（vs Z-89 的 ZCode 16 分区）：
  *   - basics 里 `approval`（审批与安全）是我们有真数据（config.approval）而 ZCode 无的分区，归 basics；
- *   - `credentials`（IM 网关凭据）保留独立分区（auth.json 真数据），归 agentCapabilities；
+ *   - `gateway`（网关 / IM：config.gateways + auth.json appSecret 掩码，Z7 新增）保留独立分区
+ *     （真数据面），归 agentCapabilities；
  *   - `mcp`（A07 批次4 拆出）与 `skill`（A08 批次4 新增）按 ZCode 归属进 agentCapabilities
  *     （顺序对齐 ZCode：plugin → mcp → skill）；此前 mcp 并入 plugins 节的登记作废；
  *   - `shortcuts` 归 basics（对齐 ZCode 的归属）；sessions / diagnostics / about 归 dataAndStats
@@ -182,10 +183,10 @@ export const SETTINGS_SECTION_META: readonly SettingsSectionMeta[] = [
     icon: IconAnchor,
   },
   {
-    id: 'credentials',
-    label: '凭据',
-    en: 'Credentials',
-    owner: 'ui-settings',
+    id: 'gateway',
+    label: '网关 / IM',
+    en: 'Gateway / IM',
+    owner: 'ui-settings-gateway',
     group: 'agentCapabilities',
     order: 140,
     icon: IconKeyRound,

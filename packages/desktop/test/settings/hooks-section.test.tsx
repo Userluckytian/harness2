@@ -6,7 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import React from 'react';
 import type { Harness2Api, SettingsConfigShape } from '../../src/shared/protocol.js';
-import { HooksSection, describeHookEntry } from '../../src/renderer/settings/hooks/HooksSection.js';
+import { HooksSection, describeHookEntry } from '@harness2/ui-shared/renderer/settings/hooks/HooksSection.js';
 import { SettingsPage } from '../../src/renderer/components/SettingsPage.js';
 
 const CFG: SettingsConfigShape = {

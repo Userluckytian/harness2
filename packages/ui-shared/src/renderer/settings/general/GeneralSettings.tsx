@@ -5,7 +5,7 @@
 //             如实标注「重启应用后生效」（运行中的通知文案不追改）。
 // 主题已迁到「外观」分区（Z-90：主题/字号属外观；本分区只留常规项），见 settings/appearance。
 // 已删除的项：启动默认分栏数 —— P4-C 三栅落地后分栏（PaneArea）已拆除，该项无消费方（假开关）。
-import type { SettingsNotifyDetails } from '../../../shared/protocol.js';
+import type { SettingsNotifyDetails } from '../../../shared/settings.js';
 import { SettingsSectionBlock } from '../shell/section-block.js';
 
 /** 通知详情可选项（与 shared/preferences 的 NOTIFY_DETAILS 同值域） */

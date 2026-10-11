@@ -1,8 +1,8 @@
 // 设置分区配置表测试（Z-89 数据驱动）：分组归属、可见性（无数据的分区不进表）、
 // models 分区 id 稳定（Z3-04 直达依赖）。改归属先改这里，再改 page-config.ts。
 import { describe, expect, it } from 'vitest';
-import { MODELS_SECTION_ID, SETTINGS_SECTION_GROUPS } from '../../src/renderer/settings/shell/index.js';
-import { SETTINGS_SECTION_META } from '../../src/renderer/settings/page-config.js';
+import { MODELS_SECTION_ID, SETTINGS_SECTION_GROUPS } from '@harness2/ui-shared/renderer/settings/shell/index.js';
+import { SETTINGS_SECTION_META } from '@harness2/ui-shared/renderer/settings/page-config.js';
 
 /** 期望的分组归属表（导航显示顺序 = 组顺序 × 组内 order） */
 const EXPECTED: Record<string, string> = {
@@ -21,7 +21,7 @@ const EXPECTED: Record<string, string> = {
   skill: 'agentCapabilities',
   cron: 'agentCapabilities',
   hooks: 'agentCapabilities',
-  credentials: 'agentCapabilities',
+  gateway: 'agentCapabilities',
   // dataAndStats
   sessions: 'dataAndStats',
   diagnostics: 'dataAndStats',

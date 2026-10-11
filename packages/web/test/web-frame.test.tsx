@@ -119,8 +119,10 @@ describe('Z7 四席位骨架（与桌面同构）', () => {
     expect(document.querySelector('[data-seat="main"] [data-testid="conversation-seat"]')).not.toBeNull();
     // 右栏默认收起（hidden 不占布局）
     expect(document.querySelector('[data-seat="rightbar"]')?.hasAttribute('hidden')).toBe(true);
-    // 覆层席位零注入（web 无设置页 / 命令面板通道）→ 无任何 slot 内容（不摆假入口）
-    expect(document.querySelectorAll('[data-seat="shell.overlay"] .slot-entry').length).toBe(0);
+    // 覆层席位：Z7 起注入 web 设置覆层（复用共享设置页，端口只接 appearance/gateway）；
+    // 默认关闭 → 设置页不渲染（无假入口）。
+    expect(document.querySelectorAll('[data-seat="shell.overlay"] .slot-entry').length).toBe(1);
+    expect(document.querySelector('[data-settings-page]')).toBeNull();
     stop();
   });
 

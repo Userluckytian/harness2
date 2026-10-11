@@ -16,7 +16,7 @@ import type {
   ModelsProviderInputShape,
   ModelsProviderRowShape,
   ModelsSettingsApi,
-} from '../../../shared/protocol.js';
+} from '../../../shared/settings.js';
 import { ConfirmDeleteDialog } from './ConfirmDeleteDialog.js';
 import { ModelDiscoverSelector } from './ModelDiscoverSelector.js';
 import { credentialPresentation, deriveApiKeyRef, emptyModelRow, rowToInput } from './model-document.js';

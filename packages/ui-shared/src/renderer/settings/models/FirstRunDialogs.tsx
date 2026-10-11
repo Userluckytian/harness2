@@ -1,7 +1,7 @@
 // D-59：首运行两个**有序**弹窗——① 版本化声明 → ② 条件式凭据步。
 // ② 仅在「确有提供方尚无已确认凭据」时出现；没有需要配置的凭据则不再打扰。
 import { useState } from 'react';
-import type { ModelsProviderRowShape } from '../../../shared/protocol.js';
+import type { ModelsProviderRowShape } from '../../../shared/settings.js';
 import { MODELS_DECLARATION_VERSION, providersNeedingCredential } from './model-document.js';
 
 export interface FirstRunDialogsProps {

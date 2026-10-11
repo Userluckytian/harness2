@@ -5,7 +5,7 @@
 //   B 侧导出：`export function ModelsSettings(props: ModelsSettingsProps): React.ReactNode`
 //   本壳侧：把 `ModelsSettings` 折成一条分区贡献注册进 `MODELS_SECTION_ID`（见 contributions.tsx）。
 // B 的文件尚未落地时，壳不 import 不存在的路径（否则编译失败），只在分区正文里**显式占位**。
-import type { SettingsConfigShape } from '../../../shared/protocol.js';
+import type { SettingsConfigShape } from '../../../shared/settings.js';
 import type { SettingsSectionProps } from './section-model.js';
 
 /** 归属包名（D-6x 包清单里的 `ui-settings-models`） */

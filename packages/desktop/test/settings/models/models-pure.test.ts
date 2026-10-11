@@ -15,7 +15,7 @@ import {
   layerLabel,
   providersNeedingCredential,
   shouldAutoExpand,
-} from '../../../src/renderer/settings/models/model-document.js';
+} from '@harness2/ui-shared/renderer/settings/models/model-document.js';
 import { deriveApiKeyRef as mainDeriveApiKeyRef } from '../../../src/main/models-config.js';
 import {
   deselectAll,
@@ -24,7 +24,7 @@ import {
   newSelectedCount,
   selectAllVisible,
   toggleDiscoverySelection,
-} from '../../../src/renderer/settings/models/discover.js';
+} from '@harness2/ui-shared/renderer/settings/models/discover.js';
 
 function row(over: Partial<ModelsProviderRowShape> = {}): ModelsProviderRowShape {
   return {

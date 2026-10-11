@@ -8,7 +8,7 @@ import {
   validateProviderInput,
   type ProviderFieldIssue,
 } from '../../../src/main/models-config.js';
-import { validateApiKey, validateProviderDraft } from '../../../src/renderer/settings/models/validate.js';
+import { validateApiKey, validateProviderDraft } from '@harness2/ui-shared/renderer/settings/models/validate.js';
 
 function provider(over: Partial<ModelsProviderInputShape> = {}): ModelsProviderInputShape {
   return {

@@ -16,9 +16,9 @@
 //     顶部 48px 面包屑行 + 主区滚动；内容列 `mx-auto w-full max-w-4xl px-4 pb-8`；
 //   - **没有全局搜索框，也没有外壳级分段 tab**（搜索是分区级的，本期未引入）。
 import { useCallback, useState } from 'react';
-import { Button } from '@harness2/ui-shared/components/ui/button.js';
-import { cn } from '@harness2/ui-shared/lib/utils.js';
-import { desktopPlatform } from '../../platform.js';
+import { Button } from '../../../components/ui/button.js';
+import { cn } from '../../../lib/utils.js';
+import { settingsPlatform } from '../platform.js';
 import { IconArrowLeft, IconFallback, type SettingsIconProps } from './icons.js';
 import {
   SETTINGS_SECTION_GROUPS,
@@ -84,7 +84,7 @@ export function SettingsShell({
   if (!open) return null;
 
   // Z-88：右栏容器圆角按平台（Windows 5px，其余 xl；非桌面宿主/测试夹具无 platform → xl）
-  const contentRadius = desktopPlatform() === 'win32' ? 'rounded-[5px]' : 'rounded-xl';
+  const contentRadius = settingsPlatform() === 'win32' ? 'rounded-[5px]' : 'rounded-xl';
   const groups = groupSections(resolved);
   // Z-88：面包屑 items.length < 2 → 不渲染（我们的分区都在组内 = 恒两项；裸分区兼容回落）
   const crumbGroup = groupLabel(current?.group);

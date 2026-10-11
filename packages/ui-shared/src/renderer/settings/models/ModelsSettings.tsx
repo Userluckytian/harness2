@@ -5,7 +5,7 @@
 //   llm/adapters-updated / connection/reset —— 无需轮询。
 // 首运行（D-59）：两个有序弹窗（版本化声明 → 条件式凭据步），声明确认版本落盘在主进程覆层。
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import type { ModelsDocumentShape, ModelsSettingsApi } from '../../../shared/protocol.js';
+import type { ModelsDocumentShape, ModelsSettingsApi } from '../../../shared/settings.js';
 import { FirstRunDialogs } from './FirstRunDialogs.js';
 import {
   documentProviderIds,
@@ -16,17 +16,20 @@ import {
   shouldAutoExpand,
 } from './model-document.js';
 import { ProviderCard, StatusDot } from './ProviderCard.js';
+import { useOptionalSettingsPorts } from '../ports.js';
 import './models.css';
 
 export interface ModelsSettingsProps {
-  /** 测试/装配可注入通道面；缺省取 window.harness2 */
+  /** 测试/装配可注入通道面；缺省取设置端口面的 modelsApi（未提供 = 空面，如实降级） */
   api?: Partial<ModelsSettingsApi>;
   /** 文档变化回调（设置壳可据此刷新其它视图） */
   onDocument?: (doc: ModelsDocumentShape) => void;
 }
 
 export function ModelsSettings({ api: injected, onDocument }: ModelsSettingsProps) {
-  const api = useMemo(() => injected ?? getModelsApi(), [injected]);
+  // Z7：通道面经设置端口注入（共享层不读 window.harness2）；单测可脱离 Provider 传 api prop。
+  const ports = useOptionalSettingsPorts();
+  const api = useMemo(() => injected ?? getModelsApi(ports?.modelsApi), [injected, ports?.modelsApi]);
   const [doc, setDoc] = useState<ModelsDocumentShape | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [expandedId, setExpandedId] = useState<string | null>(null);

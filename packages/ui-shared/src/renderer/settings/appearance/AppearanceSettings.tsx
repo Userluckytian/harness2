@@ -6,16 +6,10 @@
 //   代码设置卡（代码主题 10 选 / 行号 / 换行 / 代码字号）—— **整卡不渲染**（Z-90 如实省略）：
 //               本仓没有代码高亮主题体系（无数据面，摆了就是假开关）；随代码预览能力（D-76）
 //               落地时再按 Z-90 补齐，见 docs/refs/refs-zcode.md Z-90。
-import type { SettingsTheme } from '../../../shared/protocol.js';
-import { themeLabel } from '../../theme.js';
-import { FontSizeInput } from '@harness2/ui-shared/components/ui/font-size-input.js';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@harness2/ui-shared/components/ui/select.js';
+import type { SettingsTheme } from '../../../shared/settings.js';
+import { themeLabel } from '../../theme/theme.js';
+import { FontSizeInput } from '../../../components/ui/font-size-input.js';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../../../components/ui/select.js';
 import { IconMonitor, IconMoon, IconSun, type SettingsIconProps } from '../shell/icons.js';
 import { SettingsSectionBlock } from '../shell/section-block.js';
 

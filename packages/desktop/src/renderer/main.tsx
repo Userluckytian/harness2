@@ -3,7 +3,7 @@
 import { createRoot } from 'react-dom/client';
 import { App } from './App';
 import { ErrorBoundary } from './ErrorBoundary';
-import { registerModelsSettingsSection } from './settings/models/index.js';
+import { registerModelsSettingsSection } from '@harness2/ui-shared/renderer/settings/models/index.js';
 import { initUiFontSize } from './ui-font-size';
 // GUI 视觉层（Tailwind v4 入口 + 三层 token + Zai 双主题）：依据 docs/refs/refs-zcode.md
 import '@harness2/ui-shared/styles/styles.css';

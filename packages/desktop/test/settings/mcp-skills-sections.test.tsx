@@ -8,8 +8,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import React from 'react';
 import type { Harness2Api, SettingsConfigShape, SettingsSkillsShape } from '../../src/shared/protocol.js';
-import { McpServersSection, describeMcpServer } from '../../src/renderer/settings/mcp/McpServersSection.js';
-import { SkillsSection } from '../../src/renderer/settings/skills/SkillsSection.js';
+import { McpServersSection, describeMcpServer } from '@harness2/ui-shared/renderer/settings/mcp/McpServersSection.js';
+import { SkillsSection } from '@harness2/ui-shared/renderer/settings/skills/SkillsSection.js';
+import { SettingsPortsProvider } from '@harness2/ui-shared/renderer/settings/index.js';
 import { SettingsPage } from '../../src/renderer/components/SettingsPage.js';
 
 const CFG: SettingsConfigShape = {
@@ -105,8 +106,11 @@ describe('A07 MCP 服务器分区', () => {
 describe('A08 技能分区', () => {
   it('有数据 → 名称/描述/层级/路径逐条展示 + 告警展示', async () => {
     const getSkills = vi.fn(async () => SKILLS);
-    (window as unknown as { harness2: Partial<Harness2Api> }).harness2 = { settingsGetSkills: getSkills };
-    render(<SkillsSection />);
+    render(
+      <SettingsPortsProvider value={{ getSkills }}>
+        <SkillsSection />
+      </SettingsPortsProvider>,
+    );
     await waitFor(() => expect(document.querySelector('[data-skills-list]')).not.toBeNull());
     expect(getSkills).toHaveBeenCalled();
     expect(screen.getByText('commit-help')).toBeTruthy();
@@ -122,18 +126,22 @@ describe('A08 技能分区', () => {
   });
 
   it('空扫描 → 空态（不摆假技能）', async () => {
-    (window as unknown as { harness2: Partial<Harness2Api> }).harness2 = {
-      settingsGetSkills: vi.fn(async () => ({ skills: [], warnings: [], roots: { project: '/r', global: '/h' } })),
-    };
-    render(<SkillsSection />);
+    const getSkills = vi.fn(async () => ({ skills: [], warnings: [], roots: { project: '/r', global: '/h' } }));
+    render(
+      <SettingsPortsProvider value={{ getSkills }}>
+        <SkillsSection />
+      </SettingsPortsProvider>,
+    );
     await waitFor(() => expect(screen.getByText('未扫描到技能')).toBeTruthy());
   });
 
   it('读取失败 → 明确错误态（不空转也不假装有数据）', async () => {
-    (window as unknown as { harness2: Partial<Harness2Api> }).harness2 = {
-      settingsGetSkills: vi.fn(async () => Promise.reject(new Error('IPC 断了'))),
-    };
-    render(<SkillsSection />);
+    const getSkills = vi.fn(async () => Promise.reject(new Error('IPC 断了')));
+    render(
+      <SettingsPortsProvider value={{ getSkills }}>
+        <SkillsSection />
+      </SettingsPortsProvider>,
+    );
     await waitFor(() => expect(screen.getByText(/技能列表读取失败/)).toBeTruthy());
     expect(screen.getByText(/IPC 断了/)).toBeTruthy();
   });

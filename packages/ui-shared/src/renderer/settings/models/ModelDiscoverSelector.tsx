@@ -1,7 +1,7 @@
 // D-55/D-56：发现模型的可搜索选择器（不是直写）。
 // 「获取可用模型」成功后打开；点「添加所选」才写入模型目录；搜索/全选语义见 discover.ts。
 import { useMemo, useState } from 'react';
-import type { ModelsDiscoveryModelShape, ModelsModelRowShape } from '../../../shared/protocol.js';
+import type { ModelsDiscoveryModelShape, ModelsModelRowShape } from '../../../shared/settings.js';
 import {
   deselectAll,
   filterDiscovery,

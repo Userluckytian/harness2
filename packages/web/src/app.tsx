@@ -7,7 +7,7 @@
 //   2. 把应用壳（store/controller）与新建会话接线经 `WebShellProvider` 交给席位内容。
 // 左上浮层条（品牌 + 侧栏折叠 + New Task）用壳无关的 `FrameTopOverlay`；web 无窗口控制
 // （桌面 `frame:false` 自绘三键在会话列头，见 desktop components/ConversationHeader.tsx）。
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import type { ReactNode } from 'react';
 import type { AppShell } from '@harness2/ui-shared/renderer/app-shell.js';
 import { useDraftsUnloadGuard } from '@harness2/ui-shared/renderer/drafts-guard.js';
@@ -29,6 +29,8 @@ export function WebApp({ shell, onNewSession, newSessionBlockedReason }: WebAppP
   // 四席位注册表：本次挂载建一份（声明 + 注册容器 + 注入 web 内容）。
   const registry = useMemo(() => assembleWebFrame().registry, []);
   const frame = useFrameState({ registry });
+  // Z7：设置覆层开合（只内存，D-14）；覆层席位内容经 WebShellProvider 读它。
+  const [settingsOpen, setSettingsOpen] = useState(false);
   // P2-4：web 无草稿落盘通道（draftsPersistence==='memory-only'）——
   // 有未发送草稿时注册 beforeunload 护栏，刷新/关闭前如实提示，不静默丢草稿。
   useDraftsUnloadGuard(shell.controller, store);
@@ -49,6 +51,9 @@ export function WebApp({ shell, onNewSession, newSessionBlockedReason }: WebAppP
     ...(onNewSession !== undefined ? { onNewSession } : {}),
     newSessionEnabled: state.status === 'connected' && newSessionBlocked === undefined,
     ...(newSessionBlocked !== undefined ? { newSessionBlockedReason: newSessionBlocked } : {}),
+    settingsOpen,
+    onOpenSettings: () => setSettingsOpen(true),
+    onCloseSettings: () => setSettingsOpen(false),
   };
 
   return (

@@ -4,7 +4,8 @@
 // <home>/.harness2/skills，含 .agents 兜底目录），口径单一不重写（登记见分区注记）。
 // 不做技能编辑：authoring 审批流在 core 面（skill_author），GUI 编辑登记后续。
 import { useCallback, useEffect, useState } from 'react';
-import type { SettingsSkillsShape } from '../../../shared/protocol.js';
+import type { SettingsSkillsShape } from '../../../shared/settings.js';
+import { useOptionalSettingsPorts } from '../ports.js';
 import { SettingsSectionBlock } from '../shell/index.js';
 
 const SOURCE_LABEL: Record<SettingsSkillsShape['skills'][number]['source'], string> = {
@@ -13,15 +14,20 @@ const SOURCE_LABEL: Record<SettingsSkillsShape['skills'][number]['source'], stri
 };
 
 export function SkillsSection(): React.ReactNode {
+  const ports = useOptionalSettingsPorts();
   const [data, setData] = useState<SettingsSkillsShape | null>(null);
   const [error, setError] = useState<string | null>(null);
   const load = useCallback((): void => {
+    const fn = ports?.getSkills;
+    if (fn === undefined) {
+      setError('此壳未提供技能数据通道（getSkills）');
+      return;
+    }
     setError(null);
-    void window.harness2
-      .settingsGetSkills()
+    void fn()
       .then((r) => setData(r))
       .catch((e: Error) => setError(e.message));
-  }, []);
+  }, [ports]);
   useEffect(load, [load]);
 
   if (error !== null) {

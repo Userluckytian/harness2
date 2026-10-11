@@ -4,7 +4,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import React from 'react';
-import { AppearanceSettings, THEME_CHOICES } from '../../src/renderer/settings/appearance/index.js';
+import { AppearanceSettings, THEME_CHOICES } from '@harness2/ui-shared/renderer/settings/appearance/index.js';
 
 // Radix Select 在 jsdom 下的两个已知前提：滚动定位 API 缺失（高亮时调用）、Item 非触摸 click 即提交
 (HTMLElement.prototype as unknown as { scrollIntoView: () => void }).scrollIntoView = () => {};

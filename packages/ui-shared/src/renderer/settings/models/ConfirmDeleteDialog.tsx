@@ -1,5 +1,5 @@
 // D-59：删除确认对话框——**指名**提供方（显示名 + Provider ID），避免误删同名渠道。
-import type { ModelsProviderRowShape } from '../../../shared/protocol.js';
+import type { ModelsProviderRowShape } from '../../../shared/settings.js';
 
 export interface ConfirmDeleteDialogProps {
   row: ModelsProviderRowShape;

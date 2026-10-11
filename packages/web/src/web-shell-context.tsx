@@ -15,6 +15,12 @@ export interface WebShellValue {
   readonly newSessionEnabled: boolean;
   /** 新建会话不可用时的**可行动**原因（如实展示，不摆灰按钮不给解释） */
   readonly newSessionBlockedReason?: string | undefined;
+  /** 设置覆层是否打开（Z7：web 设置覆层，复用共享设置页；只内存，D-14） */
+  readonly settingsOpen: boolean;
+  /** 打开设置覆层（侧栏设置入口调用） */
+  readonly onOpenSettings: () => void;
+  /** 关闭设置覆层（共享页返回按钮调用） */
+  readonly onCloseSettings: () => void;
 }
 
 const WebShellContext = createContext<WebShellValue | null>(null);

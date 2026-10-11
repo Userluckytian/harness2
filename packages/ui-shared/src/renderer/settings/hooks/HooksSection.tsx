@@ -4,7 +4,7 @@
 // 红线⑩（不摆假数据）：无 config.hooks 或零条目即空态，不造示例条目。
 // 编辑面（新增/编辑/删除 hook）登记为后续：config.json 手改 + 重启 serve 生效，
 // 与 mcp/skills 两分区同口径（只读优先）。
-import type { SettingsConfigShape, SettingsHooksShape } from '../../../shared/protocol.js';
+import type { SettingsConfigShape, SettingsHooksShape } from '../../../shared/settings.js';
 import { SettingsSectionBlock } from '../shell/index.js';
 
 /** 事件 → 触发时机说明（只读展示用；与 core hooks/runner.ts 的触发点一一对应） */
