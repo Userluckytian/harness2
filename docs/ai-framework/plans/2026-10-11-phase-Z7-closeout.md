@@ -141,6 +141,31 @@
 
 **本轮据此外发现并修复 4 个真实缺陷（D1–D4，全部浏览器复测通过）**：D1 遗留 warmPaper 主题表未退役致两壳底色非 Zai；D2 composer 落点提示不清除；D3 提交派发后不从活队列出队（面板常驻「排队」）；D4 恢复账本缺 `queue/dispatched` 标记致重启复活已执行提交。详见 `docs/issue-log/2026-10-11.md` §43–§46。
 
+## 6.2 起 ZCode 官方 web 做实时对照（2026-10-11 已跑通）
+
+**用途**：把我们的实现与**上游真身**并排比对（比只读 refs 文档更硬）。
+
+**前置（一次性，约 40 分钟）**：在 `D:/AI_Projects/refs/ZCode` 装依赖。仓库要求 Node ≥24 / pnpm 10.33.2（本机 Node 22 只 WARN 不阻断）；`.npmrc` 有 `node-linker=hoisted`；`node_modules/` 已 gitignore（**不污染 refs 仓库**）。
+
+```bash
+cd D:/AI_Projects/refs/ZCode
+ELECTRON_SKIP_BINARY_DOWNLOAD=1 corepack pnpm@10.33.2 install --fetch-retries=6 --fetch-retry-mintimeout=10000 --fetch-retry-maxtimeout=180000 --network-concurrency=8
+```
+
+**启动（Windows 两个坑已定位）**：
+
+```bash
+cd D:/AI_Projects/refs/ZCode
+export npm_config_script_shell='D:/Program Files/Git/usr/bin/bash.exe'
+pnpm dev:web      # web [::1]:5173 + 后端 :3030
+```
+
+- 坑 1：`corepack pnpm@10.33.2 dev:web` 会让内层 `pnpm --filter` 落到全局 pnpm 11 并报版本不符 → **用裸 `pnpm`**（自切换到 10.33.2）。
+- 坑 2：`tsup --watch --onSuccess 'node dist/entry-http.js'` 的 POSIX 单引号被 Windows `cmd.exe` 吞掉 → **用 `npm_config_script_shell` 指到 Git bash**。
+- 后端 `authRequired:false`，**无需登录**即可看到完整界面。
+
+**对照要点**：两边默认都占 5173 → 把我们的挪到 **5174**；用 `evaluate` 读 `getComputedStyle` 取 `--color-*`、根字号、字体栈逐项比对（实测表见 `docs/issue-log/2026-10-11.md` §47）；用 `document.fonts.check('16px Inter')` 判断参考端是否真用 Inter。
+
 ## 7 交接提示词（零上下文可执行）
 
 ```
@@ -157,6 +182,7 @@
 
 ## 8 变更记录
 
-| 日期       | 变更                                                                             |
-| ---------- | -------------------------------------------------------------------------------- |
-| 2026-10-11 | 首建：Z7 计划 + 验收表（V-Z7-1～10）+ 拍板项 10 条 + 真机清单 10 条 + 交接提示词 |
+| 日期       | 变更                                                                                                                                                                                                                                                                 |
+| ---------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 2026-10-11 | 首建：Z7 计划 + 验收表（V-Z7-1～10）+ 拍板项 10 条 + 真机清单 10 条 + 交接提示词                                                                                                                                                                                     |
+| 2026-10-11 | **与 ZCode 官方 web 实时对照**：装起参考端（§6.2 配方）逐项比对——**侧栏 264px 与深色 token 12/12 完全一致**；发现并修复 **D5–D7**（根字号 14→16、字体栈补 Inter、刻度外 17px 归位），浏览器复测通过（issue-log §47–§48）。文案自拟与侧栏缺失结构登记待用户排优先级。 |
