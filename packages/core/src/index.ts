@@ -91,5 +91,9 @@ export * from './workflow/index.js';
 // Z6-A11（2026-10-11）加性导出：Agent Teams 编排层（团队/成员模型 + 共享任务板 +
 // 成员间消息 + 硬闸复用 TaskCoordinator + `/team` 命令面）。core 全新建设，UI 渲染留后续批次。
 export * from './team/index.js';
+// Z6-A22（2026-10-11）加性导出：语义代码索引（符号索引先行，向量后置）——语言感知的
+// 轻量解析（无 tree-sitter）提取定义/引用 + 增量落盘（~/.harness2/codeindex）+ 查询 API
+// + `/codeindex` 命令面。core 全新建设，GUI 渲染留后续批次。
+export * from './codeindex/index.js';
 
 export { CORE_VERSION } from './version.js';

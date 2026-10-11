@@ -9,18 +9,12 @@ import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { join, relative, resolve, sep } from 'node:path';
 import type { ToolDefinition, ToolOutput } from '../types.js';
 import { expectObject, expectString, optionalString } from './common.js';
+import { isSkippedEntryName } from './ignore.js';
 import { OutputCollector } from '../process-output.js';
 
 export const MAX_GREP_RESULTS = 500;
-const SKIP_DIRS = new Set(['node_modules', '.git']);
 const MAX_FILE_BYTES = 1024 * 1024;
 const MAX_RG_STDOUT_BYTES = 8 * 1024 * 1024;
-
-/** 与 rg 默认行为对齐的条目过滤：隐藏（点开头）与 node_modules/.git。
- *  注意：仅用于目录遍历；显式传入单个文件路径时照常搜索（对齐 rg 对显式路径的语义）。 */
-function isSkippedEntryName(name: string): boolean {
-  return name.startsWith('.') || SKIP_DIRS.has(name);
-}
 
 export const grepTool: ToolDefinition = {
   name: 'grep',

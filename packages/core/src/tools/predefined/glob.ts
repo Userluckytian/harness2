@@ -3,11 +3,10 @@ import fg from 'fast-glob';
 import { resolve } from 'node:path';
 import type { ToolDefinition } from '../types.js';
 import { expectObject, expectString, optionalString } from './common.js';
+// 忽略语义与 grep 共用同一事实源（A22 抽取；取值零变化）
+import { EXCLUDED_GLOBS } from './ignore.js';
 
 export const MAX_GLOB_ENTRIES = 1000;
-
-// 与 grep 对齐：无条件排除 node_modules/.git（P2-5）——含目录本身与其子树
-const EXCLUDED_GLOBS = ['**/node_modules', '**/node_modules/**', '**/.git', '**/.git/**'];
 
 export const globTool: ToolDefinition = {
   name: 'glob',
@@ -32,7 +31,12 @@ export const globTool: ToolDefinition = {
 
     let entries: string[];
     try {
-      entries = await fg(pattern, { cwd: searchDir, dot: true, suppressErrors: true, ignore: EXCLUDED_GLOBS });
+      entries = await fg(pattern, {
+        cwd: searchDir,
+        dot: true,
+        suppressErrors: true,
+        ignore: [...EXCLUDED_GLOBS],
+      });
     } catch (e) {
       return { error: `glob failed: ${(e as Error).message}` };
     }
