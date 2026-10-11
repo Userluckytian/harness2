@@ -236,10 +236,6 @@ body,
 .tool-status {
   margin-left: 8px;
 }
-.attempt-row {
-  color: var(--danger);
-  font-size: 12.5px;
-}
 .cursor {
   animation: blink 1s step-end infinite;
   color: var(--warn);

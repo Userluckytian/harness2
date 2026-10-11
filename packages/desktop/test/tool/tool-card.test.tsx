@@ -13,6 +13,7 @@ import {
   TERMINAL_TOOL_NAMES,
   ToolCard,
   isDiffTool,
+  isSubagentTool,
   isTerminalTool,
   resetToolOpenMemoryForTests,
   shouldRenderCommandLog,
@@ -351,5 +352,29 @@ describe('工具卡：单视图与入口可用性', () => {
     );
     fireEvent.click(screen.getByRole('button', { name: /子会话 child-1/ }));
     expect(onOpenChildSession).toHaveBeenCalledWith('child-1');
+  });
+
+  it('Z3-07 子代理特化：subagent_start/continue 头部带「子代理」徽章 + Bot 图标，状态沿用三态', () => {
+    const { container, rerender } = render(<ToolCard card={{ tool: 'subagent_start', args: {}, callId: 'c1' }} />);
+    // 徽章 + Bot 形图标（lucide lucide-bot）
+    expect(screen.getByTestId('tool-subagent-badge').textContent).toBe('子代理');
+    expect(container.querySelector('svg.lucide-bot')).not.toBeNull();
+    // 状态沿用工具卡三态：无结果 → 运行中（不假报完成）
+    expect(container.querySelector('[data-tool-status="running"]')).not.toBeNull();
+
+    rerender(<ToolCard card={{ tool: 'subagent_continue', args: {}, result: { ok: true }, callId: 'c2' }} />);
+    expect(screen.getByTestId('tool-subagent-badge').textContent).toBe('子代理');
+    expect(container.querySelector('.text-success')).not.toBeNull();
+
+    rerender(<ToolCard card={{ tool: 'read', args: { path: 'a.ts' }, result: { ok: true }, callId: 'c3' }} />);
+    expect(screen.queryByTestId('tool-subagent-badge')).toBeNull(); // 普通工具无徽章
+  });
+
+  it('Z3-07 isSubagentTool 分类：只认 subagent_start / subagent_continue', () => {
+    expect(isSubagentTool('subagent_start')).toBe(true);
+    expect(isSubagentTool('subagent_continue')).toBe(true);
+    expect(isSubagentTool('SUBAGENT_START')).toBe(true);
+    expect(isSubagentTool('bash')).toBe(false);
+    expect(isSubagentTool(undefined)).toBe(false);
   });
 });

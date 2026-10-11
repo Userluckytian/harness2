@@ -15,6 +15,20 @@ export const TERMINAL_TOOL_NAMES: readonly string[] = ['bash', 'pwsh', 'powershe
 /** 写文件类工具（有会话内文件快照 → diff 卡片） */
 export const DIFF_TOOL_NAMES: readonly string[] = ['write', 'edit', 'multiedit'];
 
+/**
+ * 子代理工具（Z-92 `subagent` 行视觉特化，Z3-07）：core 侧只有这两个工具名
+ * （core/src/agent/subagent.ts）。命中时工具卡头部加 Bot 图标 + 「子代理」徽章；
+ * 不做侧栏下钻（Z-92 的 childSessionId 下钻我们无独立数据面，子会话跳转仍走既有
+ * SubagentJump 按钮）。
+ */
+export const SUBAGENT_TOOL_NAMES: readonly string[] = ['subagent_start', 'subagent_continue'];
+
+/** 工具名分类：子代理工具（头部徽章 + Bot 图标特化） */
+export function isSubagentTool(tool: string | undefined): boolean {
+  if (tool === undefined) return false;
+  return SUBAGENT_TOOL_NAMES.includes(tool.toLowerCase());
+}
+
 /** 工具名分类：终端类（命令日志卡） */
 export function isTerminalTool(tool: string | undefined): boolean {
   if (tool === undefined) return false;

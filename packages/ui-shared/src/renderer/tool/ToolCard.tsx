@@ -39,6 +39,7 @@ import { CommandLog } from '../features/timeline/CommandLog.js';
 import type { TimelineToolRow } from '../features/timeline/execution-log.js';
 import {
   isDiffTool,
+  isSubagentTool,
   isTerminalTool,
   shouldRenderCommandLog,
   summarizeToolArgs,
@@ -92,10 +93,10 @@ const STATUS_TEXT_COLOR: Record<ToolStatus, string> = {
   failed: 'text-destructive',
 };
 
-/** 工具图标（lucide；按工具名分类取形，未知工具用扳手兜底） */
+/** 工具图标（lucide；按工具名分类取形，未知工具用扳手兜底；子代理工具用 Bot 形） */
 function ToolGlyph({ tool }: { tool: string | undefined }): ReactNode {
   const name = (tool ?? '').toLowerCase();
-  const Icon = name.startsWith('subagent_')
+  const Icon = isSubagentTool(name)
     ? BotIcon
     : isTerminalTool(name)
       ? SquareTerminalIcon
@@ -315,6 +316,15 @@ export function ToolCard({ card, sessionId, commandRow, actions }: ToolCardProps
           : {})}
       >
         <ToolGlyph tool={card.tool} />
+        {/* Z-92 subagent 视觉特化（Z3-07）：子代理工具头部加「子代理」徽章；状态沿用三态 */}
+        {isSubagentTool(card.tool) && (
+          <span
+            data-testid="tool-subagent-badge"
+            className="shrink-0 rounded border border-border bg-surface px-1.5 py-0.5 text-ui-2xs text-foreground-subtle"
+          >
+            子代理
+          </span>
+        )}
         <span className="tool-line min-w-0 flex-1 truncate">
           &gt; {displayToolName(card.tool)} ({summarizeToolArgs(card.args)})
         </span>

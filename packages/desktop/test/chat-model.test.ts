@@ -61,7 +61,7 @@ describe('projectChatItems 折叠', () => {
     expect(items.filter((i) => i.kind === 'assistant')).toHaveLength(1); // 第二条 assistant（seq 8）被遮蔽
   });
 
-  it('attempt 行显示失败尝试', () => {
+  it('attempt 以 retry-notice 标记行显示失败尝试（Z3-07：Z-92 retryNotice 语义）', () => {
     const items = projectChatItems(
       [
         ev('user/message', { text: 'x', turnId: 't2' }),
@@ -70,7 +70,26 @@ describe('projectChatItems 折叠', () => {
       emptyLive(),
       {},
     );
-    expect(items.some((i) => i.kind === 'attempt' && i.error === 'network down')).toBe(true);
+    expect(items.some((i) => i.kind === 'marker' && i.variant === 'retry-notice' && i.error === 'network down')).toBe(
+      true,
+    );
+  });
+
+  it('Z3-07：compaction/applied → compact 标记；rewind/marker → checkpoint-restored 标记', () => {
+    const items = projectChatItems(
+      [
+        ev('user/message', { text: 'x', turnId: 't1' }),
+        ev('assistant/message', { text: 'y', turnId: 't1' }),
+        ev('compaction/applied', { summary: '前情摘要', coveredUpToSeq: 2 }),
+        ev('rewind/marker', { rewindToSeq: 2, reason: 'undo' }),
+      ],
+      emptyLive(),
+      {},
+    );
+    const markers = items.filter((i) => i.kind === 'marker');
+    expect(markers.map((m) => m.variant)).toEqual(['compact', 'checkpoint-restored']);
+    expect(markers[0]!.summary).toBe('前情摘要');
+    expect(markers[1]!.rewindToSeq).toBe(2);
   });
 
   it('在途增量：streaming 条目（text 光标 + pending tool 调用）', () => {

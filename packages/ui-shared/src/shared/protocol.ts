@@ -134,6 +134,31 @@ export interface SessionEventShape {
   payload: Record<string, unknown>;
 }
 
+// —— 会话事件 payload 形状（Z3-07 加性镜像；core session/types.ts 同形） ——
+// 线上 `SessionEventShape.payload` 仍是 Record<string, unknown>（旧 serve 兼容，不加宽）；
+// 这里只给呈现层投影用到的三种事件**具名形状**（收窄读取 + 文档化），缺字段一律按
+// 缺省处理、不臆造。event 帧（live）与 /events 重放两条路共用同一形状。
+
+/** `compaction/applied`：上下文压缩边界（覆盖区摘要 + 覆盖到的最后一条消息 seq） */
+export interface CompactionAppliedPayloadShape {
+  summary: string;
+  coveredUpToSeq: number;
+}
+
+/** `rewind/marker`：回退标记（追加式撤回；reason 'redo' 前缀 = redo 链中立化语义） */
+export interface RewindMarkerPayloadShape {
+  rewindToSeq: number;
+  reason?: string;
+}
+
+/** `assistant/attempt`：失败/被取消的模型尝试（append-only；text = 半截产出时展示须标注未完成） */
+export interface AssistantAttemptPayloadShape {
+  error: string;
+  text?: string;
+  model?: string;
+  turnId?: string;
+}
+
 // —— HTTP 报文（呈现层消费的最小形态） ——
 
 export interface SessionSummaryShape {

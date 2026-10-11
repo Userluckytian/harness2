@@ -26,6 +26,7 @@ import {
 } from '../tool/index.js';
 import { ChatEmptyState } from './ChatEmptyState.js';
 import { ReasoningRow } from './ReasoningRow.js';
+import { TimelineMarkerRow } from '../conversation/TimelineMarkerRow.js';
 import type { AppStore } from '../store.js';
 
 /** 转录视图的数据源（store + controller 真身；由会话对象携带） */
@@ -95,19 +96,20 @@ export function ChatItemView({
       );
     }
 
-    case 'attempt':
+    case 'marker': {
+      // Z-92 timelineMarker（Z3-07）：压缩边界 / 回退标记 / 失败尝试（retryNotice 语义）
+      // 统一走标记行；variant 由投影保证（三种来源事件各自固定），缺失时不造语义、不渲染。
+      if (item.variant === undefined) return null;
       return (
-        <div className="attempt-row">
-          尝试失败：{item.error}
-          {/* P3-b：半截文本必须显式标注「未完成 / 已中断」，不得当作完整正文 */}
-          {item.text !== undefined && item.text.length > 0 && (
-            <details className="attempt-partial">
-              <summary>未完成 / 已中断的产出（{item.text.length} 字）</summary>
-              <pre>{item.text}</pre>
-            </details>
-          )}
-        </div>
+        <TimelineMarkerRow
+          variant={item.variant}
+          {...(item.summary !== undefined ? { summary: item.summary } : {})}
+          {...(item.rewindToSeq !== undefined ? { rewindToSeq: item.rewindToSeq } : {})}
+          {...(item.error !== undefined ? { error: item.error } : {})}
+          {...(item.text !== undefined ? { partialText: item.text } : {})}
+        />
       );
+    }
     case 'streaming':
       // Z-92：流式思考同样是一等行（渐变扫光「正在思考」+ 最后一行摘要）；不再用内联「（思考中…）」。
       return (

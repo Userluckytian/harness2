@@ -175,7 +175,8 @@ describe('P3 跨端终态文本语义（桌面投影）', () => {
       partialText: '写到一半',
     });
     const items = store.chatItems('s1');
-    const attempt = items.find((i) => i.kind === 'attempt');
+    // Z3-07：assistant/attempt 投影为 retry-notice 标记行（字段承载不变）
+    const attempt = items.find((i) => i.kind === 'marker' && i.variant === 'retry-notice');
     expect(attempt?.text).toBe('写到一半'); // assistant/attempt 是半截文本日志权威
     expect(attempt?.error).toContain('cancelled');
     const summary = items.find((i) => i.kind === 'turn-summary');

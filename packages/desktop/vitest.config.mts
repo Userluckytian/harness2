@@ -17,6 +17,10 @@ export default defineConfig({
   test: {
     environment: 'node',
     include: ['test/**/*.test.ts', 'test/**/*.test.tsx'],
+    // 真渲染 App 的装配级用例（如 test/app.test.tsx「会话列表与切换重放」）单例 ~2s，
+    // 但六包并行满载时多次偶发越过 5s 默认线（Z3-04/Z3-07 验收各一次，见 issue-log §18/§19）；
+    // 放宽到 15s 消除负载抖动，用例本身不断言时间。
+    testTimeout: 15_000,
     env: {
       NODE_ENV: 'test',
     },

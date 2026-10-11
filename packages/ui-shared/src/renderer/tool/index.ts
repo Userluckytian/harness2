@@ -5,9 +5,11 @@
 // 边界：不 import main / preload，不用浏览器存储；数据与动作由宿主经 props / ctx 注入。
 export {
   DIFF_TOOL_NAMES,
+  SUBAGENT_TOOL_NAMES,
   TERMINAL_TOOL_NAMES,
   TOOL_CARD_SINGLE_VIEW,
   isDiffTool,
+  isSubagentTool,
   isTerminalTool,
   shouldRenderCommandLog,
   summarizeToolArgs,
