@@ -88,18 +88,3 @@ body,
   background: var(--surface2);
   color: var(--fg);
 }
-
-/* 右栏 tab 内容（web 只实装审批 / 后台任务；样式沿用共享审批卡与面板语义） */
-.web-approvals {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  padding: 8px;
-}
-
-.web-pane-empty {
-  padding: 16px;
-  font-size: 13px;
-  color: var(--fg-muted);
-  text-align: center;
-}

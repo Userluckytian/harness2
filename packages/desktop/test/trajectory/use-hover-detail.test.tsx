@@ -3,7 +3,7 @@
 // 断言时间边界：499ms 不出、500ms 出、切段立即清掉上一段详情、移出取消挂起定时器。
 import { act, cleanup, renderHook } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { HOVER_DETAIL_DELAY_MS, useHoverDetail } from '../../src/renderer/trajectory/use-hover-detail.js';
+import { HOVER_DETAIL_DELAY_MS, useHoverDetail } from '@harness2/ui-shared/renderer/trajectory/use-hover-detail.js';
 
 beforeEach(() => {
   vi.useFakeTimers();

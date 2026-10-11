@@ -1,6 +1,6 @@
 // 虚拟化窗口测试（D-45）：尾部 50 / 前向补页 / 可见窗口 + 缓冲 / 稳定行键与 ARIA 索引。
 import { describe, expect, it } from 'vitest';
-import { projectTrajectory } from '../../src/renderer/trajectory/projection.js';
+import { projectTrajectory } from '@harness2/ui-shared/renderer/trajectory/projection.js';
 import {
   INITIAL_TAIL_ROWS,
   ariaRowCountOf,
@@ -14,7 +14,7 @@ import {
   resolveLoadedPages,
   rowKeys,
   semanticRowKey,
-} from '../../src/renderer/trajectory/virtual-window.js';
+} from '@harness2/ui-shared/renderer/trajectory/virtual-window.js';
 import { conversationFixture, manyRowsFixture } from './fixtures.js';
 
 const ROW_HEIGHT = 28;

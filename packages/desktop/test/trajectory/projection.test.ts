@@ -12,7 +12,7 @@ import {
   extractAttachments,
   filterModelBySelection,
   projectTrajectory,
-} from '../../src/renderer/trajectory/projection.js';
+} from '@harness2/ui-shared/renderer/trajectory/projection.js';
 import {
   betweenTurnsFixture,
   compactionInsideTurnFixture,

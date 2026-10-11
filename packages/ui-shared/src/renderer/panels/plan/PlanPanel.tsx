@@ -1,10 +1,21 @@
 // 计划面板（D3）：有证据的计划投影 + **显式**模式切换（展示计划绝不自动提权）。
-import { useState } from 'react';
-import { controller, store, useAppState } from '../../app-shared.js';
+//
+// Z7-a：本组件已下沉 ui-shared（壳无关）——数据源 = 壳注入的 `store` / `controller`
+// （桌面传 app-shared 单例、web 传 serve 壳实例），组件本身不 import 任何壳的全局对象。
+import { useState, useSyncExternalStore } from 'react';
+import type { ReactNode } from 'react';
+import type { Controller } from '../../app-controller.js';
+import type { AppStore } from '../../store.js';
 import { buildPlanDisplay, resolveModeSwitch } from './plan-model.js';
 
-export function PlanPanel({ sessionId }: { sessionId: string | null }) {
-  useAppState(); // 订阅 store 变更（计划/配置到达后重渲）
+export interface PlanPanelProps {
+  readonly store: AppStore;
+  readonly controller: Controller;
+  readonly sessionId: string | null;
+}
+
+export function PlanPanel({ store, controller, sessionId }: PlanPanelProps): ReactNode {
+  useSyncExternalStore(store.subscribe, store.getState); // 订阅 store 变更（计划/配置到达后重渲）
   const [notice, setNotice] = useState<string | null>(null);
   const [switching, setSwitching] = useState(false);
   if (sessionId === null) return <div className="panel-empty">未选择会话</div>;

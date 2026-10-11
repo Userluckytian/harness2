@@ -7,7 +7,7 @@ import {
   deriveRuntimeStatus,
   describeRetryBudget,
   describeTurnEnd,
-} from '../src/renderer/features/runtime/runtime-status.js';
+} from '@harness2/ui-shared/renderer/features/runtime/runtime-status.js';
 import { buildCapabilityReport } from '../src/shared/capabilities.js';
 import type { CapabilityReportShape } from '../src/shared/protocol.js';
 

@@ -37,7 +37,7 @@ import {
   createTrajectoryFocusStore,
   type ComposerOverlayHost,
   type TrajectoryFocusStore,
-} from '../trajectory/index.js';
+} from '@harness2/ui-shared/renderer/trajectory/index.js';
 
 export {
   createConversationComposerPort,

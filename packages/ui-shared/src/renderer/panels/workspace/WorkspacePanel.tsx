@@ -1,14 +1,21 @@
 // 工作区面板（D5/F1）：显示本次请求到底在哪个目录跑（root/cwd）+ 分叉会话 + 会话工作区一览。
 // A/B 项目隔离以真实 run-config 的 cwd 为准（不猜、不共享 UI 状态）。
-import { useState } from 'react';
-import { controller, store, useAppState } from '../../app-shared.js';
-import {
-  sameWorkspace,
-  workspaceInfoFrom,
-} from '@harness2/ui-shared/renderer/features/workspace/change-review-model.js';
+//
+// Z7-a：已下沉 ui-shared（壳无关）；store/controller 由壳注入。
+import { useState, useSyncExternalStore } from 'react';
+import type { ReactNode } from 'react';
+import type { Controller } from '../../app-controller.js';
+import type { AppStore } from '../../store.js';
+import { sameWorkspace, workspaceInfoFrom } from '../../features/workspace/change-review-model.js';
 
-export function WorkspacePanel({ sessionId }: { sessionId: string | null }) {
-  const state = useAppState();
+export interface WorkspacePanelProps {
+  readonly store: AppStore;
+  readonly controller: Controller;
+  readonly sessionId: string | null;
+}
+
+export function WorkspacePanel({ store, controller, sessionId }: WorkspacePanelProps): ReactNode {
+  const state = useSyncExternalStore(store.subscribe, store.getState);
   const [notice, setNotice] = useState<string | null>(null);
   const current = workspaceInfoFrom(
     sessionId ?? '',

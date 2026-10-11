@@ -3,12 +3,22 @@
 //
 // P6-C：卡片正文收敛到 `renderer/approval`（ApprovalCard）—— 与对话内联审批条同一实现，
 // 本文件只保留「取数 → 装饰 → 分组」与动作回传（controller.respondApproval）。
-import { controller, store, useAppState } from '../../app-shared.js';
-import { ApprovalCard } from '@harness2/ui-shared/renderer/approval/index.js';
+//
+// Z7-a：已下沉 ui-shared（壳无关）；store/controller 由壳注入。
+import { useSyncExternalStore } from 'react';
+import type { ReactNode } from 'react';
+import type { Controller } from '../../app-controller.js';
+import type { AppStore } from '../../store.js';
+import { ApprovalCard } from '../../approval/index.js';
 import { decorateApprovals, groupApprovals, type ApprovalCard as ApprovalCardModel } from './plan-model.js';
 
-export function ApprovalCenter() {
-  useAppState();
+export interface ApprovalCenterProps {
+  readonly store: AppStore;
+  readonly controller: Controller;
+}
+
+export function ApprovalCenter({ store, controller }: ApprovalCenterProps): ReactNode {
+  useSyncExternalStore(store.subscribe, store.getState);
   const approvals: ApprovalCardModel[] = store.allApprovals().map((a) => ({
     requestId: a.requestId,
     tool: a.tool,

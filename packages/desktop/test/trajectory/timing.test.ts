@@ -1,6 +1,6 @@
 // 首 token 观测测试（TTFT 的唯一诚实来源）。
 import { describe, expect, it } from 'vitest';
-import { TrajectoryTimingObserver, currentStreamingStepId } from '../../src/renderer/trajectory/timing.js';
+import { TrajectoryTimingObserver, currentStreamingStepId } from '@harness2/ui-shared/renderer/trajectory/timing.js';
 import { conversationFixture, runningFixture } from './fixtures.js';
 
 describe('TrajectoryTimingObserver', () => {

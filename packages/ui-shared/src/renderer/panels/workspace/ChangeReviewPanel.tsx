@@ -1,12 +1,13 @@
 // 变更审查面板（D5/F5）：按任务聚合的变更清单 + 真实 diff + **外部改动不静默覆盖**的安全撤销。
 // 数据源：S7 `/change-review`（拟议 vs 真实落盘）+ `/execution-view`（任务归属）。只读展示。
-import { useState } from 'react';
-import { buildDiffRows } from '@harness2/ui-shared/renderer/components/DiffCard.js';
-import { controller, store, useAppState } from '../../app-shared.js';
-import {
-  buildChangeReviewView,
-  type ChangedFileView,
-} from '@harness2/ui-shared/renderer/features/workspace/change-review-model.js';
+//
+// Z7-a：已下沉 ui-shared（壳无关）；store/controller 由壳注入。
+import { useState, useSyncExternalStore } from 'react';
+import type { ReactNode } from 'react';
+import type { Controller } from '../../app-controller.js';
+import { buildDiffRows } from '../../components/DiffCard.js';
+import type { AppStore } from '../../store.js';
+import { buildChangeReviewView, type ChangedFileView } from '../../features/workspace/change-review-model.js';
 
 function FileEntry({ file, sessionId, onUndo }: { file: ChangedFileView; sessionId: string; onUndo: () => void }) {
   const [expanded, setExpanded] = useState(false);
@@ -53,8 +54,14 @@ function FileEntry({ file, sessionId, onUndo }: { file: ChangedFileView; session
   );
 }
 
-export function ChangeReviewPanel({ sessionId }: { sessionId: string | null }) {
-  useAppState();
+export interface ChangeReviewPanelProps {
+  readonly store: AppStore;
+  readonly controller: Controller;
+  readonly sessionId: string | null;
+}
+
+export function ChangeReviewPanel({ store, controller, sessionId }: ChangeReviewPanelProps): ReactNode {
+  useSyncExternalStore(store.subscribe, store.getState);
   const [notice, setNotice] = useState<string | null>(null);
   const [pendingOverwrite, setPendingOverwrite] = useState<{ count: number; kind: 'undo' | 'redo' } | null>(null);
   if (sessionId === null) return <div className="panel-empty">未选择会话</div>;

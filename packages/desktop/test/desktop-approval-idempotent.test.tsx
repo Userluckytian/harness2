@@ -105,8 +105,9 @@ describe('ApprovalCenter 在途反馈（PD4 组件级）', () => {
     const api = { respondApproval: respond } as unknown as Harness2Api;
     vi.resetModules();
     (window as unknown as { harness2: Harness2Api }).harness2 = api;
-    const { store } = (await import('../src/renderer/app-shared.js')) as typeof import('../src/renderer/app-shared.js');
-    const { ApprovalCenter } = await import('../src/renderer/features/plan/ApprovalCenter.js');
+    const { store, controller } =
+      (await import('../src/renderer/app-shared.js')) as typeof import('../src/renderer/app-shared.js');
+    const { ApprovalCenter } = await import('@harness2/ui-shared/renderer/panels/plan/ApprovalCenter.js');
     store.applyFrame({
       type: 'approval-request',
       sessionId: 's1',
@@ -115,7 +116,7 @@ describe('ApprovalCenter 在途反馈（PD4 组件级）', () => {
       requestId: 'r1',
     } as WsFrame);
 
-    const { getByText, queryByText } = render(<ApprovalCenter />);
+    const { getByText, queryByText } = render(<ApprovalCenter store={store} controller={controller} />);
     fireEvent.click(getByText('允许'));
     await waitFor(() => expect(getByText('提交中…（防重复提交）')).toBeTruthy());
     expect(queryByText('允许')).toBeNull(); // 在途期间没有可重复点击的按钮

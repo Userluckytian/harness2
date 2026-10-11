@@ -1,12 +1,14 @@
 // 右栏标签宿主（Z2-04 / Z-13 / Z-14）—— 桌面侧内容映射。
 //
 // Z7 起承载实现（零 tab 启动器 / 标签条 / 拖拽排序 / 内容槽 / 底部运维入口）下沉到
-// `@harness2/ui-shared/renderer/side-pane/SidePaneHost.js`（壳无关）；本文件只留**桌面专属**：
+// `@harness2/ui-shared/renderer/side-pane/SidePaneHost.js`（壳无关）；Z7-a 起各 tab 的**呈现面板**
+// （计划 / 任务 / 审批 / 变更 / 工作区 / 配置 / 模型轨迹）也整体下沉 ui-shared，桌面只留薄适配：
 //   1. 路由效应：D-86 ① openFile → 「文件」tab；P2-5 ② inspect → 「模型轨迹」tab；
 //      Z2-08 状态面板 Agents「在右栏打开」→ background-tasks tab —— 三者都在右栏收起时
 //      一并展开（不静默丢请求）；
-//   2. tab 内容映射：计划 / 任务 / 后台任务 / 审批 / 变更 / 工作区 / 文件 / 配置 / 模型轨迹
-//      （内容组件是桌面 features/*，数据源为桌面单例 store/controller）；
+//   2. tab 内容映射：把**桌面单例** store/controller（app-shared）注入共享面板；「文件」tab
+//      依赖桌面 openFile/预览通道（web 无）故仍留在桌面；模型轨迹 tab 绑定桌面装配单例
+//      （图片缓存 / inspect 定位通道）也在此装配；
 //   3. 底部「刷新只读视图 / 重新同步」动作与「计划视图依赖任务账本」提示的桌面口径。
 import { useCallback, useEffect, useMemo, useRef, useSyncExternalStore } from 'react';
 import { controller, store, useAppState } from '../app-shared.js';
@@ -26,17 +28,22 @@ import {
   trajectoryTabSessionId,
   type SidePaneTabId,
 } from '@harness2/ui-shared/renderer/side-pane/index.js';
+import {
+  ApprovalCenter,
+  ChangeReviewPanel,
+  EffectiveConfigPanel,
+  PlanPanel,
+  TaskPanel,
+  WorkspacePanel,
+} from '@harness2/ui-shared/renderer/panels/index.js';
 import { composerPrefill } from '@harness2/ui-shared/renderer/conversation/composer/prefill.js';
 import { backgroundTasksPaneRequests } from '../conversation/background-tasks-requests.js';
-import { PlanPanel } from '../features/plan/PlanPanel.js';
-import { TaskPanel } from '../features/plan/TaskPanel.js';
-import { ApprovalCenter } from '../features/plan/ApprovalCenter.js';
-import { ChangeReviewPanel } from '../features/workspace/ChangeReviewPanel.js';
-import { WorkspacePanel } from '../features/workspace/WorkspacePanel.js';
-import { EffectiveConfigPanel } from '../features/config/EffectiveConfigPanel.js';
-import { TrajectoryViewContent, type TrajectorySession } from '../trajectory/index.js';
+import {
+  TrajectoryViewContent,
+  type TrajectoryFocusRequest,
+  type TrajectorySession,
+} from '@harness2/ui-shared/renderer/trajectory/index.js';
 import { conversationImageUrls, conversationTrajectoryFocus } from '../conversation/assembly.js';
-import type { TrajectoryFocusRequest } from '../trajectory/inspect-focus.js';
 
 /**
  * 「模型轨迹」tab 内容（Z-14 `model-trajectory:{sessionId}`）：既有轨迹内容组件原样挂载
@@ -69,6 +76,8 @@ export function SidePanel(): React.ReactNode {
   const filePreview = useToolFilePreview();
   const frame = useFrame();
   const sessionCwd = sessionId !== null ? state.sessions.find((s) => s.id === sessionId)?.cwd : undefined;
+  // 桌面专属端口：上下文占用读（preload IPC；core getContextUsage 单一实现）——注入共享配置面板。
+  const getContextUsage = useCallback((id: string) => window.harness2.getContextUsage(id), []);
 
   // 有**新的**打开文件请求 → 开「文件」tab；右栏关着就把它打开（不静默丢请求）。
   // 按请求对象判重（openFile 每次产生新引用）：只在真请求时路由一次，避免右栏被
@@ -122,9 +131,9 @@ export function SidePanel(): React.ReactNode {
       if (trajectorySessionId !== null) return <TrajectoryPaneTab sessionId={trajectorySessionId} />;
       switch (id) {
         case 'plan':
-          return <PlanPanel sessionId={sessionId} />;
+          return <PlanPanel store={store} controller={controller} sessionId={sessionId} />;
         case 'tasks':
-          return <TaskPanel sessionId={sessionId} />;
+          return <TaskPanel store={store} controller={controller} sessionId={sessionId} />;
         case 'background-tasks':
           return (
             <BackgroundTasksPane
@@ -133,11 +142,11 @@ export function SidePanel(): React.ReactNode {
             />
           );
         case 'approvals':
-          return <ApprovalCenter />;
+          return <ApprovalCenter store={store} controller={controller} />;
         case 'changes':
-          return <ChangeReviewPanel sessionId={sessionId} />;
+          return <ChangeReviewPanel store={store} controller={controller} sessionId={sessionId} />;
         case 'workspace':
-          return <WorkspacePanel sessionId={sessionId} />;
+          return <WorkspacePanel store={store} controller={controller} sessionId={sessionId} />;
         case 'file':
           return (
             <ToolFilePreviewPanel
@@ -156,12 +165,20 @@ export function SidePanel(): React.ReactNode {
             />
           );
         case 'config':
-          return <EffectiveConfigPanel sessionId={sessionId} />;
+          // 桌面提供上下文占用读端口（preload IPC）；web 无此通道 → 不注入即不显示占用注记。
+          return (
+            <EffectiveConfigPanel
+              store={store}
+              controller={controller}
+              sessionId={sessionId}
+              getContextUsage={getContextUsage}
+            />
+          );
         default:
           return null;
       }
     },
-    [sessionId, filePreview, sessionCwd, navigation],
+    [sessionId, filePreview, sessionCwd, navigation, getContextUsage],
   );
 
   return (

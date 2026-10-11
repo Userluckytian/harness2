@@ -1,6 +1,6 @@
 // 时间概览模型与交互测试（D-42/D-43）：真实时间投影、TTFT/解码分段、缩放/平移/拖选/清除。
 import { describe, expect, it } from 'vitest';
-import { projectTrajectory } from '../../src/renderer/trajectory/projection.js';
+import { projectTrajectory } from '@harness2/ui-shared/renderer/trajectory/projection.js';
 import {
   INITIAL_OVERVIEW_VIEWPORT,
   MIN_OVERVIEW_ZOOM,
@@ -20,7 +20,7 @@ import {
   untimedSegmentCount,
   viewportDomain,
   wheelZoom,
-} from '../../src/renderer/trajectory/overview.js';
+} from '@harness2/ui-shared/renderer/trajectory/overview.js';
 import { conversationFixture, firstOutputObservation, runningFixture, T0 } from './fixtures.js';
 
 describe('buildOverview（D-42 左→右真实时间投影）', () => {

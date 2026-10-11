@@ -1,8 +1,8 @@
 // P2-5（D-86 ② 完整度）：inspect 的 `callId`/`seq` → 轨迹**行键**定位（纯逻辑，node 环境）。
 // 口径：只认真实存在的步骤行；callId 优先于 seq；会话不匹配/找不到 → null（不猜、不乱选）。
 import { describe, expect, it, vi } from 'vitest';
-import { createTrajectoryFocusStore, findFocusRowKey } from '../../src/renderer/trajectory/inspect-focus.js';
-import { projectTrajectory } from '../../src/renderer/trajectory/projection.js';
+import { createTrajectoryFocusStore, findFocusRowKey } from '@harness2/ui-shared/renderer/trajectory/inspect-focus.js';
+import { projectTrajectory } from '@harness2/ui-shared/renderer/trajectory/projection.js';
 import { conversationFixture } from './fixtures.js';
 
 const model = projectTrajectory({ events: conversationFixture(), sessionId: 's1' });

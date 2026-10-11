@@ -3,14 +3,15 @@
 // 注入 owner 用能力包名（ui-sidebar / ui-conversation / ui-workspace），内容组件复用 ui-shared：
 //   * 侧栏 = SidebarRoot（品牌 / New Task / 命令中心（web 无 → 不注入即不渲染）/ 会话列表 / 折叠 264→4px）；
 //   * 中栏 conversation = 共享 ConversationSeat（转录 + 常驻 composer）+ web 连接/新建阻断提示条；
-//   * 右栏 = SidePaneHost（零 tab 启器 + 标签条），tab 只列**web 真能取数**的两项：
-//       审批（store.allApprovals + controller.respondApproval）、后台任务（store.allTasks）；
-//       其余 tab（计划 / 任务 / 变更 / 工作区 / 配置 / 文件 / 模型轨迹）在 web 缺对应呈现组件或数据通道，
-//       如实不列（红线⑩：不摆假入口）。
+//   * 右栏 = SidePaneHost（零 tab 启器 + 标签条）；Z7-a 起与桌面列**同一套**启动器清单：
+//       计划 / 任务 / 后台任务 / 审批 / 变更 / 工作区 / 配置 / 模型轨迹 —— 全部复用 ui-shared 面板，
+//       数据经共享 controller 走 serve 的 S7 只读端点（run-config / plan-state / execution-view /
+//       change-review）与 WS 事件流，web 真能取数；
+//       「文件」不在启动器清单（桌面亦同：D-86 openFile 路由按需打开）——web 无 openFile 预览通道，
+//       故不列、也不补假入口（红线⑩）。
 //   * 覆层席位：web 无设置页 / 命令面板数据通道 → 不注入（零覆层，如实空）。
-import { useMemo, useState, useSyncExternalStore, type ReactNode } from 'react';
+import { useMemo, useState, type ReactNode } from 'react';
 import { StatusBadge } from '@harness2/ui-shared/renderer/app-shell.js';
-import { toApprovalCardModel, ApprovalCard } from '@harness2/ui-shared/renderer/approval/index.js';
 import { ConversationSeat } from '@harness2/ui-shared/renderer/conversation/seat.js';
 import { useFrame } from '@harness2/ui-shared/renderer/layout/frame-context.js';
 import {
@@ -22,9 +23,19 @@ import {
   BackgroundTasksPane,
   SidePaneHost,
   SIDE_PANE_LAUNCHER_ITEM_IDS,
+  trajectoryTabSessionId,
   type SidePaneLauncherItemId,
   type SidePaneTabId,
 } from '@harness2/ui-shared/renderer/side-pane/index.js';
+import {
+  ApprovalCenter,
+  ChangeReviewPanel,
+  EffectiveConfigPanel,
+  PlanPanel,
+  TaskPanel,
+  WorkspacePanel,
+} from '@harness2/ui-shared/renderer/panels/index.js';
+import { TrajectoryViewContent } from '@harness2/ui-shared/renderer/trajectory/index.js';
 import { buildSessionItems, resolveBuildVersion, SidebarRoot } from '@harness2/ui-shared/renderer/sidebar/index.js';
 import type { SlotRegistry } from '@harness2/ui-shared/renderer/slots/index.js';
 import { useWebShell } from './web-shell-context.js';
@@ -35,8 +46,12 @@ function hostBuildEnv(): Record<string, string | undefined> {
   return host.process?.env ?? {};
 }
 
-/** web 右栏可打开的启动器项白名单（只列 web 真能取数渲染的 tab；未列项 = 无数据通道，不摆假入口） */
-const WEB_SIDE_PANE_ITEMS: readonly SidePaneLauncherItemId[] = ['approvals', 'background-tasks'];
+/**
+ * web 右栏可打开的启动器项白名单。
+ * Z7-a：桌面启动器清单里的 8 项 web **全部真能取数渲染**（共享面板 + serve S7 端点 + WS 事件流），
+ * 故与桌面同清单；「文件」本就不在启动器清单（桌面靠 openFile 路由按需打开，web 无此通道）。
+ */
+const WEB_SIDE_PANE_ITEMS: readonly SidePaneLauncherItemId[] = SIDE_PANE_LAUNCHER_ITEM_IDS;
 
 /** 侧栏席位内容（ui-sidebar）：SidebarRoot + 会话列表接线（web 无命令面板通道 → 不注入该入口） */
 function SidebarSeatContent(): ReactNode {
@@ -144,50 +159,45 @@ function ConversationSeatContent(): ReactNode {
   );
 }
 
-/** web 审批 tab（真实数据面）：store.allApprovals + controller.respondApproval，卡片用共享 ApprovalCard */
-function WebApprovalsPane(): ReactNode {
-  const { shell } = useWebShell();
-  const { store, controller } = shell;
-  useSyncExternalStore(store.subscribe, store.getState);
-  const approvals = store.allApprovals();
-  if (approvals.length === 0) {
-    return (
-      <div className="web-pane-empty" data-testid="web-approvals-empty">
-        无待批事项（ask 模式下有写/命令时会在此出现）
-      </div>
-    );
-  }
-  return (
-    <div className="web-approvals" data-testid="web-approvals-list">
-      {approvals.map((a) => (
-        <ApprovalCard
-          key={a.requestId}
-          card={toApprovalCardModel(a)}
-          responding={store.isApprovalResponding(a.requestId)}
-          onDecision={(decision) => void controller.respondApproval(a.requestId, decision)}
-        />
-      ))}
-    </div>
-  );
-}
-
-/** 右栏席位内容（ui-workspace）：SidePaneHost + web 真能取数的 tab 内容 */
+/**
+ * 右栏席位内容（ui-workspace）：SidePaneHost + 与桌面**同一套**面板。
+ * 数据源 = 共享 controller 经 serve（S7 只读端点 + WS 事件流）；面板本体全部来自 ui-shared，
+ * web 不做第二份实现。模型轨迹按 `model-trajectory:{sessionId}` 解析（Z-14）。
+ */
 function RightbarSeatContent(): ReactNode {
   const { shell } = useWebShell();
+  const { store, controller } = shell;
   const state = shell.useAppState();
   const sessionId = state.selectedId;
 
   const renderTab = (id: SidePaneTabId): ReactNode => {
+    const trajectorySessionId = trajectoryTabSessionId(id);
+    if (trajectorySessionId !== null) {
+      // web 无 inspect 定位通道 / 会话图片缓存 → 不注入 focusStore / imageUrl（如实不定位）；
+      // 事件流本身来自共享 store，投影与表格正常渲染。
+      return <TrajectoryViewContent session={{ id: trajectorySessionId, store }} sessionId={trajectorySessionId} />;
+    }
     switch (id) {
-      case 'approvals':
-        return <WebApprovalsPane />;
+      case 'plan':
+        return <PlanPanel store={store} controller={controller} sessionId={sessionId} />;
+      case 'tasks':
+        return <TaskPanel store={store} controller={controller} sessionId={sessionId} />;
       case 'background-tasks':
         return (
           <BackgroundTasksPane
-            store={shell.store}
-            onOpenChildSession={(childSessionId) => void shell.controller.selectSession(childSessionId)}
+            store={store}
+            onOpenChildSession={(childSessionId) => void controller.selectSession(childSessionId)}
           />
         );
+      case 'approvals':
+        return <ApprovalCenter store={store} controller={controller} />;
+      case 'changes':
+        return <ChangeReviewPanel store={store} controller={controller} sessionId={sessionId} />;
+      case 'workspace':
+        return <WorkspacePanel store={store} controller={controller} sessionId={sessionId} />;
+      case 'config':
+        // web 无上下文占用读通道 → 不注入 getContextUsage（不显示占用注记，不摆假数据）。
+        return <EffectiveConfigPanel store={store} controller={controller} sessionId={sessionId} />;
       default:
         return null;
     }
@@ -195,13 +205,13 @@ function RightbarSeatContent(): ReactNode {
 
   return (
     <SidePaneHost
-      store={shell.store}
+      store={store}
       sessionId={sessionId}
       renderTab={renderTab}
       items={WEB_SIDE_PANE_ITEMS}
-      onRefresh={(id) => void shell.controller.refreshExecutionViews(id)}
-      onResync={(id) => void shell.controller.resumeSession(id)}
-      onOpenChildSession={(childSessionId) => void shell.controller.selectSession(childSessionId)}
+      onRefresh={(id) => void controller.refreshExecutionViews(id)}
+      onResync={(id) => void controller.resumeSession(id)}
+      onOpenChildSession={(childSessionId) => void controller.selectSession(childSessionId)}
     />
   );
 }

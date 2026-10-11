@@ -8,9 +8,9 @@
 //   - 审批过期 fail-closed（ISO 解析失败也视为过期），缺席/过期卡片不假装可响应。
 import type { TaskContractShape, TaskStateShape, ApprovalScopeShape } from '../../../shared/protocol.js';
 import type { PlanStateShape } from '../../../shared/protocol.js';
-// P8-P1-1：过期判定**唯一实现**已下沉 `@harness2/ui-shared`（approval-model，web 壳同一份）。
+// P8-P1-1：过期判定**唯一实现**已下沉本包（approval-model，web 壳同一份）。
 // 本模块按名字转出，既有 `from './plan-model.js'` 的调用面不变；不再本地维护第二份。
-import { isApprovalExpired } from '@harness2/ui-shared/renderer/approval/approval-model.js';
+import { isApprovalExpired } from '../../approval/approval-model.js';
 
 export { isApprovalExpired };
 

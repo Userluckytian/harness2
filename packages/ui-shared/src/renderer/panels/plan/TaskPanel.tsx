@@ -1,10 +1,21 @@
 // 任务面板（D3）：父子归属清楚的任务树 + 单任务停止（不误伤兄弟）。
 // 数据全部来自真实任务快照（resume-snapshot / 任务帧），不做本地模拟。
-import { controller, store, useAppState } from '../../app-shared.js';
+//
+// Z7-a：已下沉 ui-shared（壳无关）；store/controller 由壳注入。
+import { useSyncExternalStore } from 'react';
+import type { ReactNode } from 'react';
+import type { Controller } from '../../app-controller.js';
+import type { AppStore } from '../../store.js';
 import { buildTaskTree, isTerminalTaskState, summarizeTasks } from './plan-model.js';
 
-export function TaskPanel({ sessionId }: { sessionId: string | null }) {
-  useAppState();
+export interface TaskPanelProps {
+  readonly store: AppStore;
+  readonly controller: Controller;
+  readonly sessionId: string | null;
+}
+
+export function TaskPanel({ store, controller, sessionId }: TaskPanelProps): ReactNode {
+  useSyncExternalStore(store.subscribe, store.getState);
   const all = store.allTasks();
   const scoped = sessionId !== null ? all.filter((t) => t.sessionId === sessionId) : all;
   const tasks = scoped.map((t) => t.task);
@@ -22,7 +33,7 @@ export function TaskPanel({ sessionId }: { sessionId: string | null }) {
     );
   }
 
-  const renderNode = (node: (typeof tree)[number], depth: number): React.ReactNode => (
+  const renderNode = (node: (typeof tree)[number], depth: number): ReactNode => (
     <div key={node.task.taskId} className={`task-node task-${node.task.state}`} style={{ marginLeft: depth * 16 }}>
       <div className="task-row">
         <span className="task-id">{node.task.taskId}</span>

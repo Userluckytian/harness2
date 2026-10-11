@@ -5,7 +5,7 @@ import {
   groupApprovals,
   isApprovalExpired,
   type ApprovalCard,
-} from '../src/renderer/features/plan/plan-model.js';
+} from '@harness2/ui-shared/renderer/panels/plan/plan-model.js';
 import type { TaskContractShape } from '../src/shared/protocol.js';
 
 const NOW = Date.parse('2026-09-11T00:00:00Z');

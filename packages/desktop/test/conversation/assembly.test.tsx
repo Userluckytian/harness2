@@ -34,7 +34,7 @@ import {
   type ConversationComposerPort,
 } from '../../src/renderer/conversation/assembly.js';
 import { createImageUrlCache } from '@harness2/ui-shared/renderer/conversation/views/image-url-cache.js';
-import { COMPOSER_INSET_VAR } from '../../src/renderer/trajectory/index.js';
+import { COMPOSER_INSET_VAR } from '@harness2/ui-shared/renderer/trajectory/index.js';
 import type { FileRefReader } from '@harness2/ui-shared/shared/file-ref.js';
 import type {
   FileReaderLike,

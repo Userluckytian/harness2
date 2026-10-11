@@ -15,12 +15,24 @@ for (const [dir, type] of [
   writeFileSync(resolve(target, 'package.json'), `${JSON.stringify({ type }, null, 2)}\n`, 'utf8');
 }
 
-// CSS：tsc 不搬非 TS 文件，这里把 src/styles/*.css 复制到 dist/{esm,cjs}/styles（两条件共用同一份）。
-const stylesDir = resolve(root, 'src/styles');
-for (const dir of ['dist/esm/styles', 'dist/cjs/styles']) {
-  const target = resolve(root, dir);
-  mkdirSync(target, { recursive: true });
-  for (const name of readdirSync(stylesDir)) {
-    copyFileSync(resolve(stylesDir, name), resolve(target, name));
+// CSS：tsc 不搬非 TS 文件，这里把 src/**/*.css 复制到 dist/{esm,cjs} 的同名相对路径
+// （两条件共用同一份）。范围：src/styles（壳样式表）+ src/renderer/**（组件级样式，如
+// renderer/trajectory/trajectory.css —— 由 trajectory-panel.tsx 相对导入，构建后需就位）。
+const cssRoot = resolve(root, 'src');
+const collectCss = (dir) => {
+  const out = [];
+  for (const entry of readdirSync(dir, { withFileTypes: true })) {
+    const abs = resolve(dir, entry.name);
+    if (entry.isDirectory()) out.push(...collectCss(abs));
+    else if (entry.name.endsWith('.css')) out.push(abs);
+  }
+  return out;
+};
+for (const dir of ['dist/esm', 'dist/cjs']) {
+  for (const abs of collectCss(cssRoot)) {
+    const rel = abs.slice(cssRoot.length + 1);
+    const target = resolve(root, dir, rel);
+    mkdirSync(dirname(target), { recursive: true });
+    copyFileSync(abs, target);
   }
 }

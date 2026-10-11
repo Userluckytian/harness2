@@ -6,7 +6,7 @@ import {
   formatUsage,
   previewValue,
   truncate,
-} from '../../src/renderer/trajectory/format.js';
+} from '@harness2/ui-shared/renderer/trajectory/format.js';
 import {
   deriveBetweenTurnsInspector,
   deriveInspectorForRow,
@@ -14,9 +14,9 @@ import {
   roleLabel,
   stateLabel,
   summarizeAttachments,
-} from '../../src/renderer/trajectory/inspector.js';
-import { projectTrajectory } from '../../src/renderer/trajectory/projection.js';
-import type { TrajectoryRow, TrajectoryStep } from '../../src/renderer/trajectory/types.js';
+} from '@harness2/ui-shared/renderer/trajectory/inspector.js';
+import { projectTrajectory } from '@harness2/ui-shared/renderer/trajectory/projection.js';
+import type { TrajectoryRow, TrajectoryStep } from '@harness2/ui-shared/renderer/trajectory/types.js';
 import { attachmentsFixture, betweenTurnsFixture, conversationFixture, T0 } from './fixtures.js';
 
 function stepsOf(events: ReturnType<typeof conversationFixture>) {

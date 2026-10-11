@@ -9,8 +9,8 @@
 //   诚实性：进行中的行 Time 列留空、Between turns 独立区段。
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react';
-import { projectTrajectory } from '../../src/renderer/trajectory/projection.js';
-import { TrajectoryPanel } from '../../src/renderer/trajectory/trajectory-panel.js';
+import { projectTrajectory } from '@harness2/ui-shared/renderer/trajectory/projection.js';
+import { TrajectoryPanel } from '@harness2/ui-shared/renderer/trajectory/trajectory-panel.js';
 import {
   betweenTurnsFixture,
   conversationFixture,

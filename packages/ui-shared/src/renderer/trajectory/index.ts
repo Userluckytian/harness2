@@ -140,9 +140,5 @@ export {
   initialComposerOverlayState,
   overlayInsetFromHost,
   parseComposerInsetPx,
-} from '@harness2/ui-shared/renderer/trajectory/shell-contract.js';
-export type {
-  ComposerOverlayHost,
-  ComposerOverlayState,
-  TrajectoryOverlayInset,
-} from '@harness2/ui-shared/renderer/trajectory/shell-contract.js';
+} from './shell-contract.js';
+export type { ComposerOverlayHost, ComposerOverlayState, TrajectoryOverlayInset } from './shell-contract.js';

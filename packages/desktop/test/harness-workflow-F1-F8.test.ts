@@ -17,7 +17,7 @@ import type { Bridge, BridgeDeps } from '../src/main/bridge.js';
 import type { Harness2Api, EffectiveRunConfigShape, WsFrame } from '../src/shared/protocol.js';
 import { AppStore } from '@harness2/ui-shared/renderer/store.js';
 import { createController } from '@harness2/ui-shared/renderer/app-controller.js';
-import { buildTaskTree } from '../src/renderer/features/plan/plan-model.js';
+import { buildTaskTree } from '@harness2/ui-shared/renderer/panels/plan/plan-model.js';
 
 vi.mock('electron', () => ({
   Notification: class {

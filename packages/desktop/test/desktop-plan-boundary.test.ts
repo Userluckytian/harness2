@@ -2,7 +2,11 @@
 import { describe, expect, it, vi } from 'vitest';
 import { AppStore } from '@harness2/ui-shared/renderer/store.js';
 import { createController } from '@harness2/ui-shared/renderer/app-controller.js';
-import { buildPlanDisplay, resolveModeSwitch, taskStateLabel } from '../src/renderer/features/plan/plan-model.js';
+import {
+  buildPlanDisplay,
+  resolveModeSwitch,
+  taskStateLabel,
+} from '@harness2/ui-shared/renderer/panels/plan/plan-model.js';
 import type { Harness2Api, PlanStateShape } from '../src/shared/protocol.js';
 
 const plan: PlanStateShape = {

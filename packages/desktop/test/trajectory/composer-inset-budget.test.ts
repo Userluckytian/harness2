@@ -15,7 +15,7 @@ const stylesCss = readFileSync(
   'utf8',
 );
 const trajectoryCss = readFileSync(
-  fileURLToPath(new URL('../../src/renderer/trajectory/trajectory.css', import.meta.url)),
+  fileURLToPath(new URL('../../../ui-shared/src/renderer/trajectory/trajectory.css', import.meta.url)),
   'utf8',
 );
 /** 去掉注释：样式表里的散文会提到属性名，不能当声明证据 */

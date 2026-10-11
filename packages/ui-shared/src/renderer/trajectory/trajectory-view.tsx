@@ -12,8 +12,8 @@
 // `composerInsetPx`（记录表的缺省兜底解析为 0px，不虚构预留）。
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import type { ReactNode } from 'react';
-import type { SessionImageUrlResolver } from '@harness2/ui-shared/renderer/conversation/views/image-url-cache.js';
-import type { AppStore } from '@harness2/ui-shared/renderer/store.js';
+import type { SessionImageUrlResolver } from '../conversation/views/image-url-cache.js';
+import type { AppStore } from '../store.js';
 import { findFocusRowKey, type TrajectoryFocusStore } from './inspect-focus.js';
 import { projectTrajectory } from './projection.js';
 import { currentStreamingStepId, TrajectoryTimingObserver } from './timing.js';

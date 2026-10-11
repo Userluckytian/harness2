@@ -1,10 +1,22 @@
 // 有效配置 / 上下文面板（D6 / F2/F8）：显示本轮**实际生效**的配置与上下文，全部来自 S7 `/run-config`。
 // 红线：不臆造配置；密钥不出现在界面；无能力/无配置给可行动提示（不摆假入口）。
-import { useEffect, useState } from 'react';
+//
+// Z7-a：已下沉 ui-shared（壳无关）。数据源 = 壳注入的 `store` / `controller`；
+// 「上下文占用」是**壳可选端口**（桌面 = preload `getContextUsage` IPC；web 无此通道 →
+// 不注入即不显示占用注记，不摆假数据）。
+import { useEffect, useState, useSyncExternalStore } from 'react';
+import type { ReactNode } from 'react';
 import { capabilityEnabled, capabilityReason, CAPABILITY_LABELS } from '../../../shared/capabilities.js';
 import type { CapabilityIdShape, EffectiveRunConfigShape } from '../../../shared/protocol.js';
-import { controller, store, useAppState } from '../../app-shared.js';
-import { cancelStateLabel, deriveRuntimeStatus } from '../runtime/runtime-status.js';
+import type { Controller } from '../../app-controller.js';
+import { cancelStateLabel, deriveRuntimeStatus } from '../../features/runtime/runtime-status.js';
+import type { AppStore } from '../../store.js';
+
+/** 上下文占用读数（与 core `/context` 同源；usage 0..1 或 null=未知） */
+export interface ContextUsageReading {
+  readonly usage: number | null;
+  readonly label: string;
+}
 
 /** P1-1 连带防御：指派分栏现在也会写入视图缓存 —— 旧 serve/异常数据可能缺关键字段。
  *  形状不完整时按「未载入」呈现：不渲染半份配置，也不崩溃。 */
@@ -20,8 +32,8 @@ function isDisplayableRunConfig(rc: EffectiveRunConfigShape): boolean {
 }
 
 /** 能力行（不可用时 disabled + 原因，不摆可点假入口） */
-function CapabilityRow({ id }: { id: CapabilityIdShape }) {
-  const state = useAppState();
+function CapabilityRow({ store, id }: { store: AppStore; id: CapabilityIdShape }): ReactNode {
+  const state = useSyncExternalStore(store.subscribe, store.getState);
   const report = state.capabilities;
   const enabled = capabilityEnabled(report, id);
   const reason = capabilityReason(report, id);
@@ -34,18 +46,30 @@ function CapabilityRow({ id }: { id: CapabilityIdShape }) {
   );
 }
 
-export function EffectiveConfigPanel({ sessionId }: { sessionId: string | null }) {
-  const state = useAppState();
-  const [usage, setUsage] = useState<{ usage: number | null; label: string } | null>(null);
+export interface EffectiveConfigPanelProps {
+  readonly store: AppStore;
+  readonly controller: Controller;
+  readonly sessionId: string | null;
+  /** 上下文占用读取端口（壳可选；缺失 = 不显示占用注记） */
+  readonly getContextUsage?: (sessionId: string) => Promise<ContextUsageReading>;
+}
+
+export function EffectiveConfigPanel({
+  store,
+  controller,
+  sessionId,
+  getContextUsage,
+}: EffectiveConfigPanelProps): ReactNode {
+  const state = useSyncExternalStore(store.subscribe, store.getState);
+  const [usage, setUsage] = useState<ContextUsageReading | null>(null);
 
   useEffect(() => {
-    if (sessionId === null) {
+    if (sessionId === null || getContextUsage === undefined) {
       setUsage(null);
       return;
     }
     let cancelled = false;
-    void window.harness2
-      .getContextUsage(sessionId)
+    void getContextUsage(sessionId)
       .then((u) => {
         if (!cancelled) setUsage(u);
       })
@@ -55,7 +79,7 @@ export function EffectiveConfigPanel({ sessionId }: { sessionId: string | null }
     return () => {
       cancelled = true;
     };
-  }, [sessionId]);
+  }, [sessionId, getContextUsage]);
 
   if (sessionId === null) return <div className="panel-empty">未选择会话</div>;
   const views = store.peekViews(sessionId);
@@ -165,16 +189,22 @@ export function EffectiveConfigPanel({ sessionId }: { sessionId: string | null }
       </dl>
       <div className="panel-head cap-head">能力盘点</div>
       <div className="cap-list">
-        <CapabilityRow id="serve" />
-        <CapabilityRow id="run-config" />
-        <CapabilityRow id="plan-state" />
-        <CapabilityRow id="execution-view" />
-        <CapabilityRow id="change-review" />
-        <CapabilityRow id="queue" />
-        <CapabilityRow id="steer" />
-        <CapabilityRow id="cancel" />
-        <CapabilityRow id="fork" />
-        <CapabilityRow id="resume-subscription" />
+        {(
+          [
+            'serve',
+            'run-config',
+            'plan-state',
+            'execution-view',
+            'change-review',
+            'queue',
+            'steer',
+            'cancel',
+            'fork',
+            'resume-subscription',
+          ] as const
+        ).map((id) => (
+          <CapabilityRow key={id} store={store} id={id} />
+        ))}
       </div>
       <div className="panel-foot">
         <button type="button" onClick={() => void controller.refreshRunConfig(sessionId)}>

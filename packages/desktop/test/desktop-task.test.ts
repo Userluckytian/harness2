@@ -5,7 +5,7 @@ import {
   isTerminalTaskState,
   summarizeTasks,
   taskStateLabel,
-} from '../src/renderer/features/plan/plan-model.js';
+} from '@harness2/ui-shared/renderer/panels/plan/plan-model.js';
 import { AppStore } from '@harness2/ui-shared/renderer/store.js';
 import { createController } from '@harness2/ui-shared/renderer/app-controller.js';
 import type { Harness2Api, TaskContractShape } from '../src/shared/protocol.js';
