@@ -1,5 +1,7 @@
 // @harness2/core —— 会话内核（事件日志、投影、轨迹）+ agent loop + 工具系统 + Provider 缝。
 export * from './session/types.js';
+// D02 事件类型开放化（2026-10-11）加性导出：扩展事件类型注册表 + 扩展事件解析。
+export * from './session/extension-events.js';
 export * from './session/writer.js';
 export * from './session/reader.js';
 export * from './session/snapshots.js';
@@ -70,5 +72,7 @@ export * from './mcp/client.js';
 export * from './doctor/index.js';
 export * from './doctor/crash.js';
 export * from './commands/index.js';
+// D02 服务容器（2026-10-11）加性导出：ServiceContainer + createCoreContainer（内建挂两注册表）。
+export * from './container.js';
 
 export { CORE_VERSION } from './version.js';

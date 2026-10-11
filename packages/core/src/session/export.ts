@@ -270,7 +270,9 @@ function replayFromJsonl(text: string, source: string): ReplaySessionReport {
   // id 优先取 header；无头时按包内路径推导（subagents/<id>/… → <id>），再退 'unknown'
   const pathDerived = source.startsWith('subagents/') ? source.split('/')[1] : undefined;
   const id = header?.sessionId ?? pathDerived ?? 'unknown';
-  const projection = computeProjection({ dir: source, header, events, warnings });
+  // 回放校验按内建 schema 严格解析（parseEventLine）：扩展事件行在此计为坏行
+  // （未注册即未知，fail-closed——扩展感知的导入留后续批次）。
+  const projection = computeProjection({ dir: source, header, events, extensionEvents: [], warnings });
   return {
     id,
     source,

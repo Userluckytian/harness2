@@ -17,6 +17,7 @@ import {
 } from 'node:fs';
 import { join } from 'node:path';
 import {
+  SESSION_FORMAT_VERSION,
   SESSION_LOCK_FILE,
   SESSION_LOG_FILE,
   type SessionEvent,
@@ -28,6 +29,7 @@ import {
   isSessionEventType,
   parseEventLine,
 } from './types.js';
+import { extensionEventTypes, parseExtensionEventLine, type ExtensionSessionEvent } from './extension-events.js';
 
 export interface SessionWriterOptions {
   /** 每次追加后 fsync（默认 true；测试可关） */
@@ -44,6 +46,11 @@ export interface SessionAppender {
   /** 日志最后一个事件的 seq */
   get lastSeq(): number;
   append<T extends SessionEventType>(type: T, payload: SessionEventMap[T]): SessionEvent<T>;
+  /**
+   * 扩展事件写入（D02 事件类型开放化；可选——观察包裹器等既有实现无需跟进）。
+   * 仅接受已注册的扩展类型（未注册 fail-closed）；payload 先过注册的 validator。
+   */
+  appendExtension?(type: string, payload: Record<string, unknown>): ExtensionSessionEvent;
 }
 
 export class SessionLockedError extends Error {
@@ -141,7 +148,14 @@ export class SessionWriter {
 
   append<T extends SessionEventType>(type: T, payload: SessionEventMap[T]): SessionEvent<T> {
     if (this.closed) throw new Error('writer is closed');
-    if (!isSessionEventType(type)) throw new Error(`unknown event type: ${type}`);
+    if (!isSessionEventType(type)) {
+      // fail-closed：内建白名单之外一律拒；已注册的扩展类型给明确指引（写扩展走 appendExtension）
+      throw new Error(
+        extensionEventTypes.has(type)
+          ? `event type ${type} is an extension type; use appendExtension()`
+          : `unknown event type: ${type}`,
+      );
+    }
     if (type === 'rewind/marker') {
       // P2-1：rewindToSeq 必须指向本日志中已存在的事件（1..lastSeq），越界在写入口即拒绝
       const n = (payload as RewindMarkerPayload).rewindToSeq;
@@ -169,6 +183,33 @@ export class SessionWriter {
     }
     const event: SessionEvent<T> = {
       v: 1,
+      seq: this.nextSeq,
+      ts: new Date().toISOString(),
+      type,
+      payload,
+    };
+    writeSync(this.fd, JSON.stringify(event) + '\n');
+    if (this.doFsync) fsyncSync(this.fd);
+    this.nextSeq += 1;
+    return event;
+  }
+
+  /**
+   * 扩展事件写入（D02 事件类型开放化）：与内建 append 共用同一 seq 空间与信封
+   * （v/seq/ts 机制同等生效）。仅接受已注册的扩展类型，payload 先过注册的 validator
+   * （与内建特例校验同口径：不合规 payload 在写入口即拒，避免读回即 corrupt）。
+   */
+  appendExtension(type: string, payload: Record<string, unknown>): ExtensionSessionEvent {
+    if (this.closed) throw new Error('writer is closed');
+    const def = extensionEventTypes.get(type);
+    if (def === undefined) {
+      throw new Error(`unknown extension event type: ${type}（先经 extensionEventTypes.register 注册）`);
+    }
+    if (!def.validator(payload)) {
+      throw new Error(`invalid extension event payload for ${type}（validator 拒绝）`);
+    }
+    const event: ExtensionSessionEvent = {
+      v: SESSION_FORMAT_VERSION,
       seq: this.nextSeq,
       ts: new Date().toISOString(),
       type,
@@ -230,8 +271,8 @@ export class SessionWriter {
   /**
    * 检测并截断文件尾部的崩溃撕裂区。返回丢弃的字节数（0 表示无需恢复）。
    * 按字节偏移逐行扫描（多字节 UTF-8 安全）：换行即提交标记 ——
-   *   - 合法事件行与空行：已提交，保留并继续扫描；
-   *   - 非空且 parseEventLine 失败的行：撕裂区起点，该行及其后全部丢弃；
+   *   - 合法事件行（内建或已注册扩展）与空行：已提交，保留并继续扫描；
+   *   - 非空且两级解析都失败的行：撕裂区起点，该行及其后全部丢弃；
    *   - 末尾未以 \n 终止的尾行：无论 JSON 是否完整，一律视为未提交丢弃。
    * goodBytes 始终不超过文件大小（结构上保证 truncate 不会把文件变长）。
    */
@@ -244,8 +285,12 @@ export class SessionWriter {
     while (pos < before) {
       const nl = buf.indexOf(0x0a, pos);
       if (nl === -1) break; // 尾行无换行 → 未提交，从该行起全部丢弃
-      if (nl > pos && parseEventLine(buf.subarray(pos, nl).toString('utf8')) === null) {
-        break; // 非空且非法 → 撕裂区起点
+      if (nl > pos) {
+        const text = buf.subarray(pos, nl).toString('utf8');
+        // 内建与扩展两级解析：任一接受即视为已提交（扩展类型未注册的行按现状视为非法）
+        if (parseEventLine(text) === null && parseExtensionEventLine(text) === null) {
+          break; // 非空且非法 → 撕裂区起点
+        }
       }
       // 空行（nl === pos，保留）或合法事件行（已提交）
       goodBytes = nl + 1;
@@ -262,7 +307,7 @@ export class SessionWriter {
     let lastSeq = 0;
     for (const line of lines) {
       if (line.length === 0) continue;
-      const e = parseEventLine(line);
+      const e = parseEventLine(line) ?? parseExtensionEventLine(line);
       if (e === null) throw new Error(`corrupt event line in ${logPath}: ${line.slice(0, 80)}`);
       count += 1;
       lastSeq = e.seq;

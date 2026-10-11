@@ -5,10 +5,13 @@
 // README 已注明）、影子事件（被回退遮蔽的 history 不进新时间线）、文件快照（快照
 // 属原会话目录，不迁移）。memory/snapshot 是普通活动事件，照常复制（分叉后冻结
 // 语义继续成立：后续轮复用快照）。
+// D02 扩展事件：活动（未被 rewind 遮蔽）且 seq <= atSeq 的扩展事件照常复制
+// （appendExtension 重放；类型必须仍处于注册态，未注册 fail-closed 抛错）。
 import { rmSync } from 'node:fs';
 import { computeProjection, loadSession } from './reader.js';
 import { SessionManager } from './manager.js';
-import type { AnySessionEvent } from './types.js';
+import type { ExtensionSessionEvent } from './extension-events.js';
+import { isSessionEventType, type AnySessionEvent } from './types.js';
 import { SessionWriter } from './writer.js';
 
 export interface ForkOptions {
@@ -50,25 +53,35 @@ export function forkSession(manager: SessionManager, id: string, options: ForkOp
   if (header === null || header.cwd === undefined) {
     throw new ForkError('invalid', `会话 ${id} 缺少 header.cwd，无法确定分叉会话的分组目录`);
   }
-  computeProjection(session); // 就地标记活动性（影子事件不复制）
-  const lastSeq = session.events.at(-1)?.event.seq ?? 0;
+  computeProjection(session); // 就地标记活动性（内建与扩展两条通道；影子事件不复制）
+  const lastSeq = Math.max(session.events.at(-1)?.event.seq ?? 0, session.extensionEvents.at(-1)?.event.seq ?? 0);
   const atSeq = options.atSeq ?? lastSeq;
   if (!Number.isInteger(atSeq) || atSeq < 1 || atSeq > lastSeq) {
     throw new ForkError('invalid', `atSeq 必须是 1..${lastSeq} 的整数，实际为 ${String(options.atSeq)}`);
   }
-  const toCopy: AnySessionEvent[] = session.events
-    .filter(
-      ({ event, active }) =>
-        active && event.seq <= atSeq && event.type !== 'session/header' && event.type !== 'rewind/marker',
-    )
-    .map(({ event }) => event);
+  // 两条活动通道按原 seq 归并（保持日志序重放）：内建排除 header/rewind，扩展照常携带
+  const toCopy: Array<AnySessionEvent | ExtensionSessionEvent> = [
+    ...session.events
+      .filter(
+        ({ event, active }) =>
+          active && event.seq <= atSeq && event.type !== 'session/header' && event.type !== 'rewind/marker',
+      )
+      .map(({ event }) => event),
+    ...session.extensionEvents.filter(({ event, active }) => active && event.seq <= atSeq).map(({ event }) => event),
+  ].sort((a, b) => a.seq - b.seq);
 
   // 新会话落在与原会话相同的 cwd 组（encodeCwd 对同一 cwd 真值结果确定）
   const created = manager.create(header.cwd, { parentSession: id, isSeeded: true });
   const writer: SessionWriter = created.writer;
   try {
     for (const event of toCopy) {
-      writer.append(event.type, event.payload); // 新 seq + 新 ts；payload 原样保留（含原 turnId）
+      if (isSessionEventType(event.type)) {
+        const builtin = event as AnySessionEvent;
+        writer.append(builtin.type, builtin.payload); // 新 seq + 新 ts；payload 原样保留（含原 turnId）
+      } else {
+        const ext = event as ExtensionSessionEvent;
+        writer.appendExtension(ext.type, ext.payload); // 扩展事件经注册表 validator 重放
+      }
     }
   } catch (e) {
     // 复制中途失败：关闭半成品 writer 并删除半成品会话目录（不让半截会话留在库里）

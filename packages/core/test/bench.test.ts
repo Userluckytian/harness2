@@ -59,6 +59,7 @@ describe('合成日志生成器', () => {
       dir: 'bench',
       header: null,
       events: events.map((event) => ({ event, active: true })),
+      extensionEvents: [],
       warnings: [],
     });
     expect(p.shadowedCount).toBeGreaterThan(0);

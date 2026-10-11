@@ -1,10 +1,13 @@
 // 能力描述（describeCapabilities）：向壳/外部展示 core 的命令面、审批模式、工具表与审批策略摘要。
 // 只读聚合、不重复造枚举：modes 读 config 的 APPROVAL_MODES，safeTools 读 approval/policy 的
 // DEFAULT_SAFE_TOOLS，tools 读 tools/predefined 的 builtinTools（注册顺序）。
+// D02 命令注册开放化：commands 条目加性携带 source（builtin 29 条 + 运行时注册的
+// extension 命令）；旧消费者不读该字段不受影响。
 import { DEFAULT_SAFE_TOOLS } from '../approval/policy.js';
 import { APPROVAL_MODES, type ApprovalMode } from '../config/schema.js';
 import { builtinTools } from '../tools/predefined/index.js';
 import { CORE_COMMAND_META, type CoreCommandMeta } from './catalog.js';
+import { listExtensionCoreCommands } from './registry.js';
 
 /** 审批模式能力条目（内核值；壳负责展示别名映射，如 normal↔default） */
 export interface ApprovalModeCapability {
@@ -31,7 +34,7 @@ export interface ApprovalPolicyCapability {
 
 /** core 能力描述（shellOnly 命令含在内，供壳标注「由界面层实现」） */
 export interface CoreCapabilities {
-  /** 全部注册命令（13 条元数据，声明顺序 = 帮助展示顺序） */
+  /** 全部注册命令（内建 29 条 + 运行时扩展，source 加性标记；声明/注册顺序） */
   commands: readonly CoreCommandMeta[];
   /** 审批模式与说明（来自 approval policy，非重复枚举） */
   modes: readonly ApprovalModeCapability[];
@@ -52,7 +55,13 @@ const MODE_DESCRIPTIONS: Readonly<Record<ApprovalMode, string>> = {
 /** 描述 core 当前能力面（命令/模式/工具/审批策略），供壳与外部展示消费 */
 export function describeCapabilities(): CoreCapabilities {
   return {
-    commands: CORE_COMMAND_META,
+    commands: [
+      // 内建条目统一补 source='builtin'（目录条目本身缺省，保持 catalog 纯数据）
+      ...CORE_COMMAND_META.map((meta) => ({ ...meta, source: 'builtin' as const })),
+      // 运行时注册的扩展命令（注册序；无注册时空数组——既有消费面零变化）。
+      // 与内建条目同口径只暴露元数据：剥掉 run 执行体（执行面走 findCoreCommand/runCoreCommand）。
+      ...listExtensionCoreCommands().map(({ run: _run, ...meta }) => meta),
+    ],
     modes: APPROVAL_MODES.map((mode) => ({ mode, description: MODE_DESCRIPTIONS[mode] })),
     tools: builtinTools.map((t) => ({ name: t.name, description: t.description })),
     approvalPolicy: {

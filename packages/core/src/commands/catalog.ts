@@ -14,7 +14,7 @@
 //     归「通用」（CoreCommandGroup 联合类型在 types.ts 冻结，本棒只改 catalog.ts）；
 //   - 上游专有且 core 无能力的命令（model/copy/delete/rename/home/loop 等）不注册，
 //     盘点表见 P3-A 报告（P7 归存清单）。
-import type { CoreCommandGroup } from './types.js';
+import type { CoreCommandGroup, CoreCommandSource } from './types.js';
 
 /** 命令元数据（无执行体——describeCapabilities 的 commands 条目即本形态） */
 export interface CoreCommandMeta {
@@ -29,6 +29,8 @@ export interface CoreCommandMeta {
   argsSpec?: string;
   /** true = 实现留壳（mode/reasoning：壳状态/呈现语义，core 只注册元数据） */
   shellOnly?: boolean;
+  /** 来源标记（D02 加性；内建目录条目缺省 = builtin，describeCapabilities 统一补齐） */
+  source?: CoreCommandSource;
 }
 
 export const CORE_COMMAND_META: readonly CoreCommandMeta[] = [

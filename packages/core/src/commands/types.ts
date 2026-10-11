@@ -14,6 +14,13 @@ import type { ToolSelectionConfig } from '../tools/selection.js';
 /** 命令语义分组（describeCapabilities / 帮助展示用） */
 export type CoreCommandGroup = '会话' | '历史' | '上下文' | '调度' | '模式' | '通用';
 
+/**
+ * 命令来源（D02 命令注册开放化，加性字段）：builtin = core 内建目录（catalog.ts，
+ * 不可覆盖不可注销）；extension = 运行时经 registerCoreCommand 注册。旧消费者不读
+ * 该字段不受影响（加性）。
+ */
+export type CoreCommandSource = 'builtin' | 'extension';
+
 /** 单次命令调用的参数（后续扩展加字段不破坏既有 run 签名） */
 export interface CoreCommandArgs {
   /** 命令词后的其余参数（已 trim；可为空串） */
@@ -85,4 +92,6 @@ export interface CoreCommand {
   shellOnly?: boolean;
   /** 执行体；shellOnly 命令必须缺省 */
   run?: CoreCommandRun;
+  /** 来源标记（D02 加性；运行时注册的扩展命令恒为 'extension'，内建条目缺省） */
+  source?: CoreCommandSource;
 }

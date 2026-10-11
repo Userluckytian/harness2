@@ -11,6 +11,18 @@ export {
   CORE_COMMANDS,
   type ParsedCoreCommand,
 } from './registry.js';
+// D02 命令注册开放化（加性）：运行时注册/注销/清单 + 容器内建服务门面。
+export {
+  registerCoreCommand,
+  unregisterCoreCommand,
+  listCoreCommands,
+  listExtensionCoreCommands,
+  resetCoreCommands,
+  coreCommandRegistry,
+  type CoreCommandRegistration,
+  type CoreCommandRegistryService,
+  type RegisteredExtensionCommand,
+} from './registry.js';
 export {
   describeCapabilities,
   type ApprovalModeCapability,
