@@ -74,7 +74,7 @@
 
 - 公共可复用模块放入统一目录（如 `src/components/`、`lib/`、`common/`），保持职责单一。
 - 对外接口支持统一的输入/输出约定，必要时提供默认值。
-- 样式若使用 CSS 变量，统一使用 `--app-*` 前缀（适配主题/暗色切换）。
+- 样式若使用 CSS 变量，统一使用**语义 token 命名**（GUI 见 `packages/ui-shared/src/styles/styles.css` 三层 token；CLI TUI 见 `packages/cli/src/tui/next/theme.ts`）。
 
 ## 项目专属约定
 
@@ -105,12 +105,26 @@
 - **packages/desktop**（npm `@harness2/desktop`，Electron）：`main/`（主进程：spawn 本地 serve + 窗口）、`preload/`、`renderer/`（**React 视图**：四席位骨架在 `renderer/layout/`、侧栏在 `renderer/sidebar/`、既有组件在 `renderer/components/`（ChatView / SidePanel / SettingsDialog / CommandPalette 等）；渲染进程零 Node）、`shared/`
 - **packages/gateway**（npm `@harness2/gateway`，IM 网关）：QQ / 飞书消息桥接到本地 serve，`platforms/`
 
-### 前端约定（desktop renderer / cli TUI）
+### 前端约定（GUI：desktop renderer / web）
+
+> **2026-10-10 决策（本条约修订）**：GUI 视觉基线改为 **ZCode**（依据 `docs/refs/refs-zcode.md`、`docs/refs/refs-zcode-layout.md`），
+> 技术栈引入 **Tailwind v4 + shadcn/ui（radix-mira）+ Radix + lucide**。
+> **原「不引 UI 框架」口径同时作废**；原 `--app-*` 变量前缀口径作废（与实际代码早已不符）。
 
 - 组件命名：**PascalCase 文件 + 默认导出**（`ChatView.tsx`、`SessionList.tsx`）
 - 状态管理：renderer `store.ts` / `app-controller.ts` 收口；渲染进程只经 HTTP/WS 与 serve 通信，不直接 import `@harness2/core`
-- 样式作用域 / 主题变量：`renderer/styles.css` + `theme.ts`，CSS 变量统一 `--app-*` 前缀（适配暗色切换）；不引 UI 框架
-- 路由 / 目录结构：无路由；`renderer/`（视图）+ `renderer/components/`（组件）按职责分文件
+- 样式：**Tailwind v4 utility + 语义 token**；共享 token 定义在 `packages/ui-shared/src/styles/styles.css`（三层：primitive → semantic → component）
+  - **只用语义 token**；禁止 `text-white/60`、`border-white/10` 这类一次性色值
+  - **字号只用 `text-ui-*` 刻度**（基准 `--ui-font-size`，默认 14px）；禁止 Tailwind 内置 `text-sm/base/xs` 或任意 `text-[13px]`
+  - 组件原语用 `packages/ui-shared/src/components/ui/`（shadcn 源码 + `cn()`，`cn` 需把 `text-ui-*` 注册进 `font-size` classGroup）
+  - **壳不许自己发明交互**：每一处交互/样式/布局都必须能指到条目编号（`Z-*` / `G-*` / `D-*` / `H-*`），见 `docs/refs/README.md`
+- 主题：`system` / `zai-light` / `zai-dark` 三态，跟随系统 + 持久化；桌面镜像到 Electron `nativeTheme`
+- 目录组织：按 `refs-zcode-layout.md` 的壳骨架划分（`app-shell/` `conversation/` `sidebar/` `side-pane/` `workbench/` `trajectory/` `code/` `settings/` `command-center/` `theme/`），无路由
+
+### 前端约定（CLI TUI）
+
+- CLI 终端界面**保持复刻 grok-build**（`docs/refs/refs-grok-build.md`，V 程序），**不参与本次 ZCode 化**
+- 自研字符网格渲染器（`packages/cli/src/tui/next/`，P10 起单轨）；**不引 React / Ink**，也不引 Tailwind
 
 ### 后端约定（core server / 服务端）
 

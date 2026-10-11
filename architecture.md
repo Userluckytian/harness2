@@ -6,16 +6,17 @@
 
 ## 技术栈（2026-09-06 确认）
 
-| 分类          | 技术                                        | 版本 | 说明                                              |
-| ------------- | ------------------------------------------- | ---- | ------------------------------------------------- |
-| 语言          | TypeScript（strict）                        | 5.x  | 全栈同语言                                        |
-| 运行时        | Node.js                                     | ≥22  | LTS                                               |
-| 包管理        | pnpm workspaces                             | 11.x | 备选 npm workspaces（Windows 符号链接异常时降级） |
-| 测试          | vitest                                      | 3.x  | 含快照回放测试                                    |
-| CLI 框架      | commander                                   | 14.x | 轻量命令解析                                      |
-| 桌面端（P1）  | Electron + React                            | —    | WebContentsView 内嵌浏览器                        |
-| 存储          | JSONL（会话事件）+ SQLite（索引/FTS，后期） | —    | 事件日志为唯一事实源                              |
-| IM 网关（P2） | Node 常驻进程 + QQ 官方 Bot API v2          | —    | 用户已在 QQ 开放平台注册                          |
+| 分类          | 技术                                        | 版本 | 说明                                                                                                                        |
+| ------------- | ------------------------------------------- | ---- | --------------------------------------------------------------------------------------------------------------------------- |
+| 语言          | TypeScript（strict）                        | 5.x  | 全栈同语言                                                                                                                  |
+| 运行时        | Node.js                                     | ≥22  | LTS                                                                                                                         |
+| 包管理        | pnpm workspaces                             | 11.x | 备选 npm workspaces（Windows 符号链接异常时降级）                                                                           |
+| 测试          | vitest                                      | 3.x  | 含快照回放测试                                                                                                              |
+| CLI 框架      | commander                                   | 14.x | 轻量命令解析                                                                                                                |
+| 桌面端（P1）  | Electron + React                            | —    | WebContentsView 内嵌浏览器                                                                                                  |
+| GUI 样式栈    | Tailwind v4 + shadcn/ui(radix-mira) + Radix | —    | 2026-10-10 起；视觉/布局基线 = ZCode（`docs/refs/refs-zcode*.md`），token 三层见 `packages/ui-shared/src/styles/styles.css` |
+| 存储          | JSONL（会话事件）+ SQLite（索引/FTS，后期） | —    | 事件日志为唯一事实源                                                                                                        |
+| IM 网关（P2） | Node 常驻进程 + QQ 官方 Bot API v2          | —    | 用户已在 QQ 开放平台注册                                                                                                    |
 
 ## 目录结构（四包位形）
 

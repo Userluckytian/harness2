@@ -109,6 +109,8 @@
 | `ui-shared` | 壳层共享包（组件 + 端口层 `HarnessClient`/`Persistence`/`AttachmentReader`/`HostBridge`），零 electron/node 依赖；desktop 无复制粘贴                                          | P8 硬规则          | ✅                        |
 | `gateway`   | **零改动**                                                                                                                                                                    | H-47 待拍板        | ⬜ 待人类决策             |
 
+> **2026-10-10 补充（不修改上表历史记录）**：上表"桌面参考 deepseek"是 P0–P9 壳复刻轮的历史事实。同日决策**将 GUI（桌面 + Web）的视觉与布局基线改为 ZCode**（`docs/refs/refs-zcode.md` + `refs-zcode-layout.md`，条目 `Z-*`），deepseek 降为"页面布局既有参考"；技术栈随之引入 **Tailwind v4 + shadcn/ui + Radix**（见 `coding-standards.md` 前端约定）。总纲：`docs/ai-framework/plans/2026-10-10-phase-zcode-ui-overhaul.md`（Z0–Z7）。**CLI 不受影响，仍以 grok-build 为准。**
+
 ### 仍缺 / 归存（超出原 26 项的 hermes 对标，详见 OPEN.md）
 
 - **flows / cron 三壳渲染（H-44、H-46、H-66~H-68）**：core 契约 + 状态机 + 用例齐备，CLI/serve/桌面**零接线** → 归存 P8/P9 后续。

@@ -23,15 +23,21 @@ harness2/
 
 当前实现位于 `packages/{core,cli,desktop,gateway}`，尚无 `web` 包；由阶段计划负责收敛。
 
-**核心约束：壳不许自己发明交互。** 壳的每一处交互、样式、布局，都必须能在本目录文档里指到一个条目编号（`G-*` / `D-*` / `H-*`）。找不到条目就先补条目，再写代码。
+**核心约束：壳不许自己发明交互。** 壳的每一处交互、样式、布局，都必须能在本目录文档里指到一个条目编号（`G-*` / `D-*` / `H-*` / `Z-*`）。找不到条目就先补条目，再写代码。
 
-### 三份参考文档与各自职责
+### 参考文档与各自职责
 
-| 文档                       | 参考项目                               | 在本项目中的职责                                                   |
-| -------------------------- | -------------------------------------- | ------------------------------------------------------------------ |
-| `refs-grok-build.md`       | `D:\AI_Projects\refs\grok-build`       | **CLI 交互完全复刻**的权威规格（键位、命令面、模式、状态行）       |
-| `refs-deepseek-harness.md` | `D:\AI_Projects\refs\deepseek-harness` | **桌面壳**的对话页面、会话列表、模型配置、轨迹视图、布局与样式参考 |
-| `refs-hermes-agent.md`     | `D:\AI_Projects\refs\hermes-agent`     | **功能完整性**基准（deepseek-harness 功能面偏薄，以 hermes 为准）  |
+| 文档                       | 参考项目                               | 在本项目中的职责                                                                     |
+| -------------------------- | -------------------------------------- | ------------------------------------------------------------------------------------ |
+| `refs-grok-build.md`       | `D:\AI_Projects\refs\grok-build`       | **CLI 交互完全复刻**的权威规格（键位、命令面、模式、状态行）                         |
+| `refs-zcode.md`            | `D:\AI_Projects\refs\ZCode`            | **GUI 视觉与组件规格权威**（设计原则、token、字体与尺寸、组件、主题链路、页面规格）  |
+| `refs-zcode-layout.md`     | `D:\AI_Projects\refs\ZCode`            | **GUI 布局与信息架构权威**（外壳、区域、默认展开折叠矩阵、几何常量、z-index、场景）  |
+| `refs-deepseek-harness.md` | `D:\AI_Projects\refs\deepseek-harness` | **桌面/Web 页面布局的既有参考**（对话页、会话列表、模型配置、轨迹视图的排布参考）    |
+| `refs-hermes-agent.md`     | `D:\AI_Projects\refs\hermes-agent`     | **功能完整性**基准 + **设计原则**参考（deepseek-harness 功能面偏薄，以 hermes 为准） |
+
+> **2026-10-10 决策**：GUI 的视觉与组件基线**由 deepseek 改为 ZCode**（`Z-*` 条目为权威）；
+> deepseek 降级为"页面布局既有参考"，hermes 保留"功能完整性 + 设计原则"职责。
+> **CLI 仍以 grok-build 为唯一依据（`G-*`），不参与本次 ZCode 化。**
 
 ---
 
@@ -39,10 +45,10 @@ harness2/
 
 任何涉及壳层（`cli` / `desktop` / `web`）的工作，开工顺序固定为六步，**不得跳步**：
 
-1. **拉取上游最新代码**（三个仓库都要）：
+1. **拉取上游最新代码**（四个仓库都要）：
 
    ```powershell
-   foreach ($p in @('D:\AI_Projects\refs\grok-build','D:\AI_Projects\refs\deepseek-harness','D:\AI_Projects\refs\hermes-agent')) {
+   foreach ($p in @('D:\AI_Projects\refs\grok-build','D:\AI_Projects\refs\deepseek-harness','D:\AI_Projects\refs\hermes-agent','D:\AI_Projects\refs\ZCode')) {
      git -C $p fetch --all --prune
      git -C $p pull --ff-only
      git -C $p rev-parse --short HEAD
@@ -60,7 +66,7 @@ harness2/
 
 ---
 
-## 3 文档结构模板（三份文档统一）
+## 3 文档结构模板（各参考文档统一）
 
 每份 `refs-<项目名>.md` 固定包含以下小节，顺序不变：
 
@@ -78,22 +84,25 @@ harness2/
 
 ### 条目编号规则
 
-| 前缀  | 来源             | 用途                      |
-| ----- | ---------------- | ------------------------- |
-| `G-*` | grok-build       | CLI 交互条目              |
-| `D-*` | deepseek-harness | 桌面/Web 壳布局与页面条目 |
-| `H-*` | hermes-agent     | 功能完整性条目            |
+| 前缀  | 来源             | 用途                            |
+| ----- | ---------------- | ------------------------------- |
+| `G-*` | grok-build       | CLI 交互条目                    |
+| `D-*` | deepseek-harness | 桌面/Web 壳布局与页面条目       |
+| `H-*` | hermes-agent     | 功能完整性条目                  |
+| `Z-*` | ZCode            | **GUI 视觉 / 组件 / 布局与 IA** |
+
+`Z-*` 分区约定：`Z-01`～`Z-45` 在 `refs-zcode-layout.md`（布局与 IA）；`Z-60` 起在 `refs-zcode.md`（视觉与组件规格）。
 
 编号一经分配**永不复用、永不重排**；条目作废时保留编号并标 `➖` + 理由。
 
 ### 复刻等级
 
-| 等级       | 含义                                                             |
-| ---------- | ---------------------------------------------------------------- |
-| **必刻**   | 逐键位、逐文案、逐状态复刻，偏差即 bug（CLI 对 grok-build 默认） |
-| **参考**   | 形似即可，允许本地化与技术栈替换（桌面壳对 deepseek 默认）       |
-| **补齐**   | 功能要有，交互形态自定（对 hermes 默认）                         |
-| **不采纳** | 明确不做，必须写理由                                             |
+| 等级       | 含义                                                                                            |
+| ---------- | ----------------------------------------------------------------------------------------------- |
+| **必刻**   | 逐键位、逐文案、逐状态、逐数值复刻，偏差即 bug（CLI 对 grok-build 默认；GUI 骨架对 ZCode 默认） |
+| **参考**   | 形似即可，允许本地化与技术栈替换                                                                |
+| **补齐**   | 功能要有，交互形态自定（对 hermes 默认）                                                        |
+| **不采纳** | 明确不做，必须写理由                                                                            |
 
 ### 状态符号
 
@@ -125,5 +134,9 @@ harness2/
 ## 6 与阶段计划的关系
 
 - 本目录回答「**壳长什么样**」；`docs/ai-framework/plans/` 回答「**分几步做到**」。
-- 当前生效的壳层实施计划：`docs/ai-framework/plans/2026-09-13-phase-shell-replication.md`。
+- 当前生效的壳层实施计划：
+  - **GUI（桌面 + Web）**：ZCode 化总纲 `docs/ai-framework/plans/2026-10-10-phase-zcode-ui-overhaul.md`（Z0–Z7）
+  - **CLI**：grok 复刻 `docs/ai-framework/plans/2026-09-17-visual-parity-program.md`（V0–V6）
+  - 桌面既有改造：`docs/ai-framework/plans/2026-09-17-phase-desktop-overhaul.md`（R0–R3；其 R2 参考对象已改指 ZCode）
+  - 功能总账：`docs/ai-framework/plans/zcode-ui-traceability.md`（A/B/C/D 四组）
 - 阶段计划的验收表必须引用本目录的条目编号，禁止出现无编号的验收项。

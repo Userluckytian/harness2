@@ -1,5 +1,12 @@
 # harness2 桌面端重设计 · 分析与设计稿
 
+> **⚠️ 2026-10-10 作废声明（`➖`）**：本目录全部设计稿（`prototype.html`、`prototype-v3/v4/v5.html`、`workspace.html`、`agent-trace.html` 及对应 PNG）
+> **整体作废**。理由：同日决策将 GUI 视觉基线改为 **ZCode**（双主题 Zai Light / Zai Dark），本目录涉及的两套方向——
+> **OLED 暗色 + 绿 accent** 与 **V5 暖纸 + 琥珀 accent**——**均不再采用**。
+> 文件保留仅供追溯，**不得作为实施依据**。
+> 现行 GUI 依据：`docs/refs/refs-zcode.md`（视觉与组件规格）+ `docs/refs/refs-zcode-layout.md`（布局与 IA）；
+> 可交互原型（评审物，非实施依据）：`design/prototype-zcode.html`。
+
 > 目的：盘点现有功能 → 对标市面主流 agent harness → 找出**缺失/可增强点** → 产出一套可落地的重设计方案（HTML 设计稿）。
 > 设计系统依据 `<ui-ux-pro-max>` skill 生成（OLED 暗色 + 绿 accent + Inter）。
 > 查看设计稿：直接双击打开 `workspace.html` / `agent-trace.html`（无需构建，浏览器即可）。

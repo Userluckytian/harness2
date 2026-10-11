@@ -21,5 +21,19 @@ packages/core/fixtures/**
 # 本机留痕（每日 issue-log 不入库），避免 pnpm lint 因本地笔记误红
 docs/issue-log/
 
+# ZCode 客户端的本机会话状态（未入库，仅本机存在）
+.zcode/
+
 # P0 选型实验证据（spike/）：一次性 demo 与原始数据，不参与格式化门禁
 spike/
+
+# 上游原文副本（R0-5 搬入的 hermes 桌面壳契约三件）：逐字保留，格式化即失真
+# 注：这三件自 2026-09-17（a7e7110）入库起就未过 prettier 闸门，导致 main 的
+#     `prettier --check .` 一直是红的（CI 的 Lint 步骤为必过项）。此处按"原始素材"
+#     处理，与 fixtures / spike 同口径。
+docs/refs/hermes-desktop/
+
+# 手工单文件原型：含 white-space:pre / pre-wrap 的字符网格与输出区块，
+# HTML 格式化器会插入换行并在这些区块里渲染成可见空白，破坏原型观感。
+# 该文件是评审物、非实施依据；实施依据见 docs/refs/refs-zcode*.md。
+design/prototype-zcode.html
