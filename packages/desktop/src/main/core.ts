@@ -27,6 +27,10 @@ export const {
   DEFAULT_MEMORY_CONFIG,
   DEFAULT_PLUGINS_CONFIG,
   DEFAULT_SUBAGENT_CONFIG,
+  // A08 技能分区：两级扫描与 core serve 完全同一实现（单一事实源，不重写扫描口径）
+  SkillStore,
+  projectSkillsRoot,
+  defaultSkillsRoot,
 } = core;
 
 export type { AuthFile, HarnessConfig, ProviderConfig } from '@harness2/core' with { 'resolution-mode': 'import' };

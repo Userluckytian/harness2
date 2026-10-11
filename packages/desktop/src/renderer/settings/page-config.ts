@@ -1,9 +1,10 @@
 // 设置分区配置表（Z-89 思路：**可见性与归属数据驱动**）。
 //
-// 只列**有真数据**的分区 —— ZCode 有而我们无对应数据的分区（hooks / skills / computerUse /
-// automations(Beta) / workspaceFileSearch / usage / 独立 mcp / 独立 commands）一律**不进表**
-// （列了就是假入口）。与 ZCode 16 分区的对照差异在 test/settings/settings-page-config.test.ts
-// 固化为断言，改动归属时先改测试再改表。
+// 只列**有真数据**的分区 —— ZCode 有而我们无对应数据的分区（hooks / commands / computerUse /
+// automations(Beta) / workspaceFileSearch / usage）一律**不进表**（列了就是假入口）。
+// `mcp`（A07）与 `skill`（A08）自批次4 起有真数据面进表（此前登记的「并入 plugins 节」作废）。
+// 与 ZCode 16 分区的对照差异在 test/settings/settings-page-config.test.ts 固化为断言，
+// 改动归属时先改测试再改表。
 //
 // 三组（Z-89）：basics = 基础设置；agentCapabilities = Agent 能力；dataAndStats = 数据与统计。
 // order 只需**组内升序**（导航先按组、组内按 order）；数值段位给组间留出空隙便于插行。
@@ -16,6 +17,7 @@ import {
   IconBlocks,
   IconBot,
   IconBrain,
+  IconCable,
   IconDatabase,
   IconGlobe2,
   IconInfo,
@@ -25,6 +27,7 @@ import {
   IconPalette,
   IconSettings2,
   IconShieldCheck,
+  IconWandSparkles,
 } from './shell/icons.js';
 
 /** 一条分区元数据（render 由宿主装配层补 —— 本表是**纯数据**，可独立测试） */
@@ -50,8 +53,8 @@ export interface SettingsSectionMeta {
  * 差异登记（vs Z-89 的 ZCode 16 分区）：
  *   - basics 里 `approval`（审批与安全）是我们有真数据（config.approval）而 ZCode 无的分区，归 basics；
  *   - `credentials`（IM 网关凭据）保留独立分区（auth.json 真数据），归 agentCapabilities；
- *   - `plugins` 合并承载 MCP 服务器（同一份 config.json 数据面，Z2 起即合一）—— ZCode 是
- *     plugin / mcp 两个分区，我们不拆（拆了要复制 PluginsSection 的正文，内容组件不改内部实现）；
+ *   - `mcp`（A07 批次4 拆出）与 `skill`（A08 批次4 新增）按 ZCode 归属进 agentCapabilities
+ *     （顺序对齐 ZCode：plugin → mcp → skill）；此前 mcp 并入 plugins 节的登记作废；
  *   - `shortcuts` 归 basics（对齐 ZCode 的归属）；sessions / diagnostics / about 归 dataAndStats
  *     （本地数据 / 体检报告 / 版本事实，无「用量统计」数据面，不设 usage 假入口）；
  *   - about 保留分区（内核/数据/更新是真实事实），版本号同时进左栏页脚（ZCode 页脚是账号菜单）。
@@ -134,11 +137,29 @@ export const SETTINGS_SECTION_META: readonly SettingsSectionMeta[] = [
   {
     id: 'plugins',
     label: '插件与集成',
-    en: 'Plugins & MCP',
+    en: 'Plugins',
     owner: 'ui-settings',
     group: 'agentCapabilities',
     order: 120,
     icon: IconBlocks,
+  },
+  {
+    id: 'mcp',
+    label: 'MCP 服务器',
+    en: 'MCP Servers',
+    owner: 'ui-settings',
+    group: 'agentCapabilities',
+    order: 125,
+    icon: IconCable,
+  },
+  {
+    id: 'skill',
+    label: '技能',
+    en: 'Skills',
+    owner: 'ui-settings',
+    group: 'agentCapabilities',
+    order: 126,
+    icon: IconWandSparkles,
   },
   {
     id: 'cron',

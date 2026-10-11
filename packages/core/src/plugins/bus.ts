@@ -1,11 +1,20 @@
-// 插件总线（阶段 8）：把插件能力接进宿主——工具注册进 ToolRegistry、事件订阅走内存
-// 事件总线、日志带插件前缀、config 只读快照。装载审批（allow 名单）在本层执行：
-// manifest 合法且 allow 含插件名 → 装载；否则跳过 + 告警（`plugin enable` 审批后写入 allow）。
+// 插件总线（阶段 8；批次4 A10 消费三开放）：把插件能力接进宿主——工具注册进
+// ToolRegistry、命令注册进 coreCommandRegistry、事件订阅走内存事件总线（内建 + 已注册
+// 扩展类型）、日志带插件前缀、config 只读快照、容器注入（D02 服务容器）。
+// 装载审批（allow 名单）在本层执行：manifest 合法且 allow 含插件名 → 装载；否则跳过 +
+// 告警（`plugin enable` 审批后写入 allow）。
 // 生命周期：每插件按获取顺序登记 disposer，卸载 = 逆序展开；单插件失败（导入/setup/
 // 权限/重名）收口为「跳过 + 告警」，不拖垮其他插件与宿主进程（v1 进程内非隔离的边界
-// 见 plugins/types.ts 头注释）。
+// 见 plugins/types.ts 头注释）。**命令/容器生命周期立场**：插件级清理走插件自身
+// disposer 链（registerCommand 的 disposer = unregisterCoreCommand，unload 逆序展开时
+// 执行）；容器是宿主作用域（随宿主创建/销毁），bus 不 dispose 容器——容器的
+// dispose/disposeAll 语义归宿主装配层（见 plugins/types.ts PluginContext.container）。
 import { isSessionEventType } from '../session/types.js';
 import type { AnySessionEvent } from '../session/types.js';
+import type { ExtensionSessionEvent } from '../session/extension-events.js';
+import { extensionEventTypes } from '../session/extension-events.js';
+import { createCoreContainer, type ServiceContainer } from '../container.js';
+import { coreCommandRegistry, type CoreCommandRegistration } from '../commands/registry.js';
 import type { HarnessConfig } from '../config/schema.js';
 import type { ToolDefinition } from '../tools/types.js';
 import type { ToolRegistry } from '../tools/registry.js';
@@ -25,6 +34,11 @@ export interface PluginBusOptions {
   config?: HarnessConfig;
   /** 插件日志 sink（缺省 console.error，避免污染 serve stdout 的启动 JSON） */
   logSink?: (line: string) => void;
+  /**
+   * D02 服务容器（批次4 加性）：注入宿主自有容器；缺省 = createCoreContainer()
+   * （预置 'commands' / 'eventTypes' 两内建服务）。宿主作用域：bus 不负责其销毁。
+   */
+  container?: ServiceContainer;
 }
 
 /** 成功装载的插件摘要 */
@@ -34,6 +48,8 @@ export interface LoadedPluginSummary {
   version: string;
   /** 实际注册成功的工具名（manifest 权限内、且未被占用） */
   tools: string[];
+  /** 实际注册成功的命令 id（批次4 加性；manifest 权限内、且未与他者冲突） */
+  commands: string[];
 }
 
 /** 装载批次报告：loaded/skipped 互斥；warnings = 面向用户的一行告警（已脱敏前提：不含密钥） */
@@ -50,6 +66,8 @@ interface PluginRecord {
   /** 依获取顺序登记的 disposer（卸载时逆序展开） */
   disposers: Array<() => void>;
   toolNames: string[];
+  /** 实际注册成功的命令 id（与 disposers 未必对齐——冲突降级时不入此表） */
+  commandNames: string[];
 }
 
 interface EventSubscription {
@@ -73,11 +91,15 @@ export class PluginBus {
   private readonly subscriptions = new Map<string, Set<EventSubscription>>();
   private readonly frozenConfig: Readonly<HarnessConfig> | undefined;
   private readonly logSink: (line: string) => void;
+  private readonly container: ServiceContainer;
   private disposed = false;
 
   constructor(private readonly options: PluginBusOptions) {
     this.frozenConfig = options.config !== undefined ? deepFreeze(structuredClone(options.config)) : undefined;
     this.logSink = options.logSink ?? ((line: string) => console.error(line));
+    // 容器注入面（批次4）：宿主自有容器优先；缺省 createCoreContainer（预置两内建服务）。
+    // 宿主作用域：bus 不 dispose（理由见文件头与 PluginContext.container 注释）。
+    this.container = options.container ?? createCoreContainer();
   }
 
   /** 已装载插件名（装载顺序） */
@@ -88,7 +110,15 @@ export class PluginBus {
   /** 单插件摘要（诊断/CLI 展示） */
   summaryOf(name: string): LoadedPluginSummary | undefined {
     const r = this.records.get(name);
-    return r ? { name: r.name, dir: r.dir, version: r.manifest.version, tools: [...r.toolNames] } : undefined;
+    return r
+      ? {
+          name: r.name,
+          dir: r.dir,
+          version: r.manifest.version,
+          tools: [...r.toolNames],
+          commands: [...r.commandNames],
+        }
+      : undefined;
   }
 
   /**
@@ -139,6 +169,7 @@ export class PluginBus {
         manifest: source.manifest,
         disposers: [],
         toolNames: [],
+        commandNames: [],
       };
       try {
         const mod = await importPluginModule(source.dir, source.manifest.name);
@@ -152,6 +183,7 @@ export class PluginBus {
           dir: source.dir,
           version: source.manifest.version,
           tools: [...record.toolNames],
+          commands: [...record.commandNames],
         });
       } catch (e) {
         // setup 半途失败：摘除登记 + 展开已获取的 disposer（不留半装载状态），再收口为跳过
@@ -168,8 +200,12 @@ export class PluginBus {
     return report;
   }
 
-  /** 会话事件分发入口（装配层把 hub onEvent 钩子接到这里）：精确类型 + '*' 两路，逐 handler 异常隔离 */
-  emitSessionEvent(sessionId: string, event: AnySessionEvent): void {
+  /**
+   * 会话事件分发入口（装配层把 hub onEvent 钩子接到这里）：精确类型 + '*' 两路，逐 handler 异常隔离。
+   * 批次4 放宽：已注册的扩展事件类型同入口分发（宿主把 writer.appendExtension 的产物
+   * 喂进来即可；内建事件的现有调用零变化）。
+   */
+  emitSessionEvent(sessionId: string, event: AnySessionEvent | ExtensionSessionEvent): void {
     for (const key of [event.type, '*']) {
       const subs = this.subscriptions.get(key);
       if (subs === undefined) continue;
@@ -182,6 +218,11 @@ export class PluginBus {
         }
       }
     }
+  }
+
+  /** 扩展事件分发别名（emitSessionEvent 的语义化入口；分发行为完全一致） */
+  emitExtensionEvent(sessionId: string, event: ExtensionSessionEvent): void {
+    this.emitSessionEvent(sessionId, event);
   }
 
   /** 卸载单个插件：disposer 逆序展开 + 订阅清理；返回是否确有装载 */
@@ -298,8 +339,8 @@ export class PluginBus {
           bus.logSink(`[plugin:${pluginName}] 插件已卸载，忽略延迟的 on("${event}") 订阅（逃逸防护）`);
           return () => {};
         }
-        if (event !== '*' && !isSessionEventType(event)) {
-          throw new PluginError(`未知事件类型 "${event}"（必须是已知会话事件类型或 '*'）`);
+        if (event !== '*' && !isSessionEventType(event) && !extensionEventTypes.has(event)) {
+          throw new PluginError(`未知事件类型 "${event}"（必须是已知会话事件类型、已注册扩展类型或 '*'）`);
         }
         const allowed = Array.isArray(perms.events) && (perms.events.includes(event) || perms.events.includes('*'));
         if (!allowed) {
@@ -333,6 +374,42 @@ export class PluginBus {
         }
         return bus.frozenConfig;
       },
+      registerCommand(cmd: CoreCommandRegistration): () => void {
+        if (!alive()) {
+          bus.logSink(`[plugin:${pluginName}] 插件已卸载，忽略延迟的 registerCommand("${cmd?.id}") 调用（逃逸防护）`);
+          return () => {};
+        }
+        const declared = perms.commands;
+        const allowed = Array.isArray(declared) && declared.includes(cmd.id);
+        if (!allowed) {
+          throw new PluginError(
+            `无权限注册命令 "${cmd?.id}"（manifest.permissions.commands 未授权${Array.isArray(declared) ? `: [${declared.join(', ')}]` : ''}）`,
+          );
+        }
+        try {
+          coreCommandRegistry.register(cmd);
+        } catch (e) {
+          // 对齐工具面的 P2-5①：单命令重名/非法 → 降级为跳过该命令 + 告警，不弃整插件
+          bus.logSink(
+            `[plugin:${pluginName}] 命令 "${cmd.id}" 跳过（与内建/既有命令冲突或名称非法）: ${(e as Error).message}`,
+          );
+          return () => {};
+        }
+        const commandDisposer = (): void => {
+          coreCommandRegistry.unregister(cmd.id);
+        };
+        record.disposers.push(commandDisposer);
+        record.commandNames.push(cmd.id);
+        return () => {
+          commandDisposer();
+          // 插件自卸载命令：从记账移除（unload 时不再重复展开）
+          const d = record.disposers.indexOf(commandDisposer);
+          if (d >= 0) record.disposers.splice(d, 1);
+          const c = record.commandNames.indexOf(cmd.id);
+          if (c >= 0) record.commandNames.splice(c, 1);
+        };
+      },
+      container: bus.container,
     };
   }
 }
@@ -344,5 +421,6 @@ export function describePermissions(manifest: PluginManifest): string {
   parts.push(p.tools === undefined ? 'tools=无' : p.tools === true ? 'tools=全部' : `tools=[${p.tools.join(', ')}]`);
   parts.push(p.events === undefined ? 'events=无' : `events=[${p.events.join(', ')}]`);
   parts.push(p.cron === true ? 'cron=预留声明' : 'cron=无');
+  parts.push(p.commands === undefined ? 'commands=无' : `commands=[${p.commands.join(', ')}]`);
   return parts.join(' ');
 }

@@ -79,6 +79,7 @@ function makeFakeApi() {
     settingsSetPreferences: vi.fn(async (p: unknown) => p as SettingsPreferencesShape),
     settingsGetDoctorReport: vi.fn(async () => ({ checks: [], exitCode: 0 as const })),
     settingsGetCrashReports: vi.fn(async () => []),
+    settingsGetSkills: vi.fn(async () => ({ skills: [], warnings: [], roots: { project: '', global: '' } })),
     gitBranch: vi.fn(async () => 'main'),
     getContextUsage: vi.fn(async () => ({ usage: 0.5, label: '50%' })),
     getSnapshotForCall: vi.fn(async () => ({ ok: false, error: '未找到对应快照' })),

@@ -119,6 +119,25 @@ export interface SettingsCrashReportShape {
   size: number;
 }
 
+/** settings:getSkills 的单条技能（A08；主进程 fs 两级扫描，只读） */
+export interface SettingsSkillShape {
+  name: string;
+  description: string;
+  /** 来源文件绝对路径（单文件型 = *.md；文件夹型 = <name>/SKILL.md） */
+  file: string;
+  /** 来源层级（同名时项目级覆盖全局级，与 core SkillStore 同口径） */
+  source: 'project' | 'global';
+}
+
+/** settings:getSkills 的响应（A08 技能分区数据；core SkillStore 同一扫描实现） */
+export interface SettingsSkillsShape {
+  skills: SettingsSkillShape[];
+  /** 坏文件/覆盖/超限告警（不阻塞，如实展示） */
+  warnings: string[];
+  /** 两级扫描根（展示用：项目级 <root>/.harness2/skills，全局级 <home>/.harness2/skills） */
+  roots: { project: string; global: string };
+}
+
 /** getContextUsage 响应（与终端 /context 同一数据源；value 为 0..1 或 null=未知） */
 export interface ContextUsageShape {
   usage: number | null;
@@ -437,6 +456,8 @@ export interface Harness2Api extends Partial<ModelsSettingsApi>, Partial<WindowC
   settingsGetDoctorReport(): Promise<SettingsDoctorReportShape>;
   /** 崩溃报告列表（~/.harness2/crash/*.log 摘要） */
   settingsGetCrashReports(): Promise<SettingsCrashReportShape[]>;
+  /** A08 技能分区：两级扫描的技能列表（主进程 fs 只读，与 core SkillStore 同一实现） */
+  settingsGetSkills(): Promise<SettingsSkillsShape>;
   /** 读当前 git 分支（主进程 git rev-parse；非 git 目录返回 null） */
   gitBranch(dir: string): Promise<string | null>;
   /** 读上下文占用（core getContextUsage 经 IPC；与终端 /context 同一数据源） */

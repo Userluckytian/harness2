@@ -77,6 +77,7 @@ const api: Harness2Api = {
     ipcRenderer.invoke(IPC_INVOKE, { cmd: 'settings:setPreferences', preferences }),
   settingsGetDoctorReport: () => ipcRenderer.invoke(IPC_INVOKE, { cmd: 'settings:getDoctorReport' }),
   settingsGetCrashReports: () => ipcRenderer.invoke(IPC_INVOKE, { cmd: 'settings:getCrashReports' }),
+  settingsGetSkills: () => ipcRenderer.invoke(IPC_INVOKE, { cmd: 'settings:getSkills' }),
   gitBranch: (dir: string) => ipcRenderer.invoke(IPC_INVOKE, { cmd: 'gitBranch', dir }),
   getContextUsage: (sessionId: string) => ipcRenderer.invoke(IPC_INVOKE, { cmd: 'getContextUsage', sessionId }),
   getSnapshotForCall: (sessionId: string, seq: number) =>

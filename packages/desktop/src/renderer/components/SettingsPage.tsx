@@ -27,6 +27,8 @@ import { applyUiFontSize, currentUiFontSize } from '../ui-font-size.js';
 import { useShellTheme } from '../layout/shell-theme.js';
 import { AppearanceSettings } from '../settings/appearance/index.js';
 import { GeneralSettings } from '../settings/general/index.js';
+import { McpServersSection } from '../settings/mcp/McpServersSection.js';
+import { SkillsSection } from '../settings/skills/SkillsSection.js';
 import {
   MODELS_SECTION_ID,
   SettingsSectionBlock,
@@ -335,46 +337,19 @@ function CronSection(): React.ReactNode {
 }
 
 function PluginsSection({ cfg }: { cfg: SettingsConfigShape }): React.ReactNode {
-  const mcpNames = Object.keys(cfg.mcpServers);
   return (
-    <>
-      <SettingsSectionBlock title="已装插件" desc="config.json plugins.allow 白名单">
-        <div className="settings-table">
-          {cfg.plugins.allow.length === 0 && <div className="settings-desc">无已启用插件</div>}
-          {cfg.plugins.allow.map((p) => (
-            <div key={p} className="settings-table-row">
-              <span className="row-key">{p}</span>
-              <span className="row-val">enabled</span>
-            </div>
-          ))}
-        </div>
-        <p className="settings-note">插件增删与审批经 CLI：harness2 plugin list / enable / disable</p>
-      </SettingsSectionBlock>
-      <SettingsSectionBlock title="MCP 服务器" desc="config.json mcpServers（stdio / streamable HTTP）">
-        <div className="settings-table">
-          {mcpNames.length === 0 && <div className="settings-desc">未配置 MCP 服务器</div>}
-          {mcpNames.map((name) => {
-            const m = cfg.mcpServers[name] as Record<string, unknown> | undefined;
-            const kind =
-              m !== undefined && 'command' in m
-                ? `${String(m['command'])} ${Array.isArray(m['args']) ? (m['args'] as string[]).join(' ') : ''}`
-                : String(m?.['url']);
-            return (
-              <div key={name} className="settings-table-row">
-                <span className="row-key">{name}</span>
-                <span className="row-val mono">{kind}</span>
-              </div>
-            );
-          })}
-        </div>
-        <div className="settings-table">
-          <div className="settings-table-row">
-            <span className="row-key">Skills</span>
-            <span className="row-val">项目级 + 全局级（只读，由 CLI harness2 skill list 查看）</span>
+    <SettingsSectionBlock title="已装插件" desc="config.json plugins.allow 白名单">
+      <div className="settings-table">
+        {cfg.plugins.allow.length === 0 && <div className="settings-desc">无已启用插件</div>}
+        {cfg.plugins.allow.map((p) => (
+          <div key={p} className="settings-table-row">
+            <span className="row-key">{p}</span>
+            <span className="row-val">enabled</span>
           </div>
-        </div>
-      </SettingsSectionBlock>
-    </>
+        ))}
+      </div>
+      <p className="settings-note">插件增删与审批经 CLI：harness2 plugin list / enable / disable</p>
+    </SettingsSectionBlock>
   );
 }
 
@@ -842,6 +817,15 @@ export function SettingsPage({
             ...meta,
             render: () => (cfg !== null ? <PluginsSection cfg={cfg} /> : <LoadingPane />),
           };
+        case 'mcp':
+          // A07：独立 MCP 分区（Z-89 对齐）；同一 config.json 数据面，状态不摆假（见组件内注记）
+          return {
+            ...meta,
+            render: () => (cfg !== null ? <McpServersSection cfg={cfg} /> : <LoadingPane />),
+          };
+        case 'skill':
+          // A08：技能分区；自取数（settings:getSkills 主进程 fs 扫描，core 同一实现）
+          return { ...meta, render: () => <SkillsSection /> };
         case 'subagent':
           return {
             ...meta,

@@ -584,8 +584,11 @@ describe('契约辅助', () => {
     expect(new PluginError('boom').name).toBe('PluginError');
     expect(
       describePermissions({ name: 'x', version: '1', permissions: { tools: ['p_a'], events: ['user/message'] } }),
-    ).toBe('tools=[p_a] events=[user/message] cron=无');
-    expect(describePermissions({ name: 'x', version: '1' })).toBe('tools=无 events=无 cron=无');
+    ).toBe('tools=[p_a] events=[user/message] cron=无 commands=无');
+    expect(describePermissions({ name: 'x', version: '1', permissions: { commands: ['my-cmd'] } })).toBe(
+      'tools=无 events=无 cron=无 commands=[my-cmd]',
+    );
+    expect(describePermissions({ name: 'x', version: '1' })).toBe('tools=无 events=无 cron=无 commands=无');
   });
 });
 

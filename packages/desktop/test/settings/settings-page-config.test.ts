@@ -17,6 +17,8 @@ const EXPECTED: Record<string, string> = {
   memory: 'agentCapabilities',
   subagent: 'agentCapabilities',
   plugins: 'agentCapabilities',
+  mcp: 'agentCapabilities',
+  skill: 'agentCapabilities',
   cron: 'agentCapabilities',
   credentials: 'agentCapabilities',
   // dataAndStats
@@ -38,12 +40,31 @@ describe('设置分区配置表（Z-89）：分组与可见性', () => {
 
   it('可见性 = 数据驱动：ZCode 有而我们无数据的分区不进表（列了就是假入口）', () => {
     const ids = new Set(SETTINGS_SECTION_META.map((m) => m.id));
-    for (const fake of ['hooks', 'skill', 'commands', 'computerUse', 'automations', 'workspaceFileSearch', 'usage']) {
+    for (const fake of ['hooks', 'commands', 'computerUse', 'automations', 'workspaceFileSearch', 'usage']) {
       expect(ids.has(fake)).toBe(false);
     }
-    // MCP 不设独立分区（与 plugins 合一承载同一份 config.json 数据面，登记差异）
-    expect(ids.has('mcp')).toBe(false);
+    // A07/A08（批次4）：mcp 与 skill 有真数据面进表（对齐 ZCode 归属 agentCapabilities；
+    // 此前「mcp 并入 plugins 节」的差异登记作废）
+    expect(ids.has('mcp')).toBe(true);
+    expect(ids.has('skill')).toBe(true);
     expect(ids.has('plugins')).toBe(true);
+  });
+
+  it('A07/A08：mcp/skill 的顺序在 plugins 之后 cron 之前（对齐 ZCode plugin→mcp→skill）', () => {
+    const orderOf = (id: string): number => {
+      const m = SETTINGS_SECTION_META.find((s) => s.id === id);
+      expect(m, `分区 ${id} 存在`).toBeTruthy();
+      return m!.order;
+    };
+    expect(orderOf('plugins')).toBeLessThan(orderOf('mcp'));
+    expect(orderOf('mcp')).toBeLessThan(orderOf('skill'));
+    expect(orderOf('skill')).toBeLessThan(orderOf('cron'));
+    const mcp = SETTINGS_SECTION_META.find((s) => s.id === 'mcp')!;
+    expect(mcp.label).toBe('MCP 服务器');
+    expect(mcp.group).toBe('agentCapabilities');
+    const skill = SETTINGS_SECTION_META.find((s) => s.id === 'skill')!;
+    expect(skill.label).toBe('技能');
+    expect(skill.group).toBe('agentCapabilities');
   });
 
   it('models 分区 id 稳定为 MODELS_SECTION_ID（Z3-04「管理模型」直达的落点）', () => {

@@ -159,6 +159,35 @@ export const IconKeyRound = defineIcon(
   </>,
 );
 
+// —— A07/A08：MCP / 技能分区图标（Z-89 分区表：mcp=Cable、skill=WandSparkles；lucide 同形路径） ——
+
+export const IconCable = defineIcon(
+  'cable',
+  <>
+    <path d="M17 19a1 1 0 0 1-1-1v-2a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v2a1 1 0 0 1-1 1z" />
+    <path d="M17 21v-2" />
+    <path d="M19 14V6.5a1 1 0 0 0-7 0v11a1 1 0 0 1-7 0V10" />
+    <path d="M21 21v-2" />
+    <path d="M3 5V3" />
+    <path d="M4 10a2 2 0 0 1-2-2V6a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2a2 2 0 0 1-2 2z" />
+    <path d="M7 5V3" />
+  </>,
+);
+
+export const IconWandSparkles = defineIcon(
+  'wand-sparkles',
+  <>
+    <path d="m21.64 3.64-1.28-1.28a1.21 1.21 0 0 0-1.72 0L2.36 18.64a1.21 1.21 0 0 0 0 1.72l1.28 1.28a1.2 1.2 0 0 0 1.72 0L21.64 5.36a1.2 1.2 0 0 0 0-1.72" />
+    <path d="m14 7 3 3" />
+    <path d="M5 6v4" />
+    <path d="M19 14v4" />
+    <path d="M10 2v2" />
+    <path d="M7 8H3" />
+    <path d="M21 16h-4" />
+    <path d="M11 3H9" />
+  </>,
+);
+
 export const IconDatabase = defineIcon(
   'database',
   <>

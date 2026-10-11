@@ -32,6 +32,7 @@ import {
   writeChannelKey,
 } from './models-config.js';
 import { getCrashReports, getDoctorReport } from './diagnostics.js';
+import { readSkillsSummary } from './skills-scan.js';
 import { listWorkspaceDir } from './workspace-fs.js';
 import { getContextUsageForSession } from './context-usage.js';
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
@@ -687,6 +688,9 @@ export function createBridge(deps: BridgeDeps): Bridge {
         return getDoctorReport(deps.home, deps.root);
       case 'settings:getCrashReports':
         return getCrashReports(deps.home);
+      // A08 技能分区：主进程 fs 两级扫描（与 core serve 同一 SkillStore 实现；只读）
+      case 'settings:getSkills':
+        return readSkillsSummary(deps.home, deps.root);
       case 'gitBranch': {
         const dir = typeof args['dir'] === 'string' ? args['dir'] : deps.root;
         return gitBranchForDir(dir);

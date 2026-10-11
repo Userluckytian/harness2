@@ -6,6 +6,7 @@ import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
+import { extensionEventTypes } from '../session/extension-events.js';
 import { KNOWN_EVENT_TYPES } from '../session/types.js';
 import { TOOL_NAME_PATTERN } from '../tools/types.js';
 import { PLUGIN_NAME_PATTERN, PluginError, type PluginManifest, type PluginModule } from './types.js';
@@ -23,12 +24,18 @@ function isPlainObject(v: unknown): v is Record<string, unknown> {
   return typeof v === 'object' && v !== null && !Array.isArray(v);
 }
 
-const PERMISSION_KEYS = new Set(['tools', 'events', 'cron']);
+const PERMISSION_KEYS = new Set(['tools', 'events', 'cron', 'commands']);
+
+/** 命令 id 约束（与 commands/registry.ts 的 NAME_RE 同风格；此处静态校验，注册时终审） */
+const COMMAND_ID_RE = /^[a-z][a-z0-9-]*$/;
 
 /**
  * manifest 校验：name（合法且 = 目录名）、version（非空字符串）、permissions（可选，
  * 逐键校验；未知键拒绝——权限声明不允许拼错键静默放行）。事件名必须是已知会话事件
- * 类型或 '*'；tools 名单内的工具名必须满足 TOOL_NAME_PATTERN（否则永远注册不上）。
+ * 类型、**校验时刻**已注册的扩展事件类型（extensionEventTypes 进程级单例——宿主或
+ * 更早装载批次注册；同批后续插件 setup 中注册的类型须下一批装载才可声明，fail-closed）
+ * 或 '*'；tools 名单内的工具名必须满足 TOOL_NAME_PATTERN（否则永远注册不上）；
+ * commands 名单内的 id 必须满足命令 id 约束（注册时终审）。
  */
 export function validatePluginManifest(raw: unknown, dirName: string): ManifestValidation {
   if (!isPlainObject(raw)) return { ok: false, error: 'manifest 必须是 JSON 对象' };
@@ -66,23 +73,39 @@ export function validatePluginManifest(raw: unknown, dirName: string): ManifestV
     }
     const events = rawPerms['events'];
     if (events !== undefined) {
-      const valid =
-        Array.isArray(events) &&
-        events.every(
-          (e) => typeof e === 'string' && (e === '*' || (KNOWN_EVENT_TYPES as readonly string[]).includes(e)),
-        );
-      if (!valid) {
+      const list = Array.isArray(events) ? events : [];
+      const known = (e: unknown): boolean =>
+        typeof e === 'string' &&
+        (e === '*' ||
+          (KNOWN_EVENT_TYPES as readonly string[]).includes(e) ||
+          // 已注册扩展事件类型放行（批次4）：声明时必须已注册（先注册后声明，fail-closed）
+          extensionEventTypes.has(e));
+      if (!Array.isArray(events) || !list.every(known)) {
+        const bad = list.filter((e) => !known(e));
         return {
           ok: false,
-          error: `manifest.permissions.events 必须是事件类型数组（${KNOWN_EVENT_TYPES.join('/')} 或 '*'）`,
+          error:
+            `manifest.permissions.events 必须是事件类型数组（内建 ${KNOWN_EVENT_TYPES.join('/')}、` +
+            `已注册扩展类型或 '*'）${bad.length > 0 ? `；未认可的事件: ${bad.map((e) => JSON.stringify(e)).join(', ')}` : ''}`,
         };
       }
-      perms.events = [...(events as string[])];
+      perms.events = [...(list as string[])];
     }
     const cron = rawPerms['cron'];
     if (cron !== undefined) {
       if (cron !== true) return { ok: false, error: 'manifest.permissions.cron 必须是 true' };
       perms.cron = true;
+    }
+    const commands = rawPerms['commands'];
+    if (commands !== undefined) {
+      const valid = Array.isArray(commands) && commands.every((c) => typeof c === 'string' && COMMAND_ID_RE.test(c));
+      if (!valid) {
+        return {
+          ok: false,
+          error: 'manifest.permissions.commands 必须是命令 id 数组（每个 id 匹配 ^[a-z][a-z0-9-]*$，精确声明无通配）',
+        };
+      }
+      perms.commands = [...(commands as string[])];
     }
     permissions = perms;
   }
