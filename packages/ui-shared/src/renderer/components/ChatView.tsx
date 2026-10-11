@@ -27,6 +27,7 @@ import {
 import { ChatEmptyState } from './ChatEmptyState.js';
 import { ReasoningRow } from './ReasoningRow.js';
 import { TimelineMarkerRow } from '../conversation/TimelineMarkerRow.js';
+import { QUOTE_ORIGIN_ATTR, SelectionAskLayer } from './selection-ask.js';
 import type { AppStore } from '../store.js';
 
 /** 转录视图的数据源（store + controller 真身；由会话对象携带） */
@@ -55,8 +56,9 @@ export function ChatItemView({
         </div>
       );
     case 'user':
+      // Z4-03：`data-quote-origin` = 划词「询问」的可引用来源标记（selection-ask 按它辨认）
       return (
-        <div className="bubble-user">
+        <div className="bubble-user" {...{ [QUOTE_ORIGIN_ATTR]: 'user' }}>
           <span className="role">你</span>
           <div className="text">{item.text}</div>
         </div>
@@ -67,7 +69,7 @@ export function ChatItemView({
       return (
         <>
           {item.reasoning !== undefined && item.reasoning.length > 0 && <ReasoningRow text={item.reasoning} />}
-          <div className="bubble-assistant">
+          <div className="bubble-assistant" {...{ [QUOTE_ORIGIN_ATTR]: 'assistant' }}>
             <span className="role">{item.model ?? '助手'}</span>
             <div className="text">{item.text}</div>
           </div>
@@ -131,7 +133,8 @@ export function ChatItemView({
                 <span className="tool-status">运行中…</span>
               </div>
             ) : (
-              <div className="text">
+              // 本分支 item.tool === undefined（工具行走上方分支）→ 流式正文同样可划词（Z4-03）
+              <div className="text" {...{ [QUOTE_ORIGIN_ATTR]: 'assistant' }}>
                 {item.text}
                 <span className="cursor">▌</span>
               </div>
@@ -175,6 +178,8 @@ export function ChatTranscript({ streamId, store, controller }: ChatTranscriptDe
   const stream = store.peekStream(streamId);
   const items = store.chatItems(streamId);
   const scrollRef = useRef<HTMLDivElement>(null);
+  /** 转录根（Z4-03 划词浮层的作用域：分屏时只认本格容器内的选区） */
+  const transcriptRef = useRef<HTMLDivElement>(null);
   /** 渲染前是否贴底（决定新内容到达时是否跟随滚动） */
   const wasAtBottomRef = useRef(true);
 
@@ -222,7 +227,7 @@ export function ChatTranscript({ streamId, store, controller }: ChatTranscriptDe
   const refReport = store.peekRefReport(streamId);
 
   return (
-    <div className="chat">
+    <div className="chat" ref={transcriptRef}>
       <div className="messages" ref={scrollRef} onScroll={onMessagesScroll}>
         {items.map((item, i) => (
           <ChatItemView
@@ -237,6 +242,11 @@ export function ChatTranscript({ streamId, store, controller }: ChatTranscriptDe
       </div>
       {/* Z2-09b：轮次导航（Z-17）——左缘细 rail；轮次 ≥2 才渲染，≥864px 由 CSS @container 显隐 */}
       <TurnNavigator turns={turns} activeTurnId={activeTurnId} onJump={onTurnJump} />
+      {/* Z4-03：转录划词「询问」浮层（ZCode selection-side-chat 的等价物入口）——
+          选区引用块经 composer 预填通道进本会话 composer（焦点随行）；
+          作用域 = 本转录容器（Z2-06 分屏各格只认自己格内的选区，不误报别的会话）；
+          无选区 / 选区不在可引用行内时浮层不渲染（红线⑩）。 */}
+      <SelectionAskLayer sessionId={streamId} containerRef={transcriptRef} />
       {/* Z-20：审批卡不再渲染在转录流内 —— 改由会话席位挂在 composer 之上的底部 dock
           （`renderer/approval/ApprovalDock`，见 conversation/seat.tsx）。队列同批迁出：
           Z2-09b 起队列由席位级 QueuePanel（composer 之上的 dock）呈现，转录内不再重复展示。 */}

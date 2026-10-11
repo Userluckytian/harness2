@@ -64,3 +64,38 @@ describe('右栏文件预览（openFile 的消费端）', () => {
     expect(container.querySelector('[data-file-preview="open"]')).not.toBeNull();
   });
 });
+
+describe('Z4-02 行内评论入口（行 hover → 行号槽位「评论」）', () => {
+  it('传 onQuote → 非空行出现入口，点击回调收到单行引用块；空白行无入口（无可引用内容）', async () => {
+    const readFile = vi.fn(async () => ({ ok: true, content: 'alpha\n\n  beta' }));
+    const onQuote = vi.fn();
+    const { container } = render(<ToolFilePreviewPanel preview={preview()} readFile={readFile} onQuote={onQuote} />);
+    await waitFor(() => expect(container.querySelector('.file-preview-body')).not.toBeNull());
+
+    const entries = container.querySelectorAll('[data-file-preview-quote]');
+    expect(entries.length).toBe(2); // 3 行里空白行（第 2 行）不摆入口
+
+    fireEvent.click(container.querySelector('[data-file-preview-quote="1"]') as Element);
+    expect(onQuote).toHaveBeenNthCalledWith(1, '`src/a.ts:1`\n> alpha');
+    fireEvent.click(container.querySelector('[data-file-preview-quote="3"]') as Element);
+    expect(onQuote).toHaveBeenNthCalledWith(2, '`src/a.ts:3`\n>   beta'); // 行内缩进取入引用（如实）
+  });
+
+  it('不传 onQuote（宿主无可预填目标）→ 整个文件无评论入口（红线⑩）', async () => {
+    const readFile = vi.fn(async () => ({ ok: true, content: 'line1\nline2' }));
+    const { container } = render(<ToolFilePreviewPanel preview={preview()} readFile={readFile} />);
+    await waitFor(() => expect(container.querySelector('.file-preview-body')).not.toBeNull());
+    expect(container.querySelector('[data-file-preview-quote]')).toBeNull();
+  });
+
+  it('跨行入口粒度登记：本期行级交互只发单行引用（区间能力在 buildFileQuote 预留）', async () => {
+    const readFile = vi.fn(async () => ({ ok: true, content: 'a\nb\nc' }));
+    const onQuote = vi.fn();
+    const { container } = render(<ToolFilePreviewPanel preview={preview()} readFile={readFile} onQuote={onQuote} />);
+    await waitFor(() => expect(container.querySelector('.file-preview-body')).not.toBeNull());
+    const entries = Array.from(container.querySelectorAll('[data-file-preview-quote]')).map((el) =>
+      el.getAttribute('data-file-preview-quote'),
+    );
+    expect(entries).toEqual(['1', '2', '3']); // 每行独立入口，无区间入口
+  });
+});

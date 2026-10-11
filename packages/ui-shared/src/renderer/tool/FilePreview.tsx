@@ -6,9 +6,18 @@
 //   Markdown/PDF/HTML 分页渲染、`dsh-resource://` 资源模型属 D-76，落地后本组件让位移交。
 //
 // 只读、无副作用：不写文件、不落浏览器存储。
+//
+// Z4-02（文件行内评论）：文本预览的整行 hover → 行号槽位出现「评论」入口，点击把该行
+// 以引用块（`路径:行号` + `> 行文本`，shared/quote-block）交还宿主预填 composer。
+// 交互粒度（刻意选择，见实现计划）：**行级**（整行 hover + 行号槽位入口），不做文本级
+// 选区 —— 文件 tab 是只读预览非编辑器，行号是预览自带的稳定坐标，文本级选区属 D-76
+// 编辑器形态的范畴；跨行引用由 `buildFileQuote` 的行号区间能力预留（本期入口只发单行）。
+// 入口显隐：`onQuote` 缺省 = 宿主无可预填目标（无会话）→ 整个文件不渲染入口（红线⑩）；
+// 空白行同样无入口（无可引用内容）。
 import { useEffect, useState } from 'react';
 import type { ToolFilePreview } from './tool-navigation.js';
 import { useHostBridge } from '../host-bridge.js';
+import { buildFileQuote } from '../../shared/quote-block.js';
 
 /** 读取结果（与宿主 `readFileForRef` 同形） */
 export interface FilePreviewReadResult {
@@ -30,9 +39,20 @@ export interface ToolFilePreviewProps {
   readonly readFile?: FilePreviewReader;
   /** 清空预览（宿主回收；缺省不渲染清空入口） */
   readonly onClear?: () => void;
+  /**
+   * Z4-02：行级评论回调（参数 = 构造好的引用块文本）。缺省 = 不渲染行评论入口
+   * （宿主无可预填目标时如实不摆入口 —— 红线⑩；预填落点由宿主接 composer 预填通道）。
+   */
+  readonly onQuote?: (quote: string) => void;
 }
 
-export function ToolFilePreviewPanel({ preview, cwd, readFile, onClear }: ToolFilePreviewProps): React.ReactNode {
+export function ToolFilePreviewPanel({
+  preview,
+  cwd,
+  readFile,
+  onClear,
+  onQuote,
+}: ToolFilePreviewProps): React.ReactNode {
   const [content, setContent] = useState<string | null>(null);
   const [truncated, setTruncated] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -105,16 +125,39 @@ export function ToolFilePreviewPanel({ preview, cwd, readFile, onClear }: ToolFi
       {content === null && error === null && <p className="settings-desc">加载中…</p>}
       {content !== null && (
         <pre className="file-preview-body">
-          {lines.map((text, i) => (
-            <div
-              key={i}
-              className={`file-preview-row${line === i + 1 ? ' file-preview-row-hit' : ''}`}
-              data-line={i + 1}
-            >
-              <span className="file-preview-gutter">{i + 1}</span>
-              <span className="file-preview-text">{text}</span>
-            </div>
-          ))}
+          {lines.map((text, i) => {
+            const lineNo = i + 1;
+            // 空白行无可引用内容 → 不摆入口（红线⑩的「无可引用内容」分支）
+            const quotable = onQuote !== undefined && text.trim().length > 0;
+            return (
+              <div
+                key={i}
+                className={`file-preview-row group/row${line === lineNo ? ' file-preview-row-hit' : ''}`}
+                data-line={lineNo}
+              >
+                <span className="file-preview-gutter relative inline-block min-w-[2.5rem] pr-2 text-right select-none">
+                  {lineNo}
+                  {quotable && (
+                    <button
+                      type="button"
+                      // 行号槽位入口：整行 hover（或键盘聚焦）才显现，覆盖行号不挤压行布局
+                      className="absolute inset-0 hidden rounded-sm bg-background text-center text-ui-2xs leading-[1.4rem] text-foreground-subtle group-focus-within/row:block group-hover/row:block hover:bg-surface-hover hover:text-foreground"
+                      data-file-preview-quote={lineNo}
+                      title={`引用第 ${lineNo} 行到对话输入`}
+                      onClick={() => {
+                        if (onQuote === undefined) return;
+                        const quote = buildFileQuote({ path: preview.path, lines, startLine: lineNo });
+                        if (quote !== null) onQuote(quote);
+                      }}
+                    >
+                      评论
+                    </button>
+                  )}
+                </span>
+                <span className="file-preview-text">{text}</span>
+              </div>
+            );
+          })}
         </pre>
       )}
     </div>

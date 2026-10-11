@@ -59,6 +59,7 @@ import {
   type PendingSubmission,
   type SubmissionQueueState,
 } from './composer/composer-state.js';
+import { composerPrefill, prefillAppendText } from './composer/prefill.js';
 import { DEFAULT_BUSY_ENTER_BEHAVIOR, type BusyEnterBehavior } from './composer/submit-policy.js';
 import { createImageUrlCache, type ImageUrlCache, type ConversationImageReader } from './views/image-url-cache.js';
 import {
@@ -364,6 +365,27 @@ export function ConversationSeat(props: ConversationSeatProps): ReactNode {
     });
   }, [composerStore, sessionId, controller]);
 
+  // composer 编辑器外部引用（Z4-02/Z4-03：预填后按请求把焦点交回编辑器）
+  const composerEditorRef = useRef<HTMLDivElement | null>(null);
+
+  // Z4-02/Z4-03：外部引用预填（右栏文件 tab「评论」/ 转录划词「询问」）。
+  // 与建议 chip 同通道：`insert-text` 进本席位会话的**活草稿 store**（随后由上面的既有订阅
+  // 经 controller.setDraft 落盘）—— 不是只写持久层（那条路活 composer 不可见）。
+  // 追加而非覆盖：光标先移到草稿末尾，非空草稿补空行分隔（prefillAppendText）。
+  // 消费去重：同一会话可能有多个席位（Z2-06 分屏），nonce 首个消费者当事，其余跳过。
+  useEffect(() => {
+    return composerPrefill.subscribe((req) => {
+      if (sessionId === null || req.sessionId !== sessionId) return;
+      if (!composerPrefill.consume(req.nonce)) return;
+      const before = composerStore.getState();
+      const append = prefillAppendText(draftText(before), req.quote);
+      if (append.length === 0) return;
+      composerStore.dispatch({ type: 'set-caret', caret: { node: before.atoms.length, offset: 0 } });
+      composerStore.dispatch({ type: 'insert-text', text: append });
+      if (req.focus) composerEditorRef.current?.focus();
+    });
+  }, [composerStore, sessionId]);
+
   const cwd = sessionId === null ? undefined : state.sessions.find((s) => s.id === sessionId)?.cwd;
   const stream = sessionId === null ? undefined : store.peekStream(sessionId);
   const running = stream?.running === true;
@@ -453,6 +475,7 @@ export function ConversationSeat(props: ConversationSeatProps): ReactNode {
           store={composerStore}
           chain={chain}
           io={io}
+          editorRef={composerEditorRef}
           // Z3-04（Z-94）：左右簇控件（壳注入；缺省不渲染，web 壳无数据通道时如实缺省）
           {...(props.modeSwitch !== undefined ? { modeSwitch: props.modeSwitch } : {})}
           {...(props.modelSelect !== undefined ? { modelSelect: props.modelSelect } : {})}

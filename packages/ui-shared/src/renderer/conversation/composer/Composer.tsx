@@ -14,7 +14,14 @@
 //        数据经 props 注入（`modelSelect` / `modeSwitch`）；缺省不渲染对应控件（web 壳无数据
 //        通道时传 undefined，控件整体不出现 —— 绝不渲染假状态）。
 import { useCallback, useMemo, useRef, useState, useSyncExternalStore } from 'react';
-import type { ChangeEvent, ClipboardEvent, FormEvent, KeyboardEvent as ReactKeyboardEvent, ReactNode } from 'react';
+import type {
+  ChangeEvent,
+  ClipboardEvent,
+  FormEvent,
+  KeyboardEvent as ReactKeyboardEvent,
+  ReactNode,
+  Ref,
+} from 'react';
 import { ArrowUpIcon, SquareIcon } from 'lucide-react';
 import { Button } from '../../../components/ui/button.js';
 import { Spinner } from '../../../components/ui/spinner.js';
@@ -144,6 +151,11 @@ export interface ComposerProps {
   /** 图片读取缝（缺省 = 浏览器 FileReader） */
   readonly imageIO?: ImageReadIO;
   readonly placeholder?: string;
+  /**
+   * 编辑器元素的外部引用（Z4-02/Z4-03 预填后聚焦用）：与内部 ref 合并，元素挂载 / 卸载
+   * 都会同步。缺省不传 = 行为与旧版完全一致。
+   */
+  readonly editorRef?: Ref<HTMLDivElement>;
 }
 
 /** 内建会话草稿的默认提示（无会话时提示选择会话） */
@@ -176,6 +188,17 @@ export function Composer(props: ComposerProps): ReactNode {
   const [inFlightSubmits, setInFlightSubmits] = useState(0);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const editorRef = useRef<HTMLDivElement>(null);
+  // 外部编辑器 ref 合并（Z4-02/Z4-03）：宿主（seat）用它做预填后聚焦；卸载时清外部引用
+  const setEditorRef = useCallback(
+    (el: HTMLDivElement | null): void => {
+      editorRef.current = el;
+      const external = props.editorRef;
+      if (external === undefined || external === null) return;
+      if (typeof external === 'function') external(el);
+      else (external as { current: HTMLDivElement | null }).current = el;
+    },
+    [props.editorRef],
+  );
   const idRef = useRef(0);
   /** 提交序号（失败台账按它排「提交顺序」，与并发落定顺序无关） */
   const submitSeqRef = useRef(0);
@@ -459,7 +482,7 @@ export function Composer(props: ComposerProps): ReactNode {
           <div
             className="composer-editor"
             data-testid="composer-editor"
-            ref={editorRef}
+            ref={setEditorRef}
             role="textbox"
             aria-multiline="true"
             aria-label={placeholder}

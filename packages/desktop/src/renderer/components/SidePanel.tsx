@@ -8,6 +8,8 @@
 //     （ZCode 无此物，刻意保留）；审批徽章保留在审批 tab 上。
 //   - Z2-08：新增「后台任务」tab（`background-tasks`，跨会话聚合；启动器项无任务时禁用 + title）；
 //     状态面板 Agents 子块的「在右栏打开」经请求通道接到这里（开 tab + 右栏收着就展开）。
+//   - Z4-02：文件 tab 行「评论」→ 引用块经 composer 预填通道（`composerPrefill`）进当前
+//     会话 composer；未选会话不渲染入口（红线⑩）。
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore, useCallback } from 'react';
 import { controller, store, useAppState } from '../app-shared.js';
 import { useFrame } from '../layout/frame-context.js';
@@ -34,6 +36,7 @@ import {
   type SidePaneLauncherItemId,
   type SidePaneTabId,
 } from '@harness2/ui-shared/renderer/side-pane/index.js';
+import { composerPrefill } from '@harness2/ui-shared/renderer/conversation/composer/prefill.js';
 import { backgroundTasksPaneRequests } from '../conversation/background-tasks-requests.js';
 import {
   DropdownMenu,
@@ -547,6 +550,15 @@ export function SidePanel(): React.ReactNode {
             preview={filePreview}
             {...(sessionCwd !== undefined ? { cwd: sessionCwd } : {})}
             onClear={() => navigation.clearFilePreview()}
+            // Z4-02：行「评论」→ 引用块经预填通道进当前会话 composer（追加不覆盖；不夺焦点）。
+            // 未选会话不传回调 = 整个文件不渲染评论入口（红线⑩：无可预填目标不摆空入口）。
+            {...(sessionId !== null
+              ? {
+                  onQuote: (quote: string) => {
+                    composerPrefill.request({ sessionId, quote, focus: false });
+                  },
+                }
+              : {})}
           />
         )}
         {activeTab === 'config' && <EffectiveConfigPanel sessionId={sessionId} />}

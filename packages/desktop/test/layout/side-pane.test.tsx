@@ -234,6 +234,38 @@ describe('右栏标签体系（Z2-04）', () => {
     expect(document.querySelector('[data-file-path="src/a.ts"]')).not.toBeNull();
   });
 
+  it('Z4-02：文件 tab 行「评论」→ 引用块预填当前会话 composer（活草稿可见 + 经 setDraft 落盘）', async () => {
+    const api = makeFakeApi();
+    const App = (await bootApp(api)) as {
+      App: () => React.ReactNode;
+      store: { draftFor(id: string): string };
+    };
+    render(<App.App />);
+    fireEvent.click(await screen.findByRole('button', { name: /第一句/ }));
+    await screen.findByText('第一句回复');
+
+    const { toolNavigation } = await import('@harness2/ui-shared/renderer/tool/index.js');
+    act(() => {
+      toolNavigation.openFile({ path: 'src/a.ts' });
+    });
+    // 文件 tab 行评论入口（fake readFileForRef 返回 line1/line2）
+    // 注意：DTL v10 的 waitFor 对「同步返回 null」会立即以 null resolve —— 未就绪必须抛错
+    const entry = await waitFor(() => {
+      const el = document.querySelector('[data-file-preview-quote="1"]');
+      if (el === null) throw new Error('行评论入口未渲染');
+      return el;
+    });
+    fireEvent.click(entry);
+
+    const editor = await waitFor(() => {
+      const el = document.querySelector('[data-testid="composer-editor"]');
+      if (el === null || (el.textContent ?? '').length === 0) throw new Error('composer 尚未收到引用块');
+      return el;
+    });
+    expect(editor.textContent).toBe('`src/a.ts:1`\n> line1'); // 引用块真实写进 composer 草稿
+    expect(App.store.draftFor('s1')).toBe('`src/a.ts:1`\n> line1'); // 既有订阅经 controller.setDraft 落盘
+  });
+
   it('Z-13：新建会话强制收起右栏；新会话的桶为空 → 重开见启动器', async () => {
     const api = makeFakeApi();
     const App = (await bootApp(api)) as { App: () => React.ReactNode };
