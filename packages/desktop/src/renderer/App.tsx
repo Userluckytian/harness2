@@ -6,6 +6,7 @@ import type { SettingsNotifyDetails, SettingsPreferencesShape, SettingsTheme } f
 import { composeNotifyContent, shouldNotifyOnTurnEnd } from '../shared/notify.js';
 import {
   AppFrame,
+  DesktopTopOverlay,
   ShellPaletteProvider,
   shellThemeLabel,
   setOverlay,
@@ -16,8 +17,10 @@ import {
   type ShellPaletteValue,
 } from './layout/index.js';
 import { shellSlots } from './layout/shell-registry.js';
+import { desktopPlatform, windowFrameClass } from './platform.js';
+import { useWindowMaximized } from './window-state.js';
 import { JUMP_TO_SESSION_ID, type PaletteCommand, type PaletteSession } from './components/CommandPalette.js';
-import { controller, store, useAppState, THEME_CYCLE, StatusBadge } from './app-shared.js';
+import { controller, store, useAppState, THEME_CYCLE } from './app-shared.js';
 import type { AppState } from '@harness2/ui-shared/renderer/store.js';
 import { filterSessionList } from '@harness2/ui-shared/shared/metadata.js';
 
@@ -27,7 +30,7 @@ export { ChatItemView, ChatTranscript } from '@harness2/ui-shared/renderer/compo
 
 export function cycleTheme(current: SettingsTheme): SettingsTheme {
   const i = THEME_CYCLE.indexOf(current);
-  return THEME_CYCLE[(i + 1) % THEME_CYCLE.length] ?? 'warmPaper';
+  return THEME_CYCLE[(i + 1) % THEME_CYCLE.length] ?? 'system';
 }
 
 /** 有序「可跳转」会话（未归档且未删除；按 mtime 降序）的 id 列表 */
@@ -50,8 +53,8 @@ export function App(): React.ReactNode {
   const state = useAppState();
   const frame = useFrameState({ registry: shellSlots });
   const { state: frameState, dispatch: frameDispatch } = frame;
-  // 侧栏开合取几何口径（窄屏看「手动展开」override、宽屏看偏好 —— frame-state.isSidebarCollapsed）
-  const sidebarCollapsed = frame.geometry.sidebarRail;
+  // 侧栏折叠取几何口径（Z-06：折叠后 4px、内容只隐藏不卸载；状态不持久化）
+  const sidebarCollapsed = frame.geometry.sidebarCollapsed;
   const theme = useShellTheme();
   const [notifyDetails, setNotifyDetails] = useState<SettingsNotifyDetails>('minimal');
   // controller 生命周期挂组件：启动事件订阅 + 布局/覆层/草稿加载（卸载时退订）
@@ -223,44 +226,25 @@ export function App(): React.ReactNode {
     [commands, paletteSessions],
   );
 
+  // 平台特化（Z-02 / Z-04）：无独立顶栏；窗口根按平台加圆角类，浮层条绝对定位不占布局高度。
+  const platform = desktopPlatform();
+  const windowMaximized = useWindowMaximized();
+  const frameClass = ['app', 'desktop-window-frame', windowFrameClass(platform, windowMaximized)]
+    .filter((c) => c.length > 0)
+    .join(' ');
+
   return (
     <ShellPaletteProvider value={paletteValue}>
-      <div className="app">
-        <header className="topbar">
-          <span className="brand">harness2</span>
-          <span className="topbar-right">
-            <button
-              type="button"
-              className="app-frame-btn"
-              title={sidebarCollapsed ? '展开侧栏' : '收起侧栏'}
-              aria-label="侧栏开关"
-              aria-pressed={!sidebarCollapsed}
-              onClick={() => frameDispatch({ type: 'sidebar/toggle' })}
-            >
-              ▤
-            </button>
-            <button
-              type="button"
-              className="app-frame-btn"
-              title={frameState.rightbarOpen ? '收起右栏' : '打开右栏'}
-              aria-label="右栏开关"
-              aria-pressed={frameState.rightbarOpen}
-              onClick={() => frameDispatch({ type: 'rightbar/toggle' })}
-            >
-              ▥
-            </button>
-            <button
-              type="button"
-              className="btn-settings"
-              title="设置 (Ctrl+,)"
-              onClick={() => setOverlay('settings', true)}
-            >
-              ⚙
-            </button>
-            <StatusBadge status={state.status} error={state.statusDetail?.error} />
-          </span>
-        </header>
+      <div className={frameClass}>
         <AppFrame controller={frame} />
+        {/* Z-01：左上角浮层（侧栏折叠入口 + New Task）；**没有 topbar** */}
+        <DesktopTopOverlay
+          platform={platform}
+          sidebarCollapsed={sidebarCollapsed}
+          sidebarWidth={frame.geometry.sidebarExpandedWidth}
+          onToggleSidebar={() => frameDispatch({ type: 'sidebar/toggle' })}
+          onNewTask={() => void controller.newSession()}
+        />
       </div>
     </ShellPaletteProvider>
   );

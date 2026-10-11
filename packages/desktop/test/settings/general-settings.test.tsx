@@ -16,7 +16,7 @@ function renderGeneral(over: Partial<React.ComponentProps<typeof GeneralSettings
   const onSelectNotifyDetails = vi.fn();
   render(
     <GeneralSettings
-      theme="warmPaper"
+      theme="system"
       onSelectTheme={onSelectTheme}
       notifyDetails="minimal"
       onSelectNotifyDetails={onSelectNotifyDetails}
@@ -28,18 +28,18 @@ function renderGeneral(over: Partial<React.ComponentProps<typeof GeneralSettings
 }
 
 describe('通用设置：真实可用项', () => {
-  it('主题三选一（暖纸/深色/跟随系统）—— 标签与命令面板同源（themeLabel）', () => {
+  it('主题三选一（跟随系统/深色/浅色）—— 标签与命令面板同源（themeLabel）', () => {
     renderGeneral();
-    expect(THEME_CHOICES).toEqual(['warmPaper', 'dark', 'system']);
-    expect(screen.getByRole('button', { name: '暖纸浅色' }).getAttribute('aria-pressed')).toBe('true');
+    expect(THEME_CHOICES).toEqual(['system', 'zai-dark', 'zai-light']);
+    expect(screen.getByRole('button', { name: '跟随系统' }).getAttribute('aria-pressed')).toBe('true');
     expect(screen.getByRole('button', { name: '深色' }).getAttribute('aria-pressed')).toBe('false');
-    expect(screen.getByRole('button', { name: '跟随系统' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: '浅色' })).toBeTruthy();
   });
 
-  it('点主题只回传选择（不自己落地）：onSelectTheme("dark")', () => {
+  it('点主题只回传选择（不自己落地）：onSelectTheme("zai-dark")', () => {
     const { onSelectTheme } = renderGeneral();
     fireEvent.click(screen.getByRole('button', { name: '深色' }));
-    expect(onSelectTheme).toHaveBeenCalledWith('dark');
+    expect(onSelectTheme).toHaveBeenCalledWith('zai-dark');
     // 未受控：自己不改变选中态（真源在宿主注入的 theme）
     expect(screen.getByRole('button', { name: '深色' }).getAttribute('aria-pressed')).toBe('false');
   });
@@ -60,7 +60,7 @@ describe('通用设置：真实可用项', () => {
   it('不摆已失效的项：无「启动默认分栏数」（P4-C 拆掉分栏后无消费方）', () => {
     const { container } = render(
       <GeneralSettings
-        theme="warmPaper"
+        theme="system"
         onSelectTheme={() => {}}
         notifyDetails="minimal"
         onSelectNotifyDetails={() => {}}

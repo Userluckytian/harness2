@@ -1,5 +1,5 @@
 // D-20 品牌席位：`sidebar.brand.mark` 与 `sidebar.brand.name` 两个 single 席位。
-// 展开态渲染两席；轨道态渲染同一个 mark 席位（D-13 轨道保留品牌标记）。
+// Z-06 折叠态没有图标轨道：内容只隐藏不卸载，故折叠时品牌行仍渲染（不可见）。
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it } from 'vitest';
 import { cleanup, screen } from '@testing-library/react';
@@ -42,11 +42,16 @@ describe('D-20 品牌席位', () => {
     expect(screen.getByTestId('custom-name')?.textContent).toBe('自定义品牌');
   });
 
-  it('冷启动即轨道态：只渲染轨道 mark 席位，不渲染展开品牌行', () => {
+  it('折叠态（Z-06）：无图标轨道，品牌行只隐藏不卸载（内容仍在 DOM）', () => {
     renderSidebar({ collapsed: true });
-    expect(screen.getByTestId('sidebar-brand-mark-rail').querySelector('svg')).not.toBeNull();
-    expect(screen.queryByTestId('sidebar-brand')).toBeNull();
-    expect(screen.queryByTestId('sidebar-brand-name')).toBeNull();
+    // 折叠 = opacity-0 + pointer-events-none，不卸载
+    expect(screen.getByTestId('sidebar-root').classList.contains('opacity-0')).toBe(true);
+    expect(screen.getByTestId('sidebar-root').classList.contains('pointer-events-none')).toBe(true);
+    expect(screen.getByTestId('sidebar-brand-mark').querySelector('svg')).not.toBeNull();
+    expect(screen.getByTestId('sidebar-brand-name')).toBeTruthy();
+    // 没有任何轨道标记
+    expect(screen.queryByTestId('sidebar-brand-mark-rail')).toBeNull();
+    expect(screen.queryByTestId('sidebar-region-rail')).toBeNull();
   });
 
   it('品牌行是新会话快捷入口（点击等同新会话按钮）', () => {

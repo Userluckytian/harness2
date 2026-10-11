@@ -80,8 +80,11 @@ describe('respondApproval 幂等与断线语义（PD4）', () => {
     const controller = createController(store, api);
     await controller.respondApproval('r1', 'allow');
     expect(store.isApprovalResponding('r1')).toBe(false); // 失败也解除在途（可重试）
+    // 失败就地注记（dock 据此显示，不静默）；卡片保留
+    expect(store.approvalFailure('r1')).toContain('审批提交失败');
     await controller.respondApproval('r1', 'allow');
     expect(respond).toHaveBeenCalledTimes(2);
+    expect(store.approvalFailure('r1')).toBeUndefined(); // 重试成功：注记清除
     expect(store.allApprovals().some((a) => a.requestId === 'r1')).toBe(false);
   });
 });

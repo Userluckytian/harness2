@@ -71,8 +71,10 @@ describe('D-25 徐标落点', () => {
     expect(screen.getByTestId('sidebar-brand-name').textContent).toBe('本地构建');
   });
 
-  it('轨道态不渲染徐标（只有标记席位）', () => {
+  it('折叠态（Z-06）仍渲染徐标但整体不可见（只隐藏不卸载）', () => {
     renderSidebar({ collapsed: true, buildVersion: '1.2.3' });
-    expect(screen.queryByTestId('sidebar-version-badge')).toBeNull();
+    // 内容不卸载：徐标仍在 DOM，由 opacity-0 + pointer-events-none 隐藏
+    expect(screen.getByTestId('sidebar-version-badge').textContent).toBe('1.2.3');
+    expect(screen.getByTestId('sidebar-root').classList.contains('opacity-0')).toBe(true);
   });
 });

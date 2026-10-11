@@ -16,6 +16,7 @@ import {
   THEME_COLOR,
 } from '../../src/renderer/layout/theme-presenter.js';
 import { getShellTheme, setShellTheme, shellThemeStore } from '../../src/renderer/layout/shell-theme.js';
+import { THEME_STORAGE_KEY } from '../../src/renderer/theme.js';
 
 /** matchMedia 替身：按查询串给 matches，并记录监听器增减 */
 function stubMatchMedia(predicate: (query: string) => boolean): { mm: MatchMediaLike; listenerCount: () => number } {
@@ -34,29 +35,32 @@ function stubMatchMedia(predicate: (query: string) => boolean): { mm: MatchMedia
 
 afterEach(() => {
   document.documentElement.style.cssText = '';
+  document.documentElement.removeAttribute('data-theme');
+  document.documentElement.classList.remove('theme-zai-light', 'theme-zai-dark', 'dark');
   document.body.removeAttribute(DARK_THEME_ATTRIBUTE);
   document.head.querySelectorAll('meta[name="theme-color"]').forEach((m) => m.remove());
+  window.localStorage.removeItem(THEME_STORAGE_KEY);
 });
 
 describe('主题呈现（D-15）', () => {
-  it('resolveThemePresentation：深色 → dark/深主题色；浅色 → light/暖纸色；字号写 px', () => {
-    expect(resolveThemePresentation('dark')).toEqual({
+  it('resolveThemePresentation：深色 → dark/深主题色；浅色 → light/浅主题色；字号写 px', () => {
+    expect(resolveThemePresentation('zai-dark')).toEqual({
       dark: true,
       colorScheme: 'dark',
       contentFontSize: `${DEFAULT_CONTENT_FONT_SIZE}px`,
       themeColor: THEME_COLOR.dark,
     });
-    const light = resolveThemePresentation('warmPaper');
+    const light = resolveThemePresentation('zai-light');
     expect(light.dark).toBe(false);
     expect(light.colorScheme).toBe('light');
     expect(light.themeColor).toBe(THEME_COLOR.light);
-    expect(resolveThemePresentation('warmPaper', { contentFontSize: 16 }).contentFontSize).toBe('16px');
+    expect(resolveThemePresentation('zai-light', { contentFontSize: 16 }).contentFontSize).toBe('16px');
     // jsdom 无 matchMedia：system 视为浅色（与 theme.ts 既有口径一致）
     expect(resolveThemePresentation('system').colorScheme).toBe('light');
   });
 
   it('applyThemePresentation 一次写四处（html color-scheme / body 属性 / 字号变量 / theme-color）', () => {
-    const dispose = applyThemePresentation('dark');
+    const dispose = applyThemePresentation('zai-dark');
     const html = document.documentElement;
     expect(html.style.colorScheme).toBe('dark');
     expect(html.style.getPropertyValue(CONTENT_FONT_SIZE_VAR)).toBe(`${DEFAULT_CONTENT_FONT_SIZE}px`);
@@ -66,7 +70,7 @@ describe('主题呈现（D-15）', () => {
     expect(meta?.getAttribute('content')).toBe(THEME_COLOR.dark);
     dispose();
 
-    applyThemePresentation('warmPaper');
+    applyThemePresentation('zai-light');
     expect(html.style.colorScheme).toBe('light');
     expect(html.style.getPropertyValue(CONTENT_FONT_SIZE_VAR)).toBe(`${DEFAULT_CONTENT_FONT_SIZE}px`);
     expect(document.body.hasAttribute(DARK_THEME_ATTRIBUTE)).toBe(false);
@@ -74,8 +78,8 @@ describe('主题呈现（D-15）', () => {
   });
 
   it('meta 复用：重复应用不重复插入 <meta name="theme-color">', () => {
-    applyThemePresentation('dark');
-    applyThemePresentation('dark');
+    applyThemePresentation('zai-dark');
+    applyThemePresentation('zai-dark');
     expect(document.head.querySelectorAll('meta[name="theme-color"]').length).toBe(1);
   });
 });
@@ -98,7 +102,7 @@ describe('降动效（D-16）', () => {
     expect(listenerCount()).toBe(0);
     // 非 system 主题不挂监听
     const fixed = stubMatchMedia(() => true);
-    applyThemePresentation('dark', { matchMedia: fixed.mm });
+    applyThemePresentation('zai-dark', { matchMedia: fixed.mm });
     expect(fixed.listenerCount()).toBe(0);
   });
 
@@ -112,17 +116,36 @@ describe('降动效（D-16）', () => {
 
 describe('主题 store（内存态，D-14 口径）', () => {
   it('setShellTheme 立即呈现并更新快照；订阅者收到通知，退订后不再收到', () => {
-    setShellTheme('warmPaper');
-    expect(getShellTheme()).toBe('warmPaper');
+    setShellTheme('zai-light');
+    expect(getShellTheme()).toBe('zai-light');
     const listener = vi.fn();
     const unsub = shellThemeStore.subscribe(listener);
-    setShellTheme('dark');
-    expect(getShellTheme()).toBe('dark');
+    setShellTheme('zai-dark');
+    expect(getShellTheme()).toBe('zai-dark');
     expect(listener).toHaveBeenCalledTimes(1);
     expect(document.body.hasAttribute(DARK_THEME_ATTRIBUTE)).toBe(true);
     unsub();
     setShellTheme('system');
     expect(listener).toHaveBeenCalledTimes(1);
     expect(document.body.hasAttribute(DARK_THEME_ATTRIBUTE)).toBe(false);
+  });
+
+  it('setShellTheme 写全根契约（class / dark / data-theme / color-scheme）并镜像偏好到 localStorage', () => {
+    setShellTheme('zai-dark');
+    const root = document.documentElement;
+    expect(root.classList.contains('theme-zai-dark')).toBe(true);
+    expect(root.classList.contains('theme-zai-light')).toBe(false);
+    expect(root.classList.contains('dark')).toBe(true);
+    expect(root.getAttribute('data-theme')).toBe('zai-dark');
+    expect(root.style.colorScheme).toBe('dark');
+    expect(window.localStorage.getItem(THEME_STORAGE_KEY)).toBe('zai-dark');
+
+    setShellTheme('zai-light');
+    expect(root.classList.contains('theme-zai-light')).toBe(true);
+    expect(root.classList.contains('theme-zai-dark')).toBe(false);
+    expect(root.classList.contains('dark')).toBe(false);
+    expect(root.getAttribute('data-theme')).toBe('zai-light');
+    expect(root.style.colorScheme).toBe('light');
+    expect(window.localStorage.getItem(THEME_STORAGE_KEY)).toBe('zai-light');
   });
 });

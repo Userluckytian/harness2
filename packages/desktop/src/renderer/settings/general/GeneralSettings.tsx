@@ -10,8 +10,8 @@ import type { SettingsNotifyDetails, SettingsTheme } from '../../../shared/proto
 import { themeLabel } from '../../theme.js';
 import { SettingsSectionBlock } from '../shell/section-block.js';
 
-/** 主题可选项（顺序 = 用户可见顺序；标签与命令面板同源 `themeLabel`，不另写一套文案） */
-export const THEME_CHOICES: readonly SettingsTheme[] = ['warmPaper', 'dark', 'system'];
+/** 主题可选项（顺序 = 用户可见顺序，对齐 Z-83「系统默认 / 深色 / 浅色」；标签与命令面板同源 `themeLabel`） */
+export const THEME_CHOICES: readonly SettingsTheme[] = ['system', 'zai-dark', 'zai-light'];
 
 /** 通知详情可选项（与 shared/preferences 的 NOTIFY_DETAILS 同值域） */
 export const NOTIFY_DETAILS_CHOICES: readonly SettingsNotifyDetails[] = ['minimal', 'full'];

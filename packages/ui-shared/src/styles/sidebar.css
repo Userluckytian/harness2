@@ -187,6 +187,59 @@
   white-space: nowrap;
 }
 
+/* —— 命令中心入口（Z-07 分区 2：New Task 之下、会话区域之上）—— */
+.h2-sidebar-command {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  height: 34px;
+  padding: 0 10px;
+  margin: 0 2px 8px;
+  box-sizing: border-box;
+  border: 1px solid transparent;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--fg-muted);
+  font: inherit;
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+  overflow: hidden;
+}
+
+.h2-sidebar-command:hover {
+  background: var(--surface2);
+  color: var(--fg);
+}
+
+.h2-sidebar-command-icon {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.h2-sidebar-command-label {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+.h2-sidebar-command-hint {
+  flex: none;
+  padding: 1px 5px;
+  border: 1px solid var(--border2);
+  border-radius: 5px;
+  color: var(--fg-dim);
+  font-family: ui-monospace, SFMono-Regular, Consolas, 'Liberation Mono', monospace;
+  font-size: 10px;
+  line-height: 14px;
+  white-space: nowrap;
+}
+
 /* —— 区域席位（D-23）：外壳只给区域留位，内部排版归占用方 —— */
 .h2-sidebar-region-area {
   flex: 1;

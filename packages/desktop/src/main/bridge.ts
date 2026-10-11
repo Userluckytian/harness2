@@ -1,7 +1,7 @@
 // 主进程桥：IPC 命令分发（渲染端唯一入口）+ 服务 WS 连接（事件帧转发给渲染端）。
 // 安全边界：渲染进程零 Node——一切经 ipcRenderer.invoke('harness2:invoke') 到这里，
 // 这里只与 127.0.0.1 的本地 serve 通信；WS 帧（含密钥三不约束的脱敏事件）原样转发。
-import { BrowserWindow, Notification, dialog, ipcMain, type IpcMainInvokeEvent } from 'electron';
+import { BrowserWindow, Notification, dialog, ipcMain, nativeTheme, type IpcMainInvokeEvent } from 'electron';
 import { composeNotifyContent } from '../shared/notify.js';
 import { buildCapabilityReport, classifyProbeResponse } from '../shared/capabilities.js';
 import type {
@@ -569,6 +569,34 @@ export function createBridge(deps: BridgeDeps): Bridge {
         return writeLayout(deps.home, args['layout']);
       case 'getStatus':
         return deps.serve.getStatus();
+      // —— Z1-05 / Z-86：桌面 nativeTheme 镜像（标题栏与原生控件跟随主题） ——
+      case 'platform:setTitleBarTheme': {
+        const value = args['theme'];
+        nativeTheme.themeSource = value === 'dark' ? 'dark' : value === 'light' ? 'light' : 'system';
+        return null;
+      }
+      // —— Z2-01b：win/linux 自绘窗口控件（主窗口取当前窗口；mac 不调用） ——
+      case 'window:minimize': {
+        BrowserWindow.getAllWindows()[0]?.minimize();
+        return null;
+      }
+      case 'window:toggleMaximize': {
+        const win = BrowserWindow.getAllWindows()[0];
+        if (win !== undefined) {
+          if (win.isMaximized()) win.unmaximize();
+          else win.maximize();
+        }
+        return null;
+      }
+      case 'window:close': {
+        // 走既有 close 事件链：D4 的「关窗口 ≠ 已停任务」提示在此生效，不绕开
+        BrowserWindow.getAllWindows()[0]?.close();
+        return null;
+      }
+      case 'window:getState': {
+        const win = BrowserWindow.getAllWindows()[0];
+        return { maximized: win?.isMaximized() ?? false };
+      }
       case 'settings:getConfig':
         return readSettingsConfig(deps.home, deps.root);
       case 'settings:updateConfig':

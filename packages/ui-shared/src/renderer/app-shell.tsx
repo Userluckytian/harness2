@@ -9,9 +9,10 @@ import { createController, type Controller } from './app-controller.js';
 import type { HarnessClient } from './ports.js';
 import { AppStore, type AppState } from './store.js';
 
-/** 主题循环（壳的设置页与主题呈现器共用；持久化由各壳自己决定） */
-export type ShellTheme = 'warmPaper' | 'dark' | 'system';
-export const THEME_CYCLE: readonly ShellTheme[] = ['warmPaper', 'dark', 'system'];
+/** 主题循环（壳的设置页与主题呈现器共用；持久化由各壳自己决定）。
+ *  三态与 Z-66 一致：system / zai-light / zai-dark（默认 system）。 */
+export type ShellTheme = 'system' | 'zai-light' | 'zai-dark';
+export const THEME_CYCLE: readonly ShellTheme[] = ['system', 'zai-dark', 'zai-light'];
 
 export interface AppShell {
   readonly store: AppStore;

@@ -13,8 +13,8 @@ export const DARK_THEME_ATTRIBUTE = 'data-ds-dark-theme';
 export const CONTENT_FONT_SIZE_VAR = '--dsh-content-font-size';
 /** 正文字号默认值（px） */
 export const DEFAULT_CONTENT_FONT_SIZE = 14;
-/** 主题色（与 styles.css 的 --bg 保持一致） */
-export const THEME_COLOR = { light: '#f6efe3', dark: '#1b1d21' } as const;
+/** 主题色（与 styles.css 的 Zai 底色 token 对齐：--color-background 亮/暗） */
+export const THEME_COLOR = { light: '#f8f8f8', dark: '#161616' } as const;
 /** 降动效 media query（D-16） */
 export const REDUCED_MOTION_QUERY = '(prefers-reduced-motion: reduce)';
 /** 系统深色 media query（theme.ts 同源） */
@@ -49,7 +49,7 @@ export function resolveThemePresentation(
   theme: SettingsTheme,
   opts: { contentFontSize?: number } = {},
 ): ThemePresentation {
-  const dark = resolvedTheme(theme) === 'dark';
+  const dark = resolvedTheme(theme) === 'zai-dark';
   const size = opts.contentFontSize ?? DEFAULT_CONTENT_FONT_SIZE;
   return {
     dark,

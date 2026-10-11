@@ -31,6 +31,21 @@ export interface SessionBrowserProps extends WorkspacesOwnerProps {
   onQueryChange?: ((query: string) => void) | undefined;
   onOpenSession: (id: string) => void;
   labels: SidebarLabels;
+  /**
+   * 行拖拽（Z2-06 / Z-19：把左栏会话拖进主区分屏）。
+   * 缺省不传 = 行不可拖（web 壳与既有调用点行为不变，向后兼容）。
+   */
+  rowDrag?: SessionRowDrag | undefined;
+}
+
+/** 会话行拖拽钩子（Z-19）：载荷由调用方决定（生产写 dataTransfer + 模块级回退） */
+export interface SessionRowDrag {
+  /** 拖拽开始（行已 `draggable`） */
+  onDragStart?: ((id: string, event: React.DragEvent<HTMLButtonElement>) => void) | undefined;
+  /** 拖拽结束（含被取消） */
+  onDragEnd?: ((id: string, event: React.DragEvent<HTMLButtonElement>) => void) | undefined;
+  /** 已在分屏中的会话：禁用拖拽（Z-19「已在分屏内的会话禁用拖拽」） */
+  disabledIds?: ReadonlySet<string> | undefined;
 }
 
 /** 一行的时间/条数摘要（本地化时间串，非「刚刚」这类伪造相对时间） */
@@ -55,33 +70,50 @@ export function SessionBrowser({
   onQueryChange,
   onOpenSession,
   labels,
+  rowDrag,
 }: SessionBrowserProps): React.ReactNode {
   const [archivedOpen, setArchivedOpen] = useState(false);
   const searching = query !== undefined && query.trim().length > 0;
   const total = sessions.length + archived.length;
   const emptyLabel = searching ? labels.noMatch : total === 0 ? labels.noSessions : labels.allArchived;
 
-  const renderRow = (item: SidebarSessionItem): React.ReactNode => (
-    <li key={item.id} className="h2-sidebar-row">
-      <button
-        type="button"
-        className="h2-sidebar-session"
-        data-session-id={item.id}
-        data-selected={selectedId === item.id ? 'true' : 'false'}
-        data-archived={item.archived ? 'true' : 'false'}
-        aria-current={selectedId === item.id ? 'true' : undefined}
-        title={item.title}
-        onClick={() => onOpenSession(item.id)}
-      >
-        <span className="h2-sidebar-session-title">
-          {item.title}
-          {item.running && <span className="h2-sidebar-running" data-testid="session-running" />}
-          {item.unread > 0 && <span className="h2-sidebar-unread">{item.unread}</span>}
-        </span>
-        <span className="h2-sidebar-session-meta">{rowMeta(item)}</span>
-      </button>
-    </li>
-  );
+  const onDragStart = rowDrag?.onDragStart;
+  const onDragEnd = rowDrag?.onDragEnd;
+  const disabledIds = rowDrag?.disabledIds;
+
+  const renderRow = (item: SidebarSessionItem): React.ReactNode => {
+    const dragDisabled = disabledIds?.has(item.id) === true;
+    const draggable = onDragStart !== undefined && !dragDisabled;
+    return (
+      <li key={item.id} className="h2-sidebar-row">
+        <button
+          type="button"
+          className="h2-sidebar-session"
+          data-session-id={item.id}
+          data-selected={selectedId === item.id ? 'true' : 'false'}
+          data-archived={item.archived ? 'true' : 'false'}
+          data-drag-disabled={dragDisabled ? 'true' : undefined}
+          aria-current={selectedId === item.id ? 'true' : undefined}
+          title={item.title}
+          {...(draggable ? { draggable: true } : {})}
+          {...(draggable && onDragStart !== undefined
+            ? { onDragStart: (event: React.DragEvent<HTMLButtonElement>) => onDragStart(item.id, event) }
+            : {})}
+          {...(onDragEnd !== undefined
+            ? { onDragEnd: (event: React.DragEvent<HTMLButtonElement>) => onDragEnd(item.id, event) }
+            : {})}
+          onClick={() => onOpenSession(item.id)}
+        >
+          <span className="h2-sidebar-session-title">
+            {item.title}
+            {item.running && <span className="h2-sidebar-running" data-testid="session-running" />}
+            {item.unread > 0 && <span className="h2-sidebar-unread">{item.unread}</span>}
+          </span>
+          <span className="h2-sidebar-session-meta">{rowMeta(item)}</span>
+        </button>
+      </li>
+    );
+  };
 
   if (!wide) {
     // 轨道态：列表让位给一枚图标按钮（D-13 保留 56px 轨道 + 展开入口）。

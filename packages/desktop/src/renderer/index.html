@@ -7,6 +7,9 @@
       content="default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'none'"
     />
     <title>harness2</title>
+    <!-- Z1-05 首屏防闪：外部脚本（CSP 无 script-src，内联会被 default-src 'self' 拦截）；
+         在模块脚本之前同步写 <html> 主题，避免 React 挂载前白闪。 -->
+    <script src="/theme-boot.js"></script>
   </head>
   <body>
     <div id="root"></div>

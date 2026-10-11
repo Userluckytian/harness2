@@ -4,7 +4,14 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { join } from 'node:path';
-import { IPC_EVENT, IPC_INVOKE, IPC_SETTINGS_EVENT, IPC_STATUS, IPC_STOP_ALL } from '../src/shared/protocol.js';
+import {
+  IPC_EVENT,
+  IPC_INVOKE,
+  IPC_SETTINGS_EVENT,
+  IPC_STATUS,
+  IPC_STOP_ALL,
+  IPC_WINDOW_STATE,
+} from '../src/shared/protocol.js';
 
 function extractConstant(source: string, name: string): string | null {
   const m = new RegExp(`const ${name} = '([^']+)'`).exec(source);
@@ -35,6 +42,9 @@ describe('preload IPC 常量一致性', () => {
     // P6-B（D-58）：设置域事件通道
     expect(extractConstant(preloadSource, 'IPC_SETTINGS_EVENT')).toBe(IPC_SETTINGS_EVENT);
     expect(IPC_SETTINGS_EVENT).toBe('harness2:settings-event');
+    // Z2-01b：窗口状态通道
+    expect(extractConstant(preloadSource, 'IPC_WINDOW_STATE')).toBe(IPC_WINDOW_STATE);
+    expect(IPC_WINDOW_STATE).toBe('harness2:window-state');
   });
 
   it('P6-B 模型配置命令在 protocol / preload / bridge 三处同名', () => {
@@ -43,6 +53,16 @@ describe('preload IPC 常量一致性', () => {
       expect(preloadSource, `preload 缺少 ${cmd}`).toContain(`'${cmd}'`);
       expect(bridgeSource, `bridge 未分发 ${cmd}`).toContain(`case '${cmd}'`);
     }
+  });
+
+  it('Z2-01b 窗口控件命令在 protocol / preload / bridge 三处同名', () => {
+    for (const cmd of ['window:minimize', 'window:toggleMaximize', 'window:close', 'window:getState'] as const) {
+      expect(protocolSource, `protocol 缺少 ${cmd}`).toContain(`'${cmd}'`);
+      expect(preloadSource, `preload 缺少 ${cmd}`).toContain(`'${cmd}'`);
+      expect(bridgeSource, `bridge 未分发 ${cmd}`).toContain(`case '${cmd}'`);
+    }
+    // 平台信号在 preload 同步暴露（渲染端零 Node 的唯一来源）
+    expect(preloadSource).toContain('platform: resolvePlatform()');
   });
 
   it('preload 源码不允许 require 相对模块 / Node 内建（sandbox 红线）', () => {

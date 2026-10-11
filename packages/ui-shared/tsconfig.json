@@ -10,7 +10,11 @@
     "verbatimModuleSyntax": false,
     "jsx": "react-jsx",
     "lib": ["ES2023", "DOM", "DOM.Iterable"],
-    "types": []
+    "types": [],
+    // shadcn 约定：`@/` = 本包 src。注意各壳的 vite 也把 `@` 指向本包 src
+    // （组件内部引用需要），因此**壳内代码不要用 `@/`，用相对路径**。
+    // 注：本包用 TypeScript 7，baseUrl 已被移除，paths 相对 tsconfig 所在目录解析。
+    "paths": { "@/*": ["./src/*"] }
   },
   "include": ["src", "test", "vitest.config.mts"]
 }

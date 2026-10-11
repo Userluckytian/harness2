@@ -11,15 +11,20 @@ export type {
   SidebarSeats,
 } from './SidebarRoot.js';
 export { SessionBrowser } from '@harness2/ui-shared/renderer/sidebar/SessionBrowser.js';
-export type { SessionBrowserProps, WorkspacesOwnerProps } from '@harness2/ui-shared/renderer/sidebar/SessionBrowser.js';
+export type {
+  SessionBrowserProps,
+  SessionRowDrag,
+  WorkspacesOwnerProps,
+} from '@harness2/ui-shared/renderer/sidebar/SessionBrowser.js';
 
-// 几何（D-11 / D-13）
+// 几何（Z-05 / Z-06）
 export {
-  RAIL_WIDTH,
+  SIDEBAR_COLLAPSED_WIDTH,
   SIDEBAR_DEFAULT_WIDTH,
-  SIDEBAR_MAX_WIDTH,
+  SIDEBAR_MAX_WIDTH_RATIO,
   SIDEBAR_MIN_WIDTH,
   clampSidebarWidth,
+  sidebarMaxWidth,
 } from './geometry.js';
 
 // 品牌徐标（D-20 / D-25）
@@ -30,9 +35,9 @@ export type { BuildVersionInput } from './brand.js';
 export { resolveNewSessionScope } from './new-session-scope.js';
 export type { NewSessionScope, NewSessionScopeInput } from './new-session-scope.js';
 
-// 收起相位（D-22）
-export { COLLAPSE_SETTLE_MS, collapsePhase, playsRailIn, settleDelayMs, sidebarStateClasses } from './collapse.js';
-export type { CollapsePhase, SidebarClassInput } from './collapse.js';
+// 折叠形态（Z-06）
+export { COLLAPSE_TRANSITION_MS, sidebarStateClasses } from './collapse.js';
+export type { SidebarClassInput } from './collapse.js';
 
 // 滚动条可供性（D-24）
 export { SCROLLBAR_LINGER_MS, scrollAffordance } from './scroll-affordance.js';

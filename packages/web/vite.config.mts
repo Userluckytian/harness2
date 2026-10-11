@@ -8,11 +8,21 @@
 //   * `VITE_HARNESS2_ORIGIN`：直连 serve 时的绝对源（仅当部署侧已解决同源/代理时使用）
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
+import tailwindcss from '@tailwindcss/vite';
+import { dirname, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
+const pkgRoot = dirname(fileURLToPath(import.meta.url));
 const proxyTarget = process.env.VITE_HARNESS2_PROXY ?? 'http://127.0.0.1:46213';
 
 export default defineConfig({
-  plugins: [react()],
+  plugins: [react(), tailwindcss()],
+  resolve: {
+    alias: {
+      // ui-shared 组件内部的 `@/` 引用（shadcn 约定）指向该包 src
+      '@': resolve(pkgRoot, '../ui-shared/src'),
+    },
+  },
   server: {
     proxy: {
       // changeOrigin: true —— serve 的信任域校验要求 Host 为 127.0.0.1:<serve 端口>

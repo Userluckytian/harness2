@@ -18,9 +18,9 @@ function tempHome(): string {
 }
 
 describe('shared/preferences 规范化', () => {
-  it('缺省偏好 = 暖纸/1 栏/显示欢迎/精简通知', () => {
+  it('缺省偏好 = 跟随系统/1 栏/显示欢迎/精简通知', () => {
     expect(defaultPreferences()).toEqual({
-      theme: 'warmPaper',
+      theme: 'system',
       defaultPaneCount: 1,
       showWelcome: true,
       notifyDetails: 'minimal',
@@ -29,9 +29,9 @@ describe('shared/preferences 规范化', () => {
 
   it('合法值原样保留', () => {
     expect(
-      normalizePreferences({ theme: 'dark', defaultPaneCount: 3, showWelcome: false, notifyDetails: 'full' }),
+      normalizePreferences({ theme: 'zai-dark', defaultPaneCount: 3, showWelcome: false, notifyDetails: 'full' }),
     ).toEqual({
-      theme: 'dark',
+      theme: 'zai-dark',
       defaultPaneCount: 3,
       showWelcome: false,
       notifyDetails: 'full',

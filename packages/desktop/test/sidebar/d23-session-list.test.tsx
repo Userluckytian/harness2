@@ -82,7 +82,7 @@ describe('D-23 底部设置席位', () => {
     expect(screen.getByTestId('sidebar-foot').textContent).toBe('');
   });
 
-  it('占用方按宽窄态渲染（轨道态收到 wide=false）', () => {
+  it('占用方按展开形态渲染（Z-06：折叠态内容只隐藏不卸载，wide 恒为 true）', () => {
     const wides: boolean[] = [];
     const seat = ({ wide }: { wide: boolean }): React.ReactNode => {
       wides.push(wide);
@@ -91,7 +91,7 @@ describe('D-23 底部设置席位', () => {
     renderSidebar({ collapsed: true, renderSettings: seat });
     cleanup();
     renderSidebar({ renderSettings: seat });
-    expect(wides).toEqual([false, true]);
+    expect(wides).toEqual([true, true]);
   });
 
   it('设置席位在会话列表滚动区之外（列表滚动不顶走设置）', () => {

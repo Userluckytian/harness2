@@ -1,7 +1,7 @@
 // Electron 主进程入口：spawn serve → 桥接 IPC → 创建窗口（contextIsolation + preload）。
 // --smoke 冒烟模式：无头窗口 + mock 服务就绪 + 渲染端加载完成后向 stdout 打一行 JSON 并退出
 // （自动化冒烟；窗口交互/拖拽等 GUI 项仍需真机人工验收，见 docs/issue-log/OPEN.md）。
-import { app, BrowserWindow, Menu, dialog } from 'electron';
+import { app, BrowserWindow, Menu, dialog, nativeTheme } from 'electron';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { homedir, tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -9,6 +9,7 @@ import { createBridge, registerBridgeIpc, type Bridge } from './bridge.js';
 import { ServeManager } from './serve-manager.js';
 import { createCloseWindowHandler } from './close-window-handler.js';
 import type { ConnectionStatus, SettingsEventFrame, StatusDetail, WsFrame } from '../shared/protocol.js';
+import { IPC_WINDOW_STATE } from '../shared/protocol.js';
 
 const SMOKE = process.argv.includes('--smoke');
 
@@ -96,6 +97,12 @@ function startDesktop(opts: { show: boolean; provider: 'mock' | 'config'; home?:
     height: 800,
     show: opts.show,
     title: 'harness2',
+    // Z1-05：加载期底色对齐 Zai token，避免首帧白闪（默认偏好 system，按系统深浅取底色）
+    backgroundColor: nativeTheme.shouldUseDarkColors ? '#161616' : '#f8f8f8',
+    // Z2-01b（Z-02 / Z-04）：无独立标题栏 ——
+    //   macOS 保留系统红绿灯（隐藏标题栏，渲染端留 96px 安全区）；
+    //   Windows / Linux 无边框，窗口控件由渲染端自绘（ConversationHeader 右侧）。
+    ...(process.platform === 'darwin' ? { titleBarStyle: 'hiddenInset' as const } : { frame: false }),
     webPreferences: {
       preload: join(__dirname, '..', 'preload', 'preload.js'),
       contextIsolation: true, // 红线：渲染进程零 Node
@@ -103,6 +110,15 @@ function startDesktop(opts: { show: boolean; provider: 'mock' | 'config'; home?:
       sandbox: true,
     },
   });
+  // Z2-01b：最大化/还原状态推给渲染端（linux 最大化去圆角 + 窗控图标切换）
+  const sendWindowState = (): void => {
+    const state = { maximized: win.isMaximized() };
+    for (const w of BrowserWindow.getAllWindows()) {
+      w.webContents.send(IPC_WINDOW_STATE, state);
+    }
+  };
+  win.on('maximize', sendWindowState);
+  win.on('unmaximize', sendWindowState);
   win.webContents.on('preload-error', (_e, path, err) => {
     console.error(JSON.stringify({ level: 'preload-error', path, message: err.message }));
   });

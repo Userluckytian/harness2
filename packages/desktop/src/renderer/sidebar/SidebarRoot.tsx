@@ -1,8 +1,10 @@
-// 侧栏外壳（refs-deepseek-harness.md D-20～D-25）：
+// 侧栏外壳（依据 docs/refs/refs-zcode-layout.md Z-05～Z-07；席位模型沿用 refs-deepseek-harness.md D-20～D-25）：
 //   D-20 品牌席位：`sidebar.brand.mark` / `sidebar.brand.name` 两个 single 席位（可被品牌包接管）
 //   D-21 新会话作用域：显式指定 → 当前会话所属 → 最近活跃 → 空白（见 new-session-scope.ts）
-//   D-22 收起动画：冻结宽度淡出 → 向左位移进 56px 轨道；降动效时即时落定（见 collapse.ts / use-collapse.ts）
+//   Z-06 折叠形态：折叠后只剩 4px，内容 opacity-0 + pointer-events-none（只隐藏不卸载、无图标轨道）
 //   D-23 区域席位：`sidebar.workspaces`（会话列表）+ 底部固定 `sidebar.settings`
+//   Z-07 分区顺序：品牌行 → New Task（分区 1）→ 命令中心入口（分区 2）→ 会话区域（分区 7/8）→ Footer（分区 9）
+//   Z-07 缺前置分区（Automations / Plugin Store / 任务工具栏 / Pinned / Projects / 文件树）本壳不摆假入口
 //   D-24 滚动条可供性：指针不在列内即静默，离开后滞留 2 秒；未溢出则本就不画（见 scroll-affordance.ts）
 //   D-25 版本徐标：品牌行下方 `version[-commit][-dirty]`（见 brand.ts）
 // 本组件**自包含**：不 import App / layout / slots / app-shared；
@@ -15,7 +17,11 @@ import { sidebarStateClasses } from './collapse.js';
 import { useCollapse } from './use-collapse.js';
 import { useScrollAffordance } from './use-scroll-affordance.js';
 import { DEFAULT_SIDEBAR_LABELS, type SidebarLabels } from '@harness2/ui-shared/renderer/sidebar/labels.js';
-import { SessionBrowser, type WorkspacesOwnerProps } from '@harness2/ui-shared/renderer/sidebar/SessionBrowser.js';
+import {
+  SessionBrowser,
+  type SessionRowDrag,
+  type WorkspacesOwnerProps,
+} from '@harness2/ui-shared/renderer/sidebar/SessionBrowser.js';
 import type { SidebarSessionItem } from '@harness2/ui-shared/renderer/sidebar/session-items.js';
 import '@harness2/ui-shared/styles/sidebar.css';
 
@@ -33,7 +39,7 @@ export interface BrandNameOwnerProps {
 
 /** 底部设置席位属主事实（D-23）：只需宽窄态 */
 export interface SettingsOwnerProps {
-  /** 展开态给完整触发行，轨道态给图标（false = 56px 轨道） */
+  /** 是否按展开形态渲染（Z-06：折叠态内容只隐藏不卸载，始终给 true） */
   wide: boolean;
 }
 
@@ -50,9 +56,9 @@ export interface SidebarSeats {
 }
 
 export interface SidebarRootProps extends SidebarSeats {
-  /** 是否收起（D-13：收起后是 56px 轨道，不是消失） */
+  /** 是否折叠（Z-06：折叠后只剩 4px，内容只隐藏不卸载、无图标轨道） */
   collapsed: boolean;
-  /** 展开宽度（D-11 264～420；缺省 280，越界自动钳制） */
+  /** 展开宽度（Z-05 264～容器 50%；缺省 264） */
   width?: number | undefined;
   /** 收起/展开切换（布局 owner 的动作，接进来即可） */
   onToggleCollapse: () => void;
@@ -62,6 +68,14 @@ export interface SidebarRootProps extends SidebarSeats {
   newSessionScope?: NewSessionScopeInput | undefined;
   /** 新会话入口是否可用（装配层按连接状态给 false；缺省可用） */
   newSessionEnabled?: boolean | undefined;
+  /**
+   * 命令中心入口（Z-07 分区 2）：点击打开既有命令面板。
+   * 不传则不渲染该入口（硬约束：界面上不摆点击无效的假入口）——
+   * 装配层经覆层链路（shell-overlays 的 setOverlay('palette', true)）注入，本组件不 import App 私有状态。
+   */
+  onOpenCommandPalette?: (() => void) | undefined;
+  /** 命令中心快捷键提示（缺省 Ctrl+K，与 App 的 Ctrl+K 唤出链路一致） */
+  commandPaletteHint?: string | undefined;
   /** 会话行数据（默认区域席位用；给了 renderWorkspaces 则由占用方自取） */
   sessions?: readonly SidebarSessionItem[] | undefined;
   /** 已归档会话（折叠区） */
@@ -76,6 +90,8 @@ export interface SidebarRootProps extends SidebarSeats {
   buildVersion?: string | undefined;
   /** 构建期环境表（默认读 globalThis.process.env；渲染进程通常由装配层显式传入） */
   buildEnv?: Record<string, string | undefined> | undefined;
+  /** Z2-06：会话行拖拽（把会话拖进主区分屏）；缺省不传 = 行不可拖 */
+  sessionRowDrag?: SessionRowDrag | undefined;
   /** 文案覆盖（缺省中文） */
   labels?: Partial<SidebarLabels> | undefined;
   className?: string | undefined;
@@ -117,7 +133,7 @@ function noop(): void {}
  */
 export function SidebarRoot(props: SidebarRootProps): React.ReactNode {
   const labels: SidebarLabels = { ...DEFAULT_SIDEBAR_LABELS, ...props.labels };
-  const { phase, wide, railIn, contentWidth, reducedMotion } = useCollapse({
+  const { collapsed, contentWidth, reducedMotion } = useCollapse({
     collapsed: props.collapsed,
     width: props.width ?? SIDEBAR_DEFAULT_WIDTH,
   });
@@ -126,7 +142,12 @@ export function SidebarRoot(props: SidebarRootProps): React.ReactNode {
   const quietBars = affordance.status === 'quiet';
   const classes = [
     'h2-sidebar',
-    ...sidebarStateClasses({ phase, railIn, quietBars, reducedMotion }),
+    // Z-06 折叠形态：内容只隐藏不卸载（不可见亦不可点），无图标轨道
+    ...(collapsed ? ['opacity-0', 'pointer-events-none'] : []),
+    // Z-08：宽度由容器过渡（app-frame.css），内容透明度跟随折叠 200ms
+    'transition-opacity',
+    'duration-200',
+    ...sidebarStateClasses({ quietBars, reducedMotion }),
     ...(props.className !== undefined ? [props.className] : []),
   ].join(' ');
   const version = props.buildVersion ?? resolveBuildVersion(props.buildEnv ?? readBuildEnv());
@@ -152,6 +173,7 @@ export function SidebarRoot(props: SidebarRootProps): React.ReactNode {
     props.onNewSession(resolveNewSessionScope(props.newSessionScope ?? {}));
   };
   const openSession = props.onOpenSession ?? noop;
+  // Z-06：折叠后没有图标轨道，区域席位始终按展开形态渲染（内容被容器裁切 + 透明）
   const workspacesSeat =
     props.renderWorkspaces ??
     ((owner: WorkspacesOwnerProps) => (
@@ -164,6 +186,7 @@ export function SidebarRoot(props: SidebarRootProps): React.ReactNode {
         onQueryChange={props.onQueryChange}
         onOpenSession={openSession}
         labels={labels}
+        {...(props.sessionRowDrag !== undefined ? { rowDrag: props.sessionRowDrag } : {})}
       />
     ));
 
@@ -172,8 +195,7 @@ export function SidebarRoot(props: SidebarRootProps): React.ReactNode {
       ref={column}
       className={classes}
       data-testid="sidebar-root"
-      data-phase={phase}
-      data-collapsed={props.collapsed ? 'true' : 'false'}
+      data-collapsed={collapsed ? 'true' : 'false'}
       data-scroll-bars={affordance.status}
       style={{ width: contentWidth }}
       role="complementary"
@@ -182,38 +204,31 @@ export function SidebarRoot(props: SidebarRootProps): React.ReactNode {
     >
       <div className="h2-sidebar-brand-row">
         {/* 展开态：品牌行本身是新会话快捷入口（上游 figma 基线行为） */}
-        {wide && (
-          <button
-            type="button"
-            className="h2-sidebar-brand"
-            data-testid="sidebar-brand"
-            aria-label={labels.newSessionLabel}
-            onClick={startSession}
-          >
-            <span className="h2-sidebar-brand-mark" data-testid="sidebar-brand-mark">
-              {mark(24)}
-            </span>
-            <span className="h2-sidebar-brand-name" data-testid="sidebar-brand-name">
-              {brandName}
-            </span>
-          </button>
-        )}
-        {/* 轨道静止态是品牌标记，悬停换成面板图标 —— 收缩/展开的唯一入口 */}
+        <button
+          type="button"
+          className="h2-sidebar-brand"
+          data-testid="sidebar-brand"
+          aria-label={labels.newSessionLabel}
+          onClick={startSession}
+        >
+          <span className="h2-sidebar-brand-mark" data-testid="sidebar-brand-mark">
+            {mark(24)}
+          </span>
+          <span className="h2-sidebar-brand-name" data-testid="sidebar-brand-name">
+            {brandName}
+          </span>
+        </button>
+        {/* 折叠/展开的唯一入口（Z-01：入口外置到左上角浮层；本按钮是侧栏内的等价入口） */}
         <button
           type="button"
           className="h2-sidebar-toggle"
           data-testid="sidebar-toggle"
-          aria-label={props.collapsed ? labels.expand : labels.collapse}
-          title={props.collapsed ? labels.expand : labels.collapse}
+          aria-label={collapsed ? labels.expand : labels.collapse}
+          title={collapsed ? labels.expand : labels.collapse}
           onClick={props.onToggleCollapse}
         >
-          {!wide && (
-            <span className="h2-sidebar-rail-mark" data-testid="sidebar-brand-mark-rail">
-              {mark(24)}
-            </span>
-          )}
           <span className="h2-sidebar-toggle-glyph" aria-hidden="true">
-            {props.collapsed ? '»' : '«'}
+            {collapsed ? '»' : '«'}
           </span>
         </button>
       </div>
@@ -231,13 +246,36 @@ export function SidebarRoot(props: SidebarRootProps): React.ReactNode {
         <span className="h2-sidebar-new-icon" aria-hidden="true">
           ＋
         </span>
-        {wide && <span className="h2-sidebar-new-label">{labels.newSession}</span>}
+        <span className="h2-sidebar-new-label">{labels.newSession}</span>
       </button>
 
-      {/* D-23：区域席位（会话列表）；轨道态由占用方给图标列（D-13 轨道保留） */}
+      {/* Z-07 分区 2：命令中心入口（搜索图标 + 快捷键）；无回调则不渲染（不摆假入口） */}
+      {props.onOpenCommandPalette !== undefined && (
+        <button
+          type="button"
+          className="h2-sidebar-command"
+          data-testid="sidebar-command-center"
+          aria-label={labels.commandCenterLabel}
+          title={`${labels.commandCenterLabel}（${props.commandPaletteHint ?? labels.commandCenterHint}）`}
+          onClick={props.onOpenCommandPalette}
+        >
+          <span className="h2-sidebar-command-icon" aria-hidden="true">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" focusable="false">
+              <circle cx="11" cy="11" r="6.5" stroke="currentColor" strokeWidth="2" />
+              <path d="m16 16 4.5 4.5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+            </svg>
+          </span>
+          <span className="h2-sidebar-command-label">{labels.commandCenter}</span>
+          <span className="h2-sidebar-command-hint" aria-hidden="true">
+            {props.commandPaletteHint ?? labels.commandCenterHint}
+          </span>
+        </button>
+      )}
+
+      {/* D-23：区域席位（会话列表）；Z-06 折叠态无图标轨道，始终按展开形态渲染 */}
       <div className="h2-sidebar-region-area" data-testid="sidebar-region-area">
         {workspacesSeat({
-          wide,
+          wide: true,
           expandSidebar: () => {
             if (props.collapsed) props.onToggleCollapse();
           },
@@ -249,7 +287,7 @@ export function SidebarRoot(props: SidebarRootProps): React.ReactNode {
       {/* D-23：底部固定设置席位；没有占用方就什么都不渲染 */}
       <div className="h2-sidebar-foot" data-testid="sidebar-foot">
         <div className="h2-sidebar-settings-area">
-          {props.renderSettings !== undefined ? props.renderSettings({ wide }) : null}
+          {props.renderSettings !== undefined ? props.renderSettings({ wide: true }) : null}
         </div>
       </div>
     </div>

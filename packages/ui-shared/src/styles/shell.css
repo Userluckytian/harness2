@@ -1,7 +1,11 @@
 /* harness2 桌面端基础样式（Task 3 骨架；Task 4/5 增量扩展）
    B0 颜色变量化：所有色值抽成 CSS 变量。
    默认主题 = V5 暖纸浅色（:root 生效，无需 <html data-theme>）；
-   [data-theme="dark"] 覆盖 = 原 GitHub-dark 硬编码值（深色主题）。 */
+   [data-theme="dark"] 覆盖 = 原 GitHub-dark 硬编码值（深色主题）。
+
+   Z1-05 迁移桥：主题运行时已改走 Zai 契约（根 class + data-theme="zai-dark" + .dark），
+   不再写 data-theme="dark"。本表在 Z2 壳重建前仍被旧组件消费，故深色块同时接受新契约，
+   避免「选深色无效果」的过渡期回归；Z2 退役本表后此桥一并移除。 */
 
 /* —— V5 暖纸 token（默认浅色；数值原样取自 design/prototype-v5.html 的 :root） —— */
 :root {
@@ -38,7 +42,10 @@
 }
 
 /* —— 深色主题覆盖（值 = 原 GitHub-dark 硬编码，直接照搬不重设计） —— */
-[data-theme='dark'] {
+[data-theme='dark'],
+[data-theme='zai-dark'],
+.theme-zai-dark,
+.dark {
   --bg: #1b1d21;
   --surface: #24262b;
   --surface2: #2a2d33;

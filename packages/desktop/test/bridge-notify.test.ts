@@ -47,6 +47,8 @@ const electronMock = vi.hoisted(() => {
     ipcMain: {
       handle: vi.fn(),
     },
+    // Z1-05 / Z-86：nativeTheme 镜像分支用（themeSource 可写）
+    nativeTheme: { themeSource: 'system' as 'system' | 'light' | 'dark' },
     listeners,
   };
 });
@@ -56,6 +58,7 @@ vi.mock('electron', () => ({
   BrowserWindow: electronMock.BrowserWindow,
   dialog: electronMock.dialog,
   ipcMain: electronMock.ipcMain,
+  nativeTheme: electronMock.nativeTheme,
 }));
 
 // bridge 依赖 node:fs 等真实模块；测试只调 handleInvoke('notify')，不触发文件读写。
@@ -89,6 +92,7 @@ beforeEach(() => {
   electronMock.BrowserWindow.getAllWindows.mockClear();
   electronMock.BrowserWindow.getAllWindows.mockReturnValue([]);
   electronMock.dialog.showMessageBox.mockClear();
+  electronMock.nativeTheme.themeSource = 'system';
 });
 
 afterEach(() => {
@@ -168,5 +172,28 @@ describe('bridge notify case', () => {
     await handleInvoke({} as never, { cmd: 'notify', title: 't', body: 'b', sessionId: 's1' });
     expect(() => electronMock.Notification._fireClick()).not.toThrow();
     expect(deps.sent).toEqual([{ type: 'notify/click', sessionId: 's1' }]);
+  });
+});
+
+// Z1-05 / Z-86：桌面 nativeTheme 镜像（标题栏与原生控件跟随主题）。
+describe('bridge platform:setTitleBarTheme case', () => {
+  it.each([
+    ['dark', 'dark'],
+    ['light', 'light'],
+    ['system', 'system'],
+  ] as const)('theme=%s → nativeTheme.themeSource=%s', async (theme, expected) => {
+    const deps = makeDeps();
+    const { handleInvoke } = createBridge(deps);
+    const ret = await handleInvoke({} as never, { cmd: 'platform:setTitleBarTheme', theme });
+    expect(ret).toBeNull();
+    expect(electronMock.nativeTheme.themeSource).toBe(expected);
+  });
+
+  it('未知取值回落 system（不抛错、不静默留旧值）', async () => {
+    electronMock.nativeTheme.themeSource = 'dark';
+    const deps = makeDeps();
+    const { handleInvoke } = createBridge(deps);
+    await handleInvoke({} as never, { cmd: 'platform:setTitleBarTheme', theme: 'neon' });
+    expect(electronMock.nativeTheme.themeSource).toBe('system');
   });
 });

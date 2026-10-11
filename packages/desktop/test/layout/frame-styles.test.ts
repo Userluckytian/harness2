@@ -50,3 +50,46 @@ describe('app-frame.css 契约', () => {
     expect(css).toMatch(/\.slot-entry \{\s*display: contents;\s*\}/);
   });
 });
+
+describe('app-frame.css 契约（Z2-03：内层纵向分栏 + 横向分隔条）', () => {
+  it('conversation / terminal 面板：conversation 填满、terminal 固定高、收起无上边框', () => {
+    expect(css).toMatch(/\.app-frame-main-column \{[\s\S]*?flex-direction: column;/);
+    expect(css).toMatch(/\.app-frame-conversation-panel \{[\s\S]*?flex: 1 1 auto;/);
+    expect(css).toMatch(/\.app-frame-terminal-panel \{[\s\S]*?flex: none;/);
+    expect(css).toMatch(/\.app-frame-terminal-panel\[data-open='false'\] \{\s*border-top: none;\s*\}/);
+  });
+
+  it('横向分隔条：flex 项 + row-resize 光标（沿用 .app-frame-resizer 的 role=separator 语义）', () => {
+    expect(css).toMatch(/\.app-frame-resizer-horizontal \{[\s\S]*?flex: none;[\s\S]*?cursor: row-resize;/);
+  });
+});
+
+describe('app-frame.css 契约（Z2-01b：窗口外壳 / 浮层 / 拖拽区）', () => {
+  it('窗口根平台圆角（Z-02）：win 5 / linux 16 + clip-path / mac 6 / linux 最大化去圆角', () => {
+    expect(css).toMatch(/\.desktop-window-frame-win \{\s*border-radius: 5px;/);
+    expect(css).toMatch(
+      /\.desktop-window-frame-linux \{\s*border-radius: 16px;[\s\S]*?clip-path: inset\(0 round 16px\);/,
+    );
+    expect(css).toMatch(/\.desktop-window-frame-mac \{[\s\S]*?border-radius: 6px;/);
+    expect(css).toMatch(
+      /\.desktop-window-frame-linux\.desktop-window-frame-maximized \{\s*border-radius: 0;\s*clip-path: none;\s*\}/,
+    );
+  });
+
+  it('DesktopTopOverlay 绝对定位不占布局高度（z-20）；mac 56 与红绿灯安全区', () => {
+    expect(css).toMatch(/\.desktop-top-overlay \{\s*position: absolute;[\s\S]*?top: 0;[\s\S]*?z-index: 20;/);
+    expect(css).toMatch(/\.desktop-top-overlay-mac \{\s*height: 56px;[\s\S]*?padding-left: 96px;/);
+    // 浮层条本身 drag；内部按钮 no-drag
+    expect(css).toMatch(/\.desktop-top-overlay \{[\s\S]*?-webkit-app-region: drag;/);
+    expect(css).toMatch(/\.desktop-top-overlay-btn,[\s\S]*?-webkit-app-region: no-drag;/);
+  });
+
+  it('拖拽区（Z-03）：内容列顶部 4px、左栏顶部 48px，均 app-region drag', () => {
+    expect(css).toMatch(/\.app-frame-drag-strip \{\s*flex: none;\s*height: 4px;[\s\S]*?-webkit-app-region: drag;/);
+    expect(css).toMatch(/\.app-frame-sidebar-drag \{\s*flex: none;\s*height: 48px;[\s\S]*?-webkit-app-region: drag;/);
+  });
+
+  it('自绘窗控三键：Z-04 的 136px 量级（3 × 45px）', () => {
+    expect(css).toMatch(/\.window-controls-btn \{[\s\S]*?width: 45px;/);
+  });
+});

@@ -86,3 +86,32 @@ export function isApprovalExpired(expiresAt: string | undefined, now: number = D
 export function canRespondApproval(card: ApprovalCardModel, responding: boolean): boolean {
   return !responding && card.expired !== true;
 }
+
+/** 服务端待批项（store `stream.approvals` / `allApprovals()` 的形状）—— 字段直传，不做推断 */
+export interface ApprovalSource {
+  readonly requestId: string;
+  readonly tool: string;
+  readonly args: unknown;
+  readonly scope?: ApprovalScope;
+  readonly expiresAt?: string;
+  readonly cwd?: string;
+  readonly taskId?: string;
+  readonly parentTaskId?: string;
+}
+
+/**
+ * 服务端待批项 → 卡片模型（逐字段直传；缺省字段不补默认值）。
+ * 供各壳把 store 数据交给 `ApprovalDock` / `ApprovalCard` 时统一口径（不重复手写映射）。
+ */
+export function toApprovalCardModel(source: ApprovalSource): ApprovalCardModel {
+  return {
+    requestId: source.requestId,
+    tool: source.tool,
+    args: source.args,
+    ...(source.scope !== undefined ? { scope: source.scope } : {}),
+    ...(source.expiresAt !== undefined ? { expiresAt: source.expiresAt } : {}),
+    ...(source.cwd !== undefined ? { cwd: source.cwd } : {}),
+    ...(source.taskId !== undefined ? { taskId: source.taskId } : {}),
+    ...(source.parentTaskId !== undefined ? { parentTaskId: source.parentTaskId } : {}),
+  };
+}

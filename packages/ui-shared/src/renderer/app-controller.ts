@@ -6,6 +6,7 @@ import type { MessageReferenceShape, SubmitIntentShape, UndoRedoResponseShape, W
 import type { HarnessClient } from './ports.js';
 import { newCancelRequestId, newClientMessageId } from '../shared/ids.js';
 import { decideUndo, summarizeRedoConflict, summarizeUndoPreview } from './features/workspace/change-review-model.js';
+import { APPROVAL_FAILURE_PREFIX } from './approval/approval-model.js';
 import type { ActiveEvent } from './chat-model.js';
 import type { AppStore } from './store.js';
 
@@ -569,7 +570,10 @@ export function createController(store: AppStore, api: HarnessClient): Controlle
         await api.respondApproval(requestId, decision);
         store.removeApproval(requestId); // 确认送达才撤卡片
       } catch (e) {
-        store.applyFrame({ type: 'error', error: `审批提交失败: ${(e as Error).message}（事项仍在待批，可重试）` });
+        // 失败如实报错：全局状态 + **卡片就地注记**（卡片保留，可重试）
+        const message = `${APPROVAL_FAILURE_PREFIX}: ${(e as Error).message}（事项仍在待批，可重试）`;
+        store.applyFrame({ type: 'error', error: message });
+        store.markApprovalFailed(requestId, message);
       } finally {
         respondingApprovals.delete(requestId);
         store.clearApprovalResponding(requestId);

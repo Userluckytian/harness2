@@ -17,12 +17,10 @@ export function renderSidebar(overrides: Partial<SidebarRootProps> = {}): Return
   return render(<SidebarRoot {...BASE_SIDEBAR_PROPS} {...overrides} />);
 }
 
-/** 收起切换宿主：点击 toggle 真的切换 collapsed（收起动画需要真实的状态来回） */
+/** 收起切换宿主：点击 toggle 真的切换 collapsed（折叠形态需要真实的状态来回） */
 export function renderCollapsibleSidebar(overrides: Partial<SidebarRootProps> = {}): {
   root: () => HTMLElement;
   toggle: () => void;
-  /** 点轨道态的区域图标（展开入口） */
-  clickRailRegion: () => void;
 } {
   function Harness(props: Partial<SidebarRootProps>): React.ReactNode {
     const [collapsed, setCollapsed] = useState(props.collapsed ?? false);
@@ -39,7 +37,6 @@ export function renderCollapsibleSidebar(overrides: Partial<SidebarRootProps> = 
   return {
     root: () => screen.getByTestId('sidebar-root'),
     toggle: () => fireEvent.click(screen.getByTestId('sidebar-toggle')),
-    clickRailRegion: () => fireEvent.click(screen.getByTestId('sidebar-region-rail')),
   };
 }
 
@@ -64,7 +61,7 @@ export function stubOverflow(element: HTMLElement, overflowing: boolean): void {
 }
 
 /** 把列矩形钉死，让坐标判定有「内 / 外」可言（jsdom 的 getBoundingClientRect 全是 0） */
-export function stubColumnRect(element: HTMLElement, right = 280, bottom = 600): void {
+export function stubColumnRect(element: HTMLElement, right = 264, bottom = 600): void {
   Object.defineProperty(element, 'getBoundingClientRect', {
     configurable: true,
     value: () => ({ left: 0, top: 0, right, bottom, x: 0, y: 0, width: right, height: bottom, toJSON: () => ({}) }),

@@ -25,6 +25,7 @@ import { resolveFileRefs, type FileRefReader } from '../../shared/file-ref.js';
 import type { MessageReferenceShape, SubmitAckStateShape } from '../../shared/protocol.js';
 import { lastTurnIdOf, type Controller } from '../app-controller.js';
 import { ChatTranscript } from '../components/ChatView.js';
+import { ApprovalDock, toApprovalCardModel } from '../approval/index.js';
 import { ambientHostBridge } from '../host-bridge.js';
 import type { AppStore } from '../store.js';
 import {
@@ -240,6 +241,13 @@ export interface ConversationComposerPort {
 export interface ConversationSeatProps {
   readonly store: AppStore;
   readonly controller: Controller;
+  /**
+   * 该席位绑定的会话 id（Z2-06 分屏：每格渲染一个席位，绑定各自会话）。
+   * 缺省（不传）= 跟随 `store.selectedId`（与旧行为完全一致）；显式传 `null` = 无会话空态。
+   * 传入具体 id 时：composer 的提交/停止/草稿都作用于该会话（不再跟随全局选中），
+   * 使非主分屏格也可独立交互。
+   */
+  readonly sessionId?: string | null;
   /** 会话视图注册表（壳装配：每个壳至少要注册 `chat`，否则视图环按 D-31 不渲染） */
   readonly registry: ConversationViewRegistry<ConversationSession>;
   /** 视图选择持久缝（缺省 = 内存实现，不落存储） */
@@ -270,7 +278,9 @@ export interface ConversationSeatProps {
 export function ConversationSeat(props: ConversationSeatProps): ReactNode {
   const { store, controller } = props;
   const state = useSyncExternalStore(store.subscribe, store.getState);
-  const sessionId = state.selectedId;
+  // Z2-06：显式 sessionId（分屏每格绑定各自会话）优先；缺省跟随全局选中（旧行为不变）
+  const selectedId = state.selectedId;
+  const sessionId = props.sessionId !== undefined ? props.sessionId : selectedId;
   const registry = props.registry;
   const persistence = props.persistence ?? sharedViewPersistence;
   const imageUrls = props.imageUrls ?? sharedImageUrls;
@@ -305,6 +315,22 @@ export function ConversationSeat(props: ConversationSeatProps): ReactNode {
   const session = useMemo<ConversationSession | undefined>(
     () => (sessionId === null ? undefined : { id: sessionId, subscribe: store.subscribe, store, controller }),
     [sessionId, store, controller],
+  );
+
+  // Z2-06：停止的目标 = **本席位绑定的会话**（分屏非主格也能正确停止自己的 turn）。
+  // 缺省（sessionId === selectedId，含未分屏与主格）原样复用 port.io，行为与旧实现完全一致；
+  // 仅在显式绑定到「非当前选中」会话时覆盖 stop（提交本就按 submission.sessionId 投递，无需改）。
+  const io = useMemo<ComposerIO>(
+    () =>
+      sessionId === null || sessionId === selectedId
+        ? port.io
+        : {
+            ...port.io,
+            stop: () => {
+              void controller.cancelTurn(sessionId);
+            },
+          },
+    [port.io, sessionId, selectedId, controller],
   );
 
   // D-33 草稿隔离：每会话一个草稿 store（切换会话换 store，不串味）；首次进入用持久草稿播种
@@ -387,6 +413,16 @@ export function ConversationSeat(props: ConversationSeatProps): ReactNode {
         </div>
       )}
       <div className="composer-overlay" ref={composerRef} data-testid="composer-overlay">
+        {/* Z-20：待审批 = 会话底部 dock，常驻在 composer **之上**（在转录滚动区之外）。
+            数据源 = 本席位绑定会话的待批列表；决定仍只回传 allow/deny（语义归 core）。 */}
+        {stream !== undefined && stream.approvals.length > 0 && (
+          <ApprovalDock
+            approvals={stream.approvals.map(toApprovalCardModel)}
+            respondingOf={(requestId) => store.isApprovalResponding(requestId)}
+            failureOf={(requestId) => store.approvalFailure(requestId)}
+            onDecision={(requestId, decision) => void controller.respondApproval(requestId, decision)}
+          />
+        )}
         <Composer
           sessionId={sessionId ?? undefined}
           session={composerSession}
@@ -397,7 +433,7 @@ export function ConversationSeat(props: ConversationSeatProps): ReactNode {
           stopAvailable={running}
           store={composerStore}
           chain={chain}
-          io={port.io}
+          io={io}
           {...(props.imageIO !== undefined ? { imageIO: props.imageIO } : {})}
         />
       </div>

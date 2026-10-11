@@ -19,6 +19,14 @@ export type FrameSeatId = (typeof FRAME_SEAT)[keyof typeof FRAME_SEAT];
 export const MAIN_CONVERSATION_KEY = 'conversation';
 
 /**
+ * 中栏**内层纵向分栏**的终端面板席位（Z2-03 / Z-12：conversation | terminal）。
+ * 这是一个**注册缝**：只有该席位被注入内容时，MainSeatView 才渲染底部终端面板与其开关；
+ * 未注入时（当前无真实终端内容提供方）界面不出现任何 terminal 痕迹（禁止假入口，
+ * docs/refs/README.md §5 第 6 条）。owner = 未来的终端能力包。
+ */
+export const TERMINAL_SEAT = 'main.terminal';
+
+/**
  * main 保留 key 的属主包（D-02）。
  * 保留 key 只接受**声明者 owner** 注入（slots/types.ts 的 SeatDeclaration.owner 契约，
  * registry.inject 强制校验）—— 会话界面的内容包就是该 key 的属主，故 main 席位声明的 owner 是它。
@@ -55,6 +63,12 @@ export const FRAME_SEAT_DECLARATIONS: readonly SeatDeclaration[] = [
     description: '中栏（keyed：conversation = 会话界面，保留 key；其余 key = 全局面板）',
   },
   { id: FRAME_SEAT.rightbar, kind: 'single', owner: LAYOUT_OWNER, description: '右栏（每会话停靠面宿主）' },
+  {
+    id: TERMINAL_SEAT,
+    kind: 'single',
+    owner: LAYOUT_OWNER,
+    description: '中栏内层纵向分栏的底部终端面板（注册缝：无内容提供方时不渲染）',
+  },
   { id: FRAME_SEAT.overlay, kind: 'list', owner: LAYOUT_OWNER, description: '窗口级覆层（设置 / 命令面板…）' },
 ];
 

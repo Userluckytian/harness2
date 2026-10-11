@@ -1,17 +1,27 @@
 // 四个帧席位容器（D-10 的四子席位视图）：
-//   sidebar —— 可拖宽 264～420（D-11）；收起后保留 56px 控制轨道（D-13）
-//   main    —— keyed 席位宿主（conversation = 会话界面）
-//   rightbar—— 可拖宽（首开 45%、上限 70%）；仅普通展开态显示手柄（D-11）；
+//   sidebar —— 可拖宽 264～容器 50%（Z-05）；折叠后 4px、**无图标轨道**（Z-06）
+//   main    —— keyed 席位宿主（conversation = 会话界面）；Z2-03 起内层纵向分栏 conversation | terminal
+//   rightbar—— 可拖宽（首开 内容区 45%、上限 内容区 65%）；仅普通展开态显示手柄（Z-12）；
 //              空间不足时收到 canShow=false props 并自行关闭（D-12，见 shell-seat-contents）
 //   overlay —— 窗口级覆层席位宿主
 import { useEffect, useRef, useState } from 'react';
-import { SlotHost } from '../slots/index.js';
-import { FRAME_SEAT } from './frame-seats.js';
+import { SlotHost, useSeatEntries } from '../slots/index.js';
+import { FRAME_SEAT, TERMINAL_SEAT } from './frame-seats.js';
 import { useFrame } from './frame-context.js';
-import { RIGHTBAR_GIVE_MIN_WIDTH, SIDEBAR_MAX_WIDTH, SIDEBAR_MIN_WIDTH } from './geometry.js';
+import {
+  clampTerminalHeight,
+  resolveTerminalHeight,
+  RIGHTBAR_MIN_PX,
+  SIDEBAR_MIN_WIDTH,
+  SIDEBAR_RESIZE_STEP_PX,
+  sidebarMaxWidth,
+  TERMINAL_MAX_RATIO,
+  TERMINAL_MIN_PX,
+} from './geometry.js';
 import { rightbarMaxWidth } from './frame-state.js';
 
-/** 拖宽手柄（指针 + 键盘；role=separator 带 aria 值域，D-11 的「可拖拽缩放」） */
+/** 拖宽手柄（指针 + 键盘；role=separator 带 aria 值域，D-11 的「可拖拽缩放」）。
+ *  edge 决定轴向与方向：left/right = 竖向（列宽），top/bottom = 横向（行高，Z2-03 终端分隔条）。 */
 function ResizeHandle({
   edge,
   label,
@@ -21,7 +31,7 @@ function ResizeHandle({
   onResize,
   onDraggingChange,
 }: {
-  edge: 'left' | 'right';
+  edge: 'left' | 'right' | 'top' | 'bottom';
   label: string;
   value: number;
   min: number;
@@ -37,6 +47,11 @@ function ResizeHandle({
   onDraggingChangeRef.current = onDraggingChange;
   const stopRef = useRef<(() => void) | null>(null);
 
+  // 横向手柄（top/bottom）沿 Y 轴拖动，竖向手柄沿 X 轴
+  const horizontal = edge === 'top' || edge === 'bottom';
+  // 手柄在远侧（right/bottom）时，向 +x/+y 拖动即增大尺寸；在近侧（left/top）时相反
+  const sign = edge === 'right' || edge === 'bottom' ? 1 : -1;
+
   // 卸载时收掉在途拖拽的全局监听（不留在 window 上）
   useEffect(() => {
     return () => stopRef.current?.();
@@ -46,10 +61,11 @@ function ResizeHandle({
   const startDrag = (e: React.PointerEvent<HTMLDivElement>): void => {
     stopRef.current?.();
     const originX = e.clientX;
+    const originY = e.clientY;
     const startValue = value;
     const onMove = (ev: PointerEvent): void => {
-      const delta = edge === 'right' ? ev.clientX - originX : originX - ev.clientX;
-      onResizeRef.current(startValue + delta);
+      const delta = horizontal ? ev.clientY - originY : ev.clientX - originX;
+      onResizeRef.current(startValue + sign * delta);
     };
     const stop = (): void => {
       setDragging(false);
@@ -70,42 +86,47 @@ function ResizeHandle({
   return (
     <div
       role="separator"
-      aria-orientation="vertical"
+      aria-orientation={horizontal ? 'horizontal' : 'vertical'}
       aria-label={label}
       aria-valuenow={value}
       aria-valuemin={min}
       aria-valuemax={max}
       tabIndex={0}
-      className={`app-frame-resizer app-frame-resizer-${edge}${dragging ? ' app-frame-resizer-dragging' : ''}`}
+      className={`app-frame-resizer app-frame-resizer-${horizontal ? 'horizontal' : 'vertical'} app-frame-resizer-${edge}${
+        dragging ? ' app-frame-resizer-dragging' : ''
+      }`}
       data-resizer={edge}
       onPointerDown={startDrag}
       onKeyDown={(e) => {
-        if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
+        const forward = horizontal ? e.key === 'ArrowDown' : e.key === 'ArrowRight';
+        const backward = horizontal ? e.key === 'ArrowUp' : e.key === 'ArrowLeft';
+        if (!forward && !backward) return;
         e.preventDefault();
-        const step = e.key === 'ArrowRight' ? 16 : -16;
-        onResize(value + (edge === 'right' ? step : -step));
+        onResize(value + (forward ? 1 : -1) * sign * SIDEBAR_RESIZE_STEP_PX);
       }}
     />
   );
 }
 
-/** 侧栏（D-11 拖宽 + D-13 56px 轨道；轨道内容归 SidebarRoot，帧只给容器宽度） */
+/** 侧栏（Z-05 拖宽 + Z-06 折叠 4px、无图标轨道；内容归 SidebarRoot，帧只给容器宽度） */
 function SidebarSeatView(): React.ReactNode {
-  const { state, geometry, registry, dispatch } = useFrame();
-  const rail = geometry.sidebarRail;
+  const { state, geometry, registry, viewportWidth, dispatch } = useFrame();
+  const collapsed = geometry.sidebarCollapsed;
   const [dragging, setDragging] = useState(false);
   return (
     <aside
-      className={`app-frame-sidebar${rail ? ' app-frame-sidebar-railed' : ''}`}
+      className="app-frame-sidebar"
       style={{ width: `${geometry.sidebar}px` }}
       data-seat={FRAME_SEAT.sidebar}
-      data-collapsed={rail ? 'true' : 'false'}
+      data-collapsed={collapsed ? 'true' : 'false'}
       data-width={geometry.sidebar}
       data-dragging={dragging ? 'true' : undefined}
       aria-label="侧栏"
     >
-      {/* 轨道内容（品牌标记/展开按钮/区域图标）由 SidebarRoot 在 rail 态渲染；
-          帧只保证容器宽度是 56px（D-13），避免两侧各画一条轨道。 */}
+      {/* Z-07 分区 0：左栏顶部 48px 拖拽条（无独立顶栏；浮层条与内容列留白条见 Z-01/Z-03） */}
+      <div className="app-frame-sidebar-drag" aria-hidden="true" />
+      {/* Z-06：折叠后只剩 4px，**没有任何图标轨道**；展开内容仍在 DOM（只隐藏不卸载），
+          由 SidebarRoot 用 opacity-0 + pointer-events-none 隐藏。 */}
       <div className="app-frame-seat-body">
         <SlotHost
           registry={registry}
@@ -113,13 +134,13 @@ function SidebarSeatView(): React.ReactNode {
           fallback={<p className="app-frame-seat-empty">侧栏席位未装配</p>}
         />
       </div>
-      {!rail && (
+      {!collapsed && (
         <ResizeHandle
           edge="right"
           label="拖宽侧栏"
           value={state.sidebarWidth}
           min={SIDEBAR_MIN_WIDTH}
-          max={SIDEBAR_MAX_WIDTH}
+          max={sidebarMaxWidth(viewportWidth)}
           onResize={(px) => dispatch({ type: 'sidebar/width', width: px })}
           onDraggingChange={setDragging}
         />
@@ -128,12 +149,99 @@ function SidebarSeatView(): React.ReactNode {
   );
 }
 
-/** 中栏（keyed 席位宿主；conversation 为会话界面保留 key）—— 帧不在中栏摆任何空间不足提示条（D-12） */
+/** 中栏（keyed 席位宿主；conversation 为会话界面保留 key）—— 帧不在中栏摆任何空间不足提示条（D-12）。
+ *  Z2-03 / Z-12：内层纵向分栏 conversation（min 35%）| terminal。
+ *  terminal 是**注册缝**（main.terminal 席位）：只有被注入内容时才渲染面板与开关；
+ *  未注入时与 Z2-01 旧结构完全一致（不出现任何 terminal 痕迹，禁止假入口）。 */
 function MainSeatView(): React.ReactNode {
   const { state, registry } = useFrame();
+  const terminalEntries = useSeatEntries(registry, TERMINAL_SEAT);
+  const terminalRegistered = terminalEntries.length > 0;
+  const columnRef = useRef<HTMLDivElement | null>(null);
+  const [columnHeight, setColumnHeight] = useState(0);
+  const [terminalOpen, setTerminalOpen] = useState(false);
+  const [terminalHeight, setTerminalHeight] = useState<number | null>(null);
+
+  // 终端展开高度按**主列实测高**算（30%，钳制 140～50%）；未注册时不测量、不监听
+  useEffect(() => {
+    if (!terminalRegistered) return;
+    const el = columnRef.current;
+    if (el === null) return;
+    const measure = (): void => setColumnHeight(el.clientHeight);
+    measure();
+    if (typeof ResizeObserver === 'undefined') return;
+    const observer = new ResizeObserver(measure);
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [terminalRegistered]);
+
+  if (!terminalRegistered) {
+    // 未注册终端：旧结构（内容列顶部 4px 留白条 + main 席位宿主），不出现任何 terminal 痕迹
+    return (
+      <div className="main app-frame-main" data-seat={FRAME_SEAT.main} data-main-key={state.mainKey}>
+        <div className="app-frame-drag-strip" aria-hidden="true" />
+        <SlotHost registry={registry} seat={FRAME_SEAT.main} activeKey={state.mainKey} />
+      </div>
+    );
+  }
+
+  // 终端展开高度：用户拖过的像素优先，否则取主列高 30%，一律钳制在 [140, 主列高 50%]
+  const terminalHeightPx = terminalOpen
+    ? clampTerminalHeight(columnHeight, terminalHeight ?? resolveTerminalHeight(columnHeight))
+    : 0;
+  const conversationHeight = Math.max(0, columnHeight - terminalHeightPx);
+  const terminalMaxHeightPx = Math.round(Math.max(0, columnHeight) * TERMINAL_MAX_RATIO);
+
   return (
     <div className="main app-frame-main" data-seat={FRAME_SEAT.main} data-main-key={state.mainKey}>
-      <SlotHost registry={registry} seat={FRAME_SEAT.main} activeKey={state.mainKey} />
+      <div className="app-frame-drag-strip" aria-hidden="true" />
+      {/* 内层纵向分栏（Z-12）：上 conversation（flex 填满剩余，≥50% → 满足 min 35%），下 terminal */}
+      <div className="app-frame-main-column" ref={columnRef} data-column-height={columnHeight}>
+        <div
+          className="app-frame-conversation-panel"
+          data-panel="conversation"
+          data-open="true"
+          data-height={conversationHeight}
+        >
+          <SlotHost registry={registry} seat={FRAME_SEAT.main} activeKey={state.mainKey} />
+        </div>
+        {terminalOpen && (
+          <ResizeHandle
+            edge="top"
+            label="调整终端高度"
+            value={terminalHeightPx}
+            min={TERMINAL_MIN_PX}
+            max={Math.max(TERMINAL_MIN_PX, terminalMaxHeightPx)}
+            onResize={(px) => setTerminalHeight(clampTerminalHeight(columnHeight, px))}
+          />
+        )}
+        {/* terminal 面板：默认高度 0（只隐藏不卸载，内容仍挂载）；展开高度见上 */}
+        <div
+          className="app-frame-terminal-panel"
+          data-panel="terminal"
+          data-open={terminalOpen ? 'true' : 'false'}
+          data-height={terminalHeightPx}
+          style={{ height: `${terminalHeightPx}px` }}
+        >
+          <SlotHost
+            registry={registry}
+            seat={TERMINAL_SEAT}
+            ownerProps={{ open: terminalOpen, height: terminalHeightPx, columnHeight }}
+          />
+        </div>
+        {/* 终端开关（注册缝存在时才出现）：默认收起，点按展开/收起 */}
+        <div className="flex flex-none items-center justify-end h-7 px-1.5" data-testid="terminal-bar">
+          <button
+            type="button"
+            data-testid="terminal-toggle"
+            aria-pressed={terminalOpen}
+            className="text-ui-sm text-foreground-subtle hover:text-foreground hover:bg-surface-hover cursor-pointer rounded px-2 py-0.5"
+            onClick={() => setTerminalOpen((open) => !open)}
+          >
+            终端
+          </button>
+        </div>
+      </div>
     </div>
   );
 }
@@ -174,8 +282,8 @@ function RightbarSeatView(): React.ReactNode {
           /* 基点 = 渲染宽度（上游 AppFrame.tsx:172-191）：抓住被让步链压窄的面板时
              不得跳回存储偏好，整段手势内冻结（dx 不叠加）。 */
           value={geometry.rightbar}
-          min={RIGHTBAR_GIVE_MIN_WIDTH}
-          max={rightbarMaxWidth(viewportWidth)}
+          min={RIGHTBAR_MIN_PX}
+          max={rightbarMaxWidth(geometry.contentWidth)}
           onResize={(px) => dispatch({ type: 'rightbar/width', width: px })}
           onDraggingChange={setDragging}
         />

@@ -78,10 +78,10 @@ describe('stepSelection', () => {
 /* —— App 层纯辅助：主题循环 / 会话移动 —— */
 
 describe('cycleTheme', () => {
-  it('warmPaper → dark → system → warmPaper', () => {
-    expect(cycleTheme('warmPaper')).toBe('dark');
-    expect(cycleTheme('dark')).toBe('system');
-    expect(cycleTheme('system')).toBe('warmPaper');
+  it('system → zai-dark → zai-light → system', () => {
+    expect(cycleTheme('system')).toBe('zai-dark');
+    expect(cycleTheme('zai-dark')).toBe('zai-light');
+    expect(cycleTheme('zai-light')).toBe('system');
   });
 });
 
@@ -327,7 +327,7 @@ function makeFakeApi(): any {
     settingsGetAuthMasked: vi.fn(async () => ({ channels: [], gateways: [] })),
     settingsUpdateAuth: vi.fn(async () => ({ ok: true })),
     settingsGetPreferences: vi.fn(async () => ({
-      theme: 'warmPaper',
+      theme: 'system',
       defaultPaneCount: 1,
       showWelcome: true,
       notifyDetails: 'minimal',
@@ -403,5 +403,15 @@ describe('App 集成：Ctrl+K 命令面板 + 命令清单完整性', () => {
     // Esc 关闭
     fireEvent.keyDown(screen.getByPlaceholderText('输入命令…'), { key: 'Escape' });
     await waitFor(() => expect(screen.queryByPlaceholderText('输入命令…')).toBeNull());
+  });
+
+  it('左栏命令中心入口点击同样唤出命令面板（Z-07 分区 2，复用同一覆层链路）', async () => {
+    const App = await bootApp(makeFakeApi());
+    render(<App.App />);
+
+    const entry = await screen.findByTestId('sidebar-command-center');
+    expect(entry.textContent).toContain('Ctrl+K');
+    fireEvent.click(entry);
+    expect(await screen.findByPlaceholderText('输入命令…')).toBeTruthy();
   });
 });

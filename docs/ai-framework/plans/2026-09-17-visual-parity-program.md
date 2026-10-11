@@ -6,6 +6,12 @@
 > **起草人：** 编排者（主会话）
 > **起草日期：** 2026-09-17
 
+> **⚠️ 2026-10-10 边界说明（范围收窄）：** 本总纲的视觉对象是 **CLI（`packages/cli`），以 grok-build 为准**。
+> 同日决策将 **GUI（桌面 + Web）的视觉基线改为 ZCode**，由 `docs/ai-framework/plans/2026-10-10-phase-zcode-ui-overhaul.md`（Z0–Z7）管辖。
+> **`packages/cli` 不参与 ZCode 化**。原文中「视觉工作只在 `packages/cli`/`packages/desktop`/`packages/ui-shared` 内」的限定，
+> 自 2026-10-10 起**收窄为仅 `packages/cli` 生效**（`desktop` / `ui-shared` 的视觉工作转归 Z 总纲）。
+> 本总纲的 `V-*` 验收范围、对象与阈值**均不变**。
+
 ---
 
 ## 0. 为什么要开这个总纲（问题诊断）

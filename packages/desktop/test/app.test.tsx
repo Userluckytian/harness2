@@ -65,7 +65,15 @@ function makeFakeApi() {
     settingsUpdateConfig: vi.fn(async () => ({ ok: true })),
     settingsGetAuthMasked: vi.fn(async () => ({ channels: [], gateways: [] })),
     settingsUpdateAuth: vi.fn(async () => ({ ok: true })),
-    settingsGetPreferences: vi.fn(async () => ({ theme: 'warmPaper' }) as SettingsPreferencesShape),
+    settingsGetPreferences: vi.fn(
+      async () =>
+        ({
+          theme: 'system',
+          defaultPaneCount: 1,
+          showWelcome: true,
+          notifyDetails: 'minimal',
+        }) as SettingsPreferencesShape,
+    ),
     settingsSetPreferences: vi.fn(async (p: unknown) => p as SettingsPreferencesShape),
     settingsGetDoctorReport: vi.fn(async () => ({ checks: [], exitCode: 0 as const })),
     settingsGetCrashReports: vi.fn(async () => []),
@@ -85,6 +93,7 @@ function makeFakeApi() {
     resumeSubscription: vi.fn(async () => undefined),
     capabilities: vi.fn(async () => ({ probedAt: '', entries: [] })),
     setBusy: vi.fn(async () => undefined),
+    setTitleBarTheme: vi.fn(async () => undefined),
     onStopAll: vi.fn(() => () => {}),
     notify: vi.fn(async () => undefined),
     metadataGet: vi.fn(async () => ({})),
@@ -154,28 +163,26 @@ describe('对话 UI（jsdom）', () => {
     expect(document.querySelector('[data-seat="rightbar"]')?.hasAttribute('hidden')).toBe(true);
     fireEvent.click(screen.getByRole('button', { name: '右栏开关' }));
     expect(document.querySelector('[data-seat="rightbar"]')?.hasAttribute('hidden')).toBe(false);
-    // P0-2（上游 stores.ts:131）：jsdom innerWidth=1024 是宽屏 → 打开右栏**不动**侧栏（仍 280 展开）
+    // 打开右栏**不动**侧栏（Z-15 自动收起改由 resize idle 判定，不由开右栏触发）
     const sidebar = document.querySelector('[data-seat="sidebar"]');
     expect(sidebar?.getAttribute('data-collapsed')).toBe('false');
-    expect(sidebar?.getAttribute('data-width')).toBe('280');
+    expect(sidebar?.getAttribute('data-width')).toBe('264');
 
-    // 宽屏手动收起侧栏：56px 轨道（不是消失）
+    // 宽屏手动收起侧栏：只剩 4px（Z-06，无图标轨道）
     fireEvent.click(screen.getByRole('button', { name: '侧栏开关' }));
     expect(sidebar?.getAttribute('data-collapsed')).toBe('true');
-    expect(sidebar?.getAttribute('data-width')).toBe('56');
+    expect(sidebar?.getAttribute('data-width')).toBe('4');
 
-    // P4-C 轨道归属裁决（单轨道断言）：收起态只有一条 56px 轨道 ——
-    // 帧只提供容器宽度（.app-frame-rail 已删除），轨道内容由 SidebarRoot 渲染；
-    // 落定后 sidebar-root 带 h2-sidebar-rail 且内联宽度正是 56。
-    await waitFor(() =>
-      expect(document.querySelector('[data-testid="sidebar-root"]')?.classList.contains('h2-sidebar-rail')).toBe(true),
-    );
+    // Z-06：折叠态没有任何图标轨道；展开内容只隐藏不卸载（仍在 DOM）
     expect(document.querySelectorAll('.app-frame-rail').length).toBe(0);
-    const railRoot = document.querySelector('[data-testid="sidebar-root"]') as HTMLElement;
-    expect(railRoot.style.width).toBe('56px');
-    // 轨道控件（SidebarRoot 的 toggle）可把侧栏展开回 280
+    expect(document.querySelectorAll('[data-testid="sidebar-region-rail"]').length).toBe(0);
+    const collapsedRoot = document.querySelector('[data-testid="sidebar-root"]') as HTMLElement;
+    expect(collapsedRoot.classList.contains('opacity-0')).toBe(true);
+    expect(collapsedRoot.classList.contains('pointer-events-none')).toBe(true);
+    expect(screen.getByTestId('sidebar-session-list')).toBeTruthy();
+    // 侧栏内的 toggle 可把侧栏展开回 264
     fireEvent.click(screen.getByTestId('sidebar-toggle'));
-    await waitFor(() => expect(sidebar?.getAttribute('data-width')).toBe('280'));
+    await waitFor(() => expect(sidebar?.getAttribute('data-width')).toBe('264'));
     expect(sidebar?.getAttribute('data-collapsed')).toBe('false');
 
     fireEvent.click(screen.getByRole('button', { name: '右栏开关' }));
@@ -186,19 +193,22 @@ describe('对话 UI（jsdom）', () => {
     const api = makeFakeApi();
     const App = (await bootApp(api)) as { App: () => React.ReactNode };
     const view = render(<App.App />);
-    await screen.findByRole('button', { name: /第一句/ });
+    // Z2-01b：右栏开关已迁到会话列头（ZCode WorkspaceHeader 位置）→ 先选中会话再开右栏
+    fireEvent.click(await screen.findByRole('button', { name: /第一句/ }));
+    await screen.findByRole('button', { name: '右栏开关' });
 
     fireEvent.click(screen.getByRole('button', { name: '右栏开关' }));
     expect(document.querySelector('[data-seat="rightbar"]')?.hasAttribute('hidden')).toBe(false);
     // 几何状态不进持久化通道（saveLayout 是旧分屏引擎的通道；几何只在 React state 里）
     expect(api.saveLayout).not.toHaveBeenCalled();
-    expect(window.localStorage.length).toBe(0);
+    // Z1-05：主题偏好会镜像到 localStorage['harness2-theme']（首屏防闪）；几何仍不落盘 —— 断言无其它键
+    expect(Object.keys(window.localStorage).filter((k) => k !== 'harness2-theme')).toEqual([]);
 
-    // 重挂载（等价刷新/切会话）：回到默认 —— 侧栏 280 展开、右栏关闭
+    // 重挂载（等价刷新/切会话）：回到默认 —— 侧栏 264 展开、右栏关闭
     view.unmount();
     render(<App.App />);
     await screen.findByRole('button', { name: /第一句/ });
-    expect(document.querySelector('[data-seat="sidebar"]')?.getAttribute('data-width')).toBe('280');
+    expect(document.querySelector('[data-seat="sidebar"]')?.getAttribute('data-width')).toBe('264');
     expect(document.querySelector('[data-seat="sidebar"]')?.getAttribute('data-collapsed')).toBe('false');
     expect(document.querySelector('[data-seat="rightbar"]')?.hasAttribute('hidden')).toBe(true);
   });
@@ -236,7 +246,7 @@ describe('对话 UI（jsdom）', () => {
     expect(api.cancel).toHaveBeenCalledWith(expect.objectContaining({ target: { kind: 'turn', id: 't1' } }));
   });
 
-  it('审批条：approval-request 帧 → 允许/拒绝按钮 → respondApproval 带决策', async () => {
+  it('审批 dock：approval-request 帧 → 底部 dock 选项 + 确认 → respondApproval 带决策', async () => {
     const api = makeFakeApi();
     const App = (await bootApp(api)) as { App: () => React.ReactNode };
     render(<App.App />);
@@ -250,8 +260,11 @@ describe('对话 UI（jsdom）', () => {
       args: { file_path: 'a.txt' },
       requestId: 'r1',
     });
-    expect(await screen.findByText(/允许执行/)).toBeTruthy();
-    fireEvent.click(screen.getByRole('button', { name: '允许' }));
+    // Z-20：审批不再出现在转录流里，而是会话底部 dock（numbered listbox + 确认）
+    expect(await screen.findByTestId('approval-dock')).toBeTruthy();
+    expect(screen.queryByText(/允许执行/)).toBeNull(); // 转录内联审批条已移除
+    fireEvent.click(screen.getByRole('option', { name: /允许/ }));
+    fireEvent.click(screen.getByRole('button', { name: '确认' }));
     expect(api.respondApproval).toHaveBeenCalledWith('r1', 'allow');
   });
 
@@ -317,7 +330,7 @@ describe('对话 UI（jsdom）', () => {
   it('主题呈现（D-15）：偏好为深色时四处呈现值一次写全', async () => {
     const api = makeFakeApi();
     vi.mocked(api.settingsGetPreferences).mockResolvedValue({
-      theme: 'dark',
+      theme: 'zai-dark',
       defaultPaneCount: 1,
       showWelcome: true,
       notifyDetails: 'minimal',
@@ -328,19 +341,43 @@ describe('对话 UI（jsdom）', () => {
     await waitFor(() => expect(document.documentElement.style.colorScheme).toBe('dark'));
     expect(document.body.hasAttribute('data-ds-dark-theme')).toBe(true);
     expect(document.documentElement.style.getPropertyValue('--dsh-content-font-size')).toBe('14px');
-    expect(document.head.querySelector('meta[name="theme-color"]')?.getAttribute('content')).toBe('#1b1d21');
+    expect(document.head.querySelector('meta[name="theme-color"]')?.getAttribute('content')).toBe('#161616');
 
     // 清理：避免污染同文件其它用例（主题是全局 DOM 呈现）
     document.documentElement.style.cssText = '';
     document.body.removeAttribute('data-ds-dark-theme');
     document.head.querySelectorAll('meta[name="theme-color"]').forEach((m) => m.remove());
   });
+
+  // Z2-01b（Z-01 / Z-07）：无 topbar —— 折叠入口进左上浮层；设置/状态进侧栏 Footer。
+  it('窗口外壳（Z-01）：无 topbar，左上浮层可折叠侧栏；设置与状态角标迁到侧栏 Footer', async () => {
+    const api = makeFakeApi();
+    const App = (await bootApp(api)) as { App: () => React.ReactNode };
+    render(<App.App />);
+    await screen.findByRole('button', { name: /第一句/ });
+
+    // 旧顶栏已拆除（不占布局高度）
+    expect(document.querySelector('header.topbar')).toBeNull();
+    expect(document.querySelector('.topbar')).toBeNull();
+    // 左上浮层在 DOM，含侧栏折叠入口
+    expect(screen.getByTestId('desktop-top-overlay')).toBeTruthy();
+    expect(screen.getByRole('button', { name: '侧栏开关' })).toBeTruthy();
+    // 设置入口迁到侧栏 Footer（原顶栏设置按钮不再存在）
+    expect(screen.getByTestId('sidebar-settings')).toBeTruthy();
+    // StatusBadge 二选一取 Footer（.badge 落在 .h2-sidebar-foot 内）
+    expect(document.querySelector('.h2-sidebar-foot .badge')).not.toBeNull();
+
+    // 浮层入口可收起侧栏（4px，Z-06）
+    fireEvent.click(screen.getByRole('button', { name: '侧栏开关' }));
+    expect(document.querySelector('[data-seat="sidebar"]')?.getAttribute('data-collapsed')).toBe('true');
+  });
 });
 
-// —————— P4-② 装配级补缺：真渲染 App + 真缩窗事件（D-12 / D-13 / D-16 / D-21 / D-25） ——————
-// 目的：把计划②点名的四项（让步链 / 56px 轨道 / 降动效禁过渡 / 新会话作用域四级降级）
+// —————— P4-② 装配级补缺：真渲染 App + 真缩窗事件（Z-05 / Z-06 / Z-12 / Z-15 / D-16 / D-21 / D-25） ——————
+// 目的：把计划②点名的四项（让步链 / 4px 折叠 / 降动效禁过渡 / 新会话作用域四级降级）
 // 从纯函数、组件级证据升到装配级证据。视口宽不再靠 prop 注入：改 window.innerWidth 后
 // 派发 resize，走 useViewportWidth 在真实 App 里的那条监听通路（等价于人拖窗口边界）。
+// 注意 Z-15：自动收起只在**窗口 resize 之后 idle 300ms** 判定，且按**会话列宽**（不是视口宽）。
 const JSDOM_INNER_WIDTH = window.innerWidth;
 const DSH_BUILD_KEYS = ['DSH_CLIENT_VERSION', 'DSH_CLIENT_COMMIT_HASH', 'DSH_CLIENT_GIT_DIRTY'] as const;
 
@@ -385,112 +422,121 @@ describe('P4-② 装配级补缺（真渲染 App + 缩窗事件）', () => {
     Object.defineProperty(window, 'innerWidth', { configurable: true, writable: true, value: JSDOM_INNER_WIDTH });
   });
 
-  it('让步链端到端（D-12）：缩窗后先缩右栏 → 空间不足则轨道摘除（占用方自关）→ 才压中栏；偏好宽度不被改写', async () => {
+  it('让步链端到端（D-12）：右栏偏好超过 available 时先缩到 available；偏好宽度不被改写', async () => {
     const api = makeFakeApi();
     const App = (await bootApp(api)) as { App: () => React.ReactNode };
-    resizeTo(1400);
+    // 挂载即 1200（挂载不算 resize → 不触发 Z-15 自动收起，专注让步链）
+    resizeTo(1200);
     render(<App.App />);
     fireEvent.click(await screen.findByRole('button', { name: /第一句/ }));
+    // Z2-01b：右栏开关在会话列头；等会话装载落定（含 header 挂载）再继续
+    await screen.findByRole('button', { name: '右栏开关' });
 
-    // 打开右栏：首开取视口 45% = 630；用户把它拖窄到 502（这就是「用户偏好宽度」）
+    // 侧栏拖到 420（1200 × 0.5 = 600 上限内）
+    const sidebarHandle = screen.getByRole('separator', { name: '拖宽侧栏' });
+    act(() => {
+      fireEvent.pointerDown(sidebarHandle, { clientX: 300 });
+      fireEvent.pointerMove(window, { clientX: 456 }); // +156 → 420
+      fireEvent.pointerUp(window, {});
+    });
+    expect(seatAttr('sidebar', 'data-width')).toBe('420');
+
+    // 打开右栏：首开取**内容区宽** 45%（1200−420=780 → 351），available 460 内放得下 → 无让步
     fireEvent.click(screen.getByRole('button', { name: '右栏开关' }));
-    expect(seatAttr('rightbar', 'data-width')).toBe('630');
-    for (let i = 0; i < 8; i += 1) fireEvent.keyDown(rightbarHandle(), { key: 'ArrowRight' }); // 630 → 502
-    expect(rightbarHandle().getAttribute('aria-valuenow')).toBe('502');
-    expect(seatAttr('rightbar', 'data-width')).toBe('502');
-
-    // 缩窗到 900（真 resize）：< 1024 自动收起侧栏（56px 轨道）→ available = 900−56−400 = 444
-    // ① 有轨道时先缩右栏：502 → 444（不多留），中栏恰好保住 400
-    resizeTo(900);
-    await waitFor(() => expect(seatAttr('sidebar', 'data-width')).toBe('56'));
-    expect(seatAttr('rightbar', 'data-width')).toBe('444');
-    expect(seatAttr('rightbar', 'data-shrunk')).toBe('true');
+    expect(seatAttr('rightbar', 'data-width')).toBe('351');
+    expect(seatAttr('rightbar', 'data-shrunk')).toBe('false');
     expect(seatAttr('rightbar', 'data-can-show')).toBe('true');
-    // ② 用户手动展开侧栏（窄屏 override）→ available = 900−280−400 = 220 < 300
-    //    → 右栏轨道摘除（宽度归零、canShow=false），占用方收到 props 后自行关闭（壳不代关）
-    fireEvent.click(screen.getByRole('button', { name: '侧栏开关' }));
-    expect(seatAttr('sidebar', 'data-width')).toBe('280');
-    await waitFor(() => expect(seatOf('rightbar')?.hasAttribute('hidden')).toBe(true));
-    expect(seatAttr('rightbar', 'data-width')).toBe('0');
-    expect(seatAttr('rightbar', 'data-can-show')).toBe('false');
-    // ③ 中栏拿到全部剩余 620，不是被压到 320；中栏不得出现任何「空间不足」提示条
-    expect(seatAttr('main', 'data-seat')).toBe('main');
+    expect(rightbarHandle().getAttribute('aria-valuenow')).toBe('351');
+    // 中栏没有任何「空间不足」提示条（D-12 报告落占用方，不落中栏）
     expect(document.querySelector('[data-shortage]')).toBeNull();
     expect(document.querySelector('.app-frame-shortage')).toBeNull();
     expect(document.querySelector('[data-seat="main"]')?.textContent ?? '').not.toContain('空间不足');
-    expect(sidebarColumn().style.width).toBe('280px'); // 侧栏不被右栏关闭连带收起
 
-    // ④ 用户偏好宽度原样保留：变宽回 1400 再开右栏 → 仍是 502（不是 45% 的 630）；
-    //    且变宽不自动重新展开右栏（D-12）
-    resizeTo(1400);
+    // 把右栏偏好拉过 available（351 → 463 > 460）：渲染被让步链压到 available 460
+    for (let i = 0; i < 7; i += 1) fireEvent.keyDown(rightbarHandle(), { key: 'ArrowLeft' }); // 每步 +16 → 463
+    expect(seatAttr('rightbar', 'data-width')).toBe('460');
+    expect(seatAttr('rightbar', 'data-shrunk')).toBe('true');
+    expect(rightbarHandle().getAttribute('aria-valuenow')).toBe('460');
+
+    // 偏好宽度原样保留：关掉再打开仍是 463（不是 45% 重算、也不是渲染宽度 460）
+    fireEvent.click(screen.getByRole('button', { name: '右栏开关' }));
     expect(seatOf('rightbar')?.hasAttribute('hidden')).toBe(true);
     fireEvent.click(screen.getByRole('button', { name: '右栏开关' }));
-    expect(seatAttr('rightbar', 'data-width')).toBe('502');
-    expect(rightbarHandle().getAttribute('aria-valuenow')).toBe('502');
+    expect(seatAttr('rightbar', 'data-width')).toBe('460');
+    expect(rightbarHandle().getAttribute('aria-valuenow')).toBe('460');
+    // 变宽（不改偏好）→ 右栏回到用户偏好 463，而不是按 45% 重算
+    resizeTo(1400);
+    expect(seatAttr('rightbar', 'data-width')).toBe('463');
   });
 
-  it('窄屏打开右栏收起手动展开的侧栏（P0-2 上游 stores.ts:131）；宽屏不动侧栏', async () => {
+  it('打开右栏不动侧栏（Z-15：自动收起改由 resize idle 判定，不由开右栏触发）', async () => {
     const api = makeFakeApi();
     const App = (await bootApp(api)) as { App: () => React.ReactNode };
-    resizeTo(900);
+    resizeTo(1400);
     render(<App.App />);
+    // Z2-01b：右栏开关在会话列头（需先选中会话）
+    fireEvent.click(await screen.findByRole('button', { name: /第一句/ }));
+    await screen.findByRole('button', { name: '右栏开关' });
 
-    // 窄屏默认自动收起（56px 轨道）→ 手动展开（rail 态不渲染会话行，故本用例不依赖选会话）
-    await waitFor(() => expect(seatAttr('sidebar', 'data-width')).toBe('56'));
-    fireEvent.click(screen.getByRole('button', { name: '侧栏开关' }));
-    expect(seatAttr('sidebar', 'data-width')).toBe('280');
-
-    // 窄屏打开右栏：清掉「窄屏手动展开」override → 侧栏回轨道 56，右栏拿到 available
+    expect(seatAttr('sidebar', 'data-width')).toBe('264');
     fireEvent.click(screen.getByRole('button', { name: '右栏开关' }));
-    expect(seatAttr('sidebar', 'data-width')).toBe('56');
-    expect(seatAttr('sidebar', 'data-collapsed')).toBe('true');
     expect(seatOf('rightbar')?.hasAttribute('hidden')).toBe(false);
-    expect(seatAttr('rightbar', 'data-width')).toBe('405'); // 900 × 45%，available 444 内放得下
+    // 侧栏保持展开（旧「窄屏开右栏清手动展开」的 narrowExpanded 概念已移除）
+    expect(seatAttr('sidebar', 'data-collapsed')).toBe('false');
+    expect(seatAttr('sidebar', 'data-width')).toBe('264');
+    // 右栏首开 511（内容区 1400−264=1136 × 45%），available 816 内放得下
+    expect(seatAttr('rightbar', 'data-width')).toBe('511');
     expect(seatAttr('rightbar', 'data-can-show')).toBe('true');
   });
 
-  it('56px 轨道装配级（D-13/P1-1）：缩窗后轨道仍在且只有一条（容器与内容同宽 56）；变宽跨阈值回宽态、右栏回到用户偏好而非 45%', async () => {
+  it('自动收起装配级（Z-15）：resize idle 300ms 后按会话列宽先收右栏、后收左栏；变宽不自动展开', async () => {
     const api = makeFakeApi();
     const App = (await bootApp(api)) as { App: () => React.ReactNode };
     resizeTo(1400);
     render(<App.App />);
-    await screen.findByRole('button', { name: /第一句/ });
+    // Z2-01b：右栏开关在会话列头（需先选中会话）
+    fireEvent.click(await screen.findByRole('button', { name: /第一句/ }));
+    await screen.findByRole('button', { name: '右栏开关' });
 
+    // 打开右栏并拖窄（首开 511，内容区 1136 × 45%；拖到偏好 383）
     fireEvent.click(screen.getByRole('button', { name: '右栏开关' }));
-    for (let i = 0; i < 8; i += 1) fireEvent.keyDown(rightbarHandle(), { key: 'ArrowRight' }); // 偏好 502
-    expect(seatAttr('rightbar', 'data-width')).toBe('502');
+    for (let i = 0; i < 8; i += 1) fireEvent.keyDown(rightbarHandle(), { key: 'ArrowRight' }); // 511 → 383
+    expect(seatAttr('rightbar', 'data-width')).toBe('383');
 
-    // 缩窗 → 侧栏自动收起：轨道存在（不是消失），容器 56px，轨道内容同样是 56px
+    // 缩窗到 900：available = 900−264−320 = 316 → 右栏 316，会话列 320 < 480
     resizeTo(900);
-    await waitFor(() => expect(seatAttr('sidebar', 'data-width')).toBe('56'));
-    expect(seatAttr('sidebar', 'data-collapsed')).toBe('true');
-    await waitFor(() => expect(sidebarColumn().classList.contains('h2-sidebar-rail')).toBe(true));
-    expect(sidebarColumn().style.width).toBe('56px');
-    expect(sidebarColumn().closest('[data-seat="sidebar"]')).not.toBeNull();
-    // 让步链（D-12）：右栏被压到 available = 900−56−400 = 444（有轨道，canShow 仍 true）
-    expect(seatAttr('rightbar', 'data-width')).toBe('444');
-    expect(seatAttr('rightbar', 'data-can-show')).toBe('true');
-    // 单轨道（P4-C 归属裁决）：没有帧自带的第二条 56px 轨道，轨道内容只此一条
-    expect(document.querySelectorAll('.app-frame-rail').length).toBe(0);
-    expect(document.querySelectorAll('.h2-sidebar-rail').length).toBe(1);
-    expect(document.querySelectorAll('[data-seat="sidebar"]').length).toBe(1);
-    // 轨道控件仍可用（不是死轨道）
-    expect(screen.getByTestId('sidebar-toggle').getAttribute('aria-label')).toBe('打开侧边栏');
-
-    // 变宽跨阈值（P1-1 上游 setViewportWidth 双向重置）：侧栏回到宽态偏好（展开 280），
-    // 右栏回到用户偏好 502（不按 45% 重算成 630）
-    resizeTo(1400);
+    expect(seatAttr('rightbar', 'data-width')).toBe('316'); // 未到 idle：状态未变
+    // idle 后：右栏先自动收起（占用方自关 → hidden）
+    await waitFor(() => expect(seatOf('rightbar')?.hasAttribute('hidden')).toBe(true), { timeout: 1_200 });
+    expect(seatAttr('rightbar', 'data-can-show')).toBe('false');
+    // 左栏保持展开（收右栏后会话列 900−264=636 ≥ 360）
     expect(seatAttr('sidebar', 'data-collapsed')).toBe('false');
-    expect(seatAttr('sidebar', 'data-width')).toBe('280');
-    expect(seatAttr('rightbar', 'data-width')).toBe('502');
-    expect(rightbarHandle().getAttribute('aria-valuenow')).toBe('502');
-    // 宽屏下手动收起才回 56px 轨道
-    fireEvent.click(screen.getByRole('button', { name: '侧栏开关' }));
-    expect(seatAttr('sidebar', 'data-width')).toBe('56');
+    expect(seatAttr('sidebar', 'data-width')).toBe('264');
+
+    // 继续缩到 600：会话列 = 600−264 = 336 < 360 → idle 后收左栏到 4px
+    resizeTo(600);
+    await waitFor(() => expect(seatAttr('sidebar', 'data-collapsed')).toBe('true'), { timeout: 1_200 });
+    expect(seatAttr('sidebar', 'data-width')).toBe('4');
+    // Z-06：折叠无图标轨道，内容只隐藏不卸载
+    expect(sidebarColumn().classList.contains('opacity-0')).toBe(true);
+    expect(document.querySelectorAll('.h2-sidebar-rail').length).toBe(0);
+    expect(document.querySelectorAll('.app-frame-rail').length).toBe(0);
+    expect(document.querySelectorAll('[data-seat="sidebar"]').length).toBe(1);
+
+    // 变宽不自动展开（Z-15 只有自动收起，没有自动展开）
+    resizeTo(1400);
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 400));
+    });
     expect(seatAttr('sidebar', 'data-collapsed')).toBe('true');
+    expect(seatAttr('sidebar', 'data-width')).toBe('4');
+    // 用户手动展开仍可用
+    fireEvent.click(screen.getByRole('button', { name: '侧栏开关' }));
+    expect(seatAttr('sidebar', 'data-collapsed')).toBe('false');
+    expect(seatAttr('sidebar', 'data-width')).toBe('264');
   });
 
-  it('降动效（D-16）装配级·命中：帧根属性/类 + 侧栏降动效类同时到位，收起即时落定不等过渡', async () => {
+  it('降动效（D-16）装配级·命中：帧根属性/类 + 侧栏降动效类同时到位，折叠仍可用', async () => {
     stubReducedMotion(true);
     const api = makeFakeApi();
     const App = (await bootApp(api)) as { App: () => React.ReactNode };
@@ -504,14 +550,13 @@ describe('P4-② 装配级补缺（真渲染 App + 缩窗事件）', () => {
     expect(frameRoot?.className).toContain('app-frame-reduced-motion');
     expect(sidebarColumn().classList.contains('h2-sidebar-reduced-motion')).toBe(true);
 
-    // 降动效下收起不排队等 150ms：同一批渲染里直接落到轨道相位（56px）
+    // 折叠到 4px（Z-06）；禁用过渡不等于禁用功能
     fireEvent.click(screen.getByRole('button', { name: '侧栏开关' }));
-    expect(sidebarColumn().getAttribute('data-phase')).toBe('rail');
-    expect(sidebarColumn().classList.contains('h2-sidebar-fading')).toBe(false);
-    expect(sidebarColumn().style.width).toBe('56px');
-    // 禁用过渡不等于禁用功能：还能再展开
+    expect(sidebarColumn().getAttribute('data-collapsed')).toBe('true');
+    expect(seatAttr('sidebar', 'data-width')).toBe('4');
+    expect(sidebarColumn().classList.contains('opacity-0')).toBe(true);
     fireEvent.click(screen.getByRole('button', { name: '侧栏开关' }));
-    expect(sidebarColumn().getAttribute('data-phase')).toBe('expanded');
+    expect(sidebarColumn().getAttribute('data-collapsed')).toBe('false');
   });
 
   it('降动效（D-16）装配级·未命中：不写帧根属性、不加降动效类（不制造假的降动效状态）', async () => {
@@ -526,9 +571,6 @@ describe('P4-② 装配级补缺（真渲染 App + 缩窗事件）', () => {
     expect(frameRoot?.hasAttribute('data-reduced-motion')).toBe(false);
     expect(frameRoot?.className).not.toContain('app-frame-reduced-motion');
     expect(sidebarColumn().classList.contains('h2-sidebar-reduced-motion')).toBe(false);
-    // 收起仍走两段过渡：先进入淡出相位（不会即时落定）
-    fireEvent.click(screen.getByRole('button', { name: '侧栏开关' }));
-    expect(sidebarColumn().getAttribute('data-phase')).toBe('collapsing');
   });
 
   it('新会话作用域（D-21）装配级：侧栏新会话按钮 → controller.newSession（当前只有空白档数据源，如实落空白）', async () => {

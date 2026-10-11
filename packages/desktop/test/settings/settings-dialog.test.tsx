@@ -17,7 +17,7 @@ import {
 } from '../../src/renderer/settings/shell/index.js';
 
 const PREFS: SettingsPreferencesShape = {
-  theme: 'warmPaper',
+  theme: 'system',
   defaultPaneCount: 1,
   showWelcome: true,
   notifyDetails: 'minimal',
@@ -53,6 +53,7 @@ function makeApi(over: Partial<Harness2Api> = {}): Harness2Api & { settingsSetPr
 function clearThemeArtifacts(): void {
   document.documentElement.style.cssText = '';
   document.documentElement.removeAttribute('data-theme');
+  document.documentElement.classList.remove('theme-zai-light', 'theme-zai-dark', 'dark');
   document.body.removeAttribute('data-ds-dark-theme');
   document.head.querySelectorAll('meta[name="theme-color"]').forEach((m) => m.remove());
 }
@@ -110,11 +111,12 @@ describe('设置弹窗：通用分区的主题真生效（D-15 四要素）', ()
     await waitFor(() => expect(document.documentElement.style.colorScheme).toBe('dark'));
     expect(document.body.hasAttribute('data-ds-dark-theme')).toBe(true);
     expect(document.documentElement.style.getPropertyValue('--dsh-content-font-size')).toBe('14px');
-    expect(document.head.querySelector('meta[name="theme-color"]')?.getAttribute('content')).toBe('#1b1d21');
-    expect(document.documentElement.getAttribute('data-theme')).toBe('dark'); // 既有变量切换同源
+    expect(document.head.querySelector('meta[name="theme-color"]')?.getAttribute('content')).toBe('#161616');
+    expect(document.documentElement.getAttribute('data-theme')).toBe('zai-dark'); // 根契约：class + data-theme 同源
+    expect(document.documentElement.classList.contains('theme-zai-dark')).toBe(true);
 
     // ② 持久化：全量偏好写回（theme 改、其余字段原样）
-    await waitFor(() => expect(api.settingsSetPreferences).toHaveBeenCalledWith({ ...PREFS, theme: 'dark' }));
+    await waitFor(() => expect(api.settingsSetPreferences).toHaveBeenCalledWith({ ...PREFS, theme: 'zai-dark' }));
     // ③ 受控回显：宿主 store 变了 → 按钮选中态跟随
     await waitFor(() => expect(dark.getAttribute('aria-pressed')).toBe('true'));
   });

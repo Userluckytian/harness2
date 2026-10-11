@@ -9,7 +9,7 @@ export interface ShellThemeState {
   readonly theme: SettingsTheme;
 }
 
-export const shellThemeStore: ShellStore<ShellThemeState> = createShellStore({ theme: 'warmPaper' });
+export const shellThemeStore: ShellStore<ShellThemeState> = createShellStore({ theme: 'system' });
 
 let disposePresentation: (() => void) | null = null;
 let disposeDataset: (() => void) | null = null;

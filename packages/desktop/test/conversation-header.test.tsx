@@ -1,7 +1,7 @@
 // B4 对话头组件测试：纯函数（水条百分比/类名/分支简称/模型简称）+ 组件渲染逻辑。
 // @vitest-environment jsdom
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, render, screen, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import React from 'react';
 import {
   ConversationHeader,
@@ -77,7 +77,15 @@ function makeFakeApi(): Harness2Api {
     settingsUpdateConfig: vi.fn(async () => ({ ok: true })),
     settingsGetAuthMasked: vi.fn(async () => ({ channels: [], gateways: [] })),
     settingsUpdateAuth: vi.fn(async () => ({ ok: true })),
-    settingsGetPreferences: vi.fn(async () => ({ theme: 'warmPaper' }) as SettingsPreferencesShape),
+    settingsGetPreferences: vi.fn(
+      async () =>
+        ({
+          theme: 'system',
+          defaultPaneCount: 1,
+          showWelcome: true,
+          notifyDetails: 'minimal',
+        }) as SettingsPreferencesShape,
+    ),
     settingsSetPreferences: vi.fn(async (p: unknown) => p as SettingsPreferencesShape),
     settingsGetDoctorReport: vi.fn(async () => ({ checks: [], exitCode: 0 as const })),
     settingsGetCrashReports: vi.fn(async () => []),
@@ -96,6 +104,7 @@ function makeFakeApi(): Harness2Api {
     resumeSubscription: vi.fn(async () => undefined),
     capabilities: vi.fn(async () => ({ probedAt: '', entries: [] })),
     setBusy: vi.fn(async () => undefined),
+    setTitleBarTheme: vi.fn(async () => undefined),
     onStopAll: vi.fn(() => () => {}),
     notify: vi.fn(async () => undefined),
     metadataGet: vi.fn(async () => ({})),
@@ -174,5 +183,44 @@ describe('ConversationHeader 组件', () => {
     const fill = document.querySelector('.ctx-bar-fill');
     expect(fill).toBeTruthy();
     expect((fill as HTMLElement).style.width).toBe('0%');
+  });
+
+  // Z2-01b（Z-04）：win/linux 自绘窗控三键挂在会话列头右侧；mac / 缺通道不摆假按钮。
+  it('win32 且有窗控通道：渲染最小化/最大化/关闭并回传 IPC', async () => {
+    const api = {
+      ...makeFakeApi(),
+      platform: 'win32' as const,
+      windowMinimize: vi.fn(async () => undefined),
+      windowToggleMaximize: vi.fn(async () => undefined),
+      windowClose: vi.fn(async () => undefined),
+      windowGetState: vi.fn(async () => ({ maximized: false })),
+      onWindowState: vi.fn(() => () => {}),
+    };
+    (window as unknown as { harness2: Harness2Api }).harness2 = api;
+    render(<ConversationHeader sessionId="s1" cwd="/tmp" />);
+
+    expect(await screen.findByTestId('window-controls')).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: '最小化' }));
+    fireEvent.click(screen.getByRole('button', { name: '最大化' }));
+    fireEvent.click(screen.getByRole('button', { name: '关闭' }));
+    expect(api.windowMinimize).toHaveBeenCalledTimes(1);
+    expect(api.windowToggleMaximize).toHaveBeenCalledTimes(1);
+    expect(api.windowClose).toHaveBeenCalledTimes(1);
+  });
+
+  it('darwin：不渲染自绘窗控（走系统红绿灯）', async () => {
+    const api = { ...makeFakeApi(), platform: 'darwin' as const };
+    (window as unknown as { harness2: Harness2Api }).harness2 = api;
+    render(<ConversationHeader sessionId="s1" cwd="/tmp" />);
+    await screen.findByText('/tmp');
+    expect(screen.queryByTestId('window-controls')).toBeNull();
+  });
+
+  it('win32 但主进程未提供窗控通道：不摆假按钮（如实降级）', async () => {
+    const api = { ...makeFakeApi(), platform: 'win32' as const };
+    (window as unknown as { harness2: Harness2Api }).harness2 = api;
+    render(<ConversationHeader sessionId="s1" cwd="/tmp" />);
+    await screen.findByText('/tmp');
+    expect(screen.queryByTestId('window-controls')).toBeNull();
   });
 });

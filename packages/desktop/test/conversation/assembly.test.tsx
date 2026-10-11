@@ -118,13 +118,13 @@ function makeApi(overrides: Partial<Harness2Api> = {}): Harness2Api {
     settingsGetAuthMasked: vi.fn(async () => ({ channels: [], gateways: [] })),
     settingsUpdateAuth: vi.fn(async () => ({ ok: true })),
     settingsGetPreferences: vi.fn(async (): Promise<SettingsPreferencesShape> => ({
-      theme: 'warmPaper',
+      theme: 'system',
       defaultPaneCount: 1,
       showWelcome: true,
       notifyDetails: 'minimal',
     })),
     settingsSetPreferences: vi.fn(async (): Promise<SettingsPreferencesShape> => ({
-      theme: 'warmPaper',
+      theme: 'system',
       defaultPaneCount: 1,
       showWelcome: true,
       notifyDetails: 'minimal',
@@ -151,6 +151,7 @@ function makeApi(overrides: Partial<Harness2Api> = {}): Harness2Api {
     resumeSubscription: vi.fn(async () => undefined),
     capabilities: vi.fn(async () => ({ probedAt: '', entries: [] })),
     setBusy: vi.fn(async () => undefined),
+    setTitleBarTheme: vi.fn(async () => undefined),
     onEvent: vi.fn((_listener: (frame: WsFrame) => void) => () => {}),
     onConnectionStatus: vi.fn((_listener: (status: ConnectionStatus, detail?: StatusDetail) => void) => () => {}),
     onStopAll: vi.fn((_listener: () => void) => () => {}),

@@ -9,14 +9,13 @@
 //
 // P6-C 收敛（D-6x 模块边界）：工具卡与审批条不再是本文件的内联实现 ——
 //   tool 行 → `renderer/tool`（ToolCard：单一视图卡片 + D-86 的 openFile/inspect 路由）
-//   审批条 → `renderer/approval`（ApprovalBar：与右栏审批中心同一套卡片实现）
+//   审批 → **不在本文件**：按 Z-20 已迁到会话底部 dock（`renderer/approval/ApprovalDock`，由会话席位渲染）
 // 本文件只负责「聊天条目 → 该用哪个卡片」的装配（数据由 store/controller 注入）。
 import { useEffect, useRef, useSyncExternalStore } from 'react';
 import type { Controller } from '../app-controller.js';
 import { displayToolName, type ChatItem } from '../chat-model.js';
 import { composeQueueView } from '../features/composer/composer-model.js';
 import { buildToolRow, isAtBottom, nextScrollTop } from '../features/timeline/execution-log.js';
-import { ApprovalBar, type ApprovalCardModel } from '../approval/index.js';
 import {
   ToolCard,
   controllerToolActions,
@@ -213,20 +212,9 @@ export function ChatTranscript({ streamId, store, controller }: ChatTranscriptDe
         ))}
         {items.length === 0 && <div className="empty-state">发送第一条消息开始对话</div>}
       </div>
-      {stream.approvals.length > 0 && (
-        <ApprovalBar
-          approvals={stream.approvals.map((a): ApprovalCardModel => ({
-            requestId: a.requestId,
-            tool: a.tool,
-            args: a.args,
-            ...(a.scope !== undefined ? { scope: a.scope } : {}),
-            ...(a.expiresAt !== undefined ? { expiresAt: a.expiresAt } : {}),
-            ...(a.cwd !== undefined ? { cwd: a.cwd } : {}),
-          }))}
-          respondingOf={(requestId) => store.isApprovalResponding(requestId)}
-          onDecision={(requestId, decision) => void controller.respondApproval(requestId, decision)}
-        />
-      )}
+      {/* Z-20：审批卡不再渲染在转录流内 —— 改由会话席位挂在 composer 之上的底部 dock
+          （`renderer/approval/ApprovalDock`，见 conversation/seat.tsx）。此处保留转录之外的
+          队列 / 引用来源报告（它们不属于审批落点）。 */}
       {refReport !== undefined &&
         refReport.sources.length + refReport.skipped.length + refReport.notFound.length + refReport.unavailable.length >
           0 && (

@@ -185,6 +185,8 @@ export class AppStore {
   private readonly views = new Map<string, SessionViews>();
   /** @引用 来源报告（D1；不进 AppState，读经 peekRefReport） */
   private readonly refReports = new Map<string, RefReport>();
+  /** 审批提交失败注记（requestId → 文案；不进 AppState，读经 approvalFailure；成功/重试时清除） */
+  private readonly approvalFailures = new Map<string, string>();
 
   // —— D1：会话草稿（按会话隔离；持久化由 controller 落主进程 desktop-drafts.json） ——
 
@@ -790,6 +792,7 @@ export class AppStore {
 
   /** 审批响应后从待处理列表移除（服务端超时/取消后 turn-end 也会清） */
   removeApproval(requestId: string): void {
+    this.approvalFailures.delete(requestId); // 决定已送达：失败注记一并清
     for (const stream of this.streams.values()) {
       if (stream.approvals.some((a) => a.requestId === requestId)) {
         stream.approvals = stream.approvals.filter((a) => a.requestId !== requestId);
@@ -798,10 +801,24 @@ export class AppStore {
     this.notify();
   }
 
+  // —— PD4b：审批提交失败注记（卡片保留可重试；dock 就地显示，不静默） ——
+
+  /** 记一次审批提交失败（controller 在 respondApproval 失败时调用） */
+  markApprovalFailed(requestId: string, message: string): void {
+    this.approvalFailures.set(requestId, message);
+    this.notify();
+  }
+
+  /** 读某请求的失败注记（无 → undefined，不默认失败） */
+  approvalFailure(requestId: string): string | undefined {
+    return this.approvalFailures.get(requestId);
+  }
+
   // —— PD4：审批决定在途反馈（防连点） ——
 
   markApprovalResponding(requestId: string): void {
     if (this.state.respondingApprovals[requestId] === true) return;
+    this.approvalFailures.delete(requestId); // 新一轮尝试：清上次失败注记（可重试）
     this.set({ respondingApprovals: { ...this.state.respondingApprovals, [requestId]: true } });
   }
 

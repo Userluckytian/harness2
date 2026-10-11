@@ -5,11 +5,14 @@
 import { contextBridge, ipcRenderer } from 'electron';
 import type {
   ConnectionStatus,
+  DesktopPlatform,
   Harness2Api,
   MessageReferenceShape,
   ModelsProviderInputShape,
+  PlatformTitleBarTheme,
   SettingsEventFrame,
   StatusDetail,
+  WindowStateShape,
   WsFrame,
 } from '../shared/protocol.js';
 
@@ -18,8 +21,17 @@ const IPC_EVENT = 'harness2:event';
 const IPC_STATUS = 'harness2:status';
 const IPC_STOP_ALL = 'harness2:stop-all';
 const IPC_SETTINGS_EVENT = 'harness2:settings-event';
+const IPC_WINDOW_STATE = 'harness2:window-state';
+
+/** Z2-01b：preload 同步暴露 process.platform（渲染端拿不到 Node，只能由此派生平台特化） */
+function resolvePlatform(): DesktopPlatform {
+  const p = process.platform;
+  return p === 'darwin' || p === 'win32' ? p : 'linux';
+}
 
 const api: Harness2Api = {
+  // Z2-01b（Z-02/Z-04）：平台信号（同步布尔/字符串 prop 的桌面等价物）
+  platform: resolvePlatform(),
   listSessions: (cwd?: string) => ipcRenderer.invoke(IPC_INVOKE, { cmd: 'listSessions', cwd }),
   createSession: (cwd?: string) => ipcRenderer.invoke(IPC_INVOKE, { cmd: 'createSession', cwd }),
   events: (sessionId: string) => ipcRenderer.invoke(IPC_INVOKE, { cmd: 'events', sessionId }),
@@ -105,6 +117,20 @@ const api: Harness2Api = {
     ipcRenderer.invoke(IPC_INVOKE, { cmd: 'capabilities', ...(sessionId !== undefined ? { sessionId } : {}) }),
   setBusy: (busy: boolean, counts?: { runningTurns: number; backgroundTasks: number }) =>
     ipcRenderer.invoke(IPC_INVOKE, { cmd: 'runtime:setBusy', busy, ...counts }),
+  setTitleBarTheme: (theme: PlatformTitleBarTheme) =>
+    ipcRenderer.invoke(IPC_INVOKE, { cmd: 'platform:setTitleBarTheme', theme }),
+  // —— Z2-01b：win/linux 自绘窗口控件（mac 不渲染这些按钮，通道存在亦无副作用） ——
+  windowMinimize: () => ipcRenderer.invoke(IPC_INVOKE, { cmd: 'window:minimize' }),
+  windowToggleMaximize: () => ipcRenderer.invoke(IPC_INVOKE, { cmd: 'window:toggleMaximize' }),
+  windowClose: () => ipcRenderer.invoke(IPC_INVOKE, { cmd: 'window:close' }),
+  windowGetState: () => ipcRenderer.invoke(IPC_INVOKE, { cmd: 'window:getState' }),
+  onWindowState: (listener: (state: WindowStateShape) => void) => {
+    const wrapped = (_e: Electron.IpcRendererEvent, state: WindowStateShape): void => listener(state);
+    ipcRenderer.on(IPC_WINDOW_STATE, wrapped);
+    return () => {
+      ipcRenderer.removeListener(IPC_WINDOW_STATE, wrapped);
+    };
+  },
   onEvent: (listener: (frame: WsFrame) => void) => {
     const wrapped = (_e: Electron.IpcRendererEvent, frame: WsFrame): void => listener(frame);
     ipcRenderer.on(IPC_EVENT, wrapped);

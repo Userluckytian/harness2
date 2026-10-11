@@ -12,6 +12,8 @@ export const IPC_STATUS = 'harness2:status';
 export const IPC_STOP_ALL = 'harness2:stop-all';
 /** P6-B（D-58）：设置域事件通道（settings/credentials/llm/connection），渲染端订阅而非轮询 */
 export const IPC_SETTINGS_EVENT = 'harness2:settings-event';
+/** Z2-01b：窗口状态变化通道（最大化/还原）——win/linux 自绘窗控图标与 linux 最大化去圆角据此 */
+export const IPC_WINDOW_STATE = 'harness2:window-state';
 
 // 本文件保留段内部要用的线协议名字（`export type *` 只做再导出、不引入本地名字）。
 import type {
@@ -36,8 +38,19 @@ export type * from '@harness2/ui-shared/shared/protocol.js';
 
 // —— 设置弹窗（B2）与后续任务的配置/偏好契约 ——
 
-export type SettingsTheme = 'warmPaper' | 'dark' | 'system';
+export type SettingsTheme = 'system' | 'zai-light' | 'zai-dark';
 export type SettingsNotifyDetails = 'minimal' | 'full';
+
+/** Z-86：桌面 nativeTheme 镜像取值（system = 交给 Electron 跟随系统） */
+export type PlatformTitleBarTheme = 'light' | 'dark' | 'system';
+
+/** Z2-01b：桌面平台（preload 同步暴露 process.platform；渲染端据此派生平台特化外壳） */
+export type DesktopPlatform = 'darwin' | 'win32' | 'linux';
+
+/** Z2-01b：窗口最大化状态（win/linux 自绘窗控图标 / linux 最大化去圆角） */
+export interface WindowStateShape {
+  maximized: boolean;
+}
 
 /** settings:getConfig 的响应（脱敏后的可用字段；与 CLI 共用同一份 config.json） */
 export interface SettingsProviderShape {
@@ -327,7 +340,14 @@ export type InvokeCommand =
   | { cmd: 'resumeSubscription'; sessionId: string; lastSeq: number; epoch: number }
   | { cmd: 'capabilities'; sessionId?: string }
   // —— D4：运行态上报（关窗口提示依据：关 UI 不等于停任务） ——
-  | { cmd: 'runtime:setBusy'; busy: boolean; runningTurns?: number; backgroundTasks?: number };
+  | { cmd: 'runtime:setBusy'; busy: boolean; runningTurns?: number; backgroundTasks?: number }
+  // —— Z1-05 / Z-86：桌面 nativeTheme 镜像（标题栏与原生控件跟随主题） ——
+  | { cmd: 'platform:setTitleBarTheme'; theme: PlatformTitleBarTheme }
+  // —— Z2-01b：win/linux 自绘窗口控件（mac 走系统红绿灯，不调用这些命令） ——
+  | { cmd: 'window:minimize' }
+  | { cmd: 'window:toggleMaximize' }
+  | { cmd: 'window:close' }
+  | { cmd: 'window:getState' };
 
 /**
  * P6-B 模型配置页所需的最小通道面（D-50～D-59）。
@@ -363,8 +383,28 @@ export interface ModelsSettingsApi {
   onSettingsEvent(listener: (frame: SettingsEventFrame) => void): () => void;
 }
 
+/**
+ * Z2-01b 窗口控件最小通道面（win/linux 自绘三键 + 最大化状态）。
+ * 与 ModelsSettingsApi 同样以 Partial 并入 Harness2Api：旧夹具只覆盖旧面，缺通道时
+ * 渲染端**不摆假窗控**（如实降级），既有测试夹具因此无需改动即可编译。
+ */
+export interface WindowControlsApi {
+  /** 最小化窗口 */
+  windowMinimize(): Promise<void>;
+  /** 切换最大化/还原 */
+  windowToggleMaximize(): Promise<void>;
+  /** 关闭窗口（走既有 close 事件链，D4 关窗口提示仍生效） */
+  windowClose(): Promise<void>;
+  /** 读当前最大化状态（linux 最大化去圆角 / 窗控图标） */
+  windowGetState(): Promise<WindowStateShape>;
+  /** 订阅最大化状态变化；返回退订函数 */
+  onWindowState(listener: (state: WindowStateShape) => void): () => void;
+}
+
 /** window.harness2 的形状（preload contextBridge 暴露） */
-export interface Harness2Api extends Partial<ModelsSettingsApi> {
+export interface Harness2Api extends Partial<ModelsSettingsApi>, Partial<WindowControlsApi> {
+  /** Z2-01b：桌面平台（preload 同步暴露）；非桌面宿主 / 旧夹具缺失时渲染端不启用平台特化 */
+  readonly platform?: DesktopPlatform;
   listSessions(cwd?: string): Promise<SessionSummaryShape[]>;
   createSession(cwd?: string): Promise<{ id: string }>;
   events(sessionId: string): Promise<SessionEventsPayloadShape>;
@@ -464,6 +504,8 @@ export interface Harness2Api extends Partial<ModelsSettingsApi> {
   capabilities(sessionId?: string): Promise<CapabilityReportShape>;
   /** D4：上报「是否有运行中工作」（main 进程据此在关窗口前提示，不静默丢弃任务） */
   setBusy(busy: boolean, counts?: { runningTurns: number; backgroundTasks: number }): Promise<void>;
+  /** Z1-05 / Z-86：镜像主题到桌面 nativeTheme（标题栏/原生控件；system = 跟随系统） */
+  setTitleBarTheme(theme: PlatformTitleBarTheme): Promise<void>;
   /** 订阅服务事件帧（delta/event/turn-end/approval-request/error）；返回退订函数 */
   onEvent(listener: (frame: WsFrame) => void): () => void;
   /** 订阅连接状态变化；返回退订函数 */

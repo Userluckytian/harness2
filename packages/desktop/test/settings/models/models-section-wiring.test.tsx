@@ -26,7 +26,7 @@ import {
 import { registerModelsSettingsSection } from '../../../src/renderer/settings/models/index.js';
 
 const PREFS: SettingsPreferencesShape = {
-  theme: 'warmPaper',
+  theme: 'system',
   defaultPaneCount: 1,
   showWelcome: true,
   notifyDetails: 'minimal',

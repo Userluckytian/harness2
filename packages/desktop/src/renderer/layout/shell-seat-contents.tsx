@@ -4,18 +4,17 @@
 //
 // P4-C 装配：侧栏席位内容 = renderer/sidebar 的 SidebarRoot（D-20～D-25），
 // 装配点只此一处（App/frame 不用动）；旧的 components/SessionList.tsx 已删除，不留第二套侧栏。
-// 轨道归属（P4-C 裁决）：帧容器（frame-seat-views.tsx）只提供轨道容器宽度（收起 56px），
-// 轨道内容（品牌标记/展开按钮/区域图标）由 SidebarRoot 在 rail 态渲染 —— 两边各司其职，不重复画。
+// Z-06 折叠归属：帧容器（frame-seat-views.tsx）只提供容器宽度（折叠 4px、无图标轨道），
+// 折叠可见性由 SidebarRoot 用 opacity-0 + pointer-events-none 承担（只隐藏不卸载）。
 //
 // P5-C 装配：会话席位内容 = renderer/conversation/assembly.tsx 的 ConversationSeat
 // （会话头 + ConversationViewRing + 常驻 Composer）。本文件只递 store/controller，
 // 不在这里写对话语义（视图环与 composer 的接线全在 assembly.tsx）。
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState, useSyncExternalStore } from 'react';
 import { CommandPalette } from '../components/CommandPalette.js';
 import { SettingsDialog } from '../components/SettingsDialog.js';
 import { SidePanel } from '../components/SidePanel.js';
-import { ConversationSeat } from '../conversation/assembly.js';
-import { controller, store, useAppState } from '../app-shared.js';
+import { controller, store, useAppState, StatusBadge } from '../app-shared.js';
 import { SidebarRoot, buildSessionItems, resolveBuildVersion } from '../sidebar/index.js';
 import type { SlotRegistry } from '../slots/index.js';
 import { CONVERSATION_OWNER, FRAME_SEAT, MAIN_CONVERSATION_KEY } from './frame-seats.js';
@@ -23,6 +22,9 @@ import { useFrame } from './frame-context.js';
 import { useShellPalette } from './shell-context.js';
 import { useOverlayOpen, setOverlay } from './shell-overlays.js';
 import { setShellTheme } from './shell-theme.js';
+import { workbenchDrag } from './workbench/drag.js';
+import { WorkbenchHost } from './workbench/host.js';
+import { workbenchStore } from './workbench/store.js';
 
 /**
  * 渲染进程可读的宿主环境表（D-25 构建徐标数据源）。
@@ -37,8 +39,11 @@ function hostBuildEnv(): Record<string, string | undefined> {
 /** 侧栏席位内容（ui-sidebar）：SidebarRoot + 装配层数据接线 */
 function SidebarSeatContent(): React.ReactNode {
   const state = useAppState();
-  const { state: frameState, geometry, dispatch: frameDispatch } = useFrame();
+  const { geometry, dispatch: frameDispatch } = useFrame();
   const [query, setQuery] = useState('');
+  // Z2-06（Z-19）：已在分屏中的会话禁用拖拽（左栏行可拖进主区）
+  const workbench = useSyncExternalStore(workbenchStore.subscribe, workbenchStore.getSnapshot);
+  const panedSessionIds = useMemo(() => new Set(Object.values(workbench.bindings)), [workbench.bindings]);
 
   // 行数据：store 摘要 + 展示态覆层（search/归档分区复用 shared/metadata，不复制过滤规则）
   const { active, archived } = buildSessionItems({
@@ -53,9 +58,10 @@ function SidebarSeatContent(): React.ReactNode {
 
   return (
     <SidebarRoot
-      // 开合事实取几何口径（窄屏看 override、宽屏看偏好，见 frame-state.isSidebarCollapsed）
-      collapsed={geometry.sidebarRail}
-      width={frameState.sidebarWidth}
+      // 折叠事实取几何口径（Z-06：折叠后容器 4px、内容只隐藏不卸载）
+      collapsed={geometry.sidebarCollapsed}
+      // 内容始终按展开宽度排版（折叠时被 4px 容器裁切 + opacity-0，避免收起途中重排）
+      width={geometry.sidebarExpandedWidth}
       onToggleCollapse={() => frameDispatch({ type: 'sidebar/toggle' })}
       sessions={active}
       archivedSessions={archived}
@@ -70,14 +76,51 @@ function SidebarSeatContent(): React.ReactNode {
       newSessionScope={{}}
       onNewSession={() => void controller.newSession()}
       newSessionEnabled={state.status === 'connected'}
+      // Z2-02（Z-07 分区 2）：左栏命令中心入口 → 复用既有覆层链路打开命令面板
+      // （与 Ctrl+K 的 toggleOverlay('palette') 同一真源，不新开一套面板）。
+      onOpenCommandPalette={() => setOverlay('palette', true)}
       buildVersion={resolveBuildVersion(hostBuildEnv())}
+      // Z2-06（Z-19）：会话行可拖进主区分屏。生产写 dataTransfer（真实 DnD 语义），
+      // 模块级 workbenchDrag 作等价回退（jsdom 单测无标准 dataTransfer）。
+      sessionRowDrag={{
+        onDragStart: (id, event) => {
+          workbenchDrag.begin(id);
+          const transfer = event.dataTransfer;
+          if (transfer !== undefined && transfer !== null) {
+            transfer.setData('text/plain', id);
+            transfer.effectAllowed = 'copy';
+          }
+        },
+        onDragEnd: () => workbenchDrag.end(),
+        disabledIds: panedSessionIds,
+      }}
+      // Z2-01b（Z-07 §9 / Z-11）：设置入口迁到左栏 Footer（原顶栏设置按钮拆除）。
+      // StatusBadge 也放这里（二选一取 Footer）——理由：Footer 是常驻的账号/设置区，
+      // 浮层条是窄拖拽条（mac 左 96px 留给红绿灯、右侧要避让窗口控件），不适合塞状态角标。
+      renderSettings={() => (
+        <div className="flex items-center justify-between gap-2 px-1">
+          <StatusBadge status={state.status} error={state.statusDetail?.error} />
+          <button
+            type="button"
+            className="text-ui-base text-foreground-subtle hover:text-foreground cursor-pointer"
+            data-testid="sidebar-settings"
+            aria-label="设置"
+            title="设置 (Ctrl+,)"
+            onClick={() => setOverlay('settings', true)}
+          >
+            ⚙
+          </button>
+        </div>
+      )}
     />
   );
 }
 
-/** 中栏 conversation key 的内容（ui-conversation）：会话头 + 视图环 + 常驻 composer（见 conversation/assembly） */
+/** 中栏 conversation key 的内容（ui-conversation）：分屏工作台宿主（Z2-06 / Z-19）。
+ *  未分屏（单格）时与旧结构等价（一格会话界面）；多格时在 conversation 面板内二叉分割。
+ *  Z2-03 的内层 conversation | terminal 分栏在 MainSeatView 层，分屏发生在本内容内部。 */
 function ConversationSeatContent(): React.ReactNode {
-  return <ConversationSeat store={store} controller={controller} />;
+  return <WorkbenchHost store={store} controller={controller} />;
 }
 
 /**

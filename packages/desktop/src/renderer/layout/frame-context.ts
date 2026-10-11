@@ -25,3 +25,11 @@ export function useFrame(): FrameController {
   if (value === null) throw new Error('useFrame 必须在 AppFrame 内使用');
   return value;
 }
+
+/**
+ * 取帧控制器或 null（供**可独立渲染**的组件使用：在帧外（组件级测试）不抛错，只是拿不到
+ * 面板动作）。会话列头用它拿右栏开合与派发；帧外返回 null 时调用方不渲染对应入口。
+ */
+export function useOptionalFrame(): FrameController | null {
+  return useContext(FrameContext);
+}

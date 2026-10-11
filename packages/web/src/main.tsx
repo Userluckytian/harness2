@@ -5,6 +5,8 @@
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { createAppShell } from '@harness2/ui-shared/renderer/app-shell.js';
+// GUI 视觉层（Tailwind v4 入口 + 三层 token + Zai 双主题）：依据 docs/refs/refs-zcode.md
+import '@harness2/ui-shared/styles/styles.css';
 import '@harness2/ui-shared/styles/shell.css';
 import '@harness2/ui-shared/styles/sidebar.css';
 import './web.css';

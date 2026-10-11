@@ -19,11 +19,15 @@ function walk(dir: string): string[] {
 }
 
 describe('面板几何不持久化（D-14）', () => {
-  it('渲染端源码不出现 localStorage / sessionStorage / indexedDB', () => {
+  it('渲染端源码不出现 localStorage / sessionStorage / indexedDB（Z1-05 主题镜像豁免）', () => {
     const hits: string[] = [];
     for (const file of walk(rendererDir)) {
       const text = readFileSync(file, 'utf8');
-      if (/localStorage|sessionStorage|indexedDB/.test(text)) hits.push(file);
+      if (!/localStorage|sessionStorage|indexedDB/.test(text)) continue;
+      // Z1-05：主题偏好镜像 localStorage['harness2-theme'] 是唯一允许的浏览器存储用途（首屏防闪）。
+      // 豁免仅限 theme.ts 且不得同时使用 sessionStorage / indexedDB；其余文件仍一律拦截。
+      if (file.endsWith(join('renderer', 'theme.ts')) && !/sessionStorage|indexedDB/.test(text)) continue;
+      hits.push(file);
     }
     expect(hits).toEqual([]);
   });
