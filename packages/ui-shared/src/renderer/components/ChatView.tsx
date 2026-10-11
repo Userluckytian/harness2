@@ -24,6 +24,8 @@ import {
   toolJumpActions,
   toolNavigation,
 } from '../tool/index.js';
+import { ChatEmptyState } from './ChatEmptyState.js';
+import { ReasoningRow } from './ReasoningRow.js';
 import type { AppStore } from '../store.js';
 
 /** 转录视图的数据源（store + controller 真身；由会话对象携带） */
@@ -54,17 +56,16 @@ export function ChatItemView({
         </div>
       );
     case 'assistant':
+      // Z-92：reasoning 是**一等行**（独立可折叠行，ReasoningRow），不再是气泡内嵌 <details>；
+      // Fragment 摊平进 .messages 弹性列 → 思考行与正文气泡是两个独立行。
       return (
-        <div className="bubble-assistant">
-          <span className="role">{item.model ?? '助手'}</span>
-          {item.reasoning !== undefined && item.reasoning.length > 0 && (
-            <details className="reasoning">
-              <summary>思考过程</summary>
-              <div className="reasoning-body">{item.reasoning}</div>
-            </details>
-          )}
-          <div className="text">{item.text}</div>
-        </div>
+        <>
+          {item.reasoning !== undefined && item.reasoning.length > 0 && <ReasoningRow text={item.reasoning} />}
+          <div className="bubble-assistant">
+            <span className="role">{item.model ?? '助手'}</span>
+            <div className="text">{item.text}</div>
+          </div>
+        </>
       );
     case 'tool': {
       // D2：有 S7 执行视图（真实 shell/cwd/exitCode/输出归属）时优先渲染命令日志卡；
@@ -108,25 +109,28 @@ export function ChatItemView({
         </div>
       );
     case 'streaming':
+      // Z-92：流式思考同样是一等行（渐变扫光「正在思考」+ 最后一行摘要）；不再用内联「（思考中…）」。
       return (
-        <div className="bubble-assistant streaming">
-          {item.tool !== undefined ? (
-            <div className="tool-row tool-pending">
-              <span className="tool-line">
-                &gt; {displayToolName(item.tool)} ({summarizeToolArgs(item.args)})
-              </span>
-              <span className="tool-status">运行中…</span>
-            </div>
-          ) : (
-            <div className="text">
-              {item.reasoning !== undefined && item.reasoning.length > 0 && (
-                <div className="reasoning-inline">（思考中…）</div>
-              )}
-              {item.text}
-              <span className="cursor">▌</span>
-            </div>
+        <>
+          {item.tool === undefined && item.reasoning !== undefined && item.reasoning.length > 0 && (
+            <ReasoningRow text={item.reasoning} streaming />
           )}
-        </div>
+          <div className="bubble-assistant streaming">
+            {item.tool !== undefined ? (
+              <div className="tool-row tool-pending">
+                <span className="tool-line">
+                  &gt; {displayToolName(item.tool)} ({summarizeToolArgs(item.args)})
+                </span>
+                <span className="tool-status">运行中…</span>
+              </div>
+            ) : (
+              <div className="text">
+                {item.text}
+                <span className="cursor">▌</span>
+              </div>
+            )}
+          </div>
+        </>
       );
     case 'turn-summary':
       return (
@@ -210,7 +214,7 @@ export function ChatTranscript({ streamId, store, controller }: ChatTranscriptDe
             controller={controller}
           />
         ))}
-        {items.length === 0 && <div className="empty-state">发送第一条消息开始对话</div>}
+        {items.length === 0 && <ChatEmptyState />}
       </div>
       {/* Z-20：审批卡不再渲染在转录流内 —— 改由会话席位挂在 composer 之上的底部 dock
           （`renderer/approval/ApprovalDock`，见 conversation/seat.tsx）。此处保留转录之外的

@@ -142,7 +142,11 @@ describe('对话 UI（jsdom）', () => {
     await waitFor(() => expect(api.subscribe).toHaveBeenCalledWith('s1'));
     await waitFor(() => expect(api.events).toHaveBeenCalledWith('s1'));
     expect(await screen.findByText('第一句回复')).toBeTruthy(); // 分栏内 assistant 气泡
-    expect(screen.getByText('思考过程')).toBeTruthy(); // reasoning 折叠块
+    // Z-92：reasoning 是一等行（默认折叠的触发行，文案「思考」）；展开后内容如实可见
+    const reasoningToggle = screen.getByText('思考');
+    expect(reasoningToggle.closest('[data-testid="reasoning-row"]')).not.toBeNull();
+    fireEvent.click(reasoningToggle);
+    expect(await screen.findByText('暗自思考')).toBeTruthy();
     expect(screen.getByText('── turn')).toBeTruthy(); // turn 标头
   });
 

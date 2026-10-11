@@ -39,7 +39,13 @@ export {
   type ToolNavigationTarget,
   type TrajectoryViewConsumer,
 } from './tool-navigation.js';
-export { ToolCard, controllerToolActions, type ToolCardActions, type ToolCardProps } from './ToolCard.js';
+export {
+  ToolCard,
+  controllerToolActions,
+  resetToolOpenMemoryForTests,
+  type ToolCardActions,
+  type ToolCardProps,
+} from './ToolCard.js';
 export {
   ToolFilePreviewPanel,
   type FilePreviewReadResult,

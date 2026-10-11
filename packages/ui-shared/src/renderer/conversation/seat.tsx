@@ -25,6 +25,7 @@ import { resolveFileRefs, type FileRefReader } from '../../shared/file-ref.js';
 import type { MessageReferenceShape, SubmitAckStateShape } from '../../shared/protocol.js';
 import { lastTurnIdOf, type Controller } from '../app-controller.js';
 import { ChatTranscript } from '../components/ChatView.js';
+import { SuggestionChips } from '../components/ChatEmptyState.js';
 import { ApprovalDock, toApprovalCardModel } from '../approval/index.js';
 import { ambientHostBridge } from '../host-bridge.js';
 import type { AppStore } from '../store.js';
@@ -436,6 +437,12 @@ export function ConversationSeat(props: ConversationSeatProps): ReactNode {
           io={io}
           {...(props.imageIO !== undefined ? { imageIO: props.imageIO } : {})}
         />
+        {/* Z-18/Z-17：草稿态（会话已加载且无任何条目、非运行中）→ composer 下方建议提示。
+            动作是真实的：点击 = 把建议提示词写入 composer 草稿（insert-text 在光标处追加，
+            不覆盖已有草稿），由用户 Enter 经既有提交边界送出 —— 不做点击无效的假 chip。 */}
+        {sessionId !== null && stream?.loaded === true && !running && store.chatItems(sessionId).length === 0 && (
+          <SuggestionChips onPick={(prompt) => composerStore.dispatch({ type: 'insert-text', text: prompt })} />
+        )}
       </div>
     </div>
   );
