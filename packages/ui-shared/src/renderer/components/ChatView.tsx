@@ -11,11 +11,11 @@
 //   tool 行 → `renderer/tool`（ToolCard：单一视图卡片 + D-86 的 openFile/inspect 路由）
 //   审批 → **不在本文件**：按 Z-20 已迁到会话底部 dock（`renderer/approval/ApprovalDock`，由会话席位渲染）
 // 本文件只负责「聊天条目 → 该用哪个卡片」的装配（数据由 store/controller 注入）。
-import { useEffect, useRef, useSyncExternalStore } from 'react';
+import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import type { Controller } from '../app-controller.js';
 import { displayToolName, type ChatItem } from '../chat-model.js';
-import { composeQueueView } from '../features/composer/composer-model.js';
 import { buildToolRow, isAtBottom, nextScrollTop } from '../features/timeline/execution-log.js';
+import { activeTurnIdOf, deriveTurns, jumpToTurn, TurnNavigator } from '../conversation/turn-navigator.js';
 import {
   ToolCard,
   controllerToolActions,
@@ -48,7 +48,12 @@ export function ChatItemView({
 }) {
   switch (item.kind) {
     case 'turn-header':
-      return <div className="turn-header">── turn</div>;
+      // Z2-09b：data-turn-id 是轮次导航的定位锚点（jumpToTurn / activeTurnIdOf 查询此属性）
+      return (
+        <div className="turn-header" data-turn-id={item.turnId}>
+          ── turn
+        </div>
+      );
     case 'user':
       return (
         <div className="bubble-user">
@@ -173,6 +178,15 @@ export function ChatTranscript({ streamId, store, controller }: ChatTranscriptDe
   /** 渲染前是否贴底（决定新内容到达时是否跟随滚动） */
   const wasAtBottomRef = useRef(true);
 
+  // Z2-09b：轮次导航（Z-17 ConversationTurnNavigator）。条目由 ChatItem 流派生（纯函数）；
+  // 当前轮随滚动位置判定；轮次 <2 时 TurnNavigator 自行不渲染，≥864px 断点交给 CSS @container。
+  const turns = deriveTurns(items);
+  const [activeTurnId, setActiveTurnId] = useState<string | undefined>(undefined);
+  // 换会话：高亮回落（不把上一会话的当前轮带过来）
+  useEffect(() => {
+    setActiveTurnId(undefined);
+  }, [streamId]);
+
   // D2 稳定滚动：仅当**之前**贴底时跟随到底；用户上滚阅读历史时不被新帧拽回底部。
   // 内容变化前先记录贴底状态（effect 在 DOM 更新后运行，用 ref 保存的是上一轮的真实位置）。
   useEffect(() => {
@@ -186,6 +200,14 @@ export function ChatTranscript({ streamId, store, controller }: ChatTranscriptDe
   const onMessagesScroll = (): void => {
     const el = scrollRef.current;
     if (el !== null) wasAtBottomRef.current = isAtBottom(el);
+    // Z2-09b：当前轮 = 顶部越过内缩线的最后一个轮首行（与稳定滚动同一次滚动事件，不另挂监听）
+    setActiveTurnId(activeTurnIdOf(scrollRef.current));
+  };
+
+  // Z2-09b：点击定位 = 滚到该轮首行；定位成功即把该轮置为当前（jsdom 无布局时 rects 为 0，
+  // 也能拿到确定的高亮结果）
+  const onTurnJump = (turnId: string): void => {
+    if (jumpToTurn(scrollRef.current, turnId)) setActiveTurnId(turnId);
   };
 
   if (stream === undefined || !stream.loaded) {
@@ -196,11 +218,6 @@ export function ChatTranscript({ streamId, store, controller }: ChatTranscriptDe
     );
   }
 
-  const queueView = composeQueueView({
-    queue: stream.queue,
-    pendingSubmits: stream.pendingSubmits,
-    submitAcks: stream.submitAcks,
-  });
   // D1/P1-1：本轮 `@path` 引用来源报告（哪些进了上下文、哪些被拒及原因）—— 引用结果必须可见
   const refReport = store.peekRefReport(streamId);
 
@@ -218,9 +235,11 @@ export function ChatTranscript({ streamId, store, controller }: ChatTranscriptDe
         ))}
         {items.length === 0 && <ChatEmptyState />}
       </div>
+      {/* Z2-09b：轮次导航（Z-17）——左缘细 rail；轮次 ≥2 才渲染，≥864px 由 CSS @container 显隐 */}
+      <TurnNavigator turns={turns} activeTurnId={activeTurnId} onJump={onTurnJump} />
       {/* Z-20：审批卡不再渲染在转录流内 —— 改由会话席位挂在 composer 之上的底部 dock
-          （`renderer/approval/ApprovalDock`，见 conversation/seat.tsx）。此处保留转录之外的
-          队列 / 引用来源报告（它们不属于审批落点）。 */}
+          （`renderer/approval/ApprovalDock`，见 conversation/seat.tsx）。队列同批迁出：
+          Z2-09b 起队列由席位级 QueuePanel（composer 之上的 dock）呈现，转录内不再重复展示。 */}
       {refReport !== undefined &&
         refReport.sources.length + refReport.skipped.length + refReport.notFound.length + refReport.unavailable.length >
           0 && (
@@ -247,25 +266,6 @@ export function ChatTranscript({ streamId, store, controller }: ChatTranscriptDe
             ))}
           </div>
         )}
-      {queueView.length > 0 && (
-        <div className="queue-bar" aria-label="待发送队列">
-          {queueView.map((q) => (
-            <div key={q.id} className={`queue-item queue-${q.kind}`}>
-              <span className="queue-kind">
-                {q.kind === 'queued'
-                  ? '排队'
-                  : q.kind === 'paused'
-                    ? '暂停'
-                    : q.kind === 'pending'
-                      ? '待确认'
-                      : '未确认'}
-              </span>
-              <span className="queue-text">{q.text}</span>
-              {q.note !== undefined && <span className="queue-note">{q.note}</span>}
-            </div>
-          ))}
-        </div>
-      )}
     </div>
   );
 }

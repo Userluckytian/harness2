@@ -108,6 +108,13 @@ export function SessionBrowser({
             {item.title}
             {item.running && <span className="h2-sidebar-running" data-testid="session-running" />}
             {item.unread > 0 && <span className="h2-sidebar-unread">{item.unread}</span>}
+            {/* Z2-09b（场景④）：待审批 attention 徽标 —— 无审批不渲染（字段没有就不显示）。
+                与未读徽标同族（行内小胶囊），警示色（--warn）区别于未读的中性 accent。 */}
+            {item.pendingApprovals > 0 && (
+              <span className="h2-sidebar-attention" data-testid="session-attention" title="有待审批事项">
+                {item.pendingApprovals}
+              </span>
+            )}
           </span>
           <span className="h2-sidebar-session-meta">{rowMeta(item)}</span>
         </button>

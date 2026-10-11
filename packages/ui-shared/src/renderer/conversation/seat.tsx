@@ -30,6 +30,9 @@ import { lastTurnIdOf, type Controller } from '../app-controller.js';
 import { ChatTranscript } from '../components/ChatView.js';
 import { SuggestionChips } from '../components/ChatEmptyState.js';
 import { ApprovalDock, toApprovalCardModel } from '../approval/index.js';
+import { composeQueueView } from '../features/composer/composer-model.js';
+import { QueuePanel } from './QueuePanel.js';
+import { ResumeBar } from './ResumeBar.js';
 import { ambientHostBridge } from '../host-bridge.js';
 import type { AppStore } from '../store.js';
 import {
@@ -388,6 +391,9 @@ export function ConversationSeat(props: ConversationSeatProps): ReactNode {
 
   return (
     <div className="conversation-seat" data-testid="conversation-seat" style={seatStyle}>
+      {/* Z2-09b（Z-17）：恢复条 —— 重订阅快照实际携带在途状态时才出现（对话页顶部细横条），
+          手动可关 + 8s 自动消失；inflight 由 store 从 ResumeSnapshotShape 真实字段计得。 */}
+      {stream?.resume !== undefined && <ResumeBar resumeAt={stream.resume.at} inflight={stream.resume.inflight} />}
       {sessionId !== null && session !== undefined ? (
         <>
           {props.header?.({ sessionId, ...(cwd !== undefined ? { cwd } : {}) })}
@@ -415,6 +421,17 @@ export function ConversationSeat(props: ConversationSeatProps): ReactNode {
         </div>
       )}
       <div className="composer-overlay" ref={composerRef} data-testid="composer-overlay">
+        {/* Z2-09b（Z-17）：队列面板 = composer 之上的按需 dock（有队列/在途提交才出现）。
+            只读展示（协议无撤回 op，登记于交付报告）；ZCode 无条目像素依据，按 dock 族视觉。 */}
+        {stream !== undefined && (
+          <QueuePanel
+            entries={composeQueueView({
+              queue: stream.queue,
+              pendingSubmits: stream.pendingSubmits,
+              submitAcks: stream.submitAcks,
+            })}
+          />
+        )}
         {/* Z-20：待审批 = 会话底部 dock，常驻在 composer **之上**（在转录滚动区之外）。
             数据源 = 本席位绑定会话的待批列表；决定仍只回传 allow/deny（语义归 core）。 */}
         {stream !== undefined && stream.approvals.length > 0 && (

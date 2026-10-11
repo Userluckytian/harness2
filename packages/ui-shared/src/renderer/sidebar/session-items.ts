@@ -12,10 +12,12 @@ export interface SidebarSessionSource {
   messageCount: number;
 }
 
-/** 行的运行态（来自 store 的会话流；缺省 = 不在跑、无未读） */
+/** 行的运行态（来自 store 的会话流；缺省 = 不在跑、无未读、无待批） */
 export interface SidebarSessionFlags {
   running?: boolean;
   unread?: number;
+  /** 待审批数（Z2-09b 场景④：左栏任务行 attention 徽标；0/缺省 = 不渲染） */
+  pendingApprovals?: number;
 }
 
 /** 侧栏一行（已是纯展示数据，不含 store 引用） */
@@ -31,6 +33,8 @@ export interface SidebarSessionItem {
   running: boolean;
   /** 非当前视图期间新增的落盘事件数 */
   unread: number;
+  /** 待审批数（>0 时行上渲染 attention 徽标） */
+  pendingApprovals: number;
 }
 
 /** 空会话的回落标题（firstUserText 为空且无覆层标题时显示，不摆假标题） */
@@ -63,6 +67,7 @@ export function toSessionItem(
     archived: opts.archived === true,
     running: opts.flags?.running === true,
     unread: opts.flags?.unread ?? 0,
+    pendingApprovals: opts.flags?.pendingApprovals ?? 0,
   };
 }
 

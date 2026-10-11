@@ -31,6 +31,13 @@ describe('D-23 toSessionItem', () => {
     const busy = toSessionItem(source('b'), { metadata: {}, archived: true, flags: { running: true, unread: 5 } });
     expect([busy.archived, busy.running, busy.unread]).toEqual([true, true, 5]);
   });
+
+  it('Z2-09b（场景④）：待审批数如实带出；缺省 0（无审批不渲染徽标的数据面）', () => {
+    const plain = toSessionItem(source('a'), { metadata: {} });
+    expect(plain.pendingApprovals).toBe(0);
+    const waiting = toSessionItem(source('b'), { metadata: {}, flags: { pendingApprovals: 2 } });
+    expect(waiting.pendingApprovals).toBe(2);
+  });
 });
 
 describe('D-23 buildSessionItems', () => {

@@ -45,7 +45,12 @@ export function WebApp({ shell, onNewSession, newSessionBlockedReason }: WebAppP
     query,
     flagsOf: (id) => {
       const stream = store.peekStream(id);
-      return { running: stream?.running === true, unread: stream?.unread ?? 0 };
+      // Z2-09b（场景④）：待审批数上会话行（attention 徽标数据源；与桌面同一 store 口径）
+      return {
+        running: stream?.running === true,
+        unread: stream?.unread ?? 0,
+        pendingApprovals: stream?.approvals.length ?? 0,
+      };
     },
   });
 

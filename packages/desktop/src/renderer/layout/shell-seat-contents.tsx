@@ -52,7 +52,10 @@ function SidebarSeatContent(): React.ReactNode {
     query,
     flagsOf: (id) => {
       const stream = store.peekStream(id);
-      return stream === undefined ? undefined : { running: stream.running, unread: stream.unread };
+      // Z2-09b（场景④）：待审批数上左栏行（attention 徽标数据源；无流 = 0，不渲染徽标）
+      return stream === undefined
+        ? undefined
+        : { running: stream.running, unread: stream.unread, pendingApprovals: stream.approvals.length };
     },
   });
 

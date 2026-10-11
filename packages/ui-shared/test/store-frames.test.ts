@@ -195,3 +195,70 @@ describe('store：取消三态与提交幂等（unknown ≠ rejected）', () => 
     expect(store.streamIds()).toEqual([]);
   });
 });
+
+describe('store：恢复条数据源（Z2-09b：resume-snapshot 在途计数）', () => {
+  const snapshotFrame = (epoch: number) => ({
+    type: 'resume-snapshot' as const,
+    sessionId: 'a',
+    epoch,
+    snapshot: {
+      epoch,
+      replay: { fromSeq: 0, toSeq: 5 },
+      activeAttempt: {
+        attemptId: 'at1',
+        turnId: 't1',
+        textChunkOffset: 0,
+        reasoningChunkOffset: 0,
+        status: 'running' as const,
+      },
+      tasks: [
+        { taskId: 'k1', background: true, state: 'running' as const },
+        { taskId: 'k2', background: true, state: 'completed' as const },
+      ],
+      pendingApprovals: [
+        {
+          requestId: 'r1',
+          sessionId: 'a',
+          tool: 'bash',
+          args: {},
+          scope: { mode: 'once' } as const,
+          expiresAt: '2026-01-01T00:00:00Z',
+        },
+      ],
+      queue: [{ id: 'cm-1', revision: 0, rawText: 'x', intent: 'queue' as const, state: 'queued' as const }],
+    },
+  });
+
+  it('快照到达：resume 记录回放区间 + 到达时刻 + 在途计数（attempt 1 + 非终态任务 1 + 待批 1 = 3）', () => {
+    const store = new AppStore();
+    const before = Date.now();
+    store.applyFrame(snapshotFrame(3));
+    const resume = store.peekStream('a')?.resume;
+    expect(resume).toBeDefined();
+    expect(resume?.fromSeq).toBe(0);
+    expect(resume?.toSeq).toBe(5);
+    expect(resume?.inflight).toBe(3);
+    expect((resume?.at ?? 0) >= before).toBe(true);
+    // 快照即权威：在途 attempt → running（既有 PD2 语义不回归）
+    expect(store.peekStream('a')?.running).toBe(true);
+  });
+
+  it('旧 epoch 快照丢弃（resume 不被陈旧代次改写）', () => {
+    const store = new AppStore();
+    store.applyFrame(snapshotFrame(5));
+    store.applyFrame(snapshotFrame(2));
+    expect(store.peekStream('a')?.epoch).toBe(5);
+    expect(store.peekStream('a')?.resume?.inflight).toBe(3);
+  });
+
+  it('无在途快照：inflight = 0（恢复条不出现的数据面依据）', () => {
+    const store = new AppStore();
+    store.applyFrame({
+      type: 'resume-snapshot',
+      sessionId: 'a',
+      epoch: 1,
+      snapshot: { epoch: 1, replay: { fromSeq: 0, toSeq: 0 }, tasks: [], pendingApprovals: [], queue: [] },
+    });
+    expect(store.peekStream('a')?.resume?.inflight).toBe(0);
+  });
+});

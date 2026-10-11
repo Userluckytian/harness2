@@ -43,6 +43,7 @@ import {
   type SessionMetadataEntry,
   type SessionMetadataMap,
 } from '../shared/metadata.js';
+import { resumeInflightCount } from './conversation/resume-model.js';
 
 export interface SessionMeta {
   id: string;
@@ -103,8 +104,8 @@ export interface SessionStream {
   tasks: TaskContractShape[];
   /** 连接代次（resume-subscription 携带；旧 epoch 快照丢弃） */
   epoch: number;
-  /** 最近一次重订阅快照的回放区间 */
-  resume?: { fromSeq: number; toSeq: number; at: number };
+  /** 最近一次重订阅快照的回放区间与在途计数（inflight = 快照计得的在途任务/审批条数，恢复条数据源） */
+  resume?: { fromSeq: number; toSeq: number; at: number; inflight: number };
   /** 重连快照里的在途 attempt（D4 据此展示「仍在跑」而非永久 loading） */
   activeAttempt?: AttemptSnapshotShape;
   /** 分叉来源（forked 帧；原会话不变） */
@@ -699,7 +700,13 @@ export class AppStore {
     if (frame.epoch < stream.epoch) return; // 旧连接代次：丢弃
     stream.epoch = frame.epoch;
     const snap = frame.snapshot;
-    stream.resume = { fromSeq: snap.replay.fromSeq, toSeq: snap.replay.toSeq, at: Date.now() };
+    // Z2-09b：恢复条计数在快照到达时刻从快照形状真实字段计得（不随流后续变化漂移）
+    stream.resume = {
+      fromSeq: snap.replay.fromSeq,
+      toSeq: snap.replay.toSeq,
+      at: Date.now(),
+      inflight: resumeInflightCount(snap),
+    };
     stream.tasks = snap.tasks;
     stream.queue = snap.queue;
     stream.activeAttempt = snap.activeAttempt;
