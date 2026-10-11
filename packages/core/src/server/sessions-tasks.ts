@@ -1,7 +1,7 @@
 // SessionHub 任务协调（A4 拆分自 sessions.ts，纯搬运）：后台任务注册、submit/cancel 接线、
 // queue 派发、任务归属 journal 记录。
 import type { TaskSpec, TaskTransitionRecorder } from '../agent/task-coordinator.js';
-import { continueQueue, submitDelivery } from '../interaction/delivery.js';
+import { continueQueue, dispatchQueueItem, submitDelivery } from '../interaction/delivery.js';
 import {
   type CancelAck,
   type CancelRequest,
@@ -130,22 +130,24 @@ export abstract class SessionHubTasks extends SessionHubResume {
   }
 
   /** queue 启动：把 durable accepted 项按顺序送进既有 turn 启动路径（sendUserMessage → runTurn）。
-   *   已 paused（重启恢复）/ 已派发（dispatched 水位）项跳过；不写第二套正文，turn 启动仍由
-   *   session.log 投影驱动（事件溯源不破坏）。 */
+   *   派发**成功**即从活队列出队（queue = 「待执行」活队列；journal 恢复账本不动）；paused
+   *   （重启恢复）项不在派发范围内，保留到显式放行（continueQueue）。
+   *   幂等：已出队项不再被遍历；派发失败项留在队列（不误出队），幂等键保留、下次重试收敛。
+   *   不写第二套正文，turn 启动仍由 session.log 投影驱动（事件溯源不破坏）。 */
   protected dispatchQueued(sessionId: string): void {
     const hd = this.deliveries.get(sessionId);
     if (hd === undefined) return;
-    const start = this.dispatched.get(sessionId) ?? 0;
-    for (let i = start; i < hd.session.queue.length; i++) {
-      const item = hd.session.queue[i]!;
-      if (item.state !== 'queued') continue;
-      if (item.rawText.trim().length === 0) continue; // 空正文不派发（恢复项 paused 不会走到）
-      this.dispatched.set(sessionId, i + 1);
+    // 快照待派发项：派发成功即出队会 splice queue，边遍历边改长度不可靠（会漏派后续项）
+    const pending = hd.session.queue.filter((q) => q.state === 'queued' && q.rawText.trim().length > 0);
+    for (const item of pending) {
       try {
         this.sendUserMessage(sessionId, item.rawText);
       } catch {
-        // 派发失败（如会话被其他进程锁定）不阻断 ack；幂等键保留，客户端重试经 judgeSubmission 收敛
+        // 派发失败（如会话被其他进程锁定）不阻断 ack；项留在活队列（不误出队），
+        // 幂等键保留，客户端重试/下次 dispatch 经 judgeSubmission 收敛
+        continue;
       }
+      dispatchQueueItem(hd.session, item.id);
     }
   }
 

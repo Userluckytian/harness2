@@ -141,8 +141,6 @@ export abstract class SessionHubCore {
   protected readonly subagentNameConflictsWarned = new Set<string>();
   /** S3c2：每会话 delivery（journal 单写 + queue；journal 在会话目录 runtime.v1.jsonl） */
   protected readonly deliveries = new Map<string, HubDelivery>();
-  /** 已被派发进 turn 管线的 queue 下标（防 submit 幂等回执重复派发） */
-  protected readonly dispatched = new Map<string, number>();
   /** 运行中 turn 的展示投影身份（real turnId 来自 loop；attemptId 由 hub 按 turn 合成） */
   protected readonly turnDisplay = new Map<
     string,

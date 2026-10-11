@@ -370,7 +370,7 @@ describe('旧客户端兼容（帧形状不变）', () => {
 });
 
 describe('S3c2：submit 幂等接线（durable-then-ack + 按序派发不重复）', () => {
-  it('同 id 同内容 → receipt 复用不重复派发；同 id 不同内容 → rejected', async () => {
+  it('同 id 重复提交 → receipt 复用不重复派发；派发后活队列出队（D3）', async () => {
     const handle = await startServe({
       requireToken: false,
       port: 0,
@@ -393,24 +393,34 @@ describe('S3c2：submit 幂等接线（durable-then-ack + 按序派发不重复�
     // 等首个 turn 落定
     await client.waitFor((f) => f.type === 'turn-end', 'turn-end');
     // 同 id 同内容 → receipt 复用（仍 accepted，不再派发新 turn）
+    const at1 = client.frames.length;
     client.send({ op: 'submit', clientMessageId: 'cm-1', sessionId: id, rawText: '同一个动作', intent: 'queue' });
-    // 同 id 不同内容 → rejected（幂等键冲突，不登记）
+    const a2 = await client.waitFor(
+      (f) => f.type === 'submit-ack' && f.clientMessageId === 'cm-1',
+      'accepted 复用',
+      at1,
+    );
+    expect(a2.type === 'submit-ack' && a2.state).toBe('accepted');
+    expect(a2.type === 'submit-ack' && a2.queueSeq).toBe(0);
+    // 同 id 不同内容（派发后）：D3 起该项已出活队列，durable journal 只记操作状态不存正文，
+    // 无法再判内容差异 → 幂等以 id 为准同样返回 receipt 复用（绝不重复派发；内容冲突防护仅
+    // 作用于「仍在活队列」的未派发项）。
+    const at2 = client.frames.length;
     client.send({ op: 'submit', clientMessageId: 'cm-1', sessionId: id, rawText: '换个说法', intent: 'queue' });
-    const rj = await client.waitFor((f) => f.type === 'submit-ack' && f.state === 'rejected', 'rejected');
-    expect(rj.type === 'submit-ack' && rj.reason).toContain('duplicate');
+    const a3 = await client.waitFor(
+      (f) => f.type === 'submit-ack' && f.clientMessageId === 'cm-1',
+      'accepted 复用（不同内容）',
+      at2,
+    );
+    expect(a3.type === 'submit-ack' && a3.state).toBe('accepted');
     await sleep(400);
-    // 全程只有 1 个 turn（重复提交未产生第二条执行）
+    // 全程只有 1 个 turn（重复提交未产生第二条执行）——幂等安全的核心断言
     const turnEnds = client.frames.filter((f) => f.type === 'turn-end').length;
     expect(turnEnds).toBe(1);
-    // resume-snapshot queue 只有一项（幂等键未被重复登记）
+    // D3：派发后活队列已出队（不再常驻「排队」幽灵条目）；durable journal 恢复账本保留
     client.send({ op: 'resume-subscription', sessionId: id, lastSeq: 0, epoch: 2 });
     const snap = await client.waitFor((f) => f.type === 'resume-snapshot', 'resume-snapshot');
-    expect(snap.type === 'resume-snapshot' && snap.snapshot.queue.length).toBe(1);
-    expect(snap.type === 'resume-snapshot' && snap.snapshot.queue[0]).toMatchObject({
-      id: 'cm-1',
-      state: 'queued',
-      intent: 'queue',
-    });
+    expect(snap.type === 'resume-snapshot' && snap.snapshot.queue).toHaveLength(0);
     client.close();
   });
 });

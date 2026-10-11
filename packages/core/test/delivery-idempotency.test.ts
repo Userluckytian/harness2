@@ -12,6 +12,8 @@ import { QUEUE_MAX_DEFAULT } from '../src/interaction/types.js';
 import { RUNTIME_JOURNAL_FILE, RuntimeJournal } from '../src/interaction/runtime-journal.js';
 import {
   createDeliverySession,
+  deliveryHasSlot,
+  dispatchQueueItem,
   editQueueItem,
   recoverQueue,
   removeQueueItem,
@@ -175,6 +177,62 @@ describe('queue 上限（QUEUE_MAX_DEFAULT=20）', () => {
     expect(submitDelivery(s, req({ clientMessageId: 'a', sessionId: 's1', rawText: 'a' })).state).toBe('accepted');
     expect(submitDelivery(s, req({ clientMessageId: 'b', sessionId: 's1', rawText: 'b' })).state).toBe('accepted');
     expect(submitDelivery(s, req({ clientMessageId: 'c', sessionId: 's1', rawText: 'c' })).state).toBe('rejected');
+    journal.close();
+  });
+});
+
+describe('D3 派发即出队（dispatchQueueItem）', () => {
+  it('移除 queued 项并清指纹：该项从活队列消失，重复调用幂等返回 false 且不报错', () => {
+    const dir = tmpDir();
+    const journal = RuntimeJournal.create(dir, { fsync: false });
+    const s = createDeliverySession(journal, 's1');
+    submitDelivery(s, req({ clientMessageId: 'cm1', sessionId: 's1', rawText: 'v1' }));
+    expect(s.queue.some((q) => q.id === 'cm1')).toBe(true);
+    expect(s.contentKeys.has('cm1')).toBe(true);
+
+    expect(dispatchQueueItem(s, 'cm1')).toBe(true);
+    expect(s.queue.some((q) => q.id === 'cm1')).toBe(false);
+    expect(s.contentKeys.has('cm1')).toBe(false);
+    // 幂等：重复派发 / 未知 id 不抛错、不误删
+    expect(dispatchQueueItem(s, 'cm1')).toBe(false);
+    expect(dispatchQueueItem(s, 'never-existed')).toBe(false);
+    expect(s.queue).toHaveLength(0);
+    journal.close();
+  });
+
+  it('paused（重启恢复）项不被自动出队：dispatchQueueItem 返回 false 且保留', () => {
+    const dir = tmpDir();
+    const journal = RuntimeJournal.create(dir, { fsync: false });
+    const s = createDeliverySession(journal, 's1');
+    s.queue.push({ id: 'cm-paused', revision: 1, rawText: '恢复项', intent: 'queue', state: 'paused' });
+    expect(dispatchQueueItem(s, 'cm-paused')).toBe(false);
+    expect(s.queue.some((q) => q.id === 'cm-paused' && q.state === 'paused')).toBe(true);
+    journal.close();
+  });
+
+  it('出队释放槽位：maxQueue=1 时派发后可再受理新 submit（deliveryHasSlot 口径一致）', () => {
+    const dir = tmpDir();
+    const journal = RuntimeJournal.create(dir, { fsync: false });
+    const s = createDeliverySession(journal, 's1', { maxQueue: 1 });
+    expect(submitDelivery(s, req({ clientMessageId: 'a', sessionId: 's1', rawText: 'a' })).state).toBe('accepted');
+    expect(deliveryHasSlot(s)).toBe(false);
+    expect(submitDelivery(s, req({ clientMessageId: 'b', sessionId: 's1', rawText: 'b' })).state).toBe('rejected');
+    // 派发 a 出队 → 槽位释放
+    expect(dispatchQueueItem(s, 'a')).toBe(true);
+    expect(deliveryHasSlot(s)).toBe(true);
+    expect(submitDelivery(s, req({ clientMessageId: 'c', sessionId: 's1', rawText: 'c' })).state).toBe('accepted');
+    journal.close();
+  });
+
+  it('并发提交不错删：只移除指定项，其余 queued 项原样保留', () => {
+    const dir = tmpDir();
+    const journal = RuntimeJournal.create(dir, { fsync: false });
+    const s = createDeliverySession(journal, 's1');
+    for (const id of ['a', 'b', 'c']) {
+      submitDelivery(s, req({ clientMessageId: id, sessionId: 's1', rawText: id }));
+    }
+    expect(dispatchQueueItem(s, 'b')).toBe(true);
+    expect(s.queue.map((q) => q.id)).toEqual(['a', 'c']);
     journal.close();
   });
 });

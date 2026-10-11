@@ -183,6 +183,24 @@ export function submitDelivery(s: DeliverySession, req: SubmitRequest): SubmitAc
 
 // —— queue 编辑 / 移除（未启动项可按 id+revision edit/remove；每次变更 revision+1） ——
 
+/**
+ * 派发成功后的显式出队（D3）：把已送进 turn 管线的 `queued` 项移出**活队列**。
+ * 语义：queue = 「待执行」活队列；提交被派发进 turn（开始执行）后即不再排队。
+ * - 只动 `state==='queued'`：`paused`（重启恢复）项**不得**被自动出队（须显式放行，既有语义）；
+ * - 幂等：未找到 / 已出队 / 非 queued → 返回 false，不抛错、不误删他人条目；
+ * - 不写 journal：`queue/accepted` 是 durable 恢复账本，出队只改活队列（账本保留不动）。
+ * 由派发方（hub 的 dispatchQueued）在 `sendUserMessage` 成功时点调用。
+ */
+export function dispatchQueueItem(s: DeliverySession, clientMessageId: ClientMessageId): boolean {
+  const idx = s.queue.findIndex((q) => q.id === clientMessageId);
+  if (idx < 0) return false; // 已出队 / 不存在：幂等 no-op
+  const item = s.queue[idx]!;
+  if (item.state !== 'queued') return false; // paused 恢复项保留（不自动出队）
+  s.queue.splice(idx, 1);
+  s.contentKeys.delete(clientMessageId);
+  return true;
+}
+
 export interface QueueEditResult {
   ok: boolean;
   reason?: string;
