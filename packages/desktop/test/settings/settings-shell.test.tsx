@@ -1,61 +1,68 @@
-// 设置壳测试（P6-C / D-6x）：分区导航、按需挂载、内容槽、分区 id 重复守门、
-// 分区排序（order 升序）与能力模块贡献注入（同 id 接管）。
+// 设置壳测试（Z5 / Z-88 全屏设置页）：分组导航、按需挂载、内容槽、分区 id 重复守门、
+// 分区排序（order 升序）与分区分组（Z-89 数据驱动）、返回按钮关页、能力模块贡献注入（同 id 接管）。
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import React from 'react';
 import {
   MODELS_SECTION_ID,
+  SETTINGS_SECTION_GROUPS,
   SettingsShell,
   SettingsShellError,
   findSettingsSection,
+  groupSections,
   registerSettingsSection,
   resetSettingsSections,
   sectionFromContribution,
   sortSections,
 } from '../../src/renderer/settings/shell/index.js';
-import type { SettingsSectionDefinition } from '../../src/renderer/settings/shell/index.js';
+import type { SettingsSectionDefinition, SettingsSectionGroupId } from '../../src/renderer/settings/shell/index.js';
 
 afterEach(() => {
   cleanup();
   resetSettingsSections();
 });
 
-function section(id: string, label: string, order?: number, body = id): SettingsSectionDefinition {
+function section(
+  id: string,
+  label: string,
+  order?: number,
+  body = id,
+  group?: SettingsSectionGroupId,
+): SettingsSectionDefinition {
   return {
     id,
     label,
     en: id.toUpperCase(),
     owner: `ui-test-${id}`,
+    ...(group !== undefined ? { group } : {}),
     ...(order !== undefined ? { order } : {}),
     render: () => <div data-testid={`body-${id}`}>{body}</div>,
   };
 }
 
-describe('设置壳：分区导航与内容槽', () => {
-  it('导航按 order 升序渲染；只有激活分区被挂载（按需挂载）', () => {
-    render(<SettingsShell open onClose={() => {}} sections={[section('b', '乙', 20), section('a', '甲', 10)]} />);
-    const navs = [...document.querySelectorAll('[data-section-nav]')].map((n) => n.getAttribute('data-section-nav'));
-    expect(navs).toEqual(['a', 'b']);
-    // 默认激活第一个分区（order 最小）
-    expect(screen.getByTestId('body-a')).toBeTruthy();
-    expect(screen.queryByTestId('body-b')).toBeNull();
-    // data-section 如实标注当前分区与归属
-    const slot = document.querySelector('[data-section]');
-    expect(slot?.getAttribute('data-section')).toBe('a');
-    expect(slot?.getAttribute('data-section-owner')).toBe('ui-test-a');
+describe('设置壳（Z-88）：全屏页骨架', () => {
+  it('返回按钮（返回工作区）回调 onClose；页面以 dialog 语义承载在 fixed 全屏层', () => {
+    const onClose = vi.fn();
+    const { container } = render(<SettingsShell open onClose={onClose} sections={[section('a', '甲', 10)]} />);
+    const page = container.querySelector('[data-settings-page]');
+    expect(page).not.toBeNull();
+    expect(screen.getByRole('dialog', { name: '设置' })).toBeTruthy();
+    // 根类含 fixed inset-0（全屏层，承载在既有 overlay 席位）
+    expect(page?.className).toContain('fixed');
+    expect(page?.className).toContain('inset-0');
+    fireEvent.click(screen.getByRole('button', { name: '返回工作区' }));
+    expect(onClose).toHaveBeenCalledTimes(1);
   });
 
-  it('点击导航切换分区：旧分区卸载、新分区挂载', () => {
-    render(<SettingsShell open onClose={() => {}} sections={[section('a', '甲', 10), section('b', '乙', 20)]} />);
-    fireEvent.click(screen.getByText('乙'));
-    expect(screen.getByTestId('body-b')).toBeTruthy();
-    expect(screen.queryByTestId('body-a')).toBeNull();
-    expect(document.querySelector('[data-section]')?.getAttribute('data-section')).toBe('b');
-  });
-
-  it('defaultSectionId 指定初始分区；关闭态不渲染任何内容', () => {
-    const view = render(
+  it('关闭态不渲染任何内容；defaultSectionId 指定初始分区（Z3-04 直达通道不变）', () => {
+    const closed = render(
+      <SettingsShell open={false} onClose={() => {}} sections={[section('a', '甲', 10), section('b', '乙', 20)]} />,
+    );
+    expect(screen.queryByRole('dialog')).toBeNull();
+    closed.unmount();
+    // 直达分区在挂载时采纳（宿主以 key 重挂载让壳落 defaultSectionId；D-14：激活分区只内存）
+    render(
       <SettingsShell
         open
         onClose={() => {}}
@@ -64,23 +71,64 @@ describe('设置壳：分区导航与内容槽', () => {
       />,
     );
     expect(screen.getByTestId('body-b')).toBeTruthy();
-    view.rerender(
-      <SettingsShell open={false} onClose={() => {}} sections={[section('a', '甲', 10), section('b', '乙', 20)]} />,
-    );
-    expect(screen.queryByRole('dialog')).toBeNull();
   });
 
-  it('关闭按钮回调；弹窗内点击不冒泡关闭', () => {
-    const onClose = vi.fn();
-    render(<SettingsShell open onClose={onClose} sections={[section('a', '甲')]} />);
-    fireEvent.click(screen.getByRole('button', { name: '关闭' }));
-    expect(onClose).toHaveBeenCalledTimes(1);
+  it('分组导航按组（Z-89 三组）×组内 order 渲染；组标题与 data-settings-group 齐备', () => {
+    render(
+      <SettingsShell
+        open
+        onClose={() => {}}
+        sections={[
+          section('s-stats', '数据', 200, 'x', 'dataAndStats'),
+          section('s-agent', '能力', 100, 'x', 'agentCapabilities'),
+          section('s-basic', '基础', 0, 'x', 'basics'),
+        ]}
+      />,
+    );
+    const navs = [...document.querySelectorAll('[data-section-nav]')].map((n) => n.getAttribute('data-section-nav'));
+    expect(navs).toEqual(['s-basic', 's-agent', 's-stats']);
+    const groupIds = [...document.querySelectorAll('[data-settings-nav-group]')].map((n) =>
+      n.getAttribute('data-settings-nav-group'),
+    );
+    expect(groupIds).toEqual(['basics', 'agentCapabilities', 'dataAndStats']);
+    const labels = [...document.querySelectorAll('[data-settings-group-label]')].map((n) => n.textContent);
+    expect(labels).toEqual(SETTINGS_SECTION_GROUPS.map((g) => g.label));
+  });
 
-    cleanup();
-    const onClose2 = vi.fn();
-    render(<SettingsShell open onClose={onClose2} sections={[section('a', '甲')]} />);
-    fireEvent.click(screen.getByRole('dialog'));
-    expect(onClose2).not.toHaveBeenCalled(); // 弹窗内点击不冒泡关闭
+  it('点击导航切换分区：旧分区卸载、新分区挂载；激活项 bg-surface-hover（Z-88）', () => {
+    render(
+      <SettingsShell
+        open
+        onClose={() => {}}
+        sections={[section('a', '甲', 10, 'x', 'basics'), section('b', '乙', 20, 'x', 'basics')]}
+      />,
+    );
+    expect(screen.getByTestId('body-a')).toBeTruthy();
+    const navA = document.querySelector('[data-section-nav="a"]') as HTMLElement;
+    expect(navA.className).toContain('bg-surface-hover');
+    fireEvent.click(document.querySelector('[data-section-nav="b"]') as HTMLElement);
+    expect(screen.getByTestId('body-b')).toBeTruthy();
+    expect(screen.queryByTestId('body-a')).toBeNull();
+    expect(document.querySelector('[data-section]')?.getAttribute('data-section')).toBe('b');
+    expect((document.querySelector('[data-section-nav="b"]') as HTMLElement).className).toContain('bg-surface-hover');
+  });
+
+  it('右栏：48px 面包屑行（组标题/分区名）+ 内容列 max-w-4xl + h2 区块标题', () => {
+    render(<SettingsShell open onClose={() => {}} sections={[section('a', '甲', 10, 'x', 'agentCapabilities')]} />);
+    const crumb = document.querySelector('[data-settings-breadcrumb]');
+    expect(crumb?.textContent).toContain('Agent 能力');
+    expect(crumb?.textContent).toContain('甲');
+    expect(crumb?.className).toContain('h-12');
+    const body = document.querySelector('[data-settings-body]');
+    expect(body?.className).toContain('overflow-y-auto');
+    const column = body?.firstChild as HTMLElement;
+    expect(column.className).toContain('max-w-4xl');
+    expect(screen.getByRole('heading', { level: 2, name: '甲' })).toBeTruthy();
+  });
+
+  it('页脚（宿主注入版本号）渲染在左栏底部', () => {
+    render(<SettingsShell open onClose={() => {}} sections={[section('a', '甲')]} footer={<span>v1.0.0</span>} />);
+    expect(document.querySelector('[data-settings-footer]')?.textContent).toBe('v1.0.0');
   });
 
   it('分区 id 重复 → 抛 SettingsShellError（两套并存守门）', () => {
@@ -94,6 +142,17 @@ describe('设置壳：分区导航与内容槽', () => {
     const sorted = sortSections(input);
     expect(sorted.map((s) => s.id)).toEqual(['a', 'c', 'b']);
     expect(input.map((s) => s.id)).toEqual(['c', 'a', 'b']); // 入参原样
+  });
+
+  it('groupSections：未声明 group 的分区垫底成未组视图（组内仍按 order）', () => {
+    const views = groupSections([
+      section('u', '无组'),
+      section('b2', '乙', 20, 'x', 'basics'),
+      section('b1', '甲', 10, 'x', 'basics'),
+    ]);
+    expect(views.map((v) => v.group?.id)).toEqual(['basics', undefined]);
+    expect(views[0]?.sections.map((s) => s.id)).toEqual(['b1', 'b2']);
+    expect(views[1]?.sections.map((s) => s.id)).toEqual(['u']);
   });
 });
 

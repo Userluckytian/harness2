@@ -19,14 +19,20 @@ function walk(dir: string): string[] {
 }
 
 describe('面板几何不持久化（D-14）', () => {
-  it('渲染端源码不出现 localStorage / sessionStorage / indexedDB（Z1-05 主题镜像豁免）', () => {
+  it('渲染端源码不出现 localStorage / sessionStorage / indexedDB（Z1-05 主题镜像 + Z-90 字号镜像豁免）', () => {
     const hits: string[] = [];
     for (const file of walk(rendererDir)) {
       const text = readFileSync(file, 'utf8');
       if (!/localStorage|sessionStorage|indexedDB/.test(text)) continue;
-      // Z1-05：主题偏好镜像 localStorage['harness2-theme'] 是唯一允许的浏览器存储用途（首屏防闪）。
-      // 豁免仅限 theme.ts 且不得同时使用 sessionStorage / indexedDB；其余文件仍一律拦截。
-      if (file.endsWith(join('renderer', 'theme.ts')) && !/sessionStorage|indexedDB/.test(text)) continue;
+      // Z1-05：主题偏好镜像 localStorage['harness2-theme'] 是例外 #1（首屏防闪；
+      // theme-boot.js 需在 React 首渲染前同步读到偏好，settings:* IPC 异步不可得）。
+      // Z-90：界面字号镜像 localStorage['harness2-font-size'] 是例外 #2，理由同主题
+      // （防首帧字号跳变；同一 boot 通道），豁免仅限 renderer/ui-font-size.ts。
+      // 两处豁免都不得同时使用 sessionStorage / indexedDB；其余文件仍一律拦截。
+      const exempt =
+        (file.endsWith(join('renderer', 'theme.ts')) || file.endsWith(join('renderer', 'ui-font-size.ts'))) &&
+        !/sessionStorage|indexedDB/.test(text);
+      if (exempt) continue;
       hits.push(file);
     }
     expect(hits).toEqual([]);

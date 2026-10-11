@@ -1,15 +1,17 @@
-// 设置弹窗（B2；P6-C 重构为**设置壳 + 分区装配**）。
+// 设置页（Z5「设置页」；B2 → P6-C → Z-88 演进：弹窗 → **全屏设置页**）。
 //
-// 结构（D-6x「ui-settings-general（设置壳与通用设置）」对应物）：
-//   壳与内容槽 → `renderer/settings/shell`（分区导航 + 按需挂载 + 能力模块注入面）；
-//   通用设置   → `renderer/settings/general`（主题真生效 / 通知详情 / 快捷键说明）；
-//   模型配置   → B 棒 `ui-settings-models`（按 props 契约接 `ModelsSettings`；未落地时**显式占位 +
-//               过渡面板**，不造假实现）；
+// 结构（Z-88/Z-89/Z-90 对应物）：
+//   壳与内容槽 → `renderer/settings/shell`（全屏页骨架 + 分组导航 + 按需挂载 + 能力模块注入面）；
+//   分区配置表 → `renderer/settings/page-config`（Z-89 数据驱动：只有真实数据的分区才进表）；
+//   常规设置   → `renderer/settings/general`（通知详情 / 快捷键说明；主题已迁外观分区）；
+//   外观设置   → `renderer/settings/appearance`（Z-90：主题 Select + 界面字号）；
+//   模型配置   → `ui-settings-models`（按 props 契约接 `ModelsSettings`；未落地时显式占位 + 过渡面板）；
 //   凭据等既有分区 → 本文件内（配置读写仍走既有 settings:* IPC，与 CLI 共用 config.json / auth.json）。
 //
 // 数据读取一律经 window.harness2 的 settings:* IPC（渲染进程零 Node，不碰文件系统）。
 // 主题呈现：选择经宿主 `onThemeChange`（装配层 = P4 的 setShellTheme）→ 立即写 D-15 四要素，再持久化偏好；
-// 本文件不自己碰 DOM、不自己碰壳 store（边界：分区内容只经 props 与宿主交互）。
+// 字号呈现：提交经 applyUiFontSize（写根 --ui-font-size + 例外 #2 持久化），见 renderer/ui-font-size.ts。
+// 本文件不自己碰 DOM（字号/主题的 DOM 写入都在各自运行时模块）、不自己碰壳 store。
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import type {
   SettingsAuthMaskedShape,
@@ -21,17 +23,19 @@ import type {
   SettingsPreferencesShape,
   SettingsTheme,
 } from '../../shared/protocol.js';
+import { applyUiFontSize, currentUiFontSize } from '../ui-font-size.js';
 import { useShellTheme } from '../layout/shell-theme.js';
+import { AppearanceSettings } from '../settings/appearance/index.js';
 import { GeneralSettings } from '../settings/general/index.js';
 import {
   MODELS_SECTION_ID,
-  MODELS_SETTINGS_OWNER,
   SettingsSectionBlock,
   SettingsShell,
   findSettingsSection,
   type ModelsSettingsProps,
   type SettingsSectionDefinition,
 } from '../settings/shell/index.js';
+import { SETTINGS_SECTION_META } from '../settings/page-config.js';
 
 const APPROVAL_MODES = [
   { value: 'default', label: '每次执行前询问', desc: 'default：安全工具自动执行，有副作用工具先询问' },
@@ -55,6 +59,9 @@ const GATEWAY_POLICIES = [
   { value: 'allowlist', label: '白名单' },
   { value: 'disabled', label: '禁用' },
 ];
+
+/** 版本号（About 分区与左栏页脚共用同一事实；ZCode 页脚是账号菜单，我们无账号体系） */
+const APP_VERSION_LABEL = 'v1.0.0';
 
 // —— 分区：模型配置（B 棒接管前） ——
 
@@ -641,7 +648,7 @@ function AboutSection(): React.ReactNode {
       <div className="settings-table">
         <div className="settings-table-row">
           <span className="row-key">版本</span>
-          <span className="row-val">v1.0.0</span>
+          <span className="row-val">{APP_VERSION_LABEL}</span>
         </div>
         <div className="settings-table-row">
           <span className="row-key">内核</span>
@@ -664,9 +671,9 @@ function LoadingPane(): React.ReactNode {
   return <div className="settings-desc">加载中…</div>;
 }
 
-// —— 主弹窗（组合根） ——
+// —— 主页面（组合根） ——
 
-export function SettingsDialog({
+export function SettingsPage({
   open,
   onClose,
   onThemeChange,
@@ -685,6 +692,9 @@ export function SettingsDialog({
   const [cfg, setCfg] = useState<SettingsConfigShape | null>(null);
   const [auth, setAuth] = useState<SettingsAuthMaskedShape | null>(null);
   const [prefsNote, setPrefsNote] = useState<string | null>(null);
+  // 界面字号真源（Z-90）：ui-font-size 运行时（浏览器存储键例外 #2 + 根变量）；
+  // 设置页只是「读当前值 + 报提交」，DOM/存储写入都在 ui-font-size.ts。
+  const [uiFontSize, setUiFontSize] = useState<number>(() => currentUiFontSize());
   // 当前主题来自壳主题 store（P4/D-15 的真源），不另存一份易漂移的副本
   const theme = useShellTheme();
 
@@ -727,6 +737,11 @@ export function SettingsDialog({
     savePrefsPatch({ theme: t });
   };
 
+  /** 界面字号提交（Z-90）：写根变量 + 例外 #2 持久化，受控回显 */
+  const commitUiFontSize = (px: number): void => {
+    setUiFontSize(applyUiFontSize(px));
+  };
+
   const selectNotifyDetails = (d: SettingsNotifyDetails): void => {
     savePrefsPatch({ notifyDetails: d });
   };
@@ -747,7 +762,13 @@ export function SettingsDialog({
   // 未注册 → 显式占位 + 过渡面板（不 import 不存在的路径，不造假实现）。
   const modelsContribution = findSettingsSection(MODELS_SECTION_ID);
 
+  // 分区装配：配置表（page-config，数据驱动）提供 id/label/en/group/order/icon；
+  // 本装配层只补 render 闭包（内容组件不改内部实现，只换组织）。
   const sections: readonly SettingsSectionDefinition[] = useMemo(() => {
+    const ownerById: Record<string, string> = {
+      general: 'ui-settings-general',
+      appearance: 'ui-settings-appearance',
+    };
     const ModelsComponent = modelsContribution?.component;
     const modelsProps: ModelsSettingsProps = {
       active: true,
@@ -755,128 +776,116 @@ export function SettingsDialog({
       onSaveConfig: saveCfg,
       ...(modelsContribution?.props ?? {}),
     };
-    return [
-      {
-        id: 'general',
-        label: '通用',
-        en: 'General',
-        owner: 'ui-settings-general',
-        order: 0,
-        render: () => (
-          <GeneralSettings
-            theme={theme}
-            onSelectTheme={selectTheme}
-            notifyDetails={prefs?.notifyDetails ?? 'minimal'}
-            onSelectNotifyDetails={selectNotifyDetails}
-            loaded={prefs !== null}
-            note={prefsNote}
-          />
-        ),
-      },
-      {
-        id: MODELS_SECTION_ID,
-        label: '模型配置',
-        en: 'Models',
-        owner: modelsContribution?.owner ?? MODELS_SETTINGS_OWNER,
-        order: 10,
-        render: () =>
-          ModelsComponent !== undefined ? (
-            <ModelsComponent {...modelsProps} />
-          ) : cfg !== null ? (
-            <ModelsTransitionSection cfg={cfg} onSave={saveCfg} />
-          ) : (
-            <LoadingPane />
-          ),
-      },
-      {
-        id: 'credentials',
-        label: '凭据',
-        en: 'Credentials',
-        owner: 'ui-settings',
-        order: 20,
-        render: () =>
-          cfg !== null && auth !== null ? (
-            <CredentialsSection cfg={cfg} auth={auth} onSaveCfg={saveCfg} onSaveAuth={saveAuth} />
-          ) : (
-            <LoadingPane />
-          ),
-      },
-      {
-        id: 'approval',
-        label: '审批与安全',
-        en: 'Approval & Security',
-        owner: 'ui-settings',
-        order: 30,
-        render: () => (cfg !== null ? <ApprovalSettingsSection cfg={cfg} onSave={saveCfg} /> : <LoadingPane />),
-      },
-      {
-        id: 'memory',
-        label: '记忆',
-        en: 'Memory',
-        owner: 'ui-settings',
-        order: 40,
-        render: () => (cfg !== null ? <MemorySection cfg={cfg} onSave={saveCfg} /> : <LoadingPane />),
-      },
-      {
-        id: 'browser',
-        label: '浏览器工具',
-        en: 'Browser',
-        owner: 'ui-settings',
-        order: 50,
-        render: () => (cfg !== null ? <BrowserSection cfg={cfg} onSave={saveCfg} /> : <LoadingPane />),
-      },
-      { id: 'cron', label: '定时任务', en: 'Cron', owner: 'ui-settings', order: 60, render: () => <CronSection /> },
-      {
-        id: 'plugins',
-        label: '插件与集成',
-        en: 'Plugins & MCP',
-        owner: 'ui-settings',
-        order: 70,
-        render: () => (cfg !== null ? <PluginsSection cfg={cfg} /> : <LoadingPane />),
-      },
-      {
-        id: 'subagent',
-        label: '子代理',
-        en: 'Subagent',
-        owner: 'ui-settings',
-        order: 80,
-        render: () => (cfg !== null ? <SubagentSection cfg={cfg} onSave={saveCfg} /> : <LoadingPane />),
-      },
-      {
-        id: 'sessions',
-        label: '会话与数据',
-        en: 'Sessions & Data',
-        owner: 'ui-settings',
-        order: 90,
-        render: () => <SessionsSection />,
-      },
-      {
-        id: 'diagnostics',
-        label: '诊断',
-        en: 'Diagnostics',
-        owner: 'ui-settings',
-        order: 100,
-        render: () => <DiagnosticsSection />,
-      },
-      {
-        id: 'shortcuts',
-        label: '快捷键',
-        en: 'Keyboard Shortcuts',
-        owner: 'ui-settings',
-        order: 110,
-        render: () => <ShortcutsSection />,
-      },
-      { id: 'about', label: '关于', en: 'About', owner: 'ui-settings', order: 120, render: () => <AboutSection /> },
-    ];
+    return SETTINGS_SECTION_META.map((meta): SettingsSectionDefinition => {
+      const owner = ownerById[meta.id] ?? meta.owner;
+      switch (meta.id) {
+        case 'general':
+          return {
+            ...meta,
+            owner,
+            render: () => (
+              <GeneralSettings
+                notifyDetails={prefs?.notifyDetails ?? 'minimal'}
+                onSelectNotifyDetails={selectNotifyDetails}
+                loaded={prefs !== null}
+                note={prefsNote}
+              />
+            ),
+          };
+        case 'appearance':
+          return {
+            ...meta,
+            owner,
+            render: () => (
+              <AppearanceSettings
+                theme={theme}
+                onSelectTheme={selectTheme}
+                uiFontSize={uiFontSize}
+                onUiFontSizeCommit={commitUiFontSize}
+                loaded={prefs !== null}
+                note={prefsNote}
+              />
+            ),
+          };
+        case MODELS_SECTION_ID:
+          return {
+            ...meta,
+            owner: modelsContribution?.owner ?? meta.owner,
+            render: () =>
+              ModelsComponent !== undefined ? (
+                <ModelsComponent {...modelsProps} />
+              ) : cfg !== null ? (
+                <ModelsTransitionSection cfg={cfg} onSave={saveCfg} />
+              ) : (
+                <LoadingPane />
+              ),
+          };
+        case 'approval':
+          return {
+            ...meta,
+            render: () => (cfg !== null ? <ApprovalSettingsSection cfg={cfg} onSave={saveCfg} /> : <LoadingPane />),
+          };
+        case 'memory':
+          return {
+            ...meta,
+            render: () => (cfg !== null ? <MemorySection cfg={cfg} onSave={saveCfg} /> : <LoadingPane />),
+          };
+        case 'browser':
+          return {
+            ...meta,
+            render: () => (cfg !== null ? <BrowserSection cfg={cfg} onSave={saveCfg} /> : <LoadingPane />),
+          };
+        case 'cron':
+          return { ...meta, render: () => <CronSection /> };
+        case 'plugins':
+          return {
+            ...meta,
+            render: () => (cfg !== null ? <PluginsSection cfg={cfg} /> : <LoadingPane />),
+          };
+        case 'subagent':
+          return {
+            ...meta,
+            render: () => (cfg !== null ? <SubagentSection cfg={cfg} onSave={saveCfg} /> : <LoadingPane />),
+          };
+        case 'credentials':
+          return {
+            ...meta,
+            render: () =>
+              cfg !== null && auth !== null ? (
+                <CredentialsSection cfg={cfg} auth={auth} onSaveCfg={saveCfg} onSaveAuth={saveAuth} />
+              ) : (
+                <LoadingPane />
+              ),
+          };
+        case 'sessions':
+          return { ...meta, render: () => <SessionsSection /> };
+        case 'diagnostics':
+          return { ...meta, render: () => <DiagnosticsSection /> };
+        case 'shortcuts':
+          return { ...meta, render: () => <ShortcutsSection /> };
+        case 'about':
+          return { ...meta, render: () => <AboutSection /> };
+        default:
+          throw new Error(`设置分区配置表有未装配的分区: ${String(meta.id)}（先改 SettingsPage 再进表）`);
+      }
+    });
     // 分区渲染闭包捕获上述数据/回调；数据未变时不重建分区表
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [prefs, cfg, auth, theme, prefsNote, modelsContribution]);
+  }, [prefs, cfg, auth, theme, prefsNote, uiFontSize, modelsContribution]);
+
+  // 左栏页脚（Z-88 底部）：ZCode 是账号菜单（仅可用项）；我们无账号体系 → 只放版本号（About 数据）
+  const footer = (
+    <span data-settings-footer-version title={`harness2 桌面端 ${APP_VERSION_LABEL}`}>
+      {APP_VERSION_LABEL}
+    </span>
+  );
 
   return (
     <SettingsShell
       open={open}
       onClose={onClose}
       sections={sections}
+      footer={footer}
       {...(defaultSectionId !== undefined ? { defaultSectionId } : {})}
     />
   );

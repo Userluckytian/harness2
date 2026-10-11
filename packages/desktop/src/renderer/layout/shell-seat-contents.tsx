@@ -12,7 +12,7 @@
 // store/controller，不在这里写对话语义（composer 的接线全在 assembly.tsx）。
 import { useEffect, useMemo, useState, useSyncExternalStore } from 'react';
 import { CommandPalette } from '../components/CommandPalette.js';
-import { SettingsDialog } from '../components/SettingsDialog.js';
+import { SettingsPage } from '../components/SettingsPage.js';
 import { SidePanel } from '../components/SidePanel.js';
 import { controller, store, useAppState, newSessionCollapsingRightbar, StatusBadge } from '../app-shared.js';
 import { SidebarRoot, buildSessionItems, resolveBuildVersion } from '../sidebar/index.js';
@@ -157,7 +157,7 @@ function RightbarSeatContent({ canShow }: RightbarOwnerProps): React.ReactNode {
   return <SidePanel />;
 }
 
-/** 覆层席位内容（ui-settings）：设置弹窗（主题变化即立即呈现，D-15）。
+/** 覆层席位内容（ui-settings）：全屏设置页（Z-88；主题变化即立即呈现，D-15）。
  *  Z3-04：composer「管理模型」经 openSettingsAtSection 请求直达分区 —— 打开时取走请求，
  *  以 key 重挂载让 SettingsShell 采纳 defaultSectionId（壳的激活分区只内存，重挂载即回落）。 */
 function SettingsOverlayContent(): React.ReactNode {
@@ -172,7 +172,7 @@ function SettingsOverlayContent(): React.ReactNode {
     if (requested !== undefined) setDefaultSection(requested);
   }, [open]);
   return (
-    <SettingsDialog
+    <SettingsPage
       key={defaultSection ?? 'auto'}
       open={open}
       {...(defaultSection !== undefined ? { defaultSectionId: defaultSection } : {})}

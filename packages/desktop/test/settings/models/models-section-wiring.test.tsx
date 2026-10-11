@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 // P6 接线棒：模型配置页**真的装配进设置壳**（D-50～D-59 的最后一公里）。
-// A/B 两棒只写了模块（`registerModelsSettingsSection` 无调用方、SettingsDialog 里是过渡面板），
+// A/B 两棒只写了模块（`registerModelsSettingsSection` 无调用方、SettingsPage（原 SettingsDialog）里是过渡面板），
 // 本文件证明应用入口的那次注册生效：设置弹窗的「模型配置」分区渲染真页面，过渡面板让位。
 // 通道面 = 真主进程函数 + 临时 home/root（同 models-page.test.tsx 手法），不手改文件。
 import { mkdtempSync, rmSync } from 'node:fs';
@@ -17,7 +17,7 @@ import {
   writeChannelKey,
 } from '../../../src/main/models-config.js';
 import { setShellTheme, shellThemeStore } from '../../../src/renderer/layout/shell-theme.js';
-import { SettingsDialog } from '../../../src/renderer/components/SettingsDialog.js';
+import { SettingsPage } from '../../../src/renderer/components/SettingsPage.js';
 import {
   MODELS_SECTION_ID,
   findSettingsSection,
@@ -90,7 +90,7 @@ describe('D-50～D-59：模型配置页装配进设置壳（真注册，不是�
     } as unknown as Harness2Api;
     (window as unknown as { harness2: Harness2Api }).harness2 = api;
 
-    render(<SettingsDialog open onClose={() => {}} onThemeChange={setShellTheme} />);
+    render(<SettingsPage open onClose={() => {}} onThemeChange={setShellTheme} />);
     fireEvent.click(await screen.findByText('模型配置'));
 
     // 真页面：标题 + 首运行声明 + 「新增提供方」入口；过渡面板与「待接入」占位都不在

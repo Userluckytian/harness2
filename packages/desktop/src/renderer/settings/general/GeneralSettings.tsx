@@ -1,17 +1,12 @@
 // 通用设置（D-6x `ui-settings-general` 对应物：通用设置区）。
 //
 // 只摆**真生效**的项（AGENTS.md：不摆没用的开关）：
-//   主题   —— 选择即经宿主的 onSelectTheme 落到 P4 主题呈现器/store（D-15 四要素即时生效）；
-//             主题是在**壳主题 store** 里，不在本模块里（本模块是受控组件，宿主注入）。
 //   通知详情 —— 真实偏好字段（`desktop-preferences.json` 的 notifyDetails，App 启动时读取）；
 //             如实标注「重启应用后生效」（运行中的通知文案不追改）。
+// 主题已迁到「外观」分区（Z-90：主题/字号属外观；本分区只留常规项），见 settings/appearance。
 // 已删除的项：启动默认分栏数 —— P4-C 三栅落地后分栏（PaneArea）已拆除，该项无消费方（假开关）。
-import type { SettingsNotifyDetails, SettingsTheme } from '../../../shared/protocol.js';
-import { themeLabel } from '../../theme.js';
+import type { SettingsNotifyDetails } from '../../../shared/protocol.js';
 import { SettingsSectionBlock } from '../shell/section-block.js';
-
-/** 主题可选项（顺序 = 用户可见顺序，对齐 Z-83「系统默认 / 深色 / 浅色」；标签与命令面板同源 `themeLabel`） */
-export const THEME_CHOICES: readonly SettingsTheme[] = ['system', 'zai-dark', 'zai-light'];
 
 /** 通知详情可选项（与 shared/preferences 的 NOTIFY_DETAILS 同值域） */
 export const NOTIFY_DETAILS_CHOICES: readonly SettingsNotifyDetails[] = ['minimal', 'full'];
@@ -23,10 +18,6 @@ export const NOTIFY_DETAILS_LABEL: Record<SettingsNotifyDetails, string> = {
 };
 
 export interface GeneralSettingsProps {
-  /** 当前主题（宿主注入：来自壳主题 store，主题的真相不在本模块） */
-  readonly theme: SettingsTheme;
-  /** 选择主题（宿主负责落到 P4 主题 store + 持久化；本模块只报选择） */
-  readonly onSelectTheme: (theme: SettingsTheme) => void;
   /** 当前通知详情级别（宿主注入：来自 preferences IPC） */
   readonly notifyDetails: SettingsNotifyDetails;
   /** 选择通知详情级别（宿主持久化） */
@@ -38,8 +29,6 @@ export interface GeneralSettingsProps {
 }
 
 export function GeneralSettings({
-  theme,
-  onSelectTheme,
   notifyDetails,
   onSelectNotifyDetails,
   loaded,
@@ -47,26 +36,6 @@ export function GeneralSettings({
 }: GeneralSettingsProps): React.ReactNode {
   return (
     <>
-      <SettingsSectionBlock title="主题" desc="选择即生效（写 html/body 呈现值与 data-theme，无需重启）">
-        {!loaded ? (
-          <p className="settings-desc">加载中…</p>
-        ) : (
-          <div className="settings-row" data-settings-group="theme">
-            {THEME_CHOICES.map((t) => (
-              <button
-                key={t}
-                type="button"
-                className={`seg${theme === t ? ' seg-on' : ''}`}
-                data-theme-choice={t}
-                aria-pressed={theme === t}
-                onClick={() => onSelectTheme(t)}
-              >
-                {themeLabel(t)}
-              </button>
-            ))}
-          </div>
-        )}
-      </SettingsSectionBlock>
       <SettingsSectionBlock
         title="任务完成通知"
         desc="系统通知的详情级别；改动写 desktop-preferences.json，重启应用后生效（当前运行的通知文案不追改）"
