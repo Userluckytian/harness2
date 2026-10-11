@@ -65,6 +65,9 @@ body,
 
 .web-conversation-title {
   font-weight: 600;
+  /* D5（2026-10-11）：无 font-size 时会继承根字号（现 16px）；按 ZCode 语义钉到
+     text-ui-base（14px，工作区/会话标题的角色字号）。 */
+  font-size: var(--text-ui-base);
 }
 
 .web-conversation-cwd {

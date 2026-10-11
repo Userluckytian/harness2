@@ -85,7 +85,9 @@
 }
 
 .h2-sidebar-brand-local {
-  font-size: 17px;
+  /* D7（2026-10-11）：原硬编码 17px 不在 text-ui-* 刻度内；改为刻度基准
+     --text-ui-base（=--ui-font-size=14px），与 ZCode 侧栏同位置文本一致。 */
+  font-size: var(--text-ui-base);
   white-space: nowrap;
 }
 

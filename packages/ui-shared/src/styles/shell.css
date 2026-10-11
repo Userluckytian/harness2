@@ -14,8 +14,21 @@ body,
 #root {
   height: 100%;
   margin: 0;
-  font-family: 'Segoe UI', 'Microsoft YaHei', system-ui, sans-serif;
-  font-size: 14px;
+  /* D6（2026-10-11）：字体栈与 ZCode 官方 web 对齐
+     （ZCode body = Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif）。
+     刻意增强（与 ZCode 的差异）：在栈尾保留 'Microsoft YaHei' 中文回退 —— Inter 无中文字形，
+     缺中文回退时中文会退到系统默认字体（字形/字宽劣化），故保留。
+     D5：根字号回归浏览器默认 16px（ZCode html=16px）——**不再覆盖 font-size**。
+     ZCode 的 --ui-font-size:14px 只驱动 px 基准的 text-ui-*（styles.css），不改根字号；
+     移除旧 14px 覆盖后，Tailwind v4 的 rem 基准工具类（间距/字号/尺寸）与 ZCode 同基准。 */
+  font-family:
+    Inter,
+    -apple-system,
+    BlinkMacSystemFont,
+    'Segoe UI',
+    'Microsoft YaHei',
+    system-ui,
+    sans-serif;
   color: var(--color-foreground);
   background: var(--color-background);
 }
@@ -101,6 +114,10 @@ body,
   display: flex;
   flex-direction: column;
   gap: 8px;
+  /* D5（2026-10-11）：根字号回归 16px 后，转录正文不再继承 body 的旧 14px。
+     按 ZCode 对齐（MessageContent / MessageResponse = text-ui-base = 14px）显式钉住，
+     使正文随 --ui-font-size 缩放，且不随根字号（rem 几何基准）漂移。 */
+  font-size: var(--text-ui-base);
 }
 .turn-header {
   color: var(--color-foreground-subtle);
@@ -637,6 +654,9 @@ body,
   padding: 10px 16px;
   border-top: 1px solid var(--color-border);
   background: var(--color-panel);
+  /* D5：编辑器 .composer-editor 用 font: inherit，若不钉住会随根字号升到 16px。
+     ZCode LexicalChatInput = text-ui-base = 14px（min-h-10 = 40px 与本表一致）。 */
+  font-size: var(--text-ui-base);
 }
 .composer-editor {
   min-height: 40px;
@@ -1341,6 +1361,8 @@ body,
   border-radius: 8px;
   cursor: pointer;
   color: var(--color-foreground);
+  /* D5：钉住主文案为 text-ui-base（14px），对齐 ZCode 命令/菜单项（Z-62 dropdown item）。 */
+  font-size: var(--text-ui-base);
 }
 .command-palette-item.selected {
   background: var(--color-accent);

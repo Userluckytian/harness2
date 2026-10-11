@@ -28,7 +28,9 @@ export class ErrorBoundary extends Component<Props, State> {
         <div
           style={{
             padding: 24,
-            fontFamily: 'system-ui, "Segoe UI", "Microsoft YaHei", sans-serif',
+            // D6（2026-10-11）：与 shell.css / ZCode 的 body 字体栈对齐（保留中文回退）。
+            fontFamily:
+              'Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft YaHei", system-ui, sans-serif',
             color: '#3B2E21',
             background: '#F6EFE3',
             minHeight: '100%',
