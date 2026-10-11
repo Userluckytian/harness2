@@ -6,16 +6,16 @@
 .h2-sidebar {
   --h2-sidebar-inline-padding: 12px;
   /* 展开态侧栏浮在中栏之上，滑块用次级描边色；.h2-sidebar-quiet 只改颜色不改布局。 */
-  --h2-sidebar-thumb: var(--border2);
-  --h2-sidebar-thumb-hover: var(--fg-dim);
+  --h2-sidebar-thumb: var(--color-border-hover);
+  --h2-sidebar-thumb-hover: var(--color-foreground-subtlest);
   display: flex;
   flex-direction: column;
   height: 100%;
   padding: 6px var(--h2-sidebar-inline-padding);
   box-sizing: border-box;
-  background: var(--panel);
-  color: var(--fg);
-  border-right: 1px solid var(--border);
+  background: var(--color-panel);
+  color: var(--color-foreground);
+  border-right: 1px solid var(--color-border);
   font-size: 14px;
   overflow: hidden;
   scrollbar-color: var(--h2-sidebar-thumb) transparent;
@@ -65,7 +65,7 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  color: var(--accent-2);
+  color: var(--color-primary);
 }
 
 .h2-sidebar-mark-svg {
@@ -108,8 +108,8 @@
   height: 12px;
   padding: 0 4px;
   border-radius: 2px;
-  background: var(--ink);
-  color: var(--surface);
+  background: var(--color-foreground);
+  color: var(--color-card);
   font-family: ui-monospace, SFMono-Regular, Consolas, 'Liberation Mono', monospace;
   font-size: 9px;
   font-weight: 500;
@@ -129,12 +129,12 @@
   border: none;
   border-radius: 50%;
   background: transparent;
-  color: var(--fg-muted);
+  color: var(--color-foreground-subtle);
   cursor: pointer;
 }
 
 .h2-sidebar-toggle:hover {
-  background: var(--surface2);
+  background: var(--color-muted);
 }
 
 .h2-sidebar-toggle-glyph {
@@ -146,7 +146,7 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  color: var(--accent-2);
+  color: var(--color-primary);
 }
 
 /* —— 新会话（D-21）—— */
@@ -160,10 +160,10 @@
   padding: 8px 16px;
   margin: 0 2px 8px;
   box-sizing: border-box;
-  border: 1px solid var(--border2);
+  border: 1px solid var(--color-border-hover);
   border-radius: 12px;
-  background: var(--surface);
-  color: var(--fg);
+  background: var(--color-card);
+  color: var(--color-foreground);
   font: inherit;
   font-weight: 500;
   cursor: pointer;
@@ -171,13 +171,13 @@
 }
 
 .h2-sidebar-new:hover {
-  background: var(--surface2);
+  background: var(--color-muted);
 }
 
 .h2-sidebar-new:disabled {
-  background: var(--muted);
-  color: var(--fg-dim);
-  border-color: var(--border);
+  background: var(--color-muted);
+  color: var(--color-foreground-subtlest);
+  border-color: var(--color-border);
   cursor: not-allowed;
 }
 
@@ -201,7 +201,7 @@
   border: 1px solid transparent;
   border-radius: 10px;
   background: transparent;
-  color: var(--fg-muted);
+  color: var(--color-foreground-subtle);
   font: inherit;
   font-size: 13px;
   text-align: left;
@@ -210,8 +210,8 @@
 }
 
 .h2-sidebar-command:hover {
-  background: var(--surface2);
-  color: var(--fg);
+  background: var(--color-muted);
+  color: var(--color-foreground);
 }
 
 .h2-sidebar-command-icon {
@@ -231,9 +231,9 @@
 .h2-sidebar-command-hint {
   flex: none;
   padding: 1px 5px;
-  border: 1px solid var(--border2);
+  border: 1px solid var(--color-border-hover);
   border-radius: 5px;
-  color: var(--fg-dim);
+  color: var(--color-foreground-subtlest);
   font-family: ui-monospace, SFMono-Regular, Consolas, 'Liberation Mono', monospace;
   font-size: 10px;
   line-height: 14px;
@@ -265,7 +265,7 @@
   display: flex;
   align-items: center;
   padding: 4px 8px 8px;
-  color: var(--fg-muted);
+  color: var(--color-foreground-subtle);
   font-size: 12px;
   font-weight: 600;
   letter-spacing: 0.06em;
@@ -275,10 +275,10 @@
   flex: none;
   margin: 0 4px 8px;
   padding: 6px 8px;
-  border: 1px solid var(--border);
+  border: 1px solid var(--color-border);
   border-radius: 8px;
-  background: var(--surface);
-  color: var(--fg);
+  background: var(--color-card);
+  color: var(--color-foreground);
   font: inherit;
   font-size: 13px;
 }
@@ -329,18 +329,18 @@
 }
 
 .h2-sidebar-session:hover {
-  background: var(--surface2);
+  background: var(--color-muted);
 }
 
 /* 当前会话高亮：填充 + 左缘强调条（不只靠颜色深浅一个通道） */
 .h2-sidebar-session[data-selected='true'] {
-  background: var(--accent-soft);
-  box-shadow: inset 2px 0 0 var(--accent);
+  background: var(--color-accent);
+  box-shadow: inset 2px 0 0 var(--color-primary);
   font-weight: 600;
 }
 
 .h2-sidebar-session[data-archived='true'] {
-  color: var(--fg-muted);
+  color: var(--color-foreground-subtle);
 }
 
 .h2-sidebar-session-title {
@@ -354,7 +354,7 @@
 
 .h2-sidebar-session-meta {
   font-size: 12px;
-  color: var(--fg-muted);
+  color: var(--color-foreground-subtle);
 }
 
 .h2-sidebar-running {
@@ -362,7 +362,7 @@
   width: 6px;
   height: 6px;
   border-radius: 50%;
-  background: var(--ok);
+  background: var(--color-success);
 }
 
 .h2-sidebar-unread {
@@ -370,8 +370,8 @@
   min-width: 16px;
   padding: 0 4px;
   border-radius: 8px;
-  background: var(--accent);
-  color: var(--on-accent);
+  background: var(--color-primary);
+  color: var(--color-primary-foreground);
   font-size: 11px;
   line-height: 16px;
   text-align: center;
@@ -383,7 +383,7 @@
   min-width: 16px;
   padding: 0 4px;
   border-radius: 8px;
-  background: var(--warn);
+  background: var(--color-warning);
   color: #fff;
   font-size: 11px;
   line-height: 16px;
@@ -392,14 +392,14 @@
 
 .h2-sidebar-empty {
   padding: 12px 8px;
-  color: var(--fg-muted);
+  color: var(--color-foreground-subtle);
   font-size: 13px;
 }
 
 .h2-sidebar-archived {
   flex: none;
   padding: 4px 6px 0;
-  border-top: 1px solid var(--border);
+  border-top: 1px solid var(--color-border);
 }
 
 .h2-sidebar-archived-toggle {
@@ -411,7 +411,7 @@
   border: none;
   border-radius: 8px;
   background: transparent;
-  color: var(--fg-muted);
+  color: var(--color-foreground-subtle);
   font: inherit;
   font-size: 12px;
   text-align: left;
@@ -419,7 +419,7 @@
 }
 
 .h2-sidebar-archived-toggle:hover {
-  background: var(--surface2);
+  background: var(--color-muted);
 }
 
 .h2-sidebar-caret {
@@ -471,7 +471,7 @@
 .h2-sidebar-rail .h2-sidebar-toggle {
   width: 36px;
   height: 36px;
-  color: var(--fg);
+  color: var(--color-foreground);
 }
 
 /* 静止态显示品牌标记，悬停才露出面板图标 */
@@ -499,7 +499,7 @@
 }
 
 .h2-sidebar-rail .h2-sidebar-new:hover {
-  background: var(--surface2);
+  background: var(--color-muted);
 }
 
 .h2-sidebar-rail .h2-sidebar-new-label {
@@ -524,13 +524,13 @@
   border: none;
   border-radius: 8px;
   background: transparent;
-  color: var(--fg);
+  color: var(--color-foreground);
   font-size: 16px;
   cursor: pointer;
 }
 
 .h2-sidebar-rail-icon:hover {
-  background: var(--surface2);
+  background: var(--color-muted);
 }
 
 .h2-sidebar-rail .h2-sidebar-foot {

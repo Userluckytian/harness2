@@ -13,12 +13,12 @@
   min-width: 0;
   gap: 8px;
   padding: 8px 10px 0;
-  color: var(--fg);
+  color: var(--color-foreground);
 }
 
 .trajectory-empty {
   margin: 12px 4px;
-  color: var(--fg-muted);
+  color: var(--color-foreground-subtle);
 }
 
 /* —— 时间概览（D-42/D-43） —— */
@@ -30,8 +30,8 @@
   flex-direction: column;
   gap: 4px;
   padding: 6px 8px;
-  background: var(--surface2);
-  border: 1px solid var(--border);
+  background: var(--color-muted);
+  border: 1px solid var(--color-border);
   border-radius: 8px;
 }
 
@@ -39,14 +39,14 @@
   display: flex;
   gap: 10px;
   font-size: 11px;
-  color: var(--fg-dim);
+  color: var(--color-foreground-subtlest);
 }
 
 .trajectory-overview-track {
   position: relative;
   width: 100%;
   min-height: 10px;
-  background: var(--muted);
+  background: var(--color-muted);
   border-radius: 4px;
   cursor: crosshair;
   user-select: none;
@@ -55,16 +55,16 @@
 .trajectory-overview-empty-text {
   margin: 2px 0;
   font-size: 12px;
-  color: var(--fg-muted);
+  color: var(--color-foreground-subtle);
 }
 
 .trajectory-overview-selection {
   position: absolute;
   top: 0;
   bottom: 0;
-  background: var(--accent-soft);
-  border-left: 1px solid var(--accent);
-  border-right: 1px solid var(--accent);
+  background: var(--color-accent);
+  border-left: 1px solid var(--color-primary);
+  border-right: 1px solid var(--color-primary);
   pointer-events: none;
 }
 
@@ -82,12 +82,12 @@
 }
 
 .trajectory-overview-bar.is-hovered {
-  outline: 1px solid var(--accent-2);
+  outline: 1px solid var(--color-primary);
 }
 
 .trajectory-overview-bar.is-selected {
-  outline: 1px solid var(--accent);
-  box-shadow: 0 0 0 2px var(--accent-soft);
+  outline: 1px solid var(--color-primary);
+  box-shadow: 0 0 0 2px var(--color-accent);
 }
 
 .trajectory-overview-seg {
@@ -97,29 +97,29 @@
 }
 
 .trajectory-overview-bar.is-user .trajectory-overview-seg {
-  background: var(--accent);
+  background: var(--color-primary);
 }
 
 .trajectory-overview-bar.is-assistant .trajectory-overview-seg {
-  background: var(--ok);
+  background: var(--color-success);
 }
 
 .trajectory-overview-bar.is-tool .trajectory-overview-seg {
-  background: var(--warn);
+  background: var(--color-warning);
 }
 
 .trajectory-overview-bar.is-between-turns .trajectory-overview-seg {
-  background: var(--fg-dim);
+  background: var(--color-foreground-subtlest);
 }
 
 /* 助手条两段：TTFT（浅）/ 解码（深）—— 只有真实观测到首 token 时才出现两段 */
 .trajectory-overview-seg.is-ttft {
-  background: var(--accent-soft);
-  border-right: 1px solid var(--accent-2);
+  background: var(--color-accent);
+  border-right: 1px solid var(--color-primary);
 }
 
 .trajectory-overview-seg.is-decode {
-  background: var(--ok);
+  background: var(--color-success);
   flex: 1 1 auto;
 }
 
@@ -132,15 +132,15 @@
   flex-wrap: wrap;
   gap: 10px;
   font-size: 11px;
-  color: var(--fg-muted);
-  background: var(--surface);
-  border: 1px dashed var(--border2);
+  color: var(--color-foreground-subtle);
+  background: var(--color-card);
+  border: 1px dashed var(--color-border-hover);
   border-radius: 6px;
   padding: 4px 6px;
 }
 
 .trajectory-overview-detail-title {
-  color: var(--fg);
+  color: var(--color-foreground);
   font-weight: 600;
 }
 
@@ -148,7 +148,7 @@
 .trajectory-between-note {
   margin: 0;
   font-size: 11px;
-  color: var(--fg-muted);
+  color: var(--color-foreground-subtle);
 }
 
 /* —— 主体：记录表 + 局部检查器 —— */
@@ -190,7 +190,7 @@
 
 /* 轮次边界 = 粗分割线（D-41） */
 .trajectory-turn-boundary {
-  border-top: 3px solid var(--border2);
+  border-top: 3px solid var(--color-border-hover);
   margin-top: 2px;
 }
 
@@ -200,23 +200,23 @@
   gap: 8px;
   width: 100%;
   font-size: 11px;
-  color: var(--fg-muted);
+  color: var(--color-foreground-subtle);
   text-transform: uppercase;
   letter-spacing: 0.04em;
 }
 
 .trajectory-between-divider {
-  border-top: 1px dashed var(--fg-dim);
+  border-top: 1px dashed var(--color-foreground-subtlest);
 }
 
 .trajectory-between-hint {
-  color: var(--fg-dim);
+  color: var(--color-foreground-subtlest);
   text-transform: none;
 }
 
 .trajectory-turn-label {
   font-weight: 600;
-  color: var(--fg);
+  color: var(--color-foreground);
 }
 
 .trajectory-turn-time,
@@ -233,21 +233,21 @@
 .trajectory-running-flag {
   padding: 0 6px;
   border-radius: 8px;
-  background: var(--warn-soft);
-  color: var(--warn);
+  background: color-mix(in srgb, var(--color-warning) 16%, transparent);
+  color: var(--color-warning);
 }
 
 .trajectory-step {
   cursor: pointer;
-  border-bottom: 1px solid var(--muted);
+  border-bottom: 1px solid var(--color-muted);
 }
 
 .trajectory-step:hover {
-  background: var(--surface2);
+  background: var(--color-muted);
 }
 
 .trajectory-step.is-selected {
-  background: var(--accent-soft);
+  background: var(--color-accent);
 }
 
 .trajectory-step-cell {
@@ -264,32 +264,32 @@
   flex: 0 0 auto;
   min-width: 22px;
   font-variant-numeric: tabular-nums;
-  color: var(--fg-dim);
+  color: var(--color-foreground-subtlest);
 }
 
 .trajectory-role-badge {
   flex: 0 0 auto;
   padding: 0 6px;
   border-radius: 8px;
-  background: var(--muted);
-  color: var(--fg-muted);
+  background: var(--color-muted);
+  color: var(--color-foreground-subtle);
   font-size: 11px;
 }
 
 .trajectory-role-badge[data-role='assistant'] {
-  background: var(--ok-soft);
-  color: var(--ok);
+  background: color-mix(in srgb, var(--color-success) 14%, transparent);
+  color: var(--color-success);
 }
 
 .trajectory-role-badge[data-role='user'] {
-  background: var(--accent-soft);
-  color: var(--accent-2);
+  background: var(--color-accent);
+  color: var(--color-primary);
 }
 
 .trajectory-role-badge[data-role='tool'],
 .trajectory-role-badge[data-role='subtool'] {
-  background: var(--warn-soft);
-  color: var(--warn);
+  background: color-mix(in srgb, var(--color-warning) 16%, transparent);
+  color: var(--color-warning);
 }
 
 .trajectory-state-badge {
@@ -300,24 +300,24 @@
 }
 
 .trajectory-state-badge[data-state='running'] {
-  background: var(--warn-soft);
-  color: var(--warn);
+  background: color-mix(in srgb, var(--color-warning) 16%, transparent);
+  color: var(--color-warning);
 }
 
 .trajectory-state-badge[data-state='failed'] {
-  background: var(--danger-soft);
-  color: var(--danger);
+  background: color-mix(in srgb, var(--color-destructive) 14%, transparent);
+  color: var(--color-destructive);
 }
 
 .trajectory-state-badge[data-state='cancelled'] {
-  background: var(--muted);
-  color: var(--fg-dim);
+  background: var(--color-muted);
+  color: var(--color-foreground-subtlest);
 }
 
 .trajectory-attach-badge {
   flex: 0 0 auto;
   font-size: 11px;
-  color: var(--fg-dim);
+  color: var(--color-foreground-subtlest);
 }
 
 .trajectory-step-label {
@@ -331,14 +331,14 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  color: var(--fg-muted);
+  color: var(--color-foreground-subtle);
 }
 
 .trajectory-step-time {
   flex: 0 0 auto;
   min-width: 56px;
   text-align: right;
-  color: var(--fg-muted);
+  color: var(--color-foreground-subtle);
 }
 
 /* —— 局部检查器（D-44） —— */
@@ -348,8 +348,8 @@
   min-width: 0;
   overflow-y: auto;
   padding: 8px;
-  background: var(--surface);
-  border: 1px solid var(--border);
+  background: var(--color-card);
+  border: 1px solid var(--color-border);
   border-radius: 8px;
   font-size: 12px;
 }
@@ -366,7 +366,7 @@
 }
 
 .trajectory-inspector-subject {
-  color: var(--fg-muted);
+  color: var(--color-foreground-subtle);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -375,15 +375,15 @@
 .trajectory-inspector-close {
   margin-left: auto;
   padding: 0 6px;
-  border: 1px solid var(--border2);
+  border: 1px solid var(--color-border-hover);
   border-radius: 6px;
-  background: var(--surface2);
-  color: var(--fg-muted);
+  background: var(--color-muted);
+  color: var(--color-foreground-subtle);
   cursor: pointer;
 }
 
 .trajectory-inspector-empty {
-  color: var(--fg-muted);
+  color: var(--color-foreground-subtle);
 }
 
 .trajectory-inspector-fields {
@@ -398,7 +398,7 @@
 }
 
 .trajectory-inspector-field dt {
-  color: var(--fg-muted);
+  color: var(--color-foreground-subtle);
 }
 
 .trajectory-inspector-field dd {
@@ -408,7 +408,7 @@
 
 /* 缺数据：弱化但**可见**（显示「未记录」而不是留白） */
 .trajectory-inspector-field dd.is-missing {
-  color: var(--fg-dim);
+  color: var(--color-foreground-subtlest);
   font-style: italic;
 }
 
@@ -416,11 +416,11 @@
 .trajectory-inspector-io h4 {
   margin: 6px 0 2px;
   font-size: 12px;
-  color: var(--fg-muted);
+  color: var(--color-foreground-subtle);
 }
 
 .trajectory-inspector-attachment-summary[data-empty='true'] {
-  color: var(--fg-dim);
+  color: var(--color-foreground-subtlest);
   font-style: italic;
 }
 
@@ -438,12 +438,12 @@
   max-width: 96px;
   max-height: 96px;
   border-radius: 4px;
-  border: 1px solid var(--border);
+  border: 1px solid var(--color-border);
 }
 
 .trajectory-inspector-image-missing,
 .trajectory-inspector-file {
-  color: var(--fg-muted);
+  color: var(--color-foreground-subtle);
 }
 
 .trajectory-inspector-pre {
@@ -451,8 +451,8 @@
   padding: 6px;
   max-height: 180px;
   overflow: auto;
-  background: var(--code-bg);
-  color: var(--code-fg);
+  background: color-mix(in srgb, var(--color-foreground) 8%, var(--color-background));
+  color: var(--color-foreground);
   border-radius: 6px;
   white-space: pre-wrap;
   overflow-wrap: anywhere;

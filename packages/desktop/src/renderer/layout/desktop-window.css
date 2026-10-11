@@ -43,13 +43,13 @@
   border: none;
   border-radius: 6px;
   background: transparent;
-  color: var(--fg-muted);
+  color: var(--color-foreground-subtle);
   cursor: pointer;
 }
 .pane-header-icon-btn:hover,
 .pane-header-icon-btn[aria-pressed='true'] {
   background: var(--color-surface-hover);
-  color: var(--fg);
+  color: var(--color-foreground);
 }
 /* 自绘窗控三键（win/linux）：Z-04 的 136px 量级安全宽度（3 × 45px） */
 .window-controls {
@@ -66,12 +66,12 @@
   height: 100%;
   border: none;
   background: transparent;
-  color: var(--fg-muted);
+  color: var(--color-foreground-subtle);
   cursor: pointer;
 }
 .window-controls-btn:hover {
   background: var(--color-surface-hover);
-  color: var(--fg);
+  color: var(--color-foreground);
 }
 .window-controls-close:hover {
   background: var(--color-destructive);

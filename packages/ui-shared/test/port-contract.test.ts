@@ -136,13 +136,15 @@ describe('HarnessClient 端口：会话面', () => {
     expect(stream?.running).toBe(true);
   });
 
-  it('submit-ack accepted 落定在途；rejected 从可见队列移除（不假装已排队）', async () => {
+  it('submit-ack accepted 落定在途并从可见队列移除；rejected 同样移除（不假装已排队）', async () => {
     const fake = fakeClient();
     const shell = createAppShell(fake.client);
     const stop = shell.controller.start(); // 帧分发经 start() 订阅的监听集合
     const { clientMessageId } = await shell.controller.submitMessage('a', 'x', { intent: 'queue' });
     fake.emit({ type: 'submit-ack', clientMessageId, sessionId: 'a', state: 'accepted', queueSeq: 1 });
-    expect(shell.store.peekStream('a')?.pendingSubmits).toEqual({});
+    const afterAccepted = shell.store.peekStream('a');
+    expect(afterAccepted?.pendingSubmits).toEqual({});
+    expect(afterAccepted?.queue).toEqual([]); // D2：accepted = 已送达，不再常驻「待发送队列」
 
     const second = await shell.controller.submitMessage('a', 'y', { intent: 'queue' });
     fake.emit({
@@ -153,7 +155,7 @@ describe('HarnessClient 端口：会话面', () => {
       reason: '忙',
     });
     const stream = shell.store.peekStream('a');
-    expect(stream?.queue.map((q) => q.id)).toEqual([clientMessageId]);
+    expect(stream?.queue).toEqual([]); // rejected 从可见队列移除
     expect(stream?.submitAcks[second.clientMessageId]).toEqual({ state: 'rejected', reason: '忙' });
     stop();
   });

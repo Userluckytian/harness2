@@ -496,6 +496,24 @@ describe('P2-1 placement 的真实落点、P2-2 链订阅', () => {
     expect(screen.getByTestId('composer-status').textContent).toContain('已排队（queue-dock）');
   });
 
+  it('D2：落点提示在提交落定后清除（不常驻「等待服务端确认…」）', async () => {
+    let settle!: () => void;
+    setup({
+      submitImpl: () =>
+        new Promise<void>((resolve) => {
+          settle = resolve;
+        }),
+      seed: (s) => s.dispatch({ type: 'insert-text', text: '你好' }),
+    });
+    fireEvent.keyDown(editor(), { key: 'Enter' });
+    expect(screen.getByTestId('composer-status').textContent).toContain('已发送（transcript）');
+    await act(async () => {
+      settle();
+    });
+    await flush();
+    expect(screen.queryByTestId('composer-status')).toBeNull();
+  });
+
   it('P2-2：运行中新注册的 takeover 立即生效（Composer 订阅链版本，不再只在渲染期 select）', () => {
     const chain = new ComposerChain();
     setup({ chain });

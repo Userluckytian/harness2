@@ -162,8 +162,8 @@ export interface ComposerProps {
 const PLACEHOLDER_WITH_SESSION = '输入消息（Enter 发送，Shift+Enter 换行，Ctrl/⌘+Enter 用另一投递模式）';
 const PLACEHOLDER_NO_SESSION = '选择会话后开始输入';
 
-/** 提交结果提示（P1-2 展示面 / P2-1 `placement` 的真实落点） */
-type SubmitStatus = { readonly kind: 'placement' | 'error'; readonly text: string };
+/** 提交结果提示（P1-2 展示面 / P2-1 `placement` 的真实落点）；seq = 提交序号（落定时只清自己那条） */
+type SubmitStatus = { readonly kind: 'placement' | 'error'; readonly text: string; readonly seq?: number };
 
 /** 空 subscribe / 空版本快照（无链注入时的稳定引用，避免每次渲染换新函数） */
 const NOOP_SUBSCRIBE = (): (() => void) => () => {};
@@ -330,14 +330,18 @@ export function Composer(props: ComposerProps): ReactNode {
     failedLedgerRef.current = ledgerAfterBoundary;
     // 草稿与附件同批清空（浏览器一次 act/渲染批次内落定；提交历史已由 store 同步清空）
     setAttachments([]);
-    // P2-1：`placement` 的真实落点 = 主指针旁的状态行（不再是「看起来有用其实没用」的字段）
-    setSubmitStatus({ kind: 'placement', text: placementNotice(submission.placement) });
     submitSeqRef.current += 1;
     const seq = submitSeqRef.current;
+    // P2-1：`placement` 的真实落点 = 主指针旁的状态行（不再是「看起来有用其实没用」的字段）
+    setSubmitStatus({ kind: 'placement', text: placementNotice(submission.placement), seq });
     setInFlightSubmits((n) => n + 1);
     Promise.resolve(props.io.submit(submission))
       .then(
-        () => undefined,
+        () => {
+          // D2：ack 落定（accepted / unknown）即清除落点提示，避免「已发送（transcript），
+          // 等待服务端确认…」永久常驻。只清自己那条（并发提交不互相覆盖）。
+          setSubmitStatus((cur) => (cur !== null && cur.kind === 'placement' && cur.seq === seq ? null : cur));
+        },
         (error: unknown) => {
           // 失败还原（P0-2；上游 facade.ts:793-868）：
           //   - 只在「用户尚未编辑还原内容」时覆盖草稿（草稿为空 或 自上次自动还原以来未编辑）；

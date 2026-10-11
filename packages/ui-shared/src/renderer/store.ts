@@ -98,7 +98,7 @@ export interface SessionStream {
   pendingSubmits: Record<string, PendingSubmit>;
   /** submit-ack 结论（clientMessageId → ack；unknown ≠ rejected） */
   submitAcks: Record<string, { state: SubmitAckStateShape; reason?: string; queueSeq?: number }>;
-  /** 服务端可见队列（submit-ack / resume-snapshot 同步；重启恢复默认 paused） */
+  /** 可见「待发送队列」（本地乐观项 + resume-snapshot 权威队列；accepted/rejected 后移除本地项） */
   queue: QueueEntryShape[];
   /** 任务表（resume-snapshot 同步；D3 计划/任务面板） */
   tasks: TaskContractShape[];
@@ -631,6 +631,23 @@ export class AppStore {
       stream.liveAttemptId = undefined;
       stream.activeAttempt = undefined;
       stream.approvals = []; // turn 结束：审批等待要么已响应要么已超时，全部失效
+      // D2：turn 结束即清空本地在途提交台账（ack 迟到/丢失不遗留幽灵条目）。
+      // fail-closed：仍未收到 ack 的提交**如实标 unknown**（不谎报已送达），队列项保留供展示
+      // 「未收到确认，请勿重复提交」；真实 ack 若随后到达会覆盖 unknown 并移除队列项。
+      const stalePending = Object.values(stream.pendingSubmits);
+      if (stalePending.length > 0) {
+        const nextAcks = { ...stream.submitAcks };
+        for (const p of stalePending) {
+          if (nextAcks[p.clientMessageId] === undefined) {
+            nextAcks[p.clientMessageId] = {
+              state: 'unknown',
+              reason: '本轮已结束仍未收到服务端确认——请勿重复提交',
+            };
+          }
+        }
+        stream.submitAcks = nextAcks;
+        stream.pendingSubmits = {};
+      }
     } else if (frame.type === 'approval-request') {
       stream.approvals = [
         ...stream.approvals,
@@ -673,7 +690,14 @@ export class AppStore {
     this.notify();
   }
 
-  /** submit-ack 收敛：accepted 保留队列项并登记序号；rejected 移除；unknown ≠ rejected（保留待定） */
+  /**
+   * submit-ack 收敛：accepted / rejected 移除本地乐观队列项（提交已落定，不再「待发送」）；
+   * unknown ≠ rejected（保留待定，渲染为「未收到确认，请勿重复提交」）。
+   *
+   * D2 根因：旧实现 accepted 只 bump revision、从不移除，本地乐观队列项永久常驻
+   * （「待发送队列」面板累积幽灵条目）。已确认送达 = 该本地项使命结束，移除即可；
+   * 服务端仍会经 resume-snapshot 报告其权威队列（真实排队/恢复项照常展示）。
+   */
   private resolveSubmitAck(stream: SessionStream, frame: Extract<WsFrame, { type: 'submit-ack' }>): void {
     stream.submitAcks = {
       ...stream.submitAcks,
@@ -684,11 +708,10 @@ export class AppStore {
       },
     };
     delete stream.pendingSubmits[frame.clientMessageId];
-    if (frame.state === 'rejected') {
-      // 明确拒绝：从可见队列移除（不假装已排队）
+    if (frame.state === 'accepted' || frame.state === 'rejected') {
+      // 已落定：从可见「待发送队列」移除（accepted = 已送达服务端；rejected = 不假装已排队）。
+      // unknown 刻意保留队列项（fail-closed：未知绝不当作已送达或已拒绝）。
       stream.queue = stream.queue.filter((q) => q.id !== frame.clientMessageId);
-    } else if (frame.state === 'accepted' && frame.queueSeq !== undefined) {
-      stream.queue = stream.queue.map((q) => (q.id === frame.clientMessageId ? { ...q, revision: q.revision + 1 } : q));
     }
   }
 

@@ -107,7 +107,7 @@ describe('resume-snapshot（S3 重订阅）', () => {
 });
 
 describe('submit-ack 三态收敛与 ack 丢失（F7）', () => {
-  it('accepted：pending 清除、队列项保留并登记序号', () => {
+  it('accepted：pending 清除、本地乐观队列项移除（提交已落定，不再常驻「待发送队列」）', () => {
     const store = new AppStore();
     store.applyReplay(replayPayload('s1'));
     store.noteSubmit('s1', { clientMessageId: 'cm-1', rawText: '你好', intent: 'queue' });
@@ -117,7 +117,7 @@ describe('submit-ack 三态收敛与 ack 丢失（F7）', () => {
     const stream = store.peekStream('s1')!;
     expect(stream.pendingSubmits['cm-1']).toBeUndefined();
     expect(stream.submitAcks['cm-1']?.state).toBe('accepted');
-    expect(stream.queue.map((q) => q.id)).toEqual(['cm-1']); // 仍在可见队列
+    expect(stream.queue).toEqual([]); // D2：accepted = 已送达，从可见「待发送队列」移除
   });
 
   it('rejected：从可见队列移除（不假装已排队）', () => {

@@ -25,8 +25,8 @@
   min-width: 0;
   min-height: 0;
   overflow: hidden;
-  background: var(--panel);
-  border-right: 1px solid var(--border);
+  background: var(--color-panel);
+  border-right: 1px solid var(--color-border);
   /* Z-08 过渡时长：侧栏 width/opacity 200ms ease-out */
   transition: width 0.2s ease-out;
 }
@@ -48,7 +48,7 @@
    不存在任何图标轨道（无帧轨道、也无侧栏轨道）。 */
 .app-frame-seat-empty {
   margin: 8px;
-  color: var(--fg-muted);
+  color: var(--color-foreground-subtle);
   font-size: 12px;
 }
 
@@ -81,7 +81,7 @@
   flex: none;
   min-height: 0;
   overflow: hidden;
-  border-top: 1px solid var(--border);
+  border-top: 1px solid var(--color-border);
 }
 .app-frame-terminal-panel[data-open='false'] {
   border-top: none;
@@ -96,7 +96,7 @@
   min-width: 0;
   min-height: 0;
   overflow: hidden;
-  border-left: 1px solid var(--border);
+  border-left: 1px solid var(--color-border);
   transition: width 0.2s ease-out;
 }
 /* Z2-04：旧 .side-panel 皮肤规则已删 —— 右栏内容（标签宿主）自带 Tailwind 工具类
@@ -143,11 +143,11 @@
 }
 .app-frame-resizer:hover,
 .app-frame-resizer-dragging {
-  background: var(--accent);
+  background: var(--color-primary);
   opacity: 0.5;
 }
 .app-frame-resizer:focus-visible {
-  outline: 2px solid var(--accent);
+  outline: 2px solid var(--color-primary);
   outline-offset: -2px;
 }
 
@@ -206,7 +206,7 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  color: var(--fg-muted);
+  color: var(--color-foreground-subtle);
 }
 .desktop-top-overlay-btn,
 .desktop-top-overlay-new {
@@ -218,7 +218,7 @@
   border: none;
   border-radius: 6px;
   background: transparent;
-  color: var(--fg-muted);
+  color: var(--color-foreground-subtle);
   cursor: pointer;
   /* 浮层条内可交互子元素必须 no-drag（否则点击被拖拽吞掉） */
   -webkit-app-region: no-drag;
@@ -226,7 +226,7 @@
 .desktop-top-overlay-btn:hover,
 .desktop-top-overlay-new:hover {
   background: var(--color-surface-hover);
-  color: var(--fg);
+  color: var(--color-foreground);
 }
 .desktop-top-overlay-new {
   font-size: var(--text-ui-sm);

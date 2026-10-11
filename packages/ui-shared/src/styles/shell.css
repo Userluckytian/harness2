@@ -1,77 +1,10 @@
 /* harness2 桌面端基础样式（Task 3 骨架；Task 4/5 增量扩展）
    B0 颜色变量化：所有色值抽成 CSS 变量。
-   默认主题 = V5 暖纸浅色（:root 生效，无需 <html data-theme>）；
-   [data-theme="dark"] 覆盖 = 原 GitHub-dark 硬编码值（深色主题）。
 
-   Z1-05 迁移桥：主题运行时已改走 Zai 契约（根 class + data-theme="zai-dark" + .dark），
-   不再写 data-theme="dark"。本表在 Z2 壳重建前仍被旧组件消费，故深色块同时接受新契约，
-   避免「选深色无效果」的过渡期回归；Z2 退役本表后此桥一并移除。 */
-
-/* —— V5 暖纸 token（默认浅色；数值原样取自 design/prototype-v5.html 的 :root） —— */
-:root {
-  --bg: #f6efe3;
-  --surface: #fffcf6;
-  --surface2: #fbf4e9;
-  --muted: #f0e7d8;
-  --border: #e6d9c3;
-  --border2: #d7c7ac;
-  --fg: #3b2e21;
-  --fg-muted: #8a7a66;
-  --fg-dim: #b5a58c;
-  --accent: #c7743b;
-  --accent-2: #a85d28;
-  --accent-soft: #f6e4d3;
-  --ink: #4a3826;
-  --ok: #6b8f4e;
-  --ok-soft: #e9f0e0;
-  --warn: #c98a2e;
-  --warn-soft: #f9ead3;
-  --danger: #b5482e;
-  --danger-soft: #f6e2dc;
-  --code-bg: #33271a;
-  --code-fg: #f2e8d6;
-  --shadow: 0 1px 2px rgba(70, 50, 30, 0.06), 0 12px 32px rgba(70, 50, 30, 0.1);
-  --radius: 14px;
-  /* 补充面板/输入框语义色（V5 无独立定义；浅色从暖纸 token 派生） */
-  --panel: #fbf4e9;
-  --composer-bg: #fffcf6;
-  /* 强调色上的前景（按钮文字等） */
-  --on-accent: #fff;
-  /* 遮罩层 */
-  --overlay-bg: rgba(40, 30, 20, 0.35);
-}
-
-/* —— 深色主题覆盖（值 = 原 GitHub-dark 硬编码，直接照搬不重设计） —— */
-[data-theme='dark'],
-[data-theme='zai-dark'],
-.theme-zai-dark,
-.dark {
-  --bg: #1b1d21;
-  --surface: #24262b;
-  --surface2: #2a2d33;
-  --muted: #32363e;
-  --border: #32353c;
-  --border2: #3a3d44;
-  --fg: #e6e6e6;
-  --fg-muted: #7d8590;
-  --fg-dim: #888;
-  --accent: #2f81f7;
-  --accent-2: #3f6d9e;
-  --accent-soft: #1f3a5f;
-  --ink: #e6e6e6;
-  --ok: #3fb950;
-  --ok-soft: #152238;
-  --warn: #d29922;
-  --warn-soft: #2a2415;
-  --danger: #f85149;
-  --danger-soft: #3a1414;
-  --code-bg: #33271a;
-  --code-fg: #f2e8d6;
-  --panel: #202226;
-  --composer-bg: #1b1d21;
-  --on-accent: #fff;
-  --overlay-bg: rgba(0, 0, 0, 0.5);
-}
+   D1（2026-10-11）：**遗留 warmPaper 暖纸 token 表（--bg/--surface/--fg/--accent…）已退役**。
+   全表消费点已迁移到 Zai 语义 token（`styles.css` 的 `--color-*`，`.theme-zai-light` /
+   `.theme-zai-dark` 契约，Z-67）。本表只剩盒子/排版规则；主题色一律引用 `--color-*`，
+   不再存在第二份同名色源。 */
 
 * {
   box-sizing: border-box;
@@ -83,8 +16,8 @@ body,
   margin: 0;
   font-family: 'Segoe UI', 'Microsoft YaHei', system-ui, sans-serif;
   font-size: 14px;
-  color: var(--fg);
-  background: var(--bg);
+  color: var(--color-foreground);
+  background: var(--color-background);
 }
 
 .app {
@@ -98,8 +31,8 @@ body,
   align-items: center;
   justify-content: space-between;
   padding: 6px 12px;
-  background: var(--surface);
-  border-bottom: 1px solid var(--border);
+  background: var(--color-card);
+  border-bottom: 1px solid var(--color-border);
   -webkit-app-region: drag;
 }
 .brand {
@@ -120,17 +53,17 @@ body,
   width: 8px;
   height: 8px;
   border-radius: 50%;
-  background: var(--fg-dim);
+  background: var(--color-foreground-subtlest);
 }
 .badge-connected .dot {
-  background: var(--ok);
+  background: var(--color-success);
 }
 .badge-connecting .dot,
 .badge-reconnecting .dot {
-  background: var(--warn);
+  background: var(--color-warning);
 }
 .badge-offline .dot {
-  background: var(--danger);
+  background: var(--color-destructive);
 }
 
 .body {
@@ -147,7 +80,7 @@ body,
 .empty-state {
   margin: auto;
   text-align: center;
-  color: var(--fg-muted);
+  color: var(--color-foreground-subtle);
 }
 .muted {
   font-size: 12px;
@@ -170,7 +103,7 @@ body,
   gap: 8px;
 }
 .turn-header {
-  color: var(--fg-muted);
+  color: var(--color-foreground-subtle);
   font-size: 12px;
   margin-top: 8px;
 }
@@ -184,36 +117,36 @@ body,
 }
 .bubble-user {
   align-self: flex-end;
-  background: var(--accent-soft);
+  background: var(--color-accent);
 }
 .bubble-assistant {
   align-self: flex-start;
-  background: var(--surface2);
+  background: var(--color-muted);
 }
 .bubble-user .role,
 .bubble-assistant .role {
   display: block;
   font-size: 11px;
-  color: var(--fg-muted);
+  color: var(--color-foreground-subtle);
   margin-bottom: 2px;
 }
 .reasoning {
   margin-bottom: 6px;
   font-size: 12px;
-  color: var(--fg-muted);
+  color: var(--color-foreground-subtle);
 }
 .reasoning summary {
   cursor: pointer;
 }
 .reasoning-body {
   white-space: pre-wrap;
-  border-left: 2px solid var(--border2);
+  border-left: 2px solid var(--color-border-hover);
   padding-left: 8px;
   margin-top: 4px;
 }
 .reasoning-inline {
   font-size: 12px;
-  color: var(--fg-muted);
+  color: var(--color-foreground-subtle);
   margin-bottom: 4px;
 }
 .tool-row {
@@ -221,25 +154,25 @@ body,
   font-size: 12.5px;
   padding: 4px 8px;
   border-radius: 6px;
-  background: var(--surface2);
+  background: var(--color-muted);
   align-self: flex-start;
   max-width: 90%;
 }
 .tool-ok .tool-status {
-  color: var(--ok);
+  color: var(--color-success);
 }
 .tool-fail .tool-status {
-  color: var(--danger);
+  color: var(--color-destructive);
 }
 .tool-pending .tool-status {
-  color: var(--warn);
+  color: var(--color-warning);
 }
 .tool-status {
   margin-left: 8px;
 }
 .cursor {
   animation: blink 1s step-end infinite;
-  color: var(--warn);
+  color: var(--color-warning);
 }
 @keyframes blink {
   50% {
@@ -247,19 +180,19 @@ body,
   }
 }
 .turn-summary {
-  color: var(--fg-muted);
+  color: var(--color-foreground-subtle);
   font-size: 12px;
   align-self: flex-start;
 }
 .sum-err {
-  color: var(--danger);
+  color: var(--color-destructive);
 }
 .sum-warn {
-  color: var(--warn);
+  color: var(--color-warning);
 }
 .approval-bar {
-  border-top: 1px solid var(--warn);
-  background: var(--warn-soft);
+  border-top: 1px solid var(--color-warning);
+  background: color-mix(in srgb, var(--color-warning) 16%, transparent);
   padding: 8px 16px;
   display: flex;
   flex-direction: column;
@@ -278,10 +211,10 @@ body,
   color: white;
 }
 .btn-allow {
-  background: var(--ok);
+  background: var(--color-success);
 }
 .btn-deny {
-  background: var(--danger);
+  background: var(--color-destructive);
 }
 /* D1：可见队列（排队/暂停/待确认/未确认）+ @引用 来源报告 */
 .queue-bar,
@@ -290,15 +223,15 @@ body,
   flex-direction: column;
   gap: 4px;
   padding: 6px 16px;
-  border-top: 1px solid var(--border);
+  border-top: 1px solid var(--color-border);
   font-size: 0.85em;
 }
 .ref-sources {
-  color: var(--muted);
+  color: var(--color-muted);
 }
 .ref-skipped,
 .ref-missing {
-  color: var(--warn);
+  color: var(--color-warning);
 }
 .queue-item {
   display: flex;
@@ -309,15 +242,15 @@ body,
   flex: 0 0 auto;
   border-radius: 4px;
   padding: 1px 6px;
-  background: var(--panel);
-  color: var(--muted);
+  background: var(--color-panel);
+  color: var(--color-muted);
 }
 .queue-item.queue-unconfirmed .queue-kind {
-  background: var(--danger);
+  background: var(--color-destructive);
   color: white;
 }
 .queue-item.queue-paused .queue-kind {
-  background: var(--warn);
+  background: var(--color-warning);
 }
 .queue-text {
   flex: 1;
@@ -326,15 +259,15 @@ body,
   white-space: nowrap;
 }
 .queue-note {
-  color: var(--muted);
+  color: var(--color-muted);
 }
 /* D2：命令执行日志卡（真实 shell/cwd/输出窗口/exit code） */
 .cmd-log {
   margin: 4px 0 6px 12px;
-  border: 1px solid var(--border);
+  border: 1px solid var(--color-border);
   border-radius: 6px;
   padding: 6px 8px;
-  background: var(--panel);
+  background: var(--color-panel);
   font-size: 0.85em;
 }
 .cmd-head {
@@ -346,26 +279,26 @@ body,
 .cmd-source {
   border-radius: 4px;
   padding: 0 6px;
-  background: var(--composer-bg);
-  color: var(--muted);
+  background: var(--color-card);
+  color: var(--color-muted);
 }
 .cmd-source-planned-only {
-  color: var(--warn);
+  color: var(--color-warning);
 }
 .cmd-status-failed,
 .cmd-status-cancelled,
 .cmd-status-unknown {
-  color: var(--danger);
+  color: var(--color-destructive);
 }
 .cmd-status-not-executed {
-  color: var(--muted);
+  color: var(--color-muted);
 }
 .cmd-command,
 .cmd-output-body {
   margin: 4px 0;
   padding: 6px;
   border-radius: 4px;
-  background: var(--composer-bg);
+  background: var(--color-card);
   white-space: pre-wrap;
   word-break: break-all;
   max-height: 260px;
@@ -374,14 +307,14 @@ body,
 .cmd-meta {
   display: flex;
   gap: 12px;
-  color: var(--muted);
+  color: var(--color-muted);
   flex-wrap: wrap;
 }
 .cmd-output-head {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  color: var(--muted);
+  color: var(--color-muted);
 }
 .cmd-error pre {
   white-space: pre-wrap;
@@ -395,7 +328,7 @@ body,
 }
 .sum-partial,
 .sum-empty {
-  color: var(--warn);
+  color: var(--color-warning);
 }
 /* D3 右侧工作面板的旧 .side-panel/.side-tabs/.side-tab/.side-badge/.side-body/.side-foot/.side-hint
    已随 Z2-04 标签体系拆除（tab 宿主改用语义 token 的 Tailwind 工具类，见
@@ -415,16 +348,16 @@ body,
 .panel-mode,
 .panel-foot,
 .panel-notice {
-  color: var(--muted);
+  color: var(--color-muted);
   font-size: 0.85em;
 }
 .panel-notice {
   margin-top: 6px;
-  color: var(--warn);
+  color: var(--color-warning);
 }
 .panel-empty {
   padding: 12px 8px;
-  color: var(--muted);
+  color: var(--color-muted);
 }
 .plan-steps {
   margin: 6px 0;
@@ -438,16 +371,16 @@ body,
   flex-direction: column;
 }
 .plan-step-completed .step-state {
-  color: var(--ok);
+  color: var(--color-success);
 }
 .plan-step-failed .step-state,
 .plan-step-cancelled .step-state {
-  color: var(--danger);
+  color: var(--color-destructive);
 }
 .step-evidence,
 .plan-goal-evidence,
 .plan-progress {
-  color: var(--muted);
+  color: var(--color-muted);
   font-size: 0.85em;
 }
 .mode-switch {
@@ -469,39 +402,39 @@ body,
   flex-wrap: wrap;
 }
 .task-state-waiting-approval {
-  color: var(--warn);
+  color: var(--color-warning);
 }
 .task-state-failed,
 .task-state-cancelled,
 .task-state-unknown {
-  color: var(--danger);
+  color: var(--color-destructive);
 }
 .task-state-completed {
-  color: var(--ok);
+  color: var(--color-success);
 }
 .task-bg,
 .task-orphan,
 .task-turn {
-  color: var(--muted);
+  color: var(--color-muted);
   font-size: 0.8em;
 }
 .task-orphan {
-  color: var(--warn);
+  color: var(--color-warning);
 }
 .approval-group {
   margin-bottom: 8px;
-  border-left: 2px solid var(--border);
+  border-left: 2px solid var(--color-border);
   padding-left: 8px;
 }
 .approval-group-head {
-  color: var(--muted);
+  color: var(--color-muted);
   font-size: 0.85em;
 }
 .approval-parent {
-  color: var(--warn);
+  color: var(--color-warning);
 }
 .approval-card {
-  border: 1px solid var(--border);
+  border: 1px solid var(--color-border);
   border-radius: 6px;
   padding: 6px;
   margin-top: 4px;
@@ -517,7 +450,7 @@ body,
   display: flex;
   gap: 10px;
   flex-wrap: wrap;
-  color: var(--muted);
+  color: var(--color-muted);
   font-size: 0.8em;
 }
 .approval-actions {
@@ -526,18 +459,18 @@ body,
   margin-top: 4px;
 }
 .approval-note {
-  color: var(--warn);
+  color: var(--color-warning);
   font-size: 0.8em;
 }
 /* D5：变更审查 + 工作区 */
 .change-file {
-  border: 1px solid var(--border);
+  border: 1px solid var(--color-border);
   border-radius: 6px;
   padding: 6px;
   margin-bottom: 6px;
 }
 .change-dirty {
-  border-color: var(--warn);
+  border-color: var(--color-warning);
 }
 .change-head {
   display: flex;
@@ -555,17 +488,17 @@ body,
   font-size: 0.8em;
 }
 .change-badge-dirty {
-  background: var(--warn);
+  background: var(--color-warning);
   color: white;
 }
 .change-badge-clean {
-  background: var(--composer-bg);
-  color: var(--muted);
+  background: var(--color-card);
+  color: var(--color-muted);
 }
 .change-meta,
 .ws-cwd,
 .ws-list-head {
-  color: var(--muted);
+  color: var(--color-muted);
   font-size: 0.8em;
   display: flex;
   gap: 12px;
@@ -577,7 +510,7 @@ body,
   margin-top: 4px;
 }
 .change-conflict {
-  border: 1px solid var(--danger);
+  border: 1px solid var(--color-destructive);
   border-radius: 6px;
   padding: 6px;
   margin-bottom: 6px;
@@ -601,10 +534,10 @@ body,
   word-break: break-all;
 }
 .ws-item-current {
-  color: var(--ok);
+  color: var(--color-success);
 }
 .ws-diff {
-  color: var(--warn);
+  color: var(--color-warning);
   font-size: 0.8em;
 }
 /* D6：有效配置 / 能力盘点 */
@@ -615,7 +548,7 @@ body,
   margin: 4px 0 8px;
 }
 .config-list dt {
-  color: var(--muted);
+  color: var(--color-muted);
   white-space: nowrap;
 }
 .config-list dd {
@@ -623,7 +556,7 @@ body,
   word-break: break-all;
 }
 .config-note {
-  color: var(--muted);
+  color: var(--color-muted);
 }
 .config-tools {
   font-family: monospace;
@@ -639,10 +572,10 @@ body,
   font-size: 0.85em;
 }
 .cap-row.cap-off .cap-state {
-  color: var(--danger);
+  color: var(--color-destructive);
 }
 .cap-reason {
-  color: var(--warn);
+  color: var(--color-warning);
   font-size: 0.85em;
 }
 /* D4：运行态行（断流/等待审批/取消结论如实呈现） */
@@ -650,7 +583,7 @@ body,
   display: flex;
   flex-direction: column;
   gap: 2px;
-  border: 1px solid var(--border);
+  border: 1px solid var(--color-border);
   border-radius: 6px;
   padding: 4px 6px;
   margin-bottom: 6px;
@@ -658,17 +591,17 @@ body,
 }
 .runtime-stalled .runtime-label,
 .runtime-unknown .runtime-label {
-  color: var(--danger);
+  color: var(--color-destructive);
 }
 .runtime-awaiting-approval .runtime-label {
-  color: var(--warn);
+  color: var(--color-warning);
 }
 .runtime-running .runtime-label {
-  color: var(--ok);
+  color: var(--color-success);
 }
 .runtime-hint,
 .runtime-cancel {
-  color: var(--muted);
+  color: var(--color-muted);
 }
 /* —— 对话席位（P5-C 接线；P6 补 D-46 浮层）：头部 + 转录（主区唯一视图，Z-16）+ composer 浮层 ——
    Z2-05：视图环（.view-ring*）已退役 —— ZCode 的主区没有视图环/标签条。 */
@@ -702,16 +635,16 @@ body,
   flex-direction: column;
   gap: 8px;
   padding: 10px 16px;
-  border-top: 1px solid var(--border);
-  background: var(--panel);
+  border-top: 1px solid var(--color-border);
+  background: var(--color-panel);
 }
 .composer-editor {
   min-height: 40px;
   max-height: 200px;
   overflow-y: auto;
-  background: var(--composer-bg);
+  background: var(--color-card);
   color: inherit;
-  border: 1px solid var(--border);
+  border: 1px solid var(--color-border);
   border-radius: 8px;
   padding: 8px;
   font: inherit;
@@ -719,14 +652,14 @@ body,
   word-break: break-word;
 }
 .composer-editor:focus {
-  outline: 1px solid var(--accent);
+  outline: 1px solid var(--color-primary);
 }
 .composer-editor[aria-disabled='true'] {
   opacity: 0.6;
 }
 .composer-chip {
-  background: var(--accent-soft);
-  border: 1px solid var(--border2);
+  background: var(--color-accent);
+  border: 1px solid var(--color-border-hover);
   border-radius: 4px;
   padding: 0 4px;
   margin: 0 2px;
@@ -738,10 +671,10 @@ body,
   flex-wrap: wrap;
   gap: 6px;
   font-size: 12px;
-  color: var(--fg-muted);
+  color: var(--color-foreground-subtle);
 }
 .composer-attachment.att-failed {
-  color: var(--danger);
+  color: var(--color-destructive);
 }
 .composer-actions {
   display: flex;
@@ -762,17 +695,17 @@ body,
 }
 .btn-attach {
   background: transparent;
-  border: 1px solid var(--border);
+  border: 1px solid var(--color-border);
   border-radius: 8px;
-  color: var(--fg-muted);
+  color: var(--color-foreground-subtle);
   padding: 8px 12px;
   cursor: pointer;
 }
 .btn-reference {
   background: transparent;
-  border: 1px solid var(--border);
+  border: 1px solid var(--color-border);
   border-radius: 8px;
-  color: var(--fg-muted);
+  color: var(--color-foreground-subtle);
   padding: 8px 12px;
   cursor: pointer;
 }
@@ -794,15 +727,15 @@ body,
 .composer-status {
   padding: 4px 2px;
   font-size: 12px;
-  color: var(--fg-muted);
+  color: var(--color-foreground-subtle);
 }
 .composer-status[data-kind='error'] {
-  color: var(--danger);
+  color: var(--color-destructive);
 }
 /* Z3-04：发送/停止主按钮改用 ui-shared Button（Z-75 icon-md + bg-brand），此处旧 .btn-send/.btn-stop 移除 */
 .unread-badge {
-  background: var(--accent);
-  color: white;
+  background: var(--color-primary);
+  color: var(--color-primary-foreground);
   border-radius: 999px;
   font-size: 11px;
   padding: 0 6px;
@@ -813,7 +746,7 @@ body,
   width: 8px;
   height: 8px;
   border-radius: 50%;
-  background: var(--warn);
+  background: var(--color-warning);
   margin-left: 6px;
 }
 
@@ -825,7 +758,7 @@ body,
 }
 .hint {
   font-size: 11px;
-  color: var(--fg-muted);
+  color: var(--color-foreground-subtle);
 }
 /* —— B4 对话头（cwd / 分支 / 模型 / 上下文水条） —— */
 .pane-header {
@@ -833,10 +766,10 @@ body,
   align-items: center;
   gap: 12px;
   padding: 3px 10px;
-  background: var(--surface2);
-  border-bottom: 1px solid var(--border);
+  background: var(--color-muted);
+  border-bottom: 1px solid var(--color-border);
   font-size: 11px;
-  color: var(--fg-muted);
+  color: var(--color-foreground-subtle);
   min-height: 22px;
 }
 .pane-header-cwd {
@@ -847,14 +780,14 @@ body,
 }
 .pane-header-branch {
   white-space: nowrap;
-  color: var(--fg-dim);
+  color: var(--color-foreground-subtlest);
 }
 .pane-header-branch-icon {
   font-size: 12px;
 }
 .pane-header-model {
   white-space: nowrap;
-  color: var(--accent);
+  color: var(--color-primary);
   font-weight: 500;
 }
 .pane-header-usage {
@@ -867,7 +800,7 @@ body,
   width: 48px;
   height: 6px;
   border-radius: 3px;
-  background: var(--muted);
+  background: var(--color-muted);
   overflow: hidden;
 }
 .ctx-bar-fill {
@@ -876,14 +809,14 @@ body,
   transition: width 0.3s ease;
 }
 .ctx-ok {
-  background: linear-gradient(90deg, var(--ok), var(--accent));
+  background: linear-gradient(90deg, var(--color-success), var(--color-primary));
 }
 .ctx-warn {
-  background: linear-gradient(90deg, var(--warn), var(--danger));
+  background: linear-gradient(90deg, var(--color-warning), var(--color-destructive));
 }
 .ctx-label {
   font-size: 10px;
-  color: var(--fg-dim);
+  color: var(--color-foreground-subtlest);
   min-width: 28px;
   text-align: right;
 }
@@ -897,12 +830,12 @@ body,
 .empty-pane {
   align-items: center;
   justify-content: center;
-  color: var(--fg-muted);
+  color: var(--color-foreground-subtle);
 }
 .bg-tag {
   font-size: 10px;
-  color: var(--warn);
-  border: 1px solid var(--warn);
+  color: var(--color-warning);
+  border: 1px solid var(--color-warning);
   border-radius: 4px;
   padding: 0 3px;
   margin-left: 6px;
@@ -912,29 +845,29 @@ body,
 .subagent-jump {
   margin-left: 8px;
   font-size: 11px;
-  color: var(--accent);
+  color: var(--color-primary);
   background: none;
-  border: 1px solid var(--accent);
+  border: 1px solid var(--color-primary);
   border-radius: 4px;
   padding: 0 5px;
   cursor: pointer;
 }
 .subagent-jump:hover {
-  background: var(--accent-soft);
+  background: var(--color-accent);
 }
 
 /* —— B2 设置弹窗 —— */
 .btn-settings {
   background: transparent;
   border: none;
-  color: var(--fg-muted);
+  color: var(--color-foreground-subtle);
   font-size: 16px;
   cursor: pointer;
   padding: 0 6px;
   -webkit-app-region: no-drag;
 }
 .btn-settings:hover {
-  color: var(--accent);
+  color: var(--color-primary);
 }
 .settings-overlay {
   position: fixed;
@@ -943,16 +876,18 @@ body,
   display: flex;
   align-items: center;
   justify-content: center;
-  background: var(--overlay-bg);
+  background: rgba(0, 0, 0, 0.45);
 }
 .settings-dialog {
   display: flex;
   width: min(880px, 92vw);
   height: min(600px, 88vh);
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  box-shadow: var(--shadow);
+  background: var(--color-card);
+  border: 1px solid var(--color-border);
+  border-radius: 14px;
+  box-shadow:
+    0 1px 2px rgba(70, 50, 30, 0.06),
+    0 12px 32px rgba(70, 50, 30, 0.1); /* D1：原 warmPaper --shadow 数值保留（待统一项，见 issue-log） */
   overflow: hidden;
 }
 .settings-nav {
@@ -960,8 +895,8 @@ body,
   flex-direction: column;
   width: 200px;
   min-width: 200px;
-  background: var(--surface2);
-  border-right: 1px solid var(--border);
+  background: var(--color-muted);
+  border-right: 1px solid var(--color-border);
   overflow-y: auto;
   padding: 12px 0 16px;
 }
@@ -969,7 +904,7 @@ body,
   font-weight: 600;
   font-size: 15px;
   padding: 4px 16px 12px;
-  color: var(--fg);
+  color: var(--color-foreground);
 }
 .settings-nav-item {
   display: flex;
@@ -983,16 +918,16 @@ body,
   border-left: 3px solid transparent;
   cursor: pointer;
   text-align: left;
-  color: var(--fg-muted);
+  color: var(--color-foreground-subtle);
 }
 .settings-nav-item:hover {
-  background: var(--muted);
-  color: var(--fg);
+  background: var(--color-muted);
+  color: var(--color-foreground);
 }
 .settings-nav-item.on {
-  background: var(--accent-soft);
-  border-left-color: var(--accent);
-  color: var(--accent);
+  background: var(--color-accent);
+  border-left-color: var(--color-primary);
+  color: var(--color-primary);
 }
 .settings-nav-item .nav-cn {
   font-size: 13px;
@@ -1000,7 +935,7 @@ body,
 }
 .settings-nav-item .nav-en {
   font-size: 11px;
-  color: var(--fg-dim);
+  color: var(--color-foreground-subtlest);
 }
 .settings-content {
   flex: 1;
@@ -1013,7 +948,7 @@ body,
   align-items: center;
   justify-content: space-between;
   padding: 14px 18px;
-  border-bottom: 1px solid var(--border);
+  border-bottom: 1px solid var(--color-border);
 }
 .settings-head-title {
   font-size: 16px;
@@ -1022,13 +957,13 @@ body,
 .btn-close {
   background: transparent;
   border: none;
-  color: var(--fg-muted);
+  color: var(--color-foreground-subtle);
   font-size: 15px;
   cursor: pointer;
   padding: 2px 6px;
 }
 .btn-close:hover {
-  color: var(--danger);
+  color: var(--color-destructive);
 }
 .settings-body {
   flex: 1;
@@ -1049,26 +984,26 @@ body,
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.5px;
-  color: var(--fg-muted);
+  color: var(--color-foreground-subtle);
 }
 .settings-desc {
   margin: 0 0 10px;
   font-size: 12px;
-  color: var(--fg-muted);
+  color: var(--color-foreground-subtle);
 }
 .settings-note {
   margin: 8px 0 0;
   font-size: 12px;
-  color: var(--fg-dim);
+  color: var(--color-foreground-subtlest);
 }
 .settings-warn {
   margin: 8px 0 0;
   font-size: 12px;
-  color: var(--warn);
+  color: var(--color-warning);
 }
 .settings-feedback {
   font-size: 12px;
-  color: var(--ok);
+  color: var(--color-success);
   margin-left: 10px;
 }
 .settings-row {
@@ -1080,21 +1015,21 @@ body,
 }
 .seg {
   padding: 5px 12px;
-  border: 1px solid var(--border2);
-  background: var(--surface);
+  border: 1px solid var(--color-border-hover);
+  background: var(--color-card);
   border-radius: 8px;
   cursor: pointer;
   font-size: 12px;
-  color: var(--fg-muted);
+  color: var(--color-foreground-subtle);
 }
 .seg:hover {
-  border-color: var(--accent);
-  color: var(--fg);
+  border-color: var(--color-primary);
+  color: var(--color-foreground);
 }
 .seg-on {
-  background: var(--accent-soft);
-  border-color: var(--accent);
-  color: var(--accent);
+  background: var(--color-accent);
+  border-color: var(--color-primary);
+  color: var(--color-primary);
   font-weight: 600;
 }
 .settings-choice {
@@ -1109,32 +1044,32 @@ body,
   align-items: flex-start;
   gap: 2px;
   padding: 10px 14px;
-  border: 1px solid var(--border);
+  border: 1px solid var(--color-border);
   border-radius: 10px;
-  background: var(--surface);
+  background: var(--color-card);
   cursor: pointer;
   text-align: left;
 }
 .choice:hover {
-  border-color: var(--accent);
+  border-color: var(--color-primary);
 }
 .choice-on {
-  border-color: var(--accent);
-  background: var(--accent-soft);
+  border-color: var(--color-primary);
+  background: var(--color-accent);
 }
 .choice-label {
   font-size: 13px;
   font-weight: 600;
-  color: var(--fg);
+  color: var(--color-foreground);
 }
 .choice-desc {
   font-size: 12px;
-  color: var(--fg-muted);
+  color: var(--color-foreground-subtle);
 }
 .settings-table {
   display: flex;
   flex-direction: column;
-  border: 1px solid var(--border);
+  border: 1px solid var(--color-border);
   border-radius: 10px;
   overflow: hidden;
   margin: 8px 0;
@@ -1144,7 +1079,7 @@ body,
   align-items: center;
   gap: 10px;
   padding: 7px 12px;
-  border-bottom: 1px solid var(--border);
+  border-bottom: 1px solid var(--color-border);
   font-size: 12px;
 }
 .settings-table-row:last-child {
@@ -1154,13 +1089,13 @@ body,
   font-weight: 500;
   width: 120px;
   min-width: 120px;
-  color: var(--fg);
+  color: var(--color-foreground);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 .row-val {
-  color: var(--fg-muted);
+  color: var(--color-foreground-subtle);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -1171,16 +1106,16 @@ body,
 }
 .settings-input {
   padding: 5px 8px;
-  border: 1px solid var(--border);
+  border: 1px solid var(--color-border);
   border-radius: 8px;
-  background: var(--composer-bg);
-  color: var(--fg);
+  background: var(--color-card);
+  color: var(--color-foreground);
   font-size: 12px;
   min-width: 120px;
 }
 .settings-input:focus {
   outline: none;
-  border-color: var(--accent);
+  border-color: var(--color-primary);
 }
 .settings-check {
   display: flex;
@@ -1191,23 +1126,23 @@ body,
   margin: 8px 0;
 }
 .settings-card {
-  border: 1px solid var(--border);
+  border: 1px solid var(--color-border);
   border-radius: 10px;
   padding: 12px 14px;
   margin: 10px 0;
-  background: var(--surface);
+  background: var(--color-card);
 }
 .btn-primary {
   padding: 6px 16px;
   border: none;
   border-radius: 8px;
-  background: var(--accent);
-  color: var(--on-accent);
+  background: var(--color-primary);
+  color: var(--color-primary-foreground);
   font-size: 13px;
   cursor: pointer;
 }
 .btn-primary:hover {
-  background: var(--accent-2);
+  background: var(--color-primary);
 }
 .btn-primary:disabled {
   opacity: 0.5;
@@ -1222,16 +1157,16 @@ body,
   padding: 1px 0;
 }
 .diag-ok {
-  color: var(--ok);
-  background: var(--ok-soft);
+  color: var(--color-success);
+  background: color-mix(in srgb, var(--color-success) 14%, transparent);
 }
 .diag-warn {
-  color: var(--warn);
-  background: var(--warn-soft);
+  color: var(--color-warning);
+  background: color-mix(in srgb, var(--color-warning) 16%, transparent);
 }
 .diag-fail {
-  color: var(--danger);
-  background: var(--danger-soft);
+  color: var(--color-destructive);
+  background: color-mix(in srgb, var(--color-destructive) 14%, transparent);
 }
 
 /* B5 diff 卡片：write/edit 真实红绿 diff 卡片 */
@@ -1239,9 +1174,9 @@ body,
   margin-top: 6px;
 }
 .diff-card {
-  border: 1px solid var(--border);
+  border: 1px solid var(--color-border);
   border-radius: 8px;
-  background: var(--surface);
+  background: var(--color-card);
   margin: 6px 0;
   max-width: 100%;
   overflow: hidden;
@@ -1254,14 +1189,14 @@ body,
   align-items: center;
   justify-content: space-between;
   padding: 4px 10px;
-  background: var(--surface2);
-  border-bottom: 1px solid var(--border);
+  background: var(--color-muted);
+  border-bottom: 1px solid var(--color-border);
   min-height: 28px;
 }
 .diff-title {
   font-size: 12px;
   font-family: Consolas, monospace;
-  color: var(--fg-muted);
+  color: var(--color-foreground-subtle);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -1269,23 +1204,23 @@ body,
 }
 .diff-error {
   font-size: 11px;
-  color: var(--fg-dim);
+  color: var(--color-foreground-subtlest);
   font-style: italic;
   margin-left: auto;
 }
 .diff-undo {
   font-size: 12px;
   padding: 2px 10px;
-  border: 1px solid var(--danger);
-  background: var(--surface);
-  color: var(--danger);
+  border: 1px solid var(--color-destructive);
+  background: var(--color-card);
+  color: var(--color-destructive);
   border-radius: 6px;
   cursor: pointer;
   white-space: nowrap;
   margin-left: auto;
 }
 .diff-undo:hover {
-  background: var(--danger-soft);
+  background: color-mix(in srgb, var(--color-destructive) 14%, transparent);
 }
 .diff-body {
   font-family: Consolas, monospace;
@@ -1300,10 +1235,10 @@ body,
   word-break: break-all;
 }
 .diff-add {
-  background: var(--ok-soft);
+  background: color-mix(in srgb, var(--color-success) 14%, transparent);
 }
 .diff-del {
-  background: var(--danger-soft);
+  background: color-mix(in srgb, var(--color-destructive) 14%, transparent);
 }
 .diff-ctx {
   background: transparent;
@@ -1313,20 +1248,20 @@ body,
   width: 14px;
   text-align: center;
   user-select: none;
-  color: var(--fg-dim);
+  color: var(--color-foreground-subtlest);
 }
 .diff-add .diff-mark {
-  color: var(--ok);
+  color: var(--color-success);
 }
 .diff-del .diff-mark {
-  color: var(--danger);
+  color: var(--color-destructive);
 }
 .diff-text {
   flex: 1;
   min-width: 0;
 }
 .diff-empty {
-  color: var(--fg-muted);
+  color: var(--color-foreground-subtle);
   font-style: italic;
   padding: 8px 10px;
 }
@@ -1338,13 +1273,13 @@ body,
   padding: 4px 10px;
   border: none;
   background: transparent;
-  color: var(--fg-muted);
+  color: var(--color-foreground-subtle);
   cursor: pointer;
   font-family: Consolas, monospace;
 }
 .diff-toggle:hover {
-  background: var(--muted);
-  color: var(--fg);
+  background: var(--color-muted);
+  color: var(--color-foreground);
 }
 
 /* —— B6 命令面板（Ctrl+K）：顶部居中 + 半透明遮罩；复用 settings-overlay 遮罩语义 —— */
@@ -1352,7 +1287,7 @@ body,
   position: fixed;
   inset: 0;
   z-index: 110;
-  background: var(--overlay-bg);
+  background: rgba(0, 0, 0, 0.45);
   display: flex;
   justify-content: center;
   align-items: flex-start;
@@ -1361,10 +1296,12 @@ body,
 }
 .command-palette {
   width: min(560px, 92vw);
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  box-shadow: var(--shadow);
+  background: var(--color-card);
+  border: 1px solid var(--color-border);
+  border-radius: 14px;
+  box-shadow:
+    0 1px 2px rgba(70, 50, 30, 0.06),
+    0 12px 32px rgba(70, 50, 30, 0.1); /* D1：原 warmPaper --shadow 数值保留（待统一项，见 issue-log） */
   overflow: hidden;
 }
 .command-palette-input-wrap {
@@ -1372,10 +1309,10 @@ body,
   align-items: center;
   gap: 8px;
   padding: 12px 16px;
-  border-bottom: 1px solid var(--border);
+  border-bottom: 1px solid var(--color-border);
 }
 .command-palette-prompt {
-  color: var(--fg-dim);
+  color: var(--color-foreground-subtlest);
   font-weight: 600;
 }
 .command-palette-input {
@@ -1384,7 +1321,7 @@ body,
   background: transparent;
   border: none;
   outline: none;
-  color: var(--fg);
+  color: var(--color-foreground);
   font-size: 15px;
   padding: 0;
 }
@@ -1403,10 +1340,10 @@ body,
   padding: 8px 10px;
   border-radius: 8px;
   cursor: pointer;
-  color: var(--fg);
+  color: var(--color-foreground);
 }
 .command-palette-item.selected {
-  background: var(--accent-soft);
+  background: var(--color-accent);
 }
 .command-palette-item .command-palette-label {
   overflow: hidden;
@@ -1414,17 +1351,17 @@ body,
   white-space: nowrap;
 }
 .command-palette-item .command-palette-hint {
-  color: var(--fg-dim);
+  color: var(--color-foreground-subtlest);
   font-size: 12px;
   white-space: nowrap;
 }
 .command-palette-item.selected .command-palette-hint {
-  color: var(--fg-muted);
+  color: var(--color-foreground-subtle);
 }
 .command-palette-empty {
   padding: 16px;
   text-align: center;
-  color: var(--fg-dim);
+  color: var(--color-foreground-subtlest);
 }
 
 /* =============================================================================
@@ -1462,18 +1399,18 @@ body,
   border: none;
   border-radius: 9px;
   background: transparent;
-  color: var(--fg-muted);
+  color: var(--color-foreground-subtle);
   font-size: 11px;
   line-height: 18px;
   cursor: pointer;
 }
 .turn-rail-item:hover {
-  background: var(--surface2);
-  color: var(--fg);
+  background: var(--color-muted);
+  color: var(--color-foreground);
 }
 .turn-rail-item-active {
-  background: var(--accent-soft);
-  color: var(--accent);
+  background: var(--color-accent);
+  color: var(--color-primary);
 }
 @container (min-width: 864px) {
   .turn-rail {

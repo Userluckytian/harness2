@@ -869,7 +869,7 @@ describe('P1-2 steer 的 expectedTurnId 与 rejected 可见（不静默）', () 
     expect(store.peekStream('s1')?.submitAcks['cm-1']?.state).toBe('rejected');
   });
 
-  it('accepted：不还原草稿（提交成功），状态行显示落点', async () => {
+  it('accepted：不还原草稿（提交成功），落点提示在 ack 落定后清除（不常驻）', async () => {
     const submit = vi.fn<Harness2Api['submit']>(async () => undefined);
     const { store, controller } = boot({ api: makeApi({ submit }) });
     const port = createConversationComposerPort({ store, controller, createClientMessageId: () => 'cm-1' });
@@ -878,6 +878,8 @@ describe('P1-2 steer 的 expectedTurnId 与 rejected 可见（不静默）', () 
     inputText('你好');
     fireEvent.keyDown(editor(), { key: 'Enter' });
     await waitFor(() => expect(submit).toHaveBeenCalledTimes(1));
+    // 提交后、ack 前：状态行显示真实落点
+    expect(screen.getByTestId('composer-status').textContent).toContain('已发送（transcript）');
     act(() => {
       store.applyFrame({
         type: 'submit-ack',
@@ -889,7 +891,8 @@ describe('P1-2 steer 的 expectedTurnId 与 rejected 可见（不静默）', () 
     });
     await wait(10);
     expect(editor().textContent).toBe('');
-    expect(screen.getByTestId('composer-status').textContent).toContain('已发送（transcript）');
+    // D2：ack 落定即清除落点提示，不再永久常驻「已发送（transcript），等待服务端确认…」
+    expect(screen.queryByTestId('composer-status')).toBeNull();
   });
 });
 
