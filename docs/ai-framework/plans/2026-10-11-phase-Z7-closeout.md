@@ -122,6 +122,25 @@
 9. IM 真机联调（需 QQ/飞书凭据）：群 @bot/私聊、审批、频率限制、飞书 webhook。
 10. README 截图**必须真实**反映当前 UI，禁用 AI 生成或占位图冒充。
 
+## 6.1 自主浏览器验收（2026-10-11 已执行）——可复跑配方
+
+**结论：§6 清单里约 2/3 的项不必等人工——web 端（与桌面同构）可在内置浏览器里自主验收**，且比肉眼看图更可核验（直接读计算样式/几何对照规格数值）。
+
+**配方（零 key，全隔离）**：
+
+1. `node packages/cli/dist/index.js serve --port 46213 --provider mock --home <tmp>/home --root <tmp>/ws`
+   —— `--provider mock` 不需要任何 API key，给流式回复；`--home` 指向临时目录，**不碰真实 `~/.harness2`**。
+2. token 从 `<tmp>/home/.harness2/serve.lock` 读取；需要会话时 `curl -H "Authorization: Bearer <token>" -X POST .../api/sessions -d '{"cwd":"<tmp>/ws"}'`（web 壳无目录选择通道，零会话时新建按钮如实禁用）。
+3. `cd packages/web && npx vite --port 5173`；浏览器打开 `http://localhost:5173/?token=<token>`（dev 代理 `/api` `/ws` 到 serve）。
+4. 用真实交互操作 + `evaluate` 读 `getComputedStyle` / `getBoundingClientRect` / `localStorage` 取证；**注意本机若设 `HTTP_PROXY` 会让 curl 打到 localhost 返回 502，用 `--noproxy '*'`**；vite 只监听 IPv6 `[::1]`，用 `localhost` 或 `[::1]`。
+5. 跑 core 全量测试前**先停 serve**（`fork.test.ts` 用默认端口 46213，会 `EADDRINUSE`）。
+
+**已由该方式闭合（实测数字）**：侧栏 264/折叠 4px · 右栏 457px(=内容区 45%)/零 tab 启器 · 界面字号 12–20 生效与存储例外 · 双主题切换（class/data-theme/color-scheme/存储）· 设置覆层分区按数据面白名单 · 空态问候+建议 chip · 流式回复 · 轮次导航 ≥2 轮出现 · **底色归位 Zai（浅 `#f8f8f8`/深 `#161616`）**。
+
+**仍须人工（浏览器测不了）**：Electron `frame:false` 窗口拖拽/红绿灯（无 OS 窗口）· 真实按键类交互（合成 KeyboardEvent 不触发 React 监听，如命令面板 Ctrl+K 的实际手感）· 审批 dock（mock provider 不触发审批）· 分屏拖拽投放的观感 · IM 真机联调（需凭据）· README 五张正式截图。
+
+**本轮据此外发现并修复 4 个真实缺陷（D1–D4，全部浏览器复测通过）**：D1 遗留 warmPaper 主题表未退役致两壳底色非 Zai；D2 composer 落点提示不清除；D3 提交派发后不从活队列出队（面板常驻「排队」）；D4 恢复账本缺 `queue/dispatched` 标记致重启复活已执行提交。详见 `docs/issue-log/2026-10-11.md` §43–§46。
+
 ## 7 交接提示词（零上下文可执行）
 
 ```
