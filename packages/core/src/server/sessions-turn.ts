@@ -1,6 +1,7 @@
 // SessionHub turn 流转（A4 拆分自 sessions.ts，纯搬运）：用户消息串行队列、runTurn 装配、
 // 流式增量转发、nudge 复盘、undo/redo/fork。
 import { runTurn } from '../agent/loop.js';
+import { CompactionBreaker } from '../agent/compactionBreaker.js';
 import { FANOUT_TOOL_NAMES, SUBAGENT_TOOL_NAMES, createSubagentTools } from '../agent/subagent.js';
 import { SpawnHistoryStore, createFanoutTools } from '../agent/subagent-fanout.js';
 import type { TaskSpec } from '../agent/task-coordinator.js';
@@ -32,6 +33,16 @@ export abstract class SessionHubTurn extends SessionHubAssembly {
   private readonly fanoutHistory = new SpawnHistoryStore();
 
   // —— turn 流转 ——
+
+  /** Z6-A05-2：每会话压缩断路器（懒创建；同会话跨 turn 复用，新会话 id = 新实例即重置） */
+  protected compactionBreakerFor(id: string): CompactionBreaker {
+    let breaker = this.compactionBreakers.get(id);
+    if (breaker === undefined) {
+      breaker = new CompactionBreaker();
+      this.compactionBreakers.set(id, breaker);
+    }
+    return breaker;
+  }
 
   /** 用户消息：入该会话串行队列（busy 即排队，同 REPL）；未知会话先 ensureOpen */
   sendUserMessage(id: string, text: string): void {
@@ -99,8 +110,16 @@ export abstract class SessionHubTurn extends SessionHubAssembly {
         ...(this.options.memory !== undefined ? { memory: this.options.memory.store } : {}),
         // 阶段 10：Skills 列表注入（每 turn 重扫磁盘；全文走 skill 工具）
         ...(this.options.skills !== undefined ? { skills: this.options.skills } : {}),
-        // 阶段 7：上下文压缩装配（启动器按 config 派生；缺省不压缩）
-        ...(this.options.compaction !== undefined ? { compaction: this.options.compaction } : {}),
+        // 阶段 7：上下文压缩装配（启动器按 config 派生；缺省不压缩）。
+        // Z6-A05-2：每会话压缩断路器（会话级状态跨 turn 复用；新会话 = 新实例即重置）。
+        ...(this.options.compaction !== undefined
+          ? {
+              compaction: {
+                ...this.options.compaction,
+                breaker: this.compactionBreakerFor(id),
+              },
+            }
+          : {}),
       });
       if (result.retryBudget !== undefined) this.lastRetryBudgets.set(id, result.retryBudget);
       this.emitTurnEnd(id, result);

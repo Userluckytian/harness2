@@ -17,6 +17,7 @@ import {
 } from './compaction.js';
 import { assembleMemorySnapshot, type MemoryStore } from '../memory/store.js';
 import { assembleSkillsSystemBlock } from '../skills/store.js';
+import { applyLayeredCompaction } from '../session/layeredCompaction.js';
 import { computeProjection, loadSession, type LoadedSession } from '../session/reader.js';
 import { readTextOrNull, snapshotTargetFile } from '../session/snapshots.js';
 import { SessionWriter, type SessionAppender } from '../session/writer.js';
@@ -206,7 +207,14 @@ interface PendingCall {
 /**
  * 压缩触发检查（turn 开始，user/message 落盘后、首个 step 前）：
  *   估算（buildChatMessages 输出，已应用既有压缩替换）> contextWindow × 0.75 →
- *   覆盖区折叠 → 摘要 provider 生成摘要 → append compaction/applied。
+ *   Z6-A05-1：自动路径走**分层**压缩——会话级摘要仍由摘要 provider 生成（输入 = 既有
+ *   单层 digest，摘要质量与失败语义不变：摘要失败不落事件、下轮重试），落盘与 turn
+ *   明细由 session/layeredCompaction.applyLayeredCompaction 承接（compaction/applied
+ *   事件形状不变，另写 turn 明细辅助文件 compaction.layers.jsonl）；分层不可用（抛错
+ *   或未落事件）→ 回退既有单层 append（同一条摘要，语义等价）。
+ *   Z6-A05-2：配置断路器（CompactionOptions.breaker）时，连续失败达阈值 → 熔断：
+ *   本会话停用自动压缩（trip 那轮 warning 明确告知一次，其后静默跳过；手动 /compact
+ *   不经本函数、不受影响；成功即清零计数）。
  * 任何失败（估算/摘要/落盘）都不中断 turn：返回 warning 或 undefined，绝不抛出。
  */
 async function runCompactionIfNeeded(
@@ -216,6 +224,8 @@ async function runCompactionIfNeeded(
 ): Promise<string | undefined> {
   const compaction = options.compaction;
   if (compaction === undefined) return undefined;
+  const breaker = compaction.breaker;
+  if (breaker !== undefined && !breaker.canAttempt()) return undefined; // 已熔断：本会话停用自动压缩
   try {
     const session = loadSession(writer.dir);
     const tokens = estimateContextTokens(buildChatMessages(session));
@@ -229,10 +239,41 @@ async function runCompactionIfNeeded(
       ...(compaction.maxSummaryChars !== undefined ? { maxChars: compaction.maxSummaryChars } : {}),
       ...(options.signal !== undefined ? { signal } : {}),
     });
+    // 分层落盘：usageRatio = tokens/contextWindow，与 getContextUsage 同一条唯一估算
+    // 算法的组成步骤（loadSession → buildChatMessages → estimateContextTokens），非第二套估算
+    const seqBefore = writer.lastSeq;
+    try {
+      const layered = await applyLayeredCompaction(writer, session, {
+        usageRatio: tokens / contextWindow,
+        refine: () => Promise.resolve(summary),
+      });
+      if (layered !== null) {
+        breaker?.recordSuccess();
+        return undefined;
+      }
+      // layered null（无可折叠区域——与上方 coveredUpToSeq 同判，防御性回退单层）
+    } catch (e) {
+      if (writer.lastSeq > seqBefore) {
+        // 分层在 compaction/applied 落盘之后失败（turn 明细辅助文件写失败等）：
+        // 会话级摘要已生效，如实告知明细未落盘；压缩本身计成功（事件已落、估算回落）。
+        breaker?.recordSuccess();
+        return `分层压缩明细落盘失败（会话级摘要已生效）: ${(e as Error)?.message ?? String(e)}`;
+      }
+      // 分层未落任何事件 → 回退既有单层 append
+    }
     writer.append('compaction/applied', { summary, coveredUpToSeq });
+    breaker?.recordSuccess();
     return undefined;
   } catch (e) {
-    return `上下文压缩失败已跳过（下轮重试）: ${(e as Error)?.message ?? String(e)}`;
+    const failure = (e as Error)?.message ?? String(e);
+    if (breaker !== undefined && breaker.recordFailure()) {
+      const count = breaker.snapshot().consecutiveFailures;
+      return (
+        `连续 ${count} 次上下文压缩失败，已熔断：本会话停用自动压缩（手动 /compact 不受影响）。` +
+        `最近一次失败：${truncateCircuitError(failure)}`
+      );
+    }
+    return `上下文压缩失败已跳过（下轮重试）: ${failure}`;
   }
 }
 

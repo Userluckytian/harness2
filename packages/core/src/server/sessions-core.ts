@@ -1,6 +1,7 @@
 // SessionHub 共享状态与观察者分发（A4 拆分自 sessions.ts，纯搬运）：会话注册表/运行状态字段、
 // 构造与 hooks 注册、emit* 观察者分发、出口断言，以及 EventMirrorWriter 与内部条目类型。
 import { TaskCoordinator, type TaskTransitionRecorder } from '../agent/task-coordinator.js';
+import { CompactionBreaker } from '../agent/compactionBreaker.js';
 import type { TurnResult } from '../agent/types.js';
 import { ApprovalQueue } from '../interaction/approval-queue.js';
 import type { DeliverySession } from '../interaction/delivery.js';
@@ -162,6 +163,8 @@ export abstract class SessionHubCore {
   protected readonly lastRetryBudgets = new Map<string, RetryBudgetState>();
   /** S6 会话级 steer sink（接收/去重/排队跨 turn 持续；loop 只在安全 step 边界消费） */
   protected readonly steerSinks = new Map<SessionId, SessionSteerSink>();
+  /** Z6-A05-2：会话级压缩断路器（跨 turn 持续；新会话 id = 新实例即重置） */
+  protected readonly compactionBreakers = new Map<SessionId, CompactionBreaker>();
 
   readonly approvalTimeoutMs: number;
   /** 观察者集合（WS 事件面 / 测试；addHooks 注册，返回退订函数） */

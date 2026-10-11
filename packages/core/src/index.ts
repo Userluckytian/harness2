@@ -7,6 +7,8 @@ export * from './session/reader.js';
 export * from './session/snapshots.js';
 export * from './session/manager.js';
 export * from './session/undo.js';
+// Z6-A17（2026-10-11）加性导出：bash 副作用清单查询（undo/redo 结果携带；GUI 警告条数据源）。
+export * from './session/bashCommands.js';
 export * from './session/fork.js';
 export * from './session/export.js';
 // P7-B（2026-09-14）H-11～H-14 会话能力补齐：纯加性导出（新模块，无删除/改名/种类变更）。
@@ -45,6 +47,8 @@ export * from './tools/script.js';
 export * from './tools/predefined/index.js';
 export * from './tools/predefined/browser.js';
 export * from './approval/policy.js';
+// Z6-A16（2026-10-11）加性导出：权限规则 DSL 的 glob 匹配（* / ?，自写小函数）。
+export * from './approval/glob.js';
 // P7-D（2026-09-14）H-44 / H-66～H-68：特权请求流（sudo/secret）+ 统一 flow 契约/状态机/审计。
 // 纯加性导出（新模块），配套更新 api-surface 基线。
 export * from './approval/privileged.js';
@@ -59,6 +63,8 @@ export * from './skills/tool.js';
 export * from './skills/authoring.js';
 export * from './agent/types.js';
 export * from './agent/compaction.js';
+// Z6-A05（2026-10-11）加性导出：压缩断路器（连续失败熔断，会话级状态）。
+export * from './agent/compactionBreaker.js';
 export * from './agent/contextUsage.js';
 export * from './agent/loop.js';
 export * from './agent/subagent.js';

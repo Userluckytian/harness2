@@ -11,6 +11,7 @@
 //
 // dryRun 只返回预览（将撤/将恢复的消息数、文件清单、冲突）不落盘（不追加 marker、
 // 不写文件）。目标恒在界内（与 Ph2 的 writer 侧 rewindToSeq 1..lastSeq 校验兼容）。
+import { collectBashCommands, type BashCommandRecord } from './bashCommands.js';
 import { computeProjection, loadSession, type ProjectionMessage } from './reader.js';
 import type { SnapshotRestoreItem, SnapshotStore } from './snapshots.js';
 import type { SessionAppender } from './writer.js';
@@ -41,6 +42,13 @@ export interface UndoRedoResult {
   messages: number;
   /** 文件恢复计划/结果（未提供 snapshots 时为空数组） */
   files: SnapshotRestoreItem[];
+  /**
+   * Z6-A17-1：受本次回退/重做影响的 bash 调用清单（真实日志提取；恢复时不重放）。
+   * undo = 被撤区间（seq > rewindToSeq 的活动调用）；redo = 复活区间（seq > 被重做
+   * undo 标记的 rewindToSeq）。这些 bash 副作用不在文件快照账内（agent/types.ts 快照
+   * 排除项），undo 后仍留在磁盘——调用方（GUI 警告条）应如实展示（红线⑩：只报真实记录）。
+   */
+  bashCommands: BashCommandRecord[];
 }
 
 function activeMessages(session: Parameters<typeof computeProjection>[0]): ProjectionMessage[] {
@@ -54,6 +62,16 @@ function projectionWithMarker(
   rewindToSeq: number,
   reason: 'undo' | 'redo',
 ): ProjectionMessage[] {
+  return activeMessages(sessionWithMarker(dir, markerSeq, rewindToSeq, reason));
+}
+
+/** 同上，返回假想会话本身（投影语义：marker 已按 undo/redo 规则参与活动性计算） */
+function sessionWithMarker(
+  dir: string,
+  markerSeq: number,
+  rewindToSeq: number,
+  reason: 'undo' | 'redo',
+): ReturnType<typeof loadSession> {
   const session = loadSession(dir);
   session.events.push({
     event: {
@@ -65,7 +83,7 @@ function projectionWithMarker(
     },
     active: true,
   });
-  return activeMessages(session);
+  return session;
 }
 
 /** diff 两份投影的消息集合（按 seq） */
@@ -156,10 +174,22 @@ function applyMarker(
       ).items
     : [];
 
+  // Z6-A17-1：bash 副作用清单（真实记录提取；不重放不回滚）。
+  //   undo = 被撤区间：真实投影中 seq > 目标 的活动调用（即将被遮蔽、磁盘副作用仍在）；
+  //   redo = 复活区间：假想「已落 redo marker」的投影中 (被重做 undo 的 rewindToSeq, 目标]
+  //   内的活动调用（当前被遮蔽、redo 后复活——其副作用从未被回滚）。
+  const bashCommands =
+    kind === 'undo'
+      ? collectBashCommands(loadSession(writer.dir), { afterSeq: target })
+      : collectBashCommands(sessionWithMarker(writer.dir, markerSeq, target, 'redo'), {
+          afterSeq: restoreFrom,
+          upToSeq: target,
+        });
+
   if (!dryRun) {
     writer.append('rewind/marker', { rewindToSeq: target, reason: kind });
   }
-  return { kind, dryRun, markerSeq, rewindToSeq: target, messages, files };
+  return { kind, dryRun, markerSeq, rewindToSeq: target, messages, files, bashCommands };
 }
 
 function countIntersection(a: ReadonlySet<number>, b: ReadonlySet<number>): number {

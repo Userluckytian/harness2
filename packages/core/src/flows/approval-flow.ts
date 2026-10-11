@@ -13,6 +13,7 @@
 //   4) o 只放行本次（不写缓存）；s/a 落缓存（a 为全局）后，后续同工具调用走第 1 步短路。
 // 即：**缓存只加宽 ask 的放行面，不能绕过 policy 的 allow/deny**（deny 永不被缓存解禁）。
 import type { ApprovalScope } from '../interaction/types.js';
+import type { ApprovalToolRule, HarnessConfig } from '../config/schema.js';
 import type { ApprovalFlowDecision, FlowApprovalScopeMode, FlowSessionId } from './types.js';
 
 /** 审批作用域（加性：在既有 ApprovalScope 之上补 'always'） */
@@ -186,4 +187,39 @@ export function applyApprovalDecision(
     return { scope, granted: true };
   }
   return { scope, granted: false };
+}
+
+// —— Z6-A16-4：always 授权 → config.approval.tools 写回 helper ——
+// 供 GUI 批次把「全局总是」授权持久化到 config（serve 端点本轮不加，登记于 Z6 报告）。
+// 纯函数、不动盘：产出新 config 对象由调用方决定落盘（config 写入归壳层，core 无写回面）。
+
+/**
+ * 把 always 授权工具清单转成 approval.tools 规则（缺省 allow）。
+ * 典型用法：grantsToApprovalToolRules(store.listAlways())。
+ */
+export function grantsToApprovalToolRules(
+  grants: readonly string[],
+  rule: ApprovalToolRule = 'allow',
+): Record<string, ApprovalToolRule> {
+  const out: Record<string, ApprovalToolRule> = {};
+  for (const tool of grants) out[tool] = rule;
+  return out;
+}
+
+/**
+ * 在 config 上写入/更新一条 approval.tools 规则（不可变：返回新对象，原 config 不改）。
+ * 既有规则（含 glob / 两段式键）原样保留；同键覆盖。
+ */
+export function upsertApprovalToolRule(
+  config: HarnessConfig,
+  tool: string,
+  rule: ApprovalToolRule = 'allow',
+): HarnessConfig {
+  return {
+    ...config,
+    approval: {
+      ...config.approval,
+      tools: { ...config.approval.tools, [tool]: rule },
+    },
+  };
 }

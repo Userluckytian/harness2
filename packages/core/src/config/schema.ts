@@ -56,7 +56,19 @@ export interface RoleConfig {
 export type ApprovalMode = 'default' | 'acceptEdits' | 'bypass' | 'plan';
 export type ApprovalToolRule = 'allow' | 'ask' | 'deny';
 
-/** 审批配置：三 mode + per-tool 规则（per-tool 优先于 mode 推导） */
+/**
+ * 审批配置：三 mode + per-tool 规则链（Z6-A16 规则 DSL，解析见 approval/policy.ts）。
+ * 规则键（tools 的键）语法：
+ *   - 单段键 = 工具名模式：精确名（`bash`）或 glob（`*` 通配任意序列含空串/换行、
+ *     `?` 单字符，如 `mcp__*` 前缀）；全串锚定；
+ *   - 两段键 `工具模式:主体模式`（首个 `:` 分隔，如 `bash:git *` 命令级）：主体 = 工具
+ *     参数中的可匹配字段（bash → args.command；其余工具无主体，两段键不命中）；
+ *   - 解析 = 确定性优先级链：字面字符多者更特异 → 无通配精确键 > 含通配键 →
+ *     两段式 > 单段 → deny > ask > allow（同特异性取更严）；
+ *   - 未命中规则 = 显式 fail-closed 口径（resolveUnmatchedDecision）：
+ *     未命中且工具不在 safe 集 → ask（plan 态 → deny）。
+ * 兼容：既有 exact-name 键是「无通配单段键」特例，老 config 不迁移即可用。
+ */
 export interface ApprovalConfig {
   mode?: ApprovalMode;
   /** 未列出的工具按 safe=allow / unsafe=ask 处理（安全集见 approval/policy.ts） */
@@ -583,6 +595,12 @@ export function parseConfig(raw: unknown): ConfigParseResult {
         } else {
           approval.tools = {};
           for (const [tool, rule] of Object.entries(tools)) {
+            // A16：键 = 规则模式（精确名 / glob / `工具:主体` 两段式），自由度留给 DSL，
+            // 只拦空键（永不匹配、只可能是笔误——fail-closed；既有非空键不受影响）。
+            if (tool.length === 0) {
+              errors.push('approval.tools 规则键不能为空字符串');
+              continue;
+            }
             if (typeof rule !== 'string' || !APPROVAL_TOOL_RULES.includes(rule as ApprovalToolRule)) {
               errors.push(
                 `approval.tools.${tool} 必须是 ${APPROVAL_TOOL_RULES.join(' | ')}，实际为 ${JSON.stringify(rule)}`,
