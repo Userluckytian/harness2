@@ -88,5 +88,8 @@ export * from './hooks/index.js';
 // Z6-A14（2026-10-11）加性导出：工作流编排引擎（定义/加载 + 步进引擎 + 扩展事件落账 +
 // 运行态投影 + `/workflow` 命令面）。core 全新建设，UI 渲染留后续批次。
 export * from './workflow/index.js';
+// Z6-A11（2026-10-11）加性导出：Agent Teams 编排层（团队/成员模型 + 共享任务板 +
+// 成员间消息 + 硬闸复用 TaskCoordinator + `/team` 命令面）。core 全新建设，UI 渲染留后续批次。
+export * from './team/index.js';
 
 export { CORE_VERSION } from './version.js';

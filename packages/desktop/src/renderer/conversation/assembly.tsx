@@ -30,6 +30,7 @@ import { toolNavigation, type TrajectoryViewConsumer } from '@harness2/ui-shared
 import { trajectoryTabId, sidePaneStore } from '@harness2/ui-shared/renderer/side-pane/index.js';
 import { backgroundTasksPaneRequests } from './background-tasks-requests.js';
 import { ConversationHeader } from '../components/ConversationHeader.js';
+import { TeamsPanel, teamsViewHasContent } from '../teams/index.js';
 import { store } from '../app-shared.js';
 import {
   createComposerOverlayHost,
@@ -117,15 +118,25 @@ function desktopConversationHeader(info: { sessionId: string; cwd?: string }): R
  * seat 的槽位包裹行整个不渲染，不留占位高度。
  * Z2-08 轻联动：Agents 子块的「在右栏打开」接到请求通道，右栏宿主（SidePanel）消费 ——
  * 打开/激活 background-tasks tab + 右栏收着就展开（不静默丢请求）。
+ * Z6-A11（Teams）：同一槽位并列渲染 Teams 只读面板（TeamsPanel 自身订阅 teamsViewStore）。
+ * 承载选择登记：走 Z3-03 状态面板缝；Z2-04 右栏 tab 目录在 ui-shared、按本批次「只动
+ * core/desktop」边界不改。二者都无数据时返回 null（空态不占位，红线⑩）。
  */
 function desktopStatusPanel(info: { sessionId: string }): ReactNode {
-  if (!statusPanelHasContent(store, info.sessionId)) return null;
+  const hasStatus = statusPanelHasContent(store, info.sessionId);
+  const hasTeams = teamsViewHasContent();
+  if (!hasStatus && !hasTeams) return null;
   return (
-    <ConversationStatusPanel
-      store={store}
-      sessionId={info.sessionId}
-      onOpenTasksPane={() => backgroundTasksPaneRequests.request()}
-    />
+    <>
+      {hasStatus && (
+        <ConversationStatusPanel
+          store={store}
+          sessionId={info.sessionId}
+          onOpenTasksPane={() => backgroundTasksPaneRequests.request()}
+        />
+      )}
+      {hasTeams && <TeamsPanel />}
+    </>
   );
 }
 
