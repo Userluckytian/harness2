@@ -7,13 +7,12 @@
 > 按天日志 [`2026-10-10.md`](issue-log/2026-10-10.md) / [`2026-10-11.md`](issue-log/2026-10-11.md)。
 > **进度**：Z0 ✅（两份 refs 文档 + 台账 + 总纲 + 规范修订）· Z1 ✅（Tailwind v4 + shadcn 基建，八项验收全绿）·
 > Z2/Z3/Z4/Z5 **四个阶段全部收口**（Z2 9 项、Z3 7 项、Z4 4 行=01 收口/02·03 完成/04 改期 Z6、Z5 设置页全屏骨架+分区+字号；Z2-07 终端与 Z4-04 Codemap 如实改期 Z6）·
-> **Z6 进行中**（批次1–5 已提交，批6 进行中）：
-> 批1 ✅ D02 内核三开放（846→870）· 批2 ✅ provider 三件套（887）· 批3 ✅ A05 分层压缩+断路器 / A16 glob 权限 DSL / A17 bash 清单（901）·
-> 批4 ✅ A10 插件消费三开放 / A07 MCP 分区 / A08 技能分区 · 批5 ✅ A09 Hooks 全新建（PreToolUse 真拦截+updatedInput、PostToolUse 回注、扩展事件落账；936）·
-> 批6-A ✅ A14 工作流引擎（声明式步进/审批闸复用/TaskCoordinator 并发闸/断点续跑；989）· 批6-B 🔄 A11 Teams 编排层（执行中）。
-> 批7 待办：重项（A15 沙箱 / A21 多端同步 / A22 语义索引 / A19-A20 SDK-ACP，逐项先核数据面）→ UI 接线批次（模型发现端点/Ctrl+T/扩展事件渲染/bash 警告条/规则编辑器/hooks+workflow+teams GUI）→ Z7 收口（Web 同构/IM QQ·飞书/真机截图/README）。
-> **Z7 收口计划已立**（2026-10-11）：[`2026-10-11-phase-Z7-closeout.md`](ai-framework/plans/2026-10-11-phase-Z7-closeout.md)——验收表 V-Z7-1～10、人工拍板项 10 条、真机清单 10 条、交接提示词。Web 壳同构为主体工作量。
-> **测试基线**（2026-10-11 批6-A 后）：ui-shared 276 / desktop 1107+1skip / core 1472|2 / cli 1575|2 / web 36 / gateway 40，全绿；core 导出基线 989。
+> **Z 程序（Z0–Z7）实现已全部收口**（2026-10-11）：
+> Z0 ✅ refs 文档+台账+总纲 · Z1 ✅ Tailwind v4 + shadcn 基建 · Z2 ✅ 9 项骨架 · Z3 ✅ 7 项对话页 · Z4 ✅ 轨迹页+代码面 · Z5 ✅ 设置页全屏骨架 · Z6 ✅ 批次 1–7（D02 三开放 / provider 三件套 / A05·A16·A17 / A10+MCP·技能 / A09 Hooks / A14 工作流 / A11 Teams / A22 符号索引）· Z7 ✅ 收口（web 与桌面同构：布局/面板/轨迹/设置/命令面板/分屏全部下沉 ui-shared 两壳共用；网关·IM 分区；文档同步；V-Z7-1～10 取证通过）。
+> **core 导出基线 846 → 1113（+267，0 removed / 0 kindChanged，全程纯加性）**；`packages/cli` / `packages/gateway` 自 Z 程序起点起**零改动**。
+> **测试基线**（Z7-3 收口）：core 1519(+2skip) · ui-shared 308 · desktop 1114(+1skip) · web 67 · gateway 40 · cli 1575(+2skip)，全绿；`pnpm lint` 0 error。
+> **收口文档**：Z7 计划 [`2026-10-11-phase-Z7-closeout.md`](ai-framework/plans/2026-10-11-phase-Z7-closeout.md)（§4.1 验收结果 / §5 拍板项 10 条 / §6 真机清单 10 项）· 功能总账 [`zcode-ui-traceability.md`](ai-framework/plans/zcode-ui-traceability.md)。
+> **⚠️ 未闭合 = 待人工**：§5 拍板项 10 条（右栏 45%/52% 口径、侧栏宽度持久化、分屏持久化 vs D-14、旧偏好归一、终端 PTY、Codemap 路线、A15 沙箱、A19/A20 ACP-LSP、上游拉取、子代理额度）与 §6 真机项 10 项，均已登记 `docs/issue-log/OPEN.md` Z 节。
 > **⚠️ 子代理额度**：批4 执行中子代理曾 `exceed quota limit` 崩溃（编排者验收收尾）；后续批次可能再现，如遇中断由编排者按验收流程接手。
 > **⚠️ 上游**：refs/ZCode 三次拉取均 `fetch-pack: unexpected disconnect` 失败，仍停 `29628c9`（v3.14.3）——refs 文档继续以该版本为权威。
 > **⚠️ 工作区状态**：Z0–Z3-06 已按子分段拆分提交（`4ccfddc`→ 最新 feat 提交，见 `git log`）；接手时以台账状态列为准。
