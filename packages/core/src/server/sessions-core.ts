@@ -22,6 +22,7 @@ import {
 import type { NudgeResult } from '../memory/nudge.js';
 import { SESSION_ID_PATTERN, SessionManager } from '../session/manager.js';
 import type { AnySessionEvent, SessionEvent, SessionEventMap, SessionEventType } from '../session/types.js';
+import type { ExtensionSessionEvent } from '../session/extension-events.js';
 import type { SessionWriter } from '../session/writer.js';
 import type { ToolExecutionRequest } from '../tools/executor.js';
 import type { ToolResult } from '../tools/types.js';
@@ -88,6 +89,14 @@ export class EventMirrorWriter {
     // event 由本方法按 T 构造，必属 AnySessionEvent 联合成员（此处收窄需显式断言）
     this.onEvent(event as AnySessionEvent);
     return event;
+  }
+  /**
+   * Z6-A09：扩展事件（hook/invocation）落盘透传。**只落盘不镜像**——onEvent 的
+   * 分发类型当前只承诺内建事件（AnySessionEvent），扩展事件经 WS 实时帧的加宽登记为
+   * 后续批次；落盘保证重载/导出可见（红线②：结果进会话必须落盘才可见）。
+   */
+  appendExtension(type: string, payload: Record<string, unknown>): ExtensionSessionEvent {
+    return this.inner.appendExtension(type, payload);
   }
   close(): void {
     if (this.closed) return;

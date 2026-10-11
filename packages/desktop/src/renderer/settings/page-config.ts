@@ -1,8 +1,9 @@
 // 设置分区配置表（Z-89 思路：**可见性与归属数据驱动**）。
 //
-// 只列**有真数据**的分区 —— ZCode 有而我们无对应数据的分区（hooks / commands / computerUse /
+// 只列**有真数据**的分区 —— ZCode 有而我们无对应数据的分区（commands / computerUse /
 // automations(Beta) / workspaceFileSearch / usage）一律**不进表**（列了就是假入口）。
-// `mcp`（A07）与 `skill`（A08）自批次4 起有真数据面进表（此前登记的「并入 plugins 节」作废）。
+// `mcp`（A07）与 `skill`（A08）自批次4 起有真数据面进表（此前登记的「并入 plugins 节」作废）；
+// `hooks`（A09，Z6 批次5）自 config.hooks 有真数据面起进表（只读展示 config.hooks，无编辑）。
 // 与 ZCode 16 分区的对照差异在 test/settings/settings-page-config.test.ts 固化为断言，
 // 改动归属时先改测试再改表。
 //
@@ -14,6 +15,7 @@ import type { SettingsIconProps } from './shell/icons.js';
 import {
   IconActivity,
   IconAlarmClock,
+  IconAnchor,
   IconBlocks,
   IconBot,
   IconBrain,
@@ -169,6 +171,15 @@ export const SETTINGS_SECTION_META: readonly SettingsSectionMeta[] = [
     group: 'agentCapabilities',
     order: 130,
     icon: IconAlarmClock,
+  },
+  {
+    id: 'hooks',
+    label: '钩子',
+    en: 'Hooks',
+    owner: 'ui-settings',
+    group: 'agentCapabilities',
+    order: 135,
+    icon: IconAnchor,
   },
   {
     id: 'credentials',

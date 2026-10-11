@@ -9,6 +9,7 @@ import type { ApprovalHandler } from '../tools/types.js';
 import type { ExecutionLifecycleObserver } from '../tools/executor.js';
 import type { SteerRequest, SteerResult, TurnTextOutcome } from '../interaction/types.js';
 import type { RetryBudgetState } from '../interaction/retry-policy.js';
+import type { HookRunner } from '../hooks/types.js';
 
 /**
  * S6 控制输入（steer）通道。外部实现把绑定到某 turn 的 steer 塞进队列；loop 在每个
@@ -149,6 +150,16 @@ export interface TurnOptions {
    * 不提供 = 零 steer 行为（既有 loop 路径完全不变）。
    */
   steer?: SteerSink;
+  /**
+   * 可选：生命周期钩子（Z6-A09）。提供时 loop 在以下点触发（见 hooks/runner.ts）：
+   *   - preTool：每个 tool/call 落盘后、执行前——可**拦截**（JSON continue:false / exit 2）
+   *     或**改写输入**（updatedInput）；被拦截的调用以 ok:false 的 tool/result 落盘；
+   *   - postTool：每个 tool/result 落盘后——JSON additionalContext 回注进该 tool/result 的
+   *     output/error（Model-visible ⟺ logged：回注文本随事件落盘，可从日志重建）；
+   *   - turnEnd：本 turn 结束时（runTurn 返回后）。
+   * 每次执行落 hook/invocation 扩展事件（opaque 投影）。不提供 = 零 hook 行为（零回归）。
+   */
+  hooks?: HookRunner;
 }
 
 /** turn 内流式观察事件（onStream 回调 payload；纯渲染缝，非模型上下文来源）。

@@ -21,6 +21,8 @@ import { getSharedBrowserPool } from '../tools/predefined/browser.js';
 import { registerBuiltinTools } from '../tools/predefined/index.js';
 import { ToolRegistry } from '../tools/registry.js';
 import { createApprovalPolicy } from '../approval/policy.js';
+import { createHookRunner } from '../hooks/runner.js';
+import type { HookRunner } from '../hooks/types.js';
 import { defaultMemoriesRoot, MemoryStore } from '../memory/store.js';
 import { defaultPendingRoot, PendingMemoryStore } from '../memory/pending.js';
 import { defaultSkillsRoot, projectSkillsRoot, SkillStore } from '../skills/store.js';
@@ -289,6 +291,8 @@ export async function startServe(options: StartServeOptions = {}): Promise<Serve
   let subagent: SessionHubSubagent | undefined = options.subagent;
   let providerMeta: SessionHubProviderMeta | undefined = options.providerMeta;
   let approvalConfig: import('../config/schema.js').ApprovalConfig | undefined;
+  // Z6-A09：config.hooks → 运行器（缺省未配置 = 零 hook 行为）
+  let hookRunner: HookRunner | undefined;
   let contextWindow: number | undefined;
   let maxOutputTokens: number | undefined;
   let configWarnings: string[] = [];
@@ -301,6 +305,9 @@ export async function startServe(options: StartServeOptions = {}): Promise<Serve
     provider = createProvider(loaded.config, 'main', { authPath: paths.globalAuth });
     const policy = createApprovalPolicy(loaded.config.approval);
     decide ??= (input) => policy.decide(input);
+    if (hookRunner === undefined && loaded.config.hooks !== undefined) {
+      hookRunner = createHookRunner({ config: loaded.config.hooks });
+    }
     configWarnings = [...loaded.warnings];
     // S7：run-config 装配元数据 = config 同源（roles.main + providers.<channel> 派生；非第二套配置存储）
     const mainRole = loaded.config.roles['main'];
@@ -411,6 +418,7 @@ export async function startServe(options: StartServeOptions = {}): Promise<Serve
     ...(toolsConfig !== undefined ? { toolsConfig } : {}),
     ...(options.approvalTimeoutMs !== undefined ? { approvalTimeoutMs: options.approvalTimeoutMs } : {}),
     ...(options.hooks !== undefined ? { hooks: options.hooks } : {}),
+    ...(hookRunner !== undefined ? { hookRunner } : {}),
     // S7：run-config 只读投影的装配来源（真实状态，非自造）
     ...(providerMeta !== undefined ? { providerMeta } : {}),
     ...(approvalConfig !== undefined ? { approvalConfig } : {}),

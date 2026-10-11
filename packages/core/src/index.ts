@@ -83,5 +83,7 @@ export * from './doctor/crash.js';
 export * from './commands/index.js';
 // D02 服务容器（2026-10-11）加性导出：ServiceContainer + createCoreContainer（内建挂两注册表）。
 export * from './container.js';
+// Z6-A09（2026-10-11）加性导出：Hooks 生命周期钩子（事件面 + 配置节 + 执行器 + 落账）。
+export * from './hooks/index.js';
 
 export { CORE_VERSION } from './version.js';

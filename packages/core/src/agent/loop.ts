@@ -34,6 +34,9 @@ import type {
 import { ToolExecutor, type ExecutedToolResult, type ToolExecutionRequest } from '../tools/executor.js';
 import type { TurnOptions, TurnResult, TurnStopReason } from './types.js';
 import type { SteerRequest } from '../interaction/types.js';
+import { appendHookInvocations } from '../hooks/extension.js';
+import { formatHookAdditionalContexts } from '../hooks/runner.js';
+import type { HookRunPayload, HookRunResult, HookRunner } from '../hooks/types.js';
 import {
   classifyAttemptError,
   createRetryBudget,
@@ -176,23 +179,82 @@ async function resolveMemorySystem(
 }
 
 /**
+ * 触发一次 hook 事件并落 hook/invocation 扩展事件（Z6-A09）。
+ * 兜底：runner 内部已 fail-open；此处再兜一层，hook 面异常绝不拖垮 turn（返回 undefined）。
+ */
+async function runHookEvent(
+  hooks: HookRunner | undefined,
+  writer: Pick<SessionAppender, 'appendExtension'>,
+  payload: HookRunPayload,
+): Promise<HookRunResult | undefined> {
+  if (hooks === undefined) return undefined;
+  let result: HookRunResult;
+  try {
+    result = await hooks.run(payload);
+  } catch {
+    return undefined; // 最后兜底：hook 运行器异常不阻断
+  }
+  appendHookInvocations(writer, result.invocations);
+  return result;
+}
+
+/** turnEnd 钩子（runTurn 返回后触发；含 turnId/stopReason 上下文）。 */
+async function fireTurnEndHooks(
+  hooks: HookRunner | undefined,
+  writer: Pick<SessionAppender, 'appendExtension'>,
+  cwd: string,
+  sessionDir: string,
+  result: TurnResult,
+): Promise<void> {
+  if (hooks === undefined) return;
+  await runHookEvent(hooks, writer, {
+    event: 'turnEnd',
+    cwd,
+    sessionDir,
+    ...(result.turnId !== undefined ? { turnId: result.turnId } : {}),
+    ...(result.stopReason !== undefined ? { stopReason: result.stopReason } : {}),
+  });
+}
+
+/**
  * 运行一个用户 turn：循环执行 step（模型调用 + 工具执行）直到模型不再调用工具、
  * 达到 maxSteps、被取消或模型出错。session 可传目录或调用方已持有的 SessionWriter：
  *   - 目录 + 日志不存在 → 新建会话（sessionId 自动生成）并在结束后 close；
  *   - 目录 + 日志已存在 → open 续写并在结束后 close；
  *   - writer → 直接使用（由调用方负责 close）。
+ * Z6-A09：目录路径下由内核持有会话生命周期 → 新建时触发 sessionStart、close 前触发
+ * sessionEnd；两种路径在 runTurn 返回后触发 turnEnd（含错误/取消终态，因包装了
+ * runTurnWithWriter 的全部 return 分支）。
  */
 export async function runTurn(
   session: string | SessionWriter | SessionAppender,
   options: TurnOptions,
 ): Promise<TurnResult> {
-  if (typeof session !== 'string') return runTurnWithWriter(session, options);
-  const writer = existsSync(join(session, SESSION_LOG_FILE))
-    ? SessionWriter.open(session)
-    : SessionWriter.create(session, { sessionId: randomUUID(), cwd: options.cwd });
+  const hooks = options.hooks;
+  if (typeof session !== 'string') {
+    const result = await runTurnWithWriter(session, options);
+    await fireTurnEndHooks(hooks, session, options.cwd, session.dir, result);
+    return result;
+  }
+  const isNew = !existsSync(join(session, SESSION_LOG_FILE));
+  const writer = isNew
+    ? SessionWriter.create(session, { sessionId: randomUUID(), cwd: options.cwd })
+    : SessionWriter.open(session);
   try {
-    return await runTurnWithWriter(writer, options);
+    if (isNew && hooks !== undefined) {
+      const sessionId = loadSession(writer.dir).header?.sessionId;
+      await runHookEvent(hooks, writer, {
+        event: 'sessionStart',
+        cwd: options.cwd,
+        sessionDir: writer.dir,
+        ...(sessionId !== undefined ? { sessionId } : {}),
+      });
+    }
+    const result = await runTurnWithWriter(writer, options);
+    await fireTurnEndHooks(hooks, writer, options.cwd, writer.dir, result);
+    return result;
   } finally {
+    await runHookEvent(hooks, writer, { event: 'sessionEnd', cwd: options.cwd, sessionDir: writer.dir });
     writer.close();
   }
 }
@@ -615,6 +677,25 @@ async function runTurnWithWriter(writer: SessionWriter | SessionAppender, option
     }
 
     const runnable = pending.filter((p): p is PendingCall & { parseError: undefined } => p.parseError === undefined);
+    // Z6-A09 preTool 钩子（拦截点）：tool/call 已落盘、执行前——可拦截（→ ok:false 的 tool/result）
+    // 或改写输入（updatedInput → 传进执行器的 args）。拦截/改写都经扩展事件如实落账。
+    const hooks = options.hooks;
+    const hookBlocked = new Map<string, string>();
+    if (hooks !== undefined) {
+      for (const p of runnable) {
+        const r = await runHookEvent(hooks, writer, {
+          event: 'preTool',
+          toolName: p.tool,
+          args: p.args,
+          cwd: options.cwd,
+          turnId,
+          sessionDir: writer.dir,
+        });
+        if (r?.blocked !== undefined) hookBlocked.set(p.callId, r.blocked.reason);
+        else if (r?.updatedInput !== undefined) p.args = r.updatedInput;
+      }
+    }
+    const toRun = runnable.filter((p) => !hookBlocked.has(p.callId));
     // 快照钩子（仅当提供 SnapshotStore；write/edit 才产生条目，bash/read 等不产生）
     const snapshots = options.snapshots;
     const snapshotHooks = snapshots
@@ -637,9 +718,9 @@ async function runTurnWithWriter(writer: SessionWriter | SessionAppender, option
     let results: ExecutedToolResult[];
     try {
       results =
-        runnable.length > 0
+        toRun.length > 0
           ? await executor.runWave(
-              runnable.map((p): ToolExecutionRequest => ({ callId: p.callId, tool: p.tool, args: p.args })),
+              toRun.map((p): ToolExecutionRequest => ({ callId: p.callId, tool: p.tool, args: p.args })),
               {
                 signal: envSignal,
                 cwd: options.cwd,
@@ -653,7 +734,7 @@ async function runTurnWithWriter(writer: SessionWriter | SessionAppender, option
       // 兜底（P2-2）：执行器意外 reject 时也必须落齐 tool/result + step/end
       // （tools/types.ts 的无悬挂承诺）；回调异常正常已在 executor 内转为 ok:false。
       const msg = (e as Error)?.message ?? String(e);
-      results = runnable.map((p) => ({
+      results = toRun.map((p) => ({
         callId: p.callId,
         ok: false,
         error: `executor crashed: ${msg}`,
@@ -666,6 +747,15 @@ async function runTurnWithWriter(writer: SessionWriter | SessionAppender, option
         writer.append('tool/result', { callId: p.callId, tool: p.tool, ok: false, error: p.parseError, turnId });
         options.onStream?.({ type: 'tool-result', callId: p.callId, ok: false, error: p.parseError, turnId });
         recordToolResult(p.tool, false, p.parseError);
+        continue;
+      }
+      // Z6-A09：本调用被 preTool 钩子拦截 → 以 ok:false 的 tool/result 落盘（模型可见）
+      const hookBlock = hookBlocked.get(p.callId);
+      if (hookBlock !== undefined) {
+        const error = `已由钩子阻止：${hookBlock}`;
+        writer.append('tool/result', { callId: p.callId, tool: p.tool, ok: false, error, turnId });
+        options.onStream?.({ type: 'tool-result', callId: p.callId, ok: false, error, turnId });
+        recordToolResult(p.tool, false, error);
         continue;
       }
       const r = byCallId.get(p.callId);
@@ -681,12 +771,36 @@ async function runTurnWithWriter(writer: SessionWriter | SessionAppender, option
         recordToolResult(p.tool, false, 'executor lost result');
         continue;
       }
+      // Z6-A09 postTool 钩子：结果落盘前触发；JSON additionalContext 回注进本结果文本
+      // （Model-visible ⟺ logged：回注文本随 tool/result 事件落盘，可从日志重建）。
+      let resultOutput = r.output;
+      let resultError = r.error;
+      if (hooks !== undefined) {
+        const pr = await runHookEvent(hooks, writer, {
+          event: 'postTool',
+          toolName: p.tool,
+          args: p.args,
+          output: r.output,
+          ok: r.ok,
+          cwd: options.cwd,
+          turnId,
+          sessionDir: writer.dir,
+        });
+        if (pr !== undefined && pr.additionalContexts.length > 0) {
+          const extra = formatHookAdditionalContexts(pr.additionalContexts);
+          if (r.ok) {
+            resultOutput = [resultOutput, extra].filter((x): x is string => x !== undefined && x.length > 0).join('\n');
+          } else {
+            resultError = [resultError, extra].filter((x): x is string => x !== undefined && x.length > 0).join('\n');
+          }
+        }
+      }
       writer.append('tool/result', {
         callId: r.callId,
         tool: p.tool,
         ok: r.ok,
-        ...(r.output !== undefined ? { output: r.output } : {}),
-        ...(r.error !== undefined ? { error: r.error } : {}),
+        ...(resultOutput !== undefined ? { output: resultOutput } : {}),
+        ...(resultError !== undefined ? { error: resultError } : {}),
         durationMs: r.durationMs,
         turnId,
       });

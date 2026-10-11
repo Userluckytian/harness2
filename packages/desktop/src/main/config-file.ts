@@ -154,6 +154,24 @@ export function readSettingsConfig(home: string, root: string): SettingsConfigSh
     mcpServers: {},
     subagent: { maxDepth: cfg.subagent.maxDepth, maxTurns: cfg.subagent.maxTurns },
     ...(cfg.gateways !== undefined ? { gateways: cfg.gateways as unknown as Record<string, unknown> } : {}),
+    // A09：hooks 段只读透传（未配置 = 不出现，分区显示空态；不做写入口）
+    ...(cfg.hooks !== undefined
+      ? {
+          hooks: {
+            enabled: cfg.hooks.enabled,
+            timeoutMs: cfg.hooks.timeoutMs,
+            maxOutputBytes: cfg.hooks.maxOutputBytes,
+            entries: cfg.hooks.entries.map((e) => ({
+              event: e.event,
+              command: e.command,
+              ...(e.matcher !== undefined ? { matcher: e.matcher } : {}),
+              ...(e.timeoutMs !== undefined ? { timeoutMs: e.timeoutMs } : {}),
+              ...(e.enabled !== undefined ? { enabled: e.enabled } : {}),
+              ...(e.async !== undefined ? { async: e.async } : {}),
+            })),
+          },
+        }
+      : {}),
     sources,
     warnings,
     errors,

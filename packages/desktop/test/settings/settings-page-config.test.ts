@@ -20,6 +20,7 @@ const EXPECTED: Record<string, string> = {
   mcp: 'agentCapabilities',
   skill: 'agentCapabilities',
   cron: 'agentCapabilities',
+  hooks: 'agentCapabilities',
   credentials: 'agentCapabilities',
   // dataAndStats
   sessions: 'dataAndStats',
@@ -40,7 +41,7 @@ describe('设置分区配置表（Z-89）：分组与可见性', () => {
 
   it('可见性 = 数据驱动：ZCode 有而我们无数据的分区不进表（列了就是假入口）', () => {
     const ids = new Set(SETTINGS_SECTION_META.map((m) => m.id));
-    for (const fake of ['hooks', 'commands', 'computerUse', 'automations', 'workspaceFileSearch', 'usage']) {
+    for (const fake of ['commands', 'computerUse', 'automations', 'workspaceFileSearch', 'usage']) {
       expect(ids.has(fake)).toBe(false);
     }
     // A07/A08（批次4）：mcp 与 skill 有真数据面进表（对齐 ZCode 归属 agentCapabilities；
@@ -48,6 +49,8 @@ describe('设置分区配置表（Z-89）：分组与可见性', () => {
     expect(ids.has('mcp')).toBe(true);
     expect(ids.has('skill')).toBe(true);
     expect(ids.has('plugins')).toBe(true);
+    // A09（批次5）：hooks 有真数据面（config.hooks）进表（归属 agentCapabilities，只读）
+    expect(ids.has('hooks')).toBe(true);
   });
 
   it('A07/A08：mcp/skill 的顺序在 plugins 之后 cron 之前（对齐 ZCode plugin→mcp→skill）', () => {

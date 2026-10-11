@@ -28,6 +28,7 @@ import { useShellTheme } from '../layout/shell-theme.js';
 import { AppearanceSettings } from '../settings/appearance/index.js';
 import { GeneralSettings } from '../settings/general/index.js';
 import { McpServersSection } from '../settings/mcp/McpServersSection.js';
+import { HooksSection } from '../settings/hooks/HooksSection.js';
 import { SkillsSection } from '../settings/skills/SkillsSection.js';
 import {
   MODELS_SECTION_ID,
@@ -826,6 +827,12 @@ export function SettingsPage({
         case 'skill':
           // A08：技能分区；自取数（settings:getSkills 主进程 fs 扫描，core 同一实现）
           return { ...meta, render: () => <SkillsSection /> };
+        case 'hooks':
+          // A09：钩子分区（Z-89 对齐）；config.hooks 只读展示（未配置 = 空态，不摆假条目）
+          return {
+            ...meta,
+            render: () => (cfg !== null ? <HooksSection cfg={cfg} /> : <LoadingPane />),
+          };
         case 'subagent':
           return {
             ...meta,

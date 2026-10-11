@@ -13,6 +13,7 @@ import type {
 import type { NudgeResult } from '../memory/nudge.js';
 import type { PendingMemoryStore } from '../memory/pending.js';
 import type { MemoryStore } from '../memory/store.js';
+import type { HookRunner } from '../hooks/types.js';
 import type { PluginBus } from '../plugins/bus.js';
 import type { ChatProvider, ToolCallRequest } from '../provider/types.js';
 import { SessionManager } from '../session/manager.js';
@@ -150,6 +151,8 @@ export interface SessionHubOptions {
   /** 插件装配（阶段 8）——插件事件订阅的桥接（emitSessionEvent） */
   plugins?: SessionHubPlugins;
   hooks?: SessionHubHooks;
+  /** Z6-A09 生命周期钩子运行器（启动器按 config.hooks 派生；缺省 = 零 hook 行为） */
+  hookRunner?: HookRunner;
   /** S5 后台任务协调器（缺省 = hub 内部单例；跨会话共享写锁 = 全局串行） */
   taskCoordinator?: TaskCoordinator;
   /** S7：provider 装配元数据（启动器从已加载 config 派生；缺省 = 注入 provider 的 name 推导，见 runConfigView） */

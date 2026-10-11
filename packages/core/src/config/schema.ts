@@ -106,6 +106,69 @@ export interface SkillsConfig {
 export const SKILL_AUTHORING_MODES: readonly SkillAuthoringMode[] = ['off', 'on'];
 
 /**
+ * Hooks 事件名（Z6-A09 加性，批次5）：**锚到我们真实生命周期**（不照抄 ZCode 的
+ * PascalCase 事件表）。语义见 hooks/runner.ts 与计划 A09：
+ *   - preTool    —— 每个工具调用在 tool/call 落盘后、真正执行**前**；可拦截（block）或改写输入；
+ *   - postTool   —— 每个工具 tool/result 落盘后；输出可回注工具结果（Model-visible ⟺ logged）；
+ *   - turnEnd    —— 一个用户 turn 结束（runTurn 返回后）；
+ *   - sessionStart / sessionEnd —— 会话由**内核**创建/关闭时（runTurn 目录路径；hub 托管
+ *     会话的边界由服务层另行接线，见报告未做项）。
+ */
+export type HookEventName = 'sessionStart' | 'sessionEnd' | 'turnEnd' | 'preTool' | 'postTool';
+
+export const HOOK_EVENT_NAMES: readonly HookEventName[] = [
+  'sessionStart',
+  'sessionEnd',
+  'turnEnd',
+  'preTool',
+  'postTool',
+];
+
+/** 单条 hook 声明（在匹配事件上运行的 shell 命令） */
+export interface HookEntry {
+  /** 触发事件（五值之一） */
+  event: HookEventName;
+  /**
+   * glob 匹配（复用 A16 approval/glob.ts 的 matchGlob，`*`/`?` 通配，全串锚定）：
+   * 仅 preTool/postTool 有意义（匹配**工具名**）；其余事件带 matcher = 配置错误（校验拒绝）。
+   * 缺省 = 全命中。
+   */
+  matcher?: string;
+  /** 待执行 shell 命令（与权限 DSL 同级信任：用户自撰 config） */
+  command: string;
+  /** 单条超时 ms（缺省取 hooks.timeoutMs）；正整数，上限 300000 */
+  timeoutMs?: number;
+  /** false = 停用（缺省 true） */
+  enabled?: boolean;
+  /** true = fire-and-forget（不等待、输出不回注、不落记录；失败仅告警） */
+  async?: boolean;
+}
+
+/** Hooks 配置段（可选：未配置 = 零 hook 行为，零回归） */
+export interface HooksConfig {
+  /** 总开关（缺省 true：段存在即启用；false = 全部停用） */
+  enabled: boolean;
+  /** 缺省单条超时 ms（默认 30000；1..300000） */
+  timeoutMs: number;
+  /** stdout/stderr 捕获上限字节（默认 32768；1..1048576；超出截断） */
+  maxOutputBytes: number;
+  /** 条目清单（声明序即执行序） */
+  entries: HookEntry[];
+}
+
+export const DEFAULT_HOOK_TIMEOUT_MS = 30_000;
+export const DEFAULT_HOOK_MAX_OUTPUT_BYTES = 32_768;
+export const HOOK_TIMEOUT_MS_MAX = 300_000;
+export const HOOK_MAX_OUTPUT_BYTES_MAX = 1_048_576;
+
+export const DEFAULT_HOOKS_CONFIG: HooksConfig = {
+  enabled: true,
+  timeoutMs: DEFAULT_HOOK_TIMEOUT_MS,
+  maxOutputBytes: DEFAULT_HOOK_MAX_OUTPUT_BYTES,
+  entries: [],
+};
+
+/**
  * 浏览器工具配置（阶段 7）：enabled=false 不注册浏览器工具；
  * idleDestroyMs/maxConcurrent 传入 BrowserPool（资源红线默认：空闲 5min 销毁、并发 2）。
  */
@@ -305,6 +368,8 @@ export interface HarnessConfig {
   tools?: ToolsConfig;
   /** Skills 配置（P7-A 加性；可选——缺省/未配置 = authoring off） */
   skills?: SkillsConfig;
+  /** Hooks 配置（Z6-A09 加性；可选——缺省/未配置 = 零 hook 行为） */
+  hooks?: HooksConfig;
   /** IM 网关配置（阶段 9；可选——缺省/未配置 = 零网关行为） */
   gateways?: GatewaysConfig;
   /** UI 渲染配置（P2-C 加性；可选——缺省/未配置 = 壳层缺省 fullscreen） */
@@ -366,6 +431,7 @@ const KNOWN_TOP_KEYS = new Set([
   'subagent',
   'tools',
   'skills',
+  'hooks',
   'gateways',
   'ui',
   'scrollback',
@@ -390,6 +456,8 @@ const MCP_SERVER_KNOWN_KEYS = new Set(['command', 'args', 'env', 'cwd', 'url', '
 const SUBAGENT_KNOWN_KEYS = new Set(['maxDepth', 'maxTurns']);
 const TOOLS_KNOWN_KEYS = new Set(['toolset', 'enable']);
 const SKILLS_KNOWN_KEYS = new Set(['authoring']);
+const HOOKS_KNOWN_KEYS = new Set(['enabled', 'timeoutMs', 'maxOutputBytes', 'entries']);
+const HOOK_ENTRY_KNOWN_KEYS = new Set(['event', 'matcher', 'command', 'timeoutMs', 'enabled', 'async']);
 const GATEWAYS_KNOWN_KEYS = new Set(['qq', 'feishu']);
 const GATEWAY_CHANNEL_KNOWN_KEYS = new Set(['enabled', 'appId', 'appSecretEnvKey', 'dmPolicy', 'groupPolicy', 'allow']);
 const UI_KNOWN_KEYS = new Set(['screen_mode', 'follow_up_behavior', 'status_line']);
@@ -911,6 +979,133 @@ export function parseConfig(raw: unknown): ConfigParseResult {
     }
   }
 
+  // —— hooks（Z6-A09 加性；缺省 = 不出现，即零 hook 行为）——
+  // fail-closed：非法形状一律报错（不静默降级）。校验点：
+  //   enabled/timeoutMs/maxOutputBytes 形状；entries 必须是数组；
+  //   每条 event 取 HOOK_EVENT_NAMES；command 非空（空命令永不执行 = 笔误）；
+  //   matcher 仅 preTool/postTool 允许（其余事件无匹配对象 → 配置错误）；
+  //   timeoutMs 正整数上限；enabled/async 布尔。未知字段记告警（与其余段一致）。
+  const hooks: HooksConfig = { ...DEFAULT_HOOKS_CONFIG, entries: [] };
+  let hooksConfigured = false;
+  const rawHooks = raw['hooks'];
+  if (rawHooks !== undefined) {
+    if (!isPlainObject(rawHooks)) {
+      errors.push('config.hooks 必须是对象');
+    } else {
+      hooksConfigured = true; // 段配置即透出（空对象 = 启用但零条目）
+      collectUnknownKeys(rawHooks, HOOKS_KNOWN_KEYS, 'hooks', warnings);
+      const enabled = rawHooks['enabled'];
+      if (enabled !== undefined) {
+        if (typeof enabled !== 'boolean') {
+          errors.push('hooks.enabled 必须是布尔值');
+        } else {
+          hooks.enabled = enabled;
+        }
+      }
+      const timeoutMs = rawHooks['timeoutMs'];
+      if (timeoutMs !== undefined) {
+        if (
+          typeof timeoutMs !== 'number' ||
+          !Number.isInteger(timeoutMs) ||
+          timeoutMs < 1 ||
+          timeoutMs > HOOK_TIMEOUT_MS_MAX
+        ) {
+          errors.push(`hooks.timeoutMs 必须是 1..${HOOK_TIMEOUT_MS_MAX} 的整数（毫秒）`);
+        } else {
+          hooks.timeoutMs = timeoutMs;
+        }
+      }
+      const maxOutputBytes = rawHooks['maxOutputBytes'];
+      if (maxOutputBytes !== undefined) {
+        if (
+          typeof maxOutputBytes !== 'number' ||
+          !Number.isInteger(maxOutputBytes) ||
+          maxOutputBytes < 1 ||
+          maxOutputBytes > HOOK_MAX_OUTPUT_BYTES_MAX
+        ) {
+          errors.push(`hooks.maxOutputBytes 必须是 1..${HOOK_MAX_OUTPUT_BYTES_MAX} 的整数（字节）`);
+        } else {
+          hooks.maxOutputBytes = maxOutputBytes;
+        }
+      }
+      const rawEntries = rawHooks['entries'];
+      if (rawEntries !== undefined) {
+        if (!Array.isArray(rawEntries)) {
+          errors.push('hooks.entries 必须是数组');
+        } else {
+          const parsed: HookEntry[] = [];
+          for (const [index, rawEntry] of rawEntries.entries()) {
+            const where = `hooks.entries[${index}]`;
+            if (!isPlainObject(rawEntry)) {
+              errors.push(`${where} 必须是对象`);
+              continue;
+            }
+            collectUnknownKeys(rawEntry, HOOK_ENTRY_KNOWN_KEYS, where, warnings);
+            const event = rawEntry['event'];
+            if (typeof event !== 'string' || !HOOK_EVENT_NAMES.includes(event as HookEventName)) {
+              errors.push(`${where}.event 必须是 ${HOOK_EVENT_NAMES.join(' | ')}，实际为 ${JSON.stringify(event)}`);
+              continue;
+            }
+            const eventName = event as HookEventName;
+            const command = rawEntry['command'];
+            if (typeof command !== 'string' || command.trim().length === 0) {
+              errors.push(`${where}.command 必须是非空字符串（shell 命令）`);
+              continue;
+            }
+            let entryOk = true;
+            const entry: HookEntry = { event: eventName, command };
+            const matcher = rawEntry['matcher'];
+            if (matcher !== undefined) {
+              if (typeof matcher !== 'string' || matcher.length === 0) {
+                errors.push(`${where}.matcher 必须是非空字符串（glob 模式）`);
+                entryOk = false;
+              } else if (eventName !== 'preTool' && eventName !== 'postTool') {
+                errors.push(`${where}.matcher 仅 preTool/postTool 事件支持（当前事件 ${eventName} 无匹配对象）`);
+                entryOk = false;
+              } else {
+                entry.matcher = matcher;
+              }
+            }
+            const entryTimeout = rawEntry['timeoutMs'];
+            if (entryTimeout !== undefined) {
+              if (
+                typeof entryTimeout !== 'number' ||
+                !Number.isInteger(entryTimeout) ||
+                entryTimeout < 1 ||
+                entryTimeout > HOOK_TIMEOUT_MS_MAX
+              ) {
+                errors.push(`${where}.timeoutMs 必须是 1..${HOOK_TIMEOUT_MS_MAX} 的整数（毫秒）`);
+                entryOk = false;
+              } else {
+                entry.timeoutMs = entryTimeout;
+              }
+            }
+            const entryEnabled = rawEntry['enabled'];
+            if (entryEnabled !== undefined) {
+              if (typeof entryEnabled !== 'boolean') {
+                errors.push(`${where}.enabled 必须是布尔值`);
+                entryOk = false;
+              } else {
+                entry.enabled = entryEnabled;
+              }
+            }
+            const entryAsync = rawEntry['async'];
+            if (entryAsync !== undefined) {
+              if (typeof entryAsync !== 'boolean') {
+                errors.push(`${where}.async 必须是布尔值`);
+                entryOk = false;
+              } else {
+                entry.async = entryAsync;
+              }
+            }
+            if (entryOk) parsed.push(entry);
+          }
+          hooks.entries = parsed;
+        }
+      }
+    }
+  }
+
   // —— gateways（阶段 9；缺省 = {}：零网关行为）——
   // 渠道名白名单（GATEWAY_CHANNELS）；DM/群策略缺省 allowlist（防滥用）；
   // appId 非密钥可入 config，appSecret 只走 auth.json.gateways / env（这里不校验密钥本身）。
@@ -1164,6 +1359,7 @@ export function parseConfig(raw: unknown): ConfigParseResult {
       subagent,
       ...(toolsConfigured ? { tools } : {}),
       ...(skillsConfigured ? { skills } : {}),
+      ...(hooksConfigured ? { hooks } : {}),
       gateways,
       ...(uiConfigured ? { ui } : {}),
       ...(scrollbackConfigured ? { scrollback } : {}),

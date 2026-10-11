@@ -188,6 +188,17 @@ export const IconWandSparkles = defineIcon(
   </>,
 );
 
+// —— A09：Hooks 分区图标（Z-89 分区表：hooks = Anchor；lucide 同形路径） ——
+
+export const IconAnchor = defineIcon(
+  'anchor',
+  <>
+    <path d="M12 22V8" />
+    <path d="M5 12H2a10 10 0 0 0 20 0h-3" />
+    <circle cx="12" cy="5" r="3" />
+  </>,
+);
+
 export const IconDatabase = defineIcon(
   'database',
   <>

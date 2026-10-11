@@ -52,8 +52,7 @@ export interface WindowStateShape {
   maximized: boolean;
 }
 
-/** settings:getConfig 的响应（脱敏后的可用字段；与 CLI 共用同一份 config.json） */
-export interface SettingsProviderShape {
+/** settings:getConfig 的响应（脱敏后的可用字段；与 CLI 共用同一份 config.json） */ export interface SettingsProviderShape {
   protocol: 'openai' | 'anthropic';
   baseUrl: string;
   envKey?: string;
@@ -63,6 +62,26 @@ export interface SettingsProviderShape {
 export interface SettingsRoleShape {
   channel: string;
   model: string;
+}
+
+/** A09：单条 hook 的只读展示形态（与 core config.schema 的 HookEntry 同源） */
+export interface SettingsHookEntryShape {
+  /** 触发事件（sessionStart/sessionEnd/turnEnd/preTool/postTool） */
+  event: string;
+  /** glob matcher（仅 preTool/postTool；缺省 = 全命中） */
+  matcher?: string;
+  command: string;
+  timeoutMs?: number;
+  enabled?: boolean;
+  async?: boolean;
+}
+
+/** A09：hooks 配置段只读视图（config.hooks；缺省未配置 = 分区空态） */
+export interface SettingsHooksShape {
+  enabled: boolean;
+  timeoutMs: number;
+  maxOutputBytes: number;
+  entries: SettingsHookEntryShape[];
 }
 
 export interface SettingsConfigShape {
@@ -75,6 +94,8 @@ export interface SettingsConfigShape {
   mcpServers: Record<string, unknown>;
   subagent: { maxDepth: number; maxTurns: number };
   gateways?: Record<string, unknown>;
+  /** A09：hooks 段（config.hooks；未配置 = 缺省，分区显示空态） */
+  hooks?: SettingsHooksShape;
   /** 全局/项目配置文件是否存在（供 UI 提示写哪份） */
   sources: { global: boolean; project: boolean };
   /** 校验告警（未知字段/缺省补全） */

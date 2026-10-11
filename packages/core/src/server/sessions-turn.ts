@@ -104,6 +104,9 @@ export abstract class SessionHubTurn extends SessionHubAssembly {
           onExecuteEnd: (req, result) => this.emitExecuteEnd(id, req, result),
         },
         onStream: (event: TurnStreamEvent) => this.forwardStream(id, event),
+        // Z6-A09：生命周期钩子（preTool/postTool/turnEnd；启动器按 config.hooks 派生）。
+        // 缺省未配置 = 零 hook 行为。会话边界钩子归内核持有生命周期的路径，serve 托管会话不触发。
+        ...(this.options.hookRunner !== undefined ? { hooks: this.options.hookRunner } : {}),
         // S6 会话级 steer sink：跨 turn 持久，loop 在每个安全 step 边界取「本 turn 未消费」的 steer
         steer: this.steerSinkFor(id),
         // 审查 P1-1：serve/desktop 路径同样注入记忆 store（缺此前主会话零快照、system 恒空）
