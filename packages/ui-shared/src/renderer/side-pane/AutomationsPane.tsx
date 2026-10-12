@@ -31,8 +31,9 @@ export interface AutomationsPaneProps {
   readonly nowMs: number;
 }
 
-/** 单条任务行（instruction 主行 + 调度人话 + nextRun 相对时间 + 状态徽标；无任何操作按钮） */
-function AutomationRow({ job, nowMs }: { job: CronJobShape; nowMs: number }): ReactNode {
+/** 单条任务行（instruction 主行 + 调度人话 + nextRun 相对时间 + 状态徽标；无任何操作按钮）。
+ *  导出供「自动化」主区视图复用——两处任务列表共用同一行口径与徽标类名（不复制第二套展示）。 */
+export function AutomationRow({ job, nowMs }: { job: CronJobShape; nowMs: number }): ReactNode {
   const status = automationStatusOf(job);
   return (
     <div

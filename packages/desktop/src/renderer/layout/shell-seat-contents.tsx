@@ -10,7 +10,7 @@
 // P5-C 装配：会话席位内容 = renderer/conversation/assembly.tsx 的 ConversationSeat
 // （会话头 + 转录 + 常驻 Composer；Z2-05 起主区事实单一 chat，无视图环）。本文件只递
 // store/controller，不在这里写对话语义（composer 的接线全在 assembly.tsx）。
-import { useEffect, useMemo, useState, useSyncExternalStore } from 'react';
+import { useCallback, useEffect, useMemo, useState, useSyncExternalStore } from 'react';
 import { CommandPalette } from '@harness2/ui-shared/renderer/components/CommandPalette.js';
 import { SettingsPage } from '../components/SettingsPage.js';
 import { SidePanel } from '../components/SidePanel.js';
@@ -22,6 +22,7 @@ import type { SlotRegistry } from '@harness2/ui-shared/renderer/slots/index.js';
 import {
   CONVERSATION_OWNER,
   FRAME_SEAT,
+  MAIN_AUTOMATIONS_KEY,
   MAIN_CONVERSATION_KEY,
 } from '@harness2/ui-shared/renderer/layout/frame-seats.js';
 import { useFrame } from '@harness2/ui-shared/renderer/layout/frame-context.js';
@@ -29,11 +30,8 @@ import { workbenchDrag } from '@harness2/ui-shared/renderer/layout/workbench/dra
 import { WorkbenchHost } from '@harness2/ui-shared/renderer/layout/workbench/host.js';
 import { workbenchStore } from '@harness2/ui-shared/renderer/layout/workbench/store.js';
 import { countPanes, MAX_PANES } from '@harness2/ui-shared/renderer/layout/workbench/model.js';
-import {
-  sidePaneStore,
-  trajectoryTabId,
-  SIDE_PANE_NO_SESSION_KEY,
-} from '@harness2/ui-shared/renderer/side-pane/index.js';
+import { sidePaneStore, trajectoryTabId, type CronJobShape } from '@harness2/ui-shared/renderer/side-pane/index.js';
+import { AutomationsMainView, type AutomationTemplate } from '@harness2/ui-shared/renderer/automation/index.js';
 import { ConversationSeat } from '../conversation/assembly.js';
 import { useShellPalette } from './shell-context.js';
 import { setOverlay, takeRequestedSettingsSection, useOverlayOpen } from './shell-overlays.js';
@@ -124,6 +122,12 @@ function SidebarSeatContent(): React.ReactNode {
     },
   });
 
+  /** P0：主区可能停在「自动化」主区视图上 —— 选会话/新建会话必须先回对话，否则主区被自动化页占住。
+   *  key=null 即回到保留的 conversation key（frame-state 的 main/select-key 语义）。 */
+  const backToConversation = (): void => {
+    frameDispatch({ type: 'main/select-key', key: null });
+  };
+
   return (
     <SidebarRoot
       // 折叠事实取几何口径（Z-06：折叠后容器 4px、内容只隐藏不卸载）
@@ -136,7 +140,10 @@ function SidebarSeatContent(): React.ReactNode {
       selectedId={state.selectedId}
       query={query}
       onQueryChange={setQuery}
-      onOpenSession={(id) => void controller.selectSession(id)}
+      onOpenSession={(id) => {
+        backToConversation();
+        void controller.selectSession(id);
+      }}
       // Z8-1：Pinned 行的「取消置顶」（置顶动作本体在 Z8-2 右键菜单）——走既有 metadata 通道。
       onTogglePin={(id, pinned) => void controller.pinSession(id, pinned)}
       // P0-2（Z-10）右键菜单：全部动作走已核实通道（controller metadata / workbench drop /
@@ -152,6 +159,7 @@ function SidebarSeatContent(): React.ReactNode {
         splitLimitReached: countPanes(workbench.root) >= MAX_PANES,
         // 查看轨迹 = P2-5 inspect 同一通道（无定位参数 = 打开即最新态）+ 右栏收着自动展开
         onInspectTrajectory: (id) => {
+          backToConversation();
           void controller.selectSession(id);
           sidePaneStore.open(id, trajectoryTabId(id));
           if (!frameState.rightbarOpen) frameDispatch({ type: 'rightbar/toggle' });
@@ -168,27 +176,33 @@ function SidebarSeatContent(): React.ReactNode {
       }
       onRemoveProject={window.harness2.projectsRemove !== undefined ? removeProject : undefined}
       // 任务区头「新建任务」= 与 SidebarRoot 新会话入口同一真源；未连接时不给动作（占位钮，不可点即坏）
-      onNewTask={state.status === 'connected' ? () => newSessionCollapsingRightbar(frameDispatch) : undefined}
+      onNewTask={
+        state.status === 'connected'
+          ? () => {
+              backToConversation();
+              newSessionCollapsingRightbar(frameDispatch);
+            }
+          : undefined
+      }
       // D-21 数据缺口（如实登记，不造假输入）：本仓没有 Workspace 概念（最接近的是
       // SessionMeta.cwd），controller.newSession() 也没有作用域入参 → 作用域输入只能是 {}，
       // 于是 resolveNewSessionScope 恒落 { kind: 'blank' }（空白新会话）。
       // 待 P7 引入工作区后，再补齐 explicit / current-session / recent 三档数据源。
       newSessionScope={{}}
       // Z2-04（Z-13）：新建会话强制收起右栏（动作层收口，见 app-shared.newSessionCollapsingRightbar）
-      onNewSession={() => newSessionCollapsingRightbar(frameDispatch)}
+      onNewSession={() => {
+        backToConversation();
+        newSessionCollapsingRightbar(frameDispatch);
+      }}
       newSessionEnabled={state.status === 'connected'}
       // Z-07 #1：New Task 的 Ctrl+N 快捷键（App.tsx 已真绑定 Ctrl/Cmd+N，见那里的注释）。
       newSessionShortcut="Ctrl+N"
       // Z2-02（Z-07 分区 2）：左栏命令中心入口 → 复用既有覆层链路打开命令面板
       // （与 Ctrl+K 的 toggleOverlay('palette') 同一真源，不新开一套面板）。
       onOpenCommandPalette={() => setOverlay('palette', true)}
-      // P0-3a（Z-07 #3）：「自动化」入口 → 定向打开右栏 + automations tab（跨会话固定 id，
-      // 桶与 SidePaneHost 同源：未选会话落无会话桶）。cron 数据=桌面主进程 fs 只读快照。
-      onOpenAutomations={() => {
-        const bucket = state.selectedId ?? SIDE_PANE_NO_SESSION_KEY;
-        sidePaneStore.open(bucket, 'automations');
-        frameDispatch({ type: 'rightbar/open' });
-      }}
+      // P0（ZCode 实测对齐）：「自动化」入口 → 打开**主区视图**（子 tab 自动化|工作流 + 模板卡），
+      // 与 ZCode 侧栏「自动化」进主区一致（不再定向右栏 pane；右栏 automations pane 保留为旁路）。
+      onOpenAutomations={() => frameDispatch({ type: 'main/select-key', key: MAIN_AUTOMATIONS_KEY })}
       // P0-3a 诚实占位（用户拍板）：插件市场/账号区只占位不开发（disabled+说明）。
       placeholders
       buildVersion={resolveBuildVersion(hostBuildEnv())}
@@ -234,6 +248,61 @@ function SidebarSeatContent(): React.ReactNode {
  *  Z3-04：composer 左右簇控件（模型选择/模式切换）由壳在此装配一次，经工作台宿主下发到每格。 */
 function ConversationSeatContent(): React.ReactNode {
   return <WorkbenchHost store={store} controller={controller} seat={ConversationSeat} />;
+}
+
+/**
+ * P0「自动化」主区视图内容（ui-automation；ZCode 实测面复刻）。
+ * 数据面 = 桌面主进程 fs 只读 jobs.json（cron:list）+ 写通道（cron:add）；两者都缺（理论不发生，
+ * preload 生产必给）→ 传 undefined 回调，视图落「无通道」降级（模板卡/创建钮 disabled，红线⑩）。
+ * 创建成功后重读一次列表刷新（不轮询、不假装实时）；失败保持现表（不误清空、不伪造成功）。
+ */
+function AutomationSeatContent(): React.ReactNode {
+  const [jobs, setJobs] = useState<readonly CronJobShape[]>([]);
+  const nowMs = useMemo(() => Date.now(), []);
+  const refresh = useCallback(() => {
+    const read = window.harness2.cronList;
+    if (read === undefined) return;
+    void read
+      .call(window.harness2)
+      .then((next) => setJobs(next))
+      .catch(() => {
+        // 读失败：保持现表（不误清空、不伪造任务）
+      });
+  }, []);
+  useEffect(() => {
+    refresh();
+  }, [refresh]);
+  const cronAdd = window.harness2.cronAdd;
+  const onCreateFromTemplate =
+    cronAdd === undefined
+      ? undefined
+      : (template: AutomationTemplate): void => {
+          void cronAdd
+            .call(window.harness2, template.instruction, template.schedule)
+            .then(() => refresh())
+            .catch(() => {
+              // 创建失败（调度非法/超上限）：不刷新、不伪造成功
+            });
+        };
+  const onCreate =
+    cronAdd === undefined
+      ? undefined
+      : (instruction: string, schedule: string): void => {
+          void cronAdd
+            .call(window.harness2, instruction, schedule)
+            .then(() => refresh())
+            .catch(() => {
+              // 同上：失败保持现表
+            });
+        };
+  return (
+    <AutomationsMainView
+      jobs={jobs}
+      nowMs={nowMs}
+      {...(onCreateFromTemplate !== undefined ? { onCreateFromTemplate } : {})}
+      {...(onCreate !== undefined ? { onCreate } : {})}
+    />
+  );
 }
 
 /**
@@ -334,6 +403,13 @@ export function injectShellSeatContents(registry: SlotRegistry): () => void {
       key: MAIN_CONVERSATION_KEY,
       owner: SHELL_SEAT_CONTENTS.conversation.owner,
       component: SHELL_SEAT_CONTENTS.conversation.component,
+    }),
+    // P0：「自动化」主区视图（ui-automation；非保留 key，与 conversation 并存，按 mainKey 切换）。
+    registry.inject({
+      seat: FRAME_SEAT.main,
+      key: MAIN_AUTOMATIONS_KEY,
+      owner: 'ui-automation',
+      component: AutomationSeatContent,
     }),
     registry.inject({
       seat: FRAME_SEAT.rightbar,

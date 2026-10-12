@@ -134,7 +134,9 @@ export function App(): React.ReactNode {
         toggleOverlay('palette');
       } else if (key === 'n') {
         // 屏蔽浏览器「新开窗口」默认行为；新建会话同时按 Z2-04 收起右栏。
+        // P0：主区若停在「自动化」视图，先回对话（key=null = 保留的 conversation）。
         e.preventDefault();
+        frameDispatch({ type: 'main/select-key', key: null });
         newSessionCollapsingRightbar(frameDispatch);
       }
     };
@@ -197,7 +199,10 @@ export function App(): React.ReactNode {
         label: '新任务',
         hint: 'Ctrl+N',
         group: '建议',
-        run: () => newSessionCollapsingRightbar(frameDispatch),
+        run: () => {
+          frameDispatch({ type: 'main/select-key', key: null });
+          newSessionCollapsingRightbar(frameDispatch);
+        },
       },
       { id: 'openWorkspace', label: '打开工作区', hint: 'Ctrl+O', group: '建议', run: openWorkspace },
       { id: 'openSettings', label: '设置', group: '建议', run: () => setOverlay('settings', true) },
@@ -334,9 +339,12 @@ export function App(): React.ReactNode {
     () => ({
       commands,
       sessions: paletteSessions,
-      onSelectSession: (id: string) => void controller.selectSession(id),
+      onSelectSession: (id: string) => {
+        frameDispatch({ type: 'main/select-key', key: null });
+        void controller.selectSession(id);
+      },
     }),
-    [commands, paletteSessions],
+    [commands, paletteSessions, frameDispatch],
   );
 
   // 平台特化（Z-02 / Z-04）：无独立顶栏；窗口根按平台加圆角类，浮层条绝对定位不占布局高度。
@@ -356,7 +364,10 @@ export function App(): React.ReactNode {
           sidebarCollapsed={sidebarCollapsed}
           sidebarWidth={frame.geometry.sidebarExpandedWidth}
           onToggleSidebar={() => frameDispatch({ type: 'sidebar/toggle' })}
-          onNewTask={() => newSessionCollapsingRightbar(frameDispatch)}
+          onNewTask={() => {
+            frameDispatch({ type: 'main/select-key', key: null });
+            newSessionCollapsingRightbar(frameDispatch);
+          }}
         />
       </div>
     </ShellPaletteProvider>

@@ -145,6 +145,8 @@ export type InvokeCommand =
   | { cmd: 'settings:getCrashReports' }
   // P0-3a 自动化（cron）：主进程 fs 只读扫描本地 jobs.json（core CronJobStore 同一实现），返回任务表
   | { cmd: 'cron:list' }
+  // P0 自动化主区视图：新增任务（core CronJobStore.add；非法调度/超上限 → reject，如实回传）
+  | { cmd: 'cron:add'; instruction: string; schedule: string }
   | { cmd: 'gitBranch'; dir: string }
   | { cmd: 'getContextUsage'; sessionId: string }
   | { cmd: 'getSnapshotForCall'; sessionId: string; seq: number }
@@ -278,6 +280,12 @@ export interface Harness2Api extends Partial<ModelsSettingsApi>, Partial<WindowC
    * 渲染端如实降级（「自动化」tab 显示空态，不摆假数据）。
    */
   cronList?(): Promise<CronJobShape[]>;
+  /**
+   * P0 自动化主区视图：新增定时任务（instruction + schedule；core CronJobStore.add 单一实现）。
+   * 可选（同 cronList 口径）：preload 生产必给；jsdom 夹具 / web 宿主缺通道时渲染端如实降级
+   * （模板卡/创建钮 disabled + 说明，不摆假按钮）。
+   */
+  cronAdd?(instruction: string, schedule: string): Promise<CronJobShape>;
   /** 读当前 git 分支（主进程 git rev-parse；非 git 目录返回 null） */
   gitBranch(dir: string): Promise<string | null>;
   /** 读上下文占用（core getContextUsage 经 IPC；与终端 /context 同一数据源） */

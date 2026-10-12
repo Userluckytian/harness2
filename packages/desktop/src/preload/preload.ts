@@ -80,6 +80,9 @@ const api: Harness2Api = {
   settingsGetSkills: () => ipcRenderer.invoke(IPC_INVOKE, { cmd: 'settings:getSkills' }),
   // P0-3a 自动化（cron）：主进程 fs 只读 jobs.json（渲染进程零 Node，唯一出口 = 本 IPC）
   cronList: () => ipcRenderer.invoke(IPC_INVOKE, { cmd: 'cron:list' }),
+  // P0 自动化主区视图：新增任务（主进程 core CronJobStore.add；非法调度 → invoke reject）
+  cronAdd: (instruction: string, schedule: string) =>
+    ipcRenderer.invoke(IPC_INVOKE, { cmd: 'cron:add', instruction, schedule }),
   gitBranch: (dir: string) => ipcRenderer.invoke(IPC_INVOKE, { cmd: 'gitBranch', dir }),
   getContextUsage: (sessionId: string) => ipcRenderer.invoke(IPC_INVOKE, { cmd: 'getContextUsage', sessionId }),
   getSnapshotForCall: (sessionId: string, seq: number) =>

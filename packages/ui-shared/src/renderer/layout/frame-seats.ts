@@ -18,6 +18,9 @@ export type FrameSeatId = (typeof FRAME_SEAT)[keyof typeof FRAME_SEAT];
 /** main 席位的保留 key：会话界面（D-10；其余 key 为全局面板） */
 export const MAIN_CONVERSATION_KEY = 'conversation';
 
+/** P0：「自动化」主区视图的 main key（ZCode 侧栏「自动化」进的是主区视图，非右栏 pane）。 */
+export const MAIN_AUTOMATIONS_KEY = 'automations';
+
 /**
  * 中栏**内层纵向分栏**的终端面板席位（Z2-03 / Z-12：conversation | terminal）。
  * 这是一个**注册缝**：只有该席位被注入内容时，MainSeatView 才渲染底部终端面板与其开关；
@@ -46,6 +49,12 @@ export const MAIN_PANEL_KEYS: readonly string[] = [
   'config',
 ] as const;
 
+/**
+ * main keyed 席位的完整合法 key 集（声明用）：保留会话 key + 全局面板 key + P0 自动化主区 key。
+ * 「自动化」加入 keys 后，壳才能在该 key 注入主区视图（非保留 key，任意 owner 可注入）。
+ */
+export const MAIN_KEYS: readonly string[] = [MAIN_CONVERSATION_KEY, ...MAIN_PANEL_KEYS, MAIN_AUTOMATIONS_KEY];
+
 /** 布局包标识（帧席位的声明者） */
 export const LAYOUT_OWNER = 'shell/layout';
 
@@ -58,7 +67,7 @@ export const FRAME_SEAT_DECLARATIONS: readonly SeatDeclaration[] = [
     kind: 'keyed',
     // owner = 保留 key 的属主包（保留 key 只由声明者注入，见 CONVERSATION_OWNER）
     owner: CONVERSATION_OWNER,
-    keys: [MAIN_CONVERSATION_KEY, ...MAIN_PANEL_KEYS],
+    keys: MAIN_KEYS,
     reservedKeys: [MAIN_CONVERSATION_KEY],
     description: '中栏（keyed：conversation = 会话界面，保留 key；其余 key = 全局面板）',
   },

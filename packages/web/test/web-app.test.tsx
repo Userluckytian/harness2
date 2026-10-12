@@ -236,14 +236,24 @@ describe('P2-4 草稿卸载护栏：web 无落盘通道时不静默丢草稿', (
   });
 });
 
-describe('P0-3d（Z-16 #3/#10）web 侧栏槽位先行', () => {
-  it('web 也摆「自动化」槽位：无 cron 通道 → disabled + data-placeholder + 悬停说明', async () => {
+describe('P0「自动化」主区视图（web 无 cron 通道 → 视图内降级）', () => {
+  it('侧栏入口可点 → 打开主区视图；模板卡/创建钮无通道 disabled + data-placeholder', async () => {
     const { stop } = await mount();
-    const automation = screen.getByTestId('sidebar-automation-entry') as HTMLButtonElement;
-    expect(automation.disabled).toBe(true);
-    expect(automation.getAttribute('data-placeholder')).toBe('true');
-    expect(automation.getAttribute('title')).toBe('web 无本地 cron 通道');
-    expect(automation.textContent).toContain('自动化');
+    const entry = screen.getByTestId('sidebar-automation-entry') as HTMLButtonElement;
+    // 入口本身是真导航（不再是无通道占位），降级发生在视图内部
+    expect(entry.disabled).toBe(false);
+    expect(entry.textContent).toContain('自动化');
+    fireEvent.click(entry);
+    expect(await screen.findByTestId('automations-main')).toBeTruthy();
+    // 空态文案（逐字）
+    expect(screen.getByTestId('automation-empty').textContent).toContain('还没有定时任务');
+    // 无通道：创建钮 + 模板卡全部 disabled 占位
+    const create = screen.getByTestId('automation-create') as HTMLButtonElement;
+    expect(create.disabled).toBe(true);
+    expect(create.getAttribute('data-placeholder')).toBe('true');
+    const template = screen.getByTestId('automation-template-morning-digest') as HTMLButtonElement;
+    expect(template.disabled).toBe(true);
+    expect(template.getAttribute('data-placeholder')).toBe('true');
     stop();
   });
 

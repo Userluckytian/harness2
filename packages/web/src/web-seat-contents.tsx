@@ -23,8 +23,10 @@ import { countPanes, MAX_PANES } from '@harness2/ui-shared/renderer/layout/workb
 import {
   CONVERSATION_OWNER,
   FRAME_SEAT,
+  MAIN_AUTOMATIONS_KEY,
   MAIN_CONVERSATION_KEY,
 } from '@harness2/ui-shared/renderer/layout/frame-seats.js';
+import { AutomationsMainView } from '@harness2/ui-shared/renderer/automation/index.js';
 import {
   BackgroundTasksPane,
   SidePaneHost,
@@ -101,7 +103,11 @@ function SidebarSeatContent(): ReactNode {
       selectedId={state.selectedId}
       query={query}
       onQueryChange={setQuery}
-      onOpenSession={(id) => void controller.selectSession(id)}
+      onOpenSession={(id) => {
+        // P0：主区可能停在「自动化」视图 —— 选会话先回对话（key=null = conversation）。
+        frameDispatch({ type: 'main/select-key', key: null });
+        void controller.selectSession(id);
+      }}
       // Z8-1：Pinned 行的「取消置顶」（置顶动作本体在 Z8-2 右键菜单）。
       // web 无 metadata 覆层通道（serve-client 注释如实登记）→ 置顶在内存生效、不落盘；
       // 也因此 web 的 Pinned 区恒不出现（metadata 为空 → 无置顶项），不摆假条目。
@@ -117,6 +123,7 @@ function SidebarSeatContent(): ReactNode {
         },
         splitLimitReached: countPanes(workbench.root) >= MAX_PANES,
         onInspectTrajectory: (id) => {
+          frameDispatch({ type: 'main/select-key', key: null });
           void controller.selectSession(id);
           sidePaneStore.open(id, trajectoryTabId(id));
           if (!frameState.rightbarOpen) frameDispatch({ type: 'rightbar/toggle' });
@@ -126,15 +133,19 @@ function SidebarSeatContent(): ReactNode {
       // web 无目录选择通道：作用域输入只能是 {}（resolveNewSessionScope 恒落 blank），
       // 真正的 cwd 由 serve 客户端用「最近会话 cwd」兜底（见 main.tsx / serve-client 注释）。
       newSessionScope={{}}
-      onNewSession={() => onNewSession?.()}
+      onNewSession={() => {
+        frameDispatch({ type: 'main/select-key', key: null });
+        onNewSession?.();
+      }}
       newSessionEnabled={newSessionEnabled}
       // Z-07 #1：New Task 的 Ctrl+N 快捷键（web app.tsx 已真绑定 Ctrl/Cmd+N，同一可用性门控）。
       newSessionShortcut="Ctrl+N"
       // Z2-02（Z-07 分区 2）：左栏命令中心入口 → 打开命令面板覆层（与 Ctrl/Cmd+K 同一真源）。
       onOpenCommandPalette={() => onOpenPalette()}
-      // Z-16 #3（P0-3d 用户拍板：槽位先行）：web 也渲染「自动化」槽位——不传 onOpenAutomations，
-      // 由 placeholders 旗标落为 disabled 占位（title「web 无本地 cron 通道」+ data-placeholder）。
-      // 右栏启动器白名单仍排除 automations（点开会是空 tab = 假面板，红线⑩）。
+      // P0（ZCode 实测对齐）：「自动化」入口 → 打开主区视图（与桌面同一交互）。web 无 cron 通道
+      // （jobs.json 读写在桌面主进程）→ 视图内模板卡/创建钮如实 disabled（无通道占位，红线⑩）。
+      onOpenAutomations={() => frameDispatch({ type: 'main/select-key', key: MAIN_AUTOMATIONS_KEY })}
+      // Z-16 #3：「插件市场」等仍为诚实占位（disabled + title + data-placeholder）。
       placeholders
       // Z2-06（Z-19）：会话行可拖进主区分屏。生产写 dataTransfer（真实 DnD 语义），
       // 模块级 workbenchDrag 作等价回退（jsdom 单测无标准 dataTransfer）。
@@ -247,6 +258,16 @@ function ConversationSeatContent(): ReactNode {
 }
 
 /**
+ * P0「自动化」主区视图内容（web 侧）：与桌面同一份共享视图，但 **web 无 cron 通道**
+ * （jobs.json 读写在桌面主进程）→ 空表 + 不注入创建回调 = 模板卡/创建钮如实 disabled（红线⑩）。
+ * 不触碰 `window.harness2`（web 宿主无此 preload 桥），不伪造任务与"已创建"。
+ */
+function AutomationSeatContent(): ReactNode {
+  const nowMs = useMemo(() => Date.now(), []);
+  return <AutomationsMainView jobs={[]} nowMs={nowMs} />;
+}
+
+/**
  * 右栏席位内容（ui-workspace）：SidePaneHost + 与桌面**同一套**面板。
  * 数据源 = 共享 controller 经 serve（S7 只读端点 + WS 事件流）；面板本体全部来自 ui-shared，
  * web 不做第二份实现。模型轨迹按 `model-trajectory:{sessionId}` 解析（Z-14）。
@@ -315,6 +336,13 @@ export function injectWebSeatContents(registry: SlotRegistry): () => void {
       key: MAIN_CONVERSATION_KEY,
       owner: CONVERSATION_OWNER,
       component: ConversationSeatContent,
+    }),
+    // P0：「自动化」主区视图（web 无通道 → 视图内 disabled 降级；非保留 key，按 mainKey 切换）。
+    registry.inject({
+      seat: FRAME_SEAT.main,
+      key: MAIN_AUTOMATIONS_KEY,
+      owner: 'ui-automation',
+      component: AutomationSeatContent,
     }),
     registry.inject({ seat: FRAME_SEAT.rightbar, owner: 'ui-workspace', component: RightbarSeatContent }),
     // 覆层席位（Z7）：设置页复用共享实现（端口只接 web 真能做到的 appearance/gateway）；

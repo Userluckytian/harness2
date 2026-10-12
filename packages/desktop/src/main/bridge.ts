@@ -35,6 +35,7 @@ import {
 import { getCrashReports, getDoctorReport } from './diagnostics.js';
 import { readSkillsSummary } from './skills-scan.js';
 import { readCronJobs } from './cron-list.js';
+import { addCronJob } from './cron-write.js';
 import { listWorkspaceDir } from './workspace-fs.js';
 import { getContextUsageForSession } from './context-usage.js';
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
@@ -727,6 +728,14 @@ export function createBridge(deps: BridgeDeps): Bridge {
       // P0-3a 自动化：主进程 fs 只读本地 jobs.json（core CronJobStore 同一实现；异常转空表不抛）
       case 'cron:list':
         return readCronJobs(deps.home);
+      // P0 自动化主区视图：新增任务（core CronJobStore.add 单一实现；非法调度/超上限 → 抛错如实回传）
+      case 'cron:add': {
+        const instruction = typeof args['instruction'] === 'string' ? args['instruction'] : '';
+        const schedule = typeof args['schedule'] === 'string' ? args['schedule'] : '';
+        if (instruction.trim().length === 0) throw new InvokeError('cron:add 缺少 instruction');
+        if (schedule.trim().length === 0) throw new InvokeError('cron:add 缺少 schedule');
+        return addCronJob(deps.home, instruction, schedule);
+      }
       case 'gitBranch': {
         const dir = typeof args['dir'] === 'string' ? args['dir'] : deps.root;
         return gitBranchForDir(dir);

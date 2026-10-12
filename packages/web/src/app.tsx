@@ -29,6 +29,9 @@ export function WebApp({ shell, onNewSession, newSessionBlockedReason }: WebAppP
   // 四席位注册表：本次挂载建一份（声明 + 注册容器 + 注入 web 内容）。
   const registry = useMemo(() => assembleWebFrame().registry, []);
   const frame = useFrameState({ registry });
+  const frameDispatch = frame.dispatch;
+  /** P0：主区可能停在「自动化」主区视图 —— 新建会话前先回对话（key=null = 保留的 conversation）。 */
+  const backToConversation = (): void => frameDispatch({ type: 'main/select-key', key: null });
   // Z7：设置覆层开合（只内存，D-14）；覆层席位内容经 WebShellProvider 读它。
   const [settingsOpen, setSettingsOpen] = useState(false);
   // Z7：命令面板覆层开合（只内存，D-14）；Ctrl/Cmd+K 与侧栏命令中心入口同一真源。
@@ -68,11 +71,15 @@ export function WebApp({ shell, onNewSession, newSessionBlockedReason }: WebAppP
     const onKeyDown = (e: KeyboardEvent): void => {
       if (!(e.ctrlKey || e.metaKey) || e.key.toLowerCase() !== 'n') return;
       e.preventDefault();
-      if (newSessionEnabled) onNewSession?.();
+      if (newSessionEnabled) {
+        // P0：主区若停在「自动化」视图，先回对话再新建。
+        frameDispatch({ type: 'main/select-key', key: null });
+        onNewSession?.();
+      }
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [newSessionEnabled, onNewSession]);
+  }, [newSessionEnabled, onNewSession, frameDispatch]);
 
   const shellValue: WebShellValue = {
     shell,
@@ -97,7 +104,10 @@ export function WebApp({ shell, onNewSession, newSessionBlockedReason }: WebAppP
           sidebarCollapsed={frame.geometry.sidebarCollapsed}
           sidebarWidth={frame.geometry.sidebarExpandedWidth}
           onToggleSidebar={() => frame.dispatch({ type: 'sidebar/toggle' })}
-          onNewTask={() => onNewSession?.()}
+          onNewTask={() => {
+            backToConversation();
+            onNewSession?.();
+          }}
           testId="web-top-overlay"
         />
       </div>
