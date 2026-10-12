@@ -28,3 +28,6 @@ scripts/tui-parity/.venv/
 scripts/tui-parity/out/
 scripts/tui-parity/__pycache__/
 scripts/tui-parity/**/__pycache__/
+
+# 测试/对照临时环境（含 auth.json 密钥，永不入库）
+.tmp-*/
