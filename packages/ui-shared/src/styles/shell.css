@@ -1348,8 +1348,9 @@ body,
   padding-top: 14vh;
   cursor: default;
 }
+/* Z-17：面板尺寸向 ZCode 实测 512×526 靠（输入框上 / tablist 次 / 列表滚区下）。 */
 .command-palette {
-  width: min(560px, 92vw);
+  width: min(512px, 92vw);
   background: var(--color-card);
   border: 1px solid var(--color-border);
   border-radius: 14px;
@@ -1383,8 +1384,55 @@ body,
   list-style: none;
   margin: 0;
   padding: 6px;
-  max-height: min(46vh, 320px);
+  /* Z-17：列表滚区高 ~440（面板总高向 526 靠） */
+  max-height: min(440px, 52vh);
   overflow-y: auto;
+}
+
+/* —— Z-17 tabbed 布局：role=tablist 四 tab（全部 | 操作 | 任务 | 文件），tab 各 ~62×24 —— */
+.command-palette-tabs {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--color-border);
+}
+.command-palette-tab {
+  appearance: none;
+  -webkit-appearance: none;
+  min-width: 62px;
+  height: 24px;
+  padding: 0 10px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--color-foreground-subtlest);
+  font-family: inherit;
+  font-size: var(--text-ui-base);
+  line-height: 24px;
+  cursor: default;
+}
+.command-palette-tab:hover {
+  color: var(--color-foreground);
+}
+.command-palette-tab.selected {
+  background: var(--color-accent);
+  color: var(--color-foreground);
+}
+/* Z-17 组头小字行（非 option，不可选中） */
+.command-palette-group {
+  padding: 8px 10px 4px;
+  color: var(--color-foreground-subtlest);
+  font-size: 12px;
+  user-select: none;
+}
+/* Z-17 红线⑩：无通道面命令如实占位（渲染但不可选中/不可触发） */
+.command-palette-item.disabled {
+  color: var(--color-foreground-subtlest);
+  cursor: not-allowed;
+}
+.command-palette-item.disabled .command-palette-hint {
+  color: var(--color-foreground-subtlest);
 }
 .command-palette-item {
   display: flex;
