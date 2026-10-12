@@ -10,12 +10,15 @@ afterEach(() => {
 });
 
 describe('D-23 会话列表席位', () => {
-  it('渲染每一行的标题与条数/时间摘要', () => {
+  it('渲染每一行的标题与相对时间摘要（行内不显示条数）', () => {
     renderSidebar({ sessions: [sessionItem('a'), sessionItem('b', { title: '第二个会话', messageCount: 7 })] });
     const rows = screen.getAllByTestId('sidebar-session-list')[0]?.querySelectorAll('[data-session-id]');
     expect(rows?.length).toBe(2);
     expect(screen.getByText('第二个会话')).toBeDefined();
-    expect(screen.getByText(/7 条/)).toBeDefined();
+    // ZCode 1:1：行内元信息只有相对时间；反向钉「N 条」不进行内
+    const rowB = document.querySelector('[data-session-id="b"]');
+    expect(rowB?.querySelector('.h2-sidebar-session-meta')?.textContent ?? '').not.toBe('');
+    expect(rowB?.textContent ?? '').not.toContain('条');
   });
 
   it('当前会话高亮：data-selected=true 且 aria-current 标注（唯一一行）', () => {

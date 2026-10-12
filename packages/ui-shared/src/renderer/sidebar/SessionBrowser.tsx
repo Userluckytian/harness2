@@ -114,9 +114,9 @@ export interface SessionRowDrag {
   disabledIds?: ReadonlySet<string> | undefined;
 }
 
-/** 一行的元信息行（Z-09）：条数 + 相对时间 */
-function rowMeta(item: SidebarSessionItem, nowMs: number, labels: SidebarLabels): string {
-  return `${labels.messageCount(item.messageCount)} · ${relativeTime(item.mtimeMs, nowMs)}`;
+/** 一行的元信息（Z-09 / ZCode 1:1）：仅相对时间（条数不进行内，见 refs-zcode-layout 行几何） */
+function rowMeta(item: SidebarSessionItem, nowMs: number): string {
+  return relativeTime(item.mtimeMs, nowMs);
 }
 
 /** leading 槽（Z-09）：unread 徽标 > running spinner > pinned 图钉；都无 → 空占位 */
@@ -224,7 +224,7 @@ function SessionRow({
             </span>
           )}
         </span>
-        <span className="h2-sidebar-session-meta">{rowMeta(item, nowMs, labels)}</span>
+        <span className="h2-sidebar-session-meta">{rowMeta(item, nowMs)}</span>
       </span>
     </button>
   );

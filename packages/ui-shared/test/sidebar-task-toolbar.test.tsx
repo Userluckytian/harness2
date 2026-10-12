@@ -173,9 +173,11 @@ describe('Z-09 会话项 leading 槽与元信息行', () => {
     expect(leading('c')).toBe('unread');
   });
 
-  it('元信息行 = 条数 + 相对时间', () => {
+  it('元信息行 = 仅相对时间（ZCode 1:1 单行；行内不再出现条数）', () => {
     renderBrowser({ sessions: [item('a', { messageCount: 7, mtimeMs: NOW - 16 * 3_600_000 })] });
     const meta = document.querySelector('[data-session-id="a"] .h2-sidebar-session-meta');
-    expect(meta?.textContent).toBe('7 条 · 16小时');
+    expect(meta?.textContent).toBe('16小时');
+    // 反向钉：条数（「N 条」）不进行内
+    expect(document.querySelector('[data-session-id="a"]')?.textContent ?? '').not.toContain('条');
   });
 });

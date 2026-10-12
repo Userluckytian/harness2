@@ -1345,7 +1345,8 @@ body,
   display: flex;
   justify-content: center;
   align-items: flex-start;
-  padding-top: 14vh;
+  /* Z-17：ZCode 实测面板起位 y=80（此前 14vh 在 900 高视口 = 126，偏低 46px） */
+  padding-top: 80px;
   cursor: default;
 }
 /* Z-17：面板尺寸向 ZCode 实测 512×526 靠（输入框上 / tablist 次 / 列表滚区下）。 */

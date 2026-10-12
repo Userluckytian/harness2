@@ -266,10 +266,12 @@
   min-height: 0;
   display: flex;
   flex-direction: column;
-  /* 抵消外壳内边距，让滚动条贴到栏边；占用方在自己的行里补回内边距 */
+  /* 抵消外壳内边距，让滚动条贴到栏边；占用方在自己的行里补回内边距。
+     P0-3c 几何对齐：左内边距清零——ZCode 实测分区头与会话行同在 x=8（侧栏 264、两侧各 8），
+     我们此前 4+6(+10) 的累计缩进把行推到 x=28，故逐层归零（见 .h2-sidebar-list / .h2-sidebar-group-list）。 */
   margin-left: -4px;
   margin-right: calc(-1 * var(--h2-sidebar-inline-padding));
-  padding-left: 4px;
+  padding-left: 0;
   overflow: hidden;
 }
 
@@ -413,7 +415,8 @@
   flex: 1;
   min-height: 0;
   margin: 0;
-  padding: 0 6px 4px;
+  /* P0-3c 几何对齐：左内边距 0（行贴 x=8，同 ZCode 实测）；右侧留 6px 给滚动区视觉余量 */
+  padding: 0 6px 4px 0;
   overflow-y: auto;
   /* 预留滚动条宽度：滑块显隐都不重排（D-24） */
   scrollbar-gutter: stable;
@@ -433,7 +436,8 @@
   align-items: center;
   gap: 6px;
   width: 100%;
-  padding: 4px 8px;
+  /* P0-3c 几何对齐：ZCode 实测分区头 28px 高（我们此前 4px 上下内边距 = 24px） */
+  padding: 6px 8px;
   border: none;
   border-radius: 6px;
   background: transparent;
@@ -512,10 +516,11 @@
   font-size: var(--text-ui-xs);
 }
 
+/* P0-3c 几何对齐：组内行不再缩进 10px——ZCode 实测组头与组内会话行同在 x=8（不缩进）。 */
 .h2-sidebar-group-list {
   list-style: none;
   margin: 0;
-  padding: 0 0 0 10px;
+  padding: 0;
 }
 
 /* —— P0-3b（Z-16 #6/#7/#9）：分区/组头 = 折叠钮 + 右侧 24×24 小钮 的行容器 ——
@@ -601,10 +606,14 @@
 
 .h2-sidebar-session {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   gap: 8px;
   width: 100%;
-  padding: 8px;
+  /* ZCode 1:1 单行几何：行盒恒 32px（实测 ZCode 行 [8,397 233×32]）。
+     用显式 height 而非 padding 推算——标题 14px 的行高（21）高于 leading 槽（18），
+     按 padding 对称推算取不到整数 32（7×2+21=35）。 */
+  height: 32px;
+  padding: 0 8px;
   border: none;
   border-radius: 8px;
   background: transparent;
@@ -639,15 +648,19 @@
   height: 18px;
 }
 
+/* ZCode 1:1：单行横向 —— 标题占满可伸区（截断），相对时间固定在右端 */
 .h2-sidebar-session-body {
   flex: 1;
   min-width: 0;
   display: flex;
-  flex-direction: column;
-  gap: 2px;
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
 }
 
 .h2-sidebar-session-title {
+  flex: 1;
+  min-width: 0;
   display: inline-flex;
   align-items: center;
   gap: 6px;
@@ -656,9 +669,13 @@
   white-space: nowrap;
 }
 
+/* ZCode 1:1：行内元信息只留相对时间（12px、半透明、右对齐）；条数不进行内。
+   字号用 --text-ui-sm（14-2=12px）——ZCode 实测 meta fs=12px；--text-ui-xs 是 10px，偏小。 */
 .h2-sidebar-session-meta {
-  font-size: var(--text-ui-xs);
-  color: var(--color-foreground-subtle);
+  flex: none;
+  font-size: var(--text-ui-sm);
+  color: var(--color-foreground-subtlest);
+  white-space: nowrap;
 }
 
 .h2-sidebar-running {
