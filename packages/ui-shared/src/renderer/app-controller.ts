@@ -96,6 +96,8 @@ export interface Controller {
   renameSession(id: string, title: string): Promise<void>;
   /** 归档/恢复（archived 覆盖层软删除；数据仍在，可随时恢复） */
   archiveSession(id: string, archived: boolean): Promise<void>;
+  /** 置顶/取消置顶（pinned 覆盖层；Z8-1 / Z-07 #6：Pinned 区数据面） */
+  pinSession(id: string, pinned: boolean): Promise<void>;
   /** 物理删除（serve 无 delete API；本轮 = 覆层 deleted 标记 + 从侧栏移除，不伪造删除） */
   deleteSession(id: string): Promise<void>;
   // P1-3 裁决（2026-09-14）：分栏（pane）状态已无渲染出口，**写出口一并删除** ——
@@ -633,6 +635,20 @@ export function createController(store: AppStore, api: HarnessClient): Controlle
         store.applyMetadata(await api.metadataSet(id, { archived }));
       } catch (e) {
         store.applyFrame({ type: 'error', error: `归档保存失败: ${(e as Error).message}` });
+      }
+    },
+    async pinSession(id: string, pinned: boolean): Promise<void> {
+      // Z8-1：置顶与归档同通道（session metadata 覆层；落 desktop-metadata.json）。
+      // 无持久化通道的壳（如 web）如实告知「仅本次会话内生效」，不假装已保存。
+      store.updateMetadata(id, { pinned });
+      if (api.metadataSet === undefined) {
+        store.applyFrame({ type: 'error', error: '此壳未提供会话展示态持久化通道：置顶仅在本次会话内生效' });
+        return;
+      }
+      try {
+        store.applyMetadata(await api.metadataSet(id, { pinned }));
+      } catch (e) {
+        store.applyFrame({ type: 'error', error: `置顶保存失败: ${(e as Error).message}` });
       }
     },
     async deleteSession(id: string): Promise<void> {

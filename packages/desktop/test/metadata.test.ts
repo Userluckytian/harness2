@@ -9,6 +9,7 @@ import {
   filterSessionList,
   isArchived,
   isDeleted,
+  isPinned,
   normalizeMetadata,
   type SessionMetadataMap,
 } from '@harness2/ui-shared/shared/metadata.js';
@@ -88,6 +89,31 @@ describe('displayTitle / isArchived / isDeleted', () => {
   });
 });
 
+describe('Z8-1 pinned 加性字段（Z-07 #6）', () => {
+  it('旧数据缺 pinned = 未置顶（不迁移、不写默认值）', () => {
+    expect(normalizeMetadata({ s1: { title: '旧条目' } })).toEqual({ s1: { title: '旧条目' } });
+    expect(isPinned({}, 's1')).toBe(false);
+    expect(isPinned({ s1: { title: '旧条目' } }, 's1')).toBe(false);
+  });
+
+  it('pinned 布尔保留；非布尔丢弃；与其它字段共存', () => {
+    expect(normalizeMetadata({ s1: { pinned: true } })).toEqual({ s1: { pinned: true } });
+    expect(normalizeMetadata({ s1: { pinned: 'yes' } })).toEqual({});
+    expect(normalizeMetadata({ s1: { title: 'T', pinned: false } })).toEqual({ s1: { title: 'T', pinned: false } });
+  });
+
+  it('isPinned：pinned=true 才真；已删除会话不作为置顶展示', () => {
+    expect(isPinned({ s1: { pinned: true } }, 's1')).toBe(true);
+    expect(isPinned({ s1: { pinned: false } }, 's1')).toBe(false);
+    expect(isPinned({ s1: { pinned: true, deleted: true } }, 's1')).toBe(false);
+  });
+
+  it('置顶不改变归档分区语义（pinned 会话仍在 active）', () => {
+    const r = filterSessionList([S], { s1: { pinned: true } }, '');
+    expect(r.active).toEqual([S]);
+  });
+});
+
 describe('metadata-file 读写契约（~/.harness2/desktop-metadata.json）', () => {
   it('无文件回落空映射；写 patch 生成文件', () => {
     const home = tempHome();
@@ -125,6 +151,20 @@ describe('metadata-file 读写契约（~/.harness2/desktop-metadata.json）', ()
     writeMetadataPatch(home, 's1', { title: 'A', archived: true });
     const m = writeMetadataPatch(home, 's1', { title: '' });
     expect(m.s1).toEqual({ archived: true });
+  });
+
+  it('Z8-1 pinned 写入/读取加性：置顶落盘、取消置顶保留其它字段', () => {
+    const home = tempHome();
+    expect(writeMetadataPatch(home, 's1', { pinned: true }).s1).toEqual({ pinned: true });
+    const raw = JSON.parse(
+      readFileSync(join(home, '.harness2', 'desktop-metadata.json'), 'utf8'),
+    ) as SessionMetadataMap;
+    expect(raw.s1).toEqual({ pinned: true });
+    // 置顶与重命名共存；取消置顶不抹掉 title
+    writeMetadataPatch(home, 's1', { title: '钉子' });
+    const unpinned = writeMetadataPatch(home, 's1', { pinned: false });
+    expect(unpinned.s1).toEqual({ pinned: false, title: '钉子' });
+    expect(readMetadata(home).s1).toEqual({ pinned: false, title: '钉子' });
   });
 
   it('损坏文件回落空映射（可恢复）', () => {

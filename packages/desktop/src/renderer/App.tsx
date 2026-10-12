@@ -126,17 +126,24 @@ export function App(): React.ReactNode {
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
   }, []);
-  // Ctrl+K / Cmd+K 命令面板（与 Ctrl+, Ctrl+N Ctrl+F 共存；屏蔽浏览器默认"定位链接"）
+  // Ctrl+K / Cmd+K 命令面板 + Ctrl+N / Cmd+N 新建会话（Z-07 #1：New Task 的 Ctrl+N 快捷键；
+  // 命令面板此前已标注该 hint 但未绑定，这里补上真绑定，避免「显示了却不生效」的假入口）。
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent): void => {
-      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
+      if (!(e.ctrlKey || e.metaKey)) return;
+      const key = e.key.toLowerCase();
+      if (key === 'k') {
         e.preventDefault();
         toggleOverlay('palette');
+      } else if (key === 'n') {
+        // 屏蔽浏览器「新开窗口」默认行为；新建会话同时按 Z2-04 收起右栏。
+        e.preventDefault();
+        newSessionCollapsingRightbar(frameDispatch);
       }
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, []);
+  }, [frameDispatch]);
 
   // 命令面板的「跳转会话」候选（展示标题优先，占位空会话）
   const activeSessions = selectableSessionIds(state);

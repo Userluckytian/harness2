@@ -13,6 +13,34 @@ export type {
 export { SessionBrowser } from './SessionBrowser.js';
 export type { SessionBrowserProps, SessionRowDrag, WorkspacesOwnerProps } from './SessionBrowser.js';
 
+// 任务工具栏与视图逻辑（Z8-1 / Z-07 #5～#8 / Z-08 / Z-09）
+export { TaskToolbar } from './TaskToolbar.js';
+export type { TaskToolbarProps } from './TaskToolbar.js';
+export {
+  DEFAULT_SIDEBAR_TASK_PREFERENCES,
+  PINNED_COLLAPSE_LIMIT,
+  buildSidebarSections,
+  filterSessionItems,
+  groupSessionsByProject,
+  leadingSlot,
+  projectName,
+  relativeTime,
+  resolveTaskViewMode,
+  sortSessionItems,
+  splitPinned,
+} from './task-view.js';
+export type {
+  SidebarFilter,
+  SidebarLeadingKind,
+  SidebarProjectGroup,
+  SidebarSection,
+  SidebarSectionsInput,
+  SidebarSortBy,
+  SidebarTaskPreferences,
+  SidebarTaskViewMode,
+  SidebarViewMode,
+} from './task-view.js';
+
 // 几何（Z-05 / Z-06）
 export {
   SIDEBAR_COLLAPSED_WIDTH,

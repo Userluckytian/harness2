@@ -95,11 +95,17 @@ function SidebarSeatContent(): ReactNode {
       query={query}
       onQueryChange={setQuery}
       onOpenSession={(id) => void controller.selectSession(id)}
+      // Z8-1：Pinned 行的「取消置顶」（置顶动作本体在 Z8-2 右键菜单）。
+      // web 无 metadata 覆层通道（serve-client 注释如实登记）→ 置顶在内存生效、不落盘；
+      // 也因此 web 的 Pinned 区恒不出现（metadata 为空 → 无置顶项），不摆假条目。
+      onTogglePin={(id, pinned) => void controller.pinSession(id, pinned)}
       // web 无目录选择通道：作用域输入只能是 {}（resolveNewSessionScope 恒落 blank），
       // 真正的 cwd 由 serve 客户端用「最近会话 cwd」兜底（见 main.tsx / serve-client 注释）。
       newSessionScope={{}}
       onNewSession={() => onNewSession?.()}
       newSessionEnabled={newSessionEnabled}
+      // Z-07 #1：New Task 的 Ctrl+N 快捷键（web app.tsx 已真绑定 Ctrl/Cmd+N，同一可用性门控）。
+      newSessionShortcut="Ctrl+N"
       // Z2-02（Z-07 分区 2）：左栏命令中心入口 → 打开命令面板覆层（与 Ctrl/Cmd+K 同一真源）。
       onOpenCommandPalette={() => onOpenPalette()}
       // Z2-06（Z-19）：会话行可拖进主区分屏。生产写 dataTransfer（真实 DnD 语义），

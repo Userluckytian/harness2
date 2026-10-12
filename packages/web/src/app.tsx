@@ -60,11 +60,24 @@ export function WebApp({ shell, onNewSession, newSessionBlockedReason }: WebAppP
       : !hasUsableCwd
         ? (newSessionBlockedReason ?? '无法新建会话：列表里没有可用 cwd（serve 要求 cwd，本壳无目录选择通道）')
         : undefined;
+  const newSessionEnabled = state.status === 'connected' && newSessionBlocked === undefined;
+
+  // Ctrl+N / Cmd+N：新建会话（Z-07 #1；与侧栏 New Task 按钮同一动作 + 同一可用性门控，
+  // 不在被阻断时「按了没反应」或强行调用必失败的动作）。
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent): void => {
+      if (!(e.ctrlKey || e.metaKey) || e.key.toLowerCase() !== 'n') return;
+      e.preventDefault();
+      if (newSessionEnabled) onNewSession?.();
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [newSessionEnabled, onNewSession]);
 
   const shellValue: WebShellValue = {
     shell,
     ...(onNewSession !== undefined ? { onNewSession } : {}),
-    newSessionEnabled: state.status === 'connected' && newSessionBlocked === undefined,
+    newSessionEnabled,
     ...(newSessionBlocked !== undefined ? { newSessionBlockedReason: newSessionBlocked } : {}),
     settingsOpen,
     onOpenSettings: () => setSettingsOpen(true),

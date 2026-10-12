@@ -40,7 +40,7 @@ export function renderCollapsibleSidebar(overrides: Partial<SidebarRootProps> = 
   };
 }
 
-/** 构造一行会话数据（默认：未归档、未运行、无未读、无待批） */
+/** 构造一行会话数据（默认：未归档、未运行、无未读、无待批、未置顶） */
 export function sessionItem(id: string, overrides: Partial<SidebarSessionItem> = {}): SidebarSessionItem {
   return {
     id,
@@ -51,6 +51,7 @@ export function sessionItem(id: string, overrides: Partial<SidebarSessionItem> =
     running: false,
     unread: 0,
     pendingApprovals: 0,
+    pinned: false,
     ...overrides,
   };
 }

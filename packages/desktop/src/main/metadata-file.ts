@@ -26,7 +26,7 @@ export function readMetadata(home: string): SessionMetadataMap {
 export function writeMetadataPatch(
   home: string,
   id: string,
-  patch: { title?: string; archived?: boolean; deleted?: boolean },
+  patch: { title?: string; archived?: boolean; deleted?: boolean; pinned?: boolean },
 ): SessionMetadataMap {
   const current = readMetadata(home); // 已 normalize
   const next: SessionMetadataMap = { ...current };
@@ -41,6 +41,9 @@ export function writeMetadataPatch(
   }
   if ('deleted' in patch) {
     entry.deleted = patch.deleted === true;
+  }
+  if ('pinned' in patch) {
+    entry.pinned = patch.pinned === true;
   }
   if (Object.keys(entry).length === 0) delete next[id];
   else next[id] = entry;

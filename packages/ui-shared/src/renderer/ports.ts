@@ -100,11 +100,11 @@ export interface HarnessClient {
   setBusy?(busy: boolean, counts?: { runningTurns: number; backgroundTasks: number }): Promise<void>;
   /** 读旧版分屏布局文件（只读兼容；web 无此历史文件） */
   loadLayout?(): Promise<unknown>;
-  /** 会话展示态覆层（重命名/归档/删除标记） */
+  /** 会话展示态覆层（重命名/归档/删除/置顶标记） */
   metadataGet?(): Promise<SessionMetadataMap>;
   metadataSet?(
     id: string,
-    patch: { title?: string; archived?: boolean; deleted?: boolean },
+    patch: { title?: string; archived?: boolean; deleted?: boolean; pinned?: boolean },
   ): Promise<SessionMetadataMap>;
   /** 会话草稿（按会话隔离的原始输入） */
   draftsGet?(): Promise<DraftsMap>;

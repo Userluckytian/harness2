@@ -87,7 +87,7 @@ const api: Harness2Api = {
   notify: (title: string, body: string, sessionId?: string) =>
     ipcRenderer.invoke(IPC_INVOKE, { cmd: 'notify', title, body, sessionId }),
   metadataGet: () => ipcRenderer.invoke(IPC_INVOKE, { cmd: 'metadata:get' }),
-  metadataSet: (id: string, patch: { title?: string; archived?: boolean; deleted?: boolean }) =>
+  metadataSet: (id: string, patch: { title?: string; archived?: boolean; deleted?: boolean; pinned?: boolean }) =>
     ipcRenderer.invoke(IPC_INVOKE, { cmd: 'metadata:set', id, patch }),
   draftsGet: () => ipcRenderer.invoke(IPC_INVOKE, { cmd: 'drafts:get' }),
   draftsSet: (drafts: Record<string, string>) => ipcRenderer.invoke(IPC_INVOKE, { cmd: 'drafts:set', drafts }),

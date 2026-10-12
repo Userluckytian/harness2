@@ -38,6 +38,11 @@ describe('D-23 toSessionItem', () => {
     const waiting = toSessionItem(source('b'), { metadata: {}, flags: { pendingApprovals: 2 } });
     expect(waiting.pendingApprovals).toBe(2);
   });
+
+  it('Z8-1：pinned 覆层如实带出；缺省 false（旧数据无该字段）', () => {
+    expect(toSessionItem(source('a'), { metadata: {} }).pinned).toBe(false);
+    expect(toSessionItem(source('a'), { metadata: { a: { pinned: true } } }).pinned).toBe(true);
+  });
 });
 
 describe('D-23 buildSessionItems', () => {

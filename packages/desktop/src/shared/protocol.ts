@@ -73,12 +73,14 @@ export interface ContextUsageShape {
   label: string;
 }
 
-/** 会话展示态覆层 entry（B3：desktop-metadata.json 单会话元数据；title/archived/deleted 均可选） */
+/** 会话展示态覆层 entry（B3：desktop-metadata.json 单会话元数据；title/archived/deleted/pinned 均可选） */
 export interface SessionMetadataEntryShape {
   title?: string;
   archived?: boolean;
   /** 删除隐藏标记（serve 无 delete API；仅覆层标记，事件数据仍在托管下） */
   deleted?: boolean;
+  /** 置顶标记（Z8-1：Pinned 区数据面；加性字段，缺省 = 未置顶） */
+  pinned?: boolean;
 }
 
 /** metadata:get / metadata:set 的响应（整体覆层映射 sessionId → entry） */
@@ -139,7 +141,11 @@ export type InvokeCommand =
   | { cmd: 'listDir'; relativePath: string }
   | { cmd: 'notify'; title: string; body: string; sessionId?: string }
   | { cmd: 'metadata:get' }
-  | { cmd: 'metadata:set'; id: string; patch: { title?: string; archived?: boolean; deleted?: boolean } }
+  | {
+      cmd: 'metadata:set';
+      id: string;
+      patch: { title?: string; archived?: boolean; deleted?: boolean; pinned?: boolean };
+    }
   // —— D1：会话草稿持久化（desktop-drafts.json；按会话隔离） ——
   | { cmd: 'drafts:get' }
   | { cmd: 'drafts:set'; drafts: DraftsMapShape }
@@ -258,10 +264,10 @@ export interface Harness2Api extends Partial<ModelsSettingsApi>, Partial<WindowC
   notify(title: string, body: string, sessionId?: string): Promise<void>;
   /** 读会话展示态覆层整体（~/.harness2/desktop-metadata.json；损坏回退空映射） */
   metadataGet(): Promise<SessionMetadataMapShape>;
-  /** 合并写回单个会话的展示态 patch（title/archived/deleted；返回更新后整体） */
+  /** 合并写回单个会话的展示态 patch（title/archived/deleted/pinned；返回更新后整体） */
   metadataSet(
     id: string,
-    patch: { title?: string; archived?: boolean; deleted?: boolean },
+    patch: { title?: string; archived?: boolean; deleted?: boolean; pinned?: boolean },
   ): Promise<SessionMetadataMapShape>;
   /** 读会话草稿（desktop-drafts.json；按会话隔离；损坏回退空映射） */
   draftsGet(): Promise<DraftsMapShape>;

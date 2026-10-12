@@ -50,6 +50,17 @@ describe('会话列表条目投影', () => {
     });
     expect(active.map((i) => i.id)).toEqual(['b']);
   });
+
+  it('Z8-1 pinned 覆层如实带出（缺省 false；置顶会话仍在 active）', () => {
+    const { active } = buildSessionItems({
+      sessions: [source('a', 'A', 1), source('b', 'B', 2)],
+      metadata: { b: { pinned: true } },
+    });
+    expect(active.map((i) => [i.id, i.pinned])).toEqual([
+      ['a', false],
+      ['b', true],
+    ]);
+  });
 });
 
 describe('会话浏览器（D-23/D-13）', () => {

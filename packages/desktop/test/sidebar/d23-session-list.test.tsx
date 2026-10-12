@@ -28,10 +28,17 @@ describe('D-23 会话列表席位', () => {
 
   it('运行中与未读标记只在该行出现（不凭空给每行都画）', () => {
     renderSidebar({
-      sessions: [sessionItem('a', { running: true, unread: 3 }), sessionItem('b')],
+      sessions: [sessionItem('a', { running: true }), sessionItem('b', { unread: 3 })],
     });
     expect(screen.getAllByTestId('session-running').length).toBe(1);
-    expect(screen.getByText('3')).toBeDefined();
+    expect(document.querySelector('.h2-sidebar-unread')?.textContent).toBe('3');
+  });
+
+  it('Z-09 leading 槽优先级：unread > running（同一行只画未读徽标，不叠 spinner）', () => {
+    renderSidebar({ sessions: [sessionItem('c', { running: true, unread: 5 })] });
+    expect(screen.queryAllByTestId('session-running').length).toBe(0);
+    expect(document.querySelector('.h2-sidebar-unread')?.textContent).toBe('5');
+    expect(document.querySelector('[data-testid="session-leading"]')?.getAttribute('data-kind')).toBe('unread');
   });
 
   it('点击行回调会话 id', () => {
@@ -56,14 +63,13 @@ describe('D-23 会话列表席位', () => {
     expect(screen.getByTestId('sidebar-empty').textContent).toBe('会话都在归档区');
   });
 
-  it('归档区默认折叠，展开后列出已归档行', () => {
+  it('归档开关默认关闭（归档行不出现），开启后列出已归档行', () => {
     renderSidebar({
       sessions: [sessionItem('a')],
       archivedSessions: [sessionItem('z', { title: '老会话', archived: true })],
     });
-    const toggle = screen.getByText('已归档（1）');
     expect(screen.queryByText('老会话')).toBeNull();
-    fireEvent.click(toggle);
+    fireEvent.click(screen.getByTestId('sidebar-archived-toggle'));
     expect(screen.getByText('老会话')).toBeDefined();
     expect(document.querySelector('[data-session-id="z"]')?.getAttribute('data-archived')).toBe('true');
   });
@@ -73,6 +79,14 @@ describe('D-23 会话列表席位', () => {
     renderSidebar({ sessions: [sessionItem('a')], query: '', onQueryChange: (q) => queries.push(q) });
     fireEvent.change(screen.getByPlaceholderText('搜索会话…'), { target: { value: 'abc' } });
     expect(queries).toEqual(['abc']);
+  });
+
+  it('Z-07 #1：壳传入 newSessionShortcut 才画 New Task 快捷键标注（缺省不画假提示）', () => {
+    renderSidebar({ newSessionShortcut: 'Ctrl+N' });
+    expect(document.querySelector('.h2-sidebar-new-hint')?.textContent).toBe('Ctrl+N');
+    cleanup();
+    renderSidebar({});
+    expect(document.querySelector('.h2-sidebar-new-hint')).toBeNull();
   });
 });
 

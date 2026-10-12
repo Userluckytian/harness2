@@ -1,7 +1,7 @@
 // 会话行视图模型（D-23 区域席位的数据适配）：
 //   把桌面 store 的会话摘要 + 展示态覆层（共享模块 shared/metadata.js，只读复用，
 //   不复制过滤规则）折算成侧栏行需要的形状。纯函数，便于装配层直接调用与单测。
-import { displayTitle, filterSessionList, type SessionMetadataMap } from '../../shared/metadata.js';
+import { displayTitle, filterSessionList, isPinned, type SessionMetadataMap } from '../../shared/metadata.js';
 
 /** 装配层给出的会话摘要（store.SessionMeta 的结构子集） */
 export interface SidebarSessionSource {
@@ -35,6 +35,8 @@ export interface SidebarSessionItem {
   unread: number;
   /** 待审批数（>0 时行上渲染 attention 徽标） */
   pendingApprovals: number;
+  /** 展示态覆层判定为置顶（Z8-1 / Z-07 #6：Pinned 区数据面） */
+  pinned: boolean;
 }
 
 /** 空会话的回落标题（firstUserText 为空且无覆层标题时显示，不摆假标题） */
@@ -68,6 +70,7 @@ export function toSessionItem(
     running: opts.flags?.running === true,
     unread: opts.flags?.unread ?? 0,
     pendingApprovals: opts.flags?.pendingApprovals ?? 0,
+    pinned: isPinned(opts.metadata, source.id),
   };
 }
 

@@ -40,6 +40,7 @@ import {
   normalizeMetadata,
   displayTitle,
   isArchived,
+  isPinned,
   type SessionMetadataEntry,
   type SessionMetadataMap,
 } from '../shared/metadata.js';
@@ -277,8 +278,8 @@ export class AppStore {
     this.set({ metadata: normalizeMetadata(raw) });
   }
 
-  /** 更新单条会话展示态（title/archived/deleted 字段级合并）；返回值供 controller 与磁盘回读对账 */
-  updateMetadata(id: string, patch: { title?: string; archived?: boolean; deleted?: boolean }): void {
+  /** 更新单条会话展示态（title/archived/deleted/pinned 字段级合并）；返回值供 controller 与磁盘回读对账 */
+  updateMetadata(id: string, patch: { title?: string; archived?: boolean; deleted?: boolean; pinned?: boolean }): void {
     const current = this.state.metadata[id] ?? {};
     const entry: SessionMetadataEntry = { ...current };
     if ('title' in patch) {
@@ -288,6 +289,7 @@ export class AppStore {
     }
     if ('archived' in patch) entry.archived = patch.archived === true;
     if ('deleted' in patch) entry.deleted = patch.deleted === true;
+    if ('pinned' in patch) entry.pinned = patch.pinned === true;
     const nextMetadata: SessionMetadataMap = { ...this.state.metadata };
     if (Object.keys(entry).length === 0)
       delete nextMetadata[id]; // 空条目不落盘
@@ -303,6 +305,11 @@ export class AppStore {
   /** 某会话是否已归档（覆层判定） */
   isArchived(id: string): boolean {
     return isArchived(this.state.metadata, id);
+  }
+
+  /** 某会话是否已置顶（覆层判定；Z8-1 / Z-07 #6） */
+  isPinned(id: string): boolean {
+    return isPinned(this.state.metadata, id);
   }
 
   /** 从当前视图移除会话（删除/归档隐藏的渲染端清理）：侧栏去项 + 分栏解绑 + 选中清理 */

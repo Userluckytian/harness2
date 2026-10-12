@@ -262,3 +262,22 @@ describe('store：恢复条数据源（Z2-09b：resume-snapshot 在途计数）'
     expect(store.peekStream('a')?.resume?.inflight).toBe(0);
   });
 });
+
+describe('会话展示态覆层：pinned 加性字段（Z8-1 / Z-07 #6）', () => {
+  it('updateMetadata 字段级合并 pinned；isPinned 判定；取消置顶不误伤其它字段', () => {
+    const store = new AppStore();
+    store.updateMetadata('s1', { title: '钉子会话', pinned: true });
+    expect(store.getState().metadata.s1).toEqual({ title: '钉子会话', pinned: true });
+    expect(store.isPinned('s1')).toBe(true);
+    store.updateMetadata('s1', { pinned: false });
+    expect(store.getState().metadata.s1).toEqual({ title: '钉子会话', pinned: false });
+    expect(store.isPinned('s1')).toBe(false);
+  });
+
+  it('applyMetadata 回读旧数据（无 pinned）→ isPinned false，不迁移', () => {
+    const store = new AppStore();
+    store.applyMetadata({ s1: { title: '旧' } });
+    expect(store.isPinned('s1')).toBe(false);
+    expect(store.getState().metadata.s1).toEqual({ title: '旧' });
+  });
+});

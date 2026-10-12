@@ -77,6 +77,8 @@ function SidebarSeatContent(): React.ReactNode {
       query={query}
       onQueryChange={setQuery}
       onOpenSession={(id) => void controller.selectSession(id)}
+      // Z8-1：Pinned 行的「取消置顶」（置顶动作本体在 Z8-2 右键菜单）——走既有 metadata 通道。
+      onTogglePin={(id, pinned) => void controller.pinSession(id, pinned)}
       // D-21 数据缺口（如实登记，不造假输入）：本仓没有 Workspace 概念（最接近的是
       // SessionMeta.cwd），controller.newSession() 也没有作用域入参 → 作用域输入只能是 {}，
       // 于是 resolveNewSessionScope 恒落 { kind: 'blank' }（空白新会话）。
@@ -85,6 +87,8 @@ function SidebarSeatContent(): React.ReactNode {
       // Z2-04（Z-13）：新建会话强制收起右栏（动作层收口，见 app-shared.newSessionCollapsingRightbar）
       onNewSession={() => newSessionCollapsingRightbar(frameDispatch)}
       newSessionEnabled={state.status === 'connected'}
+      // Z-07 #1：New Task 的 Ctrl+N 快捷键（App.tsx 已真绑定 Ctrl/Cmd+N，见那里的注释）。
+      newSessionShortcut="Ctrl+N"
       // Z2-02（Z-07 分区 2）：左栏命令中心入口 → 复用既有覆层链路打开命令面板
       // （与 Ctrl+K 的 toggleOverlay('palette') 同一真源，不新开一套面板）。
       onOpenCommandPalette={() => setOverlay('palette', true)}

@@ -672,12 +672,19 @@ export function createBridge(deps: BridgeDeps): Bridge {
         if (id.length === 0) throw new InvokeError('metadata:set 缺少会话 id');
         const rawPatch = args['patch'];
         if (typeof rawPatch !== 'object' || rawPatch === null) throw new InvokeError('metadata:set patch 必须是对象');
-        const patch = rawPatch as { title?: string; archived?: boolean; deleted?: boolean; [k: string]: unknown };
-        // 只接受白名单字段（title 字符串 / archived|deleted 布尔），其余注入字段一律忽略（校验统一在 normalizeMetadata）
+        const patch = rawPatch as {
+          title?: string;
+          archived?: boolean;
+          deleted?: boolean;
+          pinned?: boolean;
+          [k: string]: unknown;
+        };
+        // 只接受白名单字段（title 字符串 / archived|deleted|pinned 布尔），其余注入字段一律忽略（校验统一在 normalizeMetadata）
         return writeMetadataPatch(deps.home, id, {
           ...(typeof patch.title === 'string' ? { title: patch.title } : {}),
           ...(typeof patch.archived === 'boolean' ? { archived: patch.archived } : {}),
           ...(typeof patch.deleted === 'boolean' ? { deleted: patch.deleted } : {}),
+          ...(typeof patch.pinned === 'boolean' ? { pinned: patch.pinned } : {}),
         });
       }
       case 'drafts:get':

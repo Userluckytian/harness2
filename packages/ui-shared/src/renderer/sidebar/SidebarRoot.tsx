@@ -63,6 +63,8 @@ export interface SidebarRootProps extends SidebarSeats {
   newSessionScope?: NewSessionScopeInput | undefined;
   /** 新会话入口是否可用（装配层按连接状态给 false；缺省可用） */
   newSessionEnabled?: boolean | undefined;
+  /** Z-07 #1：New Task 快捷键标注（如 'Ctrl+N'）；壳真正绑定了该键才传，缺省不画 */
+  newSessionShortcut?: string | undefined;
   /**
    * 命令中心入口（Z-07 分区 2）：点击打开既有命令面板。
    * 不传则不渲染该入口（硬约束：界面上不摆点击无效的假入口）——
@@ -87,6 +89,8 @@ export interface SidebarRootProps extends SidebarSeats {
   buildEnv?: Record<string, string | undefined> | undefined;
   /** Z2-06：会话行拖拽（把会话拖进主区分屏）；缺省不传 = 行不可拖 */
   sessionRowDrag?: SessionRowDrag | undefined;
+  /** Z8-1：Pinned 行的「取消置顶」回调；缺省不传 = 不渲染该按钮（不摆无效入口） */
+  onTogglePin?: ((id: string, pinned: boolean) => void) | undefined;
   /** 文案覆盖（缺省中文） */
   labels?: Partial<SidebarLabels> | undefined;
   className?: string | undefined;
@@ -182,6 +186,7 @@ export function SidebarRoot(props: SidebarRootProps): React.ReactNode {
         onOpenSession={openSession}
         labels={labels}
         {...(props.sessionRowDrag !== undefined ? { rowDrag: props.sessionRowDrag } : {})}
+        {...(props.onTogglePin !== undefined ? { onTogglePin: props.onTogglePin } : {})}
       />
     ));
 
@@ -228,13 +233,19 @@ export function SidebarRoot(props: SidebarRootProps): React.ReactNode {
         </button>
       </div>
 
-      {/* D-21：新会话按钮；作用域解析在点击时做（数据是最新的） */}
+      {/* D-21：新会话按钮；作用域解析在点击时做（数据是最新的）。
+          Z-07 #1：`newSessionShortcut` 由壳显式传入才画快捷键标注（壳保证真的绑定了该键，
+          缺省不画 —— 不摆「显示了却按不生效」的假提示）。 */}
       <button
         type="button"
         className="h2-sidebar-new"
         data-testid="sidebar-new-session"
         aria-label={labels.newSessionLabel}
-        title={labels.newSessionLabel}
+        title={
+          props.newSessionShortcut !== undefined
+            ? `${labels.newSessionLabel}（${props.newSessionShortcut}）`
+            : labels.newSessionLabel
+        }
         disabled={props.newSessionEnabled === false}
         onClick={startSession}
       >
@@ -242,6 +253,11 @@ export function SidebarRoot(props: SidebarRootProps): React.ReactNode {
           ＋
         </span>
         <span className="h2-sidebar-new-label">{labels.newSession}</span>
+        {props.newSessionShortcut !== undefined && (
+          <span className="h2-sidebar-new-hint" aria-hidden="true">
+            {props.newSessionShortcut}
+          </span>
+        )}
       </button>
 
       {/* Z-07 分区 2：命令中心入口（搜索图标 + 快捷键）；无回调则不渲染（不摆假入口） */}

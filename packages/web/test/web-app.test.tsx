@@ -92,6 +92,14 @@ describe('web 页面装配', () => {
     stop();
   });
 
+  it('Z-07 #1：Ctrl+N 触发新建会话（与侧栏 New Task 同一动作）', async () => {
+    const onNewSession = vi.fn();
+    const { stop } = await mount({ onNewSession });
+    fireEvent.keyDown(window, { key: 'n', ctrlKey: true });
+    expect(onNewSession).toHaveBeenCalledTimes(1);
+    stop();
+  });
+
   it('点击会话 → 中栏挂载共享会话席位（视图环 + 常驻 composer）', async () => {
     const { shell, stop } = await mount();
     fireEvent.click(screen.getByText('第一个会话'));

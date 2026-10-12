@@ -34,6 +34,58 @@ export interface SidebarLabels {
   allArchived: string;
   /** 归档区开关文案（带条数） */
   archived: (count: number) => string;
+
+  // —— Z8-1 任务工具栏（Z-07 #5 / Z-08） ——
+  /** 分段控件无障碍名（视图模式） */
+  viewModeLabel: string;
+  /** 分段控件：分组 */
+  viewModeGrouped: string;
+  /** 分段控件：项目（默认） */
+  viewModeProject: string;
+  /** 全部收起（有分组展开时） */
+  collapseAll: string;
+  /** 全部展开（分组全收起时） */
+  expandAll: string;
+  /** 筛选和排序按钮文案 */
+  filterSort: string;
+  /** 排序分组标题 */
+  sortBy: string;
+  /** 排序：更新时间 */
+  sortByUpdated: string;
+  /** 排序：名称 */
+  sortByName: string;
+  /** 筛选分组标题 */
+  filter: string;
+  /** 筛选：全部 */
+  filterAll: string;
+  /** 筛选：运行中 */
+  filterRunning: string;
+  /** 筛选：未读 */
+  filterUnread: string;
+  /** 归档视图开关 */
+  archiveView: string;
+  /** 归档视图下无归档会话 */
+  noArchived: string;
+  /** 分组模式下的「会话」区标题（复用会话文案的等价项） */
+  conversations: string;
+  /** 项目区标题 */
+  projects: string;
+  /** 无 cwd 的会话所在分组的标题 */
+  noProject: string;
+  /** Pinned 区标题 */
+  pinned: string;
+  /** Pinned 区「显示全部」（折叠溢出时） */
+  pinnedShowAll: (hidden: number) => string;
+  /** 取消置顶（Pinned 行上的按钮） */
+  unpin: string;
+  /** 置顶标记的无障碍名（leading 槽） */
+  pinnedMarkLabel: string;
+  /** 未读标记的无障碍名（leading 槽） */
+  unreadLabel: string;
+  /** 运行中标记的无障碍名（leading 槽） */
+  runningLabel: string;
+  /** 行元信息：消息条数 */
+  messageCount: (count: number) => string;
 }
 
 export const DEFAULT_SIDEBAR_LABELS: SidebarLabels = {
@@ -53,4 +105,29 @@ export const DEFAULT_SIDEBAR_LABELS: SidebarLabels = {
   noMatch: '无匹配会话',
   allArchived: '会话都在归档区',
   archived: (count) => `已归档（${count}）`,
+  viewModeLabel: '视图模式',
+  viewModeGrouped: '分组',
+  viewModeProject: '项目',
+  collapseAll: '收起全部',
+  expandAll: '展开全部',
+  filterSort: '筛选和排序',
+  sortBy: '排序',
+  sortByUpdated: '更新时间',
+  sortByName: '名称',
+  filter: '筛选',
+  filterAll: '全部',
+  filterRunning: '运行中',
+  filterUnread: '未读',
+  archiveView: '归档',
+  noArchived: '暂无归档会话',
+  conversations: '会话',
+  projects: '项目',
+  noProject: '无项目',
+  pinned: '置顶',
+  pinnedShowAll: (hidden) => `显示全部（另 ${hidden}）`,
+  unpin: '取消置顶',
+  pinnedMarkLabel: '已置顶',
+  unreadLabel: '未读',
+  runningLabel: '运行中',
+  messageCount: (count) => `${count} 条`,
 };

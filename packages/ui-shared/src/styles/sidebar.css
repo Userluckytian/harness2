@@ -189,6 +189,19 @@
   white-space: nowrap;
 }
 
+/* Z-07 #1：New Task 快捷键标注（壳绑定 Ctrl+N 后才渲染） */
+.h2-sidebar-new-hint {
+  flex: none;
+  padding: 1px 5px;
+  border: 1px solid var(--color-border-hover);
+  border-radius: 5px;
+  color: var(--color-foreground-subtlest);
+  font-family: ui-monospace, SFMono-Regular, Consolas, 'Liberation Mono', monospace;
+  font-size: var(--text-ui-2xs);
+  line-height: 14px;
+  white-space: nowrap;
+}
+
 /* —— 命令中心入口（Z-07 分区 2：New Task 之下、会话区域之上）—— */
 .h2-sidebar-command {
   flex: none;
@@ -262,15 +275,121 @@
   flex-direction: column;
 }
 
-.h2-sidebar-region-head {
+/* —— 任务工具栏（Z8-1 / Z-07 #5 / Z-08）：视图模式分段 + 全部展开/收起 + 筛选排序 + 归档 —— */
+.h2-sidebar-toolbar {
   flex: none;
   display: flex;
   align-items: center;
-  padding: 4px 8px 8px;
+  justify-content: space-between;
+  gap: 6px;
+  padding: 2px 4px 8px;
+  margin-left: -4px;
+}
+
+.h2-sidebar-segmented {
+  display: inline-flex;
+  padding: 2px;
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  background: var(--color-surface);
+}
+
+.h2-sidebar-segment {
+  padding: 3px 10px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
   color: var(--color-foreground-subtle);
-  font-size: 12px;
+  font: inherit;
+  font-size: var(--text-ui-sm);
+  cursor: pointer;
+}
+
+.h2-sidebar-segment[aria-pressed='true'] {
+  background: var(--color-selected);
+  color: var(--color-foreground);
   font-weight: 600;
+}
+
+.h2-sidebar-toolbar-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.h2-sidebar-tool {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--color-foreground-subtle);
+  font-size: var(--text-ui-sm);
+  cursor: pointer;
+}
+
+.h2-sidebar-tool:hover {
+  background: var(--color-muted);
+  color: var(--color-foreground);
+}
+
+.h2-sidebar-tool[aria-pressed='true'] {
+  background: var(--color-selected);
+  color: var(--color-foreground);
+}
+
+.h2-sidebar-toolbar-menu-wrap {
+  position: relative;
+}
+
+.h2-sidebar-toolbar-menu {
+  position: absolute;
+  top: 26px;
+  right: 0;
+  z-index: 60;
+  min-width: 132px;
+  padding: 4px;
+  border: 1px solid var(--color-popover-border);
+  border-radius: 8px;
+  background: var(--color-popover);
+  box-shadow: 0 6px 20px rgb(0 0 0 / 18%);
+}
+
+.h2-sidebar-menu-group {
+  display: flex;
+  flex-direction: column;
+}
+
+.h2-sidebar-menu-title {
+  padding: 4px 8px 2px;
+  color: var(--color-foreground-subtlest);
+  font-size: var(--text-ui-2xs);
   letter-spacing: 0.06em;
+}
+
+.h2-sidebar-menu-item {
+  padding: 5px 8px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--color-foreground);
+  font: inherit;
+  font-size: var(--text-ui-sm);
+  text-align: left;
+  cursor: pointer;
+}
+
+.h2-sidebar-menu-item:hover {
+  background: var(--color-surface-hover);
+}
+
+.h2-sidebar-menu-item[aria-checked='true'] {
+  color: var(--color-primary);
+  font-weight: 600;
 }
 
 .h2-sidebar-search {
@@ -288,7 +407,6 @@
 .h2-sidebar-list {
   flex: 1;
   min-height: 0;
-  list-style: none;
   margin: 0;
   padding: 0 6px 4px;
   overflow-y: auto;
@@ -296,6 +414,120 @@
   scrollbar-gutter: stable;
   scrollbar-color: var(--h2-sidebar-thumb) transparent;
   scrollbar-width: thin;
+}
+
+/* —— 分区与分组（Z8-1 / Z-07 #6～#8）：Pinned / 项目 / 会话 / 已归档 —— */
+.h2-sidebar-section {
+  display: flex;
+  flex-direction: column;
+  padding-top: 4px;
+}
+
+.h2-sidebar-section-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  padding: 4px 8px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--color-foreground-subtle);
+  font: inherit;
+  font-size: var(--text-ui-xs);
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-align: left;
+}
+
+.h2-sidebar-section-head-toggle {
+  cursor: pointer;
+}
+
+.h2-sidebar-section-head-toggle:hover {
+  background: var(--color-muted);
+  color: var(--color-foreground);
+}
+
+.h2-sidebar-section-title {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+.h2-sidebar-section-count {
+  flex: none;
+  color: var(--color-foreground-subtlest);
+  font-weight: 400;
+}
+
+.h2-sidebar-list-inner {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.h2-sidebar-groups {
+  display: flex;
+  flex-direction: column;
+}
+
+.h2-sidebar-group-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  padding: 5px 8px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--color-foreground);
+  font: inherit;
+  font-size: var(--text-ui-sm);
+  text-align: left;
+  cursor: pointer;
+}
+
+.h2-sidebar-group-head:hover {
+  background: var(--color-muted);
+}
+
+.h2-sidebar-group-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.h2-sidebar-group-count {
+  flex: none;
+  color: var(--color-foreground-subtlest);
+  font-size: var(--text-ui-xs);
+}
+
+.h2-sidebar-group-list {
+  list-style: none;
+  margin: 0;
+  padding: 0 0 0 10px;
+}
+
+.h2-sidebar-show-all {
+  align-self: flex-start;
+  margin: 2px 0 4px 8px;
+  padding: 3px 6px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--color-primary);
+  font: inherit;
+  font-size: var(--text-ui-xs);
+  cursor: pointer;
+}
+
+.h2-sidebar-show-all:hover {
+  background: var(--color-muted);
 }
 
 .h2-sidebar-list::-webkit-scrollbar {
@@ -312,13 +544,14 @@
 }
 
 .h2-sidebar-row {
+  position: relative;
   margin-bottom: 2px;
 }
 
 .h2-sidebar-session {
   display: flex;
-  flex-direction: column;
-  gap: 2px;
+  align-items: flex-start;
+  gap: 8px;
   width: 100%;
   padding: 8px;
   border: none;
@@ -345,6 +578,24 @@
   color: var(--color-foreground-subtle);
 }
 
+/* Z-09：左侧 16px leading 槽（unread 徽标 / running spinner / pinned 图钉 三选一） */
+.h2-sidebar-session-leading {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 16px;
+  height: 18px;
+}
+
+.h2-sidebar-session-body {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
 .h2-sidebar-session-title {
   display: inline-flex;
   align-items: center;
@@ -355,16 +606,61 @@
 }
 
 .h2-sidebar-session-meta {
-  font-size: 12px;
+  font-size: var(--text-ui-xs);
   color: var(--color-foreground-subtle);
 }
 
 .h2-sidebar-running {
   flex: none;
-  width: 6px;
-  height: 6px;
+  width: 8px;
+  height: 8px;
   border-radius: 50%;
-  background: var(--color-success);
+  border: 1.5px solid var(--color-success);
+  border-top-color: transparent;
+  animation: h2-sidebar-spin 900ms linear infinite;
+}
+
+@keyframes h2-sidebar-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.h2-sidebar-pinned-mark {
+  flex: none;
+  font-size: var(--text-ui-xs);
+  line-height: 1;
+  filter: grayscale(0.2);
+}
+
+/* Pinned 行：右侧「取消置顶」按钮（行是 button，取消按钮须为兄弟节点，不能嵌套） */
+.h2-sidebar-unpin {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: none;
+  border-radius: 6px;
+  background: var(--color-card);
+  color: var(--color-foreground-subtle);
+  font-size: var(--text-ui-2xs);
+  cursor: pointer;
+  opacity: 0;
+}
+
+.h2-sidebar-row-pinned:hover .h2-sidebar-unpin,
+.h2-sidebar-unpin:focus-visible {
+  opacity: 1;
+}
+
+.h2-sidebar-unpin:hover {
+  background: var(--color-muted);
+  color: var(--color-foreground);
 }
 
 .h2-sidebar-unread {
@@ -398,32 +694,6 @@
   font-size: 13px;
 }
 
-.h2-sidebar-archived {
-  flex: none;
-  padding: 4px 6px 0;
-  border-top: 1px solid var(--color-border);
-}
-
-.h2-sidebar-archived-toggle {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  width: 100%;
-  padding: 6px 8px;
-  border: none;
-  border-radius: 8px;
-  background: transparent;
-  color: var(--color-foreground-subtle);
-  font: inherit;
-  font-size: 12px;
-  text-align: left;
-  cursor: pointer;
-}
-
-.h2-sidebar-archived-toggle:hover {
-  background: var(--color-muted);
-}
-
 .h2-sidebar-caret {
   display: inline-block;
   transition: transform 150ms ease-in-out;
@@ -431,11 +701,6 @@
 
 .h2-sidebar-caret-open {
   transform: rotate(90deg);
-}
-
-.h2-sidebar-archived-list {
-  max-height: 200px;
-  padding-bottom: 4px;
 }
 
 /* —— 底部设置席位（D-23）：会话列表滚动区之外，永不被列表顶走 —— */
@@ -508,6 +773,10 @@
   max-width: 0;
 }
 
+.h2-sidebar-rail .h2-sidebar-new-hint {
+  display: none;
+}
+
 .h2-sidebar-rail .h2-sidebar-region-area {
   margin-left: 0;
   margin-right: 0;
@@ -577,7 +846,8 @@
 .h2-sidebar-reduced-motion .h2-sidebar-rail-in .h2-sidebar-new,
 .h2-sidebar-reduced-motion .h2-sidebar-rail-in .h2-sidebar-region-area,
 .h2-sidebar-reduced-motion .h2-sidebar-rail-in .h2-sidebar-foot,
-.h2-sidebar-reduced-motion .h2-sidebar-caret {
+.h2-sidebar-reduced-motion .h2-sidebar-caret,
+.h2-sidebar-reduced-motion .h2-sidebar-running {
   transition: none;
   animation: none;
 }
@@ -588,7 +858,8 @@
   .h2-sidebar-rail-in .h2-sidebar-new,
   .h2-sidebar-rail-in .h2-sidebar-region-area,
   .h2-sidebar-rail-in .h2-sidebar-foot,
-  .h2-sidebar-caret {
+  .h2-sidebar-caret,
+  .h2-sidebar-running {
     transition: none;
     animation: none;
   }

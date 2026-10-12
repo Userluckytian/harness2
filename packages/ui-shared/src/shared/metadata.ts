@@ -1,6 +1,6 @@
 // 会话「轻量展示态」覆层 schema（main/renderer 共享）：~/.harness2/desktop-metadata.json。
-// 只存桌面端展示覆盖：会话标题（优先于 firstUserText 显示）、归档软删除标记、删除隐藏标记。
-// **不碰会话事件溯源日志（session.v1.jsonl / rewind_points.jsonl）**——重命名/归档/删除都是
+// 只存桌面端展示覆盖：会话标题（优先于 firstUserText 显示）、归档软删除标记、删除隐藏标记、置顶标记。
+// **不碰会话事件溯源日志（session.v1.jsonl / rewind_points.jsonl）**——重命名/归档/删除/置顶都是
 // 纯展示态，数据始终留在原会话目录；全量列表（listSessions）不变，由渲染端按标记分区显示。
 // 删除语义（serve 无 delete API，2026-09-07 核实）：deleted 覆层标记 + 从侧栏隐藏，
 // **绝不伪造物理删除**（事件日志原样保留；CLI 可物理清理会话目录）。
@@ -8,13 +8,18 @@
 // normalizePreferences：非对象回落空对象；单条 entry 未知字段忽略、类型不符回落无该字段）。
 export const METADATA_FILE = 'desktop-metadata.json';
 
-/** 单会话展示态覆盖（title 可选；archived/deleted 可选——缺失 = false 语义） */
+/** 单会话展示态覆盖（title 可选；archived/deleted/pinned 可选——缺失 = false 语义） */
 export interface SessionMetadataEntry {
   title?: string;
   /** 归档软删除：移出主列表，在「已归档」折叠区可见可恢复 */
   archived?: boolean;
   /** 删除隐藏（UI 二次确认后）：从侧栏移除；仅覆层标记，事件数据仍在 */
   deleted?: boolean;
+  /**
+   * 置顶（Z8-1 / Z-07 #6）：在 Pinned 区顶部单列一份快捷入口（原位置仍保留）。
+   * 加性字段：旧数据缺该字段 = 未置顶（不迁移、不写默认值）。
+   */
+  pinned?: boolean;
 }
 
 export type SessionMetadataMap = Record<string, SessionMetadataEntry>;
@@ -48,12 +53,14 @@ export function normalizeMetadata(raw: unknown): SessionMetadataMap {
     const title = normalizeTitle(entry['title']);
     const archived = normalizeFlag(entry['archived']);
     const deleted = normalizeFlag(entry['deleted']);
+    const pinned = normalizeFlag(entry['pinned']);
     // 全部字段无效 → 该条无覆盖意义，不落条目
-    if (title === undefined && archived === undefined && deleted === undefined) continue;
+    if (title === undefined && archived === undefined && deleted === undefined && pinned === undefined) continue;
     out[key] = {
       ...(title !== undefined ? { title } : {}),
       ...(archived !== undefined ? { archived } : {}),
       ...(deleted !== undefined ? { deleted } : {}),
+      ...(pinned !== undefined ? { pinned } : {}),
     };
   }
   return out;
@@ -68,6 +75,12 @@ export function isArchived(map: SessionMetadataMap, sessionId: string): boolean 
 /** 判断某会话是否已被删除隐藏（覆盖层判定） */
 export function isDeleted(map: SessionMetadataMap, sessionId: string): boolean {
   return map[sessionId]?.deleted === true;
+}
+
+/** 判断某会话是否置顶（覆盖层判定；缺失/非布尔 → false；已删除会话不作为置顶展示） */
+export function isPinned(map: SessionMetadataMap, sessionId: string): boolean {
+  const e = map[sessionId];
+  return e?.pinned === true && e?.deleted !== true;
 }
 
 /** 取某会话展示标题（优先覆层 title；无 → null 表示回落 firstUserText） */
