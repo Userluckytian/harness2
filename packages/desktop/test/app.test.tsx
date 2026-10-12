@@ -420,10 +420,11 @@ describe('对话 UI（jsdom）', () => {
     render(<App.App />);
 
     fireEvent.keyDown(window, { key: 'k', ctrlKey: true });
-    const palette = await screen.findByPlaceholderText('输入命令…');
+    // Z-17：桌面命令面板切 tabbed 布局，placeholder 统一为四 tab 文案
+    const palette = await screen.findByPlaceholderText('搜索操作、任务或文件');
     expect(palette.closest('[data-slot="shell.overlay"]')).not.toBeNull();
     fireEvent.keyDown(palette, { key: 'Escape' });
-    await waitFor(() => expect(screen.queryByPlaceholderText('输入命令…')).toBeNull());
+    await waitFor(() => expect(screen.queryByPlaceholderText('搜索操作、任务或文件')).toBeNull());
 
     fireEvent.keyDown(window, { key: ',', ctrlKey: true });
     const dialog = await screen.findByRole('dialog');

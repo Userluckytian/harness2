@@ -69,6 +69,7 @@ export {
 export { ShellPaletteProvider, useShellPalette, type ShellPaletteValue } from './shell-context.js';
 export {
   closeAllOverlays,
+  openSettingsAtSection,
   setOverlay,
   shellOverlayStore,
   toggleOverlay,

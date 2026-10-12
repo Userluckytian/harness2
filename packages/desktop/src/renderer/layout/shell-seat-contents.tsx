@@ -301,6 +301,7 @@ function PaletteOverlayContent(): React.ReactNode {
       commands={commands}
       sessions={sessions}
       onSelectSession={onSelectSession}
+      layout="tabbed"
     />
   );
 }

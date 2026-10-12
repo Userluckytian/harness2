@@ -1,8 +1,8 @@
-// web 命令面板测试（Z7）：共享 CommandPalette 经 web 覆层席位接入 ——
+// web 命令面板测试（Z7 接入 / Z8 §7 Z-17 tabbed 命令表）：共享 CommandPalette（layout="tabbed"）经 web 覆层席位接入 ——
 //   1. Ctrl/Cmd+K 唤出；侧栏命令中心入口同一链路唤出；
 //   2. 搜索过滤实时生效；无匹配显示空态（如实，不摆假条目）；
-//   3. 跳转会话：进入会话态 → 过滤 → 选中触发 controller.selectSession；
-//   4. 命令来源真实性：命令表只列 web 真能执行的动作；无可用 cwd（新建必失败）时**不列**「新建会话」。
+//   3. 任务 tab：切换 → 按标题过滤 → 选中触发 controller.selectSession（会话跳转由任务 tab 承载）；
+//   4. 命令来源真实性：命令表按 §7 分组补全，无通道项 disabled+disabledHint；无可用 cwd（新建必失败）时**不列**「新任务」。
 // 数据来自假端口（HarnessClient），不启动 serve。
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it } from 'vitest';
@@ -11,6 +11,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/re
 import { createAppShell } from '@harness2/ui-shared/renderer/app-shell.js';
 import { workbenchDrag } from '@harness2/ui-shared/renderer/layout/workbench/drag.js';
 import { workbenchStore } from '@harness2/ui-shared/renderer/layout/workbench/store.js';
+import { sidePaneStore, SIDE_PANE_NO_SESSION_KEY } from '@harness2/ui-shared/renderer/side-pane/index.js';
 import type { HarnessClient } from '@harness2/ui-shared/renderer/ports.js';
 import type { ConnectionStatus, SessionSummaryShape } from '@harness2/ui-shared/shared/protocol.js';
 import { WebApp } from '../src/app.js';
@@ -20,6 +21,8 @@ afterEach(() => {
   // 分屏布局是模块级单例（内存态）：跳转用例会绑定主格，测试间复位避免跨用例残留。
   workbenchStore.reset();
   workbenchDrag.end();
+  // 右栏标签也是模块级单例：审查标签用例会开 changes，复位全部桶避免跨用例残留。
+  for (const key of [...sidePaneStore.getSnapshot().keys()]) sidePaneStore.closeAll(key);
 });
 
 const SESSIONS: SessionSummaryShape[] = [
@@ -90,16 +93,17 @@ async function mount(options: { client?: HarnessClient } = {}) {
   return { shell, stop };
 }
 
-// 面板输入框（`输入命令…` / 会话态 `搜索会话…` 共用一个 input 元素；按容器类取，避免与侧栏搜索框同 placeholder 冲突）
+// 面板输入框（tabbed 统一 placeholder `搜索操作、任务或文件`；按容器类取，避免与侧栏搜索框同 placeholder 冲突）
 const input = (): HTMLInputElement => document.querySelector('.command-palette-input') as HTMLInputElement;
+const TABBED_PLACEHOLDER = '搜索操作、任务或文件';
 
 describe('web 命令面板：唤出链路', () => {
   it('Ctrl+K 唤出共享命令面板；Esc 关闭', async () => {
     const { stop } = await mount();
     fireEvent.keyDown(window, { key: 'k', ctrlKey: true });
-    expect(await screen.findByPlaceholderText('输入命令…')).toBeTruthy();
+    expect(await screen.findByPlaceholderText(TABBED_PLACEHOLDER)).toBeTruthy();
     fireEvent.keyDown(input(), { key: 'Escape' });
-    await waitFor(() => expect(screen.queryByPlaceholderText('输入命令…')).toBeNull());
+    await waitFor(() => expect(screen.queryByPlaceholderText(TABBED_PLACEHOLDER)).toBeNull());
     stop();
   });
 
@@ -108,7 +112,7 @@ describe('web 命令面板：唤出链路', () => {
     const entry = await screen.findByTestId('sidebar-command-center');
     expect(entry.textContent).toContain('Ctrl+K');
     fireEvent.click(entry);
-    expect(await screen.findByPlaceholderText('输入命令…')).toBeTruthy();
+    expect(await screen.findByPlaceholderText(TABBED_PLACEHOLDER)).toBeTruthy();
     stop();
   });
 });
@@ -117,56 +121,100 @@ describe('web 命令面板：过滤 / 空态 / 命令来源', () => {
   it('输入实时过滤；无匹配显示空态（不摆假条目）', async () => {
     const { stop } = await mount();
     fireEvent.keyDown(window, { key: 'k', ctrlKey: true });
-    const el = await screen.findByPlaceholderText('输入命令…');
+    const el = await screen.findByPlaceholderText(TABBED_PLACEHOLDER);
+    // 「设置」在建议/配置两组各一条（§7 规格）→ 命中 2 条，均含「设置」
     fireEvent.change(el, { target: { value: '设置' } });
-    expect(screen.getAllByRole('option')).toHaveLength(1);
-    expect(screen.getAllByRole('option')[0]!.textContent).toContain('打开设置');
+    const hit = screen.getAllByRole('option');
+    expect(hit).toHaveLength(2);
+    expect(hit.every((o) => (o.textContent ?? '').includes('设置'))).toBe(true);
 
     fireEvent.change(el, { target: { value: '根本不存在的命令' } });
     expect(screen.getByText('无匹配项')).toBeTruthy();
     stop();
   });
 
-  it('命令表只列 web 真能执行的动作（含会话导航 / 主题 / 面板开关 / 跳转会话）', async () => {
+  it('命令表按 Z-20 六组补全：真通道命令 + 无通道项 disabled 占位', async () => {
     const { stop } = await mount();
     fireEvent.keyDown(window, { key: 'k', ctrlKey: true });
-    await screen.findByPlaceholderText('输入命令…');
+    await screen.findByPlaceholderText(TABBED_PLACEHOLDER);
     const labels = screen.getAllByRole('option').map((o) => o.textContent ?? '');
-    expect(labels.some((t) => t.includes('新建会话'))).toBe(true);
+    // 真通道
+    expect(labels.some((t) => t.includes('新任务'))).toBe(true);
+    expect(labels.some((t) => t.includes('设置'))).toBe(true);
+    expect(labels.some((t) => t.includes('切换侧边栏'))).toBe(true);
     expect(labels.some((t) => t.includes('下一个会话'))).toBe(true);
-    expect(labels.some((t) => t.includes('打开设置'))).toBe(true);
-    expect(labels.some((t) => t.includes('切换主题'))).toBe(true);
-    expect(labels.some((t) => t.includes('侧栏'))).toBe(true);
-    expect(labels.some((t) => t.includes('右栏'))).toBe(true);
     expect(labels.some((t) => t.includes('复位面板'))).toBe(true);
     expect(labels.some((t) => t.includes('归档当前会话'))).toBe(true);
-    expect(labels.some((t) => t.includes('跳转到会话'))).toBe(true);
-    // 如实省略：web 设置页无「快捷键说明」分区 → 不列「帮助 / 快捷键」（不摆空目标入口）
+    // 视图：恢复的 toggleRightbar（默认右栏关闭 → 「打开右栏」）
+    expect(labels.some((t) => t.includes('打开右栏') || t.includes('收起右栏'))).toBe(true);
+    // 补齐条目（无通道占位 disabled 也如实渲染）
+    expect(labels.some((t) => t.includes('打开工作区'))).toBe(true);
+    expect(labels.some((t) => t.includes('切换终端'))).toBe(true);
+    expect(labels.some((t) => t.includes('添加终端标签'))).toBe(true);
+    expect(labels.some((t) => t.includes('添加审查标签'))).toBe(true);
+    expect(labels.some((t) => t.includes('技能'))).toBe(true);
+    expect(labels.some((t) => t.includes('MCP 服务器'))).toBe(true);
+    expect(labels.some((t) => t.includes('问题上报'))).toBe(true);
+    expect(labels.some((t) => t.includes('用户社群'))).toBe(true);
+    expect(labels.some((t) => t.includes('产品文档'))).toBe(true);
+    expect(labels.some((t) => t.includes('断开连接'))).toBe(true);
+    // 组标题（Z-20 六组）
+    for (const g of ['建议', '会话', '面板', '视图', '配置', '应用']) {
+      expect(screen.getByText(g)).toBeTruthy();
+    }
+    // classic 会话跳转命令已移除（tabbed 任务 tab 承载）
+    expect(labels.some((t) => t.includes('跳转到会话'))).toBe(false);
+    expect(labels.some((t) => t.includes('搜索会话'))).toBe(false);
+    // 无通道项：disabled 占位（aria-disabled + data-placeholder）
+    const workspace = screen.getByText('打开工作区').closest('[role="option"]');
+    expect(workspace?.getAttribute('aria-disabled')).toBe('true');
+    expect(workspace?.hasAttribute('data-placeholder')).toBe(true);
+    // web 无技能/MCP 分区 → 仍为 disable 占位（与桌面真有通道不同）
+    for (const label of ['技能', 'MCP 服务器']) {
+      const option = screen.getByText(label).closest('[role="option"]');
+      expect(option?.getAttribute('aria-disabled')).toBe('true');
+      expect(option?.hasAttribute('data-placeholder')).toBe(true);
+    }
+    // 「添加审查标签」升级为真：非占位
+    const review = screen.getByText('添加审查标签').closest('[role="option"]');
+    expect(review?.getAttribute('aria-disabled')).not.toBe('true');
+    expect(review?.hasAttribute('data-placeholder')).toBe(false);
+    // 如实省略：web 无「快捷键说明」分区 → 不列「帮助」
     expect(labels.some((t) => t.includes('帮助'))).toBe(false);
     stop();
   });
 
-  it('无可用 cwd（新建必失败）→ 命令表不含「新建会话」', async () => {
+  it('「添加审查标签」为真：执行后打开右栏 changes pane（sidePaneStore + rightbar/open）', async () => {
+    const { stop } = await mount();
+    fireEvent.keyDown(window, { key: 'k', ctrlKey: true });
+    await screen.findByPlaceholderText(TABBED_PLACEHOLDER);
+    fireEvent.change(input(), { target: { value: '添加审查标签' } });
+    fireEvent.keyDown(input(), { key: 'Enter' });
+    // 初始未选会话 → 无会话桶激活 changes（证明 run 真调用了 sidePaneStore.open）
+    await waitFor(() => {
+      const tabs = sidePaneStore.getSnapshot().get(SIDE_PANE_NO_SESSION_KEY);
+      expect(tabs?.activeTab).toBe('changes');
+    });
+    stop();
+  });
+
+  it('无可用 cwd（新建必失败）→ 命令表不含「新任务」', async () => {
     const noCwd = SESSIONS.map((s) => ({ ...s, cwd: undefined }));
     const { stop } = await mount({ client: fakeClient(noCwd) });
     fireEvent.keyDown(window, { key: 'k', ctrlKey: true });
-    await screen.findByPlaceholderText('输入命令…');
+    await screen.findByPlaceholderText(TABBED_PLACEHOLDER);
     const labels = screen.getAllByRole('option').map((o) => o.textContent ?? '');
-    expect(labels.some((t) => t.includes('新建会话'))).toBe(false);
+    expect(labels.some((t) => t.includes('新任务'))).toBe(false);
     stop();
   });
 });
 
-describe('web 命令面板：跳转会话', () => {
-  it('选中「跳转到会话…」→ 进入会话态 → 按标题过滤 → Enter 选中并关面板', async () => {
+describe('web 命令面板：任务 tab 会话跳转', () => {
+  it('切到任务 tab → 按标题过滤 → Enter 选中并关面板', async () => {
     const { shell, stop } = await mount();
     fireEvent.keyDown(window, { key: 'k', ctrlKey: true });
-    await screen.findByPlaceholderText('输入命令…');
-    fireEvent.change(input(), { target: { value: '跳转' } });
-    fireEvent.keyDown(input(), { key: 'Enter' }); // 执行跳转命令 → 会话态
-    // 会话态：同一输入框 placeholder 变为「搜索会话…」（侧栏搜索框同 placeholder，故按容器类定位）
-    expect(input().placeholder).toBe('搜索会话…');
-
+    await screen.findByPlaceholderText(TABBED_PLACEHOLDER);
+    fireEvent.click(screen.getByRole('tab', { name: '任务' }));
     fireEvent.change(input(), { target: { value: '会话B' } });
     expect(screen.getAllByRole('option')).toHaveLength(1);
     fireEvent.keyDown(input(), { key: 'Enter' });

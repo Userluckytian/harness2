@@ -9,7 +9,7 @@ import {
   AppFrame,
   DesktopTopOverlay,
   ShellPaletteProvider,
-  shellThemeLabel,
+  openSettingsAtSection,
   setOverlay,
   setShellTheme,
   toggleOverlay,
@@ -20,14 +20,11 @@ import {
 import { shellSlots } from './layout/shell-registry.js';
 import { desktopPlatform, windowFrameClass } from './platform.js';
 import { useWindowMaximized } from './window-state.js';
-import {
-  JUMP_TO_SESSION_ID,
-  type PaletteCommand,
-  type PaletteSession,
-} from '@harness2/ui-shared/renderer/components/CommandPalette.js';
+import { type PaletteCommand, type PaletteSession } from '@harness2/ui-shared/renderer/components/CommandPalette.js';
 import { controller, store, useAppState, newSessionCollapsingRightbar, THEME_CYCLE } from './app-shared.js';
 import type { AppState } from '@harness2/ui-shared/renderer/store.js';
 import { filterSessionList } from '@harness2/ui-shared/shared/metadata.js';
+import { SIDE_PANE_NO_SESSION_KEY, sidePaneStore } from '@harness2/ui-shared/renderer/side-pane/index.js';
 
 // 对外再导出（拆分前 App.tsx 的全部导出面；main.tsx / 测试仍从 './App.js' 引）
 export { controller, dragState, store, useAppState, StatusBadge } from './app-shared.js';
@@ -57,7 +54,7 @@ export function moveSession(state: AppState, delta: -1 | 1): string | null {
 export function App(): React.ReactNode {
   const state = useAppState();
   const frame = useFrameState({ registry: shellSlots });
-  const { state: frameState, dispatch: frameDispatch } = frame;
+  const { dispatch: frameDispatch } = frame;
   // 侧栏折叠取几何口径（Z-06：折叠后 4px、内容只隐藏不卸载；状态不持久化）
   const sidebarCollapsed = frame.geometry.sidebarCollapsed;
   const theme = useShellTheme();
@@ -158,29 +155,57 @@ export function App(): React.ReactNode {
     [state.sessions, state.metadata, activeSessions.join('|')],
   );
 
-  // 命令表（纯数据；副作用全在 run 回调里，经 controller/state 注入）
+  // 命令表（纯数据；副作用全在 run 回调里，经 controller/state 注入）。
+  // Z-17/Z-20：六组统一口径（建议/会话/面板/视图/配置/应用），两壳逐字一致；有真实通道面的项
+  // 接真动作，无通道面的项如实 disabled + disabledHint（红线⑩，零假 URL/零假数据）。
   const commands: PaletteCommand[] = useMemo(() => {
-    const focusSearch = (): void => {
-      // P4-C：侧栏搜索框随 SidebarRoot 落地（占位「搜索会话…」，无 id）。
-      // 收起态先展开再聚焦（否则 rail 态不渲染输入框，命令会「按了没反应」）。
-      if (sidebarCollapsed) frameDispatch({ type: 'sidebar/toggle' });
-      requestAnimationFrame(() => {
-        document.querySelector<HTMLInputElement>('.h2-sidebar-search')?.focus();
-      });
-    };
     const cycleThemeAction = (): void => {
       const next = cycleTheme(theme);
       setShellTheme(next);
       void window.harness2.settingsSetPreferences({ theme: next });
     };
+    // Z-17「打开工作区」：桌面真——Electron 目录选择 → 以所选目录 cwd 建会话（createSession 支持 cwd）。
+    // 取消选择（null）即无操作。
+    const openWorkspace = (): void => {
+      void (async () => {
+        try {
+          const dir = await window.harness2.projectsPickFolder?.();
+          if (dir === null || dir === undefined) return;
+          const created = await window.harness2.createSession(dir);
+          await controller.refreshSessions();
+          await controller.selectSession(created.id);
+        } catch {
+          /* 通道失败：静默（无假反馈） */
+        }
+      })();
+    };
+    // 「添加审查标签」真动作：打开右栏 changes pane（我们壳里「审查/变更」的对应物）。
+    // 桶与 SidePaneHost / automations 同源：未选会话落无会话桶（先例见 shell-seat-contents.tsx）。
+    const openReview = (): void => {
+      const bucket = state.selectedId ?? SIDE_PANE_NO_SESSION_KEY;
+      sidePaneStore.open(bucket, 'changes');
+      frameDispatch({ type: 'rightbar/open' });
+    };
+    const rightbarOpen = frame.state.rightbarOpen;
     const nextId = moveSession(state, 1);
     const prevId = moveSession(state, -1);
     const archiveId = state.selectedId;
     return [
-      { id: 'newSession', label: '新建会话', hint: 'Ctrl+N', run: () => newSessionCollapsingRightbar(frameDispatch) },
+      // —— 建议 ——
+      {
+        id: 'newSession',
+        label: '新任务',
+        hint: 'Ctrl+N',
+        group: '建议',
+        run: () => newSessionCollapsingRightbar(frameDispatch),
+      },
+      { id: 'openWorkspace', label: '打开工作区', hint: 'Ctrl+O', group: '建议', run: openWorkspace },
+      { id: 'openSettings', label: '设置', group: '建议', run: () => setOverlay('settings', true) },
+      // —— 会话（保留的原有真命令）——
       {
         id: 'nextSession',
         label: '切到下一个会话',
+        group: '会话',
         run: () => {
           if (nextId !== null) void controller.selectSession(nextId);
         },
@@ -188,45 +213,121 @@ export function App(): React.ReactNode {
       {
         id: 'prevSession',
         label: '上一个会话',
+        group: '会话',
         run: () => {
           if (prevId !== null) void controller.selectSession(prevId);
         },
       },
-      { id: 'openSettings', label: '打开设置', hint: 'Ctrl+,', run: () => setOverlay('settings', true) },
-      { id: 'cycleTheme', label: `切换主题（当前：${shellThemeLabel(theme)}）`, run: cycleThemeAction },
       {
-        id: 'helpShortcuts',
-        label: '帮助 / 快捷键说明',
-        run: () => setOverlay('settings', true),
+        id: 'archiveCurrent',
+        label: '归档当前会话',
+        group: '会话',
+        run: () => {
+          if (archiveId !== null) void controller.archiveSession(archiveId, true);
+        },
       },
-      // 三栅面板（取代旧的分栏数命令；D-11～D-14）
+      // —— 面板 ——
       {
         id: 'toggleSidebar',
-        label: sidebarCollapsed ? '展开侧栏' : '收起侧栏',
+        label: '切换侧边栏',
+        hint: 'Ctrl+B',
+        group: '面板',
         run: () => frameDispatch({ type: 'sidebar/toggle' }),
       },
+      // 终端 dock 未引入：如实占位（红线⑩）
+      {
+        id: 'toggleTerminal',
+        label: '切换终端',
+        hint: 'Ctrl+J',
+        group: '面板',
+        disabled: true,
+        disabledHint: '终端功能未引入',
+        run: () => {},
+      },
+      {
+        id: 'addTerminalTab',
+        label: '添加终端标签',
+        group: '面板',
+        disabled: true,
+        disabledHint: '终端功能未引入',
+        run: () => {},
+      },
+      { id: 'addReviewTab', label: '添加审查标签', group: '面板', run: openReview },
+      // —— 视图 ——
       {
         id: 'toggleRightbar',
-        label: frameState.rightbarOpen ? '收起右栏' : '打开右栏',
+        label: rightbarOpen ? '收起右栏' : '打开右栏',
+        group: '视图',
         run: () => frameDispatch({ type: 'rightbar/toggle' }),
       },
       {
         id: 'resetFrame',
         label: '复位面板宽度与开合',
+        group: '视图',
         run: () => frameDispatch({ type: 'reset' }),
       },
+      // —— 配置 ——
       {
-        id: 'archiveCurrent',
-        label: '归档当前会话',
-        run: () => {
-          if (archiveId !== null) void controller.archiveSession(archiveId, true);
-        },
+        id: 'openSettingsConfig',
+        label: '设置',
+        group: '配置',
+        run: () => setOverlay('settings', true),
       },
-      { id: 'search', label: '搜索会话…', hint: '聚焦侧栏搜索', run: focusSearch },
-      // 特殊命令：进入「跳转会话」选择态（组件识别 JUMP_TO_SESSION_ID 后切换为会话过滤）
-      { id: JUMP_TO_SESSION_ID, label: '跳转到会话…', run: () => {} },
+      {
+        id: 'cycleTheme',
+        label: theme === 'zai-dark' ? '切换主题到浅色' : '切换主题到深色',
+        group: '配置',
+        run: cycleThemeAction,
+      },
+      // 桌面设置支持直达分区（openSettingsAtSection）：真打开设置并落到对应分区
+      {
+        id: 'skills',
+        label: '技能',
+        group: '配置',
+        run: () => openSettingsAtSection('skill'),
+      },
+      {
+        id: 'mcpServers',
+        label: 'MCP 服务器',
+        group: '配置',
+        run: () => openSettingsAtSection('mcp'),
+      },
+      // —— 应用 ——
+      // 仓库无既有外链常量/通道 → 如实占位，不编造 URL（红线⑩）
+      {
+        id: 'reportIssue',
+        label: '问题上报',
+        group: '应用',
+        disabled: true,
+        disabledHint: '外链未配置',
+        run: () => {},
+      },
+      {
+        id: 'userCommunity',
+        label: '用户社群',
+        group: '应用',
+        disabled: true,
+        disabledHint: '外链未配置',
+        run: () => {},
+      },
+      {
+        id: 'productDocs',
+        label: '产品文档',
+        group: '应用',
+        disabled: true,
+        disabledHint: '外链未配置',
+        run: () => {},
+      },
+      // 无现成断开/重连渲染端通道 → 如实占位
+      { id: 'disconnect', label: '断开连接', group: '应用', disabled: true, disabledHint: '无断开通道', run: () => {} },
+      {
+        id: 'helpShortcuts',
+        label: '帮助 / 快捷键说明',
+        group: '应用',
+        run: () => setOverlay('settings', true),
+      },
     ];
-  }, [state, theme, sidebarCollapsed, frameState.rightbarOpen, frameDispatch]);
+  }, [state, theme, frameDispatch, frame.state.rightbarOpen]);
 
   // 覆层席位的命令面板数据（context 传：组件身份稳定，命令表刷新不会把面板重挂载）
   const paletteValue: ShellPaletteValue = useMemo(

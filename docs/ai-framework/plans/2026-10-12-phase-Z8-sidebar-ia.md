@@ -88,3 +88,13 @@
 **可兑现映射（我们的通道面）**：新任务/设置/切换侧边栏/切换主题/任务 tab=真；打开工作区=桌面真(web 占位)；添加审查标签=轨迹/审查 pane 真；技能/MCP 服务器=右栏 pane 真(桌面)；问题上报/用户社群/产品文档=外链（桌面 shell 打开，web=window.open）；断开连接=真（断 WS 重连语义）；**切换终端/添加终端标签=占位 disabled**（终端 dock 未引入，红线⑩）。
 
 **批次 P0-3c**：CommandPalette 升级——`group?: string` 入 PaletteCommand、tablist 4 tab、任务 tab 会话数据源注入、文件 tab 空态如实、placeholder/尺寸/组标题文案对齐上表；两壳命令表按上表补全（无通道项 disabled+data-placeholder）。
+
+### 7.1 P0-3c 落地记录（2026-10-11）与增补口径
+
+**实现**：`layout?: 'classic'|'tabbed'` **opt-in**（组件默认 classic，旧测试/旧调用点零感知——两代理并行改壳期的冲突由此化解）；tabbed 态 = 四 tab（全部/操作/任务/文件）+ `group` 分区 + `disabled`/`disabledHint` 占位 + `files`/`onSelectFile` 注入面。
+
+**两壳终表（实测）**：ZCode 四组（建议/面板/配置/应用）15 项**全部在场**；我们的既有真命令另立两组不入 ZCode 命名组——「会话」（下一个/上一个/归档）、「视图」（打开右栏/复位面板）。真/占位：桌面 12 真 5 占位、web 9 真 8 占位（web 无目录/技能/MCP/断开/外链通道）。
+
+**修正 **§7 的两处过时判定**：①「添加审查标签」= 右栏 changes pane 真动作（`sidePaneStore.open(bucket,'changes')`+`rightbar/open`，两壳都真）；②「技能/MCP 服务器」桌面真 = **设置分区直达** `openSettingsAtSection('skill'|'mcp')`（`layout/index.ts` 本批补导出），非右栏 pane。
+
+**残差登记**：面板 y=126 vs ZCode 80（垂直起位差 46px，尺寸 512×527 vs 512×526 已对齐）；随侧栏微几何残差同批处理。

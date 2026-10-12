@@ -379,30 +379,75 @@ describe('App 集成：Ctrl+K 命令面板 + 命令清单完整性', () => {
     const App = await bootApp(makeFakeApi());
     render(<App.App />);
 
-    // Ctrl+K 唤出
+    // Ctrl+K 唤出（Z-17 tabbed 布局：统一 placeholder）
     fireEvent.keyDown(window, { key: 'k', ctrlKey: true });
-    expect(await screen.findByPlaceholderText('输入命令…')).toBeTruthy();
+    expect(await screen.findByPlaceholderText('搜索操作、任务或文件')).toBeTruthy();
 
-    // 命令清单完整性（计划 Task 6 的 4 条 + 委派扩展命令）
+    // 命令清单完整性（Z-17/Z-20 六组：建议/会话/面板/视图/配置/应用）
     const labels = screen.getAllByRole('option').map((o) => o.textContent ?? '');
-    expect(labels.some((t) => t.includes('新建会话'))).toBe(true);
-    expect(labels.some((t) => t.includes('打开设置'))).toBe(true);
-    expect(labels.some((t) => t.includes('跳转到会话'))).toBe(true);
-    // 三栅面板开关（P4-A 迁移依据：旧的分栏数命令随 PaneArea 拆除，改为侧栏/右栏/复位三条真实动作）
-    expect(labels.some((t) => t.includes('侧栏'))).toBe(true);
-    expect(labels.some((t) => t.includes('右栏'))).toBe(true);
-    expect(labels.some((t) => t.includes('复位面板'))).toBe(true);
-    // 上下会话 / 归档 / 主题 / 搜索 / 帮助
+    // 建议
+    expect(labels.some((t) => t.includes('新任务'))).toBe(true);
+    expect(labels.some((t) => t.includes('打开工作区'))).toBe(true);
+    expect(labels.some((t) => t.includes('设置'))).toBe(true);
+    // 会话（保留的原有真命令）
     expect(labels.some((t) => t.includes('下一个会话'))).toBe(true);
     expect(labels.some((t) => t.includes('上一个会话'))).toBe(true);
     expect(labels.some((t) => t.includes('归档当前会话'))).toBe(true);
+    // 面板（label 固定「切换侧边栏」）
+    expect(labels.some((t) => t.includes('切换侧边栏'))).toBe(true);
+    expect(labels.some((t) => t.includes('切换终端'))).toBe(true);
+    expect(labels.some((t) => t.includes('添加终端标签'))).toBe(true);
+    expect(labels.some((t) => t.includes('添加审查标签'))).toBe(true);
+    // 视图（恢复的 toggleRightbar；默认右栏关闭 → label「打开右栏」）
+    expect(labels.some((t) => t.includes('打开右栏') || t.includes('收起右栏'))).toBe(true);
+    expect(labels.some((t) => t.includes('复位面板'))).toBe(true);
+    // 配置
     expect(labels.some((t) => t.includes('切换主题'))).toBe(true);
-    expect(labels.some((t) => t.includes('搜索会话'))).toBe(true);
+    expect(labels.some((t) => t.includes('技能'))).toBe(true);
+    expect(labels.some((t) => t.includes('MCP 服务器'))).toBe(true);
+    // 应用
+    expect(labels.some((t) => t.includes('问题上报'))).toBe(true);
+    expect(labels.some((t) => t.includes('用户社群'))).toBe(true);
+    expect(labels.some((t) => t.includes('产品文档'))).toBe(true);
+    expect(labels.some((t) => t.includes('断开连接'))).toBe(true);
     expect(labels.some((t) => t.includes('帮助 / 快捷键'))).toBe(true);
+    // 组标题（六组全在）
+    for (const g of ['建议', '会话', '面板', '视图', '配置', '应用']) {
+      expect(screen.getByText(g)).toBeTruthy();
+    }
+    // Z-20：桌面「技能」「MCP 服务器」有直达分区通道 → 真命令（非占位）；「添加审查标签」已升级为真
+    for (const label of ['技能', 'MCP 服务器', '添加审查标签']) {
+      const option = screen.getByText(label).closest('[role="option"]');
+      expect(option?.getAttribute('aria-disabled')).not.toBe('true');
+      expect(option?.hasAttribute('data-placeholder')).toBe(false);
+    }
+    // Z-17 移除的旧命令：classic 专用「搜索会话…」「跳转到会话…」不再出现在 tabbed 面板
+    expect(labels.some((t) => t.includes('搜索会话'))).toBe(false);
+    expect(labels.some((t) => t.includes('跳转到会话'))).toBe(false);
 
     // Esc 关闭
-    fireEvent.keyDown(screen.getByPlaceholderText('输入命令…'), { key: 'Escape' });
-    await waitFor(() => expect(screen.queryByPlaceholderText('输入命令…')).toBeNull());
+    fireEvent.keyDown(screen.getByPlaceholderText('搜索操作、任务或文件'), { key: 'Escape' });
+    await waitFor(() => expect(screen.queryByPlaceholderText('搜索操作、任务或文件')).toBeNull());
+  });
+
+  it('「添加审查标签」为真：执行后打开右栏 changes pane（sidePaneStore + rightbar/open）', async () => {
+    const App = await bootApp(makeFakeApi());
+    // 与 App 同一模块注册表取单例（bootApp 之后不再 resetModules）
+    const { sidePaneStore } = await import('@harness2/ui-shared/renderer/side-pane/index.js');
+    render(<App.App />);
+
+    fireEvent.keyDown(window, { key: 'k', ctrlKey: true });
+    const input = await screen.findByPlaceholderText('搜索操作、任务或文件');
+    fireEvent.change(input, { target: { value: '添加审查标签' } });
+    const option = screen.getAllByRole('option')[0]!;
+    expect(option.getAttribute('aria-disabled')).not.toBe('true');
+    fireEvent.keyDown(input, { key: 'Enter' });
+
+    // 命令 run 触发 sidePaneStore.open(bucket,'changes')：任一桶激活 changes 即证明真动作
+    await waitFor(() => {
+      const active = [...sidePaneStore.getSnapshot().values()].map((t) => t.activeTab);
+      expect(active).toContain('changes');
+    });
   });
 
   it('左栏命令中心入口点击同样唤出命令面板（Z-07 分区 2，复用同一覆层链路）', async () => {
@@ -412,6 +457,6 @@ describe('App 集成：Ctrl+K 命令面板 + 命令清单完整性', () => {
     const entry = await screen.findByTestId('sidebar-command-center');
     expect(entry.textContent).toContain('Ctrl+K');
     fireEvent.click(entry);
-    expect(await screen.findByPlaceholderText('输入命令…')).toBeTruthy();
+    expect(await screen.findByPlaceholderText('搜索操作、任务或文件')).toBeTruthy();
   });
 });
