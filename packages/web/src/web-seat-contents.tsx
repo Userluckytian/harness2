@@ -19,6 +19,7 @@ import { useFrame } from '@harness2/ui-shared/renderer/layout/frame-context.js';
 import { workbenchDrag } from '@harness2/ui-shared/renderer/layout/workbench/drag.js';
 import { WorkbenchHost } from '@harness2/ui-shared/renderer/layout/workbench/host.js';
 import { workbenchStore } from '@harness2/ui-shared/renderer/layout/workbench/store.js';
+import { countPanes, MAX_PANES } from '@harness2/ui-shared/renderer/layout/workbench/model.js';
 import {
   CONVERSATION_OWNER,
   FRAME_SEAT,
@@ -28,6 +29,8 @@ import {
   BackgroundTasksPane,
   SidePaneHost,
   SIDE_PANE_LAUNCHER_ITEM_IDS,
+  sidePaneStore,
+  trajectoryTabId,
   trajectoryTabSessionId,
   type SidePaneLauncherItemId,
   type SidePaneTabId,
@@ -65,7 +68,7 @@ function SidebarSeatContent(): ReactNode {
   const { shell, onNewSession, newSessionEnabled, onOpenSettings, onOpenPalette } = useWebShell();
   const state = shell.useAppState();
   const { store, controller } = shell;
-  const { geometry, dispatch: frameDispatch } = useFrame();
+  const { geometry, state: frameState, dispatch: frameDispatch } = useFrame();
   const [query, setQuery] = useState('');
   // Z2-06（Z-19）：已在分屏中的会话禁用拖拽（左栏行可拖进主区分屏）
   const workbench = useSyncExternalStore(workbenchStore.subscribe, workbenchStore.getSnapshot);
@@ -99,6 +102,23 @@ function SidebarSeatContent(): ReactNode {
       // web 无 metadata 覆层通道（serve-client 注释如实登记）→ 置顶在内存生效、不落盘；
       // 也因此 web 的 Pinned 区恒不出现（metadata 为空 → 无置顶项），不摆假条目。
       onTogglePin={(id, pinned) => void controller.pinSession(id, pinned)}
+      // P0-2（Z-10）右键菜单：与桌面同构（metadata 动作内存生效并由 controller 如实提示；
+      // 分屏/轨迹走共享 workbenchStore / sidePaneStore 单例）。
+      rowMenu={{
+        onPin: (id, pinned) => void controller.pinSession(id, pinned),
+        onArchive: (id, archived) => void controller.archiveSession(id, archived),
+        onOpenInSplit: (id) => {
+          const snap = workbenchStore.getSnapshot();
+          workbenchStore.dropSession({ sessionId: id, targetLeafId: snap.focusedId, side: 'right' });
+        },
+        splitLimitReached: countPanes(workbench.root) >= MAX_PANES,
+        onInspectTrajectory: (id) => {
+          void controller.selectSession(id);
+          sidePaneStore.open(id, trajectoryTabId(id));
+          if (!frameState.rightbarOpen) frameDispatch({ type: 'rightbar/toggle' });
+        },
+      }}
+      onSubmitRename={(id, title) => controller.renameSession(id, title)}
       // web 无目录选择通道：作用域输入只能是 {}（resolveNewSessionScope 恒落 blank），
       // 真正的 cwd 由 serve 客户端用「最近会话 cwd」兜底（见 main.tsx / serve-client 注释）。
       newSessionScope={{}}

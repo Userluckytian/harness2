@@ -15,8 +15,12 @@
 //   - 轨道态（56px）不渲染列表，只给一枚「展开以浏览会话」图标按钮（D-13 轨道不是消失）；
 //   - 滚动容器登记给外壳：D-24 的溢出判定与静默类由外壳统一决定（本组件只暴露 data 属性）。
 import { useState } from 'react';
+import { ContextMenu, ContextMenuTrigger } from '../../components/ui/context-menu.js';
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '../../components/ui/dialog.js';
+import { Button } from '../../components/ui/button.js';
 import type { SidebarSessionItem } from './session-items.js';
 import type { SidebarLabels } from './labels.js';
+import { SessionRowMenuContent, rowMenuActions, type RowMenuCallbacks } from './session-row-menu.js';
 import { TaskToolbar } from './TaskToolbar.js';
 import {
   buildSidebarSections,
@@ -64,6 +68,13 @@ export interface SessionBrowserProps extends WorkspacesOwnerProps {
   nowMs?: number | undefined;
   /** 任务偏好初值（缺省 Z-08 默认：project / updated / all）；之后由本组件内存持有 */
   initialTaskPreferences?: Partial<SidebarTaskPreferences> | undefined;
+  /**
+   * P0-2（Z-10）右键菜单动作回调：缺项 = 该项不渲染（不摆假入口）。
+   * 重命名的输入对话框由本组件承载（两壳共享），提交经 onSubmitRename 回壳落盘。
+   */
+  rowMenu?: RowMenuCallbacks | undefined;
+  /** 重命名提交（壳接 controller.renameSession；返回 Promise 以驱动对话框 loading/关闭） */
+  onSubmitRename?: ((id: string, title: string) => Promise<void> | void) | undefined;
 }
 
 /** 会话行拖拽钩子（Z-19）：载荷由调用方决定（生产写 dataTransfer + 模块级回退） */
@@ -119,6 +130,8 @@ interface RowContext {
   onOpenSession: (id: string) => void;
   onTogglePin: ((id: string, pinned: boolean) => void) | undefined;
   rowDrag: SessionRowDrag | undefined;
+  /** P0-2（Z-10）：右键菜单回调（缺位项不渲染） */
+  rowMenu: RowMenuCallbacks | undefined;
 }
 
 /** 单行渲染（列表区与 Pinned 区共用）；showUnpin 只在 Pinned 区为 true（取消置顶入口只此一处） */
@@ -131,46 +144,69 @@ function SessionRow({
   ctx: RowContext;
   showUnpin?: boolean;
 }): React.ReactNode {
-  const { selectedId, labels, nowMs, onOpenSession, onTogglePin, rowDrag } = ctx;
+  const { selectedId, labels, nowMs, onOpenSession, onTogglePin, rowDrag, rowMenu } = ctx;
   const onDragStart = rowDrag?.onDragStart;
   const onDragEnd = rowDrag?.onDragEnd;
   const dragDisabled = rowDrag?.disabledIds?.has(item.id) === true;
   const draggable = onDragStart !== undefined && !dragDisabled;
   const unpin = showUnpin && onTogglePin !== undefined && item.pinned;
+  // P0-2：菜单动作可用才包装（一个回调都没有 → 不挂 ContextMenu，右键无空菜单）
+  const menuActions =
+    rowMenu === undefined
+      ? []
+      : rowMenuActions({
+          pinned: item.pinned,
+          archived: item.archived,
+          canPin: rowMenu.onPin !== undefined,
+          canRename: rowMenu.onRename !== undefined,
+          canArchive: rowMenu.onArchive !== undefined,
+          canSplit: rowMenu.onOpenInSplit !== undefined,
+          canTrajectory: rowMenu.onInspectTrajectory !== undefined,
+        });
+  const rowButton = (
+    <button
+      type="button"
+      className="h2-sidebar-session"
+      data-session-id={item.id}
+      data-selected={selectedId === item.id ? 'true' : 'false'}
+      data-archived={item.archived ? 'true' : 'false'}
+      data-drag-disabled={dragDisabled ? 'true' : undefined}
+      aria-current={selectedId === item.id ? 'true' : undefined}
+      title={item.title}
+      {...(draggable ? { draggable: true } : {})}
+      {...(draggable && onDragStart !== undefined
+        ? { onDragStart: (event: React.DragEvent<HTMLButtonElement>) => onDragStart(item.id, event) }
+        : {})}
+      {...(onDragEnd !== undefined
+        ? { onDragEnd: (event: React.DragEvent<HTMLButtonElement>) => onDragEnd(item.id, event) }
+        : {})}
+      onClick={() => onOpenSession(item.id)}
+    >
+      <LeadingSlot item={item} labels={labels} />
+      <span className="h2-sidebar-session-body">
+        <span className="h2-sidebar-session-title">
+          {item.title}
+          {/* Z2-09b（场景④）：待审批 attention 徽标 —— 无审批不渲染（字段没有就不显示）。 */}
+          {item.pendingApprovals > 0 && (
+            <span className="h2-sidebar-attention" data-testid="session-attention" title="有待审批事项">
+              {item.pendingApprovals}
+            </span>
+          )}
+        </span>
+        <span className="h2-sidebar-session-meta">{rowMeta(item, nowMs, labels)}</span>
+      </span>
+    </button>
+  );
   return (
     <li className={`h2-sidebar-row${unpin ? ' h2-sidebar-row-pinned' : ''}`}>
-      <button
-        type="button"
-        className="h2-sidebar-session"
-        data-session-id={item.id}
-        data-selected={selectedId === item.id ? 'true' : 'false'}
-        data-archived={item.archived ? 'true' : 'false'}
-        data-drag-disabled={dragDisabled ? 'true' : undefined}
-        aria-current={selectedId === item.id ? 'true' : undefined}
-        title={item.title}
-        {...(draggable ? { draggable: true } : {})}
-        {...(draggable && onDragStart !== undefined
-          ? { onDragStart: (event: React.DragEvent<HTMLButtonElement>) => onDragStart(item.id, event) }
-          : {})}
-        {...(onDragEnd !== undefined
-          ? { onDragEnd: (event: React.DragEvent<HTMLButtonElement>) => onDragEnd(item.id, event) }
-          : {})}
-        onClick={() => onOpenSession(item.id)}
-      >
-        <LeadingSlot item={item} labels={labels} />
-        <span className="h2-sidebar-session-body">
-          <span className="h2-sidebar-session-title">
-            {item.title}
-            {/* Z2-09b（场景④）：待审批 attention 徽标 —— 无审批不渲染（字段没有就不显示）。 */}
-            {item.pendingApprovals > 0 && (
-              <span className="h2-sidebar-attention" data-testid="session-attention" title="有待审批事项">
-                {item.pendingApprovals}
-              </span>
-            )}
-          </span>
-          <span className="h2-sidebar-session-meta">{rowMeta(item, nowMs, labels)}</span>
-        </span>
-      </button>
+      {menuActions.length > 0 && rowMenu !== undefined ? (
+        <ContextMenu>
+          <ContextMenuTrigger asChild>{rowButton}</ContextMenuTrigger>
+          <SessionRowMenuContent item={item} labels={labels} callbacks={rowMenu} />
+        </ContextMenu>
+      ) : (
+        rowButton
+      )}
       {unpin && (
         <button
           type="button"
@@ -257,6 +293,9 @@ export function SessionBrowser({
   onTogglePin,
   nowMs = Date.now(),
   initialTaskPreferences,
+  /** P0-2（Z-10）右键菜单动作（壳注入；本组件包装 onRename 为打开对话框） */
+  rowMenu: rowMenuProp,
+  onSubmitRename,
 }: SessionBrowserProps): React.ReactNode {
   const [prefs, setPrefs] = useState<SidebarTaskPreferences>({
     ...DEFAULT_SIDEBAR_TASK_PREFERENCES,
@@ -267,6 +306,20 @@ export function SessionBrowser({
   const [collapsedGroups, setCollapsedGroups] = useState<ReadonlySet<string>>(new Set());
   const [collapsedSections, setCollapsedSections] = useState<ReadonlySet<string>>(new Set());
   const [pinnedExpanded, setPinnedExpanded] = useState(false);
+  // P0-2：重命名对话框目标行（null=关）；右键菜单「重命名」设置，Dialog 提交后清。
+  const [renameTarget, setRenameTarget] = useState<SidebarSessionItem | null>(null);
+
+  // 菜单回调：壳给了 onSubmitRename 而没给 onRename → 本组件接管（打开内置对话框）；
+  // 壳自带 onRename（如自绘内联编辑）则以壳为准，本组件不截胡。其余透传壳。
+  const rowMenu: RowMenuCallbacks | undefined =
+    rowMenuProp === undefined && onSubmitRename === undefined
+      ? undefined
+      : {
+          ...rowMenuProp,
+          ...(rowMenuProp?.onRename === undefined && onSubmitRename !== undefined
+            ? { onRename: (item: SidebarSessionItem) => setRenameTarget(item) }
+            : {}),
+        };
 
   if (!wide) {
     // 轨道态：列表让位给一枚图标按钮（D-13 保留 56px 轨道 + 展开入口）。
@@ -291,7 +344,7 @@ export function SessionBrowser({
   );
   const allCollapsed = groupKeys.length > 0 && groupKeys.every((key) => collapsedGroups.has(key));
 
-  const ctx: RowContext = { selectedId, labels, nowMs, onOpenSession, onTogglePin, rowDrag };
+  const ctx: RowContext = { selectedId, labels, nowMs, onOpenSession, onTogglePin, rowDrag, rowMenu };
 
   const updatePrefs = (patch: Partial<SidebarTaskPreferences>): void => {
     setPrefs((current) => ({ ...current, ...patch }));
@@ -467,6 +520,82 @@ export function SessionBrowser({
           </div>
         )}
       </div>
+      {renameTarget !== undefined && renameTarget !== null && onSubmitRename !== undefined ? (
+        <RenameSessionDialog
+          item={renameTarget}
+          labels={labels}
+          onSubmit={onSubmitRename}
+          onClose={() => setRenameTarget(null)}
+        />
+      ) : null}
     </section>
+  );
+}
+
+/**
+ * 重命名对话框（P0-2；ZCode 无此项像素规格，按本仓 dialog 族做，登记于 issue-log）。
+ * 空/全空白名 → 如实拒绝提交（不写脏 title）；提交成功才关闭。
+ */
+function RenameSessionDialog({
+  item,
+  labels,
+  onSubmit,
+  onClose,
+}: {
+  item: SidebarSessionItem;
+  labels: SidebarLabels;
+  onSubmit: (id: string, title: string) => Promise<void> | void;
+  onClose: () => void;
+}): React.ReactNode {
+  const [value, setValue] = useState(item.title);
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const trimmed = value.trim();
+  const canSubmit = trimmed.length > 0 && !submitting;
+  const submit = async (): Promise<void> => {
+    if (!canSubmit) return;
+    setSubmitting(true);
+    setError(null);
+    try {
+      await onSubmit(item.id, trimmed);
+      onClose();
+    } catch (e) {
+      // 失败不关窗，如实显示原因（不静默吞掉）
+      setError(e instanceof Error ? e.message : String(e));
+      setSubmitting(false);
+    }
+  };
+  return (
+    <Dialog open onOpenChange={(open) => !open && onClose()}>
+      <DialogContent className="max-w-md" aria-describedby={undefined} data-testid="rename-session-dialog">
+        <DialogHeader>
+          <DialogTitle>{labels.renameTitle}</DialogTitle>
+        </DialogHeader>
+        <input
+          className="h2-sidebar-rename-input"
+          data-testid="rename-session-input"
+          value={value}
+          placeholder={labels.renamePlaceholder}
+          aria-label={labels.renameTitle}
+          onChange={(event) => setValue(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.key === 'Enter') void submit();
+          }}
+        />
+        {error !== null && (
+          <p className="h2-sidebar-rename-error" data-testid="rename-session-error">
+            {error}
+          </p>
+        )}
+        <DialogFooter>
+          <Button type="button" variant="outline" size="lg" onClick={onClose}>
+            {labels.renameCancel}
+          </Button>
+          <Button type="button" size="lg" disabled={!canSubmit} onClick={() => void submit()}>
+            {labels.renameConfirm}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }

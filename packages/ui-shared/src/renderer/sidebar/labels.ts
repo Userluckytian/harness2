@@ -86,6 +86,21 @@ export interface SidebarLabels {
   runningLabel: string;
   /** 行元信息：消息条数 */
   messageCount: (count: number) => string;
+  /** —— 右键菜单（Z-10 可兑现子集；无通道的项不渲染） —— */
+  menuPin: string;
+  menuUnpin: string;
+  menuRename: string;
+  menuArchive: string;
+  menuUnarchive: string;
+  menuOpenInSplit: string;
+  /** 分屏已满 4 格时禁用项的 title（不摆点了不动的假项） */
+  menuSplitLimit: string;
+  menuTrajectory: string;
+  /** 重命名对话框 */
+  renameTitle: string;
+  renamePlaceholder: string;
+  renameConfirm: string;
+  renameCancel: string;
 }
 
 export const DEFAULT_SIDEBAR_LABELS: SidebarLabels = {
@@ -130,4 +145,16 @@ export const DEFAULT_SIDEBAR_LABELS: SidebarLabels = {
   unreadLabel: '未读',
   runningLabel: '运行中',
   messageCount: (count) => `${count} 条`,
+  menuPin: '置顶',
+  menuUnpin: '取消置顶',
+  menuRename: '重命名',
+  menuArchive: '归档',
+  menuUnarchive: '取消归档',
+  menuOpenInSplit: '在分屏打开',
+  menuSplitLimit: '分屏已达上限（4 格）',
+  menuTrajectory: '查看 Model Trajectory',
+  renameTitle: '重命名会话',
+  renamePlaceholder: '输入新名称',
+  renameConfirm: '保存',
+  renameCancel: '取消',
 };

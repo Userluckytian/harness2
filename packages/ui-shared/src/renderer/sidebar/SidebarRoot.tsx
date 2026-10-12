@@ -18,6 +18,7 @@ import { useCollapse } from './use-collapse.js';
 import { useScrollAffordance } from './use-scroll-affordance.js';
 import { DEFAULT_SIDEBAR_LABELS, type SidebarLabels } from './labels.js';
 import { SessionBrowser, type SessionRowDrag, type WorkspacesOwnerProps } from './SessionBrowser.js';
+import type { RowMenuCallbacks } from './session-row-menu.js';
 import type { SidebarSessionItem } from './session-items.js';
 
 /** 品牌标记席位属主事实（D-20）：只要一个方形边长 */
@@ -91,6 +92,13 @@ export interface SidebarRootProps extends SidebarSeats {
   sessionRowDrag?: SessionRowDrag | undefined;
   /** Z8-1：Pinned 行的「取消置顶」回调；缺省不传 = 不渲染该按钮（不摆无效入口） */
   onTogglePin?: ((id: string, pinned: boolean) => void) | undefined;
+  /**
+   * P0-2（Z-10）右键菜单动作（壳注入；缺项 = 该项不渲染）。重命名对话框由
+   * SessionBrowser 承载，提交经 `onSubmitRename`（壳接 controller.renameSession）。
+   */
+  rowMenu?: RowMenuCallbacks | undefined;
+  /** P0-2：重命名提交（缺省 = 菜单不出现「重命名」项） */
+  onSubmitRename?: ((id: string, title: string) => Promise<void> | void) | undefined;
   /** 文案覆盖（缺省中文） */
   labels?: Partial<SidebarLabels> | undefined;
   className?: string | undefined;
@@ -187,6 +195,8 @@ export function SidebarRoot(props: SidebarRootProps): React.ReactNode {
         labels={labels}
         {...(props.sessionRowDrag !== undefined ? { rowDrag: props.sessionRowDrag } : {})}
         {...(props.onTogglePin !== undefined ? { onTogglePin: props.onTogglePin } : {})}
+        {...(props.rowMenu !== undefined ? { rowMenu: props.rowMenu } : {})}
+        {...(props.onSubmitRename !== undefined ? { onSubmitRename: props.onSubmitRename } : {})}
       />
     ));
 

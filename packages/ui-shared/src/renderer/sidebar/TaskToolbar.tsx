@@ -84,6 +84,7 @@ export function TaskToolbar({
             data-testid="sidebar-filter-sort"
             aria-haspopup="menu"
             aria-expanded={menuOpen}
+            aria-label={labels.filterSort}
             title={labels.filterSort}
             onClick={() => setMenuOpen((open) => !open)}
           >

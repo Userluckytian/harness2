@@ -26,6 +26,8 @@ import { useFrame } from '@harness2/ui-shared/renderer/layout/frame-context.js';
 import { workbenchDrag } from '@harness2/ui-shared/renderer/layout/workbench/drag.js';
 import { WorkbenchHost } from '@harness2/ui-shared/renderer/layout/workbench/host.js';
 import { workbenchStore } from '@harness2/ui-shared/renderer/layout/workbench/store.js';
+import { countPanes, MAX_PANES } from '@harness2/ui-shared/renderer/layout/workbench/model.js';
+import { sidePaneStore, trajectoryTabId } from '@harness2/ui-shared/renderer/side-pane/index.js';
 import { ConversationSeat } from '../conversation/assembly.js';
 import { useShellPalette } from './shell-context.js';
 import { setOverlay, takeRequestedSettingsSection, useOverlayOpen } from './shell-overlays.js';
@@ -44,7 +46,8 @@ function hostBuildEnv(): Record<string, string | undefined> {
 /** 侧栏席位内容（ui-sidebar）：SidebarRoot + 装配层数据接线 */
 function SidebarSeatContent(): React.ReactNode {
   const state = useAppState();
-  const { geometry, dispatch: frameDispatch } = useFrame();
+  // P0-2：轨迹项要按右栏开合决定是否展开——右栏状态在帧 state（useFrame），非 AppState
+  const { geometry, state: frameState, dispatch: frameDispatch } = useFrame();
   const [query, setQuery] = useState('');
   // Z2-06（Z-19）：已在分屏中的会话禁用拖拽（左栏行可拖进主区）
   const workbench = useSyncExternalStore(workbenchStore.subscribe, workbenchStore.getSnapshot);
@@ -79,6 +82,25 @@ function SidebarSeatContent(): React.ReactNode {
       onOpenSession={(id) => void controller.selectSession(id)}
       // Z8-1：Pinned 行的「取消置顶」（置顶动作本体在 Z8-2 右键菜单）——走既有 metadata 通道。
       onTogglePin={(id, pinned) => void controller.pinSession(id, pinned)}
+      // P0-2（Z-10）右键菜单：全部动作走已核实通道（controller metadata / workbench drop /
+      // trajectory inspect 消费链）。重命名对话框由 SessionBrowser 承载（onSubmitRename 注入）。
+      rowMenu={{
+        onPin: (id, pinned) => void controller.pinSession(id, pinned),
+        onArchive: (id, archived) => void controller.archiveSession(id, archived),
+        // 分屏投放：目标=当前焦点格右侧（与 Z2-06 拖拽的半边语义等价的键盘/菜单版）
+        onOpenInSplit: (id) => {
+          const snap = workbenchStore.getSnapshot();
+          workbenchStore.dropSession({ sessionId: id, targetLeafId: snap.focusedId, side: 'right' });
+        },
+        splitLimitReached: countPanes(workbench.root) >= MAX_PANES,
+        // 查看轨迹 = P2-5 inspect 同一通道（无定位参数 = 打开即最新态）+ 右栏收着自动展开
+        onInspectTrajectory: (id) => {
+          void controller.selectSession(id);
+          sidePaneStore.open(id, trajectoryTabId(id));
+          if (!frameState.rightbarOpen) frameDispatch({ type: 'rightbar/toggle' });
+        },
+      }}
+      onSubmitRename={(id, title) => controller.renameSession(id, title)}
       // D-21 数据缺口（如实登记，不造假输入）：本仓没有 Workspace 概念（最接近的是
       // SessionMeta.cwd），controller.newSession() 也没有作用域入参 → 作用域输入只能是 {}，
       // 于是 resolveNewSessionScope 恒落 { kind: 'blank' }（空白新会话）。
