@@ -13,7 +13,7 @@
 // 本文件只负责「聊天条目 → 该用哪个卡片」的装配（数据由 store/controller 注入）。
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import type { Controller } from '../app-controller.js';
-import { displayToolName, type ChatItem } from '../chat-model.js';
+import { displayToolName, formatTurnDuration, type ChatItem } from '../chat-model.js';
 import { buildToolRow, isAtBottom, nextScrollTop } from '../features/timeline/execution-log.js';
 import { activeTurnIdOf, deriveTurns, jumpToTurn, TurnNavigator } from '../conversation/turn-navigator.js';
 import {
@@ -25,6 +25,7 @@ import {
   toolNavigation,
 } from '../tool/index.js';
 import { ChatEmptyState } from './ChatEmptyState.js';
+import { MessageActions } from './MessageActions.js';
 import { ReasoningRow } from './ReasoningRow.js';
 import { TimelineMarkerRow } from '../conversation/TimelineMarkerRow.js';
 import { QUOTE_ORIGIN_ATTR, SelectionAskLayer } from './selection-ask.js';
@@ -49,32 +50,45 @@ export function ChatItemView({
 }) {
   switch (item.kind) {
     case 'turn-header':
-      // Z2-09b：data-turn-id 是轮次导航的定位锚点（jumpToTurn / activeTurnIdOf 查询此属性）
-      return (
-        <div className="turn-header" data-turn-id={item.turnId}>
-          ── turn
-        </div>
-      );
+      // Z2-09b：data-turn-id 是轮次导航的定位锚点（jumpToTurn / activeTurnIdOf 查询此属性）。
+      // P0-1：移除字面 `── turn` —— ZCode 是**分组渲染**，不渲染轮次文案；本行只作无文字分组
+      // 分隔（极细线/间距，见 shell.css .turn-header），并保留 `.turn-header` 类名供结构断言。
+      return <div className="turn-header" data-turn-id={item.turnId} />;
     case 'user':
+      // P0-1：对齐 ZCode `MessageContent`（message.tsx:114,127）——用户消息右对齐 + 圆角气泡
+      // + bg-secondary + px-4 py-3；**不渲染角色标签**（ZCode 无「你」标签）。
       // Z4-03：`data-quote-origin` = 划词「询问」的可引用来源标记（selection-ask 按它辨认）
       return (
         <div className="bubble-user" {...{ [QUOTE_ORIGIN_ATTR]: 'user' }}>
-          <span className="role">你</span>
           <div className="text">{item.text}</div>
         </div>
       );
-    case 'assistant':
+    case 'assistant': {
+      // P0-1：助手消息**无气泡**（正常流，无背景）；移除 provider 名角色标签。
       // Z-92：reasoning 是**一等行**（独立可折叠行，ReasoningRow），不再是气泡内嵌 <details>；
-      // Fragment 摊平进 .messages 弹性列 → 思考行与正文气泡是两个独立行。
+      // Fragment 摊平进 .messages 弹性列 → 思考行与正文是两个独立行。
+      // P0-1 消息行内动作：hover 显现（复制 / 分叉；赞踩刻意不做 —— 无后端反馈通道）。
+      // 分叉走既有通道 `controller.forkSession(sessionId, seq)`；会话运行中禁用（「任务结束后可分叉」）。
+      const running = sessionId !== undefined && store.peekStream(sessionId)?.running === true;
+      const canFork = sessionId !== undefined && item.seq !== undefined;
       return (
         <>
           {item.reasoning !== undefined && item.reasoning.length > 0 && <ReasoningRow text={item.reasoning} />}
           <div className="bubble-assistant" {...{ [QUOTE_ORIGIN_ATTR]: 'assistant' }}>
-            <span className="role">{item.model ?? '助手'}</span>
             <div className="text">{item.text}</div>
+            <MessageActions
+              text={item.text ?? ''}
+              {...(canFork
+                ? {
+                    onFork: () => controller.forkSession(sessionId, item.seq),
+                    forkEnabled: !running,
+                  }
+                : {})}
+            />
           </div>
         </>
       );
+    }
     case 'tool': {
       // D2：有 S7 执行视图（真实 shell/cwd/exitCode/输出归属）时优先渲染命令日志卡；
       // 无执行视图时 buildToolRow 按结果字段如实降级（D-86：运行中的 bash/pwsh 也是 terminal 卡片）。
@@ -142,11 +156,20 @@ export function ChatItemView({
           </div>
         </>
       );
-    case 'turn-summary':
+    case 'turn-summary': {
+      // P0-1：对齐 ZCode 摘要文案（`持续了 N 秒`）—— 数据取本轮真实耗时（step/end 聚合）；
+      // 取不到（undefined/0）则**省略该文案，不显示假值**（红线⑩）。不再渲染 `[已完成 · Xs]`。
+      const durationText = formatTurnDuration(item.durationMs);
+      const hasBody =
+        durationText !== undefined ||
+        item.error !== undefined ||
+        item.warning !== undefined ||
+        item.textOutcome === 'partial' ||
+        item.textOutcome === 'empty';
+      if (!hasBody) return null;
       return (
         <div className="turn-summary">
-          [{item.stopReason ?? '已完成'}
-          {item.durationMs !== undefined && item.durationMs > 0 ? ` · ${(item.durationMs / 1000).toFixed(1)}s` : ''}]
+          {durationText !== undefined && <span className="sum-duration">{durationText}</span>}
           {item.error !== undefined && <span className="sum-err"> {item.error}</span>}
           {item.warning !== undefined && <span className="sum-warn"> {item.warning}</span>}
           {/* P3-b：partial 必须标注未完成/已中断（半截文本不得当完整正文） */}
@@ -166,6 +189,7 @@ export function ChatItemView({
           {item.textOutcome === 'empty' && <span className="sum-empty"> 无最终文本（见上方工具行/错误）</span>}
         </div>
       );
+    }
   }
 }
 

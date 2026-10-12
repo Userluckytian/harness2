@@ -159,7 +159,7 @@ export interface ComposerProps {
 }
 
 /** 内建会话草稿的默认提示（无会话时提示选择会话） */
-const PLACEHOLDER_WITH_SESSION = '输入消息（Enter 发送，Shift+Enter 换行，Ctrl/⌘+Enter 用另一投递模式）';
+const PLACEHOLDER_WITH_SESSION = '向 harness2 提问，使用 @ 添加上下文，使用 / 选择命令或能力';
 const PLACEHOLDER_NO_SESSION = '选择会话后开始输入';
 
 /** 提交结果提示（P1-2 展示面 / P2-1 `placement` 的真实落点）；seq = 提交序号（落定时只清自己那条） */
@@ -471,6 +471,8 @@ export function Composer(props: ComposerProps): ReactNode {
   const takeover = props.chain !== undefined ? props.chain.select(chainProps) : null;
 
   const placeholder = props.placeholder ?? (locked ? PLACEHOLDER_NO_SESSION : PLACEHOLDER_WITH_SESSION);
+  /** 占位符显隐判据：草稿为空（无文本、无 chip）—— 与 ZCode LexicalChatInput 的 isEmpty 等价 */
+  const draftIsEmpty = state.atoms.length === 0;
 
   return (
     <div className="composer-slot" data-testid="composer-slot">
@@ -483,38 +485,52 @@ export function Composer(props: ComposerProps): ReactNode {
           `@container/composer`：Z-94 外壳容器查询锚点（模型 trigger 空间不足时退化为图标） */}
       <div className="composer-default" data-testid="composer-default" hidden={takeover !== null}>
         <div className="composer @container/composer">
-          <div
-            className="composer-editor"
-            data-testid="composer-editor"
-            ref={setEditorRef}
-            role="textbox"
-            aria-multiline="true"
-            aria-label={placeholder}
-            aria-disabled={locked ? true : undefined}
-            contentEditable={!locked}
-            suppressContentEditableWarning
-            onKeyDown={onKeyDown}
-            onBeforeInput={onBeforeInput}
-            onInput={onInput}
-            onPaste={onPaste}
-          >
-            {state.atoms.map((atom, index) =>
-              atom.kind === 'text' ? (
-                <span key={`text-${index}`} data-atom="text">
-                  {atom.text}
-                </span>
-              ) : (
-                <span
-                  key={atom.id}
-                  className="composer-chip"
-                  data-atom="chip"
-                  data-chip-id={atom.id}
-                  contentEditable={false}
-                  title={atom.label}
-                >
-                  {atom.label}
-                </span>
-              ),
+          {/* P0-1 占位符（ZCode LexicalChatInput 口径）：**空草稿时可见的占位文案**。
+              contentEditable div 无原生 placeholder，故用兄弟层 `<span>` 叠在编辑器上
+              （pointer-events:none，不污染 editor.textContent —— 既有断言 textContent 的
+              用例不受影响）。有文本/chip 后自动消失。只做占位符视觉，不实现 @ / 弹层（另批）。 */}
+          <div className="composer-editor-wrap">
+            <div
+              className="composer-editor"
+              data-testid="composer-editor"
+              ref={setEditorRef}
+              role="textbox"
+              aria-multiline="true"
+              aria-label={placeholder}
+              aria-disabled={locked ? true : undefined}
+              contentEditable={!locked}
+              suppressContentEditableWarning
+              onKeyDown={onKeyDown}
+              onBeforeInput={onBeforeInput}
+              onInput={onInput}
+              onPaste={onPaste}
+            >
+              {state.atoms.map((atom, index) =>
+                atom.kind === 'text' ? (
+                  <span key={`text-${index}`} data-atom="text">
+                    {atom.text}
+                  </span>
+                ) : (
+                  <span
+                    key={atom.id}
+                    className="composer-chip"
+                    data-atom="chip"
+                    data-chip-id={atom.id}
+                    contentEditable={false}
+                    title={atom.label}
+                  >
+                    {atom.label}
+                  </span>
+                ),
+              )}
+            </div>
+            {/* 占位层：草稿为空（无文本无 chip）时显示占位文案；有内容即消失。
+                锁定（无会话）时空草稿仍显示「选择会话后开始输入」提示（与 placeholder 取值一致）。
+                aria-hidden：可访问名已由编辑器的 aria-label 承担，占位层不重复播报。 */}
+            {draftIsEmpty && (
+              <span className="composer-placeholder" data-testid="composer-placeholder" aria-hidden="true">
+                {placeholder}
+              </span>
             )}
           </div>
           {attachments.length > 0 && (

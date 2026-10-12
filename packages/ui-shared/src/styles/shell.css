@@ -119,33 +119,48 @@ body,
      使正文随 --ui-font-size 缩放，且不随根字号（rem 几何基准）漂移。 */
   font-size: var(--text-ui-base);
 }
+/* P0-1：轮次头**无文案**（ZCode 是分组渲染，不渲染轮次文字）—— 仅作极细分隔线 + 间距。 */
 .turn-header {
-  color: var(--color-foreground-subtle);
-  font-size: 12px;
-  margin-top: 8px;
+  margin-top: 12px;
+  border-top: 1px solid var(--color-border);
+}
+.turn-header:first-child {
+  margin-top: 0;
+  border-top: none;
 }
 .bubble-user,
 .bubble-assistant {
   max-width: 82%;
-  border-radius: 10px;
-  padding: 8px 12px;
   white-space: pre-wrap;
   word-break: break-word;
 }
+/* 用户消息：右对齐 + 圆角气泡 + bg-secondary + px-4 py-3（ZCode MessageContent 等价，语义 token） */
 .bubble-user {
   align-self: flex-end;
-  background: var(--color-accent);
+  border-radius: 8px; /* rounded-lg */
+  background: var(--color-secondary);
+  color: var(--color-foreground);
+  padding: 12px 16px; /* py-3 px-4 */
 }
+/* 助手消息：**无气泡**，正常流（无背景/无内边距），与 ZCode is-assistant 一致 */
 .bubble-assistant {
-  align-self: flex-start;
-  background: var(--color-muted);
+  align-self: stretch;
+  max-width: 100%;
+  background: transparent;
+  padding: 0;
 }
-.bubble-user .role,
-.bubble-assistant .role {
-  display: block;
-  font-size: 11px;
-  color: var(--color-foreground-subtle);
-  margin-bottom: 2px;
+/* P0-1：消息行内动作（复制 / 分叉；赞踩刻意不做）hover / 键盘聚焦时显现（ZCode 完成态动作行口径） */
+.message-actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  margin-top: 4px;
+  opacity: 0;
+  transition: opacity 0.15s ease;
+}
+.bubble-assistant:hover > .message-actions,
+.bubble-assistant:focus-within > .message-actions {
+  opacity: 1;
 }
 .reasoning {
   margin-bottom: 6px;
@@ -658,7 +673,26 @@ body,
      ZCode LexicalChatInput = text-ui-base = 14px（min-h-10 = 40px 与本表一致）。 */
   font-size: var(--text-ui-base);
 }
+/* P0-1：占位文案层（ZCode placeholder:text-foreground-subtlest）。contentEditable 无原生
+   placeholder，故用兄弟层叠加：pointer-events:none → 点击穿透到编辑器；不进入编辑器文本节点。 */
+.composer-editor-wrap {
+  position: relative;
+}
+.composer-placeholder {
+  position: absolute;
+  top: 8px;
+  left: 9px;
+  right: 9px;
+  z-index: 1;
+  pointer-events: none;
+  user-select: none;
+  color: var(--color-foreground-subtlest);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
 .composer-editor {
+  position: relative;
   min-height: 40px;
   max-height: 200px;
   overflow-y: auto;

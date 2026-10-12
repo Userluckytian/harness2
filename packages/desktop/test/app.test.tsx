@@ -12,6 +12,9 @@ import type {
   StatusDetail,
   WsFrame,
 } from '../src/shared/protocol.js';
+import { AppStore } from '@harness2/ui-shared/renderer/store.js';
+import { createController } from '@harness2/ui-shared/renderer/app-controller.js';
+import type { ChatItem } from '@harness2/ui-shared/renderer/chat-model.js';
 
 let seq = 0;
 function ev(type: string, payload: Record<string, unknown>): any {
@@ -142,13 +145,108 @@ describe('对话 UI（jsdom）', () => {
 
     await waitFor(() => expect(api.subscribe).toHaveBeenCalledWith('s1'));
     await waitFor(() => expect(api.events).toHaveBeenCalledWith('s1'));
-    expect(await screen.findByText('第一句回复')).toBeTruthy(); // 分栏内 assistant 气泡
+    expect(await screen.findByText('第一句回复')).toBeTruthy(); // 分栏内 assistant 正文
     // Z-92：reasoning 是一等行（默认折叠的触发行，文案「思考」）；展开后内容如实可见
     const reasoningToggle = screen.getByText('思考');
     expect(reasoningToggle.closest('[data-testid="reasoning-row"]')).not.toBeNull();
     fireEvent.click(reasoningToggle);
     expect(await screen.findByText('暗自思考')).toBeTruthy();
-    expect(screen.getByText('── turn')).toBeTruthy(); // turn 标头
+    // P0-1：轮次头**无文案**（ZCode 分组渲染，不渲染 `── turn`）—— 定位锚点 data-turn-id 仍在
+    expect(screen.queryByText(/──\s*turn/)).toBeNull();
+    expect(document.querySelector('.turn-header[data-turn-id="t1"]')).not.toBeNull();
+    // P0-1：移除角色标签（「你」/ provider 名 `mock/m` 都不再出现在行内）
+    expect(screen.queryByText('你')).toBeNull();
+    expect(screen.queryByText('mock/m')).toBeNull();
+    expect(document.querySelector('.bubble-user .role')).toBeNull();
+    expect(document.querySelector('.bubble-assistant .role')).toBeNull();
+  });
+
+  // P0-1（装配级）：经 App.tsx 再导出的真身组件渲染消息行结构 —— 用户右对齐气泡 / 助手无气泡、
+  // 无角色标签、行内动作只在助手行。与上面的全量重放用例互补（那条走完整会话链路，
+  // 这两条只钉渲染结构本身，断言更精确）。
+  it('P0-1 消息行结构（ChatItemView）：用户右对齐气泡 + 助手无气泡，且两者都无角色标签', async () => {
+    const api = makeFakeApi();
+    await bootApp(api);
+    const { ChatItemView } = (await import('../src/renderer/App')) as unknown as {
+      ChatItemView: (p: {
+        item: ChatItem;
+        sessionId?: string;
+        store: AppStore;
+        controller: ReturnType<typeof createController>;
+      }) => React.ReactElement | null;
+    };
+    const store = new AppStore();
+    const controller = createController(store, api as never);
+
+    render(
+      <div className="messages">
+        <ChatItemView
+          item={{ kind: 'user', seq: 1, turnId: 't1', text: '用户问题' }}
+          store={store}
+          controller={controller}
+        />
+        <ChatItemView
+          item={{ kind: 'assistant', seq: 2, turnId: 't1', text: '助手回答', model: 'loomy/qwen3.8-flash' }}
+          store={store}
+          controller={controller}
+        />
+      </div>,
+    );
+
+    const user = document.querySelector('.bubble-user');
+    const assistant = document.querySelector('.bubble-assistant');
+    if (user === null || assistant === null) throw new Error('消息行未渲染');
+    expect(user.textContent).toBe('用户问题'); // 只有正文，无「你」标签
+    expect(assistant.textContent).toBe('助手回答'); // provider 名不进正文
+    expect(assistant.querySelector('.message-actions')).not.toBeNull(); // 助手行有动作行
+    expect(user.querySelector('.message-actions')).toBeNull(); // 用户行无动作行（ZCode 口径）
+  });
+
+  // P0-1（装配级）：ChatTranscript 真渲染 → 动作行走既有 fork 通道；
+  // 会话运行中（store.running=true）分叉禁用并提示「任务结束后可分叉」，turn-end 后恢复可用。
+  it('P0-1 分叉通道可用性两态（ChatTranscript）：运行中禁用 + 提示，空闲可用并调 fork', async () => {
+    const api = makeFakeApi();
+    const App = (await bootApp(api)) as unknown as {
+      ChatTranscript: (p: {
+        streamId: string;
+        store: AppStore;
+        controller: ReturnType<typeof createController>;
+      }) => React.ReactElement | null;
+    };
+    const store = new AppStore();
+    const controller = createController(store, api as never);
+    store.applyStatus('connected');
+    store.applyReplay({
+      id: 's1',
+      dir: 'd',
+      header: { sessionId: 's1', cwd: 'D:/proj' },
+      events: [
+        ev('user/message', { text: '问题', turnId: 't1' }),
+        ev('assistant/message', { text: '回答', turnId: 't1' }),
+      ],
+      warnings: [],
+      lastSeq: 2,
+    });
+
+    render(<App.ChatTranscript streamId="s1" store={store} controller={controller} />);
+    const fork = (): HTMLButtonElement => screen.getByTestId('message-action-fork') as HTMLButtonElement;
+
+    // 重放后本会话空闲（running=false）→ 分叉可用
+    expect(store.peekStream('s1')?.running).toBe(false);
+    await waitFor(() => expect(fork().disabled).toBe(false));
+
+    // 新的 user/message 落盘 → running=true（store.absorbEvent）→ 分叉禁用 + ZCode 文案
+    store.applyFrame({ type: 'event', sessionId: 's1', event: ev('user/message', { text: '再来一句', turnId: 't2' }) });
+    expect(store.peekStream('s1')?.running).toBe(true);
+    await waitFor(() => expect(fork().disabled).toBe(true));
+    expect(fork().getAttribute('title')).toBe('任务结束后可分叉');
+
+    // 本轮结束 → 分叉恢复可用，点击走既有 controller/api fork 通道（目标 = 助手行的真实 seq）
+    store.applyFrame({ type: 'turn-end', sessionId: 's1', stopReason: 'end_turn' });
+    await waitFor(() => expect(fork().disabled).toBe(false));
+    const assistantSeq = store.chatItems('s1').find((i) => i.kind === 'assistant')?.seq;
+    fireEvent.click(fork());
+    await waitFor(() => expect(api.fork).toHaveBeenCalledWith('s1', assistantSeq));
   });
 
   // 迁移依据（P4-A）：旧的 components/PaneArea.tsx 六页签/多分屏已按计划③拆除，

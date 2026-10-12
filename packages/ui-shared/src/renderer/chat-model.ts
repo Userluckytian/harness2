@@ -95,6 +95,17 @@ export function displayToolName(tool: string | undefined): string {
   return tool;
 }
 
+/**
+ * 轮次摘要耗时文案（P0-1，ZCode 风格）：`持续了 N 秒`。
+ * N = `max(1, ceil(ms / 1000))` —— 与 ZCode `ConversationRowView` 的 `durationSeconds`
+ * 口径一致（不足 1 秒按 1 秒计，避免出现「持续了 0 秒」）。
+ * 无真实时长（undefined / <= 0）→ 返回 undefined：**不显示假值**（红线⑩）。
+ */
+export function formatTurnDuration(durationMs: number | undefined): string | undefined {
+  if (durationMs === undefined || durationMs <= 0) return undefined;
+  return `持续了 ${Math.max(1, Math.ceil(durationMs / 1000))} 秒`;
+}
+
 /** 解析 subagent 工具 output JSON 中的 childSessionId（非 JSON / 缺字段 → undefined） */
 export function parseSubagentChildId(output: string | undefined): string | undefined {
   if (output === undefined) return undefined;
