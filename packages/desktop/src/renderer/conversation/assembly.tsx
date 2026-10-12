@@ -16,6 +16,10 @@ import {
   type ConversationSeatProps as SharedConversationSeatProps,
 } from '@harness2/ui-shared/renderer/conversation/seat.js';
 import type { UploadTransport } from '@harness2/ui-shared/renderer/conversation/composer/attachments.js';
+import type {
+  ComposerContextPickerOptions,
+  ContextListResult,
+} from '@harness2/ui-shared/renderer/conversation/composer/composer-context-menu.js';
 import { ComposerChain } from '@harness2/ui-shared/renderer/conversation/composer/composer-chain.js';
 import {
   createImageUrlCache,
@@ -82,6 +86,19 @@ export const desktopUploadTransport: UploadTransport = {
 
 /** composer 链（D-38）：壳持有唯一实例；当前无 takeover 注册项（无人接管 = 默认 composer 常驻） */
 export const conversationComposerChain = new ComposerChain();
+
+/**
+ * P0「添加上下文」选择器数据面（桌面接线）：文件清单走既有的 `listDir` 白名单 IPC
+ * （根恒为主进程持有的 serve --root；渲染端只传相对路径，边界校验在主进程 workspace-fs）。
+ * 旧夹具/测试桩缺该通道时如实返回失败（不臆造空列表）。web 壳不注入本项 → 面板如实降级。
+ */
+export const desktopContextPicker: ComposerContextPickerOptions = {
+  listDir: async (relativePath) => {
+    const api = (globalThis as { harness2?: { listDir?: (p: string) => Promise<ContextListResult> } }).harness2;
+    if (api?.listDir === undefined) return { ok: false, error: '桌面未暴露目录通道' };
+    return api.listDir(relativePath);
+  },
+};
 
 /**
  * D-86 ②：把轨迹 tab 登记为 `inspect` 的消费者（P2-5 改道）。工具卡的「查看轨迹」由此真实可见并生效：
@@ -159,6 +176,8 @@ export function ConversationSeat(props: ConversationSeatProps): ReactNode {
       // 桌面缺省文件上传通道：如实失败并给出**桌面侧**原因（主进程未暴露上传 IPC），
       // 与共享包的中性缺省文案不同 —— 保持桌面既有行为与既有测试断言不变。
       transport={props.transport ?? desktopUploadTransport}
+      // P0「添加上下文」：桌面注入 listDir 数据源（web 壳不注入 → 面板如实降级）
+      contextPicker={props.contextPicker ?? desktopContextPicker}
     />
   );
 }

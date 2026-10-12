@@ -48,6 +48,7 @@ import {
   type ComposerModeSwitchProps,
   type ComposerModelSelectProps,
 } from './composer/Composer.js';
+import type { ComposerContextPickerOptions } from './composer/composer-context-menu.js';
 import { ComposerChain } from './composer/composer-chain.js';
 import {
   ComposerStore,
@@ -275,6 +276,11 @@ export interface ConversationSeatProps {
   readonly modeSwitch?: ComposerModeSwitchProps;
   /** Z3-04（Z-94）右簇模型选择数据面（壳注入；undefined 同上） */
   readonly modelSelect?: ComposerModelSelectProps;
+  /**
+   * P0「添加上下文」选择器数据面（壳注入）。缺省（web）= 无目录通道 → 面板**仍渲染**并如实
+   * 显示「web 无目录通道」（与左右簇控件「undefined = 不渲染」不同：本按钮是 ZCode 常驻项）。
+   */
+  readonly contextPicker?: ComposerContextPickerOptions;
 }
 
 /**
@@ -479,6 +485,7 @@ export function ConversationSeat(props: ConversationSeatProps): ReactNode {
           // Z3-04（Z-94）：左右簇控件（壳注入；缺省不渲染，web 壳无数据通道时如实缺省）
           {...(props.modeSwitch !== undefined ? { modeSwitch: props.modeSwitch } : {})}
           {...(props.modelSelect !== undefined ? { modelSelect: props.modelSelect } : {})}
+          {...(props.contextPicker !== undefined ? { contextPicker: props.contextPicker } : {})}
           {...(props.imageIO !== undefined ? { imageIO: props.imageIO } : {})}
         />
         {/* Z-18/Z-17：草稿态（会话已加载且无任何条目、非运行中）→ composer 下方建议提示。

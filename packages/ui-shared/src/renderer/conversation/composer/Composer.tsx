@@ -27,6 +27,7 @@ import { Button } from '../../../components/ui/button.js';
 import { Spinner } from '../../../components/ui/spinner.js';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '../../../components/ui/tooltip.js';
 import { ComposerModeSwitch, ComposerModelSelect } from './composer-controls.js';
+import { ComposerContextMenu, type ComposerContextPickerOptions } from './composer-context-menu.js';
 import type { ComposerApprovalMode, ComposerModelMenu, ComposerModelRef } from './composer-config.js';
 import {
   browserImageReadIO,
@@ -144,6 +145,12 @@ export interface ComposerProps {
   readonly modelSelect?: ComposerModelSelectProps;
   /** Z3-04 左簇模式切换（壳注入；undefined = 不渲染该控件） */
   readonly modeSwitch?: ComposerModeSwitchProps;
+  /**
+   * P0「添加上下文」选择器数据面（壳注入）。
+   * 与左右簇控件不同：**按钮恒渲染**（ZCode composer 常驻项）；`contextPicker` 只携带数据源，
+   * 缺省（web）= 无目录通道 → 面板文件清单区如实显示「web 无目录通道」，不摆假文件树。
+   */
+  readonly contextPicker?: ComposerContextPickerOptions;
   readonly io: ComposerIO;
   /** 注入 store（测试/装配层持久草稿用）；缺省内部自建 */
   readonly store?: ComposerStore;
@@ -400,6 +407,19 @@ export function Composer(props: ComposerProps): ReactNode {
     editorRef.current?.focus();
   };
 
+  /**
+   * P0 文件清单选中回填：把 `@相对路径` 插到光标处（沿用既有 @ 提及语义 —— 与「引用」钮同一
+   * insert-text 派发；提交边界由 assembly 的 `@path` 解析落成 references）。末尾补空格，
+   * 便于用户继续输入；焦点交回编辑器。
+   */
+  const onInsertContextPath = useCallback(
+    (relativePath: string): void => {
+      store.dispatch({ type: 'insert-text', text: `@${relativePath} ` });
+      editorRef.current?.focus();
+    },
+    [store],
+  );
+
   const onKeyDown = (e: ReactKeyboardEvent<HTMLDivElement>): void => {
     const accel = e.ctrlKey || e.metaKey;
     // IME 组合中绝不提交（React 合成事件不自带 isComposing → 取原生事件，叠加旧式 keyCode 229 兜底）
@@ -589,8 +609,16 @@ export function Composer(props: ComposerProps): ReactNode {
             </div>
           )}
           <div className="composer-actions">
-            {/* 左簇（Z-94）：引用 / 附件（既有入口）+ 模式切换（数据注入才渲染） */}
+            {/* 左簇（Z-94）：添加上下文（P0，最左常驻）→ 引用 / 附件（既有入口）+ 模式切换（数据注入才渲染） */}
             <div className="composer-actions-left">
+              <ComposerContextMenu
+                disabled={locked}
+                onInsertPath={onInsertContextPath}
+                // 附件通道 = composer 自身的 `<input type="file">`（浏览器 File 通道，真实可用）
+                attachmentsAvailable
+                onPickAttachment={() => fileInputRef.current?.click()}
+                {...(props.contextPicker?.listDir !== undefined ? { listDir: props.contextPicker.listDir } : {})}
+              />
               <button
                 type="button"
                 className="btn-reference"

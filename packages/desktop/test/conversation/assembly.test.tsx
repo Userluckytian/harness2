@@ -963,12 +963,12 @@ describe('P5-C 诚实性复核：缺口是显式事实，不是假实现/假数�
     expect(DEFAULT_BUSY_ENTER_BEHAVIOR).toBe('queue');
   });
 
-  it('引用入口只有真实存在的两颗：附件 + 引用（不做点了没反应的 chip 选择器）', () => {
+  it('引用入口都是真实存在的：添加上下文（P0，真面板）+ 附件 + 引用（不做点了没反应的 chip 选择器）', () => {
     const { store, controller } = boot();
     renderSeat({ store, controller });
     expect(
       [...document.querySelectorAll('.composer-actions button')].map((b) => b.getAttribute('data-testid')),
-    ).toEqual(['composer-reference', 'composer-attach', 'composer-primary']);
+    ).toEqual(['composer-context-trigger', 'composer-reference', 'composer-attach', 'composer-primary']);
     // 无 chip 原子节点：chip 只可能由业务 takeover 插入（当前无人插入，UI 不虚构 chip 入口）
     expect(document.querySelectorAll('[data-atom="chip"]')).toHaveLength(0);
   });
