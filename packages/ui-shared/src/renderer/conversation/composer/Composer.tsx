@@ -430,6 +430,16 @@ export function Composer(props: ComposerProps): ReactNode {
     }
   };
 
+  /**
+   * `beforeinput` 拦截层：常规文本 / 换行转成显式的状态派发，并 preventDefault 阻止浏览器
+   * 默认写入（React 状态是唯一真源）。
+   * IME 语义（组合期为何不接 DOM，与 `onInput` 的契约配套）：
+   *   - 组合中间帧（`insertCompositionText`）**不拦**——组合文本由浏览器在 contentEditable
+   *     里绘制（下划线态），不是用户的最终内容，状态一律不接（由 `onInput` 的组合期闸门兜住）；
+   *   - 落定帧（`insertFromComposition`，Chromium 在 compositionend 时发的最后一帧）在这里拦下，
+   *     一次性 dispatch 落定文本 —— 若放任默认行为，半截组合文本已污染状态时落定文本会再叠一层
+   *     （真机缺陷：草稿逐字累积重复，落盘证据 = 目标串 + 递减前缀链）。
+   */
   const onBeforeInput = (e: FormEvent<HTMLDivElement>): void => {
     const native = e.nativeEvent as InputEvent;
     if (native.inputType === 'insertText' && typeof native.data === 'string') {
@@ -440,10 +450,35 @@ export function Composer(props: ComposerProps): ReactNode {
     if (native.inputType === 'insertParagraph' || native.inputType === 'insertLineBreak') {
       e.preventDefault();
       store.dispatch({ type: 'insert-text', text: '\n' });
+      return;
+    }
+    if (native.inputType === 'insertFromComposition') {
+      if (typeof native.data === 'string' && native.data.length > 0) {
+        // 落定只此一次：preventDefault 阻止浏览器再往 DOM 里落，文本经派发进 atoms
+        e.preventDefault();
+        store.dispatch({ type: 'insert-text', text: native.data });
+      }
+      // data=null 的落定帧不拦：让后续 input(insertFromComposition，isComposing:false) 走
+      // onInput 的 textContent 兜底 —— set-text 取 DOM 全文，比凭空补一个空串稳
+      // （reducer 对 '' 本就是 no-op，但显式跳过意图更清楚）。
     }
   };
 
+  /**
+   * 兜底回写通道（无 beforeinput 的宿主，或未被上面拦截的原生操作）。
+   * 为什么组合期不接 DOM（IME 契约）：组合中途的半截文本由浏览器自行绘制进 contentEditable
+   * （下划线态），不是最终内容；状态只接**落定帧**。若中途帧也回写，`set-text` 会用半截
+   * textContent 覆盖草稿，浏览器组合继续往后追加 → 草稿逐字累积重复（真机已复现：落盘证据
+   * = 目标串 + 递减前缀链）。
+   */
   const onInput = (e: FormEvent<HTMLDivElement>): void => {
+    const native = e.nativeEvent as InputEvent;
+    // 组合中间帧闸门：isComposing 是权威信号；inputType 兜底旧宿主不透传 isComposing 的情况
+    const composingFrame =
+      native.isComposing === true ||
+      native.inputType === 'insertCompositionText' ||
+      native.inputType === 'deleteCompositionText';
+    if (composingFrame) return;
     // 兜底（无 beforeinput 的宿主）：有 chip 时不从 DOM 文本回写，避免吞掉原子节点
     if (hasChip(state.atoms)) return;
     const text = e.currentTarget.textContent ?? '';
