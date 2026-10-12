@@ -183,6 +183,83 @@ describe('OpenAI-compatible：SSE 流式与 wire 请求', () => {
     expect(calls).toEqual([{ id: 'call-1', name: 't1', arguments: '{"x":1}' }]);
   });
 
+  // —— 流式 tool name 合并（真机 E2E 复现：vLLM 系网关每 chunk 重发完整工具名）——
+  // 规则：空→incoming；incoming===current（全量重发）→吞掉；incoming.startsWith(current)（累计重发）→取 incoming；
+  // 否则真分片拼接。arguments 不受影响（纯拼接）。
+  const nameFrame = (name: string) =>
+    `data: {"choices":[{"delta":{"tool_calls":[{"index":0,"function":{"name":${JSON.stringify(name)}}}]}}]}`;
+  const finishCallsFrame = (argsJson: string) =>
+    `data: {"choices":[{"delta":{"tool_calls":[{"index":0,"function":{"arguments":${JSON.stringify(argsJson)}}}]},"finish_reason":"tool_calls"}]}`;
+
+  it('网关重发回归：index 路径每 chunk 重发完整 name（"bash"×7）→ 收敛为 bash（非 bashbash…）', async () => {
+    const stub = await start();
+    stub.enqueue({
+      sse: [...Array.from({ length: 7 }, () => nameFrame('bash')), finishCallsFrame('{"cmd":"ls"}'), 'data: [DONE]'],
+    });
+    const provider = makeProvider(stub.url);
+    const chunks = await collect(provider, { messages: [{ role: 'user', content: 'x' }] });
+    const calls = chunks
+      .filter((c) => c.type === 'tool-call')
+      .map((c) => (c as { call: { id: string; name: string; arguments: string } }).call);
+    expect(calls).toHaveLength(1);
+    expect(calls[0]!.name).toBe('bash');
+    expect(calls[0]!.arguments).toBe('{"cmd":"ls"}');
+  });
+
+  it('网关重发回归：无 index 带 id 路径每 chunk 重发完整 name → 收敛为 bash 且 arguments 正常累积', async () => {
+    const stub = await start();
+    const frame = (args: string) =>
+      `data: {"choices":[{"delta":{"tool_calls":[{"id":"call-1","function":{"name":"bash","arguments":${JSON.stringify(args)}}}]}}]}`;
+    stub.enqueue({
+      sse: [
+        ...Array.from({ length: 7 }, () => frame('')),
+        frame('{"cmd":"ls"}'),
+        'data: {"choices":[{"delta":{},"finish_reason":"tool_calls"}]}',
+        'data: [DONE]',
+      ],
+    });
+    const provider = makeProvider(stub.url);
+    const chunks = await collect(provider, { messages: [{ role: 'user', content: 'x' }] });
+    const calls = chunks
+      .filter((c) => c.type === 'tool-call')
+      .map((c) => (c as { call: { id: string; name: string; arguments: string } }).call);
+    expect(calls).toHaveLength(1);
+    expect(calls[0]).toEqual({ id: 'call-1', name: 'bash', arguments: '{"cmd":"ls"}' });
+  });
+
+  it('name 累计式重发（b/ba/bash）：startsWith 规则取最长 → bash', async () => {
+    const stub = await start();
+    stub.enqueue({
+      sse: [
+        nameFrame('b'),
+        nameFrame('ba'),
+        nameFrame('bash'),
+        'data: {"choices":[{"delta":{"tool_calls":[{"index":0,"function":{"arguments":"{}"}}]},"finish_reason":"tool_calls"}]}',
+        'data: [DONE]',
+      ],
+    });
+    const provider = makeProvider(stub.url);
+    const chunks = await collect(provider, { messages: [{ role: 'user', content: 'x' }] });
+    const call = chunks.find((c) => c.type === 'tool-call') as { call: { name: string } };
+    expect(call.call.name).toBe('bash');
+  });
+
+  it('name 真分片（ba/sh）保持兼容：拼接为 bash', async () => {
+    const stub = await start();
+    stub.enqueue({
+      sse: [
+        nameFrame('ba'),
+        nameFrame('sh'),
+        'data: {"choices":[{"delta":{"tool_calls":[{"index":0,"function":{"arguments":"{}"}}]},"finish_reason":"tool_calls"}]}',
+        'data: [DONE]',
+      ],
+    });
+    const provider = makeProvider(stub.url);
+    const chunks = await collect(provider, { messages: [{ role: 'user', content: 'x' }] });
+    const call = chunks.find((c) => c.type === 'tool-call') as { call: { name: string } };
+    expect(call.call.name).toBe('bash');
+  });
+
   it('P2-4 回归：finish_reason length/content_filter 透传为对应 stopReason（不再折叠为 end_turn）', async () => {
     const stub = await start();
     stub.enqueueAll([

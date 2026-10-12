@@ -108,6 +108,18 @@ function mapFinishReason(reason: string | undefined): 'end_turn' | 'length' | 'c
   return 'end_turn';
 }
 
+/**
+ * 流式 tool name 合并（真机 E2E 回归：vLLM 系网关每 chunk 重发完整工具名）。
+ * 规则：空→incoming；incoming===current（全量重发）→吞掉；incoming.startsWith(current)
+ * （累计重发）→取 incoming；否则真分片拼接。arguments 不受影响（纯拼接）。
+ */
+function mergeToolCallName(current: string, incoming: string): string {
+  if (current === '') return incoming;
+  if (incoming === current) return current;
+  if (incoming.startsWith(current)) return incoming;
+  return current + incoming;
+}
+
 const CANCELLED = 'cancelled';
 
 export class OpenAICompatProvider implements ChatProvider {
@@ -308,7 +320,9 @@ function* handleWireChunk(
       }
       const cur: CallBuffer = calls.get(tc.index) ?? { id: '', name: '', arguments: '' };
       if (typeof tc.id === 'string' && tc.id.length > 0) cur.id = tc.id;
-      if (typeof tc.function?.name === 'string' && tc.function.name.length > 0) cur.name += tc.function.name;
+      if (typeof tc.function?.name === 'string' && tc.function.name.length > 0) {
+        cur.name = mergeToolCallName(cur.name, tc.function.name);
+      }
       if (typeof tc.function?.arguments === 'string') cur.arguments += tc.function.arguments;
       calls.set(tc.index, cur);
     }
@@ -334,12 +348,14 @@ function bufferOpenToolCall(open: CallBuffer[], tc: ToolCallDelta): void {
       cur = { id, name: '', arguments: '' };
       open.push(cur);
     }
-    if (name !== undefined) cur.name = cur.name === '' ? name : cur.name + name;
+    if (name !== undefined) cur.name = mergeToolCallName(cur.name, name);
   } else if (name !== undefined) {
     const last = open.at(-1);
-    if (last && (last.name === name || last.name === '')) {
+    // 延续当前开放槽：空槽、全量重发（incoming===last.name）、累计重发（startsWith）——
+    // 合并结果恰为 incoming 时收敛进 last.name；真分片（合并结果 ≠ incoming）仍开新槽（P2-5）。
+    if (last && (last.name === '' || mergeToolCallName(last.name, name) === name)) {
       cur = last;
-      if (last.name === '') last.name = name; // 同名延续：不重复拼接（区别于索引路径的部分名流 +=）
+      last.name = mergeToolCallName(last.name, name);
     } else {
       cur = { id: '', name, arguments: '' };
       open.push(cur);
