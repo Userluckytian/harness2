@@ -27,7 +27,11 @@ import { workbenchDrag } from '@harness2/ui-shared/renderer/layout/workbench/dra
 import { WorkbenchHost } from '@harness2/ui-shared/renderer/layout/workbench/host.js';
 import { workbenchStore } from '@harness2/ui-shared/renderer/layout/workbench/store.js';
 import { countPanes, MAX_PANES } from '@harness2/ui-shared/renderer/layout/workbench/model.js';
-import { sidePaneStore, trajectoryTabId } from '@harness2/ui-shared/renderer/side-pane/index.js';
+import {
+  sidePaneStore,
+  trajectoryTabId,
+  SIDE_PANE_NO_SESSION_KEY,
+} from '@harness2/ui-shared/renderer/side-pane/index.js';
 import { ConversationSeat } from '../conversation/assembly.js';
 import { useShellPalette } from './shell-context.js';
 import { setOverlay, takeRequestedSettingsSection, useOverlayOpen } from './shell-overlays.js';
@@ -114,6 +118,15 @@ function SidebarSeatContent(): React.ReactNode {
       // Z2-02（Z-07 分区 2）：左栏命令中心入口 → 复用既有覆层链路打开命令面板
       // （与 Ctrl+K 的 toggleOverlay('palette') 同一真源，不新开一套面板）。
       onOpenCommandPalette={() => setOverlay('palette', true)}
+      // P0-3a（Z-07 #3）：「自动化」入口 → 定向打开右栏 + automations tab（跨会话固定 id，
+      // 桶与 SidePaneHost 同源：未选会话落无会话桶）。cron 数据=桌面主进程 fs 只读快照。
+      onOpenAutomations={() => {
+        const bucket = state.selectedId ?? SIDE_PANE_NO_SESSION_KEY;
+        sidePaneStore.open(bucket, 'automations');
+        frameDispatch({ type: 'rightbar/open' });
+      }}
+      // P0-3a 诚实占位（用户拍板）：插件市场/账号区只占位不开发（disabled+说明）。
+      placeholders
       buildVersion={resolveBuildVersion(hostBuildEnv())}
       // Z2-06（Z-19）：会话行可拖进主区分屏。生产写 dataTransfer（真实 DnD 语义），
       // 模块级 workbenchDrag 作等价回退（jsdom 单测无标准 dataTransfer）。

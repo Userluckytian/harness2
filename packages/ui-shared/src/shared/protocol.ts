@@ -257,6 +257,34 @@ export interface TaskContractShape {
   updatedAt?: string;
 }
 
+/**
+ * P0-3a：定时任务（cron）形状。与 `@harness2/core` 的 `cron/jobs.ts CronJob` **同形**（字段一一对应），
+ * 但刻意放在**跨壳线协议**里（此处浏览器壳零 Node，不 import core）。桌面主进程读本地 `jobs.json`
+ * （用 core 的同一 `CronJobStore.list()`）后投影为本形状，经 IPC `cron:list` 送出给右栏「自动化」tab。
+ * `deliver`（投递目标）属执行细节、右栏列表不展示，故不入形状。可选字段用 `?: T | undefined`
+ * （exactOptionalPropertyTypes 严格模式下与 core 口径一致）。
+ */
+export interface CronJobShape {
+  /** 任务 id */
+  id: string;
+  /** 发给模型的指令（cron 执行 = 以此为 user turn 起独立临时会话） */
+  instruction: string;
+  /** 调度表达式（interval "5m" / "daily HH:MM" / "weekly <dows> HH:MM"，见 core jobs.ts） */
+  schedule: string;
+  /** 下次应执行时间（ISO8601 UTC） */
+  nextRun: string;
+  /** 是否启用（core 熔断时置 false） */
+  enabled: boolean;
+  /** 连续失败计数（成功归零；≥3 熔断 enabled=false） */
+  failCount: number;
+  /** 创建时间（ISO8601） */
+  createdAt: string;
+  /** 上次执行时间（缺省 = 从未跑过） */
+  lastRunAt?: string | undefined;
+  /** 上次错误摘要（缺省 = 无） */
+  lastError?: string | undefined;
+}
+
 export interface AttemptSnapshotShape {
   attemptId: string;
   turnId: string;

@@ -10,7 +10,7 @@
 //      依赖桌面 openFile/预览通道（web 无）故仍留在桌面；模型轨迹 tab 绑定桌面装配单例
 //      （图片缓存 / inspect 定位通道）也在此装配；
 //   3. 底部「刷新只读视图 / 重新同步」动作与「计划视图依赖任务账本」提示的桌面口径。
-import { useCallback, useEffect, useMemo, useRef, useSyncExternalStore } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { controller, store, useAppState } from '../app-shared.js';
 import { useFrame } from '@harness2/ui-shared/renderer/layout/frame-context.js';
 import type { SessionImageUrlResolver } from '@harness2/ui-shared/renderer/conversation/views/image-url-cache.js';
@@ -21,11 +21,14 @@ import {
   type ToolFilePreview,
 } from '@harness2/ui-shared/renderer/tool/index.js';
 import {
+  AutomationsPane,
   BackgroundTasksPane,
   SidePaneHost,
   SIDE_PANE_LAUNCHER_ITEM_IDS,
+  SIDE_PANE_NO_SESSION_KEY,
   sidePaneStore,
   trajectoryTabSessionId,
+  type CronJobShape,
   type SidePaneTabId,
 } from '@harness2/ui-shared/renderer/side-pane/index.js';
 import {
@@ -79,6 +82,29 @@ export function SidePanel(): React.ReactNode {
   // 桌面专属端口：上下文占用读（preload IPC；core getContextUsage 单一实现）——注入共享配置面板。
   const getContextUsage = useCallback((id: string) => window.harness2.getContextUsage(id), []);
 
+  // P0-3a 自动化（cron）：本地 jobs.json 任务表（主进程 fs 只读）。桌面壳挂载时拉一次注入 pane
+  //（D-14 内存态：不写任何存储、不轮询——数据是挂载快照，如实展示不假装实时，改任务走 CLI 后重开
+  // 面板可见）。通道缺失（理论不发生：preload 必给；jsdom 夹具可能无）→ 空表，pane 落空态文案
+  //（红线⑩：无通道不摆假数据）。
+  const [cronJobs, setCronJobs] = useState<readonly CronJobShape[]>([]);
+  useEffect(() => {
+    const read = window.harness2.cronList;
+    if (read === undefined) return;
+    let alive = true;
+    void read
+      .call(window.harness2)
+      .then((jobs) => {
+        if (alive) setCronJobs(jobs);
+      })
+      .catch(() => {
+        if (alive) setCronJobs([]);
+      });
+    return () => {
+      alive = false;
+    };
+  }, []);
+  const nowMs = useMemo(() => Date.now(), []);
+
   // 有**新的**打开文件请求 → 开「文件」tab；右栏关着就把它打开（不静默丢请求）。
   // 按请求对象判重（openFile 每次产生新引用）：只在真请求时路由一次，避免右栏被
   // 迟到的预览反复拽开（旧实现依赖 frame 引用变化有此隐患，本版顺手修掉）。
@@ -87,7 +113,7 @@ export function SidePanel(): React.ReactNode {
     if (filePreview === routedPreviewRef.current) return;
     routedPreviewRef.current = filePreview;
     if (filePreview === null) return;
-    const bucket = sessionId ?? '(no-session)';
+    const bucket = sessionId ?? SIDE_PANE_NO_SESSION_KEY;
     sidePaneStore.open(bucket, 'file');
     if (!frame.state.rightbarOpen) frame.dispatch({ type: 'rightbar/toggle' });
   }, [filePreview, sessionId, frame]);
@@ -120,7 +146,7 @@ export function SidePanel(): React.ReactNode {
     if (bgTasksRequest === routedBgTasksRef.current) return;
     routedBgTasksRef.current = bgTasksRequest;
     if (bgTasksRequest === null) return;
-    const bucket = sessionId ?? '(no-session)';
+    const bucket = sessionId ?? SIDE_PANE_NO_SESSION_KEY;
     sidePaneStore.open(bucket, 'background-tasks');
     if (!frame.state.rightbarOpen) frame.dispatch({ type: 'rightbar/toggle' });
   }, [bgTasksRequest, sessionId, frame]);
@@ -141,6 +167,9 @@ export function SidePanel(): React.ReactNode {
               onOpenChildSession={(childSessionId) => void controller.selectSession(childSessionId)}
             />
           );
+        case 'automations':
+          // P0-3a：cron 只读列表（无启停按钮——通道不存在，红线⑩；数据 = 挂载快照）
+          return <AutomationsPane jobs={cronJobs} nowMs={nowMs} />;
         case 'approvals':
           return <ApprovalCenter store={store} controller={controller} />;
         case 'changes':
@@ -178,7 +207,7 @@ export function SidePanel(): React.ReactNode {
           return null;
       }
     },
-    [sessionId, filePreview, sessionCwd, navigation, getContextUsage],
+    [sessionId, filePreview, sessionCwd, navigation, getContextUsage, cronJobs, nowMs],
   );
 
   return (

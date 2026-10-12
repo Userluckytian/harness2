@@ -32,9 +32,20 @@ export function trajectoryTabSessionId(id: SidePaneTabId): string | null {
 
 /** 右栏 tab 类型：静态面板 id + 按会话解析的轨迹 tab（Z-14 `model-trajectory:{sessionId}`）。
  *  Z2-08：`background-tasks`（后台任务）= 固定 id、跨会话聚合（对齐 approvals 的全局面板口径），
- *  不引入 composite id —— 任务列表不随选中会话变化，无需按会话分桶。 */
+ *  不引入 composite id —— 任务列表不随选中会话变化，无需按会话分桶。
+ *  P0-3a：`automations`（自动化/cron 任务）= 同为固定 id、跨会话聚合（读本地 jobs.json 的只读列表，
+ *  不随选中会话变化）；数据通道只有桌面有（主进程 fs），web 无 → web 白名单不列（红线⑩）。 */
 export type SidePaneTabId =
-  'plan' | 'tasks' | 'background-tasks' | 'approvals' | 'changes' | 'workspace' | 'file' | 'config' | TrajectoryTabId;
+  | 'plan'
+  | 'tasks'
+  | 'background-tasks'
+  | 'automations'
+  | 'approvals'
+  | 'changes'
+  | 'workspace'
+  | 'file'
+  | 'config'
+  | TrajectoryTabId;
 
 export interface SidePaneTabDescriptor {
   readonly id: SidePaneTabId;
@@ -47,6 +58,7 @@ export const SIDE_PANE_TABS: readonly SidePaneTabDescriptor[] = Object.freeze([
   { id: 'plan', label: '计划' },
   { id: 'tasks', label: '任务' },
   { id: 'background-tasks', label: '后台任务' },
+  { id: 'automations', label: '自动化' },
   { id: 'approvals', label: '审批' },
   { id: 'changes', label: '变更' },
   { id: 'workspace', label: '工作区' },
@@ -71,6 +83,7 @@ export const SIDE_PANE_LAUNCHER_ITEM_IDS: readonly SidePaneLauncherItemId[] = Ob
   'plan',
   'tasks',
   'background-tasks',
+  'automations',
   'approvals',
   'changes',
   'workspace',

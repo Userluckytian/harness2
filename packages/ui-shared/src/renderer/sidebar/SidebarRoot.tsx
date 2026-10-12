@@ -74,6 +74,17 @@ export interface SidebarRootProps extends SidebarSeats {
   onOpenCommandPalette?: (() => void) | undefined;
   /** 命令中心快捷键提示（缺省 Ctrl+K，与 App 的 Ctrl+K 唤出链路一致） */
   commandPaletteHint?: string | undefined;
+  /**
+   * Z-07 #3 / P0-3a：「自动化」入口（cron 右栏 tab）。不传则不渲染（同命令中心口径——
+   * web 无 cron 读通道就不摆入口）。
+   */
+  onOpenAutomations?: (() => void) | undefined;
+  /**
+   * P0-3a 诚实占位（用户拍板 2026-10-12：插件市场/账号区**只占位不开发**）：
+   * 置 true 才渲染两个 disabled 占位按钮（title 说明未开发原因，data-placeholder 可辨）。
+   * 缺省 false = 完全不画——不把占位强加给不想要它的宿主/测试。
+   */
+  placeholders?: boolean | undefined;
   /** 会话行数据（默认区域席位用；给了 renderWorkspaces 则由占用方自取） */
   sessions?: readonly SidebarSessionItem[] | undefined;
   /** 已归档会话（折叠区） */
@@ -293,6 +304,55 @@ export function SidebarRoot(props: SidebarRootProps): React.ReactNode {
         </button>
       )}
 
+      {/* Z-07 #3 / P0-3a：「自动化」入口（cron 右栏 tab）；无回调不渲染（web 无通道即无入口）。 */}
+      {props.onOpenAutomations !== undefined && (
+        <button
+          type="button"
+          className="h2-sidebar-command"
+          data-testid="sidebar-automation-entry"
+          aria-label={labels.automationEntry}
+          title={labels.automationEntry}
+          onClick={props.onOpenAutomations}
+        >
+          <span className="h2-sidebar-command-icon" aria-hidden="true">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" focusable="false">
+              <circle cx="12" cy="13" r="7" stroke="currentColor" strokeWidth="2" />
+              <path
+                d="M12 13V9.5M12 13l2.3 1.6M9 3l-2.2 2M15 3l2.2 2"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+              />
+            </svg>
+          </span>
+          <span className="h2-sidebar-command-label">{labels.automationEntry}</span>
+        </button>
+      )}
+
+      {/* P0-3a 诚实占位：插件市场（用户拍板不开发）。disabled + data-placeholder + 悬停说明——
+          与真入口在 DOM 上可分辨；不摆可点的假功能。placeholders 旗标为真才渲染。 */}
+      {props.placeholders === true && (
+        <button
+          type="button"
+          className="h2-sidebar-command h2-sidebar-placeholder"
+          data-testid="sidebar-plugin-market-placeholder"
+          data-placeholder="true"
+          aria-label={labels.pluginMarketTodo}
+          title={labels.pluginMarketTodo}
+          disabled
+        >
+          <span className="h2-sidebar-command-icon" aria-hidden="true">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" focusable="false">
+              <rect x="4" y="4" width="7" height="7" rx="1.5" stroke="currentColor" strokeWidth="2" />
+              <rect x="13" y="4" width="7" height="7" rx="1.5" stroke="currentColor" strokeWidth="2" />
+              <rect x="4" y="13" width="7" height="7" rx="1.5" stroke="currentColor" strokeWidth="2" />
+              <rect x="13" y="13" width="7" height="7" rx="1.5" stroke="currentColor" strokeWidth="2" />
+            </svg>
+          </span>
+          <span className="h2-sidebar-command-label">插件市场</span>
+        </button>
+      )}
+
       {/* D-23：区域席位（会话列表）；Z-06 折叠态无图标轨道，始终按展开形态渲染 */}
       <div className="h2-sidebar-region-area" data-testid="sidebar-region-area">
         {workspacesSeat({
@@ -307,6 +367,31 @@ export function SidebarRoot(props: SidebarRootProps): React.ReactNode {
 
       {/* D-23：底部固定设置席位；没有占用方就什么都不渲染 */}
       <div className="h2-sidebar-foot" data-testid="sidebar-foot">
+        {/* P0-3a 诚实占位：账号区（无账号体系，不开发）。左侧槽位对齐 ZCode footer 布局。 */}
+        {props.placeholders === true && (
+          <button
+            type="button"
+            className="h2-sidebar-account h2-sidebar-placeholder"
+            data-testid="sidebar-account-placeholder"
+            data-placeholder="true"
+            aria-label={labels.accountTodo}
+            title={labels.accountTodo}
+            disabled
+          >
+            <span className="h2-sidebar-account-avatar" aria-hidden="true">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" focusable="false">
+                <circle cx="12" cy="8" r="4" stroke="currentColor" strokeWidth="2" />
+                <path
+                  d="M4.5 20c1.2-3.4 4-5.2 7.5-5.2s6.3 1.8 7.5 5.2"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                />
+              </svg>
+            </span>
+            <span className="h2-sidebar-account-label">账号</span>
+          </button>
+        )}
         <div className="h2-sidebar-settings-area">
           {props.renderSettings !== undefined ? props.renderSettings({ wide: true }) : null}
         </div>

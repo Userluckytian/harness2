@@ -101,6 +101,13 @@ export interface SidebarLabels {
   renamePlaceholder: string;
   renameConfirm: string;
   renameCancel: string;
+  /** Z-07 #3：自动化（cron）入口 */
+  automationEntry: string;
+  /** Z-10：行右侧「更多」按钮的可访问名（与右键同一动作集） */
+  rowMore: string;
+  /** 诚实占位（只占位不开发）：悬停说明 */
+  pluginMarketTodo: string;
+  accountTodo: string;
 }
 
 export const DEFAULT_SIDEBAR_LABELS: SidebarLabels = {
@@ -157,4 +164,8 @@ export const DEFAULT_SIDEBAR_LABELS: SidebarLabels = {
   renamePlaceholder: '输入新名称',
   renameConfirm: '保存',
   renameCancel: '取消',
+  automationEntry: '自动化',
+  rowMore: '更多操作',
+  pluginMarketTodo: '未开发：插件市场不采纳（Z 程序登记）',
+  accountTodo: '未开发：无账号体系（Z 程序登记）',
 };

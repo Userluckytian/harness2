@@ -60,8 +60,12 @@ function hostBuildEnv(): Record<string, string | undefined> {
  * web 右栏可打开的启动器项白名单。
  * Z7-a：桌面启动器清单里的 8 项 web **全部真能取数渲染**（共享面板 + serve S7 端点 + WS 事件流），
  * 故与桌面同清单；「文件」本就不在启动器清单（桌面靠 openFile 路由按需打开，web 无此通道）。
+ * P0-3a：「自动化」web 同样排除——cron 任务表是本地文件（jobs.json），读通道只在桌面主进程
+ * （skills/cron-scan 同族）；web 无此数据面，列出来点开就是空 tab（红线⑩不摆假入口）。
  */
-const WEB_SIDE_PANE_ITEMS: readonly SidePaneLauncherItemId[] = SIDE_PANE_LAUNCHER_ITEM_IDS;
+const WEB_SIDE_PANE_ITEMS: readonly SidePaneLauncherItemId[] = SIDE_PANE_LAUNCHER_ITEM_IDS.filter(
+  (id) => id !== 'automations',
+);
 
 /** 侧栏席位内容（ui-sidebar）：SidebarRoot + 会话列表接线 + 命令中心入口 + 会话行拖拽源（Z-19） */
 function SidebarSeatContent(): ReactNode {
@@ -128,6 +132,9 @@ function SidebarSeatContent(): ReactNode {
       newSessionShortcut="Ctrl+N"
       // Z2-02（Z-07 分区 2）：左栏命令中心入口 → 打开命令面板覆层（与 Ctrl/Cmd+K 同一真源）。
       onOpenCommandPalette={() => onOpenPalette()}
+      // P0-3a：web 无 cron 本地读通道 → 不传 onOpenAutomations（「自动化」入口不渲染，
+      // 与右栏白名单排除同口径）。诚实占位旗标与桌面一致（用户拍板：插件市场/账号只占位）。
+      placeholders
       // Z2-06（Z-19）：会话行可拖进主区分屏。生产写 dataTransfer（真实 DnD 语义），
       // 模块级 workbenchDrag 作等价回退（jsdom 单测无标准 dataTransfer）。
       sessionRowDrag={{

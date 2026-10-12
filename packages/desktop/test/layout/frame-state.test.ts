@@ -136,6 +136,22 @@ describe('右栏（Z-12）', () => {
     expect(applyFrameAction(closed, { type: 'rightbar/collapse' })).toBe(closed);
   });
 
+  // P0-3a：侧栏「自动化」入口需要「确保打开」语义——toggle 在已开时会把它关掉。
+  // rightbar/open：关闭→按 Z-12 首开宽度打开；已开→原对象返回（幂等，不重置宽度）。
+  it('rightbar/open：关闭态按首开规则打开；已开则幂等 no-op（同对象引用）', () => {
+    const opened = applyFrameAction(at(1400), { type: 'rightbar/open' });
+    expect(opened.rightbarOpen).toBe(true);
+    expect(opened.rightbarWidth).toBe(511); // 与 toggle 首开同规则（内容区 1136 × 0.45）
+    expect(applyFrameAction(opened, { type: 'rightbar/open' })).toBe(opened);
+    // 与 toggle 的关键差异：已开时 toggle 会关；open 绝不关
+    expect(applyFrameAction(opened, { type: 'rightbar/toggle' }).rightbarOpen).toBe(false);
+    // 拖宽后再 open：保留像素偏好不重置；关闭后 open 也沿用 500
+    const resized = applyFrameAction(opened, { type: 'rightbar/width', width: 500 });
+    expect(applyFrameAction(resized, { type: 'rightbar/open' })).toBe(resized);
+    const afterClose = applyFrameAction(resized, { type: 'rightbar/collapse' });
+    expect(applyFrameAction(afterClose, { type: 'rightbar/open' }).rightbarWidth).toBe(500);
+  });
+
   it('右栏拖宽：下界 240、上界**内容区宽** 65%；拖宽不改侧栏状态', () => {
     const opened = applyFrameAction(at(1400), { type: 'rightbar/toggle' });
     expect(rightbarMaxWidth(1136)).toBe(738); // 内容区 1136 × 0.65

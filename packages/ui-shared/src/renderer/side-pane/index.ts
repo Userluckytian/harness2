@@ -7,5 +7,9 @@ export * from './side-pane-model.js';
 export * from './side-pane-store.js';
 export * from './background-tasks-model.js';
 export * from './BackgroundTasksPane.js';
+// P0-3a：自动化（cron）tab —— 纯逻辑（automation-model：形状与 core CronJob 同形 / 调度展示 /
+// 状态徽标 / nextRun 相对时间）+ 只读面板本体（AutomationsPane，数据经壳注入，无启停按钮）。
+export * from './automation-model.js';
+export * from './AutomationsPane.js';
 // Z7：壳无关的右栏标签宿主（零 tab 启器 + 标签条 + 内容槽）——桌面 SidePanel 与 web 共用。
 export { SidePaneHost, type SidePaneHostProps } from './SidePaneHost.js';

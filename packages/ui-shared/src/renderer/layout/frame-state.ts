@@ -57,6 +57,8 @@ export type FrameAction =
   | { readonly type: 'sidebar/collapse' }
   /** 打开/收起右栏；打开时若偏好未定则取**内容区宽** 45% */
   | { readonly type: 'rightbar/toggle' }
+  /** 定向打开右栏（P0-3a：已开则幂等 no-op，不重置宽度） */
+  | { readonly type: 'rightbar/open' }
   /** 拖宽右栏（钳制 240～内容区宽 65%） */
   | { readonly type: 'rightbar/width'; readonly width: number }
   /** 自动收起右栏（Z-15：幂等；已关闭时不改状态引用） */
@@ -86,6 +88,20 @@ export function isSidebarCollapsed(state: FrameState): boolean {
   return state.sidebarCollapsed;
 }
 
+/** 打开右栏（toggle 与 rightbar/open 共用）：Z-12（Z2-03）首开取**内容区宽** 45%；之后保留用户像素宽度偏好 */
+function openRightbar(state: FrameState): FrameState {
+  const content = contentWidthOf(state);
+  return {
+    ...state,
+    rightbarOpen: true,
+    rightbarWidth: clampWidth(
+      state.rightbarWidth ?? defaultRightbarWidth(content),
+      RIGHTBAR_MIN_PX,
+      rightbarMaxWidth(content),
+    ),
+  };
+}
+
 /** 帧状态 reducer（纯函数：同入参同出参，且**不修改**入参） */
 export function applyFrameAction(state: FrameState, action: FrameAction): FrameState {
   switch (action.type) {
@@ -101,17 +117,13 @@ export function applyFrameAction(state: FrameState, action: FrameAction): FrameS
       if (state.rightbarOpen) {
         return { ...state, rightbarOpen: false, rightbarFullscreen: false };
       }
-      // Z-12（Z2-03）：首开取**内容区宽** 45%；之后保留用户像素宽度偏好
-      const content = contentWidthOf(state);
-      return {
-        ...state,
-        rightbarOpen: true,
-        rightbarWidth: clampWidth(
-          state.rightbarWidth ?? defaultRightbarWidth(content),
-          RIGHTBAR_MIN_PX,
-          rightbarMaxWidth(content),
-        ),
-      };
+      return openRightbar(state);
+    }
+    // P0-3a：定向打开（侧栏「自动化」入口等）。幂等：已开则原样返回（不改引用，不重置宽度）。
+    // toggle 无法表达「确保打开」语义——已开会把它关掉，故独立动作。
+    case 'rightbar/open': {
+      if (state.rightbarOpen) return state;
+      return openRightbar(state);
     }
     case 'rightbar/width': {
       // Z-12（Z2-03）：拖宽钳制到 [240, 内容区宽 65%]

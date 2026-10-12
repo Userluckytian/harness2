@@ -31,6 +31,9 @@ export const {
   SkillStore,
   projectSkillsRoot,
   defaultSkillsRoot,
+  // P0-3a 自动化（cron）：右栏「自动化」tab 数据源与 CLI `cron list` 完全同一 CronJobStore 实现
+  CronJobStore,
+  defaultCronRoot,
 } = core;
 
 export type { AuthFile, HarnessConfig, ProviderConfig } from '@harness2/core' with { 'resolution-mode': 'import' };

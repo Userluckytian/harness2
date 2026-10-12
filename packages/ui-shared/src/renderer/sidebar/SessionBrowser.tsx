@@ -16,11 +16,17 @@
 //   - 滚动容器登记给外壳：D-24 的溢出判定与静默类由外壳统一决定（本组件只暴露 data 属性）。
 import { useState } from 'react';
 import { ContextMenu, ContextMenuTrigger } from '../../components/ui/context-menu.js';
+import { DropdownMenu, DropdownMenuTrigger } from '../../components/ui/dropdown-menu.js';
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '../../components/ui/dialog.js';
 import { Button } from '../../components/ui/button.js';
 import type { SidebarSessionItem } from './session-items.js';
 import type { SidebarLabels } from './labels.js';
-import { SessionRowMenuContent, rowMenuActions, type RowMenuCallbacks } from './session-row-menu.js';
+import {
+  SessionRowMenuContent,
+  SessionRowMoreMenuContent,
+  rowMenuActions,
+  type RowMenuCallbacks,
+} from './session-row-menu.js';
 import { TaskToolbar } from './TaskToolbar.js';
 import {
   buildSidebarSections,
@@ -218,6 +224,24 @@ function SessionRow({
         >
           <span aria-hidden="true">✕</span>
         </button>
+      )}
+      {/* P0-2/Z-10 第二入口：行右侧 ⋯（hover/聚焦显现；动作集与右键同源 rowMenuEntries）。
+          Pinned 区行与 unpin ✕ 并排时右移避让（见 sidebar.css .h2-sidebar-row-pinned 规则）。 */}
+      {menuActions.length > 0 && rowMenu !== undefined && (
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <button
+              type="button"
+              className="h2-sidebar-row-more"
+              data-testid={`session-row-more-${item.id}`}
+              aria-label={labels.rowMore}
+              title={labels.rowMore}
+            >
+              <span aria-hidden="true">⋯</span>
+            </button>
+          </DropdownMenuTrigger>
+          <SessionRowMoreMenuContent item={item} labels={labels} callbacks={rowMenu} />
+        </DropdownMenu>
       )}
     </li>
   );

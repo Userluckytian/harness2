@@ -33,6 +33,7 @@ import {
 } from './models-config.js';
 import { getCrashReports, getDoctorReport } from './diagnostics.js';
 import { readSkillsSummary } from './skills-scan.js';
+import { readCronJobs } from './cron-list.js';
 import { listWorkspaceDir } from './workspace-fs.js';
 import { getContextUsageForSession } from './context-usage.js';
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
@@ -698,6 +699,9 @@ export function createBridge(deps: BridgeDeps): Bridge {
       // A08 技能分区：主进程 fs 两级扫描（与 core serve 同一 SkillStore 实现；只读）
       case 'settings:getSkills':
         return readSkillsSummary(deps.home, deps.root);
+      // P0-3a 自动化：主进程 fs 只读本地 jobs.json（core CronJobStore 同一实现；异常转空表不抛）
+      case 'cron:list':
+        return readCronJobs(deps.home);
       case 'gitBranch': {
         const dir = typeof args['dir'] === 'string' ? args['dir'] : deps.root;
         return gitBranchForDir(dir);

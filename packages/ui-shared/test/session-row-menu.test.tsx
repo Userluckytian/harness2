@@ -59,6 +59,17 @@ const flags = (over: Partial<RowMenuFlags>): RowMenuFlags => ({
   ...over,
 });
 
+function fullMenuFor(id: string) {
+  void id;
+  return {
+    onPin: vi.fn(),
+    onRename: vi.fn(),
+    onArchive: vi.fn(),
+    onOpenInSplit: vi.fn(),
+    onInspectTrajectory: vi.fn(),
+  };
+}
+
 describe('rowMenuActions（纯函数）', () => {
   it('全通道可用 = 完整子集，顺序按 ZCode（置顶→重命名→归档→分屏→轨迹）', () => {
     expect(rowMenuActions(flags({}))).toEqual(['pin', 'rename', 'archive', 'split', 'trajectory']);
@@ -211,5 +222,36 @@ describe('重命名对话框（SessionBrowser 内置；壳只给 onSubmitRename�
     const menu = await screen.findByTestId('session-row-menu');
     expect(menu.querySelector('[data-menu-action="rename"]')).toBeNull();
     expect(menu.querySelector('[data-menu-action="pin"]')).not.toBeNull();
+  });
+});
+
+describe('行 ⋯ 按钮（P0-2/Z-10 第二入口；与右键同源 rowMenuEntries）', () => {
+  it('有动作时 hover 区出现 ⋯（aria-label=更多操作）；点击弹下拉含同一动作集', async () => {
+    renderBrowser({ sessions: [item('m1')], rowMenu: fullMenuFor('m1') });
+    const more = screen.getByTestId('session-row-more-m1');
+    expect(more.getAttribute('aria-label')).toBe(DEFAULT_SIDEBAR_LABELS.rowMore);
+    // jsdom 无 PointerEvent：Radix DropdownMenu 用 Enter 键打开（side-pane 启动器同款模式）
+    fireEvent.keyDown(more, { key: 'Enter' });
+    const menu = await screen.findByTestId('session-row-more-menu');
+    expect(
+      Array.from(menu.querySelectorAll('[data-menu-action]')).map((el) => el.getAttribute('data-menu-action')),
+    ).toEqual(['pin', 'rename', 'archive', 'split', 'trajectory']);
+  });
+
+  it('无任何动作回调 = 不画 ⋯（与右键同口径，不摆空按钮）', () => {
+    renderBrowser({ sessions: [item('m2')], rowMenu: {} });
+    expect(screen.queryByTestId('session-row-more-m2')).toBeNull();
+  });
+
+  it('分屏满格：⋯ 菜单里 split 项同右键一样禁用（同源逻辑）', async () => {
+    renderBrowser({
+      sessions: [item('m3')],
+      rowMenu: { onPin: vi.fn(), onOpenInSplit: vi.fn(), splitLimitReached: true },
+    });
+    fireEvent.keyDown(screen.getByTestId('session-row-more-m3'), { key: 'Enter' });
+    const menu = await screen.findByTestId('session-row-more-menu');
+    const split = menu.querySelector('[data-menu-action="split"]')!;
+    expect(split.getAttribute('data-disabled')).not.toBeNull();
+    expect(split.getAttribute('title')).toBe(DEFAULT_SIDEBAR_LABELS.menuSplitLimit);
   });
 });

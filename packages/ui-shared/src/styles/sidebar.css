@@ -884,3 +884,59 @@
   color: var(--color-destructive);
   font-size: var(--text-ui-sm);
 }
+
+/* —— P0-2/P0-3a：行 ⋯ 更多按钮（hover/聚焦显现；Pinned 行与 unpin ✕ 并排时右移避让）—— */
+.h2-sidebar-row-more {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: none;
+  border-radius: 6px;
+  background: var(--color-card);
+  color: var(--color-foreground-subtle);
+  font-size: var(--text-ui-sm);
+  cursor: pointer;
+  opacity: 0;
+}
+
+.h2-sidebar-row:hover .h2-sidebar-row-more,
+.h2-sidebar-row:focus-within .h2-sidebar-row-more,
+.h2-sidebar-row-more[data-state='open'],
+.h2-sidebar-row-more:focus-visible {
+  opacity: 1;
+}
+
+.h2-sidebar-row-pinned .h2-sidebar-row-more {
+  right: 30px; /* 让位给 ✕（Pinned 行两按钮并排，ZCode 行右侧也是多钮布局） */
+}
+
+.h2-sidebar-row-more:hover {
+  background: var(--color-muted);
+  color: var(--color-foreground);
+}
+
+/* —— P0-3a：诚实占位（disabled 按钮，比真入口降透明；data-placeholder 可辨）—— */
+.h2-sidebar-placeholder {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+/* footer 账号占位（左槽；Z-11 的账号按钮位） */
+.h2-sidebar-account {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 28px;
+  padding: 0 6px;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--color-foreground-subtle);
+  font-size: var(--text-ui-sm);
+}
