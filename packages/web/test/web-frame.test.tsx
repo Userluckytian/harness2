@@ -147,7 +147,8 @@ describe('Z7 侧栏折叠 264 → 4px', () => {
     expect(sidebar?.getAttribute('data-width')).toBe('264');
     expect(sidebar?.getAttribute('data-collapsed')).toBe('false');
 
-    fireEvent.click(screen.getByTestId('sidebar-toggle'));
+    // Z-16 #0：aside 内无折叠钮——折叠走左上浮层「侧栏开关」（唯一入口）
+    fireEvent.click(screen.getByRole('button', { name: '侧栏开关' }));
     expect(sidebar?.getAttribute('data-width')).toBe('4');
     expect(sidebar?.getAttribute('data-collapsed')).toBe('true');
     // 只隐藏不卸载：SidebarRoot 仍在 DOM

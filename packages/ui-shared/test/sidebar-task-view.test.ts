@@ -138,8 +138,11 @@ describe('Z-08 分区装配（buildSidebarSections）', () => {
     expect(conversations?.kind === 'conversations' ? conversations.items.map((i) => i.id) : []).toEqual(['c']);
   });
 
-  it('项目模式：全部有 cwd 时不渲染空的会话区（红线⑩）', () => {
-    expect(buildSidebarSections({ ...base, active: withCwd }).map((s) => s.kind)).toEqual(['projects']);
+  it('项目模式（Z-16 #9）：全部有 cwd 时任务区仍恒在（items 为空，空态由渲染侧给「暂无任务」）', () => {
+    const sections = buildSidebarSections({ ...base, active: withCwd });
+    expect(sections.map((s) => s.kind)).toEqual(['projects', 'conversations']);
+    const conversations = sections.find((s) => s.kind === 'conversations');
+    expect(conversations?.kind === 'conversations' ? conversations.items : []).toEqual([]);
   });
 
   it('分组模式：单区按 cwd 归组（合并两区，含无 cwd 组）', () => {
@@ -151,15 +154,18 @@ describe('Z-08 分区装配（buildSidebarSections）', () => {
     expect(sections.map((s) => s.kind)).toEqual(['grouped']);
   });
 
-  it('有置顶才出现 Pinned 区；归档视图下不出现', () => {
+  it('有置顶才出现 Pinned 区；归档视图下不出现（Z-16 #9：任务区头恒在 → 恒有 conversations 段）', () => {
     const pinned = [item('p', { cwd: 'D:/p/alpha', pinned: true })];
     const sections = buildSidebarSections({ ...base, active: pinned });
-    expect(sections.map((s) => s.kind)).toEqual(['pinned', 'projects']);
+    expect(sections.map((s) => s.kind)).toEqual(['pinned', 'projects', 'conversations']);
     const archivedView = buildSidebarSections({ ...base, active: pinned, archivedView: true });
     expect(archivedView.map((s) => s.kind)).toEqual(['archived']);
   });
 
-  it('空活跃列表不摆空壳分区（红线⑩）', () => {
-    expect(buildSidebarSections({ ...base, active: [] })).toEqual([]);
+  it('空活跃列表：只余恒在的空任务区（items 为空；全局空态由 SessionBrowser hasRows 兜底）', () => {
+    const sections = buildSidebarSections({ ...base, active: [] });
+    expect(sections.map((s) => s.kind)).toEqual(['conversations']);
+    const conversations = sections[0];
+    expect(conversations?.kind === 'conversations' ? conversations.items : null).toEqual([]);
   });
 });

@@ -1,12 +1,15 @@
-// 侧栏外壳（依据 docs/refs/refs-zcode-layout.md Z-05～Z-07；席位模型沿用 refs-deepseek-harness.md D-20～D-25）：
-//   D-20 品牌席位：`sidebar.brand.mark` / `sidebar.brand.name` 两个 single 席位（可被品牌包接管）
+// 侧栏外壳（依据 docs/refs/refs-zcode-layout.md Z-05～Z-07 + Z-16 槽位表；席位模型沿用 refs-deepseek-harness.md D-21～D-25）：
+//   Z-16 #0：aside **无品牌行**——品牌与折叠钮在左上浮层（FrameTopOverlay），入口不丢；
+//            aside 顶部第一个槽位就是「新建任务」（ZCode 实测 y=66）。
 //   D-21 新会话作用域：显式指定 → 当前会话所属 → 最近活跃 → 空白（见 new-session-scope.ts）
 //   Z-06 折叠形态：折叠后只剩 4px，内容 opacity-0 + pointer-events-none（只隐藏不卸载、无图标轨道）
 //   D-23 区域席位：`sidebar.workspaces`（会话列表）+ 底部固定 `sidebar.settings`
-//   Z-07 分区顺序：品牌行 → New Task（分区 1）→ 命令中心入口（分区 2）→ 会话区域（分区 7/8）→ Footer（分区 9）
-//   Z-07 缺前置分区（Automations / Plugin Store / 任务工具栏 / Pinned / Projects / 文件树）本壳不摆假入口
+//   Z-07/Z-16 分区顺序：New Task（#1）→ 搜索（#2）→ 自动化（#3）→ 插件市场（#4，占位）
+//            → 会话区域（#5～#9）→ Footer（#10 固定账号槽 + 设置席位）
+//   Z-16 槽位先行（用户拍板 2026-10-12）：ZCode 有的槽位一律摆出来；缺功能的 =
+//   disabled + title 悬停说明 + data-placeholder 旗标（红线⑩），DOM 与真入口可 machine 分辨。
 //   D-24 滚动条可供性：指针不在列内即静默，离开后滞留 2 秒；未溢出则本就不画（见 scroll-affordance.ts）
-//   D-25 版本徐标：品牌行下方 `version[-commit][-dirty]`（见 brand.ts）
+//   D-25 版本徐标：aside 品牌行移除后落到 footer 末行（见 brand.ts；无版本元数据不画）。
 // 本组件**自包含**：不 import App / layout / slots / app-shared；
 // 装配（席位注入、数据接线）由接线阶段传入 props 完成（席位为渲染函数，非全局注册表）。
 import { useRef } from 'react';
@@ -18,20 +21,9 @@ import { useCollapse } from './use-collapse.js';
 import { useScrollAffordance } from './use-scroll-affordance.js';
 import { DEFAULT_SIDEBAR_LABELS, type SidebarLabels } from './labels.js';
 import { SessionBrowser, type SessionRowDrag, type WorkspacesOwnerProps } from './SessionBrowser.js';
+import type { ProjectGroupInput } from './project-groups.js';
 import type { RowMenuCallbacks } from './session-row-menu.js';
 import type { SidebarSessionItem } from './session-items.js';
-
-/** 品牌标记席位属主事实（D-20）：只要一个方形边长 */
-export interface BrandMarkOwnerProps {
-  /** 请求的方形边长（px） */
-  size: number;
-}
-
-/** 品牌名席位属主事实（D-20）：版本徐标文案由外壳解析后交给占用方（D-25） */
-export interface BrandNameOwnerProps {
-  /** 构建标签文案；无版本元数据时为 undefined（占用方据此不画徐标） */
-  version?: string | undefined;
-}
 
 /** 底部设置席位属主事实（D-23）：只需宽窄态 */
 export interface SettingsOwnerProps {
@@ -41,10 +33,6 @@ export interface SettingsOwnerProps {
 
 /** 席位渲染函数（缺省即用外壳回落实现） */
 export interface SidebarSeats {
-  /** D-20 品牌标记席位；缺省用内置标记 */
-  renderBrandMark?: ((owner: BrandMarkOwnerProps) => React.ReactNode) | undefined;
-  /** D-20 品牌名席位；缺省用「本地构建 + 版本徐标」（D-25） */
-  renderBrandName?: ((owner: BrandNameOwnerProps) => React.ReactNode) | undefined;
   /** D-23 区域席位；缺省用 SessionBrowser（会话列表） */
   renderWorkspaces?: ((owner: WorkspacesOwnerProps) => React.ReactNode) | undefined;
   /** D-23 底部设置席位；缺省不渲染（没有占用方就不摆假入口） */
@@ -56,7 +44,7 @@ export interface SidebarRootProps extends SidebarSeats {
   collapsed: boolean;
   /** 展开宽度（Z-05 264～容器 50%；缺省 264） */
   width?: number | undefined;
-  /** 收起/展开切换（布局 owner 的动作，接进来即可） */
+  /** 收起/展开切换（布局 owner 的动作；Z-16 #0 起折叠入口外置到左上浮层，本回调仅供区域席位 expandSidebar 回落） */
   onToggleCollapse: () => void;
   /** 新会话：外壳按 D-21 解析出作用域后回调（装配层据此建会话/开空白页） */
   onNewSession: (scope: NewSessionScope) => void;
@@ -67,21 +55,21 @@ export interface SidebarRootProps extends SidebarSeats {
   /** Z-07 #1：New Task 快捷键标注（如 'Ctrl+N'）；壳真正绑定了该键才传，缺省不画 */
   newSessionShortcut?: string | undefined;
   /**
-   * 命令中心入口（Z-07 分区 2）：点击打开既有命令面板。
+   * 搜索入口（Z-16 #2，原「命令中心」）：点击打开既有命令面板。
    * 不传则不渲染该入口（硬约束：界面上不摆点击无效的假入口）——
    * 装配层经覆层链路（shell-overlays 的 setOverlay('palette', true)）注入，本组件不 import App 私有状态。
    */
   onOpenCommandPalette?: (() => void) | undefined;
-  /** 命令中心快捷键提示（缺省 Ctrl+K，与 App 的 Ctrl+K 唤出链路一致） */
+  /** 搜索快捷键提示（缺省 Ctrl+K，与 App 的 Ctrl+K 唤出链路一致） */
   commandPaletteHint?: string | undefined;
   /**
-   * Z-07 #3 / P0-3a：「自动化」入口（cron 右栏 tab）。不传则不渲染（同命令中心口径——
-   * web 无 cron 读通道就不摆入口）。
+   * Z-07 #3 / Z-16 #3：「自动化」真入口（cron 右栏 tab；桌面主进程读通道）。
+   * 不传但 `placeholders=true` 时，渲染 disabled 占位槽（web：无本地 cron 通道）。
    */
   onOpenAutomations?: (() => void) | undefined;
   /**
-   * P0-3a 诚实占位（用户拍板 2026-10-12：插件市场/账号区**只占位不开发**）：
-   * 置 true 才渲染两个 disabled 占位按钮（title 说明未开发原因，data-placeholder 可辨）。
+   * Z-16 槽位先行（用户拍板 2026-10-12）：置 true 渲染「自动化（无通道时）/ 插件市场」
+   * disabled 占位槽与「固定账号槽」（title 悬停说明，data-placeholder 可辨）。
    * 缺省 false = 完全不画——不把占位强加给不想要它的宿主/测试。
    */
   placeholders?: boolean | undefined;
@@ -110,29 +98,18 @@ export interface SidebarRootProps extends SidebarSeats {
   rowMenu?: RowMenuCallbacks | undefined;
   /** P0-2：重命名提交（缺省 = 菜单不出现「重命名」项） */
   onSubmitRename?: ((id: string, title: string) => Promise<void> | void) | undefined;
+  // —— P0-3b 侧栏项目轻量版（透传给缺省区域席位 SessionBrowser；语义见其 props 注释） ——
+  /** 显式项目表（projects.json 投影）；缺省 / 空数组 = 既有分组（web 行为不变） */
+  projects?: readonly ProjectGroupInput[] | undefined;
+  /** 项目区头「添加项目」真动作；缺省 = disabled 占位（红线⑩） */
+  onAddProject?: (() => void) | undefined;
+  /** 组头「移出项目」真动作；缺省 = disabled 占位 */
+  onRemoveProject?: ((cwd: string) => void) | undefined;
+  /** 任务区头「新建任务」真动作；缺省 = 不渲染该钮 */
+  onNewTask?: (() => void) | undefined;
   /** 文案覆盖（缺省中文） */
   labels?: Partial<SidebarLabels> | undefined;
   className?: string | undefined;
-}
-
-/** 内置品牌标记（鱼形轮廓的极简替代；品牌包可整只替换该席位） */
-function FallbackBrandMark({ size }: BrandMarkOwnerProps): React.ReactNode {
-  return (
-    <svg
-      className="h2-sidebar-mark-svg"
-      width={size}
-      height={size}
-      viewBox="0 0 24 24"
-      role="img"
-      aria-hidden="true"
-      focusable="false"
-    >
-      <path
-        d="M3 12c3.2-4.2 7.2-6.3 12-6.3 2.6 0 4.9.7 6 1.9-1.5.9-2.4 2.2-2.7 4.4-.3 2.2.4 3.9 2.7 4.6-1.1 1.2-3.4 1.9-6 1.9-4.8 0-8.8-2.1-12-6.5Z"
-        fill="currentColor"
-      />
-    </svg>
-  );
 }
 
 /** 宿主环境变量表（浏览器渲染进程里 process 不存在 → 空表，徐标自然不显示） */
@@ -151,7 +128,7 @@ function noop(): void {}
  */
 export function SidebarRoot(props: SidebarRootProps): React.ReactNode {
   const labels: SidebarLabels = { ...DEFAULT_SIDEBAR_LABELS, ...props.labels };
-  const { collapsed, contentWidth, reducedMotion } = useCollapse({
+  const { contentWidth, reducedMotion } = useCollapse({
     collapsed: props.collapsed,
     width: props.width ?? SIDEBAR_DEFAULT_WIDTH,
   });
@@ -161,7 +138,7 @@ export function SidebarRoot(props: SidebarRootProps): React.ReactNode {
   const classes = [
     'h2-sidebar',
     // Z-06 折叠形态：内容只隐藏不卸载（不可见亦不可点），无图标轨道
-    ...(collapsed ? ['opacity-0', 'pointer-events-none'] : []),
+    ...(props.collapsed ? ['opacity-0', 'pointer-events-none'] : []),
     // Z-08：宽度由容器过渡（app-frame.css），内容透明度跟随折叠 200ms
     'transition-opacity',
     'duration-200',
@@ -169,23 +146,6 @@ export function SidebarRoot(props: SidebarRootProps): React.ReactNode {
     ...(props.className !== undefined ? [props.className] : []),
   ].join(' ');
   const version = props.buildVersion ?? resolveBuildVersion(props.buildEnv ?? readBuildEnv());
-
-  const mark = (size: number): React.ReactNode =>
-    props.renderBrandMark !== undefined ? props.renderBrandMark({ size }) : <FallbackBrandMark size={size} />;
-
-  const brandName: React.ReactNode =
-    props.renderBrandName !== undefined ? (
-      props.renderBrandName({ version })
-    ) : version === undefined ? (
-      <span className="h2-sidebar-brand-local">{labels.brandLocalBuild}</span>
-    ) : (
-      <span className="h2-sidebar-brand-build">
-        <span className="h2-sidebar-brand-local">{labels.brandLocalBuild}</span>
-        <span className="h2-sidebar-version" data-testid="sidebar-version-badge">
-          {version}
-        </span>
-      </span>
-    );
 
   const startSession = (): void => {
     props.onNewSession(resolveNewSessionScope(props.newSessionScope ?? {}));
@@ -208,6 +168,11 @@ export function SidebarRoot(props: SidebarRootProps): React.ReactNode {
         {...(props.onTogglePin !== undefined ? { onTogglePin: props.onTogglePin } : {})}
         {...(props.rowMenu !== undefined ? { rowMenu: props.rowMenu } : {})}
         {...(props.onSubmitRename !== undefined ? { onSubmitRename: props.onSubmitRename } : {})}
+        // P0-3b：项目表与组头动作透传（缺省全部不传 = SessionBrowser 既有行为逐字节不变）
+        {...(props.projects !== undefined ? { projects: props.projects } : {})}
+        {...(props.onAddProject !== undefined ? { onAddProject: props.onAddProject } : {})}
+        {...(props.onRemoveProject !== undefined ? { onRemoveProject: props.onRemoveProject } : {})}
+        {...(props.onNewTask !== undefined ? { onNewTask: props.onNewTask } : {})}
       />
     ));
 
@@ -216,45 +181,15 @@ export function SidebarRoot(props: SidebarRootProps): React.ReactNode {
       ref={column}
       className={classes}
       data-testid="sidebar-root"
-      data-collapsed={collapsed ? 'true' : 'false'}
+      data-collapsed={props.collapsed ? 'true' : 'false'}
       data-scroll-bars={affordance.status}
       style={{ width: contentWidth }}
       role="complementary"
       aria-label={labels.sidebar}
       {...affordance.handlers}
     >
-      <div className="h2-sidebar-brand-row">
-        {/* 展开态：品牌行本身是新会话快捷入口（上游 figma 基线行为） */}
-        <button
-          type="button"
-          className="h2-sidebar-brand"
-          data-testid="sidebar-brand"
-          aria-label={labels.newSessionLabel}
-          onClick={startSession}
-        >
-          <span className="h2-sidebar-brand-mark" data-testid="sidebar-brand-mark">
-            {mark(24)}
-          </span>
-          <span className="h2-sidebar-brand-name" data-testid="sidebar-brand-name">
-            {brandName}
-          </span>
-        </button>
-        {/* 折叠/展开的唯一入口（Z-01：入口外置到左上角浮层；本按钮是侧栏内的等价入口） */}
-        <button
-          type="button"
-          className="h2-sidebar-toggle"
-          data-testid="sidebar-toggle"
-          aria-label={collapsed ? labels.expand : labels.collapse}
-          title={collapsed ? labels.expand : labels.collapse}
-          onClick={props.onToggleCollapse}
-        >
-          <span className="h2-sidebar-toggle-glyph" aria-hidden="true">
-            {collapsed ? '»' : '«'}
-          </span>
-        </button>
-      </div>
-
-      {/* D-21：新会话按钮；作用域解析在点击时做（数据是最新的）。
+      {/* Z-16 #0：品牌行整行移除（品牌与折叠钮在左上浮层 FrameTopOverlay，入口不丢）。
+          Z-16 #1：aside 顶部第一槽 = 新建任务。D-21：作用域解析在点击时做（数据是最新的）。
           Z-07 #1：`newSessionShortcut` 由壳显式传入才画快捷键标注（壳保证真的绑定了该键，
           缺省不画 —— 不摆「显示了却按不生效」的假提示）。 */}
       <button
@@ -281,7 +216,7 @@ export function SidebarRoot(props: SidebarRootProps): React.ReactNode {
         )}
       </button>
 
-      {/* Z-07 分区 2：命令中心入口（搜索图标 + 快捷键）；无回调则不渲染（不摆假入口） */}
+      {/* Z-16 #2：搜索入口（行为仍 = 打开命令面板）；无回调则不渲染（不摆假入口） */}
       {props.onOpenCommandPalette !== undefined && (
         <button
           type="button"
@@ -304,8 +239,9 @@ export function SidebarRoot(props: SidebarRootProps): React.ReactNode {
         </button>
       )}
 
-      {/* Z-07 #3 / P0-3a：「自动化」入口（cron 右栏 tab）；无回调不渲染（web 无通道即无入口）。 */}
-      {props.onOpenAutomations !== undefined && (
+      {/* Z-16 #3：「自动化」两壳都摆——桌面传 onOpenAutomations = 真入口；
+          web 无通道但 placeholders=true = disabled 占位槽（title 悬停说明，data-placeholder 可辨）。 */}
+      {props.onOpenAutomations !== undefined ? (
         <button
           type="button"
           className="h2-sidebar-command"
@@ -327,9 +263,34 @@ export function SidebarRoot(props: SidebarRootProps): React.ReactNode {
           </span>
           <span className="h2-sidebar-command-label">{labels.automationEntry}</span>
         </button>
+      ) : (
+        props.placeholders === true && (
+          <button
+            type="button"
+            className="h2-sidebar-command h2-sidebar-placeholder"
+            data-testid="sidebar-automation-entry"
+            data-placeholder="true"
+            aria-label={labels.automationEntry}
+            title={labels.automationTodo}
+            disabled
+          >
+            <span className="h2-sidebar-command-icon" aria-hidden="true">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" focusable="false">
+                <circle cx="12" cy="13" r="7" stroke="currentColor" strokeWidth="2" />
+                <path
+                  d="M12 13V9.5M12 13l2.3 1.6M9 3l-2.2 2M15 3l2.2 2"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                />
+              </svg>
+            </span>
+            <span className="h2-sidebar-command-label">{labels.automationEntry}</span>
+          </button>
+        )
       )}
 
-      {/* P0-3a 诚实占位：插件市场（用户拍板不开发）。disabled + data-placeholder + 悬停说明——
+      {/* Z-16 #4：插件市场诚实占位（用户拍板不开发）。disabled + data-placeholder + 悬停说明——
           与真入口在 DOM 上可分辨；不摆可点的假功能。placeholders 旗标为真才渲染。 */}
       {props.placeholders === true && (
         <button
@@ -365,36 +326,45 @@ export function SidebarRoot(props: SidebarRootProps): React.ReactNode {
         })}
       </div>
 
-      {/* D-23：底部固定设置席位；没有占用方就什么都不渲染 */}
+      {/* D-23：底部固定区 = Z-16 #10 账号槽（左） + 设置席位（右）。
+          账号槽 = 用户拍板（2026-10-11）的**固定显示**：196×32 与 ZCode 同形状、32px 头像圆槽 +
+          固定名称「本地用户」——视觉如实；无菜单动作 → disabled + title + data-placeholder 旗标。
+          替换 P0-3a 的窄占位实现。D-25：版本徐标随品牌行下移到 footer 末行（无元数据不画）。 */}
       <div className="h2-sidebar-foot" data-testid="sidebar-foot">
-        {/* P0-3a 诚实占位：账号区（无账号体系，不开发）。左侧槽位对齐 ZCode footer 布局。 */}
-        {props.placeholders === true && (
-          <button
-            type="button"
-            className="h2-sidebar-account h2-sidebar-placeholder"
-            data-testid="sidebar-account-placeholder"
-            data-placeholder="true"
-            aria-label={labels.accountTodo}
-            title={labels.accountTodo}
-            disabled
-          >
-            <span className="h2-sidebar-account-avatar" aria-hidden="true">
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" focusable="false">
-                <circle cx="12" cy="8" r="4" stroke="currentColor" strokeWidth="2" />
-                <path
-                  d="M4.5 20c1.2-3.4 4-5.2 7.5-5.2s6.3 1.8 7.5 5.2"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                  strokeLinecap="round"
-                />
-              </svg>
-            </span>
-            <span className="h2-sidebar-account-label">账号</span>
-          </button>
-        )}
-        <div className="h2-sidebar-settings-area">
-          {props.renderSettings !== undefined ? props.renderSettings({ wide: true }) : null}
+        <div className="h2-sidebar-foot-row">
+          {props.placeholders === true && (
+            <button
+              type="button"
+              className="h2-sidebar-account h2-sidebar-placeholder"
+              data-testid="sidebar-account-slot"
+              data-placeholder="true"
+              aria-label={labels.accountName}
+              title={labels.accountTodo}
+              disabled
+            >
+              <span className="h2-sidebar-account-avatar" aria-hidden="true">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" focusable="false">
+                  <circle cx="12" cy="8" r="4" stroke="currentColor" strokeWidth="2" />
+                  <path
+                    d="M4.5 20c1.2-3.4 4-5.2 7.5-5.2s6.3 1.8 7.5 5.2"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                  />
+                </svg>
+              </span>
+              <span className="h2-sidebar-account-label">{labels.accountName}</span>
+            </button>
+          )}
+          <div className="h2-sidebar-settings-area">
+            {props.renderSettings !== undefined ? props.renderSettings({ wide: true }) : null}
+          </div>
         </div>
+        {version !== undefined && (
+          <span className="h2-sidebar-version" data-testid="sidebar-version-badge">
+            {version}
+          </span>
+        )}
       </div>
     </div>
   );

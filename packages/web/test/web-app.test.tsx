@@ -235,3 +235,26 @@ describe('P2-4 草稿卸载护栏：web 无落盘通道时不静默丢草稿', (
     stop();
   });
 });
+
+describe('P0-3d（Z-16 #3/#10）web 侧栏槽位先行', () => {
+  it('web 也摆「自动化」槽位：无 cron 通道 → disabled + data-placeholder + 悬停说明', async () => {
+    const { stop } = await mount();
+    const automation = screen.getByTestId('sidebar-automation-entry') as HTMLButtonElement;
+    expect(automation.disabled).toBe(true);
+    expect(automation.getAttribute('data-placeholder')).toBe('true');
+    expect(automation.getAttribute('title')).toBe('web 无本地 cron 通道');
+    expect(automation.textContent).toContain('自动化');
+    stop();
+  });
+
+  it('footer 固定账号槽（用户拍板：写死「本地用户」，不是「未登录」）', async () => {
+    const { stop } = await mount();
+    const account = screen.getByTestId('sidebar-account-slot') as HTMLButtonElement;
+    expect(account.textContent).toContain('本地用户');
+    expect(account.textContent).not.toContain('未登录');
+    expect(account.disabled).toBe(true);
+    expect(account.getAttribute('data-placeholder')).toBe('true');
+    expect(account.getAttribute('title')).toBe('本地构建 · 无账号体系');
+    stop();
+  });
+});

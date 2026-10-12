@@ -2,14 +2,10 @@
 // 只导出接口与实现，不导出内部细节（hook 仅在包内使用；纯函数导出供装配层直接调用）。
 
 // 外壳与区域席位
+// Z-16 #0：aside 品牌行移除（品牌席位 renderBrandMark/renderBrandName 随之外删——
+// 品牌与折叠钮的唯一入口在左上浮层 FrameTopOverlay）。
 export { SidebarRoot } from './SidebarRoot.js';
-export type {
-  BrandMarkOwnerProps,
-  BrandNameOwnerProps,
-  SettingsOwnerProps,
-  SidebarRootProps,
-  SidebarSeats,
-} from './SidebarRoot.js';
+export type { SettingsOwnerProps, SidebarRootProps, SidebarSeats } from './SidebarRoot.js';
 export { SessionBrowser } from './SessionBrowser.js';
 export type { SessionBrowserProps, SessionRowDrag, WorkspacesOwnerProps } from './SessionBrowser.js';
 

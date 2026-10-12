@@ -17,7 +17,9 @@ export function renderSidebar(overrides: Partial<SidebarRootProps> = {}): Return
   return render(<SidebarRoot {...BASE_SIDEBAR_PROPS} {...overrides} />);
 }
 
-/** 收起切换宿主：点击 toggle 真的切换 collapsed（折叠形态需要真实的状态来回） */
+/** 收起切换宿主：点击宿主按钮真的切换 collapsed（折叠形态需要真实的状态来回）。
+ *  Z-16 #0：aside 内不再有折叠钮——生产唯一入口是左上浮层 FrameTopOverlay；
+ *  这里在侧栏外挂一枚宿主按钮作等价驱动（走同一 onToggleCollapse 通道）。 */
 export function renderCollapsibleSidebar(overrides: Partial<SidebarRootProps> = {}): {
   root: () => HTMLElement;
   toggle: () => void;
@@ -25,18 +27,23 @@ export function renderCollapsibleSidebar(overrides: Partial<SidebarRootProps> = 
   function Harness(props: Partial<SidebarRootProps>): React.ReactNode {
     const [collapsed, setCollapsed] = useState(props.collapsed ?? false);
     return (
-      <SidebarRoot
-        {...BASE_SIDEBAR_PROPS}
-        {...props}
-        collapsed={collapsed}
-        onToggleCollapse={() => setCollapsed((value) => !value)}
-      />
+      <>
+        <SidebarRoot
+          {...BASE_SIDEBAR_PROPS}
+          {...props}
+          collapsed={collapsed}
+          onToggleCollapse={() => setCollapsed((value) => !value)}
+        />
+        <button type="button" data-testid="harness-toggle-collapse" onClick={() => setCollapsed((value) => !value)}>
+          toggle
+        </button>
+      </>
     );
   }
   render(<Harness {...overrides} />);
   return {
     root: () => screen.getByTestId('sidebar-root'),
-    toggle: () => fireEvent.click(screen.getByTestId('sidebar-toggle')),
+    toggle: () => fireEvent.click(screen.getByTestId('harness-toggle-collapse')),
   };
 }
 

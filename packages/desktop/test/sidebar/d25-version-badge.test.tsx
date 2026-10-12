@@ -53,13 +53,13 @@ describe('D-25 buildVersion 纯函数', () => {
   });
 });
 
-describe('D-25 徐标落点', () => {
-  it('徐标挂在品牌名席位内（品牌行下方），文案为解析后的构建标签', () => {
+describe('D-25 徐标落点（Z-16 #0：品牌行移除后挂在 footer 末行）', () => {
+  it('徐标挂在 footer 内，文案为解析后的构建标签；aside 不再有品牌名席位', () => {
     renderSidebar({ buildVersion: '1.2.3-abcdef0' });
     const badge = screen.getByTestId('sidebar-version-badge');
     expect(badge.textContent).toBe('1.2.3-abcdef0');
-    expect(screen.getByTestId('sidebar-brand-name').contains(badge)).toBe(true);
-    expect(screen.getByTestId('sidebar-brand-name').textContent).toBe('本地构建1.2.3-abcdef0');
+    expect(screen.getByTestId('sidebar-foot').contains(badge)).toBe(true);
+    expect(screen.queryByTestId('sidebar-brand-name')).toBeNull();
   });
 
   it('从环境表解析（装配层传 buildEnv 时不必自己拼串）', () => {
@@ -69,10 +69,9 @@ describe('D-25 徐标落点', () => {
     expect(screen.getByTestId('sidebar-version-badge').textContent).toBe('3.1.4-abcdef0');
   });
 
-  it('无版本元数据 → 整个徐标不渲染（只有回落品牌名）', () => {
+  it('无版本元数据 → 整个徐标不渲染（footer 里没有占位）', () => {
     renderSidebar({ buildEnv: {} });
     expect(screen.queryByTestId('sidebar-version-badge')).toBeNull();
-    expect(screen.getByTestId('sidebar-brand-name').textContent).toBe('本地构建');
   });
 
   it('折叠态（Z-06）仍渲染徐标但整体不可见（只隐藏不卸载）', () => {

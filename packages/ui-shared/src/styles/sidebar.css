@@ -151,16 +151,20 @@
   color: var(--color-primary);
 }
 
-/* —— 新会话（D-21）—— */
+/* —— 新会话（D-21）——
+   Z-16 #9 几何校正（对齐 ZCode 实测）：aside 宽 264（内容盒 240 = 264 − 2×12 内边距），
+   顶部四钮（新建任务 / 搜索 / 自动化 / 插件市场）统一 x=8、248×32：
+   两侧 margin -4px 顶穿 12px 内边距 → x=8；width calc(100% + 8px) = 248；height 32px。 */
 .h2-sidebar-new {
   flex: none;
   display: flex;
   align-items: center;
   justify-content: center;
   gap: 6px;
-  height: 38px;
-  padding: 8px 16px;
-  margin: 0 2px 8px;
+  width: calc(100% + 8px);
+  height: 32px;
+  padding: 0 16px;
+  margin: 0 -4px 8px;
   box-sizing: border-box;
   border: 1px solid var(--color-border-hover);
   border-radius: 12px;
@@ -202,16 +206,17 @@
   white-space: nowrap;
 }
 
-/* —— 命令中心入口（Z-07 分区 2：New Task 之下、会话区域之上）—— */
+/* —— 搜索 / 自动化 / 插件市场入口（Z-16 #2/#3/#4：New Task 之下、会话区域之上）——
+   Z-16 #9 几何校正：与 .h2-sidebar-new 同口径，四钮统一 x=8、248×32（负 margin 顶穿内边距）。 */
 .h2-sidebar-command {
   flex: none;
   display: flex;
   align-items: center;
   gap: 8px;
-  width: 100%;
-  height: 34px;
+  width: calc(100% + 8px);
+  height: 32px;
   padding: 0 10px;
-  margin: 0 2px 8px;
+  margin: 0 -4px 8px;
   box-sizing: border-box;
   border: 1px solid transparent;
   border-radius: 10px;
@@ -511,6 +516,52 @@
   list-style: none;
   margin: 0;
   padding: 0 0 0 10px;
+}
+
+/* —— P0-3b（Z-16 #6/#7/#9）：分区/组头 = 折叠钮 + 右侧 24×24 小钮 的行容器 ——
+   折叠钮在行内占余宽（原 width:100% 在行内会挤掉小钮）。 */
+.h2-sidebar-section-head-row,
+.h2-sidebar-group-head-row {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.h2-sidebar-section-head-row > .h2-sidebar-section-head,
+.h2-sidebar-group-head-row > .h2-sidebar-group-head {
+  flex: 1;
+  min-width: 0;
+  width: auto;
+}
+
+.h2-sidebar-head-button {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--color-foreground-subtle);
+  font-size: var(--text-ui-sm);
+  cursor: pointer;
+}
+
+.h2-sidebar-head-button:hover:not(:disabled) {
+  background: var(--color-muted);
+  color: var(--color-foreground);
+}
+
+/* 占位态的透明度/指针样式复用 P0-3a 的 .h2-sidebar-placeholder（disabled 钮自动继承）。 */
+
+/* Z-16 #7：空项目组的「暂无任务」行（组内提示，不可点） */
+.h2-sidebar-group-empty {
+  padding: 4px 8px;
+  color: var(--color-foreground-subtlest);
+  font-size: var(--text-ui-xs);
 }
 
 .h2-sidebar-show-all {
@@ -921,22 +972,73 @@
   color: var(--color-foreground);
 }
 
-/* —— P0-3a：诚实占位（disabled 按钮，比真入口降透明；data-placeholder 可辨）—— */
+/* —— P0-3a / Z-16：诚实占位（disabled 按钮，比真入口降透明；data-placeholder 可辨）—— */
 .h2-sidebar-placeholder {
   opacity: 0.45;
   cursor: not-allowed;
 }
 
-/* footer 账号占位（左槽；Z-11 的账号按钮位） */
-.h2-sidebar-account {
-  display: inline-flex;
+/* Z-16 #10 footer 一行：左 = 固定账号槽，右 = 设置席位（32×32 齿轮保持） */
+.h2-sidebar-foot-row {
+  display: flex;
   align-items: center;
   gap: 6px;
-  min-height: 28px;
+  min-height: 32px;
+}
+
+.h2-sidebar-foot-row .h2-sidebar-settings-area {
+  flex: 1;
+  min-width: 0;
+  width: auto;
+  display: flex;
+  justify-content: flex-end;
+}
+
+/* D-25（Z-16 #0 之后）：版本徐标从品牌行下移到 footer 末行，左对齐、不占高 */
+.h2-sidebar-foot .h2-sidebar-version {
+  margin: 4px 0 0 6px;
+  align-self: flex-start;
+}
+
+/* Z-16 #10 footer 账号槽（用户拍板 2026-10-11：无账号体系 → 写死固定账号显示）。
+   形状与 ZCode 实测同规格：整槽 196×32、左侧 32px 头像圆槽。
+   无菜单动作 → 仍带 disabled + title + data-placeholder 旗标（红线⑩），但**视觉如实**。 */
+.h2-sidebar-account {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  width: 196px;
+  height: 32px;
   padding: 0 6px;
+  box-sizing: border-box;
   border: none;
   border-radius: 8px;
   background: transparent;
   color: var(--color-foreground-subtle);
   font-size: var(--text-ui-sm);
+  text-align: left;
+  overflow: hidden;
+}
+
+/* 32px 头像圆槽（圆形底 + 图标居中） */
+.h2-sidebar-account-avatar {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  margin-left: -6px;
+  border-radius: 9999px;
+  background: var(--color-muted);
+  color: var(--color-foreground-subtle);
+  overflow: hidden;
+}
+
+.h2-sidebar-account-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }

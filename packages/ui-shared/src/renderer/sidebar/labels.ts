@@ -2,22 +2,16 @@
 // 与上游一样不走 i18n 运行时：文案是纯数据入参，缺省即可用。
 
 export interface SidebarLabels {
-  /** 新会话按钮文字（展开态） */
+  /** 新建任务按钮文字（展开态；Z-16 #1 改「新建任务」） */
   newSession: string;
-  /** 新会话按钮无障碍名（展开/轨道共用） */
+  /** 新建任务按钮无障碍名（展开/轨道共用） */
   newSessionLabel: string;
-  /** 命令中心入口文字（Z-07 分区 2） */
+  /** 搜索入口文字（Z-16 #2：原「命令中心」，行为仍开命令面板） */
   commandCenter: string;
-  /** 命令中心入口无障碍名（按钮无可见文字时用） */
+  /** 搜索入口无障碍名（按钮无可见文字时用） */
   commandCenterLabel: string;
-  /** 命令中心快捷键提示（与现有 Ctrl+K 唤出链路一致，不臆造） */
+  /** 搜索快捷键提示（与现有 Ctrl+K 唤出链路一致，不臆造） */
   commandCenterHint: string;
-  /** 收缩侧栏按钮 */
-  collapse: string;
-  /** 打开（展开）侧栏按钮 */
-  expand: string;
-  /** 品牌行本地构建标签（无版本元数据时的回落文案） */
-  brandLocalBuild: string;
   /** 区域席位标题 */
   sessions: string;
   /** 侧栏根节点无障碍名 */
@@ -70,6 +64,26 @@ export interface SidebarLabels {
   conversations: string;
   /** 项目区标题 */
   projects: string;
+  /** Z-16 #9：第二个 section（无项目归属的游离任务）文案（原「会话」类文案改「任务」） */
+  tasks: string;
+  /** Z-16 #7：空项目组占位文案 */
+  noTasks: string;
+  /** Z-16 #6/#9：分区头「移动分区」把手（纯占位，无通道） */
+  moveSection: string;
+  /** 移动把手占位悬停说明（红线⑩：disabled + 说明 + data-placeholder） */
+  moveSectionTodo: string;
+  /** 组头「添加项目」钮（有通道 = 真动作：接目录选择） */
+  addProject: string;
+  /** 添加项目无通道时的悬停说明（web：disabled 占位） */
+  addProjectTodo: string;
+  /** 组头「移出项目」钮（显式项目模式 = 真动作：删 projects.json 条目，会话不动） */
+  removeProject: string;
+  /** 移出项目无通道时的悬停说明 */
+  removeProjectTodo: string;
+  /** Z-16 #9：任务区头「新建任务」钮 */
+  newTaskInSection: string;
+  /** 新建任务钮无通道时的悬停说明（缺省不接线时的占位） */
+  newTaskInSectionTodo: string;
   /** 无 cwd 的会话所在分组的标题 */
   noProject: string;
   /** Pinned 区标题 */
@@ -103,22 +117,23 @@ export interface SidebarLabels {
   renameCancel: string;
   /** Z-07 #3：自动化（cron）入口 */
   automationEntry: string;
+  /** Z-16 #3：自动化占位槽的悬停说明（web 无本地 cron 通道） */
+  automationTodo: string;
   /** Z-10：行右侧「更多」按钮的可访问名（与右键同一动作集） */
   rowMore: string;
   /** 诚实占位（只占位不开发）：悬停说明 */
   pluginMarketTodo: string;
+  /** Z-16 #10：footer 固定账号显示名（用户拍板：无账号体系，写死固定账号，视觉如实） */
+  accountName: string;
   accountTodo: string;
 }
 
 export const DEFAULT_SIDEBAR_LABELS: SidebarLabels = {
-  newSession: '新会话',
+  newSession: '新建任务',
   newSessionLabel: '新建会话',
-  commandCenter: '命令中心',
-  commandCenterLabel: '打开命令中心',
+  commandCenter: '搜索',
+  commandCenterLabel: '打开搜索',
   commandCenterHint: 'Ctrl+K',
-  collapse: '收起侧边栏',
-  expand: '打开侧边栏',
-  brandLocalBuild: '本地构建',
   sessions: '会话',
   sidebar: '侧栏',
   sessionsRail: '展开侧边栏以浏览会话',
@@ -144,6 +159,16 @@ export const DEFAULT_SIDEBAR_LABELS: SidebarLabels = {
   noArchived: '暂无归档会话',
   conversations: '会话',
   projects: '项目',
+  tasks: '任务',
+  noTasks: '暂无任务',
+  moveSection: '移动分区',
+  moveSectionTodo: '暂不支持：分区拖拽移动未实现（占位把手）',
+  addProject: '添加项目',
+  addProjectTodo: 'web 无目录选择通道',
+  removeProject: '移出项目',
+  removeProjectTodo: '未接线：无项目移除通道',
+  newTaskInSection: '新建任务',
+  newTaskInSectionTodo: '未接线：宿主未提供新建任务通道',
   noProject: '无项目',
   pinned: '置顶',
   pinnedShowAll: (hidden) => `显示全部（另 ${hidden}）`,
@@ -165,7 +190,9 @@ export const DEFAULT_SIDEBAR_LABELS: SidebarLabels = {
   renameConfirm: '保存',
   renameCancel: '取消',
   automationEntry: '自动化',
+  automationTodo: 'web 无本地 cron 通道',
   rowMore: '更多操作',
   pluginMarketTodo: '未开发：插件市场不采纳（Z 程序登记）',
-  accountTodo: '未开发：无账号体系（Z 程序登记）',
+  accountName: '本地用户',
+  accountTodo: '本地构建 · 无账号体系',
 };

@@ -1,5 +1,6 @@
-// D-20 品牌席位：`sidebar.brand.mark` 与 `sidebar.brand.name` 两个 single 席位。
-// Z-06 折叠态没有图标轨道：内容只隐藏不卸载，故折叠时品牌行仍渲染（不可见）。
+// Z-16 #0：aside 品牌行（含品牌席位与侧栏内折叠钮）整体移除——
+// 品牌与折叠入口的唯一真源在左上浮层 FrameTopOverlay（见 layout 测试），入口不丢。
+// 本文件钉住「品牌行不在侧栏 DOM」这一预期差异（原 D-20 品牌席位用例随功能一并移除）。
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it } from 'vitest';
 import { cleanup, screen } from '@testing-library/react';
@@ -9,55 +10,49 @@ afterEach(() => {
   cleanup();
 });
 
-describe('D-20 品牌席位', () => {
-  it('展开态同时渲染 mark 与 name 两席（缺省用内置标记 + 本地构建回落名）', () => {
+describe('Z-16 #0 aside 无品牌行', () => {
+  it('展开态：没有品牌行 / 品牌席位 / 侧栏内折叠钮', () => {
     renderSidebar();
-    expect(screen.getByTestId('sidebar-brand-mark').querySelector('svg')).not.toBeNull();
-    expect(screen.getByTestId('sidebar-brand-name').textContent).toBe('本地构建');
+    expect(screen.queryByTestId('sidebar-brand')).toBeNull();
+    expect(screen.queryByTestId('sidebar-brand-mark')).toBeNull();
+    expect(screen.queryByTestId('sidebar-brand-name')).toBeNull();
+    expect(document.querySelector('.h2-sidebar-brand-row')).toBeNull();
+    expect(screen.queryByTestId('sidebar-toggle')).toBeNull();
   });
 
-  it('品牌包接管 mark 席位时收到 size，且内置标记让位', () => {
-    const sizes: number[] = [];
-    renderSidebar({
-      renderBrandMark: ({ size }) => {
-        sizes.push(size);
-        return <span data-testid="custom-mark">M</span>;
-      },
-    });
-    expect(sizes).toEqual([24]);
-    expect(screen.getByTestId('custom-mark')).not.toBeNull();
-    expect(screen.getByTestId('sidebar-brand-mark').querySelector('svg')).toBeNull();
-  });
-
-  it('品牌包接管 name 席位时收到版本徐标文案（无版本元数据则为 undefined）', () => {
-    const seen: Array<string | undefined> = [];
-    renderSidebar({
-      buildVersion: '9.9.9-abcdef0',
-      renderBrandName: ({ version }) => {
-        seen.push(version);
-        return <span data-testid="custom-name">自定义品牌</span>;
-      },
-    });
-    expect(seen).toEqual(['9.9.9-abcdef0']);
-    expect(screen.getByTestId('custom-name')?.textContent).toBe('自定义品牌');
-  });
-
-  it('折叠态（Z-06）：无图标轨道，品牌行只隐藏不卸载（内容仍在 DOM）', () => {
+  it('折叠态（Z-06）：内容仍只隐藏不卸载，也没有品牌行', () => {
     renderSidebar({ collapsed: true });
-    // 折叠 = opacity-0 + pointer-events-none，不卸载
     expect(screen.getByTestId('sidebar-root').classList.contains('opacity-0')).toBe(true);
     expect(screen.getByTestId('sidebar-root').classList.contains('pointer-events-none')).toBe(true);
-    expect(screen.getByTestId('sidebar-brand-mark').querySelector('svg')).not.toBeNull();
-    expect(screen.getByTestId('sidebar-brand-name')).toBeTruthy();
-    // 没有任何轨道标记
-    expect(screen.queryByTestId('sidebar-brand-mark-rail')).toBeNull();
+    expect(screen.queryByTestId('sidebar-brand')).toBeNull();
     expect(screen.queryByTestId('sidebar-region-rail')).toBeNull();
   });
 
-  it('品牌行是新会话快捷入口（点击等同新会话按钮）', () => {
-    const calls: Array<{ kind: string }> = [];
-    renderSidebar({ onNewSession: (scope) => calls.push({ kind: scope.kind }) });
-    screen.getByTestId('sidebar-brand').click();
-    expect(calls).toEqual([{ kind: 'blank' }]);
+  it('Z-16 槽位序列：aside 第一槽 = 新建任务 →（搜索）→（自动化）→（插件市场）→ 会话区域', () => {
+    renderSidebar({ onOpenCommandPalette: () => undefined, onOpenAutomations: () => undefined, placeholders: true });
+    const order = [
+      screen.getByTestId('sidebar-new-session'),
+      screen.getByTestId('sidebar-command-center'),
+      screen.getByTestId('sidebar-automation-entry'),
+      screen.getByTestId('sidebar-plugin-market-placeholder'),
+      screen.getByTestId('sidebar-region-area'),
+    ];
+    for (let i = 0; i + 1 < order.length; i += 1) {
+      expect(order[i]!.compareDocumentPosition(order[i + 1]!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    }
+  });
+
+  it('Z-16 #3 桌面口径：传真回调 = 真入口（enabled、无 data-placeholder 旗标）', () => {
+    renderSidebar({ onOpenAutomations: () => undefined });
+    const entry = screen.getByTestId('sidebar-automation-entry') as HTMLButtonElement;
+    expect(entry.disabled).toBe(false);
+    expect(entry.hasAttribute('data-placeholder')).toBe(false);
+  });
+
+  it('Z-16 反向钉：不给 placeholders → 自动化/插件市场/账号槽一律不画（宿主不被强加占位）', () => {
+    renderSidebar();
+    expect(screen.queryByTestId('sidebar-automation-entry')).toBeNull();
+    expect(screen.queryByTestId('sidebar-plugin-market-placeholder')).toBeNull();
+    expect(screen.queryByTestId('sidebar-account-slot')).toBeNull();
   });
 });

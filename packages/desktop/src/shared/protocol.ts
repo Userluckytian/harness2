@@ -42,6 +42,14 @@ export type * from '@harness2/ui-shared/shared/protocol.js';
 // 本文件按名字再导出，既有 `from '../shared/protocol.js'` 的引用面不变（`export type *` 只搬类型）。
 export type * from '@harness2/ui-shared/shared/settings.js';
 
+// —— 项目实体形状再导出（P0-3b；唯一事实源 @harness2/ui-shared/shared/projects.ts） ——
+// ProjectEntry / ProjectsDocument 是 ui-shared 纯模块（normalize 也在共享侧），
+// 主进程与渲染端引用同一份；此处按名字再导出保持桌面引用面统一（类型即擦除，不引依赖）。
+export type * from '@harness2/ui-shared/shared/projects.js';
+
+// 本文件保留段内部要用的项目形状。
+import type { ProjectsDocument } from '@harness2/ui-shared/shared/projects.js';
+
 // 本文件保留段内部要用的设置域名字（`export type *` 只做再导出、不引入本地名字）。
 import type {
   ModelsProviderInputShape,
@@ -152,6 +160,12 @@ export type InvokeCommand =
   // —— D1：会话草稿持久化（desktop-drafts.json；按会话隔离） ——
   | { cmd: 'drafts:get' }
   | { cmd: 'drafts:set'; drafts: DraftsMapShape }
+  // —— P0-3b：侧栏「项目」实体（projects.json；桌面主进程持久化，壳侧概念不进 core） ——
+  | { cmd: 'projects:list' }
+  | { cmd: 'projects:add'; cwd: string }
+  | { cmd: 'projects:remove'; cwd: string }
+  /** 目录选择（Electron showOpenDialog；取消 = null。桌面独有能力，web 无通道 → 不摆活按钮） */
+  | { cmd: 'projects:pickFolder' }
   // —— D0：S7 只读查询端点 + S3 交互 op ——
   | { cmd: 'runConfig'; sessionId: string }
   | { cmd: 'planState'; sessionId: string }
@@ -204,8 +218,24 @@ export interface WindowControlsApi {
   onWindowState(listener: (state: WindowStateShape) => void): () => void;
 }
 
+/**
+ * P0-3b 侧栏「项目」通道面（桌面独有能力，与 WindowControlsApi 同口径）。
+ * 以 Partial 并入 Harness2Api：jsdom 测试夹具 / web 宿主缺通道时渲染端如实降级
+ * （组头「添加项目」= disabled 占位 + 悬停说明，不摆可点即报错的假活钮，红线⑩）。
+ */
+export interface ProjectsApi {
+  /** 读显式项目表（~/.harness2/projects.json；损坏回退空表） */
+  projectsList(): Promise<ProjectsDocument>;
+  /** 加入项目（幂等：已存在 = 返回现表）；返回写后整表 */
+  projectsAdd(cwd: string): Promise<ProjectsDocument>;
+  /** 从侧栏移除项目（仅删 projects.json 条目；会话与事件日志不动）；返回写后整表 */
+  projectsRemove(cwd: string): Promise<ProjectsDocument>;
+  /** 打开系统目录选择器；用户选中 → 绝对路径，取消 → null */
+  projectsPickFolder(): Promise<string | null>;
+}
+
 /** window.harness2 的形状（preload contextBridge 暴露） */
-export interface Harness2Api extends Partial<ModelsSettingsApi>, Partial<WindowControlsApi> {
+export interface Harness2Api extends Partial<ModelsSettingsApi>, Partial<WindowControlsApi>, Partial<ProjectsApi> {
   /** Z2-01b：桌面平台（preload 同步暴露）；非桌面宿主 / 旧夹具缺失时渲染端不启用平台特化 */
   readonly platform?: DesktopPlatform;
   listSessions(cwd?: string): Promise<SessionSummaryShape[]>;

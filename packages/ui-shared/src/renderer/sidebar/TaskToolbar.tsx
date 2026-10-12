@@ -46,11 +46,15 @@ export function TaskToolbar({
 
   return (
     <div className="h2-sidebar-toolbar" data-testid="sidebar-task-toolbar">
-      <div className="h2-sidebar-segmented" role="group" aria-label={labels.viewModeLabel}>
+      {/* Z-16 #5：视图模式分段是 **tab 语义**（role=tablist / role=tab + aria-selected）；
+          同时保留 aria-pressed 供既有断言与无 AT 场景可读（不影响 tab 判定）。 */}
+      <div className="h2-sidebar-segmented" role="tablist" aria-label={labels.viewModeLabel}>
         <button
           type="button"
+          role="tab"
           className="h2-sidebar-segment"
           data-testid="sidebar-view-grouped"
+          aria-selected={prefs.viewMode === 'grouped'}
           aria-pressed={prefs.viewMode === 'grouped'}
           onClick={() => onChange({ viewMode: 'grouped' })}
         >
@@ -58,8 +62,10 @@ export function TaskToolbar({
         </button>
         <button
           type="button"
+          role="tab"
           className="h2-sidebar-segment"
           data-testid="sidebar-view-project"
+          aria-selected={prefs.viewMode === 'project'}
           aria-pressed={prefs.viewMode === 'project'}
           onClick={() => onChange({ viewMode: 'project' })}
         >

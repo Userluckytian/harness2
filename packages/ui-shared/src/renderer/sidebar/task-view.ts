@@ -7,6 +7,11 @@
 // 视图偏好落 `zcode-sidebar-task-preferences`）。置顶例外：它走 session metadata（主进程文件），
 // 不属渲染端存储。
 import type { SidebarSessionItem } from './session-items.js';
+import { mergeProjectGroups, projectName, type ProjectGroupInput } from './project-groups.js';
+
+// projectName 定义已挪到 project-groups.ts（P0-3b 起 merge 与既有分组共用同一规则），
+// 此处按名字再导出，既有引用面（index.ts / 测试）不变。
+export { projectName };
 
 /** 视图模式（Z-08）：`project` = ZCode 的 workspace/By Project（默认）；`grouped` = 分组。 */
 export type SidebarViewMode = 'project' | 'grouped';
@@ -34,18 +39,8 @@ export const DEFAULT_SIDEBAR_TASK_PREFERENCES: SidebarTaskPreferences = {
 /** Pinned 超此条数折叠（Z-07 #6「超 20 条折叠」） */
 export const PINNED_COLLAPSE_LIMIT = 20;
 
-/**
- * 项目名 = cwd 末段（Windows/Unix 分隔符都认，忽略尾分隔符）。
- * @param cwd - 会话工作目录；缺省或为空 → 空串（调用方用「无项目」文案兜底）。
- * @returns 末段目录名。
- */
-export function projectName(cwd?: string): string {
-  if (cwd === undefined) return '';
-  const trimmed = cwd.replace(/[\\/]+$/, '');
-  if (trimmed.length === 0) return '';
-  const parts = trimmed.split(/[\\/]+/);
-  return parts[parts.length - 1] ?? '';
-}
+/** Z-16 #8：组内（项目区 / 分组模式）超此条数折叠「显示更多」——与 Pinned 同阈值同语义 */
+export const GROUP_COLLAPSE_LIMIT = PINNED_COLLAPSE_LIMIT;
 
 /**
  * 相对时间（Z-09 元信息行）：刚刚 / N分钟 / N小时 / N天 / N个月 / N年。
@@ -115,11 +110,16 @@ export function filterSessionItems(items: readonly SidebarSessionItem[], filter:
 
 /** 一个项目分组（Z-08 grouped 组 / project 模式的「项目」区） */
 export interface SidebarProjectGroup {
-  /** 分组键 = cwd（'' 表示无项目） */
+  /** 分组键 = cwd（'' 表示无项目）；P0-3b 显式项目组 = `project:${cwd}` */
   key: string;
   /** 项目名 = cwd 末段（无 cwd → 空串，组件用「无项目」文案） */
   name: string;
   cwd?: string;
+  /**
+   * P0-3b：组来源旗标。`'project'` = 显式项目（projects.json；0 会话也成组，空组显示
+   * 「暂无任务」）；缺省 = 由会话 cwd 聚合而来（既有形状，web / 无项目表时行为不变）。
+   */
+  source?: 'project';
   items: SidebarSessionItem[];
 }
 
@@ -191,13 +191,20 @@ export interface SidebarSectionsInput {
   archived: readonly SidebarSessionItem[];
   prefs: SidebarTaskPreferences;
   archivedView: boolean;
+  /**
+   * P0-3b：显式项目表（projects.json 投影）。给且**非空** → 项目区改由 mergeProjectGroups
+   * 装配（空组成组、会话按归一 cwd 归属、其余进任务区）；缺省 / 空数组 → 既有分组逻辑
+   * （web 壳与旧调用点行为逐字节不变——向后兼容反向钉）。
+   */
+  projects?: readonly ProjectGroupInput[] | undefined;
 }
 
 /**
  * 装配侧栏分区（纯函数，组件只渲染返回值）：
  *   - Pinned（有置顶才出现；归档视图下不出现）；
  *   - 归档视图：单个「已归档」区（取代项目/会话区）；
- *   - 项目模式（Z-08 默认）：**项目区**（有 cwd 的会话按 cwd 归组）+ **会话区**（全部活跃会话平铺）；
+ *   - 项目模式（Z-08 默认）：**项目区**（有 cwd 的会话按 cwd 归组）+ **任务区**（无 cwd 的
+ *     游离会话）；Z-16 #9：两区 section 头恒在（空任务区如实显示「暂无任务」）；
  *   - 分组模式：单个「会话」区，全部会话按 cwd 归组（等价于把两区合并）。
  * 排序/筛选对两区一致生效。
  * @param input - 活跃/归档行 + 偏好 + 归档开关。
@@ -227,11 +234,27 @@ export function buildSidebarSections(input: SidebarSectionsInput): SidebarSectio
 
   // 项目模式（Z-08 默认，= ZCode workspace/By Project）：
   //   项目区 = 有 cwd 的会话按 cwd 归组（嵌套）；会话区 = 不属于任何项目（无 cwd）的会话。
-  // 两区**不重复**同一会话（同一行只出现一次）；空分区不渲染（红线⑩），两区都空 → 调用方给全局空态。
-  // 说明：ZCode 的 Projects（workspace）↔ 我们的「项目区（cwd）」；Conversations ↔ 我们的「会话区」。
+  // 两区**不重复**同一会话（同一行只出现一次）。
+  // Z-16 #9：项目模式下「项目」「任务」两区 section 头**恒在**（ZCode 实测两枚 section 头恒在
+  // y=252/280）——任务区即使为空也渲染，组内如实显示「暂无任务」（真实空态，非假数据，红线⑩不破）。
+  // 项目区在无显式项目表且无带 cwd 会话时仍不摆（两区全空 → 调用方给全局空态）。
+  // 说明：ZCode 的 Projects（workspace）↔ 我们的「项目区（cwd）」；Conversations ↔ 我们的「任务」区。
+  const projects = input.projects ?? [];
+  if (projects.length > 0) {
+    // P0-3b：显式项目表接管项目区——每个显式项目恒成组（0 会话也渲染，组空显示「暂无任务」），
+    // 游离会话（cwd 不属于任何显式项目 + 无 cwd）进「任务」区（kind 仍 conversations；文案见 Z-16 #9）。
+    const merged = mergeProjectGroups({ projects, items: sorted });
+    // 空项目表下不渲染空项目区（既有红线：无内容不摆区）——但 projects.length>0 时
+    // 恒渲染（显式项目即使 0 会话也要在场，Z-16 #7），所以这里 groups 至少一条。
+    sections.push({ kind: 'projects', groups: merged.groups });
+    // Z-16 #9：任务区头恒在（loose 为空时空态渲染「暂无任务」，见 SessionBrowser）。
+    sections.push({ kind: 'conversations', items: merged.loose });
+    return sections;
+  }
   const projectGroups = groupSessionsByProject(sorted.filter((item) => item.cwd !== undefined));
   const looseItems = sorted.filter((item) => item.cwd === undefined);
   if (projectGroups.length > 0) sections.push({ kind: 'projects', groups: projectGroups });
-  if (looseItems.length > 0) sections.push({ kind: 'conversations', items: looseItems });
+  // Z-16 #9：任务区头恒在（同上；无分组模式 / 归档视图会提前 return，不会走到这里）。
+  sections.push({ kind: 'conversations', items: looseItems });
   return sections;
 }

@@ -132,8 +132,9 @@ function SidebarSeatContent(): ReactNode {
       newSessionShortcut="Ctrl+N"
       // Z2-02（Z-07 分区 2）：左栏命令中心入口 → 打开命令面板覆层（与 Ctrl/Cmd+K 同一真源）。
       onOpenCommandPalette={() => onOpenPalette()}
-      // P0-3a：web 无 cron 本地读通道 → 不传 onOpenAutomations（「自动化」入口不渲染，
-      // 与右栏白名单排除同口径）。诚实占位旗标与桌面一致（用户拍板：插件市场/账号只占位）。
+      // Z-16 #3（P0-3d 用户拍板：槽位先行）：web 也渲染「自动化」槽位——不传 onOpenAutomations，
+      // 由 placeholders 旗标落为 disabled 占位（title「web 无本地 cron 通道」+ data-placeholder）。
+      // 右栏启动器白名单仍排除 automations（点开会是空 tab = 假面板，红线⑩）。
       placeholders
       // Z2-06（Z-19）：会话行可拖进主区分屏。生产写 dataTransfer（真实 DnD 语义），
       // 模块级 workbenchDrag 作等价回退（jsdom 单测无标准 dataTransfer）。

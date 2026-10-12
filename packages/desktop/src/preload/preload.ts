@@ -93,6 +93,11 @@ const api: Harness2Api = {
     ipcRenderer.invoke(IPC_INVOKE, { cmd: 'metadata:set', id, patch }),
   draftsGet: () => ipcRenderer.invoke(IPC_INVOKE, { cmd: 'drafts:get' }),
   draftsSet: (drafts: Record<string, string>) => ipcRenderer.invoke(IPC_INVOKE, { cmd: 'drafts:set', drafts }),
+  // —— P0-3b 侧栏「项目」实体（projects.json；渲染进程零 Node，唯一出口 = 本 IPC） ——
+  projectsList: () => ipcRenderer.invoke(IPC_INVOKE, { cmd: 'projects:list' }),
+  projectsAdd: (cwd: string) => ipcRenderer.invoke(IPC_INVOKE, { cmd: 'projects:add', cwd }),
+  projectsRemove: (cwd: string) => ipcRenderer.invoke(IPC_INVOKE, { cmd: 'projects:remove', cwd }),
+  projectsPickFolder: () => ipcRenderer.invoke(IPC_INVOKE, { cmd: 'projects:pickFolder' }),
   // —— D0：S7 只读查询 + S3 交互 op + 能力盘点 ——
   runConfig: (sessionId: string) => ipcRenderer.invoke(IPC_INVOKE, { cmd: 'runConfig', sessionId }),
   planState: (sessionId: string) => ipcRenderer.invoke(IPC_INVOKE, { cmd: 'planState', sessionId }),

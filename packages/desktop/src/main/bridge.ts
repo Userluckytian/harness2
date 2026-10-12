@@ -20,6 +20,7 @@ import { readLayout, writeLayout } from './layout-file.js';
 import type { ServeManager } from './serve-manager.js';
 import { readPreferences, writePreferences } from './preferences-file.js';
 import { readMetadata, writeMetadataPatch } from './metadata-file.js';
+import { addProjectEntry, readProjects, removeProjectEntry } from './projects-file.js';
 import { readDrafts, writeDrafts } from './drafts-file.js';
 import { readAuthMasked, readSettingsConfig, updateAuth, updateSettingsConfig } from './config-file.js';
 import {
@@ -692,6 +693,30 @@ export function createBridge(deps: BridgeDeps): Bridge {
         return readDrafts(deps.home);
       case 'drafts:set':
         return writeDrafts(deps.home, args['drafts']);
+      // —— P0-3b 侧栏「项目」实体（projects.json；主进程持久化，渲染端零 Node） ——
+      case 'projects:list':
+        return readProjects(deps.home);
+      case 'projects:add': {
+        const cwd = typeof args['cwd'] === 'string' ? args['cwd'].trim() : '';
+        if (cwd.length === 0) throw new InvokeError('projects:add 缺少 cwd');
+        return addProjectEntry(deps.home, cwd, Date.now());
+      }
+      case 'projects:remove': {
+        const cwd = typeof args['cwd'] === 'string' ? args['cwd'].trim() : '';
+        if (cwd.length === 0) throw new InvokeError('projects:remove 缺少 cwd');
+        return removeProjectEntry(deps.home, cwd);
+      }
+      case 'projects:pickFolder': {
+        // 系统目录选择器（桌面独有能力）；取消/异常 → null（调用方不写脏、不猜测路径）
+        try {
+          const result = await dialog.showOpenDialog({ properties: ['openDirectory'] });
+          if (result.canceled) return null;
+          const first = result.filePaths[0];
+          return typeof first === 'string' && first.length > 0 ? first : null;
+        } catch {
+          return null; // dialog 不可用（无窗口环境/平台异常）→ 与取消同语义
+        }
+      }
       case 'settings:getDoctorReport':
         return getDoctorReport(deps.home, deps.root);
       case 'settings:getCrashReports':

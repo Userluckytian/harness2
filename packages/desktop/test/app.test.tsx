@@ -283,8 +283,8 @@ describe('对话 UI（jsdom）', () => {
     expect(collapsedRoot.classList.contains('opacity-0')).toBe(true);
     expect(collapsedRoot.classList.contains('pointer-events-none')).toBe(true);
     expect(screen.getByTestId('sidebar-session-list')).toBeTruthy();
-    // 侧栏内的 toggle 可把侧栏展开回 264
-    fireEvent.click(screen.getByTestId('sidebar-toggle'));
+    // Z-16 #0：aside 内无折叠钮——展开回 264 走左上浮层的「侧栏开关」（唯一入口）
+    fireEvent.click(screen.getByRole('button', { name: '侧栏开关' }));
     await waitFor(() => expect(sidebar?.getAttribute('data-width')).toBe('264'));
     expect(sidebar?.getAttribute('data-collapsed')).toBe('false');
 
@@ -699,7 +699,7 @@ describe('P4-② 装配级补缺（真渲染 App + 缩窗事件）', () => {
     expect(App.store.getState().layout.panes.every((p) => p.sessionId === null)).toBe(true);
   });
 
-  it('版本徐标（D-25）装配级·无元数据：渲染进程拿不到 DSH_CLIENT_* → 只显示本地构建名，不摆占位徐标', async () => {
+  it('版本徐标（D-25）装配级·无元数据：渲染进程拿不到 DSH_CLIENT_* → 不摆占位徐标（Z-16 #0：品牌行已移除）', async () => {
     const api = makeFakeApi();
     const App = (await bootApp(api)) as { App: () => React.ReactNode };
     resizeTo(1400);
@@ -707,7 +707,8 @@ describe('P4-② 装配级补缺（真渲染 App + 缩窗事件）', () => {
     await screen.findByRole('button', { name: /第一句/ });
 
     expect(screen.queryByTestId('sidebar-version-badge')).toBeNull();
-    expect(document.querySelector('.h2-sidebar-brand-local')).not.toBeNull();
+    expect(document.querySelector('.h2-sidebar-brand-local')).toBeNull();
+    expect(document.querySelector('.h2-sidebar-brand-row')).toBeNull();
   });
 
   it('版本徐标（D-25）装配级·宿主注入：DSH_CLIENT_VERSION/COMMIT_HASH(7 位)/GIT_DIRTY → version-commit-dirty', async () => {

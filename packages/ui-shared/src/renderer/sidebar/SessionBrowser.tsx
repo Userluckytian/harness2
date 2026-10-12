@@ -28,11 +28,14 @@ import {
   type RowMenuCallbacks,
 } from './session-row-menu.js';
 import { TaskToolbar } from './TaskToolbar.js';
+import type { ProjectGroupInput } from './project-groups.js';
 import {
   buildSidebarSections,
   DEFAULT_SIDEBAR_TASK_PREFERENCES,
+  GROUP_COLLAPSE_LIMIT,
   leadingSlot,
   relativeTime,
+  splitPinned,
   type SidebarProjectGroup,
   type SidebarSection,
   type SidebarTaskPreferences,
@@ -81,6 +84,24 @@ export interface SessionBrowserProps extends WorkspacesOwnerProps {
   rowMenu?: RowMenuCallbacks | undefined;
   /** 重命名提交（壳接 controller.renameSession；返回 Promise 以驱动对话框 loading/关闭） */
   onSubmitRename?: ((id: string, title: string) => Promise<void> | void) | undefined;
+  // —— P0-3b 侧栏项目轻量版（两壳差异在 seat 层消化；ui-shared 零 Node/零 Electron） ——
+  /**
+   * 显式项目表（projects.json 投影）。缺省 / 空数组 = 既有分组逻辑（向后兼容反向钉，
+   * web 壳不注入即行为不变）。非空 → 项目区改走 mergeProjectGroups（空组显示「暂无任务」）。
+   */
+  projects?: readonly ProjectGroupInput[] | undefined;
+  /**
+   * 组头「添加项目」真动作（桌面 = 目录选择对话框 + projects:add）；
+   * 缺省不传 = 该钮渲染为 disabled 占位（title 说明 + data-placeholder，红线⑩）。
+   */
+  onAddProject?: (() => void) | undefined;
+  /**
+   * 组头「移出项目」真动作（桌面 = projects:remove；组消失、会话回落到「任务」区，
+   * **不删任何会话数据**——红线①②）。缺省不传 = disabled 占位。
+   */
+  onRemoveProject?: ((cwd: string) => void) | undefined;
+  /** 任务区（第二个 section）头「新建任务」真动作（与 SidebarRoot 的新会话入口同源）；缺省 = 不渲染该钮 */
+  onNewTask?: (() => void) | undefined;
 }
 
 /** 会话行拖拽钩子（Z-19）：载荷由调用方决定（生产写 dataTransfer + 模块级回退） */
@@ -138,6 +159,10 @@ interface RowContext {
   rowDrag: SessionRowDrag | undefined;
   /** P0-2（Z-10）：右键菜单回调（缺位项不渲染） */
   rowMenu: RowMenuCallbacks | undefined;
+  /** P0-3b：组头「添加项目」（缺 = 占位钮） */
+  onAddProject: (() => void) | undefined;
+  /** P0-3b：组头「移出项目」（缺 = 占位钮） */
+  onRemoveProject: ((cwd: string) => void) | undefined;
 }
 
 /** 单行渲染（列表区与 Pinned 区共用）；showUnpin 只在 Pinned 区为 true（取消置顶入口只此一处） */
@@ -247,47 +272,133 @@ function SessionRow({
   );
 }
 
-/** 分组列表（项目区 / 分组模式共用）：组头可折叠，默认展开 */
+/**
+ * 分区/组头的 24×24 小钮（Z-16 #6/#9）：有回调 = 真动作；无回调 = disabled 占位
+ * （title 说明原因 + `data-placeholder`，红线⑩「槽位先行，点击可以没反应，但不摆可点即坏」）。
+ */
+function HeadIconButton({
+  testId,
+  glyph,
+  action,
+  label,
+  title,
+  todoTitle,
+}: {
+  testId: string;
+  glyph: string;
+  /** 真动作；undefined = 渲染为 disabled 占位 */
+  action: (() => void) | undefined;
+  label: string;
+  /** 真动作态的悬停说明（可空 → 回落 label） */
+  title?: string;
+  /** 占位态的悬停说明（为什么不可用） */
+  todoTitle: string;
+}): React.ReactNode {
+  const real = action !== undefined;
+  return (
+    <button
+      type="button"
+      className={`h2-sidebar-head-button${real ? '' : ' h2-sidebar-placeholder'}`}
+      data-testid={testId}
+      {...(real ? {} : { 'data-placeholder': 'true' })}
+      aria-label={label}
+      title={real ? (title ?? label) : todoTitle}
+      disabled={!real}
+      {...(real && action !== undefined ? { onClick: action } : {})}
+    >
+      <span aria-hidden="true">{glyph}</span>
+    </button>
+  );
+}
+
+/** 分组列表（项目区 / 分组模式共用）：组头可折叠，默认展开；Z-16 #8 组内超 20 条折叠「显示更多」 */
 function GroupList({
   groups,
   collapsedGroups,
   onToggleGroup,
+  expandedGroups,
+  onShowAllGroup,
   ctx,
   noProjectLabel,
 }: {
   groups: readonly SidebarProjectGroup[];
   collapsedGroups: ReadonlySet<string>;
   onToggleGroup: (key: string) => void;
+  /** Z-16 #8：已点开「显示更多」的组（内存态，D-14） */
+  expandedGroups: ReadonlySet<string>;
+  onShowAllGroup: (key: string) => void;
   ctx: RowContext;
   noProjectLabel: string;
 }): React.ReactNode {
+  const { labels } = ctx;
   return (
     <div className="h2-sidebar-groups">
       {groups.map((group) => {
         const collapsed = collapsedGroups.has(group.key);
         const name = group.name.length > 0 ? group.name : noProjectLabel;
+        // P0-3b：显式项目组（source='project'）→ 组头右侧一枚 24×24「移出项目」钮
+        // （真动作 = projects:remove；无通道 = disabled 占位）。分区级的 移动/添加 两钮在
+        // 项目区头（Z-16 #6），见 renderSection。
+        // 会话聚合出的组（既有模式，web / 无项目表）不放钮——现状不变。
+        const explicit = group.source === 'project';
+        const slug = group.key.replace(/[^A-Za-z0-9]/g, '-');
+        // Z-16 #8：组内超 20 折叠（与 Pinned 同型 splitPinned）；点「显示更多」全量展开
+        const { visible, overflow } = splitPinned(group.items, GROUP_COLLAPSE_LIMIT);
+        const showAll = expandedGroups.has(group.key);
+        const rows = showAll ? group.items : visible;
         return (
           <div className="h2-sidebar-group" key={group.key} data-group-key={group.key}>
-            <button
-              type="button"
-              className="h2-sidebar-group-head"
-              data-testid="sidebar-group-head"
-              aria-expanded={!collapsed}
-              title={group.cwd ?? name}
-              onClick={() => onToggleGroup(group.key)}
-            >
-              <span className={`h2-sidebar-caret${collapsed ? '' : ' h2-sidebar-caret-open'}`} aria-hidden="true">
-                ▸
-              </span>
-              <span className="h2-sidebar-group-name">{name}</span>
-              <span className="h2-sidebar-group-count">{group.items.length}</span>
-            </button>
+            <div className="h2-sidebar-group-head-row">
+              <button
+                type="button"
+                className="h2-sidebar-group-head"
+                data-testid="sidebar-group-head"
+                aria-expanded={!collapsed}
+                title={group.cwd ?? name}
+                onClick={() => onToggleGroup(group.key)}
+              >
+                <span className={`h2-sidebar-caret${collapsed ? '' : ' h2-sidebar-caret-open'}`} aria-hidden="true">
+                  ▸
+                </span>
+                <span className="h2-sidebar-group-name">{name}</span>
+                <span className="h2-sidebar-group-count">{group.items.length}</span>
+              </button>
+              {explicit && group.cwd !== undefined && (
+                <HeadIconButton
+                  testId={`sidebar-group-remove-${slug}`}
+                  glyph="−"
+                  action={
+                    ctx.onRemoveProject === undefined ? undefined : () => ctx.onRemoveProject?.(group.cwd as string)
+                  }
+                  label={labels.removeProject}
+                  title={group.cwd}
+                  todoTitle={labels.removeProjectTodo}
+                />
+              )}
+            </div>
             {!collapsed && (
               <ul className="h2-sidebar-group-list">
-                {group.items.map((item) => (
+                {group.items.length === 0 && explicit && (
+                  // Z-16 #7：空组如实显示「暂无任务」（不是隐藏组——槽位先行）
+                  <li className="h2-sidebar-group-empty" data-testid={`sidebar-group-empty-${slug}`}>
+                    {labels.noTasks}
+                  </li>
+                )}
+                {rows.map((item) => (
                   <SessionRow key={item.id} item={item} ctx={ctx} />
                 ))}
               </ul>
+            )}
+            {!collapsed && overflow.length > 0 && !showAll && (
+              // Z-16 #8：组内溢出「显示更多」（与 Pinned 区同型；内存态，D-14 不落盘）
+              <button
+                type="button"
+                className="h2-sidebar-show-all"
+                data-testid={`sidebar-group-show-all-${slug}`}
+                onClick={() => onShowAllGroup(group.key)}
+              >
+                {labels.pinnedShowAll(overflow.length)}
+              </button>
             )}
           </div>
         );
@@ -320,6 +431,10 @@ export function SessionBrowser({
   /** P0-2（Z-10）右键菜单动作（壳注入；本组件包装 onRename 为打开对话框） */
   rowMenu: rowMenuProp,
   onSubmitRename,
+  projects,
+  onAddProject,
+  onRemoveProject,
+  onNewTask,
 }: SessionBrowserProps): React.ReactNode {
   const [prefs, setPrefs] = useState<SidebarTaskPreferences>({
     ...DEFAULT_SIDEBAR_TASK_PREFERENCES,
@@ -330,6 +445,8 @@ export function SessionBrowser({
   const [collapsedGroups, setCollapsedGroups] = useState<ReadonlySet<string>>(new Set());
   const [collapsedSections, setCollapsedSections] = useState<ReadonlySet<string>>(new Set());
   const [pinnedExpanded, setPinnedExpanded] = useState(false);
+  // Z-16 #8：组内「显示更多」展开态（内存，D-14）——与 pinnedExpanded 同口径
+  const [expandedGroups, setExpandedGroups] = useState<ReadonlySet<string>>(new Set());
   // P0-2：重命名对话框目标行（null=关）；右键菜单「重命名」设置，Dialog 提交后清。
   const [renameTarget, setRenameTarget] = useState<SidebarSessionItem | null>(null);
 
@@ -362,13 +479,32 @@ export function SessionBrowser({
   }
 
   const searching = query !== undefined && query.trim().length > 0;
-  const sections = buildSidebarSections({ active: sessions, archived, prefs, archivedView });
+  // P0-3b：显式项目表非空 → mergeProjectGroups 接管项目区；缺省 / 空数组 → 既有分组
+  //（向后兼容反向钉：web 壳与旧调用点逐字节不变）。
+  const sections = buildSidebarSections({
+    active: sessions,
+    archived,
+    prefs,
+    archivedView,
+    ...(projects !== undefined ? { projects } : {}),
+  });
   const groupKeys = sections.flatMap((section) =>
     section.kind === 'projects' || section.kind === 'grouped' ? section.groups.map((g) => g.key) : [],
   );
   const allCollapsed = groupKeys.length > 0 && groupKeys.every((key) => collapsedGroups.has(key));
 
-  const ctx: RowContext = { selectedId, labels, nowMs, onOpenSession, onTogglePin, rowDrag, rowMenu };
+  const ctx: RowContext = {
+    selectedId,
+    labels,
+    nowMs,
+    onOpenSession,
+    onTogglePin,
+    rowDrag,
+    rowMenu,
+    // P0-3b：组头钮回调（缺 = 渲染 disabled 占位，红线⑩）
+    onAddProject,
+    onRemoveProject,
+  };
 
   const updatePrefs = (patch: Partial<SidebarTaskPreferences>): void => {
     setPrefs((current) => ({ ...current, ...patch }));
@@ -383,6 +519,14 @@ export function SessionBrowser({
   };
   const toggleExpandAll = (): void => {
     setCollapsedGroups(allCollapsed ? new Set() : new Set(groupKeys));
+  };
+  const showAllGroup = (key: string): void => {
+    setExpandedGroups((current) => {
+      if (current.has(key)) return current;
+      const next = new Set(current);
+      next.add(key);
+      return next;
+    });
   };
   const toggleSection = (kind: string): void => {
     setCollapsedSections((current) => {
@@ -429,23 +573,47 @@ export function SessionBrowser({
           key={section.kind}
           data-testid={section.kind === 'projects' ? 'sidebar-projects' : 'sidebar-grouped'}
         >
-          <button
-            type="button"
-            className="h2-sidebar-section-head h2-sidebar-section-head-toggle"
-            data-testid="sidebar-section-head"
-            aria-expanded={!collapsed}
-            onClick={() => toggleSection(section.kind)}
-          >
-            <span className={`h2-sidebar-caret${collapsed ? '' : ' h2-sidebar-caret-open'}`} aria-hidden="true">
-              ▸
-            </span>
-            <span className="h2-sidebar-section-title">{title}</span>
-          </button>
+          {/* Z-16 #6：项目区头 = 折叠钮 + 「移动项目分区」(占位) + 「添加项目」(桌面真 / web 占位) 两枚 24×24 钮。
+              钮不能在折叠 <button> 里嵌套 → 头改为行容器，折叠钮自占一段。 */}
+          <div className="h2-sidebar-section-head-row">
+            <button
+              type="button"
+              className="h2-sidebar-section-head h2-sidebar-section-head-toggle"
+              data-testid="sidebar-section-head"
+              aria-expanded={!collapsed}
+              onClick={() => toggleSection(section.kind)}
+            >
+              <span className={`h2-sidebar-caret${collapsed ? '' : ' h2-sidebar-caret-open'}`} aria-hidden="true">
+                ▸
+              </span>
+              <span className="h2-sidebar-section-title">{title}</span>
+            </button>
+            {section.kind === 'projects' && (
+              <HeadIconButton
+                testId="sidebar-projects-move"
+                glyph="⠿"
+                action={undefined}
+                label={labels.moveSection}
+                todoTitle={labels.moveSectionTodo}
+              />
+            )}
+            {section.kind === 'projects' && (
+              <HeadIconButton
+                testId="sidebar-projects-add"
+                glyph="＋"
+                action={onAddProject}
+                label={labels.addProject}
+                todoTitle={labels.addProjectTodo}
+              />
+            )}
+          </div>
           {!collapsed && (
             <GroupList
               groups={section.groups}
               collapsedGroups={collapsedGroups}
               onToggleGroup={toggleGroup}
+              expandedGroups={expandedGroups}
+              onShowAllGroup={showAllGroup}
               ctx={ctx}
               noProjectLabel={labels.noProject}
             />
@@ -457,20 +625,45 @@ export function SessionBrowser({
       const collapsed = collapsedSections.has('conversations');
       return (
         <section className="h2-sidebar-section" key="conversations" data-testid="sidebar-conversations">
-          <button
-            type="button"
-            className="h2-sidebar-section-head h2-sidebar-section-head-toggle"
-            data-testid="sidebar-section-head"
-            aria-expanded={!collapsed}
-            onClick={() => toggleSection('conversations')}
-          >
-            <span className={`h2-sidebar-caret${collapsed ? '' : ' h2-sidebar-caret-open'}`} aria-hidden="true">
-              ▸
-            </span>
-            <span className="h2-sidebar-section-title">{labels.conversations}</span>
-          </button>
+          {/* Z-16 #9：第二区（游离任务）文案「任务」；头同放 移动(占位) + 新建任务(真) 两枚 24×24 钮。
+              项目模式下 section 头恒在（buildSidebarSections 无条件 push conversations）；
+              items 为空时不整段消失——头照画，列表区如实显示「暂无任务」（真实空态，非假数据）。 */}
+          <div className="h2-sidebar-section-head-row">
+            <button
+              type="button"
+              className="h2-sidebar-section-head h2-sidebar-section-head-toggle"
+              data-testid="sidebar-section-head"
+              aria-expanded={!collapsed}
+              onClick={() => toggleSection('conversations')}
+            >
+              <span className={`h2-sidebar-caret${collapsed ? '' : ' h2-sidebar-caret-open'}`} aria-hidden="true">
+                ▸
+              </span>
+              <span className="h2-sidebar-section-title">{labels.tasks}</span>
+            </button>
+            <HeadIconButton
+              testId="sidebar-tasks-move"
+              glyph="⠿"
+              action={undefined}
+              label={labels.moveSection}
+              todoTitle={labels.moveSectionTodo}
+            />
+            <HeadIconButton
+              testId="sidebar-tasks-new"
+              glyph="＋"
+              action={onNewTask}
+              label={labels.newTaskInSection}
+              todoTitle={labels.newTaskInSectionTodo}
+            />
+          </div>
           {!collapsed && (
             <ul className="h2-sidebar-list-inner">
+              {section.items.length === 0 && (
+                // Z-16 #9：空任务区如实「暂无任务」（复用组空态样式类）
+                <li className="h2-sidebar-group-empty" data-testid="sidebar-section-empty">
+                  {labels.noTasks}
+                </li>
+              )}
               {section.items.map((item) => (
                 <SessionRow key={item.id} item={item} ctx={ctx} />
               ))}
@@ -498,7 +691,9 @@ export function SessionBrowser({
     section.kind === 'pinned'
       ? section.items.length + section.overflow.length > 0
       : section.kind === 'projects' || section.kind === 'grouped'
-        ? section.groups.some((group) => group.items.length > 0)
+        ? // P0-3b Z-16 #7：显式项目即使 0 会话也要在场（空组显示「暂无任务」）——
+          // 有组即算有内容。既有聚合组恒 ≥1 条会话，此口径对旧行为逐字节等价。
+          section.groups.length > 0
         : section.items.length > 0,
   );
   const emptyLabel = searching

@@ -16,6 +16,8 @@ import { SettingsPage } from '../components/SettingsPage.js';
 import { SidePanel } from '../components/SidePanel.js';
 import { controller, store, useAppState, newSessionCollapsingRightbar, StatusBadge } from '../app-shared.js';
 import { SidebarRoot, buildSessionItems, resolveBuildVersion } from '@harness2/ui-shared/renderer/sidebar/index.js';
+import type { ProjectGroupInput } from '@harness2/ui-shared/renderer/sidebar/project-groups.js';
+import type { ProjectsDocument } from '@harness2/ui-shared/shared/projects.js';
 import type { SlotRegistry } from '@harness2/ui-shared/renderer/slots/index.js';
 import {
   CONVERSATION_OWNER,
@@ -47,6 +49,11 @@ function hostBuildEnv(): Record<string, string | undefined> {
   return host.process?.env ?? {};
 }
 
+/** P0-3b：projects.json 文档 → SessionBrowser 的项目表投影（渲染侧只要 cwd + addedAt） */
+function toProjectInputs(doc: ProjectsDocument): ProjectGroupInput[] {
+  return doc.projects.map((p) => ({ cwd: p.cwd, addedAt: p.addedAt }));
+}
+
 /** 侧栏席位内容（ui-sidebar）：SidebarRoot + 装配层数据接线 */
 function SidebarSeatContent(): React.ReactNode {
   const state = useAppState();
@@ -56,6 +63,52 @@ function SidebarSeatContent(): React.ReactNode {
   // Z2-06（Z-19）：已在分屏中的会话禁用拖拽（左栏行可拖进主区）
   const workbench = useSyncExternalStore(workbenchStore.subscribe, workbenchStore.getSnapshot);
   const panedSessionIds = useMemo(() => new Set(Object.values(workbench.bindings)), [workbench.bindings]);
+
+  // —— P0-3b 侧栏「项目」实体（桌面独有：~/.harness2/projects.json 经 preload IPC 读写） ——
+  // Harness2Api 的 ProjectsApi 面是 Partial（jsdom 夹具 / 旧宿主可能缺通道）→ 逐方法判空，
+  // 缺通道时 projects 恒为空表、动作不接线 = 组件渲染 disabled 占位（红线⑩），不摆假功能。
+  const [projects, setProjects] = useState<readonly ProjectGroupInput[]>([]);
+  useEffect(() => {
+    const api = window.harness2;
+    if (api.projectsList === undefined) return;
+    let cancelled = false;
+    api
+      .projectsList()
+      .then((doc) => {
+        if (!cancelled) setProjects(toProjectInputs(doc));
+      })
+      .catch(() => {
+        // 读失败 = 如实保持空表（不伪造项目、不清用户数据）
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+  /** 添加项目：系统目录选择器 → projects:add → 用写后整表刷新（取消 = null → 不写） */
+  const addProject = (): void => {
+    const api = window.harness2;
+    if (api.projectsPickFolder === undefined || api.projectsAdd === undefined) return;
+    void api
+      .projectsPickFolder()
+      .then((cwd) => {
+        if (cwd === null) return;
+        return api.projectsAdd?.(cwd).then((doc) => setProjects(toProjectInputs(doc)));
+      })
+      .catch(() => {
+        // IPC 失败：保持现表（不误清空、不伪造成功）
+      });
+  };
+  /** 移出项目：projects:remove → 写后整表刷新（只删 projects.json 条目；会话与事件日志不动） */
+  const removeProject = (cwd: string): void => {
+    const api = window.harness2;
+    if (api.projectsRemove === undefined) return;
+    void api
+      .projectsRemove(cwd)
+      .then((doc) => setProjects(toProjectInputs(doc)))
+      .catch(() => {
+        // 同上：失败保持现表
+      });
+  };
 
   // 行数据：store 摘要 + 展示态覆层（search/归档分区复用 shared/metadata，不复制过滤规则）
   const { active, archived } = buildSessionItems({
@@ -105,6 +158,17 @@ function SidebarSeatContent(): React.ReactNode {
         },
       }}
       onSubmitRename={(id, title) => controller.renameSession(id, title)}
+      // —— P0-3b 侧栏「项目」（桌面：projects.json 真通道；组头钮全为真动作） ——
+      // projects 恒传（未读到 / 无通道 = 空数组 → 走既有分组，行为不变）
+      projects={projects}
+      onAddProject={
+        window.harness2.projectsAdd !== undefined && window.harness2.projectsPickFolder !== undefined
+          ? addProject
+          : undefined
+      }
+      onRemoveProject={window.harness2.projectsRemove !== undefined ? removeProject : undefined}
+      // 任务区头「新建任务」= 与 SidebarRoot 新会话入口同一真源；未连接时不给动作（占位钮，不可点即坏）
+      onNewTask={state.status === 'connected' ? () => newSessionCollapsingRightbar(frameDispatch) : undefined}
       // D-21 数据缺口（如实登记，不造假输入）：本仓没有 Workspace 概念（最接近的是
       // SessionMeta.cwd），controller.newSession() 也没有作用域入参 → 作用域输入只能是 {}，
       // 于是 resolveNewSessionScope 恒落 { kind: 'blank' }（空白新会话）。

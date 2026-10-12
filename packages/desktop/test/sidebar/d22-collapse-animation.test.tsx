@@ -119,11 +119,13 @@ describe('Z-06 / D-16 降动效降级', () => {
   });
 });
 
-describe('Z-06 折叠切换按钮语义', () => {
-  it('展开态 aria-label 是「收起侧边栏」，折叠态是「打开侧边栏」', () => {
+describe('Z-16 #0 折叠入口外置（aside 无折叠钮）', () => {
+  it('aside 内没有 sidebar-toggle——折叠/展开唯一入口是左上浮层（宿主 onToggleCollapse 驱动状态）', () => {
     const view = renderCollapsibleSidebar();
-    expect(screen.getByTestId('sidebar-toggle').getAttribute('aria-label')).toBe('收起侧边栏');
+    expect(screen.queryByTestId('sidebar-toggle')).toBeNull();
     view.toggle();
-    expect(screen.getByTestId('sidebar-toggle').getAttribute('aria-label')).toBe('打开侧边栏');
+    expect(view.root().dataset.collapsed).toBe('true');
+    view.toggle();
+    expect(view.root().dataset.collapsed).toBe('false');
   });
 });
