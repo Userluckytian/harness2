@@ -227,3 +227,44 @@ describe('设置页：模型配置分区（B 棒接入状态）', () => {
     expect(typeof seen[0]?.['onSaveConfig']).toBe('function');
   });
 });
+
+describe('设置页：措辞按壳注入（桌面真实情形）', () => {
+  it('通用分区：偏好文件名 = desktop-preferences.json，且列出 Ctrl+, 打开本设置', async () => {
+    (window as unknown as { harness2: Harness2Api }).harness2 = makeApi();
+    render(<SettingsPage open onClose={() => {}} onThemeChange={setShellTheme} />);
+    await screen.findByRole('dialog', { name: '设置' });
+    await waitFor(() => expect(document.querySelector('[data-section="general"]')).not.toBeNull());
+    const text = document.querySelector('[data-section="general"]')?.textContent ?? '';
+    expect(text).toContain('desktop-preferences.json');
+    expect(text).toContain('Ctrl+, 打开本设置');
+  });
+
+  it('快捷键分区列桌面真实绑定（Ctrl+, 与开发者工具）；关于标题自称「harness2 桌面端」', async () => {
+    (window as unknown as { harness2: Harness2Api }).harness2 = makeApi();
+    render(<SettingsPage open onClose={() => {}} onThemeChange={setShellTheme} />);
+    await screen.findByRole('dialog', { name: '设置' });
+
+    fireEvent.click(document.querySelector('[data-section-nav="shortcuts"]') as HTMLElement);
+    await waitFor(() => expect(document.querySelector('[data-section="shortcuts"]')).not.toBeNull());
+    const sc = document.querySelector('[data-section="shortcuts"]')?.textContent ?? '';
+    expect(sc).toContain('Ctrl+, / Cmd+,');
+    expect(sc).toContain('开发者工具');
+
+    fireEvent.click(document.querySelector('[data-section-nav="about"]') as HTMLElement);
+    await waitFor(() =>
+      expect(document.querySelector('[data-section="about"] h3')?.textContent).toBe('harness2 桌面端'),
+    );
+  });
+
+  it('定时任务分区：不再写「见后续版本」，改指侧栏「自动化」', async () => {
+    (window as unknown as { harness2: Harness2Api }).harness2 = makeApi();
+    render(<SettingsPage open onClose={() => {}} onThemeChange={setShellTheme} />);
+    await screen.findByRole('dialog', { name: '设置' });
+    fireEvent.click(document.querySelector('[data-section-nav="cron"]') as HTMLElement);
+    await waitFor(() => expect(document.querySelector('[data-section="cron"]')).not.toBeNull());
+    const text = document.querySelector('[data-section="cron"]')?.textContent ?? '';
+    expect(text).not.toContain('见后续版本');
+    expect(text).toContain('自动化');
+    expect(text).toContain('harness2 cron');
+  });
+});

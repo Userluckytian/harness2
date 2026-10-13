@@ -1,10 +1,13 @@
 // 通用设置（D-6x `ui-settings-general` 对应物：通用设置区）。
 //
 // 只摆**真生效**的项（AGENTS.md：不摆没用的开关）：
-//   通知详情 —— 真实偏好字段（`desktop-preferences.json` 的 notifyDetails，App 启动时读取）；
+//   通知详情 —— 真实偏好字段（宿主的偏好存储，如桌面的偏好文件 notifyDetails，App 启动时读取）；
 //             如实标注「重启应用后生效」（运行中的通知文案不追改）。
 // 主题已迁到「外观」分区（Z-90：主题/字号属外观；本分区只留常规项），见 settings/appearance。
 // 已删除的项：启动默认分栏数 —— P4-C 三栅落地后分栏（PaneArea）已拆除，该项无消费方（假开关）。
+//
+// 措辞按壳注入（Z-措辞纠偏）：偏好文件名与「打开本设置」键位**两壳不同**（web 无 desktop-preferences.json、
+// 未绑定 Ctrl+,），故经 props 注入；缺省为中性且正确的文案（不含 desktop 专属事实）。
 import type { SettingsNotifyDetails } from '../../../shared/settings.js';
 import { SettingsSectionBlock } from '../shell/section-block.js';
 
@@ -26,6 +29,16 @@ export interface GeneralSettingsProps {
   readonly loaded: boolean;
   /** 可选的宿主反馈文案（保存失败等如实显示） */
   readonly note?: string | null;
+  /**
+   * 偏好文件 / 存储介质措辞（按壳注入；缺省中性「本机偏好文件」）。
+   * 桌面注入 `desktop-preferences.json`；web 注入其真实存储（浏览器本地存储）。
+   */
+  readonly preferencesFileLabel?: string;
+  /**
+   * 「打开本设置」的键位提示（按壳注入；缺省不显示该句）。
+   * 桌面注入 `Ctrl+,`（真实绑定）；web 未绑定该键（经侧栏齿轮进入）则不传。
+   */
+  readonly openSettingsKeys?: string;
 }
 
 export function GeneralSettings({
@@ -33,12 +46,15 @@ export function GeneralSettings({
   onSelectNotifyDetails,
   loaded,
   note,
+  preferencesFileLabel,
+  openSettingsKeys,
 }: GeneralSettingsProps): React.ReactNode {
+  const prefLabel = preferencesFileLabel ?? '本机偏好文件';
   return (
     <>
       <SettingsSectionBlock
         title="任务完成通知"
-        desc="系统通知的详情级别；改动写 desktop-preferences.json，重启应用后生效（当前运行的通知文案不追改）"
+        desc={`系统通知的详情级别；改动写 ${prefLabel}，重启应用后生效（当前运行的通知文案不追改）`}
       >
         {!loaded ? (
           <p className="settings-desc">加载中…</p>
@@ -61,7 +77,10 @@ export function GeneralSettings({
         {note !== undefined && note !== null && <p className="settings-feedback">{note}</p>}
       </SettingsSectionBlock>
       <SettingsSectionBlock title="发送快捷键" desc="只读：键位由 composer / 壳的全局键位表决定">
-        <p className="settings-desc">Enter 发送 · Shift+Enter 换行 · Ctrl+K 命令面板 · Ctrl+, 打开本设置</p>
+        <p className="settings-desc">
+          Enter 发送 · Shift+Enter 换行 · Ctrl+K 命令面板
+          {openSettingsKeys !== undefined ? ` · ${openSettingsKeys} 打开本设置` : ''}
+        </p>
       </SettingsSectionBlock>
     </>
   );

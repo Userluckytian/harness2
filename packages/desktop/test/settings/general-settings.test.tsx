@@ -57,4 +57,18 @@ describe('通用设置：真实可用项', () => {
     renderGeneral();
     expect(screen.getByText(/重启应用后生效/)).toBeTruthy();
   });
+
+  it('缺省中性措辞：不含 desktop-preferences.json 与 Ctrl+,（缺省不许再写桌面事实）', () => {
+    renderGeneral();
+    const text = document.body.textContent ?? '';
+    expect(text).toContain('本机偏好文件');
+    expect(text).not.toContain('desktop-preferences.json');
+    expect(text).not.toContain('Ctrl+,');
+  });
+
+  it('按壳注入桌面措辞：偏好文件名与「打开本设置」键位如实显示', () => {
+    renderGeneral({ preferencesFileLabel: 'desktop-preferences.json', openSettingsKeys: 'Ctrl+,' });
+    expect(screen.getByText(/desktop-preferences.json/)).toBeTruthy();
+    expect(screen.getByText(/Ctrl\+, 打开本设置/)).toBeTruthy();
+  });
 });

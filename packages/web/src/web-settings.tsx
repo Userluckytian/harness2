@@ -14,14 +14,15 @@
 //   进：general（本地偏好）、appearance（主题/字号）、models（A2：serve 模型端点齐备）、
 //       approval（cfg.approval，真实）、memory / browser / subagent（cfg.* 真实读取 + 「保存」经
 //       updateConfig 写回）、plugins / mcp / hooks（cfg.* 真实只读展示）、gateway（cfg.gateways 真实读取
-//       + auth 掩码；策略可写、凭据只读如实降级）、shortcuts / cron / sessions / about（静态事实）、
+//       + auth 掩码；策略经 updateConfig 可写、凭据经 updateAuth 可写——只写不回显）、
+//       shortcuts / cron / sessions / about（静态事实，措辞按壳注入 WEB_SETTINGS_COPY）、
 //       skill（getSkills 端点）、diagnostics（doctor + crash 端点）。
 //      （Z9-6c：core `GET /api/settings/config` 已改为返回完整 config 形状 —— memory/browser/plugins/
 //       mcpServers/subagent/hooks/gateways 段都可如实读取，故上述分区放开。）
 //      （A2：core 补齐 auth 写 + 两条模型通道 [credential-status / ack-declaration]，models 分区七法齐备。）
 //   不进：无（16 → 17 分区全部数据面齐备）。
 import { useMemo, useState, type ReactNode } from 'react';
-import { SettingsPage, type SettingsPorts } from '@harness2/ui-shared/renderer/settings/index.js';
+import { SettingsPage, type SettingsCopy, type SettingsPorts } from '@harness2/ui-shared/renderer/settings/index.js';
 import {
   applyUiFontSize,
   currentUiFontSize,
@@ -67,9 +68,28 @@ export const WEB_SETTINGS_SECTIONS: readonly string[] = [
   'about',
 ];
 
-/** web 的网关启动指引（web 无网关配置数据面，只给可行动命令） */
+/** web 的网关启动指引（web **已能**写 auth.json 凭据与 config.gateways 策略；只缺常驻进程，故只给启动命令） */
 export const WEB_GATEWAY_GUIDANCE =
-  'web 壳不读写网关配置/凭据：请在桌面端「设置 → 网关 / IM」或命令行配置 config.gateways 与 auth.json 后，运行 harness2 gateway --platform qq,feishu。';
+  '在此填写各渠道 AppID / AppSecret（凭据写入 auth.json，只写不回显）并选择私聊 / 群策略；随后在命令行运行 harness2 gateway --platform qq,feishu 启动网关（网关为独立常驻进程，界面不代跑）。';
+
+/**
+ * web 壳的措辞（按壳注入共享设置页）：web **无** desktop-preferences.json（偏好走浏览器本地存储）、
+ * **未绑定** Ctrl+,（设置经侧栏齿轮进入）、无桌面专属快捷键（开发者工具等）—— 故 shortcutRows 只列 web 真实绑定，
+ * 不传 openSettingsKeys（缺省即不显示该句）。见 app.tsx 的全局键位表（Ctrl/Cmd+K / N / J）。
+ */
+export const WEB_SETTINGS_COPY: SettingsCopy = {
+  aboutTitle: 'harness2 Web',
+  preferencesFileLabel: '浏览器本地存储',
+  shortcutRows: [
+    { keys: 'Enter', label: '发送当前消息' },
+    { keys: 'Shift+Enter', label: '换行（不发送）' },
+    { keys: 'Ctrl+K / Cmd+K', label: '命令面板' },
+    { keys: 'Ctrl+N / Cmd+N', label: '新建会话' },
+    { keys: 'Ctrl+J / Cmd+J', label: '切换终端面板' },
+  ],
+  cronNote:
+    '侧栏「自动化」进入主区视图，可查看定时任务与「定时任务模板」；创建 / 增删经 CLI：harness2 cron add/remove/list。',
+};
 
 /** web 偏好（theme 走浏览器存储例外 #1；其余仅内存、无落盘通道） */
 function webPreferences(theme: SettingsTheme): SettingsPreferencesShape {
@@ -163,5 +183,5 @@ export function WebSettingsOverlay(): ReactNode {
     [settingsDataPorts, theme, uiFontSize],
   );
 
-  return <SettingsPage open={settingsOpen} onClose={onCloseSettings} ports={ports} />;
+  return <SettingsPage open={settingsOpen} onClose={onCloseSettings} ports={ports} copy={WEB_SETTINGS_COPY} />;
 }

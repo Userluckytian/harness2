@@ -349,3 +349,61 @@ describe('web 设置覆层（Z9-6b：与桌面对齐）', () => {
     stop();
   });
 });
+
+describe('web 设置覆层：措辞按壳注入（不含桌面专属事实）', () => {
+  it('通用分区：偏好措辞为浏览器本地存储，全页不含 desktop-preferences.json 与 Ctrl+,', async () => {
+    const stop = await mount();
+    await openSettings();
+    const gen = document.querySelector('[data-section="general"]')?.textContent ?? '';
+    expect(gen).toContain('浏览器本地存储');
+    expect(gen).not.toContain('desktop-preferences.json');
+    expect(gen).not.toContain('Ctrl+,');
+    // 全页（含导航 / 页脚）也不含桌面专属事实
+    const all = document.body.textContent ?? '';
+    expect(all).not.toContain('desktop-preferences.json');
+    expect(all).not.toContain('Ctrl+,');
+    stop();
+  });
+
+  it('快捷键分区：只列 web 真实绑定（Ctrl+K / N / J），不含 Ctrl+,', async () => {
+    const stop = await mount();
+    await openSettings();
+    await gotoSection('shortcuts');
+    const text = document.querySelector('[data-section="shortcuts"]')?.textContent ?? '';
+    expect(text).toContain('Ctrl+K / Cmd+K');
+    expect(text).toContain('Ctrl+N / Cmd+N');
+    expect(text).toContain('Ctrl+J / Cmd+J');
+    expect(text).not.toContain('Ctrl+,');
+    stop();
+  });
+
+  it('关于分区：标题为「harness2 Web」，不含「桌面端」', async () => {
+    const stop = await mount();
+    await openSettings();
+    await gotoSection('about');
+    expect(document.querySelector('[data-section="about"] h3')?.textContent).toBe('harness2 Web');
+    expect(document.querySelector('[data-section="about"]')?.textContent ?? '').not.toContain('桌面端');
+    stop();
+  });
+
+  it('定时任务分区：不再写「见后续版本」，指向侧栏「自动化」', async () => {
+    const stop = await mount();
+    await openSettings();
+    await gotoSection('cron');
+    const text = document.querySelector('[data-section="cron"]')?.textContent ?? '';
+    expect(text).not.toContain('见后续版本');
+    expect(text).toContain('自动化');
+    stop();
+  });
+
+  it('网关分区：web 已具备凭据写入通道 → 渲染凭据表单，不再提示「请用桌面端」', async () => {
+    const updateAuth = vi.fn(async () => ({ ok: true }));
+    const stop = await mount(fakeDataPorts({ updateAuth }));
+    await openSettings();
+    await gotoSection('gateway');
+    const text = document.querySelector('[data-section="gateway"]')?.textContent ?? '';
+    expect(text).not.toContain('请用桌面端');
+    expect(document.querySelector('[data-section="gateway"] [data-gateway-credential-form]')).not.toBeNull();
+    stop();
+  });
+});

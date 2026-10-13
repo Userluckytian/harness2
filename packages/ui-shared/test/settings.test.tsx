@@ -175,6 +175,68 @@ describe('网关 / IM 分区', () => {
   });
 });
 
+describe('措辞缺省：中性且正确（不含桌面专属事实）', () => {
+  it('缺省通用分区：偏好措辞中性，不含 desktop-preferences.json 与 Ctrl+,', async () => {
+    await renderAt(makePorts(), 'general');
+    const text = document.querySelector('[data-section="general"]')?.textContent ?? '';
+    expect(text).toContain('本机偏好文件');
+    expect(text).not.toContain('desktop-preferences.json');
+    expect(text).not.toContain('Ctrl+,');
+  });
+
+  it('缺省快捷键表：只列两壳共同真绑定，不含 Ctrl+, / 开发者工具 / 未绑定的 Ctrl+F', async () => {
+    await renderAt(makePorts(), 'shortcuts');
+    const text = document.querySelector('[data-section="shortcuts"]')?.textContent ?? '';
+    expect(text).toContain('Ctrl+K / Cmd+K');
+    expect(text).toContain('Ctrl+N / Cmd+N');
+    expect(text).toContain('Ctrl+J / Cmd+J');
+    expect(text).not.toContain('Ctrl+,');
+    expect(text).not.toContain('开发者工具');
+    expect(text).not.toContain('Ctrl+F');
+  });
+
+  it('缺省关于标题 = harness2（不写「桌面端」）', async () => {
+    await renderAt(makePorts(), 'about');
+    expect(document.querySelector('[data-section="about"] h3')?.textContent).toBe('harness2');
+    expect(document.querySelector('[data-section="about"]')?.textContent ?? '').not.toContain('桌面端');
+  });
+
+  it('缺省定时任务说明：不再写「见后续版本」，指向侧栏「自动化」与 CLI', async () => {
+    await renderAt(makePorts(), 'cron');
+    const text = document.querySelector('[data-section="cron"]')?.textContent ?? '';
+    expect(text).not.toContain('见后续版本');
+    expect(text).toContain('自动化');
+    expect(text).toContain('harness2 cron');
+  });
+});
+
+describe('措辞注入：按壳覆盖（copy prop）', () => {
+  it('注入 copy → 偏好文件名 / 打开设置键位 / 快捷键表 / 关于标题均按注入呈现', async () => {
+    const copy = {
+      aboutTitle: 'harness2 测试端',
+      preferencesFileLabel: 'my-prefs.json',
+      openSettingsKeys: 'Ctrl+,',
+      shortcutRows: [{ keys: 'Ctrl+,', label: '打开设置' }],
+    };
+    render(<SettingsPage open onClose={() => {}} ports={makePorts()} copy={copy} />);
+    await screen.findByRole('dialog', { name: '设置' });
+
+    // general（默认分区）：偏好文件名按注入
+    expect(document.querySelector('[data-section="general"]')?.textContent ?? '').toContain('my-prefs.json');
+    expect(document.querySelector('[data-section="general"]')?.textContent ?? '').toContain('Ctrl+, 打开本设置');
+
+    fireEvent.click(document.querySelector('[data-section-nav="shortcuts"]') as HTMLElement);
+    await waitFor(() =>
+      expect(document.querySelector('[data-section="shortcuts"]')?.textContent ?? '').toContain('Ctrl+,'),
+    );
+
+    fireEvent.click(document.querySelector('[data-section-nav="about"]') as HTMLElement);
+    await waitFor(() =>
+      expect(document.querySelector('[data-section="about"] h3')?.textContent).toBe('harness2 测试端'),
+    );
+  });
+});
+
 describe('Z9-6c 配置读失败：分区如实报错（不再停在「加载中…」）', () => {
   it('getConfig 抛错 → cfg 依赖分区显示可读错误，不显示「加载中…」也不谎称成功', async () => {
     const ports = makePorts({

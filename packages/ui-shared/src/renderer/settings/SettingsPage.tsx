@@ -62,6 +62,46 @@ const MEMORY_MODES = [
 /** 版本号（About 分区与左栏页脚共用同一事实；ZCode 页脚是账号菜单，我们无账号体系） */
 const APP_VERSION_LABEL = 'v1.0.0';
 
+/** 快捷键表一行（键位 + 说明；按壳注入） */
+export interface SettingsShortcutRow {
+  readonly keys: string;
+  readonly label: string;
+}
+
+/**
+ * 缺省快捷键表（**两壳共同**的真绑定：Ctrl/Cmd+K 命令面板、Ctrl/Cmd+N 新建会话、Ctrl/Cmd+J 终端开合）。
+ * 刻意**不含**仅桌面存在的 `Ctrl+,`（打开设置）与开发者工具，也不含未绑定的 `Ctrl+F`
+ * （两壳均无该 keydown 处理，故不列 —— 见 App.tsx 的全局键位监听）。
+ */
+export const DEFAULT_SHORTCUT_ROWS: readonly SettingsShortcutRow[] = [
+  { keys: 'Enter', label: '发送当前消息' },
+  { keys: 'Shift+Enter', label: '换行（不发送）' },
+  { keys: 'Ctrl+K / Cmd+K', label: '命令面板' },
+  { keys: 'Ctrl+N / Cmd+N', label: '新建会话' },
+  { keys: 'Ctrl+J / Cmd+J', label: '切换终端面板' },
+];
+
+/** 缺省定时任务说明（中性且为事实；桌面/web 各自可覆盖更贴合本壳的呈现） */
+export const DEFAULT_CRON_NOTE =
+  '侧栏「自动化」进入主区视图，可查看定时任务与「定时任务模板」；定时任务由 CLI 命令管理（harness2 cron add/remove/list）。';
+
+/**
+ * 按壳注入的措辞（Z-措辞纠偏）：桌面与 web 的**真实情形不同**（偏好文件、打开设置键位、
+ * 快捷键表、关于标题、定时任务呈现），故由各壳注入；**缺省必须是中性且正确的**（不在缺省里再写 desktop 专属事实）。
+ */
+export interface SettingsCopy {
+  /** 关于分区标题（缺省「harness2」；桌面「harness2 桌面端」/ web「harness2 Web」） */
+  readonly aboutTitle?: string;
+  /** 偏好文件 / 存储介质措辞（缺省「本机偏好文件」） */
+  readonly preferencesFileLabel?: string;
+  /** 「打开本设置」键位提示（缺省不显示；桌面注入 'Ctrl+,'，web 未绑定则不传） */
+  readonly openSettingsKeys?: string;
+  /** 快捷键表行（缺省 = DEFAULT_SHORTCUT_ROWS：两壳共同真绑定） */
+  readonly shortcutRows?: readonly SettingsShortcutRow[];
+  /** 定时任务分区说明（缺省 = DEFAULT_CRON_NOTE） */
+  readonly cronNote?: string;
+}
+
 // —— 分区：模型配置（B 棒接管前） ——
 
 /**
@@ -319,10 +359,10 @@ function BrowserSection({
   );
 }
 
-function CronSection(): React.ReactNode {
+function CronSection({ note }: { note?: string }): React.ReactNode {
   return (
     <SettingsSectionBlock title="定时任务" desc="cron 任务由 CLI 命令管理（harness2 cron add/remove/list）">
-      <p className="settings-note">桌面端可视化任务管理见后续版本；当前请在 CLI 中配置定时任务。</p>
+      <p className="settings-note">{note ?? DEFAULT_CRON_NOTE}</p>
     </SettingsSectionBlock>
   );
 }
@@ -487,23 +527,14 @@ function DiagnosticsSection({
   );
 }
 
-function ShortcutsSection(): React.ReactNode {
-  const rows = [
-    ['Enter', '发送当前消息'],
-    ['Shift+Enter', '换行（不发送）'],
-    ['Ctrl+, / Cmd+,', '打开设置'],
-    ['Ctrl+K / Cmd+K', '命令面板'],
-    ['Ctrl+N', '新建会话'],
-    ['Ctrl+F', '侧栏会话搜索（聚焦搜索框）'],
-    ['Ctrl+Shift+I / Cmd+Opt+I', '开发者工具'],
-  ];
+function ShortcutsSection({ rows }: { rows: readonly SettingsShortcutRow[] }): React.ReactNode {
   return (
-    <SettingsSectionBlock title="快捷键" desc="只读列表">
+    <SettingsSectionBlock title="快捷键" desc="只读列表；仅列本壳**真实绑定**的键位">
       <div className="settings-table">
-        {rows.map(([k, d]) => (
-          <div key={k} className="settings-table-row">
-            <span className="row-key mono">{k}</span>
-            <span className="row-val">{d}</span>
+        {rows.map((r) => (
+          <div key={`${r.keys}\u0000${r.label}`} className="settings-table-row">
+            <span className="row-key mono">{r.keys}</span>
+            <span className="row-val">{r.label}</span>
           </div>
         ))}
       </div>
@@ -511,9 +542,9 @@ function ShortcutsSection(): React.ReactNode {
   );
 }
 
-function AboutSection(): React.ReactNode {
+function AboutSection({ title }: { title: string }): React.ReactNode {
   return (
-    <SettingsSectionBlock title="harness2 桌面端" desc="事件溯源 · 单写者 · 崩溃一致 · 仅本地无遥测">
+    <SettingsSectionBlock title={title} desc="事件溯源 · 单写者 · 崩溃一致 · 仅本地无遥测">
       <div className="settings-table">
         <div className="settings-table-row">
           <span className="row-key">版本</span>
@@ -573,9 +604,14 @@ export interface SettingsPageProps {
    * 只在**打开时**生效（调用方配 key 重挂载让壳采纳）；undefined = 跟随壳默认分区。
    */
   readonly defaultSectionId?: string;
+  /**
+   * 按壳注入的措辞（Z-措辞纠偏；缺省 = 中性且正确，见 `SettingsCopy`）。
+   * 桌面 / web 各自传自身真实情形，避免在共享页写死某壳专属事实。
+   */
+  readonly copy?: SettingsCopy;
 }
 
-export function SettingsPage({ open, onClose, ports, defaultSectionId }: SettingsPageProps): React.ReactNode {
+export function SettingsPage({ open, onClose, ports, defaultSectionId, copy }: SettingsPageProps): React.ReactNode {
   const [prefs, setPrefs] = useState<SettingsPreferencesShape | null>(null);
   const [cfg, setCfg] = useState<SettingsConfigShape | null>(null);
   const [auth, setAuth] = useState<SettingsAuthMaskedShape | null>(null);
@@ -590,6 +626,10 @@ export function SettingsPage({ open, onClose, ports, defaultSectionId }: Setting
   // 外观真源：宿主注入（桌面 = 壳主题 store + ui-font-size 运行时；web = 本地主题/字号运行时）。
   const theme = ports.theme ?? 'system';
   const uiFontSize = ports.uiFontSize ?? UI_FONT_SIZE_DEFAULT;
+
+  // 措辞真源：宿主注入的 copy（缺省中性且正确，不含任何壳专属事实）。
+  const aboutTitle = copy?.aboutTitle ?? 'harness2';
+  const shortcutRows = copy?.shortcutRows ?? DEFAULT_SHORTCUT_ROWS;
 
   const reload = useCallback(async () => {
     const p = portsRef.current;
@@ -698,6 +738,10 @@ export function SettingsPage({ open, onClose, ports, defaultSectionId }: Setting
                 onSelectNotifyDetails={selectNotifyDetails}
                 loaded={prefs !== null}
                 note={prefsNote}
+                {...(copy?.preferencesFileLabel !== undefined
+                  ? { preferencesFileLabel: copy.preferencesFileLabel }
+                  : {})}
+                {...(copy?.openSettingsKeys !== undefined ? { openSettingsKeys: copy.openSettingsKeys } : {})}
               />
             ),
           };
@@ -734,7 +778,10 @@ export function SettingsPage({ open, onClose, ports, defaultSectionId }: Setting
         case 'browser':
           return { ...meta, render: () => cfgPane((c) => <BrowserSection cfg={c} onSave={saveCfg} />) };
         case 'cron':
-          return { ...meta, render: () => <CronSection /> };
+          return {
+            ...meta,
+            render: () => <CronSection {...(copy?.cronNote !== undefined ? { note: copy.cronNote } : {})} />,
+          };
         case 'plugins':
           return { ...meta, render: () => cfgPane((c) => <PluginsSection cfg={c} />) };
         case 'mcp':
@@ -781,16 +828,16 @@ export function SettingsPage({ open, onClose, ports, defaultSectionId }: Setting
             render: () => <DiagnosticsSection runDoctor={ports.getDoctorReport} listCrashes={ports.getCrashReports} />,
           };
         case 'shortcuts':
-          return { ...meta, render: () => <ShortcutsSection /> };
+          return { ...meta, render: () => <ShortcutsSection rows={shortcutRows} /> };
         case 'about':
-          return { ...meta, render: () => <AboutSection /> };
+          return { ...meta, render: () => <AboutSection title={aboutTitle} /> };
         default:
           throw new Error(`设置分区配置表有未装配的分区: ${String(meta.id)}（先改 SettingsPage 再进表）`);
       }
     });
     // 分区渲染闭包捕获上述数据/回调；数据未变时不重建分区表
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [prefs, cfg, auth, theme, uiFontSize, prefsNote, loadError, modelsContribution, allow]);
+  }, [prefs, cfg, auth, theme, uiFontSize, prefsNote, loadError, modelsContribution, allow, copy]);
 
   // 左栏页脚（Z-88 底部）：ZCode 是账号菜单（仅可用项）；我们无账号体系 → 只放版本号（About 数据）
   const version = ports.versionLabel ?? APP_VERSION_LABEL;

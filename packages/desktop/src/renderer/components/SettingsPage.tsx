@@ -3,9 +3,35 @@
 // 主题 store（D-15 立即呈现）+ 界面字号运行时（例外 #2）。不在此写任何设置 UI。
 import { useMemo, useState } from 'react';
 import type { SettingsTheme } from '../../shared/protocol.js';
-import { SettingsPage as SharedSettingsPage, type SettingsPorts } from '@harness2/ui-shared/renderer/settings/index.js';
+import {
+  SettingsPage as SharedSettingsPage,
+  type SettingsCopy,
+  type SettingsPorts,
+} from '@harness2/ui-shared/renderer/settings/index.js';
+import { PREFERENCES_FILE } from '../../shared/preferences.js';
 import { useShellTheme } from '../layout/shell-theme.js';
 import { applyUiFontSize, currentUiFontSize } from '../ui-font-size.js';
+
+/**
+ * 桌面壳的措辞（按壳注入共享设置页）：偏好文件名、打开设置键位、快捷键表、关于标题、定时任务说明
+ * —— 均为桌面**真实情形**（与 App.tsx 全局键位表、main.ts 开发者工具绑定、desktop-preferences.json 一致）。
+ */
+const DESKTOP_SETTINGS_COPY: SettingsCopy = {
+  aboutTitle: 'harness2 桌面端',
+  preferencesFileLabel: PREFERENCES_FILE,
+  openSettingsKeys: 'Ctrl+,',
+  shortcutRows: [
+    { keys: 'Enter', label: '发送当前消息' },
+    { keys: 'Shift+Enter', label: '换行（不发送）' },
+    { keys: 'Ctrl+, / Cmd+,', label: '打开设置' },
+    { keys: 'Ctrl+K / Cmd+K', label: '命令面板' },
+    { keys: 'Ctrl+N / Cmd+N', label: '新建会话' },
+    { keys: 'Ctrl+J / Cmd+J', label: '切换终端面板' },
+    { keys: 'Ctrl+Shift+I / Cmd+Opt+I', label: '开发者工具' },
+  ],
+  cronNote:
+    '侧栏「自动化」进入主区视图，可用「定时任务模板」或表单创建任务；亦可经 CLI：harness2 cron add/remove/list。',
+};
 
 export interface SettingsPageProps {
   readonly open: boolean;
@@ -54,6 +80,7 @@ export function SettingsPage({ open, onClose, onThemeChange, defaultSectionId }:
       open={open}
       onClose={onClose}
       ports={ports}
+      copy={DESKTOP_SETTINGS_COPY}
       {...(defaultSectionId !== undefined ? { defaultSectionId } : {})}
     />
   );

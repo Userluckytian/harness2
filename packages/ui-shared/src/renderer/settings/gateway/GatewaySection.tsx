@@ -173,7 +173,7 @@ function GatewayChannelCard({
         </div>
       ) : (
         <p className="settings-desc" data-gateway-credential-unavailable>
-          此壳未提供凭据写入通道：请用桌面端或命令行配置 {label} 的 appId / appSecret。
+          此壳未提供凭据写入通道：请在命令行（或具备凭据写入能力的界面）配置 {label} 的 appId / appSecret。
         </p>
       )}
 
@@ -235,7 +235,8 @@ export function GatewaySection({ cfg, auth, onSaveAuth, onSaveCfg, guidance }: G
 
 /**
  * 网关 / IM 分区正文（**本壳无 config/auth 数据面**时）：只报如实状态 + 启动指引，不摆假条目/假开关。
- * web 壳无 config.json 读取与 auth.json 写入通道 → 走此分支（红线⑩）。
+ * 判定按**端口能力**（getConfig/getAuthMasked 缺失）而非壳名：具备数据面的壳（含已接 serve 与
+ * auth 写通道的 web）走 GatewaySection 正文，不再落到此分支。
  */
 export function GatewayUnavailable({ guidance }: { guidance?: string | undefined }): React.ReactNode {
   const guide = guidance ?? DEFAULT_GATEWAY_GUIDANCE;
@@ -244,7 +245,7 @@ export function GatewayUnavailable({ guidance }: { guidance?: string | undefined
       <SettingsSectionBlock title="IM 网关" desc="本壳无网关数据面（只读指引）">
         <div className="settings-desc" data-gateway-unavailable>
           此壳不提供 config.json 读取 / auth.json 凭据写入通道，无法展示或修改网关配置与凭据 （appSecret
-          永不回显）。请在桌面端或命令行配置。
+          永不回显）。请在命令行（或具备配置通道的界面）配置。
         </div>
         <div className="settings-table">
           {GATEWAY_CHANNELS.map((c) => (
