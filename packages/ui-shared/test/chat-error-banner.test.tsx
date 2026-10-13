@@ -143,6 +143,38 @@ describe('Z-96 禁用发送钮给原因（改进：ZCode 不解释，我们 tool
     const primary = screen.getByTestId('composer-primary');
     expect(primary.getAttribute('data-disabled-reason')).toContain('未选择会话');
   });
+
+  it('等待附件（transport 未回）→ 原因含「附件仍在上传」，完成后消失', async () => {
+    let resolveUpload: ((v: { token: string }) => void) | undefined;
+    const store = connectedStoreWithSession();
+    const controller = createController(store, {} as unknown as HarnessClient);
+    const transport = { upload: () => new Promise<{ token: string }>((r) => (resolveUpload = r)) };
+    render(
+      <ConversationSeat
+        store={store}
+        controller={controller}
+        header={() => null}
+        statusPanel={() => null}
+        transport={transport}
+      />,
+    );
+    inputText('带附件发送');
+    fireEvent.change(screen.getByTestId('composer-file-input'), {
+      target: { files: [{ name: 'a.bin', type: 'application/octet-stream', size: 1 }] },
+    });
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 0));
+    });
+    const primary = screen.getByTestId('composer-primary');
+    expect((primary as HTMLButtonElement).disabled).toBe(true);
+    expect(primary.getAttribute('data-disabled-reason')).toContain('附件仍在上传');
+    // 上传完成 → 原因消失（可发送）
+    await act(async () => {
+      resolveUpload?.({ token: 'tok-1' });
+      await new Promise((r) => setTimeout(r, 0));
+    });
+    expect(screen.getByTestId('composer-primary').hasAttribute('data-disabled-reason')).toBe(false);
+  });
 });
 
 void vi;
