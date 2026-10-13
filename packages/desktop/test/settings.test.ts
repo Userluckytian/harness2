@@ -18,30 +18,60 @@ function tempHome(): string {
 }
 
 describe('shared/preferences 规范化', () => {
-  it('缺省偏好 = 跟随系统/1 栏/显示欢迎/精简通知', () => {
+  it('缺省偏好 = 跟随系统/1 栏/显示欢迎/精简通知/代码主题与行号默认', () => {
     expect(defaultPreferences()).toEqual({
       theme: 'system',
       defaultPaneCount: 1,
       showWelcome: true,
       notifyDetails: 'minimal',
+      codeThemeLight: 'github-light',
+      codeThemeDark: 'github-dark',
+      codeLineNumbers: true,
+      codeWordWrap: false,
+      codeFontSize: 13,
     });
   });
 
   it('合法值原样保留', () => {
     expect(
-      normalizePreferences({ theme: 'zai-dark', defaultPaneCount: 3, showWelcome: false, notifyDetails: 'full' }),
+      normalizePreferences({
+        theme: 'zai-dark',
+        defaultPaneCount: 3,
+        showWelcome: false,
+        notifyDetails: 'full',
+        codeThemeLight: 'vitesse-light',
+        codeThemeDark: 'catppuccin-mocha',
+        codeLineNumbers: false,
+        codeWordWrap: true,
+        codeFontSize: 18,
+      }),
     ).toEqual({
       theme: 'zai-dark',
       defaultPaneCount: 3,
       showWelcome: false,
       notifyDetails: 'full',
+      codeThemeLight: 'vitesse-light',
+      codeThemeDark: 'catppuccin-mocha',
+      codeLineNumbers: false,
+      codeWordWrap: true,
+      codeFontSize: 18,
     });
   });
 
   it('非法/越界字段逐个回落默认', () => {
-    expect(normalizePreferences({ theme: 'neon', defaultPaneCount: 9, showWelcome: 'yes', notifyDetails: 42 })).toEqual(
-      defaultPreferences(),
-    );
+    expect(
+      normalizePreferences({
+        theme: 'neon',
+        defaultPaneCount: 9,
+        showWelcome: 'yes',
+        notifyDetails: 42,
+        codeThemeLight: 'dracula',
+        codeThemeDark: 7,
+        codeLineNumbers: 'no',
+        codeWordWrap: 1,
+        codeFontSize: 99,
+      }),
+    ).toEqual(defaultPreferences());
     expect(normalizePreferences(null)).toEqual(defaultPreferences());
     expect(normalizePreferences('oops')).toEqual(defaultPreferences());
     // 部分越界：只坏 defaultPaneCount

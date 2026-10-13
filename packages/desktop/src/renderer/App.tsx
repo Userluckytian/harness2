@@ -27,6 +27,7 @@ import { toggleTerminalDock } from './terminal/toggle-dock.js';
 import { type PaletteCommand, type PaletteSession } from '@harness2/ui-shared/renderer/components/CommandPalette.js';
 import { controller, store, useAppState, newSessionCollapsingRightbar, THEME_CYCLE } from './app-shared.js';
 import { cycleComposerMode, cycleComposerThoughtLevel } from './conversation/composer-controls-bridge.js';
+import { codePreferencesFromSettings, hydrateCodePreferences } from '@harness2/ui-shared/renderer/code/index.js';
 import { requestOpenComposerModelMenu } from '@harness2/ui-shared/renderer/conversation/composer/composer-menu-signal.js';
 import type { AppState } from '@harness2/ui-shared/renderer/store.js';
 import { filterSessionList } from '@harness2/ui-shared/shared/metadata.js';
@@ -131,6 +132,10 @@ export function App(): React.ReactNode {
       .then((p: SettingsPreferencesShape) => {
         setNotifyDetails(p.notifyDetails);
         setShellTheme(p.theme);
+        // Z10-7：代码偏好（代码主题/行号/换行/字号）灌入共享运行时 store —— 代码查看器与预览卡
+        // 在设置页打开前也能拿到持久化偏好（否则重启后查看器要等打开设置才生效）。
+        // 桌面真源 = desktop-preferences.json → 用 hydrate（不镜像浏览器本地存储，几何/偏好断言不受扰）。
+        hydrateCodePreferences(codePreferencesFromSettings(p));
       })
       .catch(() => {});
   }, []);

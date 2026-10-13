@@ -293,6 +293,48 @@ describe('右栏标签体系（Z2-04）', () => {
     expect(App.store.draftFor('s1')).toBe('`src/a.ts:1`\n> line1'); // 既有订阅经 controller.setDraft 落盘
   });
 
+  it('Z10-7：变更面板点文件名 → 开 code-viewer tab 并经 readFileForRef 读到内容', async () => {
+    const api = makeFakeApi();
+    (api.changeReview as ReturnType<typeof vi.fn>).mockResolvedValue({
+      sourceDir: '',
+      changedFiles: 1,
+      dirtyFiles: 0,
+      readOnly: true,
+      files: [
+        {
+          file: 'src/a.ts',
+          planned: { before: 'const a = 1;', after: 'const a = 2;' },
+          current: 'const a = 2;',
+          lastKnown: 'const a = 2;',
+          dirty: false,
+          matchesPlan: true,
+        },
+      ],
+    });
+    const App = (await bootApp(api)) as { App: () => React.ReactNode };
+    render(<App.App />);
+    fireEvent.click(await screen.findByRole('button', { name: /第一句/ }));
+    await screen.findByText('第一句回复');
+
+    // 开右栏 + 经加号菜单开「变更」tab
+    fireEvent.click(screen.getByRole('button', { name: '右栏开关' }));
+    await waitFor(() => expect(document.querySelector('[data-seat="rightbar"]')?.hasAttribute('hidden')).toBe(false));
+    openTabFromLauncher('changes');
+
+    // 变更文件名的可点入口（onOpenFile 注入才渲染）
+    const link = await waitFor(() => {
+      const el = document.querySelector('[data-change-open-file="src/a.ts"]');
+      if (el === null) throw new Error('变更文件名入口未渲染');
+      return el;
+    });
+    fireEvent.click(link);
+
+    // code-viewer tab 打开，且经 readFileForRef 读到 fake 内容（line1）
+    await waitFor(() => expect(document.querySelector('[data-side-tab="code-viewer"]')).not.toBeNull());
+    expect(await screen.findByText('line1')).toBeTruthy();
+    expect(api.readFileForRef).toHaveBeenCalledWith('src/a.ts', expect.anything());
+  });
+
   it('Z-13：新建会话强制收起右栏；新会话的桶为空 → 重开见启动器', async () => {
     const api = makeFakeApi();
     const App = (await bootApp(api)) as { App: () => React.ReactNode };

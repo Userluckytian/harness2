@@ -18,6 +18,9 @@ import { createServeClient } from './serve-client.js';
 import { createWebTerminalPort } from './terminal/web-port.js';
 import { createWebSettingsDataPorts } from './web-settings.js';
 import { initUiFontSize, setShellTheme, THEME_STORAGE_KEY } from '@harness2/ui-shared/renderer/theme/index.js';
+// Z10-7：代码偏好（代码主题/行号/换行/字号）从浏览器存储镜像恢复（web 无 desktop-preferences.json，
+// 持久化走 harness2-code-prefs 本地存储键；与桌面「偏好文件」口径互补）。
+import { initCodePreferences } from '@harness2/ui-shared/renderer/code/index.js';
 // A2：把 ui-shared 的模型配置分区正文注册进设置壳（同桌面 renderer/main.tsx）——
 // 未注册时 `models` 分区会退化为内建过渡占位面板；注册后由 ModelsSettings 接管并消费 modelsApi。
 import { registerModelsSettingsSection } from '@harness2/ui-shared/renderer/settings/models/index.js';
@@ -37,6 +40,7 @@ registerModelsSettingsSection();
 // 恢复进壳主题 store，使设置页外观分区显示当前值；字号（例外 #2）恢复根变量。
 setShellTheme(readStoredTheme());
 initUiFontSize();
+initCodePreferences();
 
 /** 读浏览器存储的主题偏好（缺省 system；存储不可用 → system，不阻断启动） */
 function readStoredTheme(): SettingsTheme {

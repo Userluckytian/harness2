@@ -32,6 +32,12 @@ import {
   type SidePaneTabId,
 } from '@harness2/ui-shared/renderer/side-pane/index.js';
 import {
+  CodeViewerPane,
+  clearCodeViewer,
+  openCodeViewer,
+  useCodeViewerTarget,
+} from '@harness2/ui-shared/renderer/code/index.js';
+import {
   ApprovalCenter,
   ChangeReviewPanel,
   EffectiveConfigPanel,
@@ -80,6 +86,8 @@ export function SidePanel(): React.ReactNode {
   const filePreview = useToolFilePreview();
   const frame = useFrame();
   const sessionCwd = sessionId !== null ? state.sessions.find((s) => s.id === sessionId)?.cwd : undefined;
+  // Z10-7：代码查看器当前目标（变更面板点文件 → openCodeViewer 设置；这里订阅驱动 tab 内容）
+  const codeTarget = useCodeViewerTarget();
   // 桌面专属端口：上下文占用读（preload IPC；core getContextUsage 单一实现）——注入共享配置面板。
   const getContextUsage = useCallback((id: string) => window.harness2.getContextUsage(id), []);
 
@@ -152,6 +160,17 @@ export function SidePanel(): React.ReactNode {
     if (!frame.state.rightbarOpen) frame.dispatch({ type: 'rightbar/toggle' });
   }, [bgTasksRequest, sessionId, frame]);
 
+  // Z10-7：变更面板点文件名 → 设代码查看器目标 + 开/激活 `code-viewer` tab；右栏收着就展开。
+  const openCodeViewerTab = useCallback(
+    (path: string): void => {
+      openCodeViewer(path);
+      const bucket = sessionId ?? SIDE_PANE_NO_SESSION_KEY;
+      sidePaneStore.open(bucket, 'code-viewer');
+      if (!frame.state.rightbarOpen) frame.dispatch({ type: 'rightbar/toggle' });
+    },
+    [sessionId, frame],
+  );
+
   const renderTab = useCallback(
     (id: SidePaneTabId): React.ReactNode => {
       const trajectorySessionId = trajectoryTabSessionId(id);
@@ -174,7 +193,14 @@ export function SidePanel(): React.ReactNode {
         case 'approvals':
           return <ApprovalCenter store={store} controller={controller} />;
         case 'changes':
-          return <ChangeReviewPanel store={store} controller={controller} sessionId={sessionId} />;
+          return (
+            <ChangeReviewPanel
+              store={store}
+              controller={controller}
+              sessionId={sessionId}
+              onOpenFile={openCodeViewerTab}
+            />
+          );
         case 'workspace':
           return <WorkspacePanel store={store} controller={controller} sessionId={sessionId} />;
         case 'file':
@@ -194,6 +220,16 @@ export function SidePanel(): React.ReactNode {
                 : {})}
             />
           );
+        case 'code-viewer':
+          // Z10-7：代码查看器（Z-14 `code-viewer`）—— 读文件经宿主 readFileForRef（preload IPC）；
+          // 目标由变更面板点文件名设置（openCodeViewerTab）。cwd 给会话工作目录作读取边界。
+          return (
+            <CodeViewerPane
+              path={codeTarget?.path ?? null}
+              {...(sessionCwd !== undefined ? { cwd: sessionCwd } : {})}
+              onClear={() => clearCodeViewer()}
+            />
+          );
         case 'config':
           // 桌面提供上下文占用读端口（preload IPC）；web 无此通道 → 不注入即不显示占用注记。
           return (
@@ -208,7 +244,7 @@ export function SidePanel(): React.ReactNode {
           return null;
       }
     },
-    [sessionId, filePreview, sessionCwd, navigation, getContextUsage, cronJobs, nowMs],
+    [sessionId, filePreview, sessionCwd, navigation, getContextUsage, cronJobs, nowMs, codeTarget, openCodeViewerTab],
   );
 
   return (

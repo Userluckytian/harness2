@@ -40,6 +40,11 @@ import type {
   SettingsSkillsShape,
   SettingsTheme,
 } from '@harness2/ui-shared/shared/settings.js';
+import {
+  applyCodePreferences,
+  codePreferencesFromSettings,
+  codePreferencesStore,
+} from '@harness2/ui-shared/renderer/code/index.js';
 import type { ServeAuthUpdateResult, ServeClient, ServeConfigUpdateResult } from './serve-client.js';
 import { useWebShell } from './web-shell-context.js';
 
@@ -93,9 +98,20 @@ export const WEB_SETTINGS_COPY: SettingsCopy = {
     '侧栏「自动化」进入主区视图，可查看定时任务与「定时任务模板」；创建 / 增删经 CLI：harness2 cron add/remove/list。',
 };
 
-/** web 偏好（theme 走浏览器存储例外 #1；其余仅内存、无落盘通道） */
+/** web 偏好（theme 走浏览器存储例外 #1；代码偏好走 harness2-code-prefs 本地存储键；其余仅内存） */
 function webPreferences(theme: SettingsTheme): SettingsPreferencesShape {
-  return { theme, defaultPaneCount: 1, showWelcome: false, notifyDetails: 'minimal' };
+  const code = codePreferencesStore.getSnapshot();
+  return {
+    theme,
+    defaultPaneCount: 1,
+    showWelcome: false,
+    notifyDetails: 'minimal',
+    codeThemeLight: code.themeLight,
+    codeThemeDark: code.themeDark,
+    codeLineNumbers: code.lineNumbers,
+    codeWordWrap: code.wordWrap,
+    codeFontSize: code.fontSize,
+  };
 }
 
 /** web 设置**数据面端口**（由 serve 客户端提供；与 `SettingsPorts` 的数据成员同形） */
@@ -172,6 +188,8 @@ export function WebSettingsOverlay(): ReactNode {
       getPreferences: async () => webPreferences(getShellTheme()),
       setPreferences: async (p) => {
         if (p.theme !== getShellTheme()) setShellTheme(p.theme);
+        // Z10-7：代码偏好写入共享运行时 store（镜像浏览器存储键），供查看器/预览卡消费。
+        applyCodePreferences(codePreferencesFromSettings(p));
         return p;
       },
       theme,

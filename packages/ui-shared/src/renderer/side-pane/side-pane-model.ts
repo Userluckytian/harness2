@@ -44,6 +44,7 @@ export type SidePaneTabId =
   | 'changes'
   | 'workspace'
   | 'file'
+  | 'code-viewer'
   | 'config'
   | TrajectoryTabId;
 
@@ -63,6 +64,7 @@ export const SIDE_PANE_TABS: readonly SidePaneTabDescriptor[] = Object.freeze([
   { id: 'changes', label: '变更' },
   { id: 'workspace', label: '工作区' },
   { id: 'file', label: '文件' },
+  { id: 'code-viewer', label: '代码查看器' },
   { id: 'config', label: '配置' },
 ]) as readonly SidePaneTabDescriptor[];
 
@@ -71,6 +73,9 @@ export const SIDE_PANE_TABS: readonly SidePaneTabDescriptor[] = Object.freeze([
  * 「文件」不在其中 —— 它只由 D-86 ① `openFile` 路由按需打开（ZCode 的 code-viewer 同款语义：
  * 打开文件才出现，加号菜单不列）。差异已在 Z2-04 报告登记：ZCode 启动器列的是
  * browser/git/terminal/developer-tools 等我们没有的面板，我们按实际拥有的列。
+ * Z10-7：「代码查看器」（`code-viewer`）同样**不在**加号菜单 —— Z-14 的 `code-viewer` 入口是
+ * 「打开文件/预览」（变更面板点文件名），不是启动器项；与 ZCode 一致（`resolveOpenTabLauncherItemIds`
+ * 不含 code-viewer）。按需打开见桌面/web SidePanel 的 `onOpenFile` 路由。
  * Z2-05 新增「模型轨迹」项（ZCode 任务右键「查看 Model Trajectory」的等价入口）：
  * 启动器 item id 是**类型标记** `'model-trajectory'`，打开时经 `sidePaneOpenTarget`
  * 按当前会话解析成 `model-trajectory:{sessionId}` 后入列。

@@ -25,6 +25,14 @@ import type {
   SettingsPreferencesShape,
 } from '../../shared/settings.js';
 import { UI_FONT_SIZE_DEFAULT } from '../theme/ui-font-size.js';
+import {
+  applyCodePreferences,
+  codePreferencesFromSettings,
+  codePreferencesToSettingsPatch,
+  hydrateCodePreferences,
+  useCodePreferences,
+  type CodePreferences,
+} from '../code/index.js';
 import { AppearanceSettings } from './appearance/index.js';
 import { GeneralSettings } from './general/index.js';
 import { GatewaySection, GatewayUnavailable } from './gateway/GatewaySection.js';
@@ -626,6 +634,8 @@ export function SettingsPage({ open, onClose, ports, defaultSectionId, copy }: S
   // 外观真源：宿主注入（桌面 = 壳主题 store + ui-font-size 运行时；web = 本地主题/字号运行时）。
   const theme = ports.theme ?? 'system';
   const uiFontSize = ports.uiFontSize ?? UI_FONT_SIZE_DEFAULT;
+  // 代码偏好真源：共享运行时 store（Z10-7）——订阅它，设置卡/预览卡随 store 变化即时重渲。
+  const codePreferences = useCodePreferences();
 
   // 措辞真源：宿主注入的 copy（缺省中性且正确，不含任何壳专属事实）。
   const aboutTitle = copy?.aboutTitle ?? 'harness2';
@@ -639,7 +649,12 @@ export function SettingsPage({ open, onClose, ports, defaultSectionId, copy }: S
         p.getConfig?.() ?? Promise.resolve(null),
         p.getAuthMasked?.() ?? Promise.resolve(null),
       ]);
-      if (pr !== null) setPrefs(pr);
+      if (pr !== null) {
+        setPrefs(pr);
+        // Z10-7：把持久化偏好灌进代码偏好运行时 store（查看器/预览卡即时消费；缺省字段回落默认）。
+        // 用 hydrate（不镜像浏览器本地存储）：加载路径不写第二个存储 key，只有用户显式改动才镜像。
+        hydrateCodePreferences(codePreferencesFromSettings(pr));
+      }
       if (c !== null) setCfg(c);
       if (a !== null) setAuth(a);
       setLoadError(null);
@@ -676,6 +691,12 @@ export function SettingsPage({ open, onClose, ports, defaultSectionId, copy }: S
 
   const commitUiFontSize = (px: number): void => {
     portsRef.current.onUiFontSizeCommit?.(px);
+  };
+
+  /** Z10-7：代码偏好改动 —— 先写运行时 store（查看器/预览卡即时消费），再经偏好通道持久化。 */
+  const changeCodePreferences = (patch: Partial<CodePreferences>): void => {
+    const next = applyCodePreferences(patch);
+    savePrefsPatch(codePreferencesToSettingsPatch(next));
   };
 
   const selectNotifyDetails = (d: SettingsNotifyDetails): void => {
@@ -755,6 +776,8 @@ export function SettingsPage({ open, onClose, ports, defaultSectionId, copy }: S
                 onSelectTheme={selectTheme}
                 uiFontSize={uiFontSize}
                 onUiFontSizeCommit={commitUiFontSize}
+                codePreferences={codePreferences}
+                onCodePreferencesChange={changeCodePreferences}
                 loaded
                 note={prefsNote}
               />
@@ -837,7 +860,7 @@ export function SettingsPage({ open, onClose, ports, defaultSectionId, copy }: S
     });
     // 分区渲染闭包捕获上述数据/回调；数据未变时不重建分区表
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [prefs, cfg, auth, theme, uiFontSize, prefsNote, loadError, modelsContribution, allow, copy]);
+  }, [prefs, cfg, auth, theme, uiFontSize, codePreferences, prefsNote, loadError, modelsContribution, allow, copy]);
 
   // 左栏页脚（Z-88 底部）：ZCode 是账号菜单（仅可用项）；我们无账号体系 → 只放版本号（About 数据）
   const version = ports.versionLabel ?? APP_VERSION_LABEL;

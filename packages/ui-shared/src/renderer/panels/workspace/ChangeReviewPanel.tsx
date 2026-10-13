@@ -9,16 +9,39 @@ import { buildDiffRows } from '../../components/DiffCard.js';
 import type { AppStore } from '../../store.js';
 import { buildChangeReviewView, type ChangedFileView } from '../../features/workspace/change-review-model.js';
 
-function FileEntry({ file, sessionId, onUndo }: { file: ChangedFileView; sessionId: string; onUndo: () => void }) {
+function FileEntry({
+  file,
+  sessionId,
+  onUndo,
+  onOpenFile,
+}: {
+  file: ChangedFileView;
+  sessionId: string;
+  onUndo: () => void;
+  /** Z10-7：点文件名在右栏代码查看器打开（缺省 = 不摆入口，红线⑩） */
+  onOpenFile?: ((path: string) => void) | undefined;
+}) {
   const [expanded, setExpanded] = useState(false);
   const rows = buildDiffRows(file.plannedBefore, file.plannedAfter);
   const visible = expanded ? rows : rows.slice(0, 40);
   return (
     <div className={`change-file${file.dirty ? ' change-dirty' : ''}`}>
       <div className="change-head">
-        <span className="change-path" title={file.file}>
-          {file.file}
-        </span>
+        {onOpenFile !== undefined ? (
+          <button
+            type="button"
+            className="change-path cursor-pointer text-left hover:underline"
+            title={`在代码查看器打开 ${file.file}`}
+            data-change-open-file={file.file}
+            onClick={() => onOpenFile(file.file)}
+          >
+            {file.file}
+          </button>
+        ) : (
+          <span className="change-path" title={file.file}>
+            {file.file}
+          </span>
+        )}
         {file.dirty ? (
           <span className="change-badge change-badge-dirty" title="磁盘内容与最后已知状态不一致（外部/用户改动）">
             外部改动
@@ -58,9 +81,14 @@ export interface ChangeReviewPanelProps {
   readonly store: AppStore;
   readonly controller: Controller;
   readonly sessionId: string | null;
+  /**
+   * Z10-7：点变更文件名 → 在右栏代码查看器打开（宿主实现：设置 code-viewer 目标 + 开/激活 tab）。
+   * 缺省 = 文件名不可点（不摆假入口）。
+   */
+  readonly onOpenFile?: (path: string) => void;
 }
 
-export function ChangeReviewPanel({ store, controller, sessionId }: ChangeReviewPanelProps): ReactNode {
+export function ChangeReviewPanel({ store, controller, sessionId, onOpenFile }: ChangeReviewPanelProps): ReactNode {
   useSyncExternalStore(store.subscribe, store.getState);
   const [notice, setNotice] = useState<string | null>(null);
   const [pendingOverwrite, setPendingOverwrite] = useState<{ count: number; kind: 'undo' | 'redo' } | null>(null);
@@ -164,7 +192,7 @@ export function ChangeReviewPanel({ store, controller, sessionId }: ChangeReview
       {notice !== null && <div className="panel-notice">{notice}</div>}
       <div className="change-list">
         {view.files.map((f) => (
-          <FileEntry key={f.file} file={f} sessionId={sessionId} onUndo={() => void doUndo()} />
+          <FileEntry key={f.file} file={f} sessionId={sessionId} onUndo={() => void doUndo()} onOpenFile={onOpenFile} />
         ))}
       </div>
       <div className="panel-foot">

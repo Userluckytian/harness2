@@ -6,6 +6,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/re
 import React from 'react';
 import { SettingsPage } from '../src/renderer/settings/SettingsPage.js';
 import type { SettingsPorts } from '../src/renderer/settings/ports.js';
+import { codePreferencesStore } from '../src/renderer/code/code-preferences.js';
 import type { SettingsAuthMaskedShape, SettingsConfigShape, SettingsPreferencesShape } from '../src/shared/settings.js';
 
 (HTMLElement.prototype as unknown as { scrollIntoView: () => void }).scrollIntoView = () => {};
@@ -106,6 +107,37 @@ describe('外观分区：主题 / 字号经端口真生效', () => {
     fireEvent.change(field, { target: { value: '16' } });
     fireEvent.keyDown(field, { key: 'Enter' });
     await waitFor(() => expect(onUiFontSizeCommit).toHaveBeenCalledWith(16));
+  });
+});
+
+describe('外观分区（Z10-7）：代码设置卡经偏好通道持久化 + 预览卡消费运行时 store', () => {
+  it('改浅色代码主题 → 写运行时 store + setPreferences 收到 codeThemeLight', async () => {
+    codePreferencesStore.reset();
+    const setPreferences = vi.fn(async (p: SettingsPreferencesShape) => p);
+    await renderAt(makePorts({ setPreferences }), 'appearance');
+
+    const trigger = await screen.findByRole('combobox', { name: '浅色代码主题' });
+    fireEvent.keyDown(trigger, { key: 'Enter' });
+    fireEvent.click(screen.getByRole('option', { name: 'Vitesse' }));
+
+    await waitFor(() => expect(codePreferencesStore.getSnapshot().themeLight).toBe('vitesse-light'));
+    await waitFor(() =>
+      expect(setPreferences).toHaveBeenCalledWith(expect.objectContaining({ codeThemeLight: 'vitesse-light' })),
+    );
+    codePreferencesStore.reset();
+  });
+
+  it('预览卡消费 store：主题 id 与徽标随偏好更新', async () => {
+    codePreferencesStore.reset();
+    await renderAt(makePorts(), 'appearance');
+    // 浅色预览卡（默认 github-light）标题 + 徽标（system→浅色界面 → 当前生效）
+    const light = document.querySelector('[data-theme-preview="light"]') as HTMLElement;
+    expect(light.getAttribute('data-preview-theme')).toBe('github-light');
+    expect(light.textContent).toContain('浅色预览');
+    expect(light.querySelector('[data-preview-badge]')?.getAttribute('data-preview-badge')).toBe('当前生效');
+    const dark = document.querySelector('[data-theme-preview="dark"]') as HTMLElement;
+    expect(dark.getAttribute('data-preview-theme')).toBe('github-dark');
+    codePreferencesStore.reset();
   });
 });
 

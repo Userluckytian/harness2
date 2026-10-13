@@ -346,6 +346,44 @@ describe('Z7-a 下沉面板在 web 渲染（打开 / 空态 / 数据到达）', 
     stop();
   });
 
+  it('Z10-7：变更面板点文件名 → 开 code-viewer tab，web 无文件通道 → 如实降级', async () => {
+    const client = dataClient({
+      changeReview: async () => ({
+        sourceDir: '/work',
+        changedFiles: 1,
+        dirtyFiles: 0,
+        readOnly: true,
+        files: [
+          {
+            file: 'src/a.ts',
+            planned: { before: 'a', after: 'b' },
+            current: 'b',
+            lastKnown: 'b',
+            dirty: false,
+            matchesPlan: true,
+          },
+        ],
+      }),
+    });
+    const { shell, stop } = await mount({ client });
+    await selectSession(shell);
+    fireEvent.click(screen.getByTestId('web-rightbar-toggle'));
+    await waitFor(() => expect(shell.store.peekViews('s1')?.changeReview?.files.length).toBe(1));
+    openTabFromLauncher('changes');
+
+    const link = await waitFor(() => {
+      const el = document.querySelector('[data-change-open-file="src/a.ts"]');
+      if (el === null) throw new Error('变更文件名入口未渲染');
+      return el;
+    });
+    fireEvent.click(link);
+
+    // code-viewer tab 打开；web 无 HostBridge.readFileForRef → 明说「本壳无文件读取通道」，不摆假代码
+    await waitFor(() => expect(document.querySelector('[data-side-tab="code-viewer"]')).not.toBeNull());
+    expect(await screen.findByText(/本壳无文件读取通道/)).toBeTruthy();
+    stop();
+  });
+
   it('工作区 tab：run-config 到达 → 显示会话 cwd（真数据）', async () => {
     const { shell, stop } = await mount({ client: dataClient() });
     await selectSession(shell);

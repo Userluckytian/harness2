@@ -182,7 +182,7 @@ describe('side-pane-model：LRU 内存（Z-13 上限 50，重启不保留）', (
 });
 
 describe('side-pane-model：目录与启动器清单（vs ZCode 启动器差异已登记）', () => {
-  it('目录 9 项带中文标签；未知 id 回落 id 本身', () => {
+  it('目录 10 项带中文标签；未知 id 回落 id 本身', () => {
     expect(SIDE_PANE_TABS.map((t) => t.id)).toEqual([
       'plan',
       'tasks',
@@ -192,15 +192,17 @@ describe('side-pane-model：目录与启动器清单（vs ZCode 启动器差异�
       'changes',
       'workspace',
       'file',
+      'code-viewer',
       'config',
     ]);
     expect(sidePaneTabLabel('plan')).toBe('计划');
     expect(sidePaneTabLabel('file')).toBe('文件');
+    expect(sidePaneTabLabel('code-viewer')).toBe('代码查看器'); // Z10-7
     expect(sidePaneTabLabel('background-tasks')).toBe('后台任务'); // Z2-08
     expect(sidePaneTabLabel('automations')).toBe('自动化'); // P0-3a
   });
 
-  it('启动器不列「文件」（D-86 路由专属，同 ZCode code-viewer 不进加号菜单）；列「模型轨迹」「后台任务」与「自动化」', () => {
+  it('启动器不列「文件」「代码查看器」（Z-14 入口 = 打开文件/预览，不进加号菜单）；列「模型轨迹」「后台任务」与「自动化」', () => {
     expect(SIDE_PANE_LAUNCHER_ITEM_IDS).toEqual([
       'plan',
       'tasks',
@@ -213,6 +215,7 @@ describe('side-pane-model：目录与启动器清单（vs ZCode 启动器差异�
       'model-trajectory',
     ]);
     expect(SIDE_PANE_LAUNCHER_ITEM_IDS).not.toContain('file');
+    expect(SIDE_PANE_LAUNCHER_ITEM_IDS).not.toContain('code-viewer'); // Z10-7：按需（变更面板点文件）打开
     // Z2-08：「后台任务」项常列；按需可用的显隐策略在宿主（桌面 SidePanel）落实
     expect(sidePaneOpenTarget('background-tasks', 's1')).toBe('background-tasks'); // 固定 id，不按会话解析
     // P0-3a：「自动化」同为固定 id（跨会话聚合的 cron 任务表，不按会话分桶）；

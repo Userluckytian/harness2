@@ -16,6 +16,24 @@
 export type SettingsTheme = 'system' | 'zai-light' | 'zai-dark';
 export type SettingsNotifyDetails = 'minimal' | 'full';
 
+/**
+ * 代码查看器可选语法高亮主题 id（Z10-7 外观「代码设置卡」，对齐 refs-zcode.md:357 的 10 选项）。
+ * id 与 shiki 内置主题名**一一对应**（`shiki/themes/<id>.mjs`），渲染端按 id 直取主题对象，
+ * 不做二次命名映射（避免两处清单漂移）。浅/深各一支：浅色预览用 `codeThemeLight`，
+ * 深色预览用 `codeThemeDark`。
+ */
+export type CodeThemeId =
+  | 'github-light'
+  | 'github-dark'
+  | 'vitesse-light'
+  | 'vitesse-dark'
+  | 'min-light'
+  | 'min-dark'
+  | 'github-dark-high-contrast'
+  | 'catppuccin-latte'
+  | 'catppuccin-mocha'
+  | 'one-dark-pro';
+
 /** 模型声明的推理档位（core `reasoning`；values 按强度从低到高，每模型自声明，非全局枚举） */
 export interface SettingsModelReasoningShape {
   values: string[];
@@ -104,6 +122,16 @@ export interface SettingsPreferencesShape {
   defaultPaneCount: number;
   showWelcome: boolean;
   notifyDetails: SettingsNotifyDetails;
+  /** Z10-7 代码设置卡：浅色代码主题（缺省 = 桌面归一化补 github-light） */
+  codeThemeLight?: CodeThemeId;
+  /** Z10-7 代码设置卡：深色代码主题（缺省 = github-dark） */
+  codeThemeDark?: CodeThemeId;
+  /** Z10-7 代码设置卡：显示行号 */
+  codeLineNumbers?: boolean;
+  /** Z10-7 代码设置卡：长行自动换行 */
+  codeWordWrap?: boolean;
+  /** Z10-7 代码设置卡：代码字号（12–20，缺省 13） */
+  codeFontSize?: number;
 }
 
 /** doctor 六项检查（core runDoctor 响应经 IPC 直传的最小形态） */

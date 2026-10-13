@@ -35,6 +35,7 @@ import {
   BackgroundTasksPane,
   SidePaneHost,
   SIDE_PANE_LAUNCHER_ITEM_IDS,
+  SIDE_PANE_NO_SESSION_KEY,
   sidePaneStore,
   trajectoryTabId,
   trajectoryTabSessionId,
@@ -50,6 +51,12 @@ import {
   WorkspacePanel,
 } from '@harness2/ui-shared/renderer/panels/index.js';
 import { TrajectoryViewContent } from '@harness2/ui-shared/renderer/trajectory/index.js';
+import {
+  CodeViewerPane,
+  clearCodeViewer,
+  openCodeViewer,
+  useCodeViewerTarget,
+} from '@harness2/ui-shared/renderer/code/index.js';
 import { buildSessionItems, resolveBuildVersion, SidebarRoot } from '@harness2/ui-shared/renderer/sidebar/index.js';
 import type { SlotRegistry } from '@harness2/ui-shared/renderer/slots/index.js';
 import { useWebShell } from './web-shell-context.js';
@@ -331,6 +338,18 @@ function RightbarSeatContent(): ReactNode {
   const { store, controller } = shell;
   const state = shell.useAppState();
   const sessionId = state.selectedId;
+  const { state: frameState, dispatch: frameDispatch } = useFrame();
+  // Z10-7：代码查看器当前目标（变更面板点文件设置）；web 无文件读取通道 → pane 如实降级
+  const codeTarget = useCodeViewerTarget();
+
+  // Z10-7：变更面板点文件名 → 设目标 + 开/激活 `code-viewer` tab；右栏收着就展开。
+  // web 无 readFileForRef → 该 tab 打开后如实显示「本壳无文件读取通道」（红线⑩）。
+  const openCodeViewerTab = (path: string): void => {
+    openCodeViewer(path);
+    const bucket = sessionId ?? SIDE_PANE_NO_SESSION_KEY;
+    sidePaneStore.open(bucket, 'code-viewer');
+    if (!frameState.rightbarOpen) frameDispatch({ type: 'rightbar/toggle' });
+  };
 
   const renderTab = (id: SidePaneTabId): ReactNode => {
     const trajectorySessionId = trajectoryTabSessionId(id);
@@ -354,9 +373,20 @@ function RightbarSeatContent(): ReactNode {
       case 'approvals':
         return <ApprovalCenter store={store} controller={controller} />;
       case 'changes':
-        return <ChangeReviewPanel store={store} controller={controller} sessionId={sessionId} />;
+        return (
+          <ChangeReviewPanel
+            store={store}
+            controller={controller}
+            sessionId={sessionId}
+            onOpenFile={openCodeViewerTab}
+          />
+        );
       case 'workspace':
         return <WorkspacePanel store={store} controller={controller} sessionId={sessionId} />;
+      case 'code-viewer':
+        // Z10-7：代码查看器 —— web 无 HostBridge.readFileForRef（serve 不提供文件读取通道）→
+        // CodeViewerPane 如实显示「本壳无文件读取通道」，不摆假代码（红线⑩）。
+        return <CodeViewerPane path={codeTarget?.path ?? null} onClear={() => clearCodeViewer()} />;
       case 'config':
         // web 无上下文占用读通道 → 不注入 getContextUsage（不显示占用注记，不摆假数据）。
         return <EffectiveConfigPanel store={store} controller={controller} sessionId={sessionId} />;
