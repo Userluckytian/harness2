@@ -24,7 +24,7 @@ import {
   DEFAULT_SUBAGENT_CONFIG,
   parseConfig,
 } from '../config/schema.js';
-import type { HarnessConfig } from '../config/schema.js';
+import type { HarnessConfig, ModelEntry } from '../config/schema.js';
 import { deepMerge, defaultConfigPaths, loadConfig } from '../config/load.js';
 import { readAuthFile, writeAuthFile, type AuthFile } from '../config/auth.js';
 import { redactSecrets } from '../config/redact.js';
@@ -154,12 +154,18 @@ export function updateGlobalConfig(
   return { ok: true, warnings: result.warnings };
 }
 
+/** 模型声明的推理档位（与桌面 `SettingsModelReasoningShape` 逐字同形；values 按强度从低到高，每模型自声明） */
+export interface SettingsModelReasoningView {
+  values: string[];
+  default?: string;
+}
+
 /** 单渠道脱敏视图（与桌面 `SettingsProviderShape` 同形；envKey 是具名变量引用，非密钥值） */
 export interface SettingsProviderView {
   protocol: 'openai' | 'anthropic';
   baseUrl: string;
   envKey?: string;
-  models?: Record<string, { contextWindow?: number; maxOutputTokens?: number }>;
+  models?: Record<string, { contextWindow?: number; maxOutputTokens?: number; reasoning?: SettingsModelReasoningView }>;
 }
 
 /** 单条 hook 的只读视图（与桌面 `SettingsHookEntryShape` 同形） */
@@ -189,7 +195,7 @@ export interface SettingsHooksView {
  */
 export interface SettingsConfigView {
   providers: Record<string, SettingsProviderView>;
-  roles: Record<string, { channel: string; model: string }>;
+  roles: Record<string, { channel: string; model: string; effort?: string }>;
   approval: { mode: string; tools?: Record<string, string> };
   memory: { mode: string; nudgeInterval: number };
   browser: { enabled: boolean; idleDestroyMs: number; maxConcurrent: number };
@@ -214,6 +220,30 @@ function mapMcpServer(entry: HarnessConfig['mcpServers'][string]): Record<string
     };
   }
   return { url: entry.url, ...(entry.headers !== undefined ? { headers: entry.headers } : {}) };
+}
+
+/**
+ * 单模型视图（与桌面 `SettingsProviderShape.models` 条目逐字同形）：容量字段 + 可选 `reasoning`
+ * 档位声明（web composer 思考档位的合法档位集合来源，见 ui-shared `buildThoughtLevel`）。
+ * 模型未声明 reasoning → 不出现该字段（如实：该模型无可选档位）。
+ */
+function mapModelEntry(entry: ModelEntry): {
+  contextWindow?: number;
+  maxOutputTokens?: number;
+  reasoning?: SettingsModelReasoningView;
+} {
+  return {
+    ...(entry.contextWindow !== undefined ? { contextWindow: entry.contextWindow } : {}),
+    ...(entry.maxOutputTokens !== undefined ? { maxOutputTokens: entry.maxOutputTokens } : {}),
+    ...(entry.reasoning !== undefined
+      ? {
+          reasoning: {
+            values: entry.reasoning.values,
+            ...(entry.reasoning.default !== undefined ? { default: entry.reasoning.default } : {}),
+          },
+        }
+      : {}),
+  };
 }
 
 /**
@@ -250,15 +280,21 @@ export function readSettingsConfigView(env: { root: string; home?: string }): Se
   }
   const providers: Record<string, SettingsProviderView> = {};
   for (const [name, p] of Object.entries(cfg.providers)) {
+    const models =
+      p.models !== undefined
+        ? Object.fromEntries(Object.entries(p.models).map(([id, m]) => [id, mapModelEntry(m)]))
+        : undefined;
     providers[name] = {
       protocol: p.protocol,
       baseUrl: p.baseUrl,
       ...(p.envKey !== undefined ? { envKey: p.envKey } : {}),
-      ...(p.models !== undefined ? { models: p.models } : {}),
+      ...(models !== undefined ? { models } : {}),
     };
   }
-  const roles: Record<string, { channel: string; model: string }> = {};
-  for (const [name, r] of Object.entries(cfg.roles)) roles[name] = { channel: r.channel, model: r.model };
+  const roles: Record<string, { channel: string; model: string; effort?: string }> = {};
+  for (const [name, r] of Object.entries(cfg.roles)) {
+    roles[name] = { channel: r.channel, model: r.model, ...(r.effort !== undefined ? { effort: r.effort } : {}) };
+  }
   const mcpServers: Record<string, unknown> = {};
   for (const [name, entry] of Object.entries(cfg.mcpServers)) mcpServers[name] = mapMcpServer(entry);
   return {

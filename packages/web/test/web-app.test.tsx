@@ -427,12 +427,11 @@ describe('Z10-4 快捷键扩展（源码权威键表）', () => {
     stop();
   });
 
-  it('反向钉：仍未兑现的键不触发任何动作（Ctrl+F / Ctrl+T / Ctrl+W / Ctrl+O）', async () => {
+  it('反向钉：仍未兑现的键不触发任何动作（Ctrl+F / Ctrl+W / Ctrl+O）', async () => {
     const { stop } = await mount();
     const collapsedBefore = seat('sidebar')?.getAttribute('data-collapsed');
     for (const combo of [
       { key: 'f', code: 'KeyF' },
-      { key: 't', code: 'KeyT' }, // Ctrl+T：思考档位 —— web 无数据面，如实不绑
       { key: 'w', code: 'KeyW' },
       { key: 'o', code: 'KeyO' },
     ]) {
@@ -441,6 +440,39 @@ describe('Z10-4 快捷键扩展（源码权威键表）', () => {
     expect(screen.queryByPlaceholderText(TABBED_PLACEHOLDER)).toBeNull();
     expect(screen.queryByRole('dialog', { name: '设置' })).toBeNull();
     expect(seat('sidebar')?.getAttribute('data-collapsed')).toBe(collapsedBefore);
+    stop();
+  });
+
+  it('Z10-2b Ctrl+T：思考档位循环经 PUT /api/settings/config 写回 roles.main.effort（与控件同一写路径）', async () => {
+    const updateConfig = vi.fn(async () => ({ ok: true as const, warnings: [] }));
+    const getConfig = vi.fn(async () => ({
+      providers: {
+        zai: {
+          protocol: 'openai' as const,
+          baseUrl: 'https://api.example.com',
+          models: { 'glm-5.3': { reasoning: { values: ['low', 'high'], default: 'low' } } },
+        },
+      },
+      roles: { main: { channel: 'zai', model: 'glm-5.3', effort: 'low' } },
+      approval: { mode: 'default' },
+      memory: { mode: 'off', nudgeInterval: 10 },
+      browser: { enabled: true, idleDestroyMs: 1, maxConcurrent: 1 },
+      plugins: { enabled: true, allow: [] },
+      mcpServers: {},
+      subagent: { maxDepth: 1, maxTurns: 1 },
+      sources: { global: false, project: false },
+      warnings: [],
+      errors: [],
+    }));
+    const settingsDataPorts = { getConfig, updateConfig } as unknown as WebSettingsDataPorts;
+    const { stop } = await mount({ settingsDataPorts });
+    await waitFor(() => expect(getConfig).toHaveBeenCalled());
+    fireEvent.keyDown(window, { key: 't', code: 'KeyT', ctrlKey: true });
+    await waitFor(() =>
+      expect(updateConfig).toHaveBeenCalledWith({
+        roles: { main: { channel: 'zai', model: 'glm-5.3', effort: 'high' } },
+      }),
+    );
     stop();
   });
 

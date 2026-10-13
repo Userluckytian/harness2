@@ -42,6 +42,7 @@ import type {
   SettingsCrashReportShape,
   SettingsDoctorReportShape,
   SettingsHooksShape,
+  SettingsModelReasoningShape,
   SettingsProviderShape,
   SettingsRoleShape,
   SettingsSkillsShape,
@@ -585,16 +586,32 @@ function asStringArray(v: unknown): string[] {
   return Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string') : [];
 }
 
-function mapProviderModels(v: unknown): Record<string, { contextWindow?: number; maxOutputTokens?: number }> {
-  const out: Record<string, { contextWindow?: number; maxOutputTokens?: number }> = {};
+function mapProviderModels(
+  v: unknown,
+): Record<string, { contextWindow?: number; maxOutputTokens?: number; reasoning?: SettingsModelReasoningShape }> {
+  const out: Record<
+    string,
+    { contextWindow?: number; maxOutputTokens?: number; reasoning?: SettingsModelReasoningShape }
+  > = {};
   for (const [id, raw] of Object.entries(asRecord(v))) {
     const m = asRecord(raw);
     out[id] = {
       ...(typeof m.contextWindow === 'number' ? { contextWindow: m.contextWindow } : {}),
       ...(typeof m.maxOutputTokens === 'number' ? { maxOutputTokens: m.maxOutputTokens } : {}),
+      // Z10-2b：模型档位声明（web 思考档位的合法档位集合来源；未声明 = 不出现，如实）
+      ...(m.reasoning !== undefined ? { reasoning: mapModelReasoning(m.reasoning) } : {}),
     };
   }
   return out;
+}
+
+/** 模型 reasoning 档位声明映射（values 非空字符串数组；default 可选且为字符串）——非法形状一律丢弃（如实） */
+function mapModelReasoning(v: unknown): SettingsModelReasoningShape {
+  const r = asRecord(v);
+  return {
+    values: asStringArray(r.values),
+    ...(typeof r.default === 'string' ? { default: r.default } : {}),
+  };
 }
 
 function mapHookEntry(v: unknown): SettingsHooksShape['entries'][number] {
@@ -652,6 +669,8 @@ export function mapServeConfigPayload(payload: unknown): SettingsConfigShape {
     roles[name] = {
       channel: typeof r.channel === 'string' ? r.channel : '',
       model: typeof r.model === 'string' ? r.model : '',
+      // Z10-2b：保留 effort（web 思考档位当前值来源；未配置 = 用模型缺省档位）
+      ...(typeof r.effort === 'string' ? { effort: r.effort } : {}),
     };
   }
 

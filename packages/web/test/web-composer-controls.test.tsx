@@ -1,5 +1,5 @@
-// web-composer-controls（Z10-2b）：web 侧 composer 控件数据桥 —— serve 设置端口装配、写回、
-// 以及「思考档位在 web 无数据面 → 整体不产出」的如实口径。
+// web-composer-controls（Z10-2b）：web 侧 composer 控件数据桥 —— serve 设置端口装配、写回，
+// 以及「思考档位」装配（模型声明 reasoning.values 才出控件；Ctrl+T 循环写回 roles.main.effort）。
 // @vitest-environment jsdom
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { SettingsConfigShape } from '@harness2/ui-shared/shared/settings.js';
@@ -9,6 +9,7 @@ import {
   peekWebComposerConfig,
   webComposerControlsOf,
   webCycleComposerMode,
+  webCycleComposerThoughtLevel,
 } from '../src/web-composer-controls.js';
 import type { WebSettingsDataPorts } from '../src/web-settings.js';
 
@@ -67,13 +68,35 @@ describe('webComposerControlsOf：serve config 视图 → 控件 props', () => {
     expect(controls.modelSelect?.onManageModels).toBeUndefined();
   });
 
-  it('即使运行时视图带 reasoning，也不产出 thoughtLevel（无 roles.effort 读通道 → 不摆假控件）', () => {
+  it('模型声明 reasoning.values → 出 thoughtLevel（current 取 roles.main.effort）', () => {
     const config = configOf({
       providers: {
         zai: {
           protocol: 'openai',
           baseUrl: 'https://api.example.com',
           models: { 'glm-5.3': { reasoning: { values: ['low', 'high'], default: 'low' } } },
+        },
+      },
+      roles: { main: { channel: 'zai', model: 'glm-5.3', effort: 'high' } },
+    });
+    const controls = webComposerControlsOf(
+      config,
+      portsOf(
+        async () => config,
+        async () => ({ ok: true }),
+      ),
+    );
+    expect(controls.thoughtLevel?.current).toBe('high');
+    expect(controls.thoughtLevel?.values).toEqual(['low', 'high']);
+  });
+
+  it('反向钉：模型未声明 reasoning.values → 不出 thoughtLevel（无档位可选不摆控件）', () => {
+    const config = configOf({
+      providers: {
+        zai: {
+          protocol: 'openai',
+          baseUrl: 'https://api.example.com',
+          models: { 'glm-5.3': { contextWindow: 128000 } },
         },
       },
       roles: { main: { channel: 'zai', model: 'glm-5.3' } },
@@ -86,6 +109,27 @@ describe('webComposerControlsOf：serve config 视图 → 控件 props', () => {
       ),
     );
     expect('thoughtLevel' in controls).toBe(false);
+  });
+
+  it('未显式设置 effort 时按模型 default 展示（explicit=false 由 buildThoughtLevel 内部决定）', () => {
+    const config = configOf({
+      providers: {
+        zai: {
+          protocol: 'openai',
+          baseUrl: 'https://api.example.com',
+          models: { 'glm-5.3': { reasoning: { values: ['low', 'high'], default: 'high' } } },
+        },
+      },
+      roles: { main: { channel: 'zai', model: 'glm-5.3' } },
+    });
+    const controls = webComposerControlsOf(
+      config,
+      portsOf(
+        async () => config,
+        async () => ({ ok: true }),
+      ),
+    );
+    expect(controls.thoughtLevel?.current).toBe('high');
   });
 
   it('roles.main 缺失 → 不出 modelSelect；modeSwitch 仍可切换', () => {
@@ -123,6 +167,26 @@ describe('写回链路：PUT /api/settings/config + 响应回带视图刷新缓�
     expect(updateConfig).toHaveBeenCalledWith({ roles: { main: { channel: 'zai', model: 'glm-5.3' } } });
   });
 
+  it('onSelectLevel → PUT roles.main patch（含 channel/model/effort）', async () => {
+    const config = configOf({
+      providers: {
+        zai: {
+          protocol: 'openai',
+          baseUrl: 'https://api.example.com',
+          models: { 'glm-5.3': { reasoning: { values: ['low', 'high'] } } },
+        },
+      },
+      roles: { main: { channel: 'zai', model: 'glm-5.3', effort: 'low' } },
+    });
+    const updateConfig = vi.fn(async () => ({ ok: true, config }));
+    const ports = portsOf(async () => config, updateConfig);
+    const controls = webComposerControlsOf(config, ports);
+    await controls.thoughtLevel!.onSelectLevel('high');
+    expect(updateConfig).toHaveBeenCalledWith({
+      roles: { main: { channel: 'zai', model: 'glm-5.3', effort: 'high' } },
+    });
+  });
+
   it('写回失败（ok=false）→ 如实记录，不伪造成功', async () => {
     const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
     const ports = portsOf(
@@ -149,5 +213,46 @@ describe('webCycleComposerMode（Ctrl+Shift+M）：复用同一 PUT 写路径', 
     webCycleComposerMode(ports);
     await new Promise<void>((resolve) => setTimeout(resolve, 0));
     expect(updateConfig).toHaveBeenCalledWith({ approval: { mode: 'acceptEdits' } });
+  });
+});
+
+describe('webCycleComposerThoughtLevel（Ctrl+T）：复用同一 PUT 写路径', () => {
+  function reasonedConfig(): SettingsConfigShape {
+    return configOf({
+      providers: {
+        zai: {
+          protocol: 'openai',
+          baseUrl: 'https://api.example.com',
+          models: { 'glm-5.3': { reasoning: { values: ['low', 'high'] } } },
+        },
+      },
+      roles: { main: { channel: 'zai', model: 'glm-5.3', effort: 'low' } },
+    });
+  }
+
+  it('端口缺失 → no-op', () => {
+    expect(() => webCycleComposerThoughtLevel(undefined)).not.toThrow();
+  });
+
+  it('已载入 config（有档位）→ 写下一档 roles.main.effort', async () => {
+    const config = reasonedConfig();
+    const updateConfig = vi.fn(async () => ({ ok: true, config }));
+    const ports = portsOf(async () => config, updateConfig);
+    await loadWebComposerConfig(ports);
+    webCycleComposerThoughtLevel(ports);
+    await new Promise<void>((resolve) => setTimeout(resolve, 0));
+    expect(updateConfig).toHaveBeenCalledWith({
+      roles: { main: { channel: 'zai', model: 'glm-5.3', effort: 'high' } },
+    });
+  });
+
+  it('模型未声明档位 → no-op（不写回，如实）', async () => {
+    const config = configOf();
+    const updateConfig = vi.fn(async () => ({ ok: true, config }));
+    const ports = portsOf(async () => config, updateConfig);
+    await loadWebComposerConfig(ports);
+    webCycleComposerThoughtLevel(ports);
+    await new Promise<void>((resolve) => setTimeout(resolve, 0));
+    expect(updateConfig).not.toHaveBeenCalled();
   });
 });

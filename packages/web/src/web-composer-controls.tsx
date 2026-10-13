@@ -7,30 +7,37 @@
 //   * 响应回带合并后的新 config 视图 → 直接刷新缓存（无第二次请求），订阅者重渲。
 //
 // ⚠️ 如实差异（红线⑩，写给每个改动者）：
-//   * **思考档位在 web 不渲染** —— serve config 视图（core `readSettingsConfigView`）的 roles 段
-//     只映射 {channel, model}、providers.models 只映射容量字段，**既不回 `roles.*.effort` 也不回
-//     模型 `reasoning.values`**。缺当前值与档位集合两样，控件无从如实展示（写回后视图也不跟进
-//     = 假状态）→ 本壳整体不出档位控件，Ctrl+T 亦不绑（见 app.tsx）。
+//   * **思考档位在 web 已接通**（Z10-2b 后续）：core `readSettingsConfigView` 现回 `roles.*.effort` 与
+//     模型 `providers.<c>.models.<m>.reasoning`，serve 客户端 `mapServeConfigPayload` 逐字保留 → 本壳
+//     用 ui-shared `buildThoughtLevel` 装配档位控件，Ctrl+T（`webCycleComposerThoughtLevel`）写回
+//     `roles.main.effort`（同一 PUT 白名单路径）。模型未声明 `reasoning.values` 时如实不出档位控件。
 //   * 「管理模型」入口不渲染：web 无「打开设置并直达模型分区」通道（桌面经 openSettingsAtSection）。
 //   * config 缓存只存模块内存（不落任何浏览器存储 —— D-14）。
 import { useEffect, useMemo, useSyncExternalStore } from 'react';
 import type {
   ComposerModeSwitchProps,
   ComposerModelSelectProps,
+  ComposerThoughtLevelProps,
 } from '@harness2/ui-shared/renderer/conversation/composer/Composer.js';
 import {
   approvalModePatch,
   buildModelMenu,
+  buildThoughtLevel,
   modelSelectionPatch,
   nextApprovalMode,
+  nextThoughtLevel,
+  thoughtLevelPatch,
+  COMPOSER_MAIN_ROLE,
 } from '@harness2/ui-shared/renderer/conversation/composer/composer-config.js';
 import type { SettingsConfigShape } from '@harness2/ui-shared/shared/settings.js';
 import type { WebSettingsDataPorts } from './web-settings.js';
 
-/** web composer 控件 props（与桌面 ComposerControls 同形；web 无 thoughtLevel 数据面，故不含它） */
+/** web composer 控件 props（与桌面 ComposerControls 同形） */
 export interface WebComposerControls {
   readonly modelSelect?: ComposerModelSelectProps;
   readonly modeSwitch?: ComposerModeSwitchProps;
+  /** 思考档位（模型声明了 `reasoning.values` 才出；未声明 = 不渲染，如实） */
+  readonly thoughtLevel?: ComposerThoughtLevelProps;
 }
 
 // —— 模块级 config 缓存（多席位共享一次请求；只存内存，D-14） ——
@@ -95,8 +102,8 @@ export function useWebComposerConfig(ports: WebSettingsDataPorts | undefined): S
 /**
  * 由 config 视图装配控件 props：
  *   - config 未载入（null）→ 空对象（控件不渲染）；
- *   - `roles.main` 缺失 → 不出模型选择；权限模式恒可切换。
- * 注：不透出 thoughtLevel —— serve 视图无 roles.effort / reasoning.values（见模块头注释）。
+ *   - `roles.main` 缺失 → 不出模型选择；权限模式恒可切换；
+ *   - 思考档位仅当所引模型声明了 `reasoning.values` 才出（无档位可选时不摆控件，如实）。
  */
 export function webComposerControlsOf(
   config: SettingsConfigShape | null,
@@ -128,9 +135,23 @@ export function webComposerControlsOf(
       );
     },
   };
+  const thoughtLevel = buildThoughtLevel(config);
   return {
     ...(modelSelect !== undefined ? { modelSelect } : {}),
     modeSwitch,
+    ...(thoughtLevel !== undefined && role !== undefined
+      ? {
+          thoughtLevel: {
+            current: thoughtLevel.current,
+            values: thoughtLevel.values,
+            onSelectLevel: (level) => {
+              void patchWebConfig(ports, thoughtLevelPatch(COMPOSER_MAIN_ROLE, role, level)).catch((e: unknown) =>
+                console.error('[web-composer-controls] 思考档位写回失败（config 保持旧值）', e),
+              );
+            },
+          } satisfies ComposerThoughtLevelProps,
+        }
+      : {}),
   };
 }
 
@@ -152,6 +173,27 @@ export function webCycleComposerMode(ports: WebSettingsDataPorts | undefined): v
       return patchWebConfig(ports, approvalModePatch(nextApprovalMode(cached.approval?.mode)));
     })
     .catch((e: unknown) => console.error('[web-composer-controls] 模式循环写回失败', e));
+}
+
+/**
+ * Ctrl+T（Z-94 cycleThoughtLevel，web）：按模型声明的档位顺序循环到下一档并写回 `roles.main.effort`。
+ * 端口缺失 → 无操作；config 未载入 → 先载入再循环；模型未声明档位 / 档位不足两档 → 无操作（如实，不假造）。
+ * 写路径与档位控件同一 PUT（白名单 roles 深合并），不新造第二套状态。
+ */
+export function webCycleComposerThoughtLevel(ports: WebSettingsDataPorts | undefined): void {
+  if (ports === undefined) return;
+  void loadWebComposerConfig(ports)
+    .then(() => {
+      if (cached === null) return undefined;
+      const level = buildThoughtLevel(cached);
+      if (level === undefined) return undefined;
+      const next = nextThoughtLevel(level.current, level.values);
+      if (next === undefined) return undefined;
+      const role = cached.roles?.[COMPOSER_MAIN_ROLE];
+      if (role === undefined) return undefined;
+      return patchWebConfig(ports, thoughtLevelPatch(COMPOSER_MAIN_ROLE, role, next));
+    })
+    .catch((e: unknown) => console.error('[web-composer-controls] 思考档位循环写回失败', e));
 }
 
 /** 仅测试可见：重置模块级缓存（vitest ESM 无模块重置）。命名带 `_` 前缀防误用。 */

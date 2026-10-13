@@ -170,6 +170,65 @@ describe('Z9-6c GET /api/settings/config（完整脱敏视图，与桌面 settin
   });
 });
 
+describe('Z10-2b GET/PUT /api/settings/config：roles.effort 与模型 reasoning 档位（web 思考档位数据面）', () => {
+  /** 覆盖全局 config.json：模型声明 reasoning 档位 + roles.main.effort（并保留密钥哨兵字段） */
+  function seedReasoningHome(home: string): void {
+    const cfgDir = join(home, '.harness2');
+    mkdirSync(cfgDir, { recursive: true });
+    writeFileSync(
+      join(cfgDir, 'config.json'),
+      JSON.stringify({
+        providers: {
+          ds: {
+            protocol: 'openai',
+            baseUrl: 'https://api.test/v1',
+            envKey: 'DS_KEY',
+            models: {
+              'm-1': { contextWindow: 128000, reasoning: { values: ['low', 'medium', 'high'], default: 'medium' } },
+              'm-2': { maxOutputTokens: 4096 },
+            },
+            apiKey: CONFIG_PLANTED_SECRET,
+          },
+        },
+        roles: { main: { channel: 'ds', model: 'm-1', effort: 'high' } },
+      }),
+      'utf8',
+    );
+  }
+
+  it('GET 返回 effort 与 reasoning（与桌面 SettingsRoleShape/SettingsProviderShape 同形）；密钥不外泄', async () => {
+    const { handle } = await start({ seed: seedReasoningHome });
+    const r = await api(handle, 'GET', '/api/settings/config');
+    expect(r.status).toBe(200);
+    expect(r.json.roles.main).toEqual({ channel: 'ds', model: 'm-1', effort: 'high' });
+    expect(r.json.providers.ds.models['m-1']).toEqual({
+      contextWindow: 128000,
+      reasoning: { values: ['low', 'medium', 'high'], default: 'medium' },
+    });
+    // 未声明 reasoning 的模型不出现该字段（如实，不臆造）
+    expect(r.json.providers.ds.models['m-2']).toEqual({ maxOutputTokens: 4096 });
+    expect(r.text).not.toContain(AUTH_PLAINTEXT);
+    expect(r.text).not.toContain(CONFIG_PLANTED_SECRET);
+  });
+
+  it('PUT roles.main.effort 走白名单深合并并落盘，响应回带新视图（写路径无需另改白名单）', async () => {
+    const { handle, home } = await start({ seed: seedReasoningHome });
+    const r = await api(handle, 'PUT', '/api/settings/config', {
+      roles: { main: { channel: 'ds', model: 'm-1', effort: 'low' } },
+    });
+    expect(r.status).toBe(200);
+    expect(r.json.ok).toBe(true);
+    expect(r.json.config.roles.main.effort).toBe('low');
+    const onDisk = JSON.parse(readFileSync(join(home, '.harness2', 'config.json'), 'utf8')) as {
+      roles: { main: { effort: string } };
+      providers: { ds: { models: Record<string, { reasoning: { values: string[] } }> } };
+    };
+    expect(onDisk.roles.main.effort).toBe('low');
+    // 模型 reasoning 声明未被 effort 写入覆盖（深合并）
+    expect(onDisk.providers.ds.models['m-1']!.reasoning.values).toEqual(['low', 'medium', 'high']);
+  });
+});
+
 describe('Z9-6a PUT/POST /api/settings/config（白名单深合并写回）', () => {
   it('合法 patch 生效并落盘；响应回读与 GET 同源', async () => {
     const { handle, home } = await start();

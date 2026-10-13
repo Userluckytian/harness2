@@ -68,10 +68,13 @@ const CONFIG_PAYLOAD = {
       protocol: 'openai',
       baseUrl: 'https://api.test/v1',
       envKey: 'DS_KEY',
-      models: { 'm-1': { contextWindow: 128000, maxOutputTokens: 4096 }, 'm-2': {} },
+      models: {
+        'm-1': { contextWindow: 128000, maxOutputTokens: 4096 },
+        'm-2': { reasoning: { values: ['low', 'high'], default: 'low' } },
+      },
     },
   },
-  roles: { main: { channel: 'ds', model: 'm-1' } },
+  roles: { main: { channel: 'ds', model: 'm-1', effort: 'high' } },
   approval: { mode: 'bypass', tools: { write: 'ask' } },
   memory: { mode: 'ask', nudgeInterval: 30 },
   browser: { enabled: false, idleDestroyMs: 120_000, maxConcurrent: 4 },
@@ -97,7 +100,9 @@ describe('Z9-6c GET /api/settings/config → SettingsConfigShape 适配（完整
     expect(cfg.providers['ds']).toMatchObject({ protocol: 'openai', baseUrl: 'https://api.test/v1', envKey: 'DS_KEY' });
     expect(Object.keys(cfg.providers['ds']!.models!)).toEqual(['m-1', 'm-2']);
     expect(cfg.providers['ds']!.models!['m-1']).toEqual({ contextWindow: 128000, maxOutputTokens: 4096 });
-    expect(cfg.roles['main']).toEqual({ channel: 'ds', model: 'm-1' });
+    // Z10-2b：模型 reasoning 档位声明与 roles.effort 如实保留（web 思考档位的数据面）
+    expect(cfg.providers['ds']!.models!['m-2']).toEqual({ reasoning: { values: ['low', 'high'], default: 'low' } });
+    expect(cfg.roles['main']).toEqual({ channel: 'ds', model: 'm-1', effort: 'high' });
     expect(cfg.approval).toEqual({ mode: 'bypass', tools: { write: 'ask' } });
     // Z9-6c：此前缺的段现在是真实读取值（非缺省占位）
     expect(cfg.memory).toEqual({ mode: 'ask', nudgeInterval: 30 });
