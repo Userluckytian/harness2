@@ -10,7 +10,7 @@ import type { ConnectionStatus, Harness2Api, StatusDetail, WsFrame } from '../sr
 /* —— App 装配所需的完整假桥（与 app.test.tsx 同族，最小可启动面） —— */
 
 function makeFakeApi(platform: 'win32' | 'linux' | 'darwin', withWindowChannels: boolean): Harness2Api {
-  const base: Harness2Api & Record<string, unknown> = {
+  const base: Record<string, unknown> = {
     platform,
     listSessions: vi.fn(async () => [
       { id: 's1', dir: 'd', mtimeMs: 10, firstUserText: '第一句', messageCount: 2, lastSeq: 3 },
@@ -65,10 +65,10 @@ function makeFakeApi(platform: 'win32' | 'linux' | 'darwin', withWindowChannels:
     getSnapshotForCall: vi.fn(async () => ({ ok: false, error: '未找到对应快照' })),
     readFileForRef: vi.fn(async () => ({ ok: false, error: '未找到' })),
     listDir: vi.fn(async () => ({ ok: true as const, path: '', entries: [], truncated: false })),
-    runConfig: vi.fn(async () => ({ redacted: true })),
+    runConfig: vi.fn(async () => ({ redacted: true }) as never),
     planState: vi.fn(async () => null),
     executionViews: vi.fn(async () => []),
-    changeReview: vi.fn(async () => ({ readOnly: true })),
+    changeReview: vi.fn(async () => ({ readOnly: true }) as never),
     fork: vi.fn(async () => undefined),
     submit: vi.fn(async () => undefined),
     cancel: vi.fn(async () => undefined),
@@ -92,7 +92,7 @@ function makeFakeApi(platform: 'win32' | 'linux' | 'darwin', withWindowChannels:
     base['windowGetState'] = vi.fn(async () => ({ maximized: false }));
     base['onWindowState'] = vi.fn(() => () => {});
   }
-  return base;
+  return base as unknown as Harness2Api;
 }
 
 async function bootApp(api: Harness2Api): Promise<{ App: () => React.ReactNode }> {

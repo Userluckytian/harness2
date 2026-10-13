@@ -362,6 +362,8 @@ describe('web 设置覆层：措辞按壳注入（不含桌面专属事实）', 
     const all = document.body.textContent ?? '';
     expect(all).not.toContain('desktop-preferences.json');
     expect(all).not.toContain('Ctrl+,');
+    // Z-47 托盘开关是桌面独有：web 壳无 tray 通道 = 通用分区不渲染该开关（不摆假开关）
+    expect(screen.queryByRole('switch', { name: '关闭窗口时隐藏到托盘' })).toBeNull();
     stop();
   });
 

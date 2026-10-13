@@ -23,6 +23,7 @@ import type {
   SettingsDoctorReportShape,
   SettingsNotifyDetails,
   SettingsPreferencesShape,
+  TrayStatusView,
 } from '../../shared/settings.js';
 import { UI_FONT_SIZE_DEFAULT } from '../theme/ui-font-size.js';
 import {
@@ -626,6 +627,8 @@ export function SettingsPage({ open, onClose, ports, defaultSectionId, copy }: S
   const [prefsNote, setPrefsNote] = useState<string | null>(null);
   /** 数据载入失败的可读错误（红线⑩）：非 null 时 cfg 相关分区显示错误态而非停留在「加载中…」 */
   const [loadError, setLoadError] = useState<string | null>(null);
+  /** Z-47 托盘状态（端口 getTrayStatus 有值才载入；null = 该壳无托盘通道 → 通用分区不渲染开关） */
+  const [trayStatus, setTrayStatus] = useState<TrayStatusView | null>(null);
 
   // 端口面经 ref 读取：宿主每次渲染可传新对象而不触发重载循环（只在 open 变化时重新取数）。
   const portsRef = useRef(ports);
@@ -644,10 +647,12 @@ export function SettingsPage({ open, onClose, ports, defaultSectionId, copy }: S
   const reload = useCallback(async () => {
     const p = portsRef.current;
     try {
-      const [pr, c, a] = await Promise.all([
+      const [pr, c, a, ts] = await Promise.all([
         p.getPreferences?.() ?? Promise.resolve(null),
         p.getConfig?.() ?? Promise.resolve(null),
         p.getAuthMasked?.() ?? Promise.resolve(null),
+        // Z-47：托盘状态（缺通道 = 保持 null，通用分区不渲染开关；读失败不阻断其它分区）
+        p.getTrayStatus?.() ?? Promise.resolve(null),
       ]);
       if (pr !== null) {
         setPrefs(pr);
@@ -657,6 +662,7 @@ export function SettingsPage({ open, onClose, ports, defaultSectionId, copy }: S
       }
       if (c !== null) setCfg(c);
       if (a !== null) setAuth(a);
+      if (ts !== null) setTrayStatus(ts);
       setLoadError(null);
     } catch (e) {
       // 数据载入失败：把错误暴露到界面（分区级错误态），不再只 console.error 后停留在「加载中…」
@@ -701,6 +707,15 @@ export function SettingsPage({ open, onClose, ports, defaultSectionId, copy }: S
 
   const selectNotifyDetails = (d: SettingsNotifyDetails): void => {
     savePrefsPatch({ notifyDetails: d });
+  };
+
+  /** Z-47：切换关窗驻留（写后直接采用响应整像刷新开关初值；失败如实回注偏好反馈区） */
+  const toggleCloseToTray = (enabled: boolean): void => {
+    const fn = portsRef.current.setCloseToTray;
+    if (fn === undefined) return;
+    void fn(enabled)
+      .then((status) => setTrayStatus(status))
+      .catch((e: unknown) => setPrefsNote(`托盘偏好保存失败：${e instanceof Error ? e.message : String(e)}`));
   };
 
   const saveCfg = async (patch: Record<string, unknown>): Promise<void> => {
@@ -763,6 +778,9 @@ export function SettingsPage({ open, onClose, ports, defaultSectionId, copy }: S
                   ? { preferencesFileLabel: copy.preferencesFileLabel }
                   : {})}
                 {...(copy?.openSettingsKeys !== undefined ? { openSettingsKeys: copy.openSettingsKeys } : {})}
+                // Z-47：托盘通道就绪（getTrayStatus 存在且已载入）才传状态；web/缺通道 = undefined → 不渲染开关
+                {...(trayStatus !== null ? { trayStatus } : {})}
+                {...(ports.setCloseToTray !== undefined ? { onToggleCloseToTray: toggleCloseToTray } : {})}
               />
             ),
           };
@@ -860,7 +878,20 @@ export function SettingsPage({ open, onClose, ports, defaultSectionId, copy }: S
     });
     // 分区渲染闭包捕获上述数据/回调；数据未变时不重建分区表
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [prefs, cfg, auth, theme, uiFontSize, codePreferences, prefsNote, loadError, modelsContribution, allow, copy]);
+  }, [
+    prefs,
+    cfg,
+    auth,
+    theme,
+    uiFontSize,
+    codePreferences,
+    prefsNote,
+    loadError,
+    modelsContribution,
+    allow,
+    copy,
+    trayStatus,
+  ]);
 
   // 左栏页脚（Z-88 底部）：ZCode 是账号菜单（仅可用项）；我们无账号体系 → 只放版本号（About 数据）
   const version = ports.versionLabel ?? APP_VERSION_LABEL;

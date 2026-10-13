@@ -25,8 +25,8 @@ export interface RowMenuFlags {
   canArchive: boolean;
   canSplit: boolean;
   canTrajectory: boolean;
-  /** Z-49：壳提供删除通道才出现「删除」（缺 = 该项不渲染，红线⑩） */
-  canDelete: boolean;
+  /** Z-49：壳提供删除通道才出现「删除」（缺省 false = 该项不渲染，红线⑩） */
+  canDelete?: boolean | undefined;
 }
 
 /** 可兑现动作集合（纯逻辑，测试钉顺序与「无通道不出现」） */

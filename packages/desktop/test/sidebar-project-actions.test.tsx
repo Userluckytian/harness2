@@ -9,8 +9,8 @@ import type { ConnectionStatus, Harness2Api, StatusDetail, WsFrame } from '../sr
 
 const ALPHA = 'D:/p/alpha';
 
-function makeFakeApi(): Harness2Api & Record<string, unknown> {
-  const api: Harness2Api & Record<string, unknown> = {
+function makeFakeApi(): Harness2Api {
+  const api = {
     platform: 'win32' as const,
     listSessions: vi.fn(async () => [
       { id: 's1', dir: 'd1', cwd: ALPHA, mtimeMs: 10, firstUserText: 'alpha会话', messageCount: 2, lastSeq: 3 },
@@ -87,7 +87,7 @@ function makeFakeApi(): Harness2Api & Record<string, unknown> {
     windowGetState: vi.fn(async () => ({ maximized: false })),
     onWindowState: vi.fn(() => () => {}),
   };
-  return api;
+  return api as unknown as Harness2Api;
 }
 
 async function bootApp(api: Harness2Api): Promise<{ App: () => React.ReactNode }> {

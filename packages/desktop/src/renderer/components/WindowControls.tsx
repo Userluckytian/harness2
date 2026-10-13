@@ -58,7 +58,8 @@ function CloseIcon(): React.ReactNode {
  */
 export function WindowControls(): React.ReactNode {
   const maximized = useWindowMaximized();
-  const api = (typeof window === 'undefined' ? undefined : (window as { harness2?: Harness2Api }).harness2) ?? {};
+  const api: Partial<Harness2Api> =
+    (typeof window === 'undefined' ? undefined : (window as { harness2?: Partial<Harness2Api> }).harness2) ?? {};
   return (
     <span className="window-controls" data-testid="window-controls">
       <button
@@ -94,13 +95,14 @@ export function WindowControls(): React.ReactNode {
 
 /**
  * 顶层常驻 overlay（Z-46）：48px 标题带（透明 drag 条 + 右对齐三键），
- * `pointer-events-none` 整带不挡任何点击（除右端 138px 安全区）；
+ * `pointer-events-none` 整带不挡任何点击（除右端 136px 安全区）；
  * 键体 `pointer-events-auto` + no-drag（CSS `.window-controls-overlay`）。
  * 仅 win/linux 且有通道时渲染；mac / web / 缺通道 → null。
  */
 export function WindowControlsOverlay(): React.ReactNode {
   const platform = desktopPlatform();
-  const api = (typeof window === 'undefined' ? undefined : (window as { harness2?: Harness2Api }).harness2) ?? {};
+  const api: Partial<Harness2Api> =
+    (typeof window === 'undefined' ? undefined : (window as { harness2?: Partial<Harness2Api> }).harness2) ?? {};
   if (!usesCustomWindowControls(platform) || typeof api.windowMinimize !== 'function') return null;
   return (
     <div className="window-controls-overlay" data-testid="window-controls-overlay">

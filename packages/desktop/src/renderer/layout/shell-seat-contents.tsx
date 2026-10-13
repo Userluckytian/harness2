@@ -134,6 +134,26 @@ function SidebarSeatContent(): React.ReactNode {
     frameDispatch({ type: 'main/select-key', key: null });
   };
 
+  // Z-47（T3 渲染侧接线）：订阅主进程托盘菜单事件（IPC_TRAY_EVENT）。
+  // 「新建会话」→ 与侧栏顶部「+」同一路径（backToConversation + 收右栏 + controller.newSession）；
+  // 「添加项目」→ 与组头「添加项目」同一真源（本组件 addProject：目录选择器 → projects:add）。
+  // 侧栏席位恒在场（Z-06 折叠只隐藏不卸载），故在此订阅覆盖全场景；缺通道（web/旧夹具）跳过。
+  useEffect(() => {
+    const onTrayEvent = window.harness2.onTrayEvent;
+    if (onTrayEvent === undefined) return undefined;
+    return onTrayEvent((event) => {
+      if (event.type === 'tray:new-session') {
+        backToConversation();
+        newSessionCollapsingRightbar(frameDispatch);
+      } else if (event.type === 'tray:add-project') {
+        addProject();
+      }
+    });
+    // backToConversation/addProject 读的都是模块级稳定引用（window.harness2 + setState 函数）；
+    // frameDispatch 身份稳定 → 挂载一次订阅即正确，无需随渲染重挂。
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [frameDispatch]);
+
   return (
     <SidebarRoot
       // 折叠事实取几何口径（Z-06：折叠后容器 4px、内容只隐藏不卸载）
