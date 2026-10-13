@@ -413,15 +413,25 @@ export function createBridge(deps: BridgeDeps): Bridge {
     ws.send(JSON.stringify(op));
   };
 
+  /**
+   * R0-3①：serve HTTP base 的**惰性**求值。
+   * `deps.serve.baseUrl` 是「serve 未就绪即同步抛错」的 getter（serve-manager.ts:194-196）。
+   * 此前它在 handleInvoke 的 switch 之前被无条件读取，导致未就绪期间**所有** IPC 命令连坐抛错——
+   * 包括 window:*、projects:*、notify:*、settings/metadata/drafts:*、loadLayout/saveLayout、
+   * getStatus、gitBranch、listDir、terminal:* 等 48 条根本不碰 HTTP 的命令。
+   * 现只在真正要发 HTTP 的 case 内调用本函数；错误文案由 getter 原样给出，行为语义不变。
+   */
+  const serveBase = (): string => deps.serve.baseUrl;
+
   const handleInvoke = async (_event: IpcMainInvokeEvent, req: unknown): Promise<unknown> => {
     if (typeof req !== 'object' || req === null || typeof (req as { cmd?: unknown }).cmd !== 'string') {
       throw new InvokeError('invoke 请求必须是 {cmd, ...}');
     }
     const cmd = (req as { cmd: string }).cmd;
     const args = req as Record<string, unknown>;
-    const base = deps.serve.baseUrl;
     switch (cmd) {
       case 'listSessions': {
+        const base = serveBase();
         const cwd = args['cwd'];
         // serve 返回 { sessions: [...] }，但 Harness2Api.listSessions 契约是数组 → 这里取 .sessions
         // （2026-09-07 修：此前返回整个对象，渲染端 [...sessions] 展开对象抛错，会话列表永不更新）
@@ -430,7 +440,8 @@ export function createBridge(deps: BridgeDeps): Bridge {
         );
         return body.sessions;
       }
-      case 'createSession':
+      case 'createSession': {
+        const base = serveBase();
         return httpJson(`${base}/api/sessions`, {
           method: 'POST',
           headers: { 'content-type': 'application/json' },
@@ -438,9 +449,13 @@ export function createBridge(deps: BridgeDeps): Bridge {
             cwd: typeof args['cwd'] === 'string' && args['cwd'].length > 0 ? args['cwd'] : deps.root,
           }),
         });
-      case 'events':
+      }
+      case 'events': {
+        const base = serveBase();
         return httpJson(`${base}/api/sessions/${encodeURIComponent(String(args['sessionId']))}/events`);
-      case 'undo':
+      }
+      case 'undo': {
+        const base = serveBase();
         return httpJson(`${base}/api/sessions/${encodeURIComponent(String(args['sessionId']))}/undo`, {
           method: 'POST',
           headers: { 'content-type': 'application/json' },
@@ -449,12 +464,15 @@ export function createBridge(deps: BridgeDeps): Bridge {
             ...(typeof args['dryRun'] === 'boolean' ? { dryRun: args['dryRun'] } : {}),
           }),
         });
-      case 'redo':
+      }
+      case 'redo': {
+        const base = serveBase();
         return httpJson(`${base}/api/sessions/${encodeURIComponent(String(args['sessionId']))}/redo`, {
           method: 'POST',
           headers: { 'content-type': 'application/json' },
           body: '{}',
         });
+      }
       case 'subscribe':
         wsSendOrThrow({ op: 'subscribe', sessionId: requireSessionId(args) });
         return null;
@@ -491,15 +509,18 @@ export function createBridge(deps: BridgeDeps): Bridge {
       }
       // —— D0：S7 只读查询端点（GET，纯投影） ——
       case 'runConfig': {
+        const base = serveBase();
         const sid = requireSessionId(args);
         return httpJson(`${base}/api/sessions/${encodeURIComponent(sid)}/run-config`);
       }
       case 'planState': {
+        const base = serveBase();
         const sid = requireSessionId(args);
         // 404 = 「会话暂无计划数据」（core 明确语义，非错误）→ null，UI 显示空态而非假计划
         return httpJsonOptional(`${base}/api/sessions/${encodeURIComponent(sid)}/plan-state`);
       }
       case 'executionViews': {
+        const base = serveBase();
         const sid = requireSessionId(args);
         const body = await httpJson<{ views: unknown[] }>(
           `${base}/api/sessions/${encodeURIComponent(sid)}/execution-view`,
@@ -507,6 +528,7 @@ export function createBridge(deps: BridgeDeps): Bridge {
         return body.views;
       }
       case 'changeReview': {
+        const base = serveBase();
         const sid = requireSessionId(args);
         return httpJson(`${base}/api/sessions/${encodeURIComponent(sid)}/change-review`);
       }
