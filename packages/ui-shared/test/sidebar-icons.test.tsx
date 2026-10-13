@@ -5,7 +5,7 @@
 //   - 可访问名逐项保留（aria-label / title 不变）；
 //   - 页脚账号块 = 两行：上行「用户名」、下行「连接状态」（renderAccountStatus 席位，用户名之后）。
 import { afterEach, describe, expect, it } from 'vitest';
-import { cleanup, render, screen } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { DEFAULT_SIDEBAR_LABELS } from '../src/renderer/sidebar/labels.js';
 import { SidebarRoot, type SidebarRootProps } from '../src/renderer/sidebar/SidebarRoot.js';
 import type { SidebarSessionItem } from '../src/renderer/sidebar/session-items.js';
@@ -105,7 +105,10 @@ describe('分区头 / 组头 / 行内图标化（14×14）', () => {
     expect(groupHead.querySelector('svg.lucide-folder')).not.toBeNull();
     expectIcon(groupHead, 14);
 
-    // 组头右侧「移出项目」14×14
+    // 组头右侧「移出项目」14×14 —— Z-48：动作钮只在 hover/focus 态 mount，先悬浮组头行
+    const headRow = document.querySelector('[data-group-key="project:D:/p/alpha"] > .h2-sidebar-group-head-row');
+    expect(headRow).not.toBeNull();
+    fireEvent.mouseOver(headRow as Element);
     expectIcon(screen.getByTestId('sidebar-group-remove-project-D--p-alpha'), 14);
 
     // 分区头右侧「移动」占位 + 「添加项目」14×14

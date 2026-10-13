@@ -58,6 +58,13 @@ function testButton(testId: string): HTMLButtonElement {
   return screen.getByTestId(testId) as HTMLButtonElement;
 }
 
+/** Z-48：组头动作钮只在 hover/focus 态 mount —— 悬浮该组头行（jsdom 无 :hover，mouseOver → React onMouseEnter） */
+function hoverGroupHead(cwd: string = ALPHA): void {
+  const headRow = document.querySelector(`[data-group-key="project:${cwd}"] > .h2-sidebar-group-head-row`);
+  if (!headRow) throw new Error(`组头行未找到：project:${cwd}`);
+  fireEvent.mouseOver(headRow);
+}
+
 describe('项目区头按钮（Z-16 #6）', () => {
   it('「移动项目分区」恒为 disabled 占位（disabled + data-placeholder + title 说明，红线⑩）', () => {
     renderBrowser({ projects: [{ cwd: ALPHA, addedAt: 1 }] });
@@ -109,7 +116,7 @@ describe('显式项目组（Z-16 #7）', () => {
     expect(screen.getByText('alpha')).toBeTruthy();
   });
 
-  it('组头「移出项目」：有回调点击带组 cwd；无回调 = disabled 占位', () => {
+  it('组头「移出项目」：hover 出现后，有回调点击带组 cwd（Z-48：交互态才 mount）', () => {
     const onRemoveProject = vi.fn();
     renderBrowser({
       projects: [
@@ -119,12 +126,21 @@ describe('显式项目组（Z-16 #7）', () => {
       sessions: [item('a1', { cwd: ALPHA })],
       onRemoveProject,
     });
+    // Z-48：非 hover/focus 态时组头动作钮不 mount
+    expect(screen.queryByTestId('sidebar-group-remove-project-D--p-alpha')).toBeNull();
+    // 悬浮组头触发 hover（jsdom 无 :hover，用 mouseOver → React onMouseEnter）
+    hoverGroupHead(ALPHA);
     const remove = testButton('sidebar-group-remove-project-D--p-alpha');
     expect(remove.disabled).toBe(false);
     fireEvent.click(remove);
+    // 无 running 会话 → 直接移除，不弹确认（Z-49）
     expect(onRemoveProject).toHaveBeenCalledWith(ALPHA);
-    cleanup();
+    expect(screen.queryByTestId('confirm-dialog')).toBeNull();
+  });
+
+  it('无回调时 hover 后仍渲染「移出项目」disabled 占位（红线⑩）', () => {
     renderBrowser({ projects: [{ cwd: ALPHA, addedAt: 1 }] });
+    hoverGroupHead(ALPHA);
     const placeholder = testButton('sidebar-group-remove-project-D--p-alpha');
     expect(placeholder.disabled).toBe(true);
     expect(placeholder.getAttribute('data-placeholder')).toBe('true');

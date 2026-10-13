@@ -181,6 +181,23 @@ function SidebarSeatContent(): React.ReactNode {
           : undefined
       }
       onRemoveProject={window.harness2.projectsRemove !== undefined ? removeProject : undefined}
+      // Z-48 #2：项目组头 hover「在此项目新建会话」= 同一新建链路但**带项目 cwd**
+      // （controller.newSession(cwd) → api.createSession(cwd)；与顶部「+」的空白新会话区分）。
+      // 未连接 / 无创建通道时不接线（钮不渲染，红线⑩）。
+      onNewSessionInProject={
+        state.status === 'connected' && window.harness2.createSession !== undefined
+          ? (cwd: string) => {
+              backToConversation();
+              newSessionCollapsingRightbar(frameDispatch, cwd);
+            }
+          : undefined
+      }
+      // Z-49：删除会话（软删 controller.deleteSession：metadata deleted + 列表移除；
+      // 确认对话框在 SessionBrowser 内承载）。metadata 通道缺失时不接线（菜单不出现该项，
+      // controller 会如实降级为「仅当前视图移除」——但按红线⑩只在有通道时摆入口）。
+      onDeleteSession={
+        window.harness2.metadataSet !== undefined ? (id: string) => controller.deleteSession(id) : undefined
+      }
       // 任务区头「新建任务」= 与 SidebarRoot 新会话入口同一真源；未连接时不给动作（占位钮，不可点即坏）
       onNewTask={
         state.status === 'connected'

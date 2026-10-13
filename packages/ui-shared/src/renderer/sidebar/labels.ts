@@ -84,6 +84,27 @@ export interface SidebarLabels {
   newTaskInSection: string;
   /** 新建任务钮无通道时的悬停说明（缺省不接线时的占位） */
   newTaskInSectionTodo: string;
+  /** Z-48 #2：项目组头 hover 出现的「在此项目新建会话」（显式项目独有；聚合组无此钮） */
+  newSessionInProject: string;
+  /** —— Z-49 确认对话框文案（口径 = ZCode confirmDialog 族） —— */
+  /** 删除会话确认标题 */
+  deleteSessionTitle: string;
+  /** 删除会话确认描述（软删语义如实：只从列表移除，数据保留） */
+  deleteSessionDescription: string;
+  /** 删除会话确认按钮（destructive） */
+  deleteSessionConfirm: string;
+  /** 行菜单「删除」项 */
+  menuDelete: string;
+  /** 行菜单「删除」在会话运行中时的禁用说明（Z-49/Denia 语义：running 禁用） */
+  menuDeleteRunning: string;
+  /** 移除运行中的项目确认标题（Z-49：组内有 running 会话才弹） */
+  removeProjectRunningTitle: string;
+  /** 移除运行中的项目确认描述 */
+  removeProjectRunningDescription: string;
+  /** 移除运行中的项目确认按钮（destructive） */
+  removeProjectRunningConfirm: string;
+  /** 对话框通用取消 */
+  dialogCancel: string;
   /** 无 cwd 的会话所在分组的标题 */
   noProject: string;
   /** Pinned 区标题 */
@@ -169,6 +190,17 @@ export const DEFAULT_SIDEBAR_LABELS: SidebarLabels = {
   removeProjectTodo: '未接线：无项目移除通道',
   newTaskInSection: '新建任务',
   newTaskInSectionTodo: '未接线：宿主未提供新建任务通道',
+  // Z-48/Z-49 文案（口径 = refs-zcode-layout.md Z-48/Z-49 的 zh-CN 文案族）
+  newSessionInProject: '在此项目新建会话',
+  deleteSessionTitle: '删除这个会话？',
+  deleteSessionDescription: '会话将从列表移除。',
+  deleteSessionConfirm: '删除',
+  menuDelete: '删除',
+  menuDeleteRunning: '会话正在运行，先停止再删除',
+  removeProjectRunningTitle: '移除运行中的项目？',
+  removeProjectRunningDescription: '历史任务不会被删除。',
+  removeProjectRunningConfirm: '移除并停止运行',
+  dialogCancel: '取消',
   noProject: '无项目',
   pinned: '置顶',
   pinnedShowAll: (hidden) => `显示全部（另 ${hidden}）`,

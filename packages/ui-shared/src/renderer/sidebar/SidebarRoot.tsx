@@ -111,6 +111,10 @@ export interface SidebarRootProps extends SidebarSeats {
   onAddProject?: (() => void) | undefined;
   /** 组头「移出项目」真动作；缺省 = disabled 占位 */
   onRemoveProject?: ((cwd: string) => void) | undefined;
+  /** Z-48 #2：显式项目组头 hover「在此项目新建会话」真动作（带 cwd）；缺省 = 不渲染该钮 */
+  onNewSessionInProject?: ((cwd: string) => void) | undefined;
+  /** Z-49：删除会话真执行（软删）；缺省 = 行菜单不出现「删除」。确认对话框由 SessionBrowser 承载 */
+  onDeleteSession?: ((id: string) => Promise<void> | void) | undefined;
   /** 任务区头「新建任务」真动作；缺省 = 不渲染该钮 */
   onNewTask?: (() => void) | undefined;
   /** 文案覆盖（缺省中文） */
@@ -178,6 +182,8 @@ export function SidebarRoot(props: SidebarRootProps): React.ReactNode {
         {...(props.projects !== undefined ? { projects: props.projects } : {})}
         {...(props.onAddProject !== undefined ? { onAddProject: props.onAddProject } : {})}
         {...(props.onRemoveProject !== undefined ? { onRemoveProject: props.onRemoveProject } : {})}
+        {...(props.onNewSessionInProject !== undefined ? { onNewSessionInProject: props.onNewSessionInProject } : {})}
+        {...(props.onDeleteSession !== undefined ? { onDeleteSession: props.onDeleteSession } : {})}
         {...(props.onNewTask !== undefined ? { onNewTask: props.onNewTask } : {})}
       />
     ));
