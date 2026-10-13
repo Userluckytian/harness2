@@ -19,6 +19,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import { CheckIcon, CopyIcon, GitForkIcon } from 'lucide-react';
 import { Button } from '../../components/ui/button.js';
+import { toast } from '../toast/index.js';
 
 /** 「已复制」还原间隔（验收要求 2s；ZCode CopyRowAction 为 1200ms） */
 export const COPIED_REVERT_MS = 2000;
@@ -67,7 +68,12 @@ export function MessageActions(props: MessageActionsProps): ReactNode {
 
   const onCopy = useCallback((): void => {
     void copyMessageText(text).then((ok) => {
-      if (!ok) return; // 失败不显示已复制
+      if (!ok) {
+        // Z10-8b：原来静默（只不显示「已复制」）→ 现在如实报一条失败通知，
+        // 让用户知道是复制没成功，而不是以为点了没反应。
+        toast({ kind: 'error', message: '复制失败', detail: '剪贴板不可用或写入被拒绝' });
+        return;
+      }
       setCopied(true);
       if (revertTimerRef.current !== null) window.clearTimeout(revertTimerRef.current);
       revertTimerRef.current = window.setTimeout(() => {

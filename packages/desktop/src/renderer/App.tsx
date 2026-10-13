@@ -32,6 +32,7 @@ import { requestOpenComposerModelMenu } from '@harness2/ui-shared/renderer/conve
 import type { AppState } from '@harness2/ui-shared/renderer/store.js';
 import { filterSessionList } from '@harness2/ui-shared/shared/metadata.js';
 import { SIDE_PANE_NO_SESSION_KEY, sidePaneStore } from '@harness2/ui-shared/renderer/side-pane/index.js';
+import { ToastHost, toast } from '@harness2/ui-shared/renderer/toast/index.js';
 
 // 对外再导出（拆分前 App.tsx 的全部导出面；main.tsx / 测试仍从 './App.js' 引）
 export { controller, dragState, store, useAppState, StatusBadge } from './app-shared.js';
@@ -68,8 +69,9 @@ function openWorkspaceFromPicker(): void {
       const created = await window.harness2.createSession(dir);
       await controller.refreshSessions();
       await controller.selectSession(created.id);
-    } catch {
-      /* 通道失败：静默（无假反馈） */
+    } catch (e) {
+      // Z10-8b：原来静默吞掉 → 现在如实弹一条失败通知（不伪造成功）。
+      toast({ kind: 'error', message: '打开工作区失败', detail: e instanceof Error ? e.message : String(e) });
     }
   })();
 }
@@ -467,6 +469,8 @@ export function App(): React.ReactNode {
           onBack={() => navigateHistory('back')}
           onForward={() => navigateHistory('forward')}
         />
+        {/* Z10-8b：全局 Toast 宿主（覆层区；订阅壳无关 toastStore，两壳同一实现） */}
+        <ToastHost />
       </div>
     </ShellPaletteProvider>
   );

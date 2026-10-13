@@ -4,6 +4,7 @@
 // @vitest-environment jsdom
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Harness2Api, SettingsConfigShape } from '../../src/shared/protocol.js';
+import { toastStore } from '@harness2/ui-shared/renderer/toast/index.js';
 import {
   _resetComposerConfigForTest,
   composerControlsOf,
@@ -134,7 +135,8 @@ describe('写回链路：patch 形状 + 响应回带 config 刷新（无第二�
     expect(updateConfig).toHaveBeenCalledWith({ approval: { mode: 'plan' } });
   });
 
-  it('写回失败（ok=false）→ 桥层 console.error 如实记录（无 toast 宿主，受限项），不伪造成功', async () => {
+  it('写回失败（ok=false）→ 桥层 console.error 如实记录 + 全局 Toast（Z10-8b 接入），不伪造成功', async () => {
+    toastStore.clear();
     const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
     const controls = composerControlsOf(configOf());
     setWindowApi({ settingsUpdateConfig: vi.fn(async () => ({ ok: false as const, error: '不允许的配置字段 x' })) });
@@ -142,7 +144,12 @@ describe('写回链路：patch 形状 + 响应回带 config 刷新（无第二�
     // 回调是 fire-and-forget（void …catch(logPatchError)）→ 失败落定在后续微任务，先排空再断言
     await new Promise<void>((resolve) => setTimeout(resolve, 0));
     expect(errorSpy).toHaveBeenCalled();
+    // Z10-8b：原来只 console.error（等同静默）→ 现在如实弹一条 error Toast
+    const items = toastStore.getSnapshot();
+    expect(items.some((t) => t.kind === 'error' && t.message === '设置保存失败')).toBe(true);
+    expect(items.find((t) => t.message === '设置保存失败')?.detail).toContain('不允许的配置字段 x');
     errorSpy.mockRestore();
+    toastStore.clear();
   });
 });
 

@@ -35,6 +35,7 @@ import {
 import type { Controller } from '../app-controller.js';
 import { displayToolName } from '../chat-model.js';
 import { DiffCard } from '../components/DiffCard.js';
+import { toast } from '../toast/index.js';
 import { CommandLog } from '../features/timeline/CommandLog.js';
 import type { TimelineToolRow } from '../features/timeline/execution-log.js';
 import {
@@ -139,7 +140,11 @@ function useCopyFeedback(): { copied: boolean; copy: (text: string) => void } {
       } catch {
         ok = false;
       }
-      if (!ok) return;
+      if (!ok) {
+        // Z10-8b：原来静默（不显示「已复制」）→ 现在如实报失败，避免「点了没反应」。
+        toast({ kind: 'error', message: '复制失败', detail: '剪贴板不可用或写入被拒绝' });
+        return;
+      }
       setCopied(true);
       if (timerRef.current !== null) window.clearTimeout(timerRef.current);
       timerRef.current = window.setTimeout(() => {

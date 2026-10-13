@@ -989,3 +989,23 @@ describe('Z10-4 快捷键扩展（源码权威键表）', () => {
     );
   });
 });
+
+// —————— Z10-8b 全局 Toast 宿主装配 + 真实接入点 ——————
+describe('Z10-8b 全局 Toast（桌面壳）', () => {
+  it('ToastHost 挂载于壳覆层；Ctrl+O 打开工作区失败 → 全局 Toast 如实提示（原来静默）', async () => {
+    const api = makeFakeApi();
+    (api as unknown as { projectsPickFolder: () => Promise<string | null> }).projectsPickFolder = vi.fn(async () => {
+      throw new Error('目录选择不可用');
+    });
+    const App = (await bootApp(api)) as { App: () => React.ReactNode };
+    const { toastStore } = await import('@harness2/ui-shared/renderer/toast/index.js');
+    toastStore.clear();
+    render(<App.App />);
+    expect(screen.getByTestId('toast-host')).toBeTruthy();
+
+    fireEvent.keyDown(window, { key: 'o', code: 'KeyO', ctrlKey: true });
+    await waitFor(() => {
+      expect(toastStore.getSnapshot().some((t) => t.kind === 'error' && t.message === '打开工作区失败')).toBe(true);
+    });
+  });
+});

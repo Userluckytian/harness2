@@ -15,6 +15,7 @@ import { decideUndo, summarizeRedoConflict, summarizeUndoPreview } from './featu
 import { APPROVAL_FAILURE_PREFIX } from './approval/approval-model.js';
 import type { ActiveEvent } from './chat-model.js';
 import type { AppStore } from './store.js';
+import { toast } from './toast/toast-store.js';
 
 export interface Controller {
   start(): () => void;
@@ -342,6 +343,15 @@ export function createController(store: AppStore, api: HarnessClient): Controlle
     }, 500);
   };
 
+  /**
+   * Z10-8b：会话展示态（重命名/归档/置顶/删除标记）写失败或降级的**可见**提示。
+   * 原来只写 store 的 error 帧（仅状态角标 tooltip 可见，等同静默）；现在同步弹一条全局
+   * Toast。降级（无持久化通道、仅本次生效）用 info 自动消失，避免把能力降级误报成硬错误。
+   */
+  const toastSessionMetaIssue = (message: string, detail: string, degraded = false): void => {
+    toast(degraded ? { kind: 'info', message, detail } : { kind: 'error', message, detail });
+  };
+
   return {
     get draftsPersistence(): 'disk' | 'memory-only' {
       return draftsPersistence();
@@ -622,6 +632,7 @@ export function createController(store: AppStore, api: HarnessClient): Controlle
       if (api.metadataSet === undefined) {
         // 无持久化通道：内存覆盖层已生效，但**如实告知**不落盘（不假装已保存）
         store.applyFrame({ type: 'error', error: '此壳未提供会话展示态持久化通道：重命名仅在本次会话内生效' });
+        toastSessionMetaIssue('重命名未持久化', '此壳未提供会话展示态持久化通道：仅在本次会话内生效', true);
         return;
       }
       try {
@@ -629,18 +640,21 @@ export function createController(store: AppStore, api: HarnessClient): Controlle
         store.applyMetadata(await api.metadataSet(id, { title }));
       } catch (e) {
         store.applyFrame({ type: 'error', error: `重命名保存失败: ${(e as Error).message}` });
+        toastSessionMetaIssue('重命名失败', (e as Error).message);
       }
     },
     async archiveSession(id: string, archived: boolean): Promise<void> {
       store.updateMetadata(id, { archived });
       if (api.metadataSet === undefined) {
         store.applyFrame({ type: 'error', error: '此壳未提供会话展示态持久化通道：归档仅在本次会话内生效' });
+        toastSessionMetaIssue('归档未持久化', '此壳未提供会话展示态持久化通道：仅在本次会话内生效', true);
         return;
       }
       try {
         store.applyMetadata(await api.metadataSet(id, { archived }));
       } catch (e) {
         store.applyFrame({ type: 'error', error: `归档保存失败: ${(e as Error).message}` });
+        toastSessionMetaIssue('归档失败', (e as Error).message);
       }
     },
     async pinSession(id: string, pinned: boolean): Promise<void> {
@@ -649,12 +663,14 @@ export function createController(store: AppStore, api: HarnessClient): Controlle
       store.updateMetadata(id, { pinned });
       if (api.metadataSet === undefined) {
         store.applyFrame({ type: 'error', error: '此壳未提供会话展示态持久化通道：置顶仅在本次会话内生效' });
+        toastSessionMetaIssue('置顶未持久化', '此壳未提供会话展示态持久化通道：仅在本次会话内生效', true);
         return;
       }
       try {
         store.applyMetadata(await api.metadataSet(id, { pinned }));
       } catch (e) {
         store.applyFrame({ type: 'error', error: `置顶保存失败: ${(e as Error).message}` });
+        toastSessionMetaIssue('置顶失败', (e as Error).message);
       }
     },
     async deleteSession(id: string): Promise<void> {
@@ -665,6 +681,7 @@ export function createController(store: AppStore, api: HarnessClient): Controlle
       store.updateMetadata(id, { deleted: true });
       if (api.metadataSet === undefined) {
         store.applyFrame({ type: 'error', error: '此壳未提供会话展示态持久化通道：删除标记仅从当前视图移除' });
+        toastSessionMetaIssue('删除未持久化', '此壳未提供会话展示态持久化通道：仅从当前视图移除', true);
         store.removeSessionFromView(id);
         return;
       }
@@ -672,6 +689,7 @@ export function createController(store: AppStore, api: HarnessClient): Controlle
         await api.metadataSet(id, { deleted: true });
       } catch (e) {
         store.applyFrame({ type: 'error', error: `删除标记保存失败: ${(e as Error).message}` });
+        toastSessionMetaIssue('删除失败', (e as Error).message);
       }
       store.removeSessionFromView(id);
     },

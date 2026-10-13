@@ -37,6 +37,7 @@ import {
 import type { SettingsConfigShape } from '../../shared/protocol.js';
 import { openSettingsAtSection } from '../layout/shell-overlays.js';
 import { MODELS_SECTION_ID } from '@harness2/ui-shared/renderer/settings/shell/contributions.js';
+import { toast } from '@harness2/ui-shared/renderer/toast/toast-store.js';
 
 // —— 模块级 config 缓存（多席位共享一次 IPC；只存内存，D-14） ——
 
@@ -93,6 +94,12 @@ export async function patchComposerConfig(patch: Record<string, unknown>): Promi
 
 function logPatchError(error: unknown): void {
   console.error('[composer-controls] 配置写入失败（config 保持旧值）', error);
+  // Z10-8b：Toast 宿主已落地 → 把写失败如实弹给用户（原来只 console.error，等同静默）。
+  toast({
+    kind: 'error',
+    message: '设置保存失败',
+    detail: error instanceof Error ? error.message : String(error),
+  });
 }
 
 /** 订阅 + 触发首载的 hook（多席位各自调用，加载被模块缓存去重） */

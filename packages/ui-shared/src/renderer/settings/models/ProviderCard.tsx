@@ -20,6 +20,7 @@ import type {
 import { ConfirmDeleteDialog } from './ConfirmDeleteDialog.js';
 import { ModelDiscoverSelector } from './ModelDiscoverSelector.js';
 import { credentialPresentation, deriveApiKeyRef, emptyModelRow, rowToInput } from './model-document.js';
+import { toast } from '../../toast/index.js';
 import { issueFor, validateApiKey, validateProviderDraft, type FieldIssue } from './validate.js';
 
 /** 状态点（D-52）：仅在已确认时标绿、仅在已确认具名引用缺失时标红；未知不上色 */
@@ -152,7 +153,10 @@ export function ProviderCard({
     try {
       const res = await write(route, valid.value as string);
       if (!res.ok) {
-        setKeyError(res.error ?? '密钥写入失败');
+        const message = res.error ?? '密钥写入失败';
+        setKeyError(message);
+        // Z10-8b：凭据写入结果同时弹全局 Toast（A2 写路径）；原来只有卡内 inline 错误。
+        toast({ kind: 'error', message: 'API 密钥保存失败', detail: message });
         return;
       }
       const reference = res.reference ?? deriveApiKeyRef(route);
@@ -160,7 +164,13 @@ export function ProviderCard({
       setCredentialOverride({ state: 'confirmed', source: 'auth.json', reference });
       // 无障碍消息且不回显机密（D-52）
       setLiveMessage(`「${route}」的 API 密钥已保存到 auth.json（不回显）；具名引用 ${reference}`);
+      toast({ kind: 'success', message: 'API 密钥已保存', detail: `渠道「${route}」→ auth.json（引用 ${reference}）` });
       onRefresh();
+    } catch (e) {
+      // 通道抛错（旧实现未捕获 → 调用方 unhandled）：就地报错 + 全局 Toast，不假报成功。
+      const message = e instanceof Error ? e.message : String(e);
+      setKeyError(message);
+      toast({ kind: 'error', message: 'API 密钥保存失败', detail: message });
     } finally {
       setKeyBusy(false);
     }

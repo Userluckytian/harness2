@@ -3,8 +3,9 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import React from 'react';
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { createAppShell } from '@harness2/ui-shared/renderer/app-shell.js';
+import { toast, toastStore } from '@harness2/ui-shared/renderer/toast/index.js';
 import { workbenchStore } from '@harness2/ui-shared/renderer/layout/workbench/store.js';
 import { sessionNavHistory } from '@harness2/ui-shared/renderer/layout/session-nav-history.js';
 import { setShellTheme } from '@harness2/ui-shared/renderer/theme/index.js';
@@ -30,6 +31,8 @@ afterEach(() => {
   setShellTheme('system');
   globalThis.localStorage?.removeItem('harness2-theme');
   document.documentElement.removeAttribute('data-theme');
+  // Z10-8b：Toast 是模块级单例 —— 测试间清空，避免上一用例的通知串味。
+  toastStore.clear();
 });
 
 /** 假端口的事件帧注入（onEvent 订阅进这里；测试据此驱动流式/终态，走真实 controller 分发） */
@@ -461,6 +464,19 @@ describe('Z10-4 快捷键扩展（源码权威键表）', () => {
     await waitFor(() => expect(getConfig).toHaveBeenCalled());
     fireEvent.keyDown(window, { key: 'm', code: 'KeyM', ctrlKey: true, shiftKey: true });
     await waitFor(() => expect(updateConfig).toHaveBeenCalledWith({ approval: { mode: 'acceptEdits' } }));
+    stop();
+  });
+});
+
+// —————— Z10-8b 全局 Toast 宿主（web 壳）——————
+describe('Z10-8b 全局 Toast 宿主（web 壳）', () => {
+  it('ToastHost 挂在覆层区；toast() 后通知可见（两壳同一实现）', async () => {
+    const { stop } = await mount();
+    expect(screen.getByTestId('toast-host')).toBeTruthy();
+    act(() => {
+      toast({ kind: 'info', message: '来自 web 壳' });
+    });
+    expect(await screen.findByText('来自 web 壳')).toBeTruthy();
     stop();
   });
 });

@@ -15,6 +15,7 @@ import { isImeComposing } from '@harness2/ui-shared/renderer/features/composer/c
 import { AppFrame, FrameTopOverlay, useFrameState } from '@harness2/ui-shared/renderer/layout/index.js';
 import { canGoBack, canGoForward, sessionNavHistory } from '@harness2/ui-shared/renderer/layout/session-nav-history.js';
 import { getShellTheme, setShellTheme } from '@harness2/ui-shared/renderer/theme/index.js';
+import { ToastHost } from '@harness2/ui-shared/renderer/toast/index.js';
 import { requestOpenComposerModelMenu } from '@harness2/ui-shared/renderer/conversation/composer/composer-menu-signal.js';
 import type { TerminalPort } from '@harness2/ui-shared/renderer/terminal/port.js';
 import { toggleTerminalDock } from './terminal/toggle-dock.js';
@@ -212,6 +213,8 @@ export function WebApp({
           onForward={() => navigateHistory('forward')}
           testId="web-top-overlay"
         />
+        {/* Z10-8b：全局 Toast 宿主（覆层区；与桌面同一实现） */}
+        <ToastHost />
       </div>
     </WebShellProvider>
   );
