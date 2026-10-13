@@ -1062,6 +1062,93 @@ button.composer-context-chip-readonly:hover {
   background: var(--color-hover);
   color: var(--color-foreground);
 }
+
+/* =============================================================================
+ * 草稿态（新任务态）composer —— 对齐 ZCode ConversationComposer.tsx:2202-2238
+ * -----------------------------------------------------------------------------
+ * 属性来源（seat.tsx，均为唯一真相，非本表另立）：
+ *   · data-draft="true"        = 会话已加载、非运行中、无任何条目（草稿判据 isDraft）；
+ *   · data-draft-inflow="true" = 草稿态且队列/审批 dock 均为空时才切「在流内」布局；
+ *     有条目时回落贴底浮层（卡片视觉仍随 data-draft 生效）—— 见下方位置段注释。
+ * ZCode 依据：centered（草稿）→ 外层 max-w-2xl(672px) 居中；有 contextHeader 时内层才套
+ *   卡片 `rounded-2xl bg-surface shadow-xl/5`；编辑器 `className="p-0"`（自身无边框/背景/圆角）。
+ * ========================================================================== */
+/* 卡片化：max-w-2xl 居中 + rounded-2xl + 极柔阴影 + p-1.5 外层（上下文条顶带即在此内衬里）。 */
+.conversation-seat[data-draft='true'] .composer {
+  width: 100%;
+  max-width: 672px; /* max-w-2xl */
+  margin-inline: auto;
+  padding: 6px; /* p-1.5：上下文条顶带 + 内容区外衬 */
+  border-top: 0;
+  border-radius: 16px; /* rounded-2xl */
+  background: var(--color-card); /* 语义 token，深浅两主题均成立（light #fff / dark #2b2b2b） */
+  /* Tailwind shadow-xl/5：与主题无关的中性黑投影（非色值硬编，两主题同值）。 */
+  box-shadow:
+    0 20px 25px -5px rgb(0 0 0 / 0.05),
+    0 8px 10px -6px rgb(0 0 0 / 0.05);
+}
+/* 编辑器去壳（ZCode ChatPromptEditor `p-0` 的等价）：自身无边框/背景/圆角，与卡片融为一体；
+   保留 min-height / padding / 滚动（文本呼吸与最小高度）。 */
+.conversation-seat[data-draft='true'] .composer-editor {
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+}
+/* 占位层随去边框回移 1px：编辑器无 border 后内容起点 = padding(8px)。 */
+.conversation-seat[data-draft='true'] .composer-placeholder {
+  top: 8px;
+  left: 8px;
+  right: 8px;
+}
+/* focus 态跟随卡片：编辑器自身不画方框（否则卡片内出现突兀矩形），焦点环改由卡片承担。 */
+.conversation-seat[data-draft='true'] .composer-editor:focus {
+  outline: none;
+}
+.conversation-seat[data-draft='true'] .composer:focus-within {
+  outline: 1px solid var(--color-primary);
+  outline-offset: -1px;
+}
+
+/* —— 草稿态「在流内」布局（ZCode ConversationTimeline.tsx:1759-1776）——
+   顺序：顶部 29dvh 留白 → 水印+问候 → 输入卡片 → 建议 chips → 下方弹性留白。
+   仅 data-draft-inflow（草稿且队列/审批条目均为空）时切换；否则 .composer-overlay
+   仍是会话态同一份贴底浮层（队列/审批 dock 必须仍可见且不破版）。 */
+.conversation-seat[data-draft-inflow='true'] {
+  justify-content: flex-start;
+}
+/* 转录区不再撑满（内容自高），使「空态内容 + composer + chips」成为一体、整体贴上部。 */
+.conversation-seat[data-draft-inflow='true'] .chat {
+  flex: none;
+}
+.conversation-seat[data-draft-inflow='true'] .messages {
+  flex: none;
+  overflow: visible;
+  /* 草稿态 composer 在流内（不与转录重叠）→ 取消浮层预留（不再引用 --composer-inset）。 */
+  padding-bottom: 0;
+}
+/* 顶部弹性留白 = ZCode `before:min-h-[52px] before:basis-[29dvh]`；内容不再垂直居中。 */
+.conversation-seat[data-draft-inflow='true'] .h2-empty {
+  flex: none;
+  justify-content: flex-start;
+  padding-top: max(52px, 29dvh);
+  padding-bottom: 0;
+}
+/* composer 从贴底浮层切回流内；卡片与问候之间 mt-3 = 12px。 */
+.conversation-seat[data-draft-inflow='true'] .composer-overlay {
+  position: static;
+  left: auto;
+  right: auto;
+  bottom: auto;
+  z-index: auto;
+  padding-top: 12px;
+}
+/* 下方弹性留白 = ZCode `after:min-h-4 after:flex-1`（吃掉剩余高度，内容整体集中在上部）。 */
+.conversation-seat[data-draft-inflow='true']::after {
+  content: '';
+  flex: 1;
+  min-height: 16px;
+}
+
 .bg-tag {
   font-size: 10px;
   color: var(--color-warning);

@@ -419,6 +419,24 @@ export function ConversationSeat(props: ConversationSeatProps): ReactNode {
       ? undefined
       : { id: sessionId, running, ...(activeTurnId !== undefined ? { activeTurnId } : {}) };
 
+  // 草稿态判据（**唯一真相**，Z10-1 建议 chip 与草稿态卡片化/在流内布局共用同一表达式）：
+  // 会话已加载、非运行中、且本会话尚无任何条目（= 新任务态）。
+  const isDraft = sessionId !== null && stream?.loaded === true && !running && store.chatItems(sessionId).length === 0;
+  // 队列 dock 的内容（渲染与判据共用同一份模型，不重复计算；空 = 不渲染）。
+  const queueView =
+    stream === undefined
+      ? []
+      : composeQueueView({
+          queue: stream.queue,
+          pendingSubmits: stream.pendingSubmits,
+          submitAcks: stream.submitAcks,
+        });
+  const hasApprovals = stream !== undefined && stream.approvals.length > 0;
+  // 草稿态**在流内**布局（ZCode ConversationTimeline.tsx:1759-1776 responsiveCenteredEmptyLayout）：
+  // 仅当队列与审批 dock **都为空**时才切换 —— 有条目时两个 dock 必须仍可见且不破版，
+  // 此时回落贴底浮层（会话态同一形态）。视觉规则见 shell.css 的 `[data-draft-inflow]`。
+  const isDraftInFlow = isDraft && queueView.length === 0 && !hasApprovals;
+
   // D-46（chat 侧）：composer 以浮层置于全高转录之上，并预留**实测**高度。
   // 测量源 = ResizeObserver（环境无 RO 时静默不测 → 预留 0，绝不虚构），
   // 出口 = CSS 变量 `--composer-inset`（`.messages` 滚动叶容器消费）。
@@ -433,7 +451,15 @@ export function ConversationSeat(props: ConversationSeatProps): ReactNode {
     composerInsetPx === undefined ? undefined : ({ [COMPOSER_INSET_VAR]: `${composerInsetPx}px` } as CSSProperties);
 
   return (
-    <div className="conversation-seat" data-testid="conversation-seat" style={seatStyle}>
+    <div
+      className="conversation-seat"
+      data-testid="conversation-seat"
+      style={seatStyle}
+      // 草稿态判据（唯一真相，见上方 isDraft）；undefined = 非草稿态不写属性。
+      data-draft={isDraft ? 'true' : undefined}
+      // 草稿态且队列/审批 dock 均为空 → 才切「在流内」布局（CSS 依据）。
+      data-draft-inflow={isDraftInFlow ? 'true' : undefined}
+    >
       {/* Z2-09b（Z-17）：恢复条 —— 重订阅快照实际携带在途状态时才出现（对话页顶部细横条），
           手动可关 + 8s 自动消失；inflight 由 store 从 ResumeSnapshotShape 真实字段计得。 */}
       {stream?.resume !== undefined && <ResumeBar resumeAt={stream.resume.at} inflight={stream.resume.inflight} />}
@@ -463,18 +489,17 @@ export function ConversationSeat(props: ConversationSeatProps): ReactNode {
           <p>选择左侧会话开始对话（Ctrl+K 打开命令面板）</p>
         </div>
       )}
-      <div className="composer-overlay" ref={composerRef} data-testid="composer-overlay">
+      <div
+        className="composer-overlay"
+        ref={composerRef}
+        data-testid="composer-overlay"
+        // 草稿态透出给 composer 链路（卡片化视觉用 data-draft；在流内布局用 data-draft-inflow）。
+        data-draft={isDraft ? 'true' : undefined}
+        data-draft-inflow={isDraftInFlow ? 'true' : undefined}
+      >
         {/* Z2-09b（Z-17）：队列面板 = composer 之上的按需 dock（有队列/在途提交才出现）。
             只读展示（协议无撤回 op，登记于交付报告）；ZCode 无条目像素依据，按 dock 族视觉。 */}
-        {stream !== undefined && (
-          <QueuePanel
-            entries={composeQueueView({
-              queue: stream.queue,
-              pendingSubmits: stream.pendingSubmits,
-              submitAcks: stream.submitAcks,
-            })}
-          />
-        )}
+        {stream !== undefined && <QueuePanel entries={queueView} />}
         {/* Z-20：待审批 = 会话底部 dock，常驻在 composer **之上**（在转录滚动区之外）。
             数据源 = 本席位绑定会话的待批列表；决定仍只回传 allow/deny（语义归 core）。 */}
         {stream !== undefined && stream.approvals.length > 0 && (
@@ -510,7 +535,7 @@ export function ConversationSeat(props: ConversationSeatProps): ReactNode {
             动作是真实的：点击 = 把该文案**预填**进 composer（insert-text，光标处追加，不覆盖已有
             草稿），由用户 Enter 经既有提交边界送出 —— 非直接发送，不摆点击无效的假 chip。
             壳可注入 `onPickSuggestion` 接管（如经 composerPrefill 通道）；缺省写本席位活草稿。 */}
-        {sessionId !== null && stream?.loaded === true && !running && store.chatItems(sessionId).length === 0 && (
+        {isDraft && (
           <ConversationSuggestionChips
             onPickSuggestion={
               props.onPickSuggestion ?? ((text) => composerStore.dispatch({ type: 'insert-text', text }))
