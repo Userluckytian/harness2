@@ -32,9 +32,9 @@
 
 ## 首次公开发布说明（0.1 / 0.3 / 0.6 均未实际发到 npm）
 
-截至 1.0.0 之前，`harness2` 与 `@harness2/core` **从未发布到 npm registry**（0.1/0.3/0.6 均为「代码就绪；发布待授权」，见 `CHANGELOG.md` 各节与 `docs/issue-log/OPEN.md`）。因此：
+1.0.0 之前，`harness2` 与 `@harness2/core` **从未发布到 npm registry**（0.1/0.3/0.6 均为「代码就绪；发布待授权」，见 `CHANGELOG.md` 各节与 `docs/issue-log/OPEN.md`）。因此：
 
-- 不存在「已发布版本升级」场景；**1.0.0 是首个公开发布版本**。
+- 不存在「已发布版本升级」场景；**1.0.0 是首个公开发布版本**（2026-10-13 已发 GitHub Release 安装包；npm publish 待 `NPM_TOKEN`，届时装包命令 `npm i -g harness2` 方可用）。
 - 此前从源码使用的用户：`git pull` → `pnpm install` → `pnpm build`，数据目录 `~/.harness2/` 原样兼容（见下「数据兼容性」）。
 
 ## config / auth 演进索引（0.1 → 0.6，全部加性）

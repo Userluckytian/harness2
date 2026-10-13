@@ -8,7 +8,9 @@
 
 **内核能力补齐（Z6）**：事件类型/命令注册/服务容器**三开放**（不引 Cordis 运行时）· provider 动态拉取模型 + 每模型推理档位 + prompt caching（system/工具前缀断点）· 分层压缩接入自动路径 + 连续失败断路器 · 权限规则 glob DSL（遍历优先级 deny>ask>allow + fail-closed）· bash 副作用清单随 undo/redo 携带 · Hooks（生命周期事件面 + 执行器：PreToolUse 真拦截/可改写输入、PostToolUse 上下文回注）· 工作流编排引擎（声明式步进 + 审批闸复用 + 并发闸 + 断点续跑）· Agent Teams（成员/共享任务板/成员间消息 + 硬闸）· 符号代码索引（8 语言定义/引用 + 增量）。**全程 core 公开导出纯加性**（846 → 1113+，0 removed / 0 kindChanged）。
 
-## 1.0.0 — M4「公开发布收口」（2026-09-07，代码就绪；发布待授权）
+## 1.0.0 — M4「公开发布收口」（2026-09-07 代码就绪；2026-10-13 GitHub Release 已发布）
+
+> **发布补记（2026-10-13）**：tag `v1.0.0`（commit `19514fc`）触发 release 工作流，**GitHub Release 已发布五件 unsigned 安装包**（https://github.com/Userluckytian/harness2/releases/tag/v1.0.0 ：win nsis + win portable / mac dmg arm64+x64 / linux AppImage）。**该发布构建已包含上方 Unreleased 段的 Z 程序（GUI 复刻）改动**——版本号仍标 1.0.0；后续 npm 发布前先按 semver 承诺递增。npm publish 因 `NPM_TOKEN` 未配置按设计条件跳过。
 
 首个公开发布版本（0.1/0.3/0.6 均为「代码就绪；发布待授权」，从未实际发布到 npm，见 `docs/MIGRATION.md`）。**0.6 → 1.0 无破坏性变更、零迁移**（变更索引逐项引用提交号见 `docs/MIGRATION.md`）。
 
@@ -23,7 +25,7 @@
 
 - **API 稳定承诺**（`docs/API-STABILITY.md`）：1.0 起 semver 政策生效——breaking（删除/改名/声明种类变更）只进 major、加性（新增导出/可选字段）进 minor；`@harness2/core` 主入口 **372 个导出**经快照测试钉死（`packages/core/test/api-surface.test.ts`：加性不红、删除/改名/声明种类变更红 + 运行时导出交叉校验防漏报）；`@harness2/core/dist/...` 深路径不在发布映射内、不承诺。
 - **迁移指南**（`docs/MIGRATION.md`）：0.6→1.0 零迁移（逐项引用 CHANGELOG 条目与提交号）；auth.json / config schema 演进索引（0.1 起全部加性，旧文件零修改可用）；0.1→0.6 历史变更速览。
-- **文档站**：`docs/site/index.html` docsify CDN 零构建单页（README/architecture/API-STABILITY/MIGRATION/RELEASE-CHECKLIST/ROADMAP/HANDOFF/CHANGELOG）；CI 新增 `pages` job（GitHub Pages 部署，开启待仓库设置）。
+- **文档站**：`docs/site/index.html` docsify CDN 零构建单页（README/architecture/API-STABILITY/MIGRATION/RELEASE-CHECKLIST/ROADMAP/HANDOFF/CHANGELOG）；CI 新增 `pages` job（GitHub Pages 部署；2026-10-13 已在线：https://userluckytian.github.io/harness2/ ）。
 - **发布回归汇总**（`docs/RELEASE-CHECKLIST.md`）：自动化覆盖声明（**615 项测试 = 614 passed + 1 skipped**、typecheck、bench 基线、API 快照、crash-drill、口径统一断言——命令级）+ 手工清单索引（13 域，逐项链接 OPEN.md）+ 发布动作 checklist（push/NPM_TOKEN/tag/Pages/包名占用）。
 - **无运行时行为变更**：`packages/core/src/session/types.ts` 相对 0.6 零 diff；公开导出面零增删（快照基线即 1.0 面）；版本号与文档物料是本版主要产出。
 

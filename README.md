@@ -6,14 +6,14 @@
 > 2. `docs/screenshots/desktop-multi.png` —— 桌面端多会话分屏
 > 3. `docs/screenshots/traj-timeline.png` —— traj 轨迹时间线视图
 
-自研跨端 AI agent harness（CLI / 桌面 / IM 网关多形态）。**M1（v0.1）= 终端里接真实模型干活**：流式对话、读写文件、跑命令、`/undo` `/redo`、轨迹可查、审批可控。**M2（v0.3）= 桌面可用**：多会话并行分屏、上下文压缩、浏览器工具、定时任务。**M3（v0.6）= 连接外部**：插件 / MCP / 子代理、QQ/飞书机器人、轨迹导出回放、项目级 Skills。**M4（v1.0.0）= 公开发布收口**：API 稳定承诺（semver + 导出面快照）、迁移指南、文档站、发布回归汇总——首个公开发布版本（发布动作待授权，见 `docs/RELEASE-CHECKLIST.md`）。
+自研跨端 AI agent harness（CLI / 桌面 / IM 网关多形态）。**M1（v0.1）= 终端里接真实模型干活**：流式对话、读写文件、跑命令、`/undo` `/redo`、轨迹可查、审批可控。**M2（v0.3）= 桌面可用**：多会话并行分屏、上下文压缩、浏览器工具、定时任务。**M3（v0.6）= 连接外部**：插件 / MCP / 子代理、QQ/飞书机器人、轨迹导出回放、项目级 Skills。**M4（v1.0.0）= 公开发布收口**：API 稳定承诺（semver + 导出面快照）、迁移指南、文档站、发布回归汇总——首个公开发布版本（**2026-10-13 GitHub Release v1.0.0 已发布**：win 安装器 + win 免安装版 / mac dmg×2 / linux AppImage 共五件，均 unsigned；npm 发布待 `NPM_TOKEN` 配置，见 `docs/RELEASE-CHECKLIST.md`）。
 
 **Z 程序（2026-10-10 起）= GUI 按 ZCode 完全还原 + 能力补齐**：桌面/Web 双端统一到 ZCode 的骨架与视觉（无顶栏浮层、侧栏 264/4px 折叠、右栏零 tab 启器、分屏工作台、Zai 浅/深双主题、Tailwind v4 + shadcn 原语、界面字号 12–20），并补齐内核能力（事件类型/命令注册/服务容器三开放、provider 动态发现与推理档位与 prompt caching、分层压缩 + 断路器、权限 glob DSL、Hooks、工作流引擎、Agent Teams、符号代码索引）。**总纲** `docs/ai-framework/plans/2026-10-10-phase-zcode-ui-overhaul.md`（Z0–Z7）· **功能总账** `docs/ai-framework/plans/zcode-ui-traceability.md` · **收口清单** `docs/ai-framework/plans/2026-10-11-phase-Z7-closeout.md`。
 
 - **新维护者/AI 入口：`docs/HANDOFF.md`**
 - 路线图与功能清单：`docs/ROADMAP.md` · 变更记录：`CHANGELOG.md`
 - API 稳定承诺：`docs/API-STABILITY.md` · 迁移指南：`docs/MIGRATION.md` · 发布回归汇总：`docs/RELEASE-CHECKLIST.md`
-- 文档站：`docs/site/index.html`（docsify 零构建单页；GitHub Pages 开启后经 CI `pages` job 部署）
+- 文档站：https://userluckytian.github.io/harness2/ （docsify 零构建单页，源 `docs/site/index.html`；随 main push 经 CI `pages` job 自动部署，2026-10-13 起在线）
 - 调研报告：`docs/research/` · 阶段计划：`docs/ai-framework/plans/`
 - 每日日志：`docs/diary/`（发版 release note 素材来源）
 - 问题日志：`docs/issue-log/`（OPEN.md 为未关闭事项索引）
@@ -22,8 +22,11 @@
 ## 30 秒快速开始
 
 ```bash
-# 1. 安装（发布授权后可用；当前可从仓库 pnpm install && pnpm build 自行构建）
-npm i -g harness2
+# 1. 安装
+#   桌面版：GitHub Releases 直接下载安装包（免安装版为 *-portable.exe）：
+#     https://github.com/Userluckytian/harness2/releases/tag/v1.0.0
+#   CLI：npm 发布待 NPM_TOKEN 配置（包名已核空闲）；当前从仓库自构建：pnpm install && pnpm build
+npm i -g harness2   # npm publish 后可用
 
 # 2. 体检配置：channels/roles/审批规则/key 来源（永不打印明文 key）
 harness2 config check
