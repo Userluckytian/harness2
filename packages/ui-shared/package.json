@@ -62,7 +62,6 @@
     "diff": "^9.0.0",
     "lucide-react": "^1.54.0",
     "radix-ui": "^1.7.0",
-    "shadcn": "^4.21.4",
     "shiki": "4.5.0",
     "tailwind-merge": "^3.7.0",
     "tailwind-scrollbar-hide": "^4.0.0",
@@ -81,6 +80,7 @@
     "jsdom": "^30.0.1",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",
+    "shadcn": "^4.21.4",
     "tailwindcss": "^4.3.3",
     "typescript": "^7.0.2",
     "vitest": "^5.0.0"

@@ -28,9 +28,11 @@ win:
   # 显式产物名（默认含空格，作 Release 资产不友好）：三平台命名风格统一。
   artifactName: harness2-${version}-win-${arch}.${ext}
 nsis:
-  oneClick: true
+  # oneClick: false = 走「辅助安装向导」（可选安装路径/快捷方式），而非一键静默装到默认目录。
+  # 2026-10-11 用户反馈「不让我选择安装路径」——oneClick: true 时 NSIS 直接开装、无目录页。
+  oneClick: false
   perMachine: false
-  allowToChangeInstallationDirectory: false
+  allowToChangeInstallationDirectory: true
   deleteAppDataOnUninstall: false
 portable:
   artifactName: harness2-${version}-win-${arch}-portable.${ext}
