@@ -53,12 +53,15 @@ import {
   readCrashReports,
   readSettingsConfigView,
   readSkillsView,
+  updateAuth,
   updateGlobalConfig,
 } from './settings.js';
 // A1：模型配置文档读写取自同一 core 模块（桌面薄适配与 serve 路由共用一份语义）。
 import {
+  ackModelsDeclaration,
   deleteModelsProvider,
   discoverModelsFor,
+  readCredentialStatuses,
   readModelsDocument,
   updateModelsProvider,
   writeChannelKey,
@@ -733,7 +736,7 @@ async function route(
     sendJson(res, 405, { error: `方法 ${req.method} 不被支持（可用：GET /api/config）` });
     return;
   }
-  // —— Z9-6a：web 设置数据端点（只读 + 配置写；凭据写不开放）——
+  // —— Z9-6a/A2：web 设置数据端点（只读 + 配置写 + auth 写[用户授权放开]）——
   // 统一前缀 /api/settings/*；token 与 Origin/Host 门禁已在 handleRequest 统一施加（沿既有路径，无旁路）。
   // GET /api/settings/config → 与桌面 settings:getConfig **同一完整形状**（readSettingsConfigView，复用 core
   //   loadConfig；覆盖 providers/roles/approval + memory/browser/plugins/mcpServers/subagent/gateways/hooks）。
@@ -758,15 +761,25 @@ async function route(
     return;
   }
   // GET /api/settings/auth → auth.json 掩码视图（只回 channel/gateway 掩码状态，绝不回明文）
+  // PUT/POST /api/settings/auth → 写 auth.json 的 gateways 段（A2 用户授权放开；口径逐字照抄桌面
+  //   settings:updateAuth）；响应只回掩码级信息，绝不回显明文、绝不写日志。
   if (pathname === '/api/settings/auth') {
     if (req.method === 'GET') {
       sendJson(res, 200, readAuthMaskedView(env.home));
       return;
     }
-    // 凭据写（auth.json）默认不开放：网页端写本机凭据风险等级高于普通配置，需用户单独授权（计划 §4）
-    sendJson(res, 405, {
-      error: `方法 ${req.method} 不被支持：serve 不开放网页端写凭据（auth.json）——如需请由用户单独拍板；可用：GET /api/settings/auth`,
-    });
+    if (req.method === 'PUT' || req.method === 'POST') {
+      const body = await readJsonBody(req, res);
+      const result = updateAuth(env.home, body);
+      if (!result.ok) {
+        sendJson(res, 400, { ok: false, error: result.error });
+        return;
+      }
+      // 响应带掩码视图（只含 channel/gateway 有无，绝不含明文），便于调用方即时刷新凭据状态。
+      sendJson(res, 200, { ok: true, auth: readAuthMaskedView(env.home) });
+      return;
+    }
+    sendJson(res, 405, { error: `方法 ${req.method} 不被支持（可用：GET/PUT/POST /api/settings/auth）` });
     return;
   }
   // GET /api/settings/doctor → 六项检查报告（复用 core runDoctor）
@@ -859,6 +872,31 @@ async function route(
       return;
     }
     sendJson(res, 405, { error: `方法 ${req.method} 不被支持（可用：POST /api/settings/models/discover）` });
+    return;
+  }
+  // POST /api/settings/models/credential-status → 凭据确认查询（只回「已确认/缺失/未确认 + 具名引用」，
+  // 无明文；口径同桌面 settings:getCredentialStatus）—— A2 补：共享模型分区就绪检查需要该通道。
+  if (pathname === '/api/settings/models/credential-status') {
+    if (req.method === 'POST') {
+      const body = await readJsonBody(req, res);
+      const raw = body['routes'];
+      const routes = Array.isArray(raw) ? raw.filter((r): r is string => typeof r === 'string') : [];
+      sendJson(res, 200, readCredentialStatuses(env.home, env.root, routes));
+      return;
+    }
+    sendJson(res, 405, { error: `方法 ${req.method} 不被支持（可用：POST /api/settings/models/credential-status）` });
+    return;
+  }
+  // POST /api/settings/models/ack-declaration → 首运行声明确认（版本化落盘 ~/.harness2/desktop-models.json
+  // 覆层；口径同桌面 settings:ackModelsDeclaration）—— A2 补：共享模型分区首运行弹窗需要该通道。
+  if (pathname === '/api/settings/models/ack-declaration') {
+    if (req.method === 'POST') {
+      const body = await readJsonBody(req, res);
+      const result = ackModelsDeclaration(env.home, body['version']);
+      sendJson(res, result.ok ? 200 : 400, result);
+      return;
+    }
+    sendJson(res, 405, { error: `方法 ${req.method} 不被支持（可用：POST /api/settings/models/ack-declaration）` });
     return;
   }
   sendJson(res, 404, { error: `not found: ${req.method} ${pathname}` });

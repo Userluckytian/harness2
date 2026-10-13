@@ -5,14 +5,17 @@
 //   * config 写：成功路径经 updateConfig；失败（500/401/405）分区如实报错，不假装成功；
 //   * diagnostics：doctor 端点失败 → 分区如实报错。
 // @vitest-environment jsdom
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import React from 'react';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { createAppShell } from '@harness2/ui-shared/renderer/app-shell.js';
 import type { HarnessClient } from '@harness2/ui-shared/renderer/ports.js';
 import type { ConnectionStatus, SessionSummaryShape } from '@harness2/ui-shared/shared/protocol.js';
-import type { SettingsConfigShape } from '@harness2/ui-shared/shared/settings.js';
+import type { ModelsSettingsApi, SettingsConfigShape } from '@harness2/ui-shared/shared/settings.js';
 import { shellThemeStore } from '@harness2/ui-shared/renderer/theme/index.js';
+import { resetSettingsSections } from '@harness2/ui-shared/renderer/settings/index.js';
+// A2：注册 ui-shared 模型分区正文（同生产 main.tsx；未注册则 models 退化为过渡占位面板）
+import { registerModelsSettingsSection } from '@harness2/ui-shared/renderer/settings/models/index.js';
 import { WebApp } from '../src/app.js';
 import { WEB_SETTINGS_SECTIONS, type WebSettingsDataPorts } from '../src/web-settings.js';
 
@@ -50,14 +53,49 @@ const CFG: SettingsConfigShape = {
   errors: [],
 };
 
+/** A2：模型通道面假实现（七法齐备 → 共享 modelsApiReady 为真，models 分区可用） */
+function fakeModelsApi(over: Partial<ModelsSettingsApi> = {}): Partial<ModelsSettingsApi> {
+  return {
+    settingsGetModels: async () => ({
+      revision: '0123456789abcdef',
+      providers: [
+        {
+          id: 'ds',
+          displayName: 'DeepSeek',
+          protocol: 'openai',
+          baseUrl: 'https://api.test/v1',
+          apiKeyRef: 'DS_KEY',
+          models: [{ id: 'm-1' }],
+          layers: ['user'],
+          deletable: true,
+          credential: { state: 'confirmed', source: 'auth.json', reference: 'DS_KEY' },
+        },
+      ],
+      declarationAckVersion: 1,
+      sources: { global: true, project: false },
+      warnings: [],
+      errors: [],
+    }),
+    settingsUpdateModels: async () => ({ ok: true }),
+    settingsDeleteProvider: async () => ({ ok: true }),
+    settingsWriteChannelKey: async () => ({ ok: true, reference: 'DS_API_KEY' }),
+    settingsGetCredentialStatus: async () => ({ ds: { state: 'confirmed', source: 'auth.json', reference: 'DS_KEY' } }),
+    settingsAckModelsDeclaration: async (version) => ({ ok: true, declarationAckVersion: version }),
+    settingsDiscoverModels: async () => ({ ok: true, models: [{ id: 'm-1', displayName: 'm-1' }] }),
+    ...over,
+  };
+}
+
 function fakeDataPorts(over: Partial<WebSettingsDataPorts> = {}): WebSettingsDataPorts {
   return {
     getConfig: async () => CFG,
     updateConfig: async () => ({ ok: true, config: CFG }),
     getAuthMasked: async () => ({ channels: [], gateways: [] }),
+    updateAuth: async () => ({ ok: true }),
     getDoctorReport: async () => ({ checks: [], exitCode: 0 }),
     getSkills: async () => ({ skills: [], warnings: [], roots: { project: '/p', global: '/g' } }),
     getCrashReports: async () => [],
+    modelsApi: fakeModelsApi(),
     ...over,
   };
 }
@@ -131,8 +169,14 @@ function clearThemeArtifacts(): void {
   document.head.querySelectorAll('meta[name="theme-color"]').forEach((m) => m.remove());
 }
 
+beforeEach(() => {
+  // A2：注册模型分区正文（幂等）；afterEach 复位注册表，避免跨用例泄漏
+  registerModelsSettingsSection();
+});
+
 afterEach(() => {
   cleanup();
+  resetSettingsSections();
   shellThemeStore.reset();
   window.localStorage.clear();
   clearThemeArtifacts();
@@ -145,12 +189,13 @@ describe('web 设置覆层（Z9-6b：与桌面对齐）', () => {
     expect(document.querySelector('[data-section="general"]')).not.toBeNull();
     // ④ 防回归：导航集合与顺序 = WEB_SETTINGS_SECTIONS（数量与集合一致）
     expect(navIds()).toEqual([...WEB_SETTINGS_SECTIONS]);
-    expect(WEB_SETTINGS_SECTIONS).toHaveLength(16);
-    // Z9-6c：数据面齐备的分区放开进导航（deep 等值集合）
+    expect(WEB_SETTINGS_SECTIONS).toHaveLength(17);
+    // A2：数据面齐备的分区全部放开进导航（含 models：serve 模型端点七法齐备）
     expect(new Set(navIds())).toEqual(
       new Set([
         'general',
         'appearance',
+        'models',
         'browser',
         'approval',
         'shortcuts',
@@ -167,8 +212,22 @@ describe('web 设置覆层（Z9-6b：与桌面对齐）', () => {
         'about',
       ]),
     );
-    // 仅 models 仍不进导航（serve 无模型配置路由）
-    expect(navIds()).not.toContain('models');
+    // A2：models 已进导航（serve 模型端点齐备；modelsApiReady 为真）
+    expect(navIds()).toContain('models');
+    stop();
+  });
+
+  // A2：模型分区可开且经端口读取（settingsGetModels → 渲染分层文档）
+  it('模型：分区可开并渲染 getModels 端口返回的提供方行', async () => {
+    const settingsGetModels = vi.fn(fakeModelsApi().settingsGetModels as ModelsSettingsApi['settingsGetModels']);
+    const stop = await mount(fakeDataPorts({ modelsApi: fakeModelsApi({ settingsGetModels }) }));
+    await openSettings();
+    await gotoSection('models');
+
+    expect(settingsGetModels).toHaveBeenCalled();
+    const text = document.querySelector('[data-section="models"]')?.textContent ?? '';
+    expect(text).toContain('DeepSeek');
+    expect(text).toContain('ds');
     stop();
   });
 

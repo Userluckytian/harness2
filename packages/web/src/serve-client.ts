@@ -30,6 +30,13 @@ import type {
   WsFrame,
 } from '@harness2/ui-shared/shared/protocol.js';
 import type {
+  CredentialStatusShape,
+  ModelsCredentialWriteResultShape,
+  ModelsDeclarationAckShape,
+  ModelsDiscoveryResultShape,
+  ModelsDocumentShape,
+  ModelsProviderInputShape,
+  ModelsWriteResultShape,
   SettingsAuthMaskedShape,
   SettingsConfigShape,
   SettingsCrashReportShape,
@@ -46,6 +53,12 @@ export interface ServeConfigUpdateResult {
   config?: SettingsConfigShape;
   error?: string;
   warnings?: string[];
+}
+
+/** auth 写结果（与 SettingsPorts.updateAuth / 桌面 settings:updateAuth 同形；绝不回显明文） */
+export interface ServeAuthUpdateResult {
+  ok: boolean;
+  error?: string;
 }
 
 /** 与 core `PROTOCOL_VERSION` 同值（WS 能力协商底线；跨壳不得各自发明） */
@@ -106,6 +119,36 @@ export interface ServeClient extends HarnessClient {
   getSettingsSkills(): Promise<SettingsSkillsShape>;
   /** GET /api/settings/crash-reports → 崩溃报告列表 */
   getSettingsCrashReports(): Promise<SettingsCrashReportShape[]>;
+
+  // —— A2：模型配置通道面（与桌面 `ModelsSettingsApi` 同名同形；serve /api/settings/models*）——
+  // 存在即可作为 SettingsPorts.modelsApi（Partial<ModelsSettingsApi>）注入；未提供的方法如实不实现。
+
+  /** GET /api/settings/models → 分层模型文档视图（密钥只回状态，永不回明文） */
+  settingsGetModels(): Promise<ModelsDocumentShape>;
+  /** PUT /api/settings/models → provider upsert（写后回读；失败回 {ok:false,code?,field?,error?,document?}） */
+  settingsUpdateModels(opts: {
+    revision: string;
+    provider: ModelsProviderInputShape;
+    originalId?: string;
+    mainModel?: string;
+  }): Promise<ModelsWriteResultShape>;
+  /** DELETE /api/settings/models → 删 provider（confirmRoute 必须与 route 一致） */
+  settingsDeleteProvider(route: string, confirmRoute: string): Promise<ModelsWriteResultShape>;
+  /** PUT /api/settings/models/credential → 写渠道密钥（响应只回具名引用，永不回显明文） */
+  settingsWriteChannelKey(route: string, key: string): Promise<ModelsCredentialWriteResultShape>;
+  /** POST /api/settings/models/credential-status → 凭据确认查询（只回状态 + 具名引用） */
+  settingsGetCredentialStatus(routes: string[]): Promise<Record<string, CredentialStatusShape>>;
+  /** POST /api/settings/models/ack-declaration → 首运行声明确认（版本化落盘覆层） */
+  settingsAckModelsDeclaration(version: number): Promise<ModelsDeclarationAckShape>;
+  /** POST /api/settings/models/discover → 拉模型列表（密钥取 auth.json 既有值；失败如实回错误） */
+  settingsDiscoverModels(input: {
+    route: string;
+    baseUrl: string;
+    protocol: ModelsProviderInputShape['protocol'];
+  }): Promise<ModelsDiscoveryResultShape>;
+
+  /** PUT /api/settings/auth → 写 auth.json 的 gateways 段（A2 放开；同桌面 settings:updateAuth） */
+  updateSettingsAuth(patch: Record<string, unknown>): Promise<ServeAuthUpdateResult>;
 }
 
 /** Z9-5：终端客户端帧（`WsClientOp` 联合的终端子集；判别字段 `op`） */
@@ -219,6 +262,21 @@ export function createServeClient(options: ServeClientOptions = {}): ServeClient
       throw new ServeError(message);
     }
     return body;
+  };
+
+  /**
+   * A2：非抛错的 HTTP 面 —— 模型写端点/凭据写拿到的是**结果对象**（{ok:false,code?,field?,error?}），
+   * 由共享分区就地渲染可读错误（红线⑩：4xx/5xx 不画成成功/空数据）。读端点仍走上面的 http（失败即抛）。
+   */
+  const httpRaw = async (path: string, init?: RequestInit): Promise<{ status: number; body: unknown }> => {
+    const base = origin.length > 0 ? origin : globalThis.location.origin;
+    const headers = new Headers(init?.headers);
+    if (token.length > 0) headers.set('x-harness2-token', token);
+    if (init?.body !== undefined) headers.set('content-type', 'application/json');
+    const res = await doFetch(new URL(path, base).toString(), { ...init, headers });
+    const text = await res.text();
+    const body: unknown = text.length === 0 ? undefined : safeJson(text);
+    return { status: res.status, body };
   };
 
   connect();
@@ -410,6 +468,78 @@ export function createServeClient(options: ServeClientOptions = {}): ServeClient
     async getSettingsCrashReports(): Promise<SettingsCrashReportShape[]> {
       return (await http('/api/settings/crash-reports')) as SettingsCrashReportShape[];
     },
+
+    // —— A2：模型配置通道面（与桌面 ModelsSettingsApi 同名同形）+ auth 写 ——
+
+    async settingsGetModels(): Promise<ModelsDocumentShape> {
+      // 读端点失败即抛（ModelsSettings.reload 的 catch 会把可读错误渲染成加载错误态）
+      return (await http('/api/settings/models')) as ModelsDocumentShape;
+    },
+    async settingsUpdateModels(opts): Promise<ModelsWriteResultShape> {
+      const { status, body } = await httpRaw('/api/settings/models', {
+        method: 'PUT',
+        body: JSON.stringify({
+          revision: opts.revision,
+          provider: opts.provider,
+          ...(opts.originalId !== undefined ? { originalId: opts.originalId } : {}),
+          ...(opts.mainModel !== undefined ? { mainModel: opts.mainModel } : {}),
+        }),
+      });
+      return asWriteResult(body, status);
+    },
+    async settingsDeleteProvider(route, confirmRoute): Promise<ModelsWriteResultShape> {
+      const { status, body } = await httpRaw('/api/settings/models', {
+        method: 'DELETE',
+        body: JSON.stringify({ route, confirmRoute }),
+      });
+      return asWriteResult(body, status);
+    },
+    async settingsWriteChannelKey(route, key): Promise<ModelsCredentialWriteResultShape> {
+      const { status, body } = await httpRaw('/api/settings/models/credential', {
+        method: 'PUT',
+        // 密钥只随请求体发往 serve（写 auth.json），响应只回具名引用，绝不回显明文
+        body: JSON.stringify({ route, key }),
+      });
+      if (isOkObject(body)) return body as ModelsCredentialWriteResultShape;
+      return { ok: false, error: errorMessageFrom(body, status) };
+    },
+    async settingsGetCredentialStatus(routes): Promise<Record<string, CredentialStatusShape>> {
+      return (await http('/api/settings/models/credential-status', {
+        method: 'POST',
+        body: JSON.stringify({ routes }),
+      })) as Record<string, CredentialStatusShape>;
+    },
+    async settingsAckModelsDeclaration(version): Promise<ModelsDeclarationAckShape> {
+      const { status, body } = await httpRaw('/api/settings/models/ack-declaration', {
+        method: 'POST',
+        body: JSON.stringify({ version }),
+      });
+      if (
+        typeof body === 'object' &&
+        body !== null &&
+        typeof (body as { ok?: unknown }).ok === 'boolean' &&
+        typeof (body as { declarationAckVersion?: unknown }).declarationAckVersion === 'number'
+      ) {
+        return body as ModelsDeclarationAckShape;
+      }
+      return { ok: false, declarationAckVersion: 0, error: errorMessageFrom(body, status) };
+    },
+    async settingsDiscoverModels(input): Promise<ModelsDiscoveryResultShape> {
+      const { status, body } = await httpRaw('/api/settings/models/discover', {
+        method: 'POST',
+        body: JSON.stringify({ route: input.route, baseUrl: input.baseUrl, protocol: input.protocol }),
+      });
+      if (isOkObject(body)) return body as ModelsDiscoveryResultShape;
+      return { ok: false, error: errorMessageFrom(body, status) };
+    },
+    async updateSettingsAuth(patch): Promise<ServeAuthUpdateResult> {
+      const { status, body } = await httpRaw('/api/settings/auth', {
+        method: 'PUT',
+        body: JSON.stringify(patch),
+      });
+      if (typeof body === 'object' && body !== null && (body as { ok?: unknown }).ok === true) return { ok: true };
+      return { ok: false, error: errorMessageFrom(body, status) };
+    },
   };
 }
 
@@ -432,6 +562,23 @@ interface ServeConfigViewPayloadShape {
 
 function asRecord(v: unknown): Record<string, unknown> {
   return typeof v === 'object' && v !== null && !Array.isArray(v) ? (v as Record<string, unknown>) : {};
+}
+
+/** 响应体是否带布尔 `ok`（模型写端点/发现/auth 写的结果对象判别） */
+function isOkObject(v: unknown): v is { ok: boolean } {
+  return typeof v === 'object' && v !== null && typeof (v as { ok?: unknown }).ok === 'boolean';
+}
+
+/** 从错误响应体取可读错误（body.error 优先，否则 HTTP <status>）—— 绝不臆造成功 */
+function errorMessageFrom(body: unknown, status: number): string {
+  const e = asRecord(body)['error'];
+  return typeof e === 'string' ? e : `HTTP ${status}`;
+}
+
+/** 模型写结果归一：serve 已回 ModelsWriteResultShape（含 code/field/document）则原样透传，否则回可读错误 */
+function asWriteResult(body: unknown, status: number): ModelsWriteResultShape {
+  if (isOkObject(body)) return body as ModelsWriteResultShape;
+  return { ok: false, error: errorMessageFrom(body, status) };
 }
 
 function asStringArray(v: unknown): string[] {

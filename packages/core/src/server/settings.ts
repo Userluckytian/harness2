@@ -9,7 +9,8 @@
 //     `writeRawGlobalConfig`（同目录临时文件 + rename，失败回落直写并清理临时文件）。
 //   - 白名单顶层 key 与「疑似密钥字段名」集合与桌面完全一致；密钥类字段一律拒绝并回可读错误。
 //   - auth 只回**掩码**（channel 有无 / gateway appId、appSecret 是否非空），绝不回明文；
-//     **不提供 auth 写**（serve 侧凭据写需用户单独拍板，走 405）。
+//     A2 起 auth 写放开（`updateAuth`，口径逐字照抄桌面 `settings:updateAuth`）：只写 auth.json 的
+//     gateways 段，响应只回掩码级信息，绝不回显明文。
 //   - doctor 复用 core `runDoctor`（六项检查）；skills 复用 core `SkillStore` 两级扫描；
 //     crash-reports 复用 core `crashReportDir`（~/.harness2/crash，core 自有目录，非 Electron 专有）。
 // 隐私边界：本模块任何错误出口经 `redactSecrets`，绝不打印密钥。
@@ -25,7 +26,7 @@ import {
 } from '../config/schema.js';
 import type { HarnessConfig } from '../config/schema.js';
 import { deepMerge, defaultConfigPaths, loadConfig } from '../config/load.js';
-import { readAuthFile } from '../config/auth.js';
+import { readAuthFile, writeAuthFile, type AuthFile } from '../config/auth.js';
 import { redactSecrets } from '../config/redact.js';
 import { SkillStore, defaultSkillsRoot, projectSkillsRoot } from '../skills/store.js';
 import { crashReportDir } from '../doctor/crash.js';
@@ -317,6 +318,60 @@ export function readAuthMaskedView(home?: string): SettingsAuthMaskedView {
     maskedAppSecret: g.appSecret.length > 0,
   }));
   return { channels, gateways, ...(error !== undefined ? { error } : {}) };
+}
+
+/**
+ * PUT/POST /api/settings/auth：写 auth.json 的**网关凭据**（口径**逐字照抄**桌面主进程
+ * `packages/desktop/src/main/config-file.ts` 的 `updateAuth`；A2 起由用户授权放开，A1 曾走 405）。
+ *
+ * patch 形态：`{ gateways: { qq: { appId, appSecret } | null } }`。
+ *   - 值非对象/数组 → 400 {ok:false, error}；
+ *   - 某渠道 = null / appId+appSecret 均空 → 移除该渠道；
+ *   - 单字段空白 = **保留原值**（用于「只改策略不动密钥」场景）；
+ *   - 仅合并 gateways 段，**不动 channels 段**（渠道密钥只经 /api/settings/models/credential 写）。
+ * 安全边界：写前先读回既有 auth（损坏时 readAuthFile 回空表，与桌面同口径），写后响应只回
+ * 掩码级信息，绝不回显明文、绝不写日志；写入失败错误经 redactSecrets。
+ */
+export function updateAuth(home: string | undefined, patch: Record<string, unknown>): { ok: boolean; error?: string } {
+  if (typeof patch !== 'object' || patch === null || Array.isArray(patch)) {
+    return { ok: false, error: 'patch 必须是对象' };
+  }
+  const gatewaysPatch = patch['gateways'];
+  if (typeof gatewaysPatch !== 'object' || gatewaysPatch === null || Array.isArray(gatewaysPatch)) {
+    return { ok: false, error: 'gateways 必须是对象' };
+  }
+  const path = defaultConfigPaths(undefined, home).globalAuth;
+  const current = readAuthFile(path).auth;
+  const baseGateways = current.gateways ?? {};
+  const gateways: Record<string, { appId: string; appSecret: string }> = { ...baseGateways };
+  for (const [name, v] of Object.entries(gatewaysPatch as Record<string, unknown>)) {
+    if (v === null) {
+      delete gateways[name];
+      continue;
+    }
+    const g = (typeof v === 'object' && v !== null ? v : {}) as Record<string, unknown>;
+    const appId = typeof g['appId'] === 'string' ? g['appId'] : '';
+    const appSecret = typeof g['appSecret'] === 'string' ? g['appSecret'] : '';
+    if (appId.length === 0 && appSecret.length === 0) {
+      delete gateways[name];
+      continue;
+    }
+    const prev = gateways[name];
+    gateways[name] = {
+      // 空白 = 保留原值（渲染端输入框发新值时是完整值；保留原值用于"只改策略不动密钥"场景）
+      appId: appId.length > 0 ? appId : (prev?.appId ?? ''),
+      appSecret: appSecret.length > 0 ? appSecret : (prev?.appSecret ?? ''),
+    };
+  }
+  const next: AuthFile = { ...current };
+  if (Object.keys(gateways).length > 0) next.gateways = gateways;
+  else delete next.gateways;
+  try {
+    writeAuthFile(path, next);
+  } catch (e) {
+    return { ok: false, error: `auth.json 写入失败: ${redactSecrets((e as Error).message)}` };
+  }
+  return { ok: true };
 }
 
 /** 技能分区视图（与桌面 `readSkillsSummary` 同口径；复用 core SkillStore 两级扫描） */

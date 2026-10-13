@@ -245,3 +245,33 @@ describe('A1 POST /api/settings/models/discover（代理发现；失败如实回
     expect((await api(handle, 'GET', '/api/settings/models/discover')).status).toBe(405);
   });
 });
+
+describe('A2 POST /api/settings/models/credential-status（凭据确认；只回状态无明文）', () => {
+  it('200 回 routes 的确认状态（含具名引用），无明文；GET → 405', async () => {
+    const { handle } = await start();
+    const r = await api(handle, 'POST', '/api/settings/models/credential-status', { routes: ['ds', 'nope'] });
+    expect(r.status).toBe(200);
+    expect(r.json.ds).toEqual({ state: 'confirmed', source: 'auth.json', reference: 'DS_KEY' });
+    expect(r.json.nope.state).toBe('unknown');
+    expect(r.text).not.toContain(AUTH_PLAINTEXT);
+    expect((await api(handle, 'GET', '/api/settings/models/credential-status')).status).toBe(405);
+  });
+});
+
+describe('A2 POST /api/settings/models/ack-declaration（首运行声明确认；版本化落盘）', () => {
+  it('合法版本 → 200 ok + declarationAckVersion 递增；写后文档 ack 版本同步', async () => {
+    const { handle } = await start();
+    const r = await api(handle, 'POST', '/api/settings/models/ack-declaration', { version: 1 });
+    expect(r.status).toBe(200);
+    expect(r.json).toEqual({ ok: true, declarationAckVersion: 1 });
+    expect((await api(handle, 'GET', '/api/settings/models')).json.declarationAckVersion).toBe(1);
+  });
+
+  it('非法版本 → 400 ok=false（不冒充成功）；GET → 405', async () => {
+    const { handle } = await start();
+    const bad = await api(handle, 'POST', '/api/settings/models/ack-declaration', { version: 'x' });
+    expect(bad.status).toBe(400);
+    expect(bad.json.ok).toBe(false);
+    expect((await api(handle, 'GET', '/api/settings/models/ack-declaration')).status).toBe(405);
+  });
+});

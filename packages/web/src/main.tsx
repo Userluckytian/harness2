@@ -18,6 +18,9 @@ import { createServeClient } from './serve-client.js';
 import { createWebTerminalPort } from './terminal/web-port.js';
 import { createWebSettingsDataPorts } from './web-settings.js';
 import { initUiFontSize, setShellTheme, THEME_STORAGE_KEY } from '@harness2/ui-shared/renderer/theme/index.js';
+// A2：把 ui-shared 的模型配置分区正文注册进设置壳（同桌面 renderer/main.tsx）——
+// 未注册时 `models` 分区会退化为内建过渡占位面板；注册后由 ModelsSettings 接管并消费 modelsApi。
+import { registerModelsSettingsSection } from '@harness2/ui-shared/renderer/settings/models/index.js';
 import type { SettingsTheme } from '@harness2/ui-shared/shared/settings.js';
 
 const env = readWebEnv();
@@ -27,6 +30,8 @@ const shell = createAppShell(client);
 const terminalPort = createWebTerminalPort(client);
 // Z9-6b：设置数据面端口（同一 serve 客户端 → /api/settings/*）。
 const settingsDataPorts = createWebSettingsDataPorts(client);
+// A2：模型分区正文装配（幂等；注册表只存内存，不落任何存储）。
+registerModelsSettingsSection();
 
 // Z7 外观双保险（boot 脚本已在首渲染前写 <html>）：把浏览器存储里的主题偏好（D-14 例外 #1）
 // 恢复进壳主题 store，使设置页外观分区显示当前值；字号（例外 #2）恢复根变量。

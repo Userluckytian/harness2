@@ -1,7 +1,7 @@
 // Z9-6a serve 设置数据端点测试：
 //   - GET /api/settings/config 脱敏读（种子 config 密钥字段不出现在响应；与 GET /api/config 同源）；
 //   - PUT/POST /api/settings/config 白名单深合并写回全局 config.json（合法生效并落盘；非法/密钥字段拒绝且文件不变）；
-//   - GET /api/settings/auth 掩码视图（不含明文）；写 auth → 405（网页端不开放凭据写）；
+//   - GET /api/settings/auth 掩码视图（不含明文）；A2 起 PUT/POST 放开写 auth.json gateways 段（响应掩码、无明文）；
 //   - GET /api/settings/doctor / skills / crash-reports 结构断言（真实调用 core runDoctor/SkillStore/crash 目录）；
 //   - 鉴权：严格模式无 token → 401（沿既有门禁）。
 // 全部本地临时目录 + startServe（127.0.0.1 随机端口），无网络。
@@ -244,8 +244,8 @@ describe('Z9-6a PUT/POST /api/settings/config（白名单深合并写回）', ()
   });
 });
 
-describe('Z9-6a GET /api/settings/auth（掩码视图；写不开放）', () => {
-  it('200 返回 channel/gateway 掩码状态，绝不含明文', async () => {
+describe('GET /api/settings/auth（掩码视图）+ A2 PUT/POST 放开写网关凭据', () => {
+  it('GET 200 返回 channel/gateway 掩码状态，绝不含明文', async () => {
     const { handle } = await start();
     const r = await api(handle, 'GET', '/api/settings/auth');
     expect(r.status).toBe(200);
@@ -256,17 +256,46 @@ describe('Z9-6a GET /api/settings/auth（掩码视图；写不开放）', () => 
     expect(r.text).not.toContain('app-id-plain');
   });
 
-  it('写凭据（PUT/POST）→ 405 并说明网页端不开放', async () => {
+  it('A2 PUT 写网关凭据：200 落盘、响应只含掩码、回显无明文；空白字段保留原值', async () => {
+    const { handle, home } = await start();
+    const path = join(home, '.harness2', 'auth.json');
+    const NEW_SECRET = 'gateway-new-secret-777';
+    for (const method of ['PUT', 'POST'] as const) {
+      const r = await api(handle, method, '/api/settings/auth', {
+        gateways: { qq: { appSecret: NEW_SECRET } },
+      });
+      expect(r.status).toBe(200);
+      expect(r.json.ok).toBe(true);
+      // 响应只回掩码级信息，绝不回显明文（新旧都不出现）
+      expect(r.json.auth.channels).toContainEqual({ channel: 'ds', masked: true });
+      expect(r.json.auth.gateways).toContainEqual({ channel: 'qq', maskedAppId: true, maskedAppSecret: true });
+      expect(r.text).not.toContain(NEW_SECRET);
+      expect(r.text).not.toContain(AUTH_PLAINTEXT);
+      expect(r.text).not.toContain('app-secret-plain');
+      const onDisk = JSON.parse(readFileSync(path, 'utf8'));
+      expect(onDisk.gateways.qq.appSecret).toBe(NEW_SECRET);
+      expect(onDisk.gateways.qq.appId).toBe('app-id-plain'); // 空白字段 = 保留原值
+      expect(onDisk.channels.ds.apiKey).toBe(AUTH_PLAINTEXT); // channels 段不受影响
+    }
+  });
+
+  it('A2 非法 patch（gateways 非对象）→ 400 可读错误，文件不被触碰', async () => {
     const { handle, home } = await start();
     const path = join(home, '.harness2', 'auth.json');
     const before = readFileSync(path, 'utf8');
-    for (const method of ['PUT', 'POST']) {
-      const r = await api(handle, method, '/api/settings/auth', { gateways: { qq: { appSecret: 'x' } } });
-      expect(r.status).toBe(405);
-      expect(r.json.error).toContain('auth.json');
-      expect(r.text).not.toContain(AUTH_PLAINTEXT);
-    }
-    expect(readFileSync(path, 'utf8')).toBe(before); // 凭据文件未被触碰
+    const r = await api(handle, 'PUT', '/api/settings/auth', { gateways: 'nope' });
+    expect(r.status).toBe(400);
+    expect(r.json.ok).toBe(false);
+    expect(r.json.error).toContain('gateways');
+    expect(readFileSync(path, 'utf8')).toBe(before);
+  });
+
+  it('A2 null 值移除渠道；其余方法仍 405', async () => {
+    const { handle, home } = await start();
+    const r = await api(handle, 'POST', '/api/settings/auth', { gateways: { qq: null } });
+    expect(r.status).toBe(200);
+    expect(JSON.parse(readFileSync(join(home, '.harness2', 'auth.json'), 'utf8')).gateways).toBeUndefined();
+    expect((await api(handle, 'PATCH', '/api/settings/auth')).status).toBe(405);
   });
 });
 

@@ -213,3 +213,121 @@ describe('Z9-6b auth / doctor / skills / crash-reports 端点', () => {
     ]);
   });
 });
+
+describe('A2 模型通道面 + auth 写（method/path/body 逐一对齐 serve 路由）', () => {
+  it('settingsGetModels → GET /api/settings/models（文档原样映射）', async () => {
+    const doc = {
+      revision: '0123456789abcdef',
+      providers: [],
+      declarationAckVersion: 0,
+      sources: { global: false, project: false },
+      warnings: [],
+      errors: [],
+    };
+    const { client, calls } = clientWith(() => ({ status: 200, body: doc }));
+    expect(await client.settingsGetModels()).toEqual(doc);
+    expect(calls[0]).toMatchObject({ method: 'GET', path: '/api/settings/models', token: TOKEN });
+  });
+
+  it('settingsUpdateModels → PUT /api/settings/models，体含 revision/provider/originalId/mainModel', async () => {
+    const result = { ok: true, document: { revision: 'ffffffffffffffff' } };
+    const { client, calls } = clientWith(() => ({ status: 200, body: result }));
+    const provider = { id: 'new-oai', displayName: '新网关', protocol: 'openai' as const, baseUrl: 'u', models: [] };
+    const res = await client.settingsUpdateModels({
+      revision: '0123456789abcdef',
+      provider,
+      originalId: 'old',
+      mainModel: 'm-1',
+    });
+    expect(calls[0]).toMatchObject({
+      method: 'PUT',
+      path: '/api/settings/models',
+      body: { revision: '0123456789abcdef', provider, originalId: 'old', mainModel: 'm-1' },
+    });
+    expect(res).toEqual(result);
+  });
+
+  it('settingsDeleteProvider → DELETE /api/settings/models，体含 route/confirmRoute', async () => {
+    const { client, calls } = clientWith(() => ({ status: 200, body: { ok: true } }));
+    await client.settingsDeleteProvider('temp', 'temp');
+    expect(calls[0]).toMatchObject({
+      method: 'DELETE',
+      path: '/api/settings/models',
+      body: { route: 'temp', confirmRoute: 'temp' },
+    });
+  });
+
+  it('settingsWriteChannelKey → PUT /api/settings/models/credential；请求带 key，响应无明文', async () => {
+    const PLAINTEXT = 'sk-client-channel-secret-246810';
+    const { client, calls } = clientWith(() => ({ status: 200, body: { ok: true, reference: 'CH1_API_KEY' } }));
+    const res = await client.settingsWriteChannelKey('ch1', PLAINTEXT);
+    // 请求体必须携带密钥（写 auth.json 的唯一入口）
+    expect(calls[0]).toMatchObject({ method: 'PUT', path: '/api/settings/models/credential' });
+    expect(calls[0]?.body).toEqual({ route: 'ch1', key: PLAINTEXT });
+    // 响应只回具名引用：回显里没有明文 key
+    expect(res).toEqual({ ok: true, reference: 'CH1_API_KEY' });
+    expect(JSON.stringify(res)).not.toContain(PLAINTEXT);
+  });
+
+  it('settingsGetCredentialStatus → POST /api/settings/models/credential-status，体含 routes', async () => {
+    const statuses = { ds: { state: 'confirmed', source: 'auth.json', reference: 'DS_KEY' } };
+    const { client, calls } = clientWith(() => ({ status: 200, body: statuses }));
+    expect(await client.settingsGetCredentialStatus(['ds'])).toEqual(statuses);
+    expect(calls[0]).toMatchObject({
+      method: 'POST',
+      path: '/api/settings/models/credential-status',
+      body: { routes: ['ds'] },
+    });
+  });
+
+  it('settingsAckModelsDeclaration → POST /api/settings/models/ack-declaration，体含 version', async () => {
+    const { client, calls } = clientWith(() => ({ status: 200, body: { ok: true, declarationAckVersion: 1 } }));
+    expect(await client.settingsAckModelsDeclaration(1)).toEqual({ ok: true, declarationAckVersion: 1 });
+    expect(calls[0]).toMatchObject({
+      method: 'POST',
+      path: '/api/settings/models/ack-declaration',
+      body: { version: 1 },
+    });
+  });
+
+  it('settingsDiscoverModels → POST /api/settings/models/discover，体含 route/baseUrl/protocol', async () => {
+    const models = { ok: true, models: [{ id: 'm-1', displayName: 'M1' }] };
+    const { client, calls } = clientWith(() => ({ status: 200, body: models }));
+    const res = await client.settingsDiscoverModels({
+      route: 'ds',
+      baseUrl: 'https://api.test/v1',
+      protocol: 'openai',
+    });
+    expect(res).toEqual(models);
+    expect(calls[0]).toMatchObject({
+      method: 'POST',
+      path: '/api/settings/models/discover',
+      body: { route: 'ds', baseUrl: 'https://api.test/v1', protocol: 'openai' },
+    });
+  });
+
+  it('模型写失败（409 冲突 / 400 校验）→ 原样回结果对象（含 code/field），不抛错不假装成功', async () => {
+    const conflict = { ok: false, code: 'settings/conflict', error: 'revision 不一致' };
+    const { client } = clientWith(() => ({ status: 409, body: conflict }));
+    expect(await client.settingsUpdateModels({ revision: 'r', provider: {} as never })).toEqual(conflict);
+
+    const invalid = { ok: false, code: 'validation', field: 'key', error: '密钥非法' };
+    const c2 = clientWith(() => ({ status: 400, body: invalid }));
+    expect(await c2.client.settingsWriteChannelKey('ch1', 'sk-a b')).toEqual(invalid);
+  });
+
+  it('updateSettingsAuth → PUT /api/settings/auth，体为 patch；成功 ok、400 回可读错误', async () => {
+    const { client, calls } = clientWith(() => ({
+      status: 200,
+      body: { ok: true, auth: { channels: [], gateways: [] } },
+    }));
+    const patch = { gateways: { qq: { appSecret: 's' } } };
+    expect(await client.updateSettingsAuth(patch)).toEqual({ ok: true });
+    expect(calls[0]).toMatchObject({ method: 'PUT', path: '/api/settings/auth', body: patch });
+
+    const bad = clientWith(() => ({ status: 400, body: { ok: false, error: 'gateways 必须是对象' } }));
+    const res = await bad.client.updateSettingsAuth({ gateways: 'nope' });
+    expect(res.ok).toBe(false);
+    expect(res.error).toContain('gateways');
+  });
+});
