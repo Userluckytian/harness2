@@ -29,6 +29,23 @@ import type {
   WsClientOp,
   WsFrame,
 } from '@harness2/ui-shared/shared/protocol.js';
+import type {
+  SettingsAuthMaskedShape,
+  SettingsConfigShape,
+  SettingsCrashReportShape,
+  SettingsDoctorReportShape,
+  SettingsProviderShape,
+  SettingsRoleShape,
+  SettingsSkillsShape,
+} from '@harness2/ui-shared/shared/settings.js';
+
+/** config 写结果（与 SettingsPorts.updateConfig 同形；失败回可读错误，绝不假装成功） */
+export interface ServeConfigUpdateResult {
+  ok: boolean;
+  config?: SettingsConfigShape;
+  error?: string;
+  warnings?: string[];
+}
 
 /** 与 core `PROTOCOL_VERSION` 同值（WS 能力协商底线；跨壳不得各自发明） */
 export const PROTOCOL_VERSION = 2;
@@ -74,6 +91,20 @@ export interface ServeClient extends HarnessClient {
   sendTerminalOp(op: TerminalClientOp): void;
   /** Z9-5：订阅终端服务端帧（`terminal/opened|data|exit|error`，判别字段 `type`）；返回退订函数 */
   onTerminalFrame(listener: (frame: TerminalServerFrame) => void): () => void;
+
+  // —— Z9-6b：设置数据端点（web 设置页面对齐桌面；GET/PUT /api/settings/*）——
+  /** GET /api/settings/config → 适配成共享设置页的 SettingsConfigShape（脱敏；密钥字段绝不出现） */
+  getSettingsConfig(): Promise<SettingsConfigShape>;
+  /** PUT /api/settings/config → 白名单深合并写；HTTP 失败（400/405/401/500）回 {ok:false,error}（区块如实报错） */
+  updateSettingsConfig(patch: Record<string, unknown>): Promise<ServeConfigUpdateResult>;
+  /** GET /api/settings/auth → auth.json 掩码视图（只回掩码布尔，永不回明文） */
+  getSettingsAuthMasked(): Promise<SettingsAuthMaskedShape>;
+  /** GET /api/settings/doctor → doctor 六项检查 */
+  getSettingsDoctor(): Promise<SettingsDoctorReportShape>;
+  /** GET /api/settings/skills → 技能两级扫描结果 */
+  getSettingsSkills(): Promise<SettingsSkillsShape>;
+  /** GET /api/settings/crash-reports → 崩溃报告列表 */
+  getSettingsCrashReports(): Promise<SettingsCrashReportShape[]>;
 }
 
 /** Z9-5：终端客户端帧（`WsClientOp` 联合的终端子集；判别字段 `op`） */
@@ -340,6 +371,108 @@ export function createServeClient(options: ServeClientOptions = {}): ServeClient
     async changeReview(sessionId): Promise<ChangeSetShape> {
       return (await http(`/api/sessions/${encodeURIComponent(sessionId)}/change-review`)) as ChangeSetShape;
     },
+
+    // —— Z9-6b 设置数据面（serve /api/settings/*；web 设置页各分区按端口可用性降级）——
+
+    async getSettingsConfig(): Promise<SettingsConfigShape> {
+      // serve 的读载荷是脱敏报告（providers/roles/approval + sources/warnings/errors）——形状与
+      // 共享设置页的 SettingsConfigShape 不同，这里做**单一适配**（不另造第二套读取语义）。
+      return mapServeConfigPayload(await http('/api/settings/config'));
+    },
+    async updateSettingsConfig(patch: Record<string, unknown>): Promise<ServeConfigUpdateResult> {
+      try {
+        const body = (await http('/api/settings/config', { method: 'PUT', body: JSON.stringify(patch) })) as {
+          ok?: boolean;
+          warnings?: string[];
+          config?: unknown;
+        };
+        return {
+          ok: body.ok !== false,
+          warnings: Array.isArray(body.warnings) ? body.warnings : [],
+          config: mapServeConfigPayload(body.config),
+        };
+      } catch (e) {
+        // 400（白名单/密钥/损坏）· 405 · 401 · 500 → 一律回 {ok:false,error}：调用分区如实报错，
+        // 绝不把失败画成成功或空数据（红线⑩）。
+        return { ok: false, error: e instanceof Error ? e.message : String(e) };
+      }
+    },
+    async getSettingsAuthMasked(): Promise<SettingsAuthMaskedShape> {
+      return (await http('/api/settings/auth')) as SettingsAuthMaskedShape;
+    },
+    async getSettingsDoctor(): Promise<SettingsDoctorReportShape> {
+      return (await http('/api/settings/doctor')) as SettingsDoctorReportShape;
+    },
+    async getSettingsSkills(): Promise<SettingsSkillsShape> {
+      return (await http('/api/settings/skills')) as SettingsSkillsShape;
+    },
+    async getSettingsCrashReports(): Promise<SettingsCrashReportShape[]> {
+      return (await http('/api/settings/crash-reports')) as SettingsCrashReportShape[];
+    },
+  };
+}
+
+/** core `buildConfigPayload`（GET /api/settings/config）的读载荷最小形状（与 buildConfigReport 同源） */
+interface ServeConfigPayloadShape {
+  ok?: boolean;
+  errors?: string[];
+  warnings?: string[];
+  sources?: { global?: boolean; project?: boolean };
+  report?: {
+    providers: Array<{ channel: string; protocol: string; baseUrl: string; envKey?: string; models: string[] }>;
+    roles: Array<{ role: string; channel: string; model: string }>;
+    approval: { mode: string; tools?: Record<string, string> };
+  };
+}
+
+/**
+ * serve 脱敏 config 载荷 → 共享设置页 `SettingsConfigShape`（Z9-6b 的唯一适配点）。
+ *
+ * **已知限制（如实登记，见 web-settings.tsx 分区判定）**：serve 的读载荷只含
+ * providers / roles / approval 三段（`buildConfigReport`）；memory / browser / plugins /
+ * mcpServers / subagent / gateways / hooks **不在读载荷里**。为避免「显示 schema 缺省值并在保存时
+ * 回写覆盖用户真实配置」，依赖这些段的分区**不进 web 导航**；此处仅为满足类型给缺省占位（永不渲染）。
+ */
+export function mapServeConfigPayload(payload: unknown): SettingsConfigShape {
+  const p = (typeof payload === 'object' && payload !== null ? payload : {}) as ServeConfigPayloadShape;
+  const errors = Array.isArray(p.errors) ? p.errors : [];
+  const warnings = Array.isArray(p.warnings) ? p.warnings : [];
+  const report = p.report;
+  const providers: Record<string, SettingsProviderShape> = {};
+  const roles: Record<string, SettingsRoleShape> = {};
+  if (report !== undefined) {
+    for (const row of report.providers ?? []) {
+      providers[row.channel] = {
+        protocol: row.protocol === 'anthropic' ? 'anthropic' : 'openai',
+        baseUrl: row.baseUrl,
+        ...(typeof row.envKey === 'string' ? { envKey: row.envKey } : {}),
+        // 报告只给模型 id 清单（无容量元数据）→ 逐 id 建空条目，不臆造 contextWindow
+        models: Object.fromEntries((row.models ?? []).map((id) => [id, {}])),
+      };
+    }
+    for (const row of report.roles ?? []) roles[row.role] = { channel: row.channel, model: row.model };
+  }
+  const approval =
+    report?.approval !== undefined
+      ? {
+          mode: report.approval.mode,
+          ...(report.approval.tools !== undefined ? { tools: report.approval.tools } : {}),
+        }
+      : { mode: 'default' };
+  return {
+    providers,
+    roles,
+    approval,
+    // 以下为**不渲染的占位**（对应分区不进 allowList）：serve 读载荷不含这些段，若填真实值需 enrich
+    // serve 读端点；填 schema 缺省仅为满足类型，绝不作为「已读到的真实配置」呈现。
+    memory: { mode: 'off', nudgeInterval: 10 },
+    browser: { enabled: true, idleDestroyMs: 300_000, maxConcurrent: 2 },
+    plugins: { enabled: true, allow: [] },
+    mcpServers: {},
+    subagent: { maxDepth: 1, maxTurns: 25 },
+    sources: { global: p.sources?.global === true, project: p.sources?.project === true },
+    warnings,
+    errors,
   };
 }
 

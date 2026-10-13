@@ -17,6 +17,7 @@ import { toggleTerminalDock } from './terminal/toggle-dock.js';
 import { UNAVAILABLE_WEB_TERMINAL_PORT } from './terminal/web-port.js';
 import { assembleWebFrame } from './shell-registry.js';
 import { WebShellProvider, type WebShellValue } from './web-shell-context.js';
+import type { WebSettingsDataPorts } from './web-settings.js';
 
 export interface WebAppProps {
   readonly shell: AppShell;
@@ -26,9 +27,17 @@ export interface WebAppProps {
   readonly newSessionBlockedReason?: string;
   /** 终端传输端口（Z9-5；缺省 = 无通道 → available=false 的如实空实现） */
   readonly terminalPort?: TerminalPort;
+  /** 设置数据面端口（Z9-6b；缺省 = 无 serve 设置通道 → 对应分区如实降级） */
+  readonly settingsDataPorts?: WebSettingsDataPorts;
 }
 
-export function WebApp({ shell, onNewSession, newSessionBlockedReason, terminalPort }: WebAppProps): ReactNode {
+export function WebApp({
+  shell,
+  onNewSession,
+  newSessionBlockedReason,
+  terminalPort,
+  settingsDataPorts,
+}: WebAppProps): ReactNode {
   const { store } = shell;
   const state = shell.useAppState();
   // 四席位注册表：本次挂载建一份（声明 + 注册容器 + 注入 web 内容）。
@@ -96,6 +105,7 @@ export function WebApp({ shell, onNewSession, newSessionBlockedReason, terminalP
   const shellValue: WebShellValue = {
     shell,
     terminalPort: terminalPort ?? UNAVAILABLE_WEB_TERMINAL_PORT,
+    ...(settingsDataPorts !== undefined ? { settingsDataPorts } : {}),
     ...(onNewSession !== undefined ? { onNewSession } : {}),
     newSessionEnabled,
     ...(newSessionBlocked !== undefined ? { newSessionBlockedReason: newSessionBlocked } : {}),

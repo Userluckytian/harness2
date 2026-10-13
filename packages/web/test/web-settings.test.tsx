@@ -1,14 +1,20 @@
-// web 设置覆层测试（Z7）：经侧栏设置入口打开共享设置页；外观分区主题/字号真生效；
-// 网关 / IM 分区如实只读指引（无数据面不摆假条目）；未提供的数据面不出现在导航。
+// web 设置覆层测试（Z7 → Z9-6b）：经侧栏设置入口打开共享设置页。
+//   * 导航白名单 = WEB_SETTINGS_SECTIONS（数据面齐备的分区；防回归：数量与集合）；
+//   * 外观：主题/字号真生效（浏览器存储镜像，例外 #1/#2）；
+//   * config 读：getConfig 走端口并渲染**脱敏值**（approval 模式 / 工具规则）；
+//   * config 写：成功路径经 updateConfig；失败（500/401/405）分区如实报错，不假装成功；
+//   * diagnostics：doctor 端点失败 → 分区如实报错。
 // @vitest-environment jsdom
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import React from 'react';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { createAppShell } from '@harness2/ui-shared/renderer/app-shell.js';
 import type { HarnessClient } from '@harness2/ui-shared/renderer/ports.js';
 import type { ConnectionStatus, SessionSummaryShape } from '@harness2/ui-shared/shared/protocol.js';
+import type { SettingsConfigShape } from '@harness2/ui-shared/shared/settings.js';
 import { shellThemeStore } from '@harness2/ui-shared/renderer/theme/index.js';
 import { WebApp } from '../src/app.js';
+import { WEB_SETTINGS_SECTIONS, type WebSettingsDataPorts } from '../src/web-settings.js';
 
 (HTMLElement.prototype as unknown as { scrollIntoView: () => void }).scrollIntoView = () => {};
 
@@ -21,6 +27,33 @@ const SESSION: SessionSummaryShape = {
   messageCount: 2,
   lastSeq: 0,
 };
+
+/** 脱敏 config 视图（approval 有真实值；其余段是「不渲染的占位」——对应分区不进 allowList） */
+const CFG: SettingsConfigShape = {
+  providers: { ds: { protocol: 'openai', baseUrl: 'https://api.test/v1', envKey: 'DS_KEY', models: { 'm-1': {} } } },
+  roles: { main: { channel: 'ds', model: 'm-1' } },
+  approval: { mode: 'bypass', tools: { write: 'ask' } },
+  memory: { mode: 'off', nudgeInterval: 10 },
+  browser: { enabled: true, idleDestroyMs: 300_000, maxConcurrent: 2 },
+  plugins: { enabled: true, allow: [] },
+  mcpServers: {},
+  subagent: { maxDepth: 1, maxTurns: 25 },
+  sources: { global: true, project: false },
+  warnings: [],
+  errors: [],
+};
+
+function fakeDataPorts(over: Partial<WebSettingsDataPorts> = {}): WebSettingsDataPorts {
+  return {
+    getConfig: async () => CFG,
+    updateConfig: async () => ({ ok: true, config: CFG }),
+    getAuthMasked: async () => ({ channels: [], gateways: [] }),
+    getDoctorReport: async () => ({ checks: [], exitCode: 0 }),
+    getSkills: async () => ({ skills: [], warnings: [], roots: { project: '/p', global: '/g' } }),
+    getCrashReports: async () => [],
+    ...over,
+  };
+}
 
 function fakeClient(): HarnessClient {
   const statusListeners = new Set<(status: ConnectionStatus) => void>();
@@ -61,17 +94,26 @@ function fakeClient(): HarnessClient {
   };
 }
 
-async function mount(): Promise<() => void> {
+async function mount(data: WebSettingsDataPorts = fakeDataPorts()): Promise<() => void> {
   const shell = createAppShell(fakeClient());
   const stop = shell.controller.start();
   await shell.controller.refreshSessions();
-  render(React.createElement(WebApp, { shell, onNewSession: () => undefined }));
+  render(React.createElement(WebApp, { shell, onNewSession: () => undefined, settingsDataPorts: data }));
   return stop;
 }
 
 async function openSettings(): Promise<void> {
   fireEvent.click(await screen.findByTestId('sidebar-settings'));
   await screen.findByRole('dialog', { name: '设置' });
+}
+
+function navIds(): Array<string | null> {
+  return [...document.querySelectorAll('[data-section-nav]')].map((n) => n.getAttribute('data-section-nav'));
+}
+
+async function gotoSection(id: string): Promise<void> {
+  fireEvent.click(document.querySelector(`[data-section-nav="${id}"]`) as HTMLElement);
+  await waitFor(() => expect(document.querySelector(`[data-section="${id}"]`)).not.toBeNull());
 }
 
 function clearThemeArtifacts(): void {
@@ -89,20 +131,25 @@ afterEach(() => {
   clearThemeArtifacts();
 });
 
-describe('web 设置覆层（Z7）', () => {
-  it('侧栏设置入口 → 打开共享设置页；默认落外观分区', async () => {
+describe('web 设置覆层（Z9-6b：与桌面对齐）', () => {
+  it('侧栏设置入口 → 打开共享设置页；默认落常规分区；导航 = 数据面齐备的分区集合', async () => {
     const stop = await mount();
     await openSettings();
-    expect(document.querySelector('[data-section="appearance"]')).not.toBeNull();
-    // 导航只见有真数据面的分区（appearance / gateway）；不出现 models/skill 等无通道分区
-    const navs = [...document.querySelectorAll('[data-section-nav]')].map((n) => n.getAttribute('data-section-nav'));
-    expect(navs).toEqual(['appearance', 'gateway']);
+    expect(document.querySelector('[data-section="general"]')).not.toBeNull();
+    // ④ 防回归：导航集合与顺序 = WEB_SETTINGS_SECTIONS（数量与集合一致）
+    expect(navIds()).toEqual([...WEB_SETTINGS_SECTIONS]);
+    expect(WEB_SETTINGS_SECTIONS).toHaveLength(9);
+    // 无数据面的分区不进导航（隐藏而非摆禁用假控件）
+    for (const absent of ['models', 'memory', 'browser', 'plugins', 'mcp', 'subagent', 'hooks', 'gateway']) {
+      expect(navIds()).not.toContain(absent);
+    }
     stop();
   });
 
   it('外观：选择「深色」→ 主题真生效（D-15 四要素）+ 浏览器存储镜像（例外 #1）', async () => {
     const stop = await mount();
     await openSettings();
+    await gotoSection('appearance');
     const trigger = await screen.findByRole('combobox', { name: '界面主题' });
     fireEvent.keyDown(trigger, { key: 'Enter' });
     fireEvent.click(screen.getByRole('option', { name: '深色' }));
@@ -117,6 +164,7 @@ describe('web 设置覆层（Z7）', () => {
   it('外观：提交界面字号 → 写根 --ui-font-size + 浏览器存储镜像（例外 #2）', async () => {
     const stop = await mount();
     await openSettings();
+    await gotoSection('appearance');
     const field = await screen.findByRole('spinbutton', { name: '界面字号' });
     fireEvent.change(field, { target: { value: '16' } });
     fireEvent.keyDown(field, { key: 'Enter' });
@@ -126,33 +174,73 @@ describe('web 设置覆层（Z7）', () => {
     stop();
   });
 
-  it('网关 / IM：web 无配置/凭据数据面 → 如实只读指引 + 「未探测」，不摆假条目/假绿点', async () => {
-    const stop = await mount();
+  // ① config 读走端点并渲染脱敏值
+  it('审批与安全：config 经 getConfig 端口读取 → 渲染脱敏的审批模式与工具规则', async () => {
+    const getConfig = vi.fn(async () => CFG);
+    const stop = await mount(fakeDataPorts({ getConfig }));
     await openSettings();
-    fireEvent.click(document.querySelector('[data-section-nav="gateway"]') as HTMLElement);
+    await gotoSection('approval');
 
-    expect(await screen.findByText(/此壳不提供 config.json 读取/)).toBeTruthy();
-    expect(document.querySelector('[data-gateway-unavailable]')).not.toBeNull();
-    // 两个渠道都只报「未探测」，且网关分区内无「已连接」等假状态（状态角标在侧栏页脚，不在此分区）
-    expect(document.querySelectorAll('[data-gateway-status="unprobed"]').length).toBe(2);
-    const gatewayText = document.querySelector('[data-section="gateway"]')?.textContent ?? '';
-    expect(gatewayText).not.toContain('已连接');
-    expect(gatewayText).not.toContain('连接中');
-    // 无凭据写入入口（不渲染假的 AppSecret 输入）
-    expect(screen.queryByLabelText('QQ AppSecret')).toBeNull();
+    expect(getConfig).toHaveBeenCalled();
+    // 审批模式（config.approval.mode = bypass）→「完全控制」为选中态
+    const on = document.querySelector('[data-section="approval"] .choice-on');
+    expect(on?.textContent).toContain('完全控制');
+    // 工具级规则（config.approval.tools）如实渲染
+    const text = document.querySelector('[data-section="approval"]')?.textContent ?? '';
+    expect(text).toContain('write');
+    expect(text).toContain('ask');
     stop();
   });
 
-  it('分区切换：外观 ↔ 网关 正文互斥（旧分区卸载）', async () => {
+  // ② config 写成功路径走后端
+  it('审批与安全：改模式保存 → 经 updateConfig 端口写入 patch', async () => {
+    const updateConfig = vi.fn(async () => ({ ok: true, config: CFG }));
+    const stop = await mount(fakeDataPorts({ updateConfig }));
+    await openSettings();
+    await gotoSection('approval');
+
+    fireEvent.click(screen.getByRole('button', { name: /先计划再执行/ }));
+    fireEvent.click(screen.getByRole('button', { name: '保存' }));
+
+    await waitFor(() => expect(updateConfig).toHaveBeenCalledWith({ approval: { mode: 'plan' } }));
+    expect(await screen.findByText('已保存')).toBeTruthy();
+    stop();
+  });
+
+  // ③ 端点失败时分区如实报错（写 500/401/405）
+  it('审批与安全：写失败（400/500/405）→ 分区显示可读错误，不假装成功', async () => {
+    const updateConfig = vi.fn(async () => ({ ok: false, error: '配置写入失败：HTTP 500' }));
+    const stop = await mount(fakeDataPorts({ updateConfig }));
+    await openSettings();
+    await gotoSection('approval');
+
+    fireEvent.click(screen.getByRole('button', { name: '保存' }));
+    expect(await screen.findByText(/配置写入失败：HTTP 500/)).toBeTruthy();
+    expect(screen.queryByText('已保存')).toBeNull();
+    stop();
+  });
+
+  // ③ 端点失败时分区如实报错（doctor 500）
+  it('诊断：doctor 端点失败 → 分区如实报错（不画成空数据/成功）', async () => {
+    const getDoctorReport = vi.fn(async () => {
+      throw new Error('doctor 请求失败：HTTP 500');
+    });
+    const stop = await mount(fakeDataPorts({ getDoctorReport }));
+    await openSettings();
+    await gotoSection('diagnostics');
+
+    expect(await screen.findByText(/doctor 请求失败：HTTP 500/)).toBeTruthy();
+    stop();
+  });
+
+  it('分区切换：常规 ↔ 审批 正文互斥（旧分区卸载）', async () => {
     const stop = await mount();
     await openSettings();
-    fireEvent.click(document.querySelector('[data-section-nav="gateway"]') as HTMLElement);
-    await waitFor(() => expect(document.querySelector('[data-section="gateway"]')).not.toBeNull());
-    expect(document.querySelector('[data-section="appearance"]')).toBeNull();
+    await gotoSection('approval');
+    expect(document.querySelector('[data-section="general"]')).toBeNull();
 
-    fireEvent.click(document.querySelector('[data-section-nav="appearance"]') as HTMLElement);
-    await waitFor(() => expect(document.querySelector('[data-section="appearance"]')).not.toBeNull());
-    expect(document.querySelector('[data-section="gateway"]')).toBeNull();
+    await gotoSection('general');
+    expect(document.querySelector('[data-section="approval"]')).toBeNull();
     stop();
   });
 });

@@ -6,12 +6,18 @@
 import { createContext, useContext } from 'react';
 import type { AppShell } from '@harness2/ui-shared/renderer/app-shell.js';
 import type { TerminalPort } from '@harness2/ui-shared/renderer/terminal/port.js';
+import type { WebSettingsDataPorts } from './web-settings.js';
 
 export interface WebShellValue {
   /** 应用壳：store（事件流投影）+ controller（动作面） */
   readonly shell: AppShell;
   /** 终端传输端口（Z9-5；未注入 serve 通道时为 available=false 的如实空实现） */
   readonly terminalPort: TerminalPort;
+  /**
+   * 设置数据面端口（Z9-6b：serve `/api/settings/*`；未注入 = 无数据面 → 对应分区如实降级）。
+   * 只含数据成员（getConfig/updateConfig/getAuthMasked/getDoctorReport/getSkills/getCrashReports）。
+   */
+  readonly settingsDataPorts?: WebSettingsDataPorts | undefined;
   /** 新建会话（serve 需要 cwd，由入口传入；缺省 = 无入口，按钮置灰） */
   readonly onNewSession?: (() => void) | undefined;
   /** 新建会话是否可用（连接状态 + 是否有可用 cwd 的综合结论；false 时按钮置灰） */
