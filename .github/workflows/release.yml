@@ -157,23 +157,25 @@ jobs:
           merge-multiple: true
 
       - name: Attach to GitHub Release（幂等 + 显式诊断 + notes 回退）
-        # 首次真跑（v1.0.0，run 38382399850）在本步 exit 1 且 Release 未建出来；未登录看不到日志，
-        # 无法锁定是 `gh release create --generate-notes` 的服务端 notes 生成失败，还是创建本身被拒。
-        # 本版把两种可能都收敛：①先试 --generate-notes，失败立即回退手写 notes 再建（notes 不是关键产物）；
-        # ②所有 gh 调用失败时把 stderr 完整打进日志（::error::），下次红一眼可定位；③建完即 view 复核。
+        # 两次真跑（v1.0.0 @629de9a / @0941211）均在本步 14~20s 失败且 Release 未建出来。
+        # 根因（推断已收敛）：本 job 无 actions/checkout，gh CLI 在既无本地 git 仓库、又无
+        # GH_REPO 时解析不出目标仓库 → `gh release view/create` 直接报 "no repository"退出。
+        # 修法：显式 GH_REPO=github.repository（gh 官方支持的 repo 上下文来源）。
+        # 诊断加固：失败时把 stderr 压成单行 ::error:: 注解——未登录也能在 Run 页面看到真因。
         env:
           GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
           TAG: ${{ github.ref_name }}
         run: |
           set -u
+          one_line() { tr '\n\r' '  ' | cut -c1-400; }
           if ! gh release view "$TAG" >/dev/null 2>&1; then
             echo "::group::create release $TAG"
             if ! gh release create "$TAG" --generate-notes --title "$TAG" 2>err.log; then
-              echo "::warning::--generate-notes 失败，回退手写 notes。stderr 如下："
-              cat err.log
+              echo "::warning::--generate-notes 失败：$(one_line <err.log)"
               gh release create "$TAG" --title "$TAG" \
                 --notes "harness2 $TAG：三平台桌面产物（win nsis+portable / mac dmg arm64+x64 / linux AppImage），全部 unsigned。" \
-                2>err.log || { echo "::error::gh release create（含回退）失败："; cat err.log; exit 1; }
+                2>err.log || { echo "::error::gh release create 失败（含回退）：$(one_line <err.log)"; exit 1; }
             fi
             echo "::endgroup::"
           fi
