@@ -14,6 +14,8 @@
 
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import type { ReactNode } from 'react';
+import { FileDiffIcon, ListTodoIcon, SquareTerminalIcon } from 'lucide-react';
+import type { LucideIcon } from 'lucide-react';
 import type { AppStore } from '../store.js';
 import { cn } from '../../lib/utils.js';
 import {
@@ -25,6 +27,9 @@ import {
 } from '../../components/ui/dropdown-menu.js';
 import { ScrollArea } from '../../components/ui/scroll-area.js';
 import {
+  SIDE_PANE_LAUNCHER_CARD_HEIGHT_PX,
+  SIDE_PANE_LAUNCHER_CARD_WIDTH_PX,
+  SIDE_PANE_LAUNCHER_CARDS,
   SIDE_PANE_LAUNCHER_ITEM_IDS,
   SIDE_PANE_NO_SESSION_KEY,
   SIDE_PANE_TAB_GAP_PX,
@@ -33,6 +38,7 @@ import {
   sidePaneMoveTarget,
   sidePaneOpenTarget,
   sidePaneTabLabel,
+  type SidePaneLauncherCard,
   type SidePaneLauncherItemId,
   type SidePaneTabId,
 } from './side-pane-model.js';
@@ -40,6 +46,13 @@ import { sidePaneStore, useSidePaneTabs } from './side-pane-store.js';
 
 /** 指针拖拽起手阈值（px）：小幅位移仍算点击，不误触重排 */
 const DRAG_THRESHOLD_PX = 4;
+
+/** 启动器卡片图标（按卡片 id 映射；文案与目标在 side-pane-model 的卡片清单里） */
+const LAUNCHER_CARD_ICONS: Record<string, LucideIcon> = {
+  review: FileDiffIcon,
+  terminal: SquareTerminalIcon,
+  plan: ListTodoIcon,
+};
 
 /* 三个内联小图标（lucide 24×24 同形路径）：统一 stroke=currentColor，尺寸由 className 给。 */
 function IconPlus({ className }: { className?: string }): ReactNode {
@@ -158,33 +171,70 @@ function TabMenuItems({
   );
 }
 
-/** 零 tab 启动器（Z-13：右栏打开但没有任何 tab 时的唯一内容） */
+/** 零 tab 启动器（Z-13：右栏打开但没有任何 tab 时的唯一内容）。
+ *  形态 = 标题「打开标签页」+ 卡片（156×88，只摆能诚实兑现的目标）+「更多标签页」菜单
+ *  （后者保住白名单里其余 tab 的可达性；ZCode 的启动器只列 5 项、其余靠别的路由，我们无那些
+ *  路由，故保留菜单而不是砍掉入口）。 */
 function SidePaneLauncher({
   items,
   openTabs,
   sessionId,
   backgroundTasksAvailable,
   onOpen,
+  onOpenTerminal,
 }: {
   items: readonly SidePaneLauncherItemId[];
   openTabs: readonly SidePaneTabId[];
   sessionId: string | null;
   backgroundTasksAvailable: boolean;
   onOpen: (id: SidePaneLauncherItemId) => void;
+  /** 底部 dock 终端的开合动作（缺省 = 该壳无终端 → 不摆「终端」卡，红线⑩） */
+  onOpenTerminal?: (() => void) | undefined;
 }): ReactNode {
+  // 卡片按壳白名单过滤：tab 卡只在项可用时摆；终端卡只在壳给了动作时摆。
+  const cards: readonly SidePaneLauncherCard[] = SIDE_PANE_LAUNCHER_CARDS.filter((card) =>
+    card.target.kind === 'terminal' ? onOpenTerminal !== undefined : items.includes(card.target.item),
+  );
   return (
     <div
-      className="flex min-h-0 flex-1 flex-col items-center justify-center gap-3 p-4"
+      className="flex min-h-0 flex-1 flex-col items-center justify-center gap-4 p-4"
       data-testid="side-pane-launcher"
     >
+      <p className="text-ui-sm text-foreground-subtle">打开标签页</p>
+      {cards.length > 0 && (
+        <div className="flex flex-wrap items-stretch justify-center gap-2" data-testid="side-pane-launcher-cards">
+          {cards.map((card) => {
+            const Icon = LAUNCHER_CARD_ICONS[card.id] ?? IconPlus;
+            return (
+              <button
+                key={card.id}
+                type="button"
+                data-testid="side-pane-launcher-card"
+                data-launcher-card={card.id}
+                style={{ width: SIDE_PANE_LAUNCHER_CARD_WIDTH_PX, height: SIDE_PANE_LAUNCHER_CARD_HEIGHT_PX }}
+                className="flex cursor-pointer flex-col items-start justify-center gap-2 rounded-lg border border-border bg-background px-3 text-left outline-none hover:bg-surface-hover focus-visible:ring-1 focus-visible:ring-border-hover"
+                onClick={() => {
+                  if (card.target.kind === 'terminal') onOpenTerminal?.();
+                  else onOpen(card.target.item);
+                }}
+              >
+                <Icon className="size-5 text-foreground-subtle" aria-hidden="true" />
+                <span className="text-ui-sm text-foreground">{card.label}</span>
+                <span className="text-ui-xs text-foreground-subtlest">{card.hint}</span>
+              </button>
+            );
+          })}
+        </div>
+      )}
       <DropdownMenu>
         <DropdownMenuTrigger
           data-testid="side-pane-launcher-trigger"
-          aria-label="打开标签页"
-          title="打开标签页"
-          className="flex size-10 cursor-pointer items-center justify-center rounded-lg border border-border text-foreground-subtle hover:bg-surface-hover hover:text-foreground"
+          aria-label="更多标签页"
+          title="更多标签页"
+          className="flex cursor-pointer items-center gap-1 rounded-lg border border-border px-2 py-1 text-ui-sm text-foreground-subtle hover:bg-surface-hover hover:text-foreground"
         >
-          <IconPlus className="size-5" />
+          <IconPlus className="size-4" />
+          <span>更多标签页</span>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="center" data-testid="side-pane-launcher-menu">
           <TabMenuItems
@@ -196,8 +246,6 @@ function SidePaneLauncher({
           />
         </DropdownMenuContent>
       </DropdownMenu>
-      <p className="text-ui-sm text-foreground-subtle">打开标签页</p>
-      <p className="text-ui-xs text-foreground-subtlest">面板按需出现，可随时关闭</p>
     </div>
   );
 }
@@ -422,6 +470,8 @@ export interface SidePaneHostProps {
   readonly planAvailable?: boolean;
   /** 后台任务子会话跳转（缺省不渲染跳转） */
   readonly onOpenChildSession?: (childSessionId: string) => void;
+  /** 零 tab 启动器「终端」卡的动作（缺省不摆该卡）—— 各壳传自己的底部 dock 开合入口 */
+  readonly onOpenTerminal?: () => void;
 }
 
 /**
@@ -450,6 +500,7 @@ export function SidePaneHost(props: SidePaneHostProps): ReactNode {
           sessionId={sessionId}
           backgroundTasksAvailable={backgroundTasksAvailable}
           onOpen={(id) => sidePaneStore.open(bucket, sidePaneOpenTarget(id, bucket))}
+          {...(props.onOpenTerminal !== undefined ? { onOpenTerminal: props.onOpenTerminal } : {})}
         />
       ) : (
         <SidePaneTabBar

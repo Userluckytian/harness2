@@ -4,6 +4,9 @@ import { describe, expect, it } from 'vitest';
 import {
   EMPTY_SIDE_PANE_SESSION,
   MODEL_TRAJECTORY_TAB_PREFIX,
+  SIDE_PANE_LAUNCHER_CARD_HEIGHT_PX,
+  SIDE_PANE_LAUNCHER_CARD_WIDTH_PX,
+  SIDE_PANE_LAUNCHER_CARDS,
   SIDE_PANE_LAUNCHER_ITEM_IDS,
   SIDE_PANE_MEMORY_LIMIT,
   SIDE_PANE_TABS,
@@ -215,6 +218,17 @@ describe('side-pane-model：目录与启动器清单（vs ZCode 启动器差异�
     // P0-3a：「自动化」同为固定 id（跨会话聚合的 cron 任务表，不按会话分桶）；
     // web 无 cron:list 通道 → 白名单在 web 壳侧过滤掉本项（见 web-seat-contents）
     expect(sidePaneOpenTarget('automations', 's1')).toBe('automations');
+  });
+
+  it('Z10-6 零 tab 启动器卡片：审查→changes / 终端→跨 surface 动作 / 计划→plan；尺寸 156×88', () => {
+    expect(SIDE_PANE_LAUNCHER_CARDS.map((c) => c.id)).toEqual(['review', 'terminal', 'plan']);
+    expect(SIDE_PANE_LAUNCHER_CARDS[0]?.target).toEqual({ kind: 'tab', item: 'changes' });
+    expect(SIDE_PANE_LAUNCHER_CARDS[1]?.target).toEqual({ kind: 'terminal' });
+    expect(SIDE_PANE_LAUNCHER_CARDS[2]?.target).toEqual({ kind: 'tab', item: 'plan' });
+    // 只摆能诚实兑现的目标：ZCode 的辅助对话/浏览器/开发者工具不在卡片里（红线⑩不摆假卡）
+    expect(SIDE_PANE_LAUNCHER_CARDS.every((c) => c.label.length > 0 && c.hint.length > 0)).toBe(true);
+    expect(SIDE_PANE_LAUNCHER_CARD_WIDTH_PX).toBe(156);
+    expect(SIDE_PANE_LAUNCHER_CARD_HEIGHT_PX).toBe(88);
   });
 });
 

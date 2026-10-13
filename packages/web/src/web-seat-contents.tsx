@@ -53,6 +53,7 @@ import { TrajectoryViewContent } from '@harness2/ui-shared/renderer/trajectory/i
 import { buildSessionItems, resolveBuildVersion, SidebarRoot } from '@harness2/ui-shared/renderer/sidebar/index.js';
 import type { SlotRegistry } from '@harness2/ui-shared/renderer/slots/index.js';
 import { useWebShell } from './web-shell-context.js';
+import { toggleTerminalDock } from './terminal/toggle-dock.js';
 import { webContextChipsForSession } from './web-context-chips.js';
 import { useWebComposerControls } from './web-composer-controls.js';
 import { WebPaletteOverlay } from './web-command-palette.js';
@@ -373,6 +374,8 @@ function RightbarSeatContent(): ReactNode {
       onRefresh={(id) => void controller.refreshExecutionViews(id)}
       onResync={(id) => void controller.resumeSession(id)}
       onOpenChildSession={(childSessionId) => void controller.selectSession(childSessionId)}
+      // Z10-6：零 tab 启动器「终端」卡 → 底部 dock 的真开关（Ctrl+J 同一真源；跨 surface，不另造右栏终端）
+      onOpenTerminal={() => toggleTerminalDock()}
     />
   );
 }

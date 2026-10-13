@@ -203,6 +203,23 @@ describe('Z7 右栏开关与 tab 启器（web 白名单）', () => {
     stop();
   });
 
+  it('Z10-6：零 tab 启动器卡片（156×88，审查/终端/计划）；点「审查」开 changes tab', async () => {
+    const { shell, stop } = await mount();
+    await selectSession(shell);
+    fireEvent.click(screen.getByTestId('web-rightbar-toggle'));
+    await waitFor(() => expect(document.querySelector('[data-seat="rightbar"]')?.hasAttribute('hidden')).toBe(false));
+    const cards = [...document.querySelectorAll('[data-testid="side-pane-launcher-card"]')];
+    expect(cards.map((c) => c.getAttribute('data-launcher-card'))).toEqual(['review', 'terminal', 'plan']);
+    for (const c of cards) {
+      expect((c as HTMLElement).style.width).toBe('156px');
+      expect((c as HTMLElement).style.height).toBe('88px');
+    }
+    fireEvent.click(document.querySelector('[data-launcher-card="review"]') as Element);
+    expect(document.querySelector('[data-side-tab="changes"]')?.getAttribute('data-side-tab-active')).toBe('true');
+    expect(screen.queryByTestId('side-pane-launcher')).toBeNull();
+    stop();
+  });
+
   it('打开审批 tab → 标签条出现并激活；无待批 → 如实空态；关闭 → 回启动器', async () => {
     const { shell, stop } = await mount();
     await selectSession(shell);

@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import type React from 'react';
 import type {
+  ChangeSetShape,
   ConnectionStatus,
   Harness2Api,
   SessionEventShape,
@@ -88,7 +89,13 @@ function makeFakeApi() {
     runConfig: vi.fn(async () => ({ redacted: true }) as never),
     planState: vi.fn(async () => null),
     executionViews: vi.fn(async () => []),
-    changeReview: vi.fn(async () => ({ readOnly: true }) as never),
+    changeReview: vi.fn(async (): Promise<ChangeSetShape> => ({
+      sourceDir: '',
+      files: [],
+      changedFiles: 0,
+      dirtyFiles: 0,
+      readOnly: true,
+    })),
     fork: vi.fn(async () => undefined),
     submit: vi.fn(async () => undefined),
     cancel: vi.fn(async () => undefined),
@@ -157,6 +164,25 @@ beforeEach(() => {
 describe('右栏标签体系（Z2-04）', () => {
   it('Z-13：右栏打开但零 tab → 「打开标签页」加号启动器（无标签条）', async () => {
     await openRightbarExpectLauncher(makeFakeApi());
+  });
+
+  it('Z10-6：零 tab 启动器 = 标题 + 3 张 156×88 卡片（审查/终端/计划）；审查→changes tab、终端→底部 dock', async () => {
+    await openRightbarExpectLauncher(makeFakeApi());
+    const cards = [...document.querySelectorAll('[data-testid="side-pane-launcher-card"]')];
+    expect(cards.map((c) => c.getAttribute('data-launcher-card'))).toEqual(['review', 'terminal', 'plan']);
+    for (const c of cards) {
+      expect((c as HTMLElement).style.width).toBe('156px');
+      expect((c as HTMLElement).style.height).toBe('88px');
+    }
+    // 「终端」卡 = 跨 surface 真动作（底部 dock，Ctrl+J 同一真源）：开 dock 但不占右栏 tab
+    expect(screen.getByTestId('terminal-toggle').getAttribute('aria-pressed')).toBe('false');
+    fireEvent.click(document.querySelector('[data-launcher-card="terminal"]') as Element);
+    await waitFor(() => expect(screen.getByTestId('terminal-toggle').getAttribute('aria-pressed')).toBe('true'));
+    expect(document.querySelectorAll('[data-side-tab]')).toHaveLength(0);
+    // 「审查」卡 → 我们已有的变更 pane（changes），与 + 菜单同一打开入口
+    fireEvent.click(document.querySelector('[data-launcher-card="review"]') as Element);
+    expect(document.querySelector('[data-side-tab="changes"]')?.getAttribute('data-side-tab-active')).toBe('true');
+    expect(screen.queryByTestId('side-pane-launcher')).toBeNull();
   });
 
   it('启动器开 tab → 标签条出现并激活；关闭 → 回到启动器', async () => {

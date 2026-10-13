@@ -41,6 +41,7 @@ import {
 } from '@harness2/ui-shared/renderer/panels/index.js';
 import { composerPrefill } from '@harness2/ui-shared/renderer/conversation/composer/prefill.js';
 import { backgroundTasksPaneRequests } from '../conversation/background-tasks-requests.js';
+import { toggleTerminalDock } from '../terminal/toggle-dock.js';
 import {
   TrajectoryViewContent,
   type TrajectoryFocusRequest,
@@ -220,6 +221,8 @@ export function SidePanel(): React.ReactNode {
       onResync={(id) => void controller.resumeSession(id)}
       planAvailable={planAvailable}
       onOpenChildSession={(childSessionId) => void controller.selectSession(childSessionId)}
+      // Z10-6：零 tab 启动器「终端」卡 → 底部 dock 的真开关（Ctrl+J 同一真源；跨 surface，不另造右栏终端）
+      onOpenTerminal={() => toggleTerminalDock()}
     />
   );
 }

@@ -96,6 +96,43 @@ export function sidePaneOpenTarget(itemId: SidePaneLauncherItemId, sessionId: st
   return itemId === 'model-trajectory' ? trajectoryTabId(sessionId) : itemId;
 }
 
+/**
+ * 零 tab 启动器卡片的目标（Z-13；审计形态「打开标签页」+ 卡片 156×88）。
+ * - `tab`：打开启动器项对应的 tab（经 `sidePaneOpenTarget` 解析，与 + 菜单同一入口）；
+ * - `terminal`：**跨 surface** 真动作 —— 终端在**底部 dock**（已实现），不另造右栏终端挂载。
+ */
+export type SidePaneLauncherCardTarget =
+  { readonly kind: 'tab'; readonly item: SidePaneLauncherItemId } | { readonly kind: 'terminal' };
+
+export interface SidePaneLauncherCard {
+  /** 稳定 id（DOM 的 `data-launcher-card`；测试与图标映射用它，不用文案） */
+  readonly id: string;
+  readonly label: string;
+  /** 一行说明（卡片副文案；诚实描述动作落点，不承诺不存在的面板） */
+  readonly hint: string;
+  readonly target: SidePaneLauncherCardTarget;
+}
+
+/**
+ * 零 tab 启动器卡片清单（Z-13）。ZCode 启动器为「辅助对话 / 审查 / 终端」三卡，我们**只摆能
+ * 诚实兑现**的目标：
+ *   - 审查 → 我们已有的**变更** pane（`changes`，真）；
+ *   - 终端 → **底部 dock** 的真开关（跨 surface；不为右栏再造第二套终端，见交付说明）；
+ *   - 计划 → 我们已有的计划 pane（`plan`，真）—— ZCode 第三卡「辅助对话」我们**无对应能力**，
+ *     按红线⑩**不摆假卡**；用一张真卡补足三卡形态（取舍见报告）。
+ * ZCode 启动器的「浏览器 / 开发者工具」同样无对应能力 → 不摆卡（不摆 disabled 假入口）。
+ * 宿主另渲染「更多标签页」菜单列出全部白名单项（保住其余 tab 的可达性）。
+ */
+export const SIDE_PANE_LAUNCHER_CARDS: readonly SidePaneLauncherCard[] = Object.freeze([
+  { id: 'review', label: '审查', hint: '查看变更与逐行 diff', target: { kind: 'tab', item: 'changes' } },
+  { id: 'terminal', label: '终端', hint: '在底部面板打开终端', target: { kind: 'terminal' } },
+  { id: 'plan', label: '计划', hint: '查看会话计划与阶段', target: { kind: 'tab', item: 'plan' } },
+]) as readonly SidePaneLauncherCard[];
+
+/** 卡片尺寸（px）：审计形态 156×88（DOM 内联尺寸与测试共用同一常量） */
+export const SIDE_PANE_LAUNCHER_CARD_WIDTH_PX = 156;
+export const SIDE_PANE_LAUNCHER_CARD_HEIGHT_PX = 88;
+
 /** tab 标签（宿主渲染用；未知 id 返回 id 本身，不摆假文案） */
 export function sidePaneTabLabel(id: SidePaneTabId): string {
   if (id.startsWith(MODEL_TRAJECTORY_TAB_PREFIX)) return '模型轨迹';
