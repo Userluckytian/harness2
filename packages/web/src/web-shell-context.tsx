@@ -5,10 +5,13 @@
 // 当前壳实例 —— context 是唯一不引全局的地方（与桌面 app-shared 单例语义等价，但可注入）。
 import { createContext, useContext } from 'react';
 import type { AppShell } from '@harness2/ui-shared/renderer/app-shell.js';
+import type { TerminalPort } from '@harness2/ui-shared/renderer/terminal/port.js';
 
 export interface WebShellValue {
   /** 应用壳：store（事件流投影）+ controller（动作面） */
   readonly shell: AppShell;
+  /** 终端传输端口（Z9-5；未注入 serve 通道时为 available=false 的如实空实现） */
+  readonly terminalPort: TerminalPort;
   /** 新建会话（serve 需要 cwd，由入口传入；缺省 = 无入口，按钮置灰） */
   readonly onNewSession?: (() => void) | undefined;
   /** 新建会话是否可用（连接状态 + 是否有可用 cwd 的综合结论；false 时按钮置灰） */

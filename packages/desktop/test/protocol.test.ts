@@ -10,6 +10,7 @@ import {
   IPC_SETTINGS_EVENT,
   IPC_STATUS,
   IPC_STOP_ALL,
+  IPC_TERMINAL_EVENT,
   IPC_WINDOW_STATE,
 } from '../src/shared/protocol.js';
 
@@ -45,6 +46,9 @@ describe('preload IPC 常量一致性', () => {
     // Z2-01b：窗口状态通道
     expect(extractConstant(preloadSource, 'IPC_WINDOW_STATE')).toBe(IPC_WINDOW_STATE);
     expect(IPC_WINDOW_STATE).toBe('harness2:window-state');
+    // Z9-3：终端事件通道（data/exit）
+    expect(extractConstant(preloadSource, 'IPC_TERMINAL_EVENT')).toBe(IPC_TERMINAL_EVENT);
+    expect(IPC_TERMINAL_EVENT).toBe('harness2:terminal-event');
   });
 
   it('P6-B 模型配置命令在 protocol / preload / bridge 三处同名', () => {
@@ -63,6 +67,14 @@ describe('preload IPC 常量一致性', () => {
     }
     // 平台信号在 preload 同步暴露（渲染端零 Node 的唯一来源）
     expect(preloadSource).toContain('platform: resolvePlatform()');
+  });
+
+  it('Z9-3 终端命令在 protocol / preload / bridge 三处同名', () => {
+    for (const cmd of ['terminal:open', 'terminal:write', 'terminal:resize', 'terminal:close'] as const) {
+      expect(protocolSource, `protocol 缺少 ${cmd}`).toContain(`'${cmd}'`);
+      expect(preloadSource, `preload 缺少 ${cmd}`).toContain(`'${cmd}'`);
+      expect(bridgeSource, `bridge 未分发 ${cmd}`).toContain(`case '${cmd}'`);
+    }
   });
 
   it('preload 源码不允许 require 相对模块 / Node 内建（sandbox 红线）', () => {

@@ -8,7 +8,14 @@ import { join } from 'node:path';
 import { createBridge, registerBridgeIpc, type Bridge } from './bridge.js';
 import { ServeManager } from './serve-manager.js';
 import { createCloseWindowHandler } from './close-window-handler.js';
-import type { ConnectionStatus, SettingsEventFrame, StatusDetail, WsFrame } from '../shared/protocol.js';
+import { startTerminal, stopTerminal } from './terminal.js';
+import type {
+  ConnectionStatus,
+  SettingsEventFrame,
+  StatusDetail,
+  TerminalEventFrame,
+  WsFrame,
+} from '../shared/protocol.js';
 import { IPC_WINDOW_STATE } from '../shared/protocol.js';
 
 const SMOKE = process.argv.includes('--smoke');
@@ -61,6 +68,12 @@ function startDesktop(opts: { show: boolean; provider: 'mock' | 'config'; home?:
       win.webContents.send('harness2:settings-event', frame);
     }
   };
+  // Z9-3：终端事件通道（data/exit）；终端管理器为进程级单例，PTY 仅在渲染端显式 open 时创建。
+  const sendTerminalEvent = (frame: TerminalEventFrame): void => {
+    for (const win of BrowserWindow.getAllWindows()) {
+      win.webContents.send('harness2:terminal-event', frame);
+    }
+  };
 
   const serve = new ServeManager({
     cliEntry: resolveCliEntry(),
@@ -91,6 +104,8 @@ function startDesktop(opts: { show: boolean; provider: 'mock' | 'config'; home?:
     },
   });
   registerBridgeIpc(bridge);
+  // Z9-3：启动进程级终端传输（core TerminalManager 单例；不 spawn 任何 PTY 直到 open）
+  startTerminal({ root: resolveRepoRoot(), sendEvent: sendTerminalEvent });
 
   const win = new BrowserWindow({
     width: 1280,
@@ -163,6 +178,7 @@ function startDesktop(opts: { show: boolean; provider: 'mock' | 'config'; home?:
 
   app.on('before-quit', () => {
     bridge.disconnectWs();
+    stopTerminal();
     void serve.stop();
   });
 
@@ -194,6 +210,7 @@ async function runSmoke(): Promise<void> {
     void (async () => {
       if (handles !== null) {
         handles.bridge.disconnectWs();
+        stopTerminal();
         await handles.serve.stop().catch(() => {});
       }
       try {

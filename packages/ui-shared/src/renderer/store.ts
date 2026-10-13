@@ -578,6 +578,16 @@ export class AppStore {
       // 如实丢弃，绝不落到 ensureStream(frame.sessionId = undefined) 造幽灵流（审查 P2）。
       return;
     }
+    if (
+      frame.type === 'terminal/opened' ||
+      frame.type === 'terminal/data' ||
+      frame.type === 'terminal/exit' ||
+      frame.type === 'terminal/error'
+    ) {
+      // Z9-2：终端帧为**连接私有**、经终端面板通道消费，不属会话流 → 此处如实忽略，
+      // 不落到 ensureStream(undefined) 造幽灵流（与 cron 帧同口径）。
+      return;
+    }
     const id: string = frame.sessionId;
     const stream = this.ensureStream(id);
     stream.lastFrameAt = Date.now(); // D4：断流判定水位（帧到达即刷新）

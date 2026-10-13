@@ -30,6 +30,7 @@ import { setShellTheme, useShellTheme } from '@harness2/ui-shared/renderer/theme
 import { filterSessionList } from '@harness2/ui-shared/shared/metadata.js';
 import type { AppState } from '@harness2/ui-shared/renderer/store.js';
 import { SIDE_PANE_NO_SESSION_KEY, sidePaneStore } from '@harness2/ui-shared/renderer/side-pane/index.js';
+import { toggleTerminalDock } from './terminal/toggle-dock.js';
 import { useWebShell } from './web-shell-context.js';
 
 /** 可跳转会话的有序 id（未归档、未删除；按 mtime 降序）——与侧栏同一共享过滤口径 */
@@ -139,16 +140,16 @@ export function WebPaletteOverlay(): ReactNode {
       label: '切换终端',
       hint: 'Ctrl+J',
       group: '面板',
-      disabled: true,
-      disabledHint: '终端功能未引入',
-      run: noop,
+      run: () => toggleTerminalDock(),
     });
+    // Z9-5：TerminalPanel 未暴露 imperative 新建口（面板内「＋」才是真入口），命令面板无从触达 →
+    // 如实保留占位，不硬造第二个入口（红线⑩）。
     list.push({
       id: 'addTerminalTab',
       label: '添加终端标签',
       group: '面板',
       disabled: true,
-      disabledHint: '终端功能未引入',
+      disabledHint: '请在终端面板内用「＋」新建标签',
       run: noop,
     });
     list.push({ id: 'addReviewTab', label: '添加审查标签', group: '面板', run: openReview });

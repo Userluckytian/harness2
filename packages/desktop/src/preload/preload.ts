@@ -12,6 +12,7 @@ import type {
   PlatformTitleBarTheme,
   SettingsEventFrame,
   StatusDetail,
+  TerminalEventFrame,
   WindowStateShape,
   WsFrame,
 } from '../shared/protocol.js';
@@ -22,6 +23,7 @@ const IPC_STATUS = 'harness2:status';
 const IPC_STOP_ALL = 'harness2:stop-all';
 const IPC_SETTINGS_EVENT = 'harness2:settings-event';
 const IPC_WINDOW_STATE = 'harness2:window-state';
+const IPC_TERMINAL_EVENT = 'harness2:terminal-event';
 
 /** Z2-01b：preload 同步暴露 process.platform（渲染端拿不到 Node，只能由此派生平台特化） */
 function resolvePlatform(): DesktopPlatform {
@@ -135,6 +137,13 @@ const api: Harness2Api = {
   windowToggleMaximize: () => ipcRenderer.invoke(IPC_INVOKE, { cmd: 'window:toggleMaximize' }),
   windowClose: () => ipcRenderer.invoke(IPC_INVOKE, { cmd: 'window:close' }),
   windowGetState: () => ipcRenderer.invoke(IPC_INVOKE, { cmd: 'window:getState' }),
+  // —— Z9-3：终端 IPC（渲染端零 Node 的唯一终端出口；cwd 由主进程做工作区根边界校验） ——
+  terminalOpen: (opts: { cols: number; rows: number; cwd?: string }) =>
+    ipcRenderer.invoke(IPC_INVOKE, { cmd: 'terminal:open', ...opts }),
+  terminalWrite: (id: string, data: string) => ipcRenderer.invoke(IPC_INVOKE, { cmd: 'terminal:write', id, data }),
+  terminalResize: (id: string, cols: number, rows: number) =>
+    ipcRenderer.invoke(IPC_INVOKE, { cmd: 'terminal:resize', id, cols, rows }),
+  terminalClose: (id: string) => ipcRenderer.invoke(IPC_INVOKE, { cmd: 'terminal:close', id }),
   onWindowState: (listener: (state: WindowStateShape) => void) => {
     const wrapped = (_e: Electron.IpcRendererEvent, state: WindowStateShape): void => listener(state);
     ipcRenderer.on(IPC_WINDOW_STATE, wrapped);
@@ -169,6 +178,14 @@ const api: Harness2Api = {
     ipcRenderer.on(IPC_SETTINGS_EVENT, wrapped);
     return () => {
       ipcRenderer.removeListener(IPC_SETTINGS_EVENT, wrapped);
+    };
+  },
+  // —— Z9-3：终端事件（主进程单例 TerminalManager 推送的 data/exit） ——
+  onTerminalEvent: (listener: (frame: TerminalEventFrame) => void) => {
+    const wrapped = (_e: Electron.IpcRendererEvent, frame: TerminalEventFrame): void => listener(frame);
+    ipcRenderer.on(IPC_TERMINAL_EVENT, wrapped);
+    return () => {
+      ipcRenderer.removeListener(IPC_TERMINAL_EVENT, wrapped);
     };
   },
 };

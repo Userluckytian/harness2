@@ -24,6 +24,7 @@ import {
   FRAME_SEAT,
   MAIN_AUTOMATIONS_KEY,
   MAIN_CONVERSATION_KEY,
+  TERMINAL_SEAT,
 } from '@harness2/ui-shared/renderer/layout/frame-seats.js';
 import { useFrame } from '@harness2/ui-shared/renderer/layout/frame-context.js';
 import { workbenchDrag } from '@harness2/ui-shared/renderer/layout/workbench/drag.js';
@@ -32,10 +33,12 @@ import { workbenchStore } from '@harness2/ui-shared/renderer/layout/workbench/st
 import { countPanes, MAX_PANES } from '@harness2/ui-shared/renderer/layout/workbench/model.js';
 import { sidePaneStore, trajectoryTabId, type CronJobShape } from '@harness2/ui-shared/renderer/side-pane/index.js';
 import { AutomationsMainView, type AutomationTemplate } from '@harness2/ui-shared/renderer/automation/index.js';
+import { TerminalPanel } from '@harness2/ui-shared/renderer/terminal/index.js';
 import { ConversationSeat } from '../conversation/assembly.js';
+import { desktopTerminalPort } from '../terminal/desktop-port.js';
 import { useShellPalette } from './shell-context.js';
 import { setOverlay, takeRequestedSettingsSection, useOverlayOpen } from './shell-overlays.js';
-import { setShellTheme } from './shell-theme.js';
+import { setShellTheme, useShellTheme } from './shell-theme.js';
 
 /**
  * 渲染进程可读的宿主环境表（D-25 构建徐标数据源）。
@@ -306,6 +309,19 @@ function AutomationSeatContent(): React.ReactNode {
 }
 
 /**
+ * 中栏终端席位内容（ui-terminal；Z9-5）：已就绪的共享 `TerminalPanel` + 桌面传输单例。
+ *
+ * - 端口用**模块级稳定单例** `desktopTerminalPort`（TerminalPanel 的 effect 依赖 port 身份，
+ *   每次渲染新建会触发终端重建）；`available` 在桌面宿主恒为 true，夹具缺 IPC 时为 false
+ *   （面板如实显示「终端不可用」，红线⑩）。
+ * - `theme` 传壳主题（仅作重新取色的失效信号；实际色值由 TerminalPanel 读 CSS 语义 token）。
+ */
+function TerminalSeatContent(): React.ReactNode {
+  const theme = useShellTheme();
+  return <TerminalPanel port={desktopTerminalPort} theme={theme === 'zai-light' ? 'light' : 'dark'} />;
+}
+
+/**
  * 右栏席位属主 props（上游 ui-layout RightbarOwnerProps / AppFrame.tsx:227）：
  * 渲染宽度（不是偏好）、当帧视口宽、以及能否以普通形态在场。
  */
@@ -411,6 +427,8 @@ export function injectShellSeatContents(registry: SlotRegistry): () => void {
       owner: 'ui-automation',
       component: AutomationSeatContent,
     }),
+    // Z9-5：中栏终端席位（注册缝；注入后 MainSeatView 才出现终端面板与其开关）。
+    registry.inject({ seat: TERMINAL_SEAT, owner: 'ui-terminal', component: TerminalSeatContent }),
     registry.inject({
       seat: FRAME_SEAT.rightbar,
       owner: SHELL_SEAT_CONTENTS.rightbar.owner,

@@ -15,12 +15,15 @@ import './web.css';
 import { WebApp } from './app.js';
 import { readWebEnv } from './env.js';
 import { createServeClient } from './serve-client.js';
+import { createWebTerminalPort } from './terminal/web-port.js';
 import { initUiFontSize, setShellTheme, THEME_STORAGE_KEY } from '@harness2/ui-shared/renderer/theme/index.js';
 import type { SettingsTheme } from '@harness2/ui-shared/shared/settings.js';
 
 const env = readWebEnv();
 const client = createServeClient({ origin: env.origin, token: env.token });
 const shell = createAppShell(client);
+// Z9-5：终端端口基于同一 serve 客户端的 WS 通道（available 随连接状态实时变化）。
+const terminalPort = createWebTerminalPort(client);
 
 // Z7 外观双保险（boot 脚本已在首渲染前写 <html>）：把浏览器存储里的主题偏好（D-14 例外 #1）
 // 恢复进壳主题 store，使设置页外观分区显示当前值；字号（例外 #2）恢复根变量。
@@ -51,6 +54,7 @@ createRoot(container).render(
   <StrictMode>
     <WebApp
       shell={shell}
+      terminalPort={terminalPort}
       // serve 要求 cwd：serve 客户端用「最近列出的会话 cwd」兜底（本壳无目录选择通道）；
       // 兜底失败会由 controller 记成可见错误帧，按钮不假装成功。
       onNewSession={() => void shell.controller.newSession()}

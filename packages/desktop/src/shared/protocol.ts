@@ -14,6 +14,8 @@ export const IPC_STOP_ALL = 'harness2:stop-all';
 export const IPC_SETTINGS_EVENT = 'harness2:settings-event';
 /** Z2-01b：窗口状态变化通道（最大化/还原）——win/linux 自绘窗控图标与 linux 最大化去圆角据此 */
 export const IPC_WINDOW_STATE = 'harness2:window-state';
+/** Z9-3：终端事件通道（data/exit）——主进程推终端输出/退出到渲染端（沿用事件通道形态） */
+export const IPC_TERMINAL_EVENT = 'harness2:terminal-event';
 
 // 本文件保留段内部要用的线协议名字（`export type *` 只做再导出、不引入本地名字）。
 import type {
@@ -74,6 +76,15 @@ export type DesktopPlatform = 'darwin' | 'win32' | 'linux';
 export interface WindowStateShape {
   maximized: boolean;
 }
+
+/**
+ * Z9-3：主进程 → 渲染端的终端事件帧（线协议命名，与阶段计划 §1.2 的 `terminal/data` /
+ * `terminal/exit` 同口径，桌面 IPC 通道名沿用既有「冒号命名」形态）。
+ * data 为 PTY 原始输出（含 ANSI）；exit 的 exitCode 未知时为 undefined（如实，不臆造 0）。
+ */
+export type TerminalEventFrame =
+  | { type: 'terminal:data'; id: string; data: string }
+  | { type: 'terminal:exit'; id: string; exitCode: number | undefined };
 
 /** getContextUsage 响应（与终端 /context 同一数据源；value 为 0..1 或 null=未知） */
 export interface ContextUsageShape {
@@ -200,7 +211,12 @@ export type InvokeCommand =
   | { cmd: 'window:minimize' }
   | { cmd: 'window:toggleMaximize' }
   | { cmd: 'window:close' }
-  | { cmd: 'window:getState' };
+  | { cmd: 'window:getState' }
+  // —— Z9-3：终端 IPC（主进程单例 TerminalManager；cwd 受工作区根边界约束） ——
+  | { cmd: 'terminal:open'; cols: number; rows: number; cwd?: string }
+  | { cmd: 'terminal:write'; id: string; data: string }
+  | { cmd: 'terminal:resize'; id: string; cols: number; rows: number }
+  | { cmd: 'terminal:close'; id: string };
 
 /**
  * Z2-01b 窗口控件最小通道面（win/linux 自绘三键 + 最大化状态）。
@@ -236,8 +252,30 @@ export interface ProjectsApi {
   projectsPickFolder(): Promise<string | null>;
 }
 
+/**
+ * Z9-3：桌面终端 IPC 通道面（以 Partial 并入 Harness2Api，同 ProjectsApi 口径）。
+ * 生产 preload 必给；jsdom 测试夹具 / web 宿主缺通道时，渲染端 `TerminalPort.available`
+ * 如实为 false（红线⑩：无通道不摆假终端，不创建 xterm）。
+ *
+ * 事件（`terminal:data` / `terminal:exit`）经 `onTerminalEvent` 订阅——由主进程单例
+ * TerminalManager 推送，渲染端仅做展示与转发，不在渲染进程持有任何 PTY 句柄。
+ */
+export interface TerminalApi {
+  /** 起一个终端；返回 id。cols/rows 非法或 cwd 越界 → reject（可读错误，不伪装成功） */
+  terminalOpen(opts: { cols: number; rows: number; cwd?: string }): Promise<{ id: string }>;
+  /** 写输入（fire-and-forget；未知 id 在主进程侧如实返回 false，不抛到渲染端） */
+  terminalWrite(id: string, data: string): Promise<void>;
+  /** 改终端尺寸 */
+  terminalResize(id: string, cols: number, rows: number): Promise<void>;
+  /** 关闭终端（杀 PTY）；关闭后该 id 失效 */
+  terminalClose(id: string): Promise<void>;
+  /** 订阅终端 data/exit 事件；返回退订函数 */
+  onTerminalEvent(listener: (frame: TerminalEventFrame) => void): () => void;
+}
+
 /** window.harness2 的形状（preload contextBridge 暴露） */
-export interface Harness2Api extends Partial<ModelsSettingsApi>, Partial<WindowControlsApi>, Partial<ProjectsApi> {
+export interface Harness2Api
+  extends Partial<ModelsSettingsApi>, Partial<WindowControlsApi>, Partial<ProjectsApi>, Partial<TerminalApi> {
   /** Z2-01b：桌面平台（preload 同步暴露）；非桌面宿主 / 旧夹具缺失时渲染端不启用平台特化 */
   readonly platform?: DesktopPlatform;
   listSessions(cwd?: string): Promise<SessionSummaryShape[]>;

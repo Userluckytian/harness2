@@ -37,6 +37,7 @@ import { readSkillsSummary } from './skills-scan.js';
 import { readCronJobs } from './cron-list.js';
 import { addCronJob } from './cron-write.js';
 import { listWorkspaceDir } from './workspace-fs.js';
+import { getTerminalTransport } from './terminal.js';
 import { getContextUsageForSession } from './context-usage.js';
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { execFile as execFileCb } from 'node:child_process';
@@ -600,6 +601,42 @@ export function createBridge(deps: BridgeDeps): Bridge {
       case 'window:getState': {
         const win = BrowserWindow.getAllWindows()[0];
         return { maximized: win?.isMaximized() ?? false };
+      }
+      // —— Z9-3：终端 IPC（主进程单例 TerminalManager；非法尺寸/越界 cwd 转可读错误回传，不伪装成功） ——
+      case 'terminal:open': {
+        const cols = args['cols'];
+        const rows = args['rows'];
+        if (typeof cols !== 'number' || typeof rows !== 'number') {
+          throw new InvokeError('terminal:open 需要 cols 与 rows');
+        }
+        const cwdRaw = args['cwd'];
+        const cwd = typeof cwdRaw === 'string' && cwdRaw.length > 0 ? cwdRaw : undefined;
+        try {
+          return getTerminalTransport().open({ cols, rows, ...(cwd !== undefined ? { cwd } : {}) });
+        } catch (e) {
+          // PTY 不可用 / 尺寸非法 / cwd 越界：统一转 InvokeError，渲染端收到可读原因
+          throw new InvokeError(e instanceof Error ? e.message : String(e));
+        }
+      }
+      case 'terminal:write': {
+        // 未知 id → 管理器如实返回 false（仅诊断），渲染端无需区分；不抛到渲染端
+        getTerminalTransport().write(
+          typeof args['id'] === 'string' ? args['id'] : '',
+          typeof args['data'] === 'string' ? args['data'] : '',
+        );
+        return null;
+      }
+      case 'terminal:resize': {
+        getTerminalTransport().resize(
+          typeof args['id'] === 'string' ? args['id'] : '',
+          typeof args['cols'] === 'number' ? args['cols'] : 0,
+          typeof args['rows'] === 'number' ? args['rows'] : 0,
+        );
+        return null;
+      }
+      case 'terminal:close': {
+        getTerminalTransport().close(typeof args['id'] === 'string' ? args['id'] : '');
+        return null;
       }
       case 'settings:getConfig':
         return readSettingsConfig(deps.home, deps.root);

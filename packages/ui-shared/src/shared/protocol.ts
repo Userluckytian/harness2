@@ -119,6 +119,17 @@ export type WsFrame =
    * 当作会话帧落到 ensureStream(frame.sessionId = undefined) → undefined 幽灵流（审查 P2）。
    */
   | { type: 'cron'; op: 'finished'; id: string; ok: boolean; error?: string }
+  // —— Z9-2（2026-10-13）终端帧（server→client；冻结契约见阶段计划 §1.2）——
+  // 终端会话**连接私有**：仅创建它的连接收到 opened/data/exit；连接断开即全杀。
+  // 生成/退出/错误一律如实回传，UI 不得把 terminal/error 画成成功。
+  /** spawn 成功（requestId 回带；id = 连接内终端句柄） */
+  | { type: 'terminal/opened'; requestId: string; id: string }
+  /** PTY 输出（该终端归属连接独收） */
+  | { type: 'terminal/data'; id: string; data: string }
+  /** PTY 退出（id 此后失效；exitCode 缺省 = 平台未提供） */
+  | { type: 'terminal/exit'; id: string; exitCode?: number }
+  /** 终端错误（open 失败带 requestId；input/resize/close 未知或跨连接带 id）——如实失败 */
+  | { type: 'terminal/error'; requestId?: string; id?: string; error: string }
   /**
    * 本地回传帧（非服务帧）：系统通知被点击 → 壳聚焦窗口并把该帧推给呈现层，
    * 据此 selectSession 跳转（桌面走既有 IPC 通道，无需新建）。
@@ -348,7 +359,18 @@ export type WsClientOp =
       intent: SubmitIntentShape;
       references?: MessageReferenceShape[];
       expectedTurnId?: string;
-    };
+    }
+  // —— Z9-2（2026-10-13）终端帧（client→server；冻结契约见阶段计划 §1.2）——
+  // 冻结契约 §1.2 以「终端/动词」命名；并入本联合（WsClientOp / core WsClientMessage 同形）
+  // 时判别字段沿既有客户端帧的 `op`（服务端帧仍为 `type`）。字段名与形状逐字同 §1.2。
+  /** 请求创建终端（cols/rows 必填；cwd 缺省 = serve 进程 cwd） */
+  | { op: 'terminal/open'; requestId: string; cols: number; rows: number; cwd?: string }
+  /** 向终端写入用户输入 */
+  | { op: 'terminal/input'; id: string; data: string }
+  /** 终端视口尺寸变化（xterm fit） */
+  | { op: 'terminal/resize'; id: string; cols: number; rows: number }
+  /** 关闭终端（kill 归属 PTY） */
+  | { op: 'terminal/close'; id: string };
 
 // —— S7 只读查询端点镜像（serve GET /api/sessions/:id/{run-config,plan-state,execution-view,change-review}） ——
 

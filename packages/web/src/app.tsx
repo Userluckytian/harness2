@@ -12,6 +12,9 @@ import type { ReactNode } from 'react';
 import type { AppShell } from '@harness2/ui-shared/renderer/app-shell.js';
 import { useDraftsUnloadGuard } from '@harness2/ui-shared/renderer/drafts-guard.js';
 import { AppFrame, FrameTopOverlay, useFrameState } from '@harness2/ui-shared/renderer/layout/index.js';
+import type { TerminalPort } from '@harness2/ui-shared/renderer/terminal/port.js';
+import { toggleTerminalDock } from './terminal/toggle-dock.js';
+import { UNAVAILABLE_WEB_TERMINAL_PORT } from './terminal/web-port.js';
 import { assembleWebFrame } from './shell-registry.js';
 import { WebShellProvider, type WebShellValue } from './web-shell-context.js';
 
@@ -21,9 +24,11 @@ export interface WebAppProps {
   readonly onNewSession?: () => void;
   /** 新建会话不可用时的**可行动**原因（不摆灰按钮不给解释） */
   readonly newSessionBlockedReason?: string;
+  /** 终端传输端口（Z9-5；缺省 = 无通道 → available=false 的如实空实现） */
+  readonly terminalPort?: TerminalPort;
 }
 
-export function WebApp({ shell, onNewSession, newSessionBlockedReason }: WebAppProps): ReactNode {
+export function WebApp({ shell, onNewSession, newSessionBlockedReason, terminalPort }: WebAppProps): ReactNode {
   const { store } = shell;
   const state = shell.useAppState();
   // 四席位注册表：本次挂载建一份（声明 + 注册容器 + 注入 web 内容）。
@@ -42,11 +47,18 @@ export function WebApp({ shell, onNewSession, newSessionBlockedReason }: WebAppP
 
   // Ctrl+K / Cmd+K 唤出命令面板（与浏览器默认「地址栏搜索」共存：阻止默认后由壳接管）。
   // 打开设置覆层的 Ctrl+, 桌面有、web 不设（共享设置页在 web 经侧栏齿轮进入，不新造键位）。
+  // Z9-5：Ctrl+J 切换终端面板开合（与命令面板「切换终端」同一真动作，见 toggleTerminalDock）；
+  // 阻止浏览器默认（Ctrl+J 在部分浏览器 = 下载）。
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent): void => {
-      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
+      if (!(e.ctrlKey || e.metaKey)) return;
+      const key = e.key.toLowerCase();
+      if (key === 'k') {
         e.preventDefault();
         setPaletteOpen((open) => !open);
+      } else if (key === 'j') {
+        e.preventDefault();
+        toggleTerminalDock();
       }
     };
     window.addEventListener('keydown', onKeyDown);
@@ -83,6 +95,7 @@ export function WebApp({ shell, onNewSession, newSessionBlockedReason }: WebAppP
 
   const shellValue: WebShellValue = {
     shell,
+    terminalPort: terminalPort ?? UNAVAILABLE_WEB_TERMINAL_PORT,
     ...(onNewSession !== undefined ? { onNewSession } : {}),
     newSessionEnabled,
     ...(newSessionBlocked !== undefined ? { newSessionBlockedReason: newSessionBlocked } : {}),

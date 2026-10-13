@@ -46,6 +46,9 @@ import {
   type SessionHubProviderMeta,
 } from './sessions.js';
 import { attachWsServer, type WsPlane } from './ws.js';
+import { createTerminalManager, type TerminalManager } from '../terminal/manager.js';
+import { runDoctor } from '../doctor/index.js';
+import { readAuthMaskedView, readCrashReports, readSkillsView, updateGlobalConfig } from './settings.js';
 import { isTrustedHost, isTrustedOrigin, normalizeOriginHeader } from './trust.js';
 import {
   createServeSecurityStats,
@@ -214,6 +217,11 @@ export interface StartServeOptions {
   requireToken?: boolean;
   /** A3-2：WS 面附加选项（帧超限记账回调等；auth 由 startServe 统一注入） */
   wsOptions?: import('./ws.js').WsPlaneOptions;
+  /**
+   * Z9-2：终端管理器注入点（依赖注入 / 测试假 PTY）。缺省 = startServe 自建一份，
+   * 经 ServeHandle.terminal 暴露并随 serve 关闭 dispose（终端的唯一实例）。
+   */
+  terminal?: TerminalManager;
 }
 
 export interface ServeHandle {
@@ -223,6 +231,8 @@ export interface ServeHandle {
   server: Server;
   /** WS 事件面（路径 /ws） */
   ws: WsPlane;
+  /** Z9-2：终端管理器（serve 生命周期唯一实例；随 close 关闭 dispose——`dispose()` 杀全部 PTY） */
+  terminal: TerminalManager;
   /** 定时任务调度器（serve 常驻 tick；close 时一并停止） */
   cron: CronScheduler;
   /** 插件总线（未启用插件时 undefined；close 时 dispose——工具/订阅逆序展开） */
@@ -430,7 +440,7 @@ export async function startServe(options: StartServeOptions = {}): Promise<Serve
   }
 
   const server = createServer((req, res) => {
-    void handleRequest(hub, { root, home }, { token, requireToken, stats: security }, req, res).catch(() => {
+    void handleRequest(hub, { root, home, skills }, { token, requireToken, stats: security }, req, res).catch(() => {
       // handleRequest 内部已兜底；这里防御 handler 本身抛错
       if (!res.headersSent) sendJson(res, 500, { error: '内部错误' });
       res.end();
@@ -455,8 +465,11 @@ export async function startServe(options: StartServeOptions = {}): Promise<Serve
   // S3c2：startServe 默认接 hub（会话接线：delivery/journal/approval 全挂）
   // A3-1：WS 升级与 HTTP 同口径 token 校验（auth 统一注入，调用方不可覆盖）
   // A3-2：帧超限断连记账（计数 + 日志 + 可注入 onFrameOversize）
+  // Z9-2：serve 启动时创建**唯一**终端管理器（注入优先，测试假 PTY），随 serve 关闭 dispose。
+  const terminal = options.terminal ?? createTerminalManager();
   const ws = attachWsServer(server, hub, {
     ...options.wsOptions,
+    terminal,
     resumeState: options.resumeState ?? hub,
     auth: { token, requireToken, stats: security },
   });
@@ -477,6 +490,7 @@ export async function startServe(options: StartServeOptions = {}): Promise<Serve
     hub,
     server,
     ws,
+    terminal,
     cron,
     token,
     security,
@@ -486,6 +500,8 @@ export async function startServe(options: StartServeOptions = {}): Promise<Serve
       await cron.stop();
       await hub.close();
       await ws.close();
+      // Z9-2：终端管理器随 serve 关闭 dispose（杀全部 PTY；幂等）。注入的实例同样由 serve 收口。
+      terminal.dispose();
       await new Promise<void>((resolve) => server.close(() => resolve()));
       if (mcp !== undefined) await mcp.manager.close();
       if (plugins !== undefined) plugins.bus.dispose();
@@ -499,6 +515,8 @@ export async function startServe(options: StartServeOptions = {}): Promise<Serve
 interface ServeEnv {
   root: string;
   home?: string;
+  /** Z9-6a：serve 装配期已建的技能商店（/api/settings/skills 复用同一实例，保证与装配同源） */
+  skills?: SkillStore;
 }
 
 /** A3-1：HTTP/WS 共用的 token 鉴权上下文（由 startServe 构造并注入，路由层不可绕过） */
@@ -697,6 +715,68 @@ async function route(
       return;
     }
     sendJson(res, 405, { error: `方法 ${req.method} 不被支持（可用：GET /api/config）` });
+    return;
+  }
+  // —— Z9-6a：web 设置数据端点（只读 + 配置写；凭据写不开放）——
+  // 统一前缀 /api/settings/*；token 与 Origin/Host 门禁已在 handleRequest 统一施加（沿既有路径，无旁路）。
+  // GET /api/settings/config → 脱敏 config 视图（与 GET /api/config 同一 buildConfigPayload，不另造读取语义）
+  if (pathname === '/api/settings/config') {
+    if (req.method === 'GET') {
+      sendJson(res, 200, buildConfigPayload(env));
+      return;
+    }
+    // PUT/POST /api/settings/config → 白名单顶层 key 深合并写回全局 config.json（口径同桌面 settings:updateConfig）
+    if (req.method === 'PUT' || req.method === 'POST') {
+      const body = await readJsonBody(req, res);
+      const result = updateGlobalConfig(env.home, body);
+      if (!result.ok) {
+        sendJson(res, 400, { error: redactSecrets(result.error) });
+        return;
+      }
+      sendJson(res, 200, { ok: true, warnings: result.warnings, config: buildConfigPayload(env) });
+      return;
+    }
+    sendJson(res, 405, { error: `方法 ${req.method} 不被支持（可用：GET/PUT/POST /api/settings/config）` });
+    return;
+  }
+  // GET /api/settings/auth → auth.json 掩码视图（只回 channel/gateway 掩码状态，绝不回明文）
+  if (pathname === '/api/settings/auth') {
+    if (req.method === 'GET') {
+      sendJson(res, 200, readAuthMaskedView(env.home));
+      return;
+    }
+    // 凭据写（auth.json）默认不开放：网页端写本机凭据风险等级高于普通配置，需用户单独授权（计划 §4）
+    sendJson(res, 405, {
+      error: `方法 ${req.method} 不被支持：serve 不开放网页端写凭据（auth.json）——如需请由用户单独拍板；可用：GET /api/settings/auth`,
+    });
+    return;
+  }
+  // GET /api/settings/doctor → 六项检查报告（复用 core runDoctor）
+  if (pathname === '/api/settings/doctor') {
+    if (req.method === 'GET') {
+      const report = await runDoctor({ root: env.root, ...(env.home !== undefined ? { home: env.home } : {}) });
+      sendJson(res, 200, { checks: report.checks, exitCode: report.exitCode });
+      return;
+    }
+    sendJson(res, 405, { error: `方法 ${req.method} 不被支持（可用：GET /api/settings/doctor）` });
+    return;
+  }
+  // GET /api/settings/skills → 技能列表（复用 core SkillStore 两级扫描）
+  if (pathname === '/api/settings/skills') {
+    if (req.method === 'GET') {
+      sendJson(res, 200, readSkillsView(env.root, env.home, env.skills));
+      return;
+    }
+    sendJson(res, 405, { error: `方法 ${req.method} 不被支持（可用：GET /api/settings/skills）` });
+    return;
+  }
+  // GET /api/settings/crash-reports → 崩溃报告列表（core 自有目录 ~/.harness2/crash）
+  if (pathname === '/api/settings/crash-reports') {
+    if (req.method === 'GET') {
+      sendJson(res, 200, readCrashReports(env.home));
+      return;
+    }
+    sendJson(res, 405, { error: `方法 ${req.method} 不被支持（可用：GET /api/settings/crash-reports）` });
     return;
   }
   sendJson(res, 404, { error: `not found: ${req.method} ${pathname}` });

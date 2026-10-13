@@ -67,7 +67,19 @@ export interface ServeClient extends HarnessClient {
   status(): ConnectionStatus;
   /** 主动断开（页面卸载/测试收尾） */
   close(): void;
+  /**
+   * Z9-5：发送终端客户端帧（`terminal/open|input|resize|close`，判别字段沿既有 `op`）。
+   * WS 未连接时抛 ServeError —— 调用方据实失败，不假装已送达（红线⑩）。
+   */
+  sendTerminalOp(op: TerminalClientOp): void;
+  /** Z9-5：订阅终端服务端帧（`terminal/opened|data|exit|error`，判别字段 `type`）；返回退订函数 */
+  onTerminalFrame(listener: (frame: TerminalServerFrame) => void): () => void;
 }
+
+/** Z9-5：终端客户端帧（`WsClientOp` 联合的终端子集；判别字段 `op`） */
+export type TerminalClientOp = Extract<WsClientOp, { op: `terminal/${string}` }>;
+/** Z9-5：终端服务端帧（`WsFrame` 联合的终端子集；判别字段 `type`） */
+export type TerminalServerFrame = Extract<WsFrame, { type: `terminal/${string}` }>;
 
 const OPEN = 1;
 
@@ -244,6 +256,23 @@ export function createServeClient(options: ServeClientOptions = {}): ServeClient
       listener(current, detail);
       return () => {
         statusListeners.delete(listener);
+      };
+    },
+
+    // —— Z9-5 终端帧（WS 契约：客户端 `op` / 服务端 `type`）——
+
+    sendTerminalOp: (op) => {
+      // 复用与其它 op 相同的发送口径：未连接即抛 ServeError（调用方如实降级，不静默）
+      send(op);
+    },
+    onTerminalFrame: (listener) => {
+      // 复用既有帧订阅泵（onEvent 同一 frameListeners），只按 `type` 前缀过滤终端帧
+      const wrapped = (frame: WsFrame): void => {
+        if (frame.type.startsWith('terminal/')) listener(frame as TerminalServerFrame);
+      };
+      frameListeners.add(wrapped);
+      return () => {
+        frameListeners.delete(wrapped);
       };
     },
 

@@ -62,6 +62,10 @@ export function createTerminalManager(deps?: {
 
 （命名沿既有 `notify/click` 的斜杠命名空间习惯。生成/退出/错误都必须**如实回传**，UI 侧不得把 error 画成成功。）
 
+> **实施修正（Z9-2 落地时，2026-10-13）**：**客户端** 4 帧的判别字段沿用既有 `WsClientOp` 联合的 **`op`**（core 分发 `switch(msg.op)` + OPS 白名单同为 `op` 体系；若改 `type` 会导致该联合判别分裂、既有解析全断）。**服务端** 4 帧仍用 `type`（沿用 `WsFrame`）。帧名与其余字段（requestId/cols/rows/cwd/id/data/exitCode/error）与上表逐字一致。
+
+> **连接归属语义（Z9-2 定）**：终端属于**创建它的 WS 连接**；`data`/`exit` 只回该连接（不按会话订阅过滤、不广播）；跨连接访问他人 id → `terminal/error` 如实拒绝；连接断开 → kill 该连接全部终端。
+
 ### 1.3 渲染端端口（`ui-shared/src/renderer/terminal/port.ts`，两壳各自实现）
 
 ```ts

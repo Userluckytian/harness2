@@ -34,6 +34,12 @@ export const {
   // P0-3a 自动化（cron）：右栏「自动化」tab 数据源与 CLI `cron list` 完全同一 CronJobStore 实现
   CronJobStore,
   defaultCronRoot,
+  // Z9-1／Z9-3 终端：core 终端管理器（冻结契约 §1.1），桌面主进程经 IPC bridge 复用同一实现
+  createTerminalManager,
+  TerminalUnavailableError,
 } = core;
 
 export type { AuthFile, HarnessConfig, ProviderConfig } from '@harness2/core' with { 'resolution-mode': 'import' };
+export type { TerminalEvent, TerminalManager, TerminalSpawnOptions, PtyLike } from '@harness2/core' with {
+  'resolution-mode': 'import',
+};

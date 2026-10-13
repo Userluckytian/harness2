@@ -20,6 +20,7 @@ import {
 import { shellSlots } from './layout/shell-registry.js';
 import { desktopPlatform, windowFrameClass } from './platform.js';
 import { useWindowMaximized } from './window-state.js';
+import { toggleTerminalDock } from './terminal/toggle-dock.js';
 import { type PaletteCommand, type PaletteSession } from '@harness2/ui-shared/renderer/components/CommandPalette.js';
 import { controller, store, useAppState, newSessionCollapsingRightbar, THEME_CYCLE } from './app-shared.js';
 import type { AppState } from '@harness2/ui-shared/renderer/store.js';
@@ -125,6 +126,7 @@ export function App(): React.ReactNode {
   }, []);
   // Ctrl+K / Cmd+K 命令面板 + Ctrl+N / Cmd+N 新建会话（Z-07 #1：New Task 的 Ctrl+N 快捷键；
   // 命令面板此前已标注该 hint 但未绑定，这里补上真绑定，避免「显示了却不生效」的假入口）。
+  // Z9-5：Ctrl+J 切换终端面板开合（与命令面板「切换终端」同一真动作，见 toggleTerminalDock）。
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent): void => {
       if (!(e.ctrlKey || e.metaKey)) return;
@@ -138,6 +140,10 @@ export function App(): React.ReactNode {
         e.preventDefault();
         frameDispatch({ type: 'main/select-key', key: null });
         newSessionCollapsingRightbar(frameDispatch);
+      } else if (key === 'j') {
+        // 屏蔽浏览器「下载」等默认行为；终端席位未注册时 toggleTerminalDock 如实 no-op。
+        e.preventDefault();
+        toggleTerminalDock();
       }
     };
     window.addEventListener('keydown', onKeyDown);
@@ -239,22 +245,22 @@ export function App(): React.ReactNode {
         group: '面板',
         run: () => frameDispatch({ type: 'sidebar/toggle' }),
       },
-      // 终端 dock 未引入：如实占位（红线⑩）
+      // Z9-5：终端 dock 已引入 —— 切换终端为真动作（与 Ctrl+J 同一真源 toggleTerminalDock）；
+      // 「添加终端标签」仍占位：TerminalPanel 未暴露 imperative 新建口（面板内 ＋ 按钮才是真入口），
+      // 命令面板无从触达，故保留 disabled 占位而不硬造（红线⑩）。
       {
         id: 'toggleTerminal',
         label: '切换终端',
         hint: 'Ctrl+J',
         group: '面板',
-        disabled: true,
-        disabledHint: '终端功能未引入',
-        run: () => {},
+        run: () => toggleTerminalDock(),
       },
       {
         id: 'addTerminalTab',
         label: '添加终端标签',
         group: '面板',
         disabled: true,
-        disabledHint: '终端功能未引入',
+        disabledHint: '请在终端面板内用「＋」新建标签',
         run: () => {},
       },
       { id: 'addReviewTab', label: '添加审查标签', group: '面板', run: openReview },

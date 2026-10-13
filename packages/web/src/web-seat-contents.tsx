@@ -25,8 +25,11 @@ import {
   FRAME_SEAT,
   MAIN_AUTOMATIONS_KEY,
   MAIN_CONVERSATION_KEY,
+  TERMINAL_SEAT,
 } from '@harness2/ui-shared/renderer/layout/frame-seats.js';
 import { AutomationsMainView } from '@harness2/ui-shared/renderer/automation/index.js';
+import { TerminalPanel } from '@harness2/ui-shared/renderer/terminal/index.js';
+import { useShellTheme } from '@harness2/ui-shared/renderer/theme/index.js';
 import {
   BackgroundTasksPane,
   SidePaneHost,
@@ -268,6 +271,29 @@ function AutomationSeatContent(): ReactNode {
 }
 
 /**
+ * 中栏终端席位内容（ui-terminal；Z9-5）：已就绪的共享 `TerminalPanel` + web 的 WS 端口。
+ *
+ * - 端口经 context 注入（`createWebTerminalPort(serveClient)`，见 main.tsx）；缺省 = 无通道 →
+ *   `available=false`，面板如实显示「终端不可用」（红线⑩，不创建 xterm、不摆假终端）。
+ * - 订阅 `useAppState()`（连接状态变化即重渲染）→ 重新读取 `port.available`（getter 反映实时状态），
+ *   并给出可行动的不可用原因。
+ * - `theme` 传壳主题（仅作重新取色的失效信号；实际色值读 CSS 语义 token）。
+ */
+function WebTerminalSeatContent(): ReactNode {
+  const { shell, terminalPort } = useWebShell();
+  const state = shell.useAppState();
+  const theme = useShellTheme();
+  const unavailableReason = state.status === 'connected' ? undefined : 'serve 未连接：终端需要 serve 的 WS 通道';
+  return (
+    <TerminalPanel
+      port={terminalPort}
+      theme={theme === 'zai-light' ? 'light' : 'dark'}
+      {...(unavailableReason !== undefined ? { unavailableReason } : {})}
+    />
+  );
+}
+
+/**
  * 右栏席位内容（ui-workspace）：SidePaneHost + 与桌面**同一套**面板。
  * 数据源 = 共享 controller 经 serve（S7 只读端点 + WS 事件流）；面板本体全部来自 ui-shared，
  * web 不做第二份实现。模型轨迹按 `model-trajectory:{sessionId}` 解析（Z-14）。
@@ -344,6 +370,8 @@ export function injectWebSeatContents(registry: SlotRegistry): () => void {
       owner: 'ui-automation',
       component: AutomationSeatContent,
     }),
+    // Z9-5：中栏终端席位（注册缝；注入后 MainSeatView 才出现终端面板与其开关）。
+    registry.inject({ seat: TERMINAL_SEAT, owner: 'ui-terminal', component: WebTerminalSeatContent }),
     registry.inject({ seat: FRAME_SEAT.rightbar, owner: 'ui-workspace', component: RightbarSeatContent }),
     // 覆层席位（Z7）：设置页复用共享实现（端口只接 web 真能做到的 appearance/gateway）；
     // 命令面板复用共享 CommandPalette（命令表/会话候选由 web 壳组装，见 web-command-palette.tsx）。

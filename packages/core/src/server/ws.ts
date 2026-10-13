@@ -6,6 +6,11 @@
 //   → {op:'resume-subscription', sessionId, lastSeq, epoch}  # S3c1 带水位重连握手 → resume-snapshot
 //   → {op:'cancel', requestId, target:{kind,id}, expectedId?, expectedTurnGeneration?} # S3c1 取消 ack（三态；FixB turn 代次加性）
 //   → {op:'submit', clientMessageId, sessionId, rawText, intent, references?, expectedTurnId?} # S3c1 帧+校验
+//   → {op:'terminal/open', requestId, cols, rows, cwd?} / {op:'terminal/input', id, data}
+//   → {op:'terminal/resize', id, cols, rows} / {op:'terminal/close', id}   # Z9-2 终端帧（连接私有）
+//   ← {type:'terminal/opened', requestId, id} / {type:'terminal/data', id, data}
+//   ← {type:'terminal/exit', id, exitCode?} / {type:'terminal/error', requestId?, id?, error}
+//      # Z9-2：终端会话属创建它的连接；他连接访问其 id → terminal/error（如实拒绝）
 //   ← {type:'delta', sessionId, kind:'text'|'reasoning', text} / {kind:'tool', call}   # 旧帧形状不变
 //   ← {type:'text-delta'|'reasoning-delta', sessionId, turnId, attemptId, chunkOffset, text} # S0 带水位
 //   ← {type:'attempt-final', sessionId, turnId, attemptId, state, finalText?, error?}  # S0 终态归属
@@ -46,6 +51,12 @@ import {
 } from '../interaction/types.js';
 import { HubError, SessionHub, type TurnDelta } from './sessions.js';
 import type { ResumeStateProvider } from '../interaction/resume-state.js';
+import {
+  createTerminalManager,
+  TerminalUnavailableError,
+  type TerminalManager,
+  type TerminalSpawnOptions,
+} from '../terminal/manager.js';
 // S3c2 起 DeltaAttribution/WatermarkCursor/ResumeStateProvider 移驻 interaction/resume-state.ts
 // （hub 与传输共用、避免 sessions↔ws 模块环）；此处重新导出保持 S3c1 公开导出面不变。
 export { WatermarkCursor } from '../interaction/resume-state.js';
@@ -85,7 +96,13 @@ export type WsClientMessage =
       intent: 'queue' | 'steer';
       references?: MessageReference[];
       expectedTurnId?: string;
-    };
+    }
+  // Z9-2 终端帧（连接私有；跨壳线协议镜像 ui-shared/src/shared/protocol.ts WsClientOp）。
+  // 冻结契约 §1.2 以 type 记名；内核客户端帧判别沿既有 `op`（WsClientMessage 与解析器一致）。
+  | { op: 'terminal/open'; requestId: string; cols: number; rows: number; cwd?: string }
+  | { op: 'terminal/input'; id: string; data: string }
+  | { op: 'terminal/resize'; id: string; cols: number; rows: number }
+  | { op: 'terminal/close'; id: string };
 
 export type WsServerMessage =
   | { type: 'delta'; sessionId: string; kind: 'text' | 'reasoning'; text: string }
@@ -154,6 +171,12 @@ export type WsServerMessage =
     }
   | { type: 'forked'; sessionId: string; parentSession: string; copiedEvents: number }
   | { type: 'cron'; op: 'finished'; id: string; ok: boolean; error?: string }
+  // Z9-2 终端帧（server→client；镜像 ui-shared WsFrame 的同名帧）。终端会话连接私有：
+  // 仅创建它的连接收到 opened/data/exit；error 是**如实失败**帧（UI 不得画成成功）。
+  | { type: 'terminal/opened'; requestId: string; id: string }
+  | { type: 'terminal/data'; id: string; data: string }
+  | { type: 'terminal/exit'; id: string; exitCode?: number }
+  | { type: 'terminal/error'; requestId?: string; id?: string; error: string }
   | { type: 'error'; error: string };
 
 export interface WsPlaneOptions {
@@ -173,6 +196,12 @@ export interface WsPlaneOptions {
   auth?: { token: string; requireToken: boolean; stats?: ServeSecurityStats };
   /** A3-2：WS 帧超限断连记账回调（除计数/日志外的可观测出口；测试注入） */
   onFrameOversize?: (info: { remote: string; limitBytes: number }) => void;
+  /**
+   * Z9-2：终端管理器注入点（缺省 = attachWsServer 自建一个，close 时 dispose）。
+   * startServe 统一注入一份实例并随 serve 关闭 dispose（同样经 ServeHandle.terminal 暴露）；
+   * 测试可注入 `createTerminalManager({ spawnPty })` 的假 PTY 管理器。
+   */
+  terminal?: TerminalManager;
 }
 
 export interface WsPlane {
@@ -263,9 +292,42 @@ export function attachWsServer(server: Server, hub: SessionHub, options: WsPlane
     epoch: number;
     /** S3c2：已成功 resume-subscription → 带水位帧消费者。旧客户端（未 resume）继续收旧 delta 形状 */
     v2: boolean;
+    /** Z9-2：本连接创建的终端 id（归属语义：连接断开 → 这些终端全部 kill） */
+    terminals: Set<string>;
   }
   const conns = new Set<Conn>();
   const resumeState = options.resumeState;
+  // Z9-2：终端管理器（注入优先，缺省自建并在 close 时 dispose）。数据/退出事件经
+  // termOwner 反查归属连接回推——终端帧**不按会话订阅过滤**，只认创建它的连接。
+  const terminal = options.terminal ?? createTerminalManager();
+  const ownsTerminal = options.terminal === undefined;
+  const termOwner = new Map<string, Conn>();
+
+  /** 连接清理：kill 该连接创建的全部终端并从归属表摘除（断开即全杀，ZCode 同语义） */
+  const cleanupConn = (conn: Conn): void => {
+    for (const id of conn.terminals) {
+      termOwner.delete(id);
+      terminal.kill(id);
+    }
+    conn.terminals.clear();
+    conns.delete(conn);
+  };
+
+  const offTerminal = terminal.onEvent((e) => {
+    const owner = termOwner.get(e.id);
+    if (owner === undefined) return; // 无归属（连接已断开/已清理）→ 丢弃，不泄漏
+    if (e.type === 'data') {
+      sendSafe(owner.ws, { type: 'terminal/data', id: e.id, data: e.data });
+    } else {
+      sendSafe(owner.ws, {
+        type: 'terminal/exit',
+        id: e.id,
+        ...(e.exitCode !== undefined ? { exitCode: e.exitCode } : {}),
+      });
+      owner.terminals.delete(e.id);
+      termOwner.delete(e.id);
+    }
+  });
 
   const broadcast = (sessionId: string, frame: WsServerMessage): void => broadcastTo([sessionId], frame);
 
@@ -329,7 +391,7 @@ export function attachWsServer(server: Server, hub: SessionHub, options: WsPlane
   });
 
   wss.on('connection', (ws: WebSocket, req: IncomingMessage) => {
-    const conn: Conn = { ws, subs: new Set<string>(), epoch: 0, v2: false };
+    const conn: Conn = { ws, subs: new Set<string>(), epoch: 0, v2: false, terminals: new Set<string>() };
     conns.add(conn);
     ws.on('message', (data: unknown) => {
       let msg: WsClientMessage;
@@ -455,6 +517,56 @@ export function attachWsServer(server: Server, hub: SessionHub, options: WsPlane
             });
             break;
           }
+          // —— Z9-2 终端帧：会话属创建它的连接；他连接访问其 id 一律 terminal/error（如实拒绝） ——
+          case 'terminal/open': {
+            const spawnOpts: TerminalSpawnOptions = {
+              cols: msg.cols,
+              rows: msg.rows,
+              ...(msg.cwd !== undefined ? { cwd: msg.cwd } : {}),
+            };
+            try {
+              const { id } = terminal.spawn(spawnOpts);
+              conn.terminals.add(id);
+              termOwner.set(id, conn);
+              sendSafe(ws, { type: 'terminal/opened', requestId: msg.requestId, id });
+            } catch (e) {
+              // PTY 不可用（平台不支持/依赖缺失）→ 如实回 terminal/error，绝不假装 opened
+              const detail =
+                e instanceof TerminalUnavailableError ? e.message : `终端创建失败: ${(e as Error).message}`;
+              sendSafe(ws, { type: 'terminal/error', requestId: msg.requestId, error: detail });
+            }
+            break;
+          }
+          case 'terminal/input': {
+            if (!conn.terminals.has(msg.id)) {
+              sendSafe(ws, { type: 'terminal/error', id: msg.id, error: '终端不属于本连接或不存在' });
+              break;
+            }
+            if (!terminal.write(msg.id, msg.data)) {
+              sendSafe(ws, { type: 'terminal/error', id: msg.id, error: '终端已退出' });
+            }
+            break;
+          }
+          case 'terminal/resize': {
+            if (!conn.terminals.has(msg.id)) {
+              sendSafe(ws, { type: 'terminal/error', id: msg.id, error: '终端不属于本连接或不存在' });
+              break;
+            }
+            if (!terminal.resize(msg.id, msg.cols, msg.rows)) {
+              sendSafe(ws, { type: 'terminal/error', id: msg.id, error: '终端已退出' });
+            }
+            break;
+          }
+          case 'terminal/close': {
+            if (!conn.terminals.has(msg.id)) {
+              sendSafe(ws, { type: 'terminal/error', id: msg.id, error: '终端不属于本连接或不存在' });
+              break;
+            }
+            conn.terminals.delete(msg.id);
+            termOwner.delete(msg.id);
+            terminal.kill(msg.id);
+            break;
+          }
         }
       } catch (e) {
         const detail = e instanceof HubError ? e.message : `请求处理失败: ${(e as Error).message}`;
@@ -462,7 +574,7 @@ export function attachWsServer(server: Server, hub: SessionHub, options: WsPlane
       }
     });
     ws.on('close', () => {
-      conns.delete(conn);
+      cleanupConn(conn);
     });
     ws.on('error', (err: Error) => {
       // A3-2：帧超限不是静默断连——计数 + 日志（不含帧内容/token）+ 可注入回调记账
@@ -472,7 +584,7 @@ export function attachWsServer(server: Server, hub: SessionHub, options: WsPlane
         console.error(`serve: WS 帧超限（>${WS_MAX_PAYLOAD} 字节），已断连 ${remote}`);
         options.onFrameOversize?.({ remote, limitBytes: WS_MAX_PAYLOAD });
       }
-      conns.delete(conn);
+      cleanupConn(conn);
     });
   });
 
@@ -490,8 +602,10 @@ export function attachWsServer(server: Server, hub: SessionHub, options: WsPlane
     },
     close(): Promise<void> {
       offHooks();
+      offTerminal();
       return new Promise((resolve) => {
-        for (const conn of conns) {
+        for (const conn of [...conns]) {
+          cleanupConn(conn); // 终端随连接断开全杀（归属语义）
           try {
             conn.ws.terminate();
           } catch {
@@ -499,6 +613,8 @@ export function attachWsServer(server: Server, hub: SessionHub, options: WsPlane
           }
         }
         conns.clear();
+        // 自建管理器随 WS 面关闭 dispose；注入的（如 startServe 传入）由注入方负责。
+        if (ownsTerminal) terminal.dispose();
         wss.close(() => resolve());
       });
     },
@@ -523,6 +639,10 @@ const OPS = new Set([
   'resume-subscription',
   'cancel',
   'submit',
+  'terminal/open',
+  'terminal/input',
+  'terminal/resize',
+  'terminal/close',
 ]);
 
 export function parseClientMessage(data: unknown): WsClientMessage {
@@ -609,10 +729,42 @@ export function parseClientMessage(data: unknown): WsClientMessage {
         ? { op, clientMessageId, sessionId, rawText, intent, ...refs }
         : { op, clientMessageId, sessionId, rawText, intent, ...refs, expectedTurnId };
     }
+    // Z9-2 终端帧校验（cols/rows 正整数字段级把关；未知 id 的交由分发器回 terminal/error）
+    case 'terminal/open': {
+      const requestId = requireString(m['requestId'], 'requestId');
+      const cols = requirePositiveInt(m['cols'], 'cols');
+      const rows = requirePositiveInt(m['rows'], 'rows');
+      const cwd = m['cwd'];
+      if (cwd !== undefined && (typeof cwd !== 'string' || cwd.length === 0)) {
+        throw new Error('cwd 必须是非空字符串');
+      }
+      return cwd === undefined ? { op, requestId, cols, rows } : { op, requestId, cols, rows, cwd };
+    }
+    case 'terminal/input': {
+      const id = requireString(m['id'], 'id');
+      const data = m['data'];
+      // data 允许空串（粘贴/清屏等），但必须是字符串
+      if (typeof data !== 'string') throw new Error('data 必须是字符串');
+      return { op, id, data };
+    }
+    case 'terminal/resize':
+      return {
+        op,
+        id: requireString(m['id'], 'id'),
+        cols: requirePositiveInt(m['cols'], 'cols'),
+        rows: requirePositiveInt(m['rows'], 'rows'),
+      };
+    case 'terminal/close':
+      return { op, id: requireString(m['id'], 'id') };
   }
 }
 
 function requireString(v: unknown, name: string): string {
   if (typeof v !== 'string' || v.length === 0) throw new Error(`${name} 必须是非空字符串`);
+  return v;
+}
+
+function requirePositiveInt(v: unknown, name: string): number {
+  if (typeof v !== 'number' || !Number.isInteger(v) || v < 1) throw new Error(`${name} 必须是 >= 1 的整数`);
   return v;
 }
