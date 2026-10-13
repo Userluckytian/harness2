@@ -156,11 +156,27 @@ jobs:
           path: release-assets
           merge-multiple: true
 
-      - name: Attach to GitHub Release（无 Release 则生成后附加）
+      - name: Attach to GitHub Release（幂等 + 显式诊断 + notes 回退）
+        # 首次真跑（v1.0.0，run 38382399850）在本步 exit 1 且 Release 未建出来；未登录看不到日志，
+        # 无法锁定是 `gh release create --generate-notes` 的服务端 notes 生成失败，还是创建本身被拒。
+        # 本版把两种可能都收敛：①先试 --generate-notes，失败立即回退手写 notes 再建（notes 不是关键产物）；
+        # ②所有 gh 调用失败时把 stderr 完整打进日志（::error::），下次红一眼可定位；③建完即 view 复核。
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ github.ref_name }}
         run: |
-          gh release view "$TAG" >/dev/null 2>&1 || gh release create "$TAG" --generate-notes --title "$TAG"
+          set -u
+          if ! gh release view "$TAG" >/dev/null 2>&1; then
+            echo "::group::create release $TAG"
+            if ! gh release create "$TAG" --generate-notes --title "$TAG" 2>err.log; then
+              echo "::warning::--generate-notes 失败，回退手写 notes。stderr 如下："
+              cat err.log
+              gh release create "$TAG" --title "$TAG" \
+                --notes "harness2 $TAG：三平台桌面产物（win nsis+portable / mac dmg arm64+x64 / linux AppImage），全部 unsigned。" \
+                2>err.log || { echo "::error::gh release create（含回退）失败："; cat err.log; exit 1; }
+            fi
+            echo "::endgroup::"
+          fi
+          gh release view "$TAG" --json tagName,uploadUrl >/dev/null || { echo "::error::Release $TAG 视图复核失败"; exit 1; }
           gh release upload "$TAG" release-assets/* --clobber
           echo "::notice::桌面产物已附加到 Release $TAG（全部 unsigned，无签名/公证）"
