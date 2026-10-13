@@ -132,23 +132,14 @@ describe('webComposerControlsOf：serve config 视图 → 控件 props', () => {
     expect(controls.thoughtLevel?.current).toBe('high');
   });
 
-  it('roles.main 缺失 → 回落 providers 列表首项为初值（3b 两壳同口径）；modeSwitch 仍可切换', () => {
+  it('roles.main 缺失 → 不出 modelSelect；modeSwitch 仍可切换', () => {
     const ports = portsOf(
       async () => configOf(),
       async () => ({ ok: true }),
     );
     const controls = webComposerControlsOf(configOf({ roles: {} }), ports);
-    expect(controls.modelSelect?.menu.current).toEqual({ channel: 'zai', model: 'glm-5.3' });
-    expect(controls.modeSwitch?.mode).toBe('default');
-  });
-
-  it('roles.main 缺失且无 provider/models 声明 → 不出 modelSelect（无从选择）', () => {
-    const ports = portsOf(
-      async () => configOf(),
-      async () => ({ ok: true }),
-    );
-    const controls = webComposerControlsOf(configOf({ roles: {}, providers: {} }), ports);
     expect(controls.modelSelect).toBeUndefined();
+    expect(controls.modeSwitch?.mode).toBe('default');
   });
 });
 

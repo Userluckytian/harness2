@@ -23,14 +23,12 @@ import {
   approvalModePatch,
   buildModelMenu,
   buildThoughtLevel,
-  firstAvailableModel,
   modelSelectionPatch,
   nextApprovalMode,
   nextThoughtLevel,
   thoughtLevelPatch,
   COMPOSER_MAIN_ROLE,
 } from '@harness2/ui-shared/renderer/conversation/composer/composer-config.js';
-import type { ComposerModelRef } from '@harness2/ui-shared/renderer/conversation/composer/composer-config.js';
 import type { SettingsConfigShape } from '@harness2/ui-shared/shared/settings.js';
 import type { WebSettingsDataPorts } from './web-settings.js';
 
@@ -104,8 +102,7 @@ export function useWebComposerConfig(ports: WebSettingsDataPorts | undefined): S
 /**
  * 由 config 视图装配控件 props：
  *   - config 未载入（null）→ 空对象（控件不渲染）；
- *   - 模型选择初值 = roles.main（优先），缺失回落 providers 列表首项（3b，两壳同口径）；
- *     无任何 provider/models 声明才不出模型选择；权限模式恒可切换；
+ *   - `roles.main` 缺失 → 不出模型选择；权限模式恒可切换；
  *   - 思考档位仅当所引模型声明了 `reasoning.values` 才出（无档位可选时不摆控件，如实）。
  */
 export function webComposerControlsOf(
@@ -113,12 +110,12 @@ export function webComposerControlsOf(
   ports: WebSettingsDataPorts,
 ): WebComposerControls {
   if (config === null) return {};
-  const role: ComposerModelRef | undefined = config.roles?.main ?? firstAvailableModel(config);
+  const role = config.roles?.main;
   const modelSelect: ComposerModelSelectProps | undefined =
     role === undefined
       ? undefined
       : (() => {
-          const menu = buildModelMenu(config, role);
+          const menu = buildModelMenu(config);
           if (menu === undefined) return undefined;
           return {
             menu,
