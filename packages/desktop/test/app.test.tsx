@@ -751,3 +751,104 @@ describe('P4-② 装配级补缺（真渲染 App + 缩窗事件）', () => {
     expect(document.querySelectorAll('[data-seat="rightbar"] [data-slot="rightbar"]').length).toBe(1);
   });
 });
+
+// —————— Z10-4 快捷键扩展（ZCode 源码权威键表 @zcode/shared/shortcutCommands.ts）——————
+describe('Z10-4 快捷键扩展（源码权威键表）', () => {
+  beforeEach(() => {
+    cleanup();
+    seq = 0;
+  });
+  afterEach(() => {
+    cleanup();
+    vi.unstubAllGlobals();
+    // 主题是全局 DOM 呈现：复位，避免污染同文件其它用例
+    document.documentElement.removeAttribute('data-theme');
+    document.documentElement.classList.remove('theme-zai-light', 'theme-zai-dark', 'dark');
+    document.documentElement.style.cssText = '';
+    globalThis.localStorage?.removeItem('harness2-theme');
+  });
+
+  it('Ctrl+Shift+P：命令面板别名（同 Ctrl+K）', async () => {
+    const api = makeFakeApi();
+    const App = (await bootApp(api)) as { App: () => React.ReactNode };
+    render(<App.App />);
+    fireEvent.keyDown(window, { key: 'P', code: 'KeyP', ctrlKey: true, shiftKey: true });
+    const palette = await screen.findByPlaceholderText('搜索操作、任务或文件');
+    expect(palette.closest('[data-slot="shell.overlay"]')).not.toBeNull();
+  });
+
+  it('Ctrl+B 切侧栏；Ctrl+Alt+B 切右栏（frameDispatch 真动作）', async () => {
+    const api = makeFakeApi();
+    const App = (await bootApp(api)) as { App: () => React.ReactNode };
+    render(<App.App />);
+    expect(seatOf('sidebar')?.getAttribute('data-collapsed')).toBe('false');
+    fireEvent.keyDown(window, { key: 'b', code: 'KeyB', ctrlKey: true });
+    expect(seatOf('sidebar')?.getAttribute('data-collapsed')).toBe('true');
+
+    const hiddenBefore = seatOf('rightbar')?.hasAttribute('hidden');
+    fireEvent.keyDown(window, { key: 'b', code: 'KeyB', ctrlKey: true, altKey: true });
+    expect(seatOf('rightbar')?.hasAttribute('hidden')).toBe(!hiddenBefore);
+  });
+
+  it('Ctrl+Shift+L：切换主题并持久化到 settingsSetPreferences', async () => {
+    const api = makeFakeApi();
+    const App = (await bootApp(api)) as { App: () => React.ReactNode };
+    render(<App.App />);
+    // 启动偏好 = system → jsdom 解析为浅色
+    await waitFor(() => expect(document.documentElement.getAttribute('data-theme')).toBe('zai-light'));
+    fireEvent.keyDown(window, { key: 'L', code: 'KeyL', ctrlKey: true, shiftKey: true });
+    await waitFor(() => expect(api.settingsSetPreferences).toHaveBeenCalledWith({ theme: 'zai-dark' }));
+    expect(document.documentElement.getAttribute('data-theme')).toBe('zai-dark');
+  });
+
+  it('Ctrl+Shift+] / Ctrl+Shift+[：下一个 / 上一个会话（moveSession 同源，真切换）', async () => {
+    const api = makeFakeApi();
+    vi.mocked(api.listSessions).mockResolvedValue([
+      { id: 's1', dir: 'd', mtimeMs: 20, firstUserText: '第一句', messageCount: 2, lastSeq: 3 },
+      { id: 's2', dir: 'd', mtimeMs: 10, firstUserText: '第二句', messageCount: 1, lastSeq: 0 },
+    ]);
+    const App = (await bootApp(api)) as { App: () => React.ReactNode; store: AppStore };
+    render(<App.App />);
+    await screen.findByText(/第一句/);
+    // 无选中 → 下一个落到 mtime 最高的 s1
+    fireEvent.keyDown(window, { key: ']', code: 'BracketRight', ctrlKey: true, shiftKey: true });
+    await waitFor(() => expect(App.store.getState().selectedId).toBe('s1'));
+    fireEvent.keyDown(window, { key: ']', code: 'BracketRight', ctrlKey: true, shiftKey: true });
+    await waitFor(() => expect(App.store.getState().selectedId).toBe('s2'));
+    fireEvent.keyDown(window, { key: '[', code: 'BracketLeft', ctrlKey: true, shiftKey: true });
+    await waitFor(() => expect(App.store.getState().selectedId).toBe('s1'));
+  });
+
+  it('Ctrl+O：打开工作区（目录选择 → 以所选 cwd 建会话）', async () => {
+    const api = makeFakeApi();
+    api.projectsPickFolder = vi.fn(async () => 'D:/proj');
+    const App = (await bootApp(api)) as { App: () => React.ReactNode };
+    render(<App.App />);
+    fireEvent.keyDown(window, { key: 'o', code: 'KeyO', ctrlKey: true });
+    await waitFor(() => expect(api.projectsPickFolder).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(api.createSession).toHaveBeenCalledWith('D:/proj'));
+  });
+
+  it('反向钉：未兑现的键不触发任何动作（Ctrl+F / Ctrl+T / Ctrl+Shift+M / Ctrl+W）', async () => {
+    const api = makeFakeApi();
+    const App = (await bootApp(api)) as { App: () => React.ReactNode };
+    render(<App.App />);
+    await screen.findByText(/第一句/);
+    const collapsedBefore = seatOf('sidebar')?.getAttribute('data-collapsed');
+    const rightbarBefore = seatOf('rightbar')?.hasAttribute('hidden');
+    for (const combo of [
+      { key: 'f', code: 'KeyF' },
+      { key: 't', code: 'KeyT' },
+      { key: 'm', code: 'KeyM', shiftKey: true },
+      { key: 'w', code: 'KeyW' },
+    ]) {
+      fireEvent.keyDown(window, { ctrlKey: true, ...combo });
+    }
+    // 没有任何覆层/面板/主题/侧栏状态被改动
+    expect(screen.queryByPlaceholderText('搜索操作、任务或文件')).toBeNull();
+    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(seatOf('sidebar')?.getAttribute('data-collapsed')).toBe(collapsedBefore);
+    expect(seatOf('rightbar')?.hasAttribute('hidden')).toBe(rightbarBefore);
+    expect(api.settingsSetPreferences).not.toHaveBeenCalled();
+  });
+});

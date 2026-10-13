@@ -9,6 +9,7 @@ import {
   AppFrame,
   DesktopTopOverlay,
   ShellPaletteProvider,
+  getShellTheme,
   openSettingsAtSection,
   setOverlay,
   setShellTheme,
@@ -17,6 +18,7 @@ import {
   useShellTheme,
   type ShellPaletteValue,
 } from './layout/index.js';
+import { isImeComposing } from '@harness2/ui-shared/renderer/features/composer/composer-model.js';
 import { shellSlots } from './layout/shell-registry.js';
 import { desktopPlatform, windowFrameClass } from './platform.js';
 import { useWindowMaximized } from './window-state.js';
@@ -50,6 +52,35 @@ export function moveSession(state: AppState, delta: -1 | 1): string | null {
   const curIdx = cur !== null ? ids.indexOf(cur) : -1;
   const next = curIdx >= 0 ? (curIdx + delta + ids.length) % ids.length : 0;
   return ids[next] ?? null;
+}
+
+/** 「打开工作区」真动作（命令面板与 Ctrl+O 共用同一入口）：Electron 目录选择 → 以所选目录 cwd 建会话。
+ *  取消选择（null）即无操作；通道失败静默（不伪造成功）。 */
+function openWorkspaceFromPicker(): void {
+  void (async () => {
+    try {
+      const dir = await window.harness2.projectsPickFolder?.();
+      if (dir === null || dir === undefined) return;
+      const created = await window.harness2.createSession(dir);
+      await controller.refreshSessions();
+      await controller.selectSession(created.id);
+    } catch {
+      /* 通道失败：静默（无假反馈） */
+    }
+  })();
+}
+
+/** 相对当前选中切换 ±1 会话（Ctrl+Shift+[ / ] 与命令面板同一动作） */
+function stepSelectedSession(delta: -1 | 1): void {
+  const id = moveSession(store.getState(), delta);
+  if (id !== null) void controller.selectSession(id);
+}
+
+/** 切换主题并持久化（桌面：settingsSetPreferences；Ctrl+Shift+L 与命令面板同一动作） */
+function cycleThemeAndPersist(): void {
+  const next = cycleTheme(getShellTheme());
+  setShellTheme(next);
+  void window.harness2.settingsSetPreferences({ theme: next });
 }
 
 export function App(): React.ReactNode {
@@ -114,26 +145,57 @@ export function App(): React.ReactNode {
       });
     });
   }, [controller]);
-  useEffect(() => {
-    const onKeyDown = (e: KeyboardEvent): void => {
-      if ((e.ctrlKey || e.metaKey) && e.key === ',') {
-        e.preventDefault();
-        toggleOverlay('settings');
-      }
-    };
-    window.addEventListener('keydown', onKeyDown);
-    return () => window.removeEventListener('keydown', onKeyDown);
-  }, []);
-  // Ctrl+K / Cmd+K 命令面板 + Ctrl+N / Cmd+N 新建会话（Z-07 #1：New Task 的 Ctrl+N 快捷键；
-  // 命令面板此前已标注该 hint 但未绑定，这里补上真绑定，避免「显示了却不生效」的假入口）。
-  // Z9-5：Ctrl+J 切换终端面板开合（与命令面板「切换终端」同一真动作，见 toggleTerminalDock）。
+  // 全局快捷键（Z10-4：按 ZCode 源码权威键表 `@zcode/shared/shortcutCommands.ts` 补齐）。
+  // 全部收敛在**唯一一条** keydown 监听里（不写第二套监听器）；一律 e.preventDefault 防浏览器默认，
+  // 忽略长按 repeat 与 IME 组合（isComposing / keyCode 229，与 composer 同一 isImeComposing 口径）。
+  // 已兑现：Ctrl+K / Ctrl+Shift+P（命令面板别名）、Ctrl+,（设置）、Ctrl+N（新任务）、Ctrl+J（终端）、
+  //        Ctrl+B（侧栏）、Ctrl+Alt+B（右栏）、Ctrl+Shift+L（切换主题+持久化）、
+  //        Ctrl+Shift+[ / ]（上/下一个会话）、Ctrl+O（打开工作区）。
+  // 不可兑现（如实不绑，见 Z10-4 报告）：Ctrl+[ / ]（会话历史栈未落地）、Ctrl+W（无「关闭当前上下文」动作）、
+  //        Ctrl+Shift+M（模式切换未接壳）、Ctrl+T（思考档位无 UI）、Ctrl+F / Ctrl+M / 缩放 / 双模式 / 引导。
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent): void => {
       if (!(e.ctrlKey || e.metaKey)) return;
+      if (e.repeat || isImeComposing(e)) return;
       const key = e.key.toLowerCase();
-      if (key === 'k') {
+      const code = e.code;
+      const { shiftKey, altKey } = e;
+      // 左右方括号按物理 code 兜底（Shift 下 e.key 会变成 { / }，非 US 布局也不可靠）
+      const bracketLeft = code === 'BracketLeft' || key === '[' || key === '{';
+      const bracketRight = code === 'BracketRight' || key === ']' || key === '}';
+
+      if (shiftKey && !altKey) {
+        if (key === 'p') {
+          e.preventDefault();
+          toggleOverlay('palette'); // openCommandCenter 别名（同 Ctrl+K）
+        } else if (key === 'l') {
+          e.preventDefault();
+          cycleThemeAndPersist(); // switchTheme
+        } else if (bracketLeft) {
+          e.preventDefault();
+          stepSelectedSession(-1); // previousConversation
+        } else if (bracketRight) {
+          e.preventDefault();
+          stepSelectedSession(1); // nextConversation
+        }
+        // 其余 Shift 组合（Ctrl+Shift+M/U/O…）未兑现：不动作、不 preventDefault
+        return;
+      }
+      if (altKey) {
+        if (key === 'b') {
+          e.preventDefault();
+          frameDispatch({ type: 'rightbar/toggle' }); // toggleSidePane
+        }
+        // 其余 Ctrl+Alt 组合无绑定
+        return;
+      }
+
+      if (key === ',') {
         e.preventDefault();
-        toggleOverlay('palette');
+        toggleOverlay('settings'); // openSettings
+      } else if (key === 'k') {
+        e.preventDefault();
+        toggleOverlay('palette'); // openCommandCenter
       } else if (key === 'n') {
         // 屏蔽浏览器「新开窗口」默认行为；新建会话同时按 Z2-04 收起右栏。
         // P0：主区若停在「自动化」视图，先回对话（key=null = 保留的 conversation）。
@@ -144,6 +206,12 @@ export function App(): React.ReactNode {
         // 屏蔽浏览器「下载」等默认行为；终端席位未注册时 toggleTerminalDock 如实 no-op。
         e.preventDefault();
         toggleTerminalDock();
+      } else if (key === 'b') {
+        e.preventDefault();
+        frameDispatch({ type: 'sidebar/toggle' }); // toggleSidebar
+      } else if (key === 'o') {
+        e.preventDefault();
+        openWorkspaceFromPicker(); // openWorkspace（桌面有目录通道；web 无 → 不绑）
       }
     };
     window.addEventListener('keydown', onKeyDown);
@@ -167,26 +235,6 @@ export function App(): React.ReactNode {
   // Z-17/Z-20：六组统一口径（建议/会话/面板/视图/配置/应用），两壳逐字一致；有真实通道面的项
   // 接真动作，无通道面的项如实 disabled + disabledHint（红线⑩，零假 URL/零假数据）。
   const commands: PaletteCommand[] = useMemo(() => {
-    const cycleThemeAction = (): void => {
-      const next = cycleTheme(theme);
-      setShellTheme(next);
-      void window.harness2.settingsSetPreferences({ theme: next });
-    };
-    // Z-17「打开工作区」：桌面真——Electron 目录选择 → 以所选目录 cwd 建会话（createSession 支持 cwd）。
-    // 取消选择（null）即无操作。
-    const openWorkspace = (): void => {
-      void (async () => {
-        try {
-          const dir = await window.harness2.projectsPickFolder?.();
-          if (dir === null || dir === undefined) return;
-          const created = await window.harness2.createSession(dir);
-          await controller.refreshSessions();
-          await controller.selectSession(created.id);
-        } catch {
-          /* 通道失败：静默（无假反馈） */
-        }
-      })();
-    };
     // 「添加审查标签」真动作：打开右栏 changes pane（我们壳里「审查/变更」的对应物）。
     // 桶与 SidePaneHost / automations 同源：未选会话落无会话桶（先例见 shell-seat-contents.tsx）。
     const openReview = (): void => {
@@ -210,7 +258,7 @@ export function App(): React.ReactNode {
           newSessionCollapsingRightbar(frameDispatch);
         },
       },
-      { id: 'openWorkspace', label: '打开工作区', hint: 'Ctrl+O', group: '建议', run: openWorkspace },
+      { id: 'openWorkspace', label: '打开工作区', hint: 'Ctrl+O', group: '建议', run: openWorkspaceFromPicker },
       { id: 'openSettings', label: '设置', group: '建议', run: () => setOverlay('settings', true) },
       // —— 会话（保留的原有真命令）——
       {
@@ -288,7 +336,7 @@ export function App(): React.ReactNode {
         id: 'cycleTheme',
         label: theme === 'zai-dark' ? '切换主题到浅色' : '切换主题到深色',
         group: '配置',
-        run: cycleThemeAction,
+        run: cycleThemeAndPersist,
       },
       // 桌面设置支持直达分区（openSettingsAtSection）：真打开设置并落到对应分区
       {

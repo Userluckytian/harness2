@@ -6,9 +6,12 @@ import React from 'react';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { createAppShell } from '@harness2/ui-shared/renderer/app-shell.js';
 import { workbenchStore } from '@harness2/ui-shared/renderer/layout/workbench/store.js';
+import { setShellTheme } from '@harness2/ui-shared/renderer/theme/index.js';
 import type { HarnessClient } from '@harness2/ui-shared/renderer/ports.js';
 import type { ConnectionStatus, SessionSummaryShape, WsFrame } from '@harness2/ui-shared/shared/protocol.js';
 import { WebApp } from '../src/app.js';
+
+const TABBED_PLACEHOLDER = '搜索操作、任务或文件';
 
 afterEach(() => {
   cleanup();
@@ -16,6 +19,10 @@ afterEach(() => {
   // 分屏布局是**模块级单例**（Z2-06：内存态、D-14 不落盘）——测试间显式复位，
   // 否则上一用例的主格绑定会带进下一用例（主格头部会把会话标题再渲染一遍）。
   workbenchStore.reset();
+  // 主题是模块级单例 + 全局 DOM 呈现：测试间复位，避免快捷键用例的切换污染其它用例。
+  setShellTheme('system');
+  globalThis.localStorage?.removeItem('harness2-theme');
+  document.documentElement.removeAttribute('data-theme');
 });
 
 /** 假端口的事件帧注入（onEvent 订阅进这里；测试据此驱动流式/终态，走真实 controller 分发） */
@@ -179,6 +186,29 @@ describe('web 页面装配', () => {
     expect(screen.getByTestId('sidebar-settings')).toBeTruthy();
     stop();
   });
+
+  it('Z10-1 空态：会话已选中且无消息 → Logo mark + 问候 + 4 建议 chip；点击 chip 预填 composer', async () => {
+    const { shell, stop } = await mount();
+    fireEvent.click(screen.getByText('第一个会话'));
+    await waitFor(() => expect(shell.store.getState().selectedId).toBe('s1'));
+
+    // 空态新组件（会话已加载、0 条目）
+    await waitFor(() => expect(screen.getByTestId('conversation-empty')).toBeTruthy());
+    expect(screen.getByTestId('conversation-empty-mark').querySelector('svg')).not.toBeNull();
+    expect(screen.getByTestId('conversation-empty-greeting').textContent).toMatch(/，有什么想让我帮忙的吗$/);
+    expect(screen.getAllByTestId('conversation-empty-suggestion').map((c) => c.textContent)).toEqual([
+      '周报总结',
+      '报错修复',
+      'PPT 制作',
+      '闲时任务',
+    ]);
+
+    // 点击 chip → 经壳注入的 composerPrefill 通道把文案预填进 composer 输入框（非直接发送）
+    fireEvent.click(screen.getAllByTestId('conversation-empty-suggestion')[3]!);
+    await waitFor(() => expect(screen.getByTestId('composer-editor').textContent).toBe('闲时任务'));
+    expect(shell.store.peekStream('s1')?.pendingSubmits ?? {}).toEqual({}); // 未发送
+    stop();
+  });
 });
 
 describe('P2-9 新建会话：无可用 cwd 时置灰并给可行动原因（不摆必失败入口）', () => {
@@ -265,6 +295,79 @@ describe('P0「自动化」主区视图（web 无 cron 通道 → 视图内降�
     expect(account.disabled).toBe(true);
     expect(account.getAttribute('data-placeholder')).toBe('true');
     expect(account.getAttribute('title')).toBe('本地构建 · 无账号体系');
+    stop();
+  });
+});
+
+// —————— Z10-4 快捷键扩展（ZCode 源码权威键表 @zcode/shared/shortcutCommands.ts）——————
+describe('Z10-4 快捷键扩展（源码权威键表）', () => {
+  const seat = (name: string): Element | null => document.querySelector(`[data-seat="${name}"]`);
+
+  it('Ctrl+Shift+P：命令面板别名（同 Ctrl+K）', async () => {
+    const { stop } = await mount();
+    fireEvent.keyDown(window, { key: 'P', code: 'KeyP', ctrlKey: true, shiftKey: true });
+    expect(await screen.findByPlaceholderText(TABBED_PLACEHOLDER)).toBeTruthy();
+    stop();
+  });
+
+  it('Ctrl+,：打开共享设置覆层（桌面同键、web 本批补齐）', async () => {
+    const { stop } = await mount();
+    expect(screen.queryByRole('dialog', { name: '设置' })).toBeNull();
+    fireEvent.keyDown(window, { key: ',', code: 'Comma', ctrlKey: true });
+    expect(await screen.findByRole('dialog', { name: '设置' })).toBeTruthy();
+    stop();
+  });
+
+  it('Ctrl+B 切侧栏；Ctrl+Alt+B 切右栏（共享帧动作真生效）', async () => {
+    const { stop } = await mount();
+    expect(seat('sidebar')?.getAttribute('data-collapsed')).toBe('false');
+    fireEvent.keyDown(window, { key: 'b', code: 'KeyB', ctrlKey: true });
+    expect(seat('sidebar')?.getAttribute('data-collapsed')).toBe('true');
+    const hiddenBefore = seat('rightbar')?.hasAttribute('hidden');
+    fireEvent.keyDown(window, { key: 'b', code: 'KeyB', ctrlKey: true, altKey: true });
+    expect(seat('rightbar')?.hasAttribute('hidden')).toBe(!hiddenBefore);
+    stop();
+  });
+
+  it('Ctrl+Shift+L：切换主题并镜像浏览器存储（D-14 例外 #1）', async () => {
+    const { stop } = await mount();
+    setShellTheme('system');
+    expect(document.documentElement.getAttribute('data-theme')).toBe('zai-light');
+    fireEvent.keyDown(window, { key: 'L', code: 'KeyL', ctrlKey: true, shiftKey: true });
+    expect(document.documentElement.getAttribute('data-theme')).toBe('zai-dark');
+    expect(globalThis.localStorage?.getItem('harness2-theme')).toBe('zai-dark');
+    stop();
+  });
+
+  it('Ctrl+Shift+] / Ctrl+Shift+[：下一个 / 上一个会话（webAdjacentSessionId 同源）', async () => {
+    const s1: SessionSummaryShape = { ...SESSION, id: 's1', mtimeMs: 20, firstUserText: '第一个会话' };
+    const s2: SessionSummaryShape = { ...SESSION, id: 's2', mtimeMs: 10, firstUserText: '第二个会话' };
+    const { shell, stop } = await mount({ client: fakeClient([s1, s2]) });
+    await waitFor(() => expect(screen.getByText('第二个会话')).toBeTruthy());
+    fireEvent.keyDown(window, { key: ']', code: 'BracketRight', ctrlKey: true, shiftKey: true });
+    await waitFor(() => expect(shell.store.getState().selectedId).toBe('s1'));
+    fireEvent.keyDown(window, { key: ']', code: 'BracketRight', ctrlKey: true, shiftKey: true });
+    await waitFor(() => expect(shell.store.getState().selectedId).toBe('s2'));
+    fireEvent.keyDown(window, { key: '[', code: 'BracketLeft', ctrlKey: true, shiftKey: true });
+    await waitFor(() => expect(shell.store.getState().selectedId).toBe('s1'));
+    stop();
+  });
+
+  it('反向钉：未兑现的键不触发任何动作（Ctrl+F / Ctrl+T / Ctrl+Shift+M / Ctrl+W / Ctrl+O）', async () => {
+    const { stop } = await mount();
+    const collapsedBefore = seat('sidebar')?.getAttribute('data-collapsed');
+    for (const combo of [
+      { key: 'f', code: 'KeyF' },
+      { key: 't', code: 'KeyT' },
+      { key: 'm', code: 'KeyM', shiftKey: true },
+      { key: 'w', code: 'KeyW' },
+      { key: 'o', code: 'KeyO' },
+    ]) {
+      fireEvent.keyDown(window, { ctrlKey: true, ...combo });
+    }
+    expect(screen.queryByPlaceholderText(TABBED_PLACEHOLDER)).toBeNull();
+    expect(screen.queryByRole('dialog', { name: '设置' })).toBeNull();
+    expect(seat('sidebar')?.getAttribute('data-collapsed')).toBe(collapsedBefore);
     stop();
   });
 });

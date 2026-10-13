@@ -9,13 +9,16 @@
 // （桌面 `frame:false` 自绘三键在会话列头，见 desktop components/ConversationHeader.tsx）。
 import { useEffect, useMemo, useState } from 'react';
 import type { ReactNode } from 'react';
-import type { AppShell } from '@harness2/ui-shared/renderer/app-shell.js';
+import { THEME_CYCLE, type AppShell } from '@harness2/ui-shared/renderer/app-shell.js';
 import { useDraftsUnloadGuard } from '@harness2/ui-shared/renderer/drafts-guard.js';
+import { isImeComposing } from '@harness2/ui-shared/renderer/features/composer/composer-model.js';
 import { AppFrame, FrameTopOverlay, useFrameState } from '@harness2/ui-shared/renderer/layout/index.js';
+import { getShellTheme, setShellTheme } from '@harness2/ui-shared/renderer/theme/index.js';
 import type { TerminalPort } from '@harness2/ui-shared/renderer/terminal/port.js';
 import { toggleTerminalDock } from './terminal/toggle-dock.js';
 import { UNAVAILABLE_WEB_TERMINAL_PORT } from './terminal/web-port.js';
 import { assembleWebFrame } from './shell-registry.js';
+import { webAdjacentSessionId } from './web-command-palette.js';
 import { WebShellProvider, type WebShellValue } from './web-shell-context.js';
 import type { WebSettingsDataPorts } from './web-settings.js';
 
@@ -54,26 +57,6 @@ export function WebApp({
   // 有未发送草稿时注册 beforeunload 护栏，刷新/关闭前如实提示，不静默丢草稿。
   useDraftsUnloadGuard(shell.controller, store);
 
-  // Ctrl+K / Cmd+K 唤出命令面板（与浏览器默认「地址栏搜索」共存：阻止默认后由壳接管）。
-  // 打开设置覆层的 Ctrl+, 桌面有、web 不设（共享设置页在 web 经侧栏齿轮进入，不新造键位）。
-  // Z9-5：Ctrl+J 切换终端面板开合（与命令面板「切换终端」同一真动作，见 toggleTerminalDock）；
-  // 阻止浏览器默认（Ctrl+J 在部分浏览器 = 下载）。
-  useEffect(() => {
-    const onKeyDown = (e: KeyboardEvent): void => {
-      if (!(e.ctrlKey || e.metaKey)) return;
-      const key = e.key.toLowerCase();
-      if (key === 'k') {
-        e.preventDefault();
-        setPaletteOpen((open) => !open);
-      } else if (key === 'j') {
-        e.preventDefault();
-        toggleTerminalDock();
-      }
-    };
-    window.addEventListener('keydown', onKeyDown);
-    return () => window.removeEventListener('keydown', onKeyDown);
-  }, []);
-
   // P2-9：新建会话需要 cwd（serve 强制要求；本壳无目录选择通道）。
   // 列表里一个带 cwd 的会话都没有时，按钮点了必失败 —— 据实置灰并给出可行动原因，
   // 不摆「可点但必失败」的入口。
@@ -86,21 +69,81 @@ export function WebApp({
         : undefined;
   const newSessionEnabled = state.status === 'connected' && newSessionBlocked === undefined;
 
-  // Ctrl+N / Cmd+N：新建会话（Z-07 #1；与侧栏 New Task 按钮同一动作 + 同一可用性门控，
-  // 不在被阻断时「按了没反应」或强行调用必失败的动作）。
+  // 全局快捷键（Z10-4：按 ZCode 源码权威键表 `@zcode/shared/shortcutCommands.ts` 补齐）。
+  // 全部收敛在**唯一一条** keydown 监听里（不写第二套监听器）；一律 e.preventDefault 防浏览器默认，
+  // 忽略长按 repeat 与 IME 组合（isComposing / keyCode 229，与 composer 同一 isImeComposing 口径）。
+  // 已兑现：Ctrl+K / Ctrl+Shift+P（命令面板别名）、Ctrl+,（设置覆层）、Ctrl+N（新任务，受可用性门控）、
+  //        Ctrl+J（终端）、Ctrl+B（侧栏）、Ctrl+Alt+B（右栏）、Ctrl+Shift+L（切换主题，浏览器存储持久化）、
+  //        Ctrl+Shift+[ / ]（上/下一个会话）。
+  // 不绑（如实登记，见 Z10-4 报告）：Ctrl+O（web 无目录选择通道）、Ctrl+[ / ]（无会话历史栈）、
+  //        Ctrl+W（无「关闭当前上下文」动作）、Ctrl+Shift+M（模式切换未接壳）、Ctrl+T（思考档位无 UI）、
+  //        Ctrl+F / Ctrl+M / 缩放 / 双模式 / 引导 —— 均无对应真实动作/通道。
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent): void => {
-      if (!(e.ctrlKey || e.metaKey) || e.key.toLowerCase() !== 'n') return;
-      e.preventDefault();
-      if (newSessionEnabled) {
-        // P0：主区若停在「自动化」视图，先回对话再新建。
-        frameDispatch({ type: 'main/select-key', key: null });
-        onNewSession?.();
+      if (!(e.ctrlKey || e.metaKey)) return;
+      if (e.repeat || isImeComposing(e)) return;
+      const key = e.key.toLowerCase();
+      const code = e.code;
+      const { shiftKey, altKey } = e;
+      // 左右方括号按物理 code 兜底（Shift 下 e.key 会变成 { / }，非 US 布局也不可靠）
+      const bracketLeft = code === 'BracketLeft' || key === '[' || key === '{';
+      const bracketRight = code === 'BracketRight' || key === ']' || key === '}';
+
+      if (shiftKey && !altKey) {
+        if (key === 'p') {
+          e.preventDefault();
+          setPaletteOpen((open) => !open); // openCommandCenter 别名（同 Ctrl+K）
+        } else if (key === 'l') {
+          e.preventDefault();
+          const next = THEME_CYCLE[(THEME_CYCLE.indexOf(getShellTheme()) + 1) % THEME_CYCLE.length] ?? 'system';
+          setShellTheme(next); // switchTheme；落盘经共享主题运行时镜像到 localStorage（D-14 例外 #1）
+        } else if (bracketLeft) {
+          e.preventDefault();
+          const id = webAdjacentSessionId(store.getState(), -1);
+          if (id !== null) void shell.controller.selectSession(id); // previousConversation
+        } else if (bracketRight) {
+          e.preventDefault();
+          const id = webAdjacentSessionId(store.getState(), 1);
+          if (id !== null) void shell.controller.selectSession(id); // nextConversation
+        }
+        // 其余 Shift 组合（Ctrl+Shift+M/U/O…）未兑现：不动作、不 preventDefault
+        return;
+      }
+      if (altKey) {
+        if (key === 'b') {
+          e.preventDefault();
+          frameDispatch({ type: 'rightbar/toggle' }); // toggleSidePane
+        }
+        return;
+      }
+
+      if (key === 'k') {
+        // 与浏览器默认「地址栏搜索」共存：阻止默认后由壳接管。
+        e.preventDefault();
+        setPaletteOpen((open) => !open);
+      } else if (key === ',') {
+        e.preventDefault();
+        setSettingsOpen(true); // openSettings（打开共享设置覆层）
+      } else if (key === 'n') {
+        // 与侧栏 New Task 同一动作 + 同一可用性门控（被阻断时按了不强行调用必失败动作）。
+        e.preventDefault();
+        if (newSessionEnabled) {
+          // P0：主区若停在「自动化」视图，先回对话再新建。
+          frameDispatch({ type: 'main/select-key', key: null });
+          onNewSession?.();
+        }
+      } else if (key === 'j') {
+        // 阻止浏览器默认（Ctrl+J 在部分浏览器 = 下载）；终端席位未注册时如实 no-op。
+        e.preventDefault();
+        toggleTerminalDock();
+      } else if (key === 'b') {
+        e.preventDefault();
+        frameDispatch({ type: 'sidebar/toggle' }); // toggleSidebar
       }
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [newSessionEnabled, onNewSession, frameDispatch]);
+  }, [newSessionEnabled, onNewSession, frameDispatch, store, shell.controller]);
 
   const shellValue: WebShellValue = {
     shell,

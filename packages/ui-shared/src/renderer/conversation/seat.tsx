@@ -28,7 +28,7 @@ import { resolveFileRefs, type FileRefReader } from '../../shared/file-ref.js';
 import type { MessageReferenceShape, SubmitAckStateShape } from '../../shared/protocol.js';
 import { lastTurnIdOf, type Controller } from '../app-controller.js';
 import { ChatTranscript } from '../components/ChatView.js';
-import { SuggestionChips } from '../components/ChatEmptyState.js';
+import { ConversationSuggestionChips } from './EmptyState.js';
 import { ApprovalDock, toApprovalCardModel } from '../approval/index.js';
 import { composeQueueView } from '../features/composer/composer-model.js';
 import { QueuePanel } from './QueuePanel.js';
@@ -281,6 +281,12 @@ export interface ConversationSeatProps {
    * 显示「web 无目录通道」（与左右簇控件「undefined = 不渲染」不同：本按钮是 ZCode 常驻项）。
    */
   readonly contextPicker?: ComposerContextPickerOptions;
+  /**
+   * Z10-1：空态建议 chip 的点击处理（壳注入）。
+   * 壳经既有 composer 编辑原语（如 `composerPrefill` 通道）把文案**预填进本席位会话的活草稿**
+   * ——非直接发送。缺省（未注入）= 内部直接写入本席位 `composerStore`（分屏各格各自正确）。
+   */
+  readonly onPickSuggestion?: (text: string) => void;
 }
 
 /**
@@ -488,11 +494,17 @@ export function ConversationSeat(props: ConversationSeatProps): ReactNode {
           {...(props.contextPicker !== undefined ? { contextPicker: props.contextPicker } : {})}
           {...(props.imageIO !== undefined ? { imageIO: props.imageIO } : {})}
         />
-        {/* Z-18/Z-17：草稿态（会话已加载且无任何条目、非运行中）→ composer 下方建议提示。
-            动作是真实的：点击 = 把建议提示词写入 composer 草稿（insert-text 在光标处追加，
-            不覆盖已有草稿），由用户 Enter 经既有提交边界送出 —— 不做点击无效的假 chip。 */}
+        {/* Z10-1（承 Z-18/Z-17）：草稿态（会话已加载且无任何条目、非运行中）→ composer 下方
+            4 建议 chip（实测文案「周报总结/报错修复/PPT 制作/闲时任务」）。
+            动作是真实的：点击 = 把该文案**预填**进 composer（insert-text，光标处追加，不覆盖已有
+            草稿），由用户 Enter 经既有提交边界送出 —— 非直接发送，不摆点击无效的假 chip。
+            壳可注入 `onPickSuggestion` 接管（如经 composerPrefill 通道）；缺省写本席位活草稿。 */}
         {sessionId !== null && stream?.loaded === true && !running && store.chatItems(sessionId).length === 0 && (
-          <SuggestionChips onPick={(prompt) => composerStore.dispatch({ type: 'insert-text', text: prompt })} />
+          <ConversationSuggestionChips
+            onPickSuggestion={
+              props.onPickSuggestion ?? ((text) => composerStore.dispatch({ type: 'insert-text', text }))
+            }
+          />
         )}
       </div>
     </div>

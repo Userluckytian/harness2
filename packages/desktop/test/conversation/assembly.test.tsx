@@ -34,6 +34,8 @@ import {
   type ConversationComposerPort,
 } from '../../src/renderer/conversation/assembly.js';
 import { createImageUrlCache } from '@harness2/ui-shared/renderer/conversation/views/image-url-cache.js';
+import { EMPTY_STATE_SUGGESTIONS } from '@harness2/ui-shared/renderer/conversation/EmptyState.js';
+import { composerPrefill } from '@harness2/ui-shared/renderer/conversation/composer/prefill.js';
 import { COMPOSER_INSET_VAR } from '@harness2/ui-shared/renderer/trajectory/index.js';
 import type { FileRefReader } from '@harness2/ui-shared/shared/file-ref.js';
 import type {
@@ -189,6 +191,8 @@ interface SeatOptions {
   readonly maxConcurrentFileUploads?: number;
   /** `@path` 读取缝（注入则完全绕开 window.harness2.readFileForRef） */
   readonly readRef?: FileRefReader;
+  /** Z10-1：空态建议 chip 的注入回调（undefined = 走 seat 内部缺省写活草稿） */
+  readonly onPickSuggestion?: (text: string) => void;
 }
 
 function renderSeat(options: SeatOptions): ReturnType<typeof render> {
@@ -203,11 +207,27 @@ function renderSeat(options: SeatOptions): ReturnType<typeof render> {
       {...(options.chain !== undefined ? { chain: options.chain } : {})}
       {...(options.transport !== undefined ? { transport: options.transport } : {})}
       {...(options.readRef !== undefined ? { readRef: options.readRef } : {})}
+      {...(options.onPickSuggestion !== undefined ? { onPickSuggestion: options.onPickSuggestion } : {})}
       {...(options.maxConcurrentFileUploads !== undefined
         ? { maxConcurrentFileUploads: options.maxConcurrentFileUploads }
         : {})}
     />,
   );
+}
+
+/** s2 置为「已加载但 0 条目」并选中 → 命中 Z10-1 的空态 ②（会话已选中但无消息）。 */
+function selectEmptySession(store: AppStore, id = 's2'): void {
+  act(() => {
+    store.applyReplay({
+      id,
+      dir: 'd',
+      header: { sessionId: id, cwd: 'D:/proj' },
+      events: [],
+      warnings: [],
+      lastSeq: 0,
+    });
+    store.select(id);
+  });
 }
 
 const editor = (): HTMLElement => screen.getByTestId('composer-editor');
@@ -971,5 +991,63 @@ describe('P5-C 诚实性复核：缺口是显式事实，不是假实现/假数�
     ).toEqual(['composer-context-trigger', 'composer-reference', 'composer-attach', 'composer-primary']);
     // 无 chip 原子节点：chip 只可能由业务 takeover 插入（当前无人插入，UI 不虚构 chip 入口）
     expect(document.querySelectorAll('[data-atom="chip"]')).toHaveLength(0);
+  });
+});
+
+// —— Z10-1 空态（会话已选中但无消息 = 新任务态）——
+
+describe('Z10-1 空态：Logo mark + 时间问候 + 4 建议 chip', () => {
+  it('空会话渲染新空态组件（Logo mark + 问候）与 4 建议 chip（文案逐字）', () => {
+    const { store, controller } = boot();
+    selectEmptySession(store);
+    renderSeat({ store, controller });
+
+    // ① 转录区：Logo mark + 时间问候（新组件）
+    const empty = screen.getByTestId('conversation-empty');
+    expect(empty).toBeTruthy();
+    expect(screen.getByTestId('conversation-empty-mark').querySelector('svg')).not.toBeNull();
+    expect(screen.getByTestId('conversation-empty-greeting').textContent).toMatch(/，有什么想让我帮忙的吗$/);
+
+    // ② composer 之下：4 建议 chip（实测文案逐字）
+    expect(screen.getAllByTestId('conversation-empty-suggestion').map((c) => c.textContent)).toEqual([
+      ...EMPTY_STATE_SUGGESTIONS,
+    ]);
+  });
+
+  it('点击建议 chip → 文案预填进 composer 输入框（缺省路径：写本席位活草稿，非直接发送）', () => {
+    const { store, controller } = boot();
+    selectEmptySession(store);
+    renderSeat({ store, controller });
+
+    fireEvent.click(screen.getAllByTestId('conversation-empty-suggestion')[0]!);
+    expect(editor().textContent).toBe('周报总结');
+    // 未发送：主按钮仍是「发送」（不是 Stop）；无在途提交
+    expect(primary().getAttribute('data-kind')).toBe('send');
+    expect(Object.keys(store.peekStream('s2')?.pendingSubmits ?? {})).toHaveLength(0);
+  });
+
+  it('壳注入 onPickSuggestion 时接管点击（composerPrefill 通道预填进对应会话草稿）', () => {
+    const { store, controller } = boot();
+    selectEmptySession(store);
+    const request = vi.spyOn(composerPrefill, 'request');
+    renderSeat({
+      store,
+      controller,
+      onPickSuggestion: (text) => composerPrefill.request({ sessionId: 's2', quote: text, focus: false }),
+    });
+
+    fireEvent.click(screen.getAllByTestId('conversation-empty-suggestion')[1]!);
+    expect(request).toHaveBeenCalledWith(expect.objectContaining({ sessionId: 's2', quote: '报错修复' }));
+    // composerPrefill 通道被 seat 消费 → 文案进入本会话活草稿
+    expect(editor().textContent).toBe('报错修复');
+    request.mockRestore();
+  });
+
+  it('无会话（①）：仍是既有提示文案，不摆新空态组件（两种空态区分）', () => {
+    const { store, controller } = boot({ select: null });
+    renderSeat({ store, controller });
+    expect(screen.getByText(/选择左侧会话开始对话/)).toBeTruthy();
+    expect(screen.queryByTestId('conversation-empty')).toBeNull();
+    expect(screen.queryAllByTestId('conversation-empty-suggestion')).toHaveLength(0);
   });
 });

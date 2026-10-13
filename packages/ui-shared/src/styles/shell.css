@@ -886,6 +886,75 @@ body,
   justify-content: center;
   color: var(--color-foreground-subtle);
 }
+
+/* =============================================================================
+ * Z10-1 空态（会话已选中但无消息 = 新任务态）
+ * 依据：docs/ai-framework/plans/2026-10-13-phase-Z10-p1-p2-parity.md §0.2（ZCode 1440×900 实测）
+ *       · docs/refs/refs-zcode-layout.md Z-18 / §①
+ * 与 ZCode 实测一致，视觉块分置两处：Logo + 问候在转录区（composer 之上，y=80/262）；
+ * 建议 chip 在 composer 之下（y=511）。颜色只用既有语义 token。
+ * ========================================================================== */
+.h2-empty {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 24px;
+  padding: 48px 16px 8px;
+  user-select: none;
+}
+/* Logo mark 占位容器：实测 400×320（Z10-1 §0.2）；窄屏按比例收缩，低对比度装饰件。 */
+.h2-empty-mark {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  max-width: 400px;
+  height: 320px;
+  color: var(--color-foreground-subtlest);
+  opacity: 0.5;
+}
+.h2-empty-greeting {
+  /* Z10-1 实测：ZCode 问候语 36px（1440×900，[510,262 672×36]）。
+     36px 超出 --text-ui-* 刻度（最大 --text-ui-xl = --ui-font-size + 4px = 18px），
+     按实测显式给定字号（本计划 §0.2 的实测依据）。 */
+  font-size: 36px;
+  line-height: 1.2;
+  font-weight: 500;
+  color: var(--color-foreground);
+  text-align: center;
+}
+.h2-empty-suggestions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 17px; /* Z10-1 实测：chip 间距 ≈17px */
+  padding: 12px 16px 4px;
+}
+.h2-empty-suggestion {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 32px; /* Z10-1 实测：chip ≈103×32 */
+  padding: 0 16px;
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  background: transparent;
+  color: var(--color-foreground-subtle);
+  font-size: var(--text-ui-caption);
+  cursor: pointer;
+  transition:
+    background-color 0.15s ease,
+    border-color 0.15s ease,
+    color 0.15s ease;
+}
+.h2-empty-suggestion:hover {
+  border-color: var(--color-border-hover);
+  background: var(--color-hover);
+  color: var(--color-foreground);
+}
 .bg-tag {
   font-size: 10px;
   color: var(--color-warning);

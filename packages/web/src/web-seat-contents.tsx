@@ -15,6 +15,7 @@
 import { useMemo, useState, useSyncExternalStore, type ReactNode } from 'react';
 import { StatusBadge } from '@harness2/ui-shared/renderer/app-shell.js';
 import { ConversationSeat, type ConversationSeatProps } from '@harness2/ui-shared/renderer/conversation/seat.js';
+import { composerPrefill } from '@harness2/ui-shared/renderer/conversation/composer/prefill.js';
 import { useFrame } from '@harness2/ui-shared/renderer/layout/frame-context.js';
 import { workbenchDrag } from '@harness2/ui-shared/renderer/layout/workbench/drag.js';
 import { WorkbenchHost } from '@harness2/ui-shared/renderer/layout/workbench/host.js';
@@ -226,7 +227,19 @@ function WebConversationSeat(props: ConversationSeatProps): ReactNode {
   );
 
   // Z-19：非主格由 WorkbenchHost 注入 PaneHeader（props.header 存在）→ 优先用它。
-  return <ConversationSeat {...props} header={props.header ?? header} />;
+  // Z10-1：空态建议 chip 点击 → 经 composerPrefill 通道把文案**预填**进本格会话的 composer
+  // 活草稿（同一 insert 原语；非直接发送）。sessionId 来自 WorkbenchHost 下发的本格绑定。
+  const sessionId = props.sessionId;
+  return (
+    <ConversationSeat
+      {...props}
+      header={props.header ?? header}
+      onPickSuggestion={(text) => {
+        if (sessionId === undefined || sessionId === null) return;
+        composerPrefill.request({ sessionId, quote: text, focus: true });
+      }}
+    />
+  );
 }
 
 /**

@@ -24,7 +24,7 @@ import {
   toolJumpActions,
   toolNavigation,
 } from '../tool/index.js';
-import { ChatEmptyState } from './ChatEmptyState.js';
+import { ConversationEmptyState } from '../conversation/EmptyState.js';
 import { MessageActions } from './MessageActions.js';
 import { ReasoningRow } from './ReasoningRow.js';
 import { TimelineMarkerRow } from '../conversation/TimelineMarkerRow.js';
@@ -262,7 +262,9 @@ export function ChatTranscript({ streamId, store, controller }: ChatTranscriptDe
             controller={controller}
           />
         ))}
-        {items.length === 0 && <ChatEmptyState />}
+        {/* Z10-1：会话已选中但无消息（新任务态）→ Logo mark + 时间问候。
+            建议 chip 不在此处：由会话席位渲染在 composer **之下**（与 ZCode 实测布局一致）。 */}
+        {items.length === 0 && <ConversationEmptyState />}
       </div>
       {/* Z2-09b：轮次导航（Z-17）——左缘细 rail；轮次 ≥2 才渲染，≥864px 由 CSS @container 显隐 */}
       <TurnNavigator turns={turns} activeTurnId={activeTurnId} onJump={onTurnJump} />

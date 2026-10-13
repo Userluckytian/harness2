@@ -34,7 +34,8 @@ import { countPanes, MAX_PANES } from '@harness2/ui-shared/renderer/layout/workb
 import { sidePaneStore, trajectoryTabId, type CronJobShape } from '@harness2/ui-shared/renderer/side-pane/index.js';
 import { AutomationsMainView, type AutomationTemplate } from '@harness2/ui-shared/renderer/automation/index.js';
 import { TerminalPanel } from '@harness2/ui-shared/renderer/terminal/index.js';
-import { ConversationSeat } from '../conversation/assembly.js';
+import { ConversationSeat, type ConversationSeatProps } from '../conversation/assembly.js';
+import { composerPrefill } from '@harness2/ui-shared/renderer/conversation/composer/prefill.js';
 import { desktopTerminalPort } from '../terminal/desktop-port.js';
 import { useShellPalette } from './shell-context.js';
 import { setOverlay, takeRequestedSettingsSection, useOverlayOpen } from './shell-overlays.js';
@@ -248,9 +249,26 @@ function SidebarSeatContent(): React.ReactNode {
 /** 中栏 conversation key 的内容（ui-conversation）：分屏工作台宿主（Z2-06 / Z-19）。
  *  未分屏（单格）时与旧结构等价（一格会话界面）；多格时在 conversation 面板内二叉分割。
  *  Z2-03 的内层 conversation | terminal 分栏在 MainSeatView 层，分屏发生在本内容内部。
- *  Z3-04：composer 左右簇控件（模型选择/模式切换）由壳在此装配一次，经工作台宿主下发到每格。 */
+ *  Z3-04：composer 左右簇控件（模型选择/模式切换）由壳在此装配一次，经工作台宿主下发到每格。
+ *  Z10-1：空态建议 chip 的点击经 `onPickSuggestion` 注入（见 DesktopConversationSeat）。 */
+function DesktopConversationSeat(props: ConversationSeatProps): React.ReactNode {
+  // WorkbenchHost 下发的 sessionId = 本格绑定的会话（分屏各格各自正确）。
+  const sessionId = props.sessionId;
+  return (
+    <ConversationSeat
+      {...props}
+      // Z10-1：建议 chip 点击 → 经 composerPrefill 通道把文案**预填**进本格会话的 composer
+      // 活草稿（与划词「询问」/ 文件评论同一 insert 原语；非直接发送，用户可改后发）。
+      onPickSuggestion={(text) => {
+        if (sessionId === undefined || sessionId === null) return;
+        composerPrefill.request({ sessionId, quote: text, focus: true });
+      }}
+    />
+  );
+}
+
 function ConversationSeatContent(): React.ReactNode {
-  return <WorkbenchHost store={store} controller={controller} seat={ConversationSeat} />;
+  return <WorkbenchHost store={store} controller={controller} seat={DesktopConversationSeat} />;
 }
 
 /**
