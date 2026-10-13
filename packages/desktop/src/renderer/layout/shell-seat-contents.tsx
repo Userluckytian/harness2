@@ -227,11 +227,11 @@ function SidebarSeatContent(): React.ReactNode {
         disabledIds: panedSessionIds,
       }}
       // Z2-01b（Z-07 §9 / Z-11）：设置入口迁到左栏 Footer（原顶栏设置按钮拆除）。
-      // StatusBadge 也放这里（二选一取 Footer）——理由：Footer 是常驻的账号/设置区，
-      // 浮层条是窄拖拽条（mac 左 96px 留给红绿灯、右侧要避让窗口控件），不适合塞状态角标。
+      // 2026-10-13 校正：连接状态角标从设置区**移入账号块**（用户名下方，SidebarRoot 的
+      // renderAccountStatus 席位）——账号/状态同处常驻 Footer，设置区只留齿轮。
+      renderAccountStatus={() => <StatusBadge status={state.status} error={state.statusDetail?.error} />}
       renderSettings={() => (
-        <div className="flex items-center justify-between gap-2 px-1">
-          <StatusBadge status={state.status} error={state.statusDetail?.error} />
+        <div className="flex items-center justify-end gap-2 px-1">
           <button
             type="button"
             className="text-ui-base text-foreground-subtle hover:text-foreground cursor-pointer"

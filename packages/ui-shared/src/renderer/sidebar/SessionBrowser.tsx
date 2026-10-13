@@ -15,6 +15,17 @@
 //   - 轨道态（56px）不渲染列表，只给一枚「展开以浏览会话」图标按钮（D-13 轨道不是消失）；
 //   - 滚动容器登记给外壳：D-24 的溢出判定与静默类由外壳统一决定（本组件只暴露 data 属性）。
 import { useState } from 'react';
+import {
+  ChevronRightIcon,
+  EllipsisIcon,
+  FolderIcon,
+  GripVerticalIcon,
+  MinusIcon,
+  PanelLeftIcon,
+  PinIcon,
+  PlusIcon,
+  XIcon,
+} from 'lucide-react';
 import { ContextMenu, ContextMenuTrigger } from '../../components/ui/context-menu.js';
 import { DropdownMenu, DropdownMenuTrigger } from '../../components/ui/dropdown-menu.js';
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '../../components/ui/dialog.js';
@@ -142,7 +153,7 @@ function LeadingSlot({ item, labels }: { item: SidebarSessionItem; labels: Sideb
     return (
       <span className="h2-sidebar-session-leading" data-testid="session-leading" data-kind="pinned">
         <span className="h2-sidebar-pinned-mark" data-testid="session-pinned" aria-label={labels.pinnedMarkLabel}>
-          📌
+          <PinIcon size={14} aria-hidden="true" />
         </span>
       </span>
     );
@@ -247,7 +258,7 @@ function SessionRow({
           title={labels.unpin}
           onClick={() => onTogglePin?.(item.id, false)}
         >
-          <span aria-hidden="true">✕</span>
+          <XIcon size={14} aria-hidden="true" />
         </button>
       )}
       {/* P0-2/Z-10 第二入口：行右侧 ⋯（hover/聚焦显现；动作集与右键同源 rowMenuEntries）。
@@ -262,7 +273,7 @@ function SessionRow({
               aria-label={labels.rowMore}
               title={labels.rowMore}
             >
-              <span aria-hidden="true">⋯</span>
+              <EllipsisIcon size={14} aria-hidden="true" />
             </button>
           </DropdownMenuTrigger>
           <SessionRowMoreMenuContent item={item} labels={labels} callbacks={rowMenu} />
@@ -278,14 +289,15 @@ function SessionRow({
  */
 function HeadIconButton({
   testId,
-  glyph,
+  icon,
   action,
   label,
   title,
   todoTitle,
 }: {
   testId: string;
-  glyph: string;
+  /** 图标节点（lucide SVG；尺寸由调用方给） */
+  icon: React.ReactNode;
   /** 真动作；undefined = 渲染为 disabled 占位 */
   action: (() => void) | undefined;
   label: string;
@@ -306,7 +318,7 @@ function HeadIconButton({
       disabled={!real}
       {...(real && action !== undefined ? { onClick: action } : {})}
     >
-      <span aria-hidden="true">{glyph}</span>
+      <span aria-hidden="true">{icon}</span>
     </button>
   );
 }
@@ -358,15 +370,16 @@ function GroupList({
                 onClick={() => onToggleGroup(group.key)}
               >
                 <span className={`h2-sidebar-caret${collapsed ? '' : ' h2-sidebar-caret-open'}`} aria-hidden="true">
-                  ▸
+                  <ChevronRightIcon size={14} />
                 </span>
+                <FolderIcon size={14} className="h2-sidebar-group-folder" aria-hidden="true" />
                 <span className="h2-sidebar-group-name">{name}</span>
                 <span className="h2-sidebar-group-count">{group.items.length}</span>
               </button>
               {explicit && group.cwd !== undefined && (
                 <HeadIconButton
                   testId={`sidebar-group-remove-${slug}`}
-                  glyph="−"
+                  icon={<MinusIcon size={14} />}
                   action={
                     ctx.onRemoveProject === undefined ? undefined : () => ctx.onRemoveProject?.(group.cwd as string)
                   }
@@ -473,7 +486,7 @@ export function SessionBrowser({
         title={labels.sessionsRail}
         onClick={expandSidebar}
       >
-        <span aria-hidden="true">≡</span>
+        <PanelLeftIcon size={18} aria-hidden="true" />
       </button>
     );
   }
@@ -584,14 +597,14 @@ export function SessionBrowser({
               onClick={() => toggleSection(section.kind)}
             >
               <span className={`h2-sidebar-caret${collapsed ? '' : ' h2-sidebar-caret-open'}`} aria-hidden="true">
-                ▸
+                <ChevronRightIcon size={14} />
               </span>
               <span className="h2-sidebar-section-title">{title}</span>
             </button>
             {section.kind === 'projects' && (
               <HeadIconButton
                 testId="sidebar-projects-move"
-                glyph="⠿"
+                icon={<GripVerticalIcon size={14} />}
                 action={undefined}
                 label={labels.moveSection}
                 todoTitle={labels.moveSectionTodo}
@@ -600,7 +613,7 @@ export function SessionBrowser({
             {section.kind === 'projects' && (
               <HeadIconButton
                 testId="sidebar-projects-add"
-                glyph="＋"
+                icon={<PlusIcon size={14} />}
                 action={onAddProject}
                 label={labels.addProject}
                 todoTitle={labels.addProjectTodo}
@@ -637,20 +650,20 @@ export function SessionBrowser({
               onClick={() => toggleSection('conversations')}
             >
               <span className={`h2-sidebar-caret${collapsed ? '' : ' h2-sidebar-caret-open'}`} aria-hidden="true">
-                ▸
+                <ChevronRightIcon size={14} />
               </span>
               <span className="h2-sidebar-section-title">{labels.tasks}</span>
             </button>
             <HeadIconButton
               testId="sidebar-tasks-move"
-              glyph="⠿"
+              icon={<GripVerticalIcon size={14} />}
               action={undefined}
               label={labels.moveSection}
               todoTitle={labels.moveSectionTodo}
             />
             <HeadIconButton
               testId="sidebar-tasks-new"
-              glyph="＋"
+              icon={<PlusIcon size={14} />}
               action={onNewTask}
               label={labels.newTaskInSection}
               todoTitle={labels.newTaskInSectionTodo}

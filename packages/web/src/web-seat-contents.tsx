@@ -176,10 +176,11 @@ function SidebarSeatContent(): ReactNode {
         disabledIds: panedSessionIds,
       }}
       buildVersion={resolveBuildVersion(hostBuildEnv())}
-      // 底部状态角标（与桌面同一 StatusBadge）+ 设置入口（Z7：打开设置覆层，复用共享设置页）
+      // 底部状态角标（与桌面同一 StatusBadge）2026-10-13 校正：从设置区**移入账号块**
+      // （用户名下方，SidebarRoot 的 renderAccountStatus 席位）；设置区只留齿轮。
+      renderAccountStatus={() => <StatusBadge status={state.status} error={state.statusDetail?.error} />}
       renderSettings={() => (
-        <div className="flex items-center justify-between gap-2 px-1">
-          <StatusBadge status={state.status} error={state.statusDetail?.error} />
+        <div className="flex items-center justify-end gap-2 px-1">
           <button
             type="button"
             className="text-ui-base text-foreground-subtle hover:text-foreground cursor-pointer"

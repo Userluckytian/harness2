@@ -193,6 +193,15 @@
   white-space: nowrap;
 }
 
+/* 顶部四钮的图标槽（Z-16 #9 图标化）：lucide SVG 16×16，与文字基线居中对齐 */
+.h2-sidebar-new-icon,
+.h2-sidebar-command-icon {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
 /* Z-07 #1：New Task 快捷键标注（壳绑定 Ctrl+N 后才渲染） */
 .h2-sidebar-new-hint {
   flex: none;
@@ -763,12 +772,21 @@
 }
 
 .h2-sidebar-caret {
-  display: inline-block;
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   transition: transform 150ms ease-in-out;
 }
 
 .h2-sidebar-caret-open {
   transform: rotate(90deg);
+}
+
+/* Z-16 图标化：组头/项目行的 14×14 文件夹图标（对齐 ZCode 项目行） */
+.h2-sidebar-group-folder {
+  flex: none;
+  color: var(--color-foreground-subtle);
 }
 
 /* —— 底部设置席位（D-23）：会话列表滚动区之外，永不被列表顶走 —— */
@@ -1018,7 +1036,8 @@
 }
 
 /* Z-16 #10 footer 账号槽（用户拍板 2026-10-11：无账号体系 → 写死固定账号显示）。
-   形状与 ZCode 实测同规格：整槽 196×32、左侧 32px 头像圆槽。
+   形状与 ZCode 实测同规格：整槽 196 宽、左侧 32px 头像圆槽。
+   2026-10-13 校正：块内改**两行**（上行头像 + 用户名，下行连接状态），高度 32 → 44（头像 32 + 上下 6 内边距）。
    无菜单动作 → 仍带 disabled + title + data-placeholder 旗标（红线⑩），但**视觉如实**。 */
 .h2-sidebar-account {
   flex: none;
@@ -1026,8 +1045,8 @@
   align-items: center;
   gap: 8px;
   width: 196px;
-  height: 32px;
-  padding: 0 6px;
+  min-height: 44px;
+  padding: 6px;
   box-sizing: border-box;
   border: none;
   border-radius: 8px;
@@ -1036,6 +1055,28 @@
   font-size: var(--text-ui-sm);
   text-align: left;
   overflow: hidden;
+}
+
+/* 账号块正文列：上行用户名、下行状态行（renderAccountStatus 席位） */
+.h2-sidebar-account-body {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.h2-sidebar-account-status {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+}
+
+/* 状态行内沿用 .badge badge-connected 语义（色/文案），仅收紧内边距以贴合两行版式 */
+.h2-sidebar-account-status .badge {
+  padding: 0;
+  gap: 5px;
+  font-size: var(--text-ui-2xs);
 }
 
 /* 32px 头像圆槽（圆形底 + 图标居中） */

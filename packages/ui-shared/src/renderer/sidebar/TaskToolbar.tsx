@@ -3,6 +3,7 @@
 // 纯展示 + 受控回调：偏好由 SessionBrowser 内存持有（D-14，不落盘）。
 // ZCode 的 Automations / Plugin Store / 文件树入口**不在此**（不采纳，登记于阶段报告）。
 import { useState } from 'react';
+import { ArchiveIcon, ChevronsDownUpIcon, ChevronsUpDownIcon, ListFilterIcon } from 'lucide-react';
 import type { SidebarLabels } from './labels.js';
 import type { SidebarFilter, SidebarSortBy, SidebarTaskPreferences } from './task-view.js';
 
@@ -81,7 +82,9 @@ export function TaskToolbar({
           title={allCollapsed ? labels.expandAll : labels.collapseAll}
           onClick={onToggleExpandAll}
         >
-          <span aria-hidden="true">{allCollapsed ? '⊞' : '⊟'}</span>
+          <span aria-hidden="true">
+            {allCollapsed ? <ChevronsUpDownIcon size={14} /> : <ChevronsDownUpIcon size={14} />}
+          </span>
         </button>
         <div className="h2-sidebar-toolbar-menu-wrap">
           <button
@@ -94,7 +97,9 @@ export function TaskToolbar({
             title={labels.filterSort}
             onClick={() => setMenuOpen((open) => !open)}
           >
-            <span aria-hidden="true">⇅</span>
+            <span aria-hidden="true">
+              <ListFilterIcon size={14} />
+            </span>
           </button>
           {menuOpen && (
             <div className="h2-sidebar-toolbar-menu" role="menu" data-testid="sidebar-filter-sort-menu">
@@ -166,7 +171,9 @@ export function TaskToolbar({
           title={labels.archiveView}
           onClick={onToggleArchived}
         >
-          <span aria-hidden="true">🗄</span>
+          <span aria-hidden="true">
+            <ArchiveIcon size={14} />
+          </span>
         </button>
       </div>
     </div>

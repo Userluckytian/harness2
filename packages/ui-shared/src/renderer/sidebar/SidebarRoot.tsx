@@ -13,6 +13,7 @@
 // 本组件**自包含**：不 import App / layout / slots / app-shared；
 // 装配（席位注入、数据接线）由接线阶段传入 props 完成（席位为渲染函数，非全局注册表）。
 import { useRef } from 'react';
+import { ClockIcon, PlusIcon, PuzzleIcon, SearchIcon } from 'lucide-react';
 import { SIDEBAR_DEFAULT_WIDTH } from './geometry.js';
 import { resolveBuildVersion } from './brand.js';
 import { resolveNewSessionScope, type NewSessionScope, type NewSessionScopeInput } from './new-session-scope.js';
@@ -37,6 +38,11 @@ export interface SidebarSeats {
   renderWorkspaces?: ((owner: WorkspacesOwnerProps) => React.ReactNode) | undefined;
   /** D-23 底部设置席位；缺省不渲染（没有占用方就不摆假入口） */
   renderSettings?: ((owner: SettingsOwnerProps) => React.ReactNode) | undefined;
+  /**
+   * Z-16 #10 账号槽「状态行」席位：注入后在账号名**下方**渲染（如连接状态角标）。
+   * 缺省不画（不摆假状态）。账号槽本身仍由 `placeholders` 旗标决定是否在场。
+   */
+  renderAccountStatus?: (() => React.ReactNode) | undefined;
 }
 
 export interface SidebarRootProps extends SidebarSeats {
@@ -206,7 +212,7 @@ export function SidebarRoot(props: SidebarRootProps): React.ReactNode {
         onClick={startSession}
       >
         <span className="h2-sidebar-new-icon" aria-hidden="true">
-          ＋
+          <PlusIcon size={16} />
         </span>
         <span className="h2-sidebar-new-label">{labels.newSession}</span>
         {props.newSessionShortcut !== undefined && (
@@ -227,10 +233,7 @@ export function SidebarRoot(props: SidebarRootProps): React.ReactNode {
           onClick={props.onOpenCommandPalette}
         >
           <span className="h2-sidebar-command-icon" aria-hidden="true">
-            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" focusable="false">
-              <circle cx="11" cy="11" r="6.5" stroke="currentColor" strokeWidth="2" />
-              <path d="m16 16 4.5 4.5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
-            </svg>
+            <SearchIcon size={16} />
           </span>
           <span className="h2-sidebar-command-label">{labels.commandCenter}</span>
           <span className="h2-sidebar-command-hint" aria-hidden="true">
@@ -251,15 +254,7 @@ export function SidebarRoot(props: SidebarRootProps): React.ReactNode {
           onClick={props.onOpenAutomations}
         >
           <span className="h2-sidebar-command-icon" aria-hidden="true">
-            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" focusable="false">
-              <circle cx="12" cy="13" r="7" stroke="currentColor" strokeWidth="2" />
-              <path
-                d="M12 13V9.5M12 13l2.3 1.6M9 3l-2.2 2M15 3l2.2 2"
-                stroke="currentColor"
-                strokeWidth="2"
-                strokeLinecap="round"
-              />
-            </svg>
+            <ClockIcon size={16} />
           </span>
           <span className="h2-sidebar-command-label">{labels.automationEntry}</span>
         </button>
@@ -275,15 +270,7 @@ export function SidebarRoot(props: SidebarRootProps): React.ReactNode {
             disabled
           >
             <span className="h2-sidebar-command-icon" aria-hidden="true">
-              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" focusable="false">
-                <circle cx="12" cy="13" r="7" stroke="currentColor" strokeWidth="2" />
-                <path
-                  d="M12 13V9.5M12 13l2.3 1.6M9 3l-2.2 2M15 3l2.2 2"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                  strokeLinecap="round"
-                />
-              </svg>
+              <ClockIcon size={16} />
             </span>
             <span className="h2-sidebar-command-label">{labels.automationEntry}</span>
           </button>
@@ -303,12 +290,7 @@ export function SidebarRoot(props: SidebarRootProps): React.ReactNode {
           disabled
         >
           <span className="h2-sidebar-command-icon" aria-hidden="true">
-            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" focusable="false">
-              <rect x="4" y="4" width="7" height="7" rx="1.5" stroke="currentColor" strokeWidth="2" />
-              <rect x="13" y="4" width="7" height="7" rx="1.5" stroke="currentColor" strokeWidth="2" />
-              <rect x="4" y="13" width="7" height="7" rx="1.5" stroke="currentColor" strokeWidth="2" />
-              <rect x="13" y="13" width="7" height="7" rx="1.5" stroke="currentColor" strokeWidth="2" />
-            </svg>
+            <PuzzleIcon size={16} />
           </span>
           <span className="h2-sidebar-command-label">插件市场</span>
         </button>
@@ -353,7 +335,16 @@ export function SidebarRoot(props: SidebarRootProps): React.ReactNode {
                   />
                 </svg>
               </span>
-              <span className="h2-sidebar-account-label">{labels.accountName}</span>
+              {/* 账号块两行：上行「用户名」、下行「状态行」（renderAccountStatus 席位，缺省不画）。
+                  Z-16 #10 校正：状态角标从右侧设置区移入本块（用户 2026-10-13 拍板）。 */}
+              <span className="h2-sidebar-account-body">
+                <span className="h2-sidebar-account-label">{labels.accountName}</span>
+                {props.renderAccountStatus !== undefined && (
+                  <span className="h2-sidebar-account-status" data-testid="sidebar-account-status">
+                    {props.renderAccountStatus()}
+                  </span>
+                )}
+              </span>
             </button>
           )}
           <div className="h2-sidebar-settings-area">
