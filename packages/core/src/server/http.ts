@@ -55,6 +55,16 @@ import {
   readSkillsView,
   updateGlobalConfig,
 } from './settings.js';
+// A1：模型配置文档读写取自同一 core 模块（桌面薄适配与 serve 路由共用一份语义）。
+import {
+  deleteModelsProvider,
+  discoverModelsFor,
+  readModelsDocument,
+  updateModelsProvider,
+  writeChannelKey,
+  type ModelsProviderInputShape,
+  type ModelsWriteCodeShape,
+} from '../settings/models-document.js';
 import { isTrustedHost, isTrustedOrigin, normalizeOriginHeader } from './trust.js';
 import {
   createServeSecurityStats,
@@ -787,7 +797,92 @@ async function route(
     sendJson(res, 405, { error: `方法 ${req.method} 不被支持（可用：GET /api/settings/crash-reports）` });
     return;
   }
+  // —— A1：web 设置「模型」分区数据端点（模型文档读写 + 渠道凭据写 + 发现模型）——
+  // 与 GET /api/settings/config（config.json 视图）**分属两种语义**，互不覆盖。
+  // 密钥安全口径：读视图只回状态（readModelsDocument/readCredentialStatuses 口径），绝不回显明文；
+  // 凭据写只写 auth.json，响应只回具名引用，绝不回显明文、绝不写日志。
+  if (pathname === '/api/settings/models') {
+    // GET → 与桌面 readModelsDocument 同形的分层视图（含来源分层；渠道密钥绝不回显）
+    if (req.method === 'GET') {
+      sendJson(res, 200, readModelsDocument(env.home, env.root));
+      return;
+    }
+    // PUT/POST → 新增/更新 provider（写后回读，密钥仍不回显）
+    if (req.method === 'PUT' || req.method === 'POST') {
+      const body = await readJsonBody(req, res);
+      const result = updateModelsProvider(env.home, env.root, {
+        revision: typeof body['revision'] === 'string' ? body['revision'] : '',
+        provider: body['provider'],
+        ...(typeof body['originalId'] === 'string' ? { originalId: body['originalId'] } : {}),
+        ...(typeof body['mainModel'] === 'string' ? { mainModel: body['mainModel'] } : {}),
+      });
+      sendJson(res, result.ok ? 200 : modelsWriteStatus(result.code), result);
+      return;
+    }
+    // DELETE → 删除 provider（确认框指名；仅用户层独有可删）
+    if (req.method === 'DELETE') {
+      const body = await readJsonBody(req, res);
+      const result = deleteModelsProvider(env.home, env.root, {
+        route: pickRoute(body),
+        confirmRoute: typeof body['confirmRoute'] === 'string' ? body['confirmRoute'] : '',
+      });
+      sendJson(res, result.ok ? 200 : modelsWriteStatus(result.code), result);
+      return;
+    }
+    sendJson(res, 405, { error: `方法 ${req.method} 不被支持（可用：GET/PUT/POST/DELETE /api/settings/models）` });
+    return;
+  }
+  // PUT/POST /api/settings/models/credential → 写渠道密钥（唯一入口，只写 auth.json；响应只回具名引用）
+  if (pathname === '/api/settings/models/credential') {
+    if (req.method === 'PUT' || req.method === 'POST') {
+      const body = await readJsonBody(req, res);
+      const result = writeChannelKey(env.home, env.root, pickRoute(body), body['key']);
+      sendJson(res, result.ok ? 200 : modelsWriteStatus(result.code), result);
+      return;
+    }
+    sendJson(res, 405, { error: `方法 ${req.method} 不被支持（可用：PUT/POST /api/settings/models/credential）` });
+    return;
+  }
+  // POST /api/settings/models/discover → 代理「获取可用模型」（密钥取 auth.json 既有值[或本请求 apiKey]；
+  // 失败如实回错误，不返回空列表冒充成功）
+  if (pathname === '/api/settings/models/discover') {
+    if (req.method === 'POST') {
+      const body = await readJsonBody(req, res);
+      const protocol: ModelsProviderInputShape['protocol'] = body['protocol'] === 'anthropic' ? 'anthropic' : 'openai';
+      const result = await discoverModelsFor(env.home, env.root, {
+        route: pickRoute(body),
+        baseUrl: typeof body['baseUrl'] === 'string' ? body['baseUrl'] : '',
+        protocol,
+        ...(typeof body['apiKey'] === 'string' ? { apiKey: body['apiKey'] } : {}),
+      });
+      sendJson(res, result.ok ? 200 : 400, result);
+      return;
+    }
+    sendJson(res, 405, { error: `方法 ${req.method} 不被支持（可用：POST /api/settings/models/discover）` });
+    return;
+  }
   sendJson(res, 404, { error: `not found: ${req.method} ${pathname}` });
+}
+
+/** A1：模型写入失败码 → HTTP 状态（validation=400 / 并发 or 规则=409 / io=500） */
+function modelsWriteStatus(code: ModelsWriteCodeShape | undefined): number {
+  switch (code) {
+    case 'validation':
+      return 400;
+    case 'settings/conflict':
+    case 'locked':
+      return 409;
+    case 'io':
+      return 500;
+    default:
+      return 400;
+  }
+}
+
+/** A1：从请求体取渠道名（route 为主，channel 为 web 侧别名） */
+function pickRoute(body: Record<string, unknown>): string {
+  const value = body['route'] ?? body['channel'];
+  return typeof value === 'string' ? value : '';
 }
 
 /** /api/config 载荷：loadConfig + readAuthFile（与 config check 同源），报告只含来源标签 */

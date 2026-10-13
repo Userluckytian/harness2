@@ -37,6 +37,21 @@ export const {
   // Z9-1／Z9-3 终端：core 终端管理器（冻结契约 §1.1），桌面主进程经 IPC bridge 复用同一实现
   createTerminalManager,
   TerminalUnavailableError,
+  // A1 模型配置：模型文档读写/凭据通道/发现模型已下沉 core（settings/models-document.ts），
+  // 桌面 models-config.ts 薄适配同一实现（单一事实源，IPC 面/preload/行为保持）。
+  MODELS_OVERLAY_FILE,
+  ackModelsDeclaration,
+  deleteModelsProvider,
+  deriveApiKeyRef,
+  discoverModelsFor,
+  normalizeProviderInput,
+  readCredentialStatuses,
+  readModelsDocument,
+  readModelsDocumentWithLayers,
+  updateModelsProvider,
+  validateApiKeyInput,
+  validateProviderInput,
+  writeChannelKey,
 } = core;
 
 export type { AuthFile, HarnessConfig, ProviderConfig } from '@harness2/core' with { 'resolution-mode': 'import' };

@@ -69,6 +69,9 @@ export * from './agent/contextUsage.js';
 export * from './agent/loop.js';
 export * from './agent/subagent.js';
 export * from './agent/subagent-fanout.js';
+// A1（2026-10-11）加性导出：模型配置文档读写下沉 core（用户层/项目层分层合并 + provider
+// upsert/删除 + 渠道凭据只写 + 校验归一 + 发现模型），桌面与 serve 共用同一份语义。
+export * from './settings/models-document.js';
 export * from './server/sessions.js';
 export * from './server/http.js';
 export * from './server/ws.js';
