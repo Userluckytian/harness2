@@ -7,12 +7,13 @@
 //   2. 把应用壳（store/controller）与新建会话接线经 `WebShellProvider` 交给席位内容。
 // 左上浮层条（品牌 + 侧栏折叠 + New Task）用壳无关的 `FrameTopOverlay`；web 无窗口控制
 // （桌面 `frame:false` 自绘三键在会话列头，见 desktop components/ConversationHeader.tsx）。
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState, useSyncExternalStore } from 'react';
 import type { ReactNode } from 'react';
 import { THEME_CYCLE, type AppShell } from '@harness2/ui-shared/renderer/app-shell.js';
 import { useDraftsUnloadGuard } from '@harness2/ui-shared/renderer/drafts-guard.js';
 import { isImeComposing } from '@harness2/ui-shared/renderer/features/composer/composer-model.js';
 import { AppFrame, FrameTopOverlay, useFrameState } from '@harness2/ui-shared/renderer/layout/index.js';
+import { canGoBack, canGoForward, sessionNavHistory } from '@harness2/ui-shared/renderer/layout/session-nav-history.js';
 import { getShellTheme, setShellTheme } from '@harness2/ui-shared/renderer/theme/index.js';
 import { requestOpenComposerModelMenu } from '@harness2/ui-shared/renderer/conversation/composer/composer-menu-signal.js';
 import type { TerminalPort } from '@harness2/ui-shared/renderer/terminal/port.js';
@@ -49,8 +50,24 @@ export function WebApp({
   const registry = useMemo(() => assembleWebFrame().registry, []);
   const frame = useFrameState({ registry });
   const frameDispatch = frame.dispatch;
+  // Z10-3：会话导航历史（模块级内存单例）—— 订阅以驱动顶部 后退/前进 的 disabled 态。
+  const navHistory = useSyncExternalStore(sessionNavHistory.subscribe, sessionNavHistory.getSnapshot);
   /** P0：主区可能停在「自动化」主区视图 —— 新建会话前先回对话（key=null = 保留的 conversation）。 */
   const backToConversation = (): void => frameDispatch({ type: 'main/select-key', key: null });
+  // Z10-3：选中会话变化即写入导航历史（去重/截断 forward 由 history 内部完成）。
+  const selectedId = state.selectedId;
+  useEffect(() => {
+    if (selectedId !== null) sessionNavHistory.record(selectedId);
+  }, [selectedId]);
+  /** 会话历史「后退 / 前进」（Z10-3：顶部两钮与 Ctrl+[ / ] 同一动作）；
+   *  无路可走（返回 null）→ 不动作、不报错（反向钉）。 */
+  const navigateHistory = useCallback(
+    (direction: 'back' | 'forward'): void => {
+      const id = direction === 'back' ? sessionNavHistory.back() : sessionNavHistory.forward();
+      if (id !== null) void shell.controller.selectSession(id);
+    },
+    [shell.controller],
+  );
   // Z7：设置覆层开合（只内存，D-14）；覆层席位内容经 WebShellProvider 读它。
   const [settingsOpen, setSettingsOpen] = useState(false);
   // Z7：命令面板覆层开合（只内存，D-14）；Ctrl/Cmd+K 与侧栏命令中心入口同一真源。
@@ -76,8 +93,9 @@ export function WebApp({
   // 忽略长按 repeat 与 IME 组合（isComposing / keyCode 229，与 composer 同一 isImeComposing 口径）。
   // 已兑现：Ctrl+K / Ctrl+Shift+P（命令面板别名）、Ctrl+,（设置覆层）、Ctrl+N（新任务，受可用性门控）、
   //        Ctrl+J（终端）、Ctrl+B（侧栏）、Ctrl+Alt+B（右栏）、Ctrl+Shift+L（切换主题，浏览器存储持久化）、
-  //        Ctrl+Shift+[ / ]（上/下一个会话）、Ctrl+M（打开模型菜单）、Ctrl+Shift+M（权限模式循环）。
-  // 不绑（如实登记，见 Z10-4/Z10-2b 报告）：Ctrl+O（web 无目录选择通道）、Ctrl+[ / ]（无会话历史栈）、
+  //        Ctrl+Shift+[ / ]（上/下一个会话）、Ctrl+[ / ]（会话历史 后退/前进，Z10-3）、
+  //        Ctrl+M（打开模型菜单）、Ctrl+Shift+M（权限模式循环）。
+  // 不绑（如实登记，见 Z10-4/Z10-2b 报告）：Ctrl+O（web 无目录选择通道）、
   //        Ctrl+W（无「关闭当前上下文」动作）、**Ctrl+T（思考档位：serve config 视图不回 roles.effort
   //        与 reasoning.values，web 无该数据面 → 控件不渲染、键不绑）**、Ctrl+F / 缩放 / 双模式 / 引导。
   useEffect(() => {
@@ -147,11 +165,17 @@ export function WebApp({
       } else if (key === 'm') {
         e.preventDefault();
         requestOpenComposerModelMenu(); // openModelMenu（无已挂载模型菜单时 no-op）
+      } else if (bracketLeft) {
+        e.preventDefault();
+        navigateHistory('back'); // navigateBack（会话历史后退）
+      } else if (bracketRight) {
+        e.preventDefault();
+        navigateHistory('forward'); // navigateForward（会话历史前进）
       }
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [newSessionEnabled, onNewSession, frameDispatch, store, shell.controller, settingsDataPorts]);
+  }, [newSessionEnabled, onNewSession, frameDispatch, store, shell.controller, settingsDataPorts, navigateHistory]);
 
   const shellValue: WebShellValue = {
     shell,
@@ -182,6 +206,10 @@ export function WebApp({
             backToConversation();
             onNewSession?.();
           }}
+          canGoBack={canGoBack(navHistory)}
+          canGoForward={canGoForward(navHistory)}
+          onBack={() => navigateHistory('back')}
+          onForward={() => navigateHistory('forward')}
           testId="web-top-overlay"
         />
       </div>

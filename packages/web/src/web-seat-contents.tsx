@@ -53,6 +53,7 @@ import { TrajectoryViewContent } from '@harness2/ui-shared/renderer/trajectory/i
 import { buildSessionItems, resolveBuildVersion, SidebarRoot } from '@harness2/ui-shared/renderer/sidebar/index.js';
 import type { SlotRegistry } from '@harness2/ui-shared/renderer/slots/index.js';
 import { useWebShell } from './web-shell-context.js';
+import { webContextChipsForSession } from './web-context-chips.js';
 import { useWebComposerControls } from './web-composer-controls.js';
 import { WebPaletteOverlay } from './web-command-palette.js';
 import { WebSettingsOverlay } from './web-settings.js';
@@ -230,11 +231,15 @@ function WebConversationSeat(props: ConversationSeatProps): ReactNode {
   // Z-19：非主格由 WorkbenchHost 注入 PaneHeader（props.header 存在）→ 优先用它。
   // Z10-1：空态建议 chip 点击 → 经 composerPrefill 通道把文案**预填**进本格会话的 composer
   // 活草稿（同一 insert 原语；非直接发送）。sessionId 来自 WorkbenchHost 下发的本格绑定。
+  // Z10-2：composer 上方「项目」「Git 分支」chip —— 项目名由本格会话 cwd 末段推出（只读）；
+  // web 无 gitBranch 通道 → 分支 chip 不渲染（如实降级，见 web-context-chips.ts）。
   const sessionId = props.sessionId;
+  const contextChips = webContextChipsForSession(state.sessions, sessionId);
   return (
     <ConversationSeat
       {...props}
       header={props.header ?? header}
+      {...(contextChips !== undefined ? { contextChips } : {})}
       onPickSuggestion={(text) => {
         if (sessionId === undefined || sessionId === null) return;
         composerPrefill.request({ sessionId, quote: text, focus: true });

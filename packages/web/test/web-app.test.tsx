@@ -6,6 +6,7 @@ import React from 'react';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { createAppShell } from '@harness2/ui-shared/renderer/app-shell.js';
 import { workbenchStore } from '@harness2/ui-shared/renderer/layout/workbench/store.js';
+import { sessionNavHistory } from '@harness2/ui-shared/renderer/layout/session-nav-history.js';
 import { setShellTheme } from '@harness2/ui-shared/renderer/theme/index.js';
 import type { HarnessClient } from '@harness2/ui-shared/renderer/ports.js';
 import type { ConnectionStatus, SessionSummaryShape, WsFrame } from '@harness2/ui-shared/shared/protocol.js';
@@ -23,6 +24,8 @@ afterEach(() => {
   // 分屏布局是**模块级单例**（Z2-06：内存态、D-14 不落盘）——测试间显式复位，
   // 否则上一用例的主格绑定会带进下一用例（主格头部会把会话标题再渲染一遍）。
   workbenchStore.reset();
+  // Z10-3：会话导航历史同为模块级单例 —— 测试间复位，避免上一用例的栈污染 disabled 态断言。
+  sessionNavHistory.reset();
   // 主题是模块级单例 + 全局 DOM 呈现：测试间复位，避免快捷键用例的切换污染其它用例。
   setShellTheme('system');
   globalThis.localStorage?.removeItem('harness2-theme');
@@ -366,6 +369,58 @@ describe('Z10-4 快捷键扩展（源码权威键表）', () => {
     await waitFor(() => expect(shell.store.getState().selectedId).toBe('s2'));
     fireEvent.keyDown(window, { key: '[', code: 'BracketLeft', ctrlKey: true, shiftKey: true });
     await waitFor(() => expect(shell.store.getState().selectedId).toBe('s1'));
+    stop();
+  });
+
+  // —— Z10-3 顶部「后退/前进」会话导航（会话历史栈 + Ctrl+[ / ]） ——
+  it('Z10-3 顶部 后退/前进：两次选中后可退可进，边界按钮 disabled', async () => {
+    const s1: SessionSummaryShape = { ...SESSION, id: 's1', mtimeMs: 20, firstUserText: '第一个会话' };
+    const s2: SessionSummaryShape = { ...SESSION, id: 's2', mtimeMs: 10, firstUserText: '第二个会话' };
+    const { shell, stop } = await mount({ client: fakeClient([s1, s2]) });
+    await waitFor(() => expect(screen.getByText('第二个会话')).toBeTruthy());
+    const back = (): HTMLButtonElement => screen.getByRole('button', { name: '后退' }) as HTMLButtonElement;
+    const forward = (): HTMLButtonElement => screen.getByRole('button', { name: '前进' }) as HTMLButtonElement;
+
+    expect(back().disabled).toBe(true); // 空历史
+
+    fireEvent.click(screen.getByText('第一个会话'));
+    await waitFor(() => expect(shell.store.getState().selectedId).toBe('s1'));
+    expect(back().disabled).toBe(true); // 只有一条
+
+    fireEvent.click(screen.getByText('第二个会话'));
+    await waitFor(() => expect(shell.store.getState().selectedId).toBe('s2'));
+    await waitFor(() => expect(back().disabled).toBe(false));
+
+    fireEvent.click(back());
+    await waitFor(() => expect(shell.store.getState().selectedId).toBe('s1'));
+    expect(back().disabled).toBe(true);
+    expect(forward().disabled).toBe(false);
+
+    fireEvent.click(forward());
+    await waitFor(() => expect(shell.store.getState().selectedId).toBe('s2'));
+    expect(forward().disabled).toBe(true);
+    stop();
+  });
+
+  it('Z10-3 Ctrl+[ / Ctrl+]：真触发会话历史后退/前进；无历史时按下不报错不误动', async () => {
+    const s1: SessionSummaryShape = { ...SESSION, id: 's1', mtimeMs: 20, firstUserText: '第一个会话' };
+    const s2: SessionSummaryShape = { ...SESSION, id: 's2', mtimeMs: 10, firstUserText: '第二个会话' };
+    const { shell, stop } = await mount({ client: fakeClient([s1, s2]) });
+    await waitFor(() => expect(screen.getByText('第二个会话')).toBeTruthy());
+
+    // 无历史：Ctrl+[ 无路可走 → 不动作、不抛错
+    fireEvent.keyDown(window, { key: '[', code: 'BracketLeft', ctrlKey: true });
+    expect(shell.store.getState().selectedId).toBeNull();
+
+    fireEvent.click(screen.getByText('第一个会话'));
+    await waitFor(() => expect(shell.store.getState().selectedId).toBe('s1'));
+    fireEvent.click(screen.getByText('第二个会话'));
+    await waitFor(() => expect(shell.store.getState().selectedId).toBe('s2'));
+
+    fireEvent.keyDown(window, { key: '[', code: 'BracketLeft', ctrlKey: true });
+    await waitFor(() => expect(shell.store.getState().selectedId).toBe('s1')); // navigateBack
+    fireEvent.keyDown(window, { key: ']', code: 'BracketRight', ctrlKey: true });
+    await waitFor(() => expect(shell.store.getState().selectedId).toBe('s2')); // navigateForward
     stop();
   });
 

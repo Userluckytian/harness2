@@ -14,6 +14,12 @@ export interface DesktopTopOverlayProps {
   readonly sidebarWidth: number;
   readonly onToggleSidebar: () => void;
   readonly onNewTask: () => void;
+  /** 会话历史：能否后退/前进（缺省 false → 按钮 disabled；Z10-3） */
+  readonly canGoBack?: boolean;
+  readonly canGoForward?: boolean;
+  /** 后退/前进动作（Z10-3 会话历史导航） */
+  readonly onBack?: () => void;
+  readonly onForward?: () => void;
 }
 
 /**
@@ -30,6 +36,10 @@ export function DesktopTopOverlay(props: DesktopTopOverlayProps): React.ReactNod
       sidebarWidth={props.sidebarWidth}
       onToggleSidebar={props.onToggleSidebar}
       onNewTask={props.onNewTask}
+      canGoBack={props.canGoBack === true}
+      canGoForward={props.canGoForward === true}
+      {...(props.onBack !== undefined ? { onBack: props.onBack } : {})}
+      {...(props.onForward !== undefined ? { onForward: props.onForward } : {})}
       classBase="desktop-top-overlay"
       testId="desktop-top-overlay"
     />

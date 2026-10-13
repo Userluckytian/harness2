@@ -231,6 +231,22 @@
 .desktop-top-overlay-new {
   font-size: var(--text-ui-sm);
 }
+/* Z10-3：后退 / 前进（会话历史导航）—— ZCode 顶左最前两枚 28×28 方钮；
+   disabled 时如实变灰不可点（常驻显示，不隐藏）。 */
+.desktop-top-overlay-nav {
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  flex: none;
+}
+.desktop-top-overlay-nav:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+.desktop-top-overlay-nav:disabled:hover {
+  background: transparent;
+  color: var(--color-foreground-subtle);
+}
 
 /* —— 降动效（D-16）：系统偏好 + 帧根属性两条路都关过渡 —— */
 @media (prefers-reduced-motion: reduce) {

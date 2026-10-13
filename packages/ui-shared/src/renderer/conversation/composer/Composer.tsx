@@ -27,6 +27,7 @@ import { Button } from '../../../components/ui/button.js';
 import { Spinner } from '../../../components/ui/spinner.js';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '../../../components/ui/tooltip.js';
 import { ComposerModeSwitch, ComposerModelSelect, ComposerThoughtLevel } from './composer-controls.js';
+import { ComposerContextChipRow, type ComposerContextChipsProps } from './context-chips.js';
 import { ComposerContextMenu, type ComposerContextPickerOptions } from './composer-context-menu.js';
 import type { ComposerApprovalMode, ComposerModelMenu, ComposerModelRef } from './composer-config.js';
 import {
@@ -78,6 +79,9 @@ export interface SelectedFileLike {
   readonly type?: string;
   readonly size: number;
 }
+
+/** Z10-2 上下文 chip 数据面类型（定义在 context-chips.tsx；此处 re-export 便于壳从单一入口取型）。 */
+export type { ComposerContextChip, ComposerContextChipsProps } from './context-chips.js';
 
 /**
  * Z3-04 右簇「模型选择」数据面（壳注入；undefined = 该壳无数据通道，控件整体不渲染）。
@@ -159,6 +163,11 @@ export interface ComposerProps {
   readonly modeSwitch?: ComposerModeSwitchProps;
   /** Z10-2b 右簇思考档位（壳注入；undefined = 不渲染该控件） */
   readonly thoughtLevel?: ComposerThoughtLevelProps;
+  /**
+   * Z10-2 composer 上方「项目」「Git 分支」上下文 chip（壳注入；undefined = 整行不渲染）。
+   * 缺省不渲染；无切换通道的壳把 chip 渲染为只读（disabled + title）—— 见 `context-chips.tsx`。
+   */
+  readonly contextChips?: ComposerContextChipsProps;
   /**
    * P0「添加上下文」选择器数据面（壳注入）。
    * 与左右簇控件不同：**按钮恒渲染**（ZCode composer 常驻项）；`contextPicker` 只携带数据源，
@@ -554,6 +563,9 @@ export function Composer(props: ComposerProps): ReactNode {
           `@container/composer`：Z-94 外壳容器查询锚点（模型 trigger 空间不足时退化为图标） */}
       <div className="composer-default" data-testid="composer-default" hidden={takeover !== null}>
         <div className="composer @container/composer">
+          {/* Z10-2：「项目」「Git 分支」上下文 chip 行 —— 位于编辑器之上（ZCode 实测 y=348 < 394）。
+              无数据（无 cwd / gitBranch null / web 无通道）→ 整行不渲染（不摆空 chip）。 */}
+          <ComposerContextChipRow chips={props.contextChips} />
           {/* P0-1 占位符（ZCode LexicalChatInput 口径）：**空草稿时可见的占位文案**。
               contentEditable div 无原生 placeholder，故用兄弟层 `<span>` 叠在编辑器上
               （pointer-events:none，不污染 editor.textContent —— 既有断言 textContent 的

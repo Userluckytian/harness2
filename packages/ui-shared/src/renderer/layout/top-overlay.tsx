@@ -1,7 +1,7 @@
 // FrameTopOverlay —— 壳无关的左上角浮层条（依据 docs/refs/refs-zcode-layout.md Z-01 / Z-03 / §8）。
 //
 // ZCode **没有 topbar**：左上角是一条**绝对定位浮层**（不占布局高度），内容是
-// 「品牌标记 + 侧栏折叠按钮 + New Task（仅侧栏收起时）」；浮层条本体是拖拽区，
+// 「后退 / 前进（会话历史，Z10-3）+ 品牌标记 + 侧栏折叠按钮 + New Task（仅侧栏收起时）」；浮层条本体是拖拽区，
 // 内部按钮一律 no-drag。桌面壳的窗口控制（自绘三键）不在此浮层，而在会话列头
 // （见 desktop `components/ConversationHeader.tsx`），故本组件两壳共用、零平台依赖：
 // 高度与 mac 安全区由壳传入（mac 56 / win-linux 48；mac 左侧留 96px 红绿灯安全区）。
@@ -20,6 +20,14 @@ export interface FrameTopOverlayProps {
   readonly sidebarWidth: number;
   readonly onToggleSidebar: () => void;
   readonly onNewTask: () => void;
+  /** 会话历史：能否后退（缺省/false → 按钮 disabled；ZCode 常驻显示，不隐藏） */
+  readonly canGoBack?: boolean;
+  /** 会话历史：能否前进（缺省/false → 按钮 disabled） */
+  readonly canGoForward?: boolean;
+  /** 后退动作（history.back → 目标会话）；缺省时按钮 disabled */
+  readonly onBack?: () => void;
+  /** 前进动作（history.forward → 目标会话）；缺省时按钮 disabled */
+  readonly onForward?: () => void;
   /** 根元素类名前缀（缺省桌面历史类名，两壳共用同一份 CSS 契约） */
   readonly classBase?: string;
   /** 根元素 data-testid（缺省 'frame-top-overlay'） */
@@ -69,6 +77,48 @@ function PanelLeftIcon(): React.ReactNode {
   );
 }
 
+/** 后退图标（ArrowLeft 轮廓；Z10-3 会话历史导航） */
+function BackIcon(): React.ReactNode {
+  return (
+    <svg
+      width={16}
+      height={16}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={2}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+      focusable="false"
+    >
+      <path d="M19 12H5" />
+      <path d="m12 19-7-7 7-7" />
+    </svg>
+  );
+}
+
+/** 前进图标（ArrowRight 轮廓；Z10-3 会话历史导航） */
+function ForwardIcon(): React.ReactNode {
+  return (
+    <svg
+      width={16}
+      height={16}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={2}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+      focusable="false"
+    >
+      <path d="M5 12h14" />
+      <path d="m12 5 7 7-7 7" />
+    </svg>
+  );
+}
+
 /**
  * 渲染左上角浮层（不占布局高度）。
  * @param props - 高度/mac、侧栏几何与动作回调。
@@ -90,6 +140,28 @@ export function FrameTopOverlay(props: FrameTopOverlayProps): React.ReactNode {
       role="toolbar"
       aria-label={props.label ?? '窗口浮层'}
     >
+      {/* Z10-3：会话历史「后退 / 前进」 ZCode 顶左最前两枚（28×28 @ 后退 x=0 / 前进 x=32）。
+          无历史时按 disabled 呈现（常驻显示，不隐藏）。 */}
+      <button
+        type="button"
+        className="desktop-top-overlay-btn desktop-top-overlay-nav"
+        aria-label="后退"
+        title="后退 (Ctrl+[)"
+        disabled={props.canGoBack !== true || props.onBack === undefined}
+        onClick={props.onBack}
+      >
+        <BackIcon />
+      </button>
+      <button
+        type="button"
+        className="desktop-top-overlay-btn desktop-top-overlay-nav"
+        aria-label="前进"
+        title="前进 (Ctrl+])"
+        disabled={props.canGoForward !== true || props.onForward === undefined}
+        onClick={props.onForward}
+      >
+        <ForwardIcon />
+      </button>
       <span className="desktop-top-overlay-brand" aria-hidden="true">
         <BrandMark />
       </span>

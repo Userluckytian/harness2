@@ -820,6 +820,64 @@ describe('Z10-4 快捷键扩展（源码权威键表）', () => {
     await waitFor(() => expect(App.store.getState().selectedId).toBe('s1'));
   });
 
+  // —— Z10-3 顶部「后退/前进」会话导航（会话历史栈 + Ctrl+[ / ]） ——
+  it('Z10-3 顶部 后退/前进：两次选中后可退可进，边界按钮 disabled', async () => {
+    const api = makeFakeApi();
+    vi.mocked(api.listSessions).mockResolvedValue([
+      { id: 's1', dir: 'd', mtimeMs: 20, firstUserText: '第一句', messageCount: 2, lastSeq: 3 },
+      { id: 's2', dir: 'd', mtimeMs: 10, firstUserText: '第二句', messageCount: 1, lastSeq: 0 },
+    ]);
+    const App = (await bootApp(api)) as { App: () => React.ReactNode; store: AppStore };
+    render(<App.App />);
+    await screen.findByText(/第二句/);
+    const back = (): HTMLButtonElement => screen.getByRole('button', { name: '后退' }) as HTMLButtonElement;
+    const forward = (): HTMLButtonElement => screen.getByRole('button', { name: '前进' }) as HTMLButtonElement;
+
+    expect(back().disabled).toBe(true); // 空历史
+
+    fireEvent.click(screen.getByRole('button', { name: /第一句/ }));
+    await waitFor(() => expect(App.store.getState().selectedId).toBe('s1'));
+    expect(back().disabled).toBe(true); // 只有一条：仍不可退
+
+    fireEvent.click(screen.getByRole('button', { name: /第二句/ }));
+    await waitFor(() => expect(App.store.getState().selectedId).toBe('s2'));
+    await waitFor(() => expect(back().disabled).toBe(false));
+
+    fireEvent.click(back());
+    await waitFor(() => expect(App.store.getState().selectedId).toBe('s1'));
+    expect(back().disabled).toBe(true); // 到最旧
+    expect(forward().disabled).toBe(false);
+
+    fireEvent.click(forward());
+    await waitFor(() => expect(App.store.getState().selectedId).toBe('s2'));
+    expect(forward().disabled).toBe(true); // 到最新
+  });
+
+  it('Z10-3 Ctrl+[ / Ctrl+]：真触发会话历史后退/前进；无历史时按下不报错不误动', async () => {
+    const api = makeFakeApi();
+    vi.mocked(api.listSessions).mockResolvedValue([
+      { id: 's1', dir: 'd', mtimeMs: 20, firstUserText: '第一句', messageCount: 2, lastSeq: 3 },
+      { id: 's2', dir: 'd', mtimeMs: 10, firstUserText: '第二句', messageCount: 1, lastSeq: 0 },
+    ]);
+    const App = (await bootApp(api)) as { App: () => React.ReactNode; store: AppStore };
+    render(<App.App />);
+    await screen.findByText(/第二句/);
+
+    // 无历史：Ctrl+[ 无路可走 → 不动作、不抛错
+    fireEvent.keyDown(window, { key: '[', code: 'BracketLeft', ctrlKey: true });
+    expect(App.store.getState().selectedId).toBeNull();
+
+    fireEvent.click(screen.getByRole('button', { name: /第一句/ }));
+    await waitFor(() => expect(App.store.getState().selectedId).toBe('s1'));
+    fireEvent.click(screen.getByRole('button', { name: /第二句/ }));
+    await waitFor(() => expect(App.store.getState().selectedId).toBe('s2'));
+
+    fireEvent.keyDown(window, { key: '[', code: 'BracketLeft', ctrlKey: true });
+    await waitFor(() => expect(App.store.getState().selectedId).toBe('s1')); // navigateBack
+    fireEvent.keyDown(window, { key: ']', code: 'BracketRight', ctrlKey: true });
+    await waitFor(() => expect(App.store.getState().selectedId).toBe('s2')); // navigateForward
+  });
+
   it('Ctrl+O：打开工作区（目录选择 → 以所选 cwd 建会话）', async () => {
     const api = makeFakeApi();
     api.projectsPickFolder = vi.fn(async () => 'D:/proj');

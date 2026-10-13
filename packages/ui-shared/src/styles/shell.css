@@ -673,6 +673,46 @@ body,
      ZCode LexicalChatInput = text-ui-base = 14px（min-h-10 = 40px 与本表一致）。 */
   font-size: var(--text-ui-base);
 }
+/* Z10-2 composer 上方「项目」「Git 分支」上下文 chip 行（实测 chip 高 28、圆角/边框用既有 token）。
+   只读 chip（本仓无切换通道）如实展示当前值：不置灰、不透明化，仅 disabled + title 说明不可点。 */
+.composer-context-chips {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.composer-context-chip {
+  display: inline-flex;
+  align-items: center;
+  height: 28px; /* Z10-2 §0.2 实测 */
+  max-width: 220px;
+  padding: 0 10px;
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  background: transparent;
+  color: var(--color-foreground-subtle);
+  font-size: var(--text-ui-sm);
+  line-height: 1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  cursor: pointer;
+}
+button.composer-context-chip:hover {
+  border-color: var(--color-border-hover);
+  background: var(--color-hover);
+  color: var(--color-foreground);
+}
+/* 只读态：值仍是真实当前值，故不调透明度；仅 cue「不可点」（红线⑩：disabled + title）。 */
+.composer-context-chip-readonly,
+.composer-context-chip:disabled {
+  cursor: default;
+}
+button.composer-context-chip-readonly:hover {
+  border-color: var(--color-border);
+  background: transparent;
+  color: var(--color-foreground-subtle);
+}
 /* P0-1：占位文案层（ZCode placeholder:text-foreground-subtlest）。contentEditable 无原生
    placeholder，故用兄弟层叠加：pointer-events:none → 点击穿透到编辑器；不进入编辑器文本节点。 */
 .composer-editor-wrap {

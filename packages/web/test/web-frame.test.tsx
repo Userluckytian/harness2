@@ -11,6 +11,7 @@ import React from 'react';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { createAppShell } from '@harness2/ui-shared/renderer/app-shell.js';
 import { workbenchStore } from '@harness2/ui-shared/renderer/layout/workbench/store.js';
+import { sessionNavHistory } from '@harness2/ui-shared/renderer/layout/session-nav-history.js';
 import { sidePaneStore } from '@harness2/ui-shared/renderer/side-pane/index.js';
 import type { HarnessClient } from '@harness2/ui-shared/renderer/ports.js';
 import type {
@@ -31,6 +32,8 @@ afterEach(() => {
   sidePaneStore.closeAll('(no-session)');
   // 分屏布局同为模块级单例（Z2-06：内存态）——测试间复位，避免主格绑定跨用例残留。
   workbenchStore.reset();
+  // Z10-3：会话导航历史亦为模块级单例 —— 测试间复位，避免跨用例污染。
+  sessionNavHistory.reset();
 });
 
 const SESSION: SessionSummaryShape = {
@@ -130,12 +133,15 @@ describe('Z7 四席位骨架（与桌面同构）', () => {
     stop();
   });
 
-  it('左上浮层（FrameTopOverlay）在场：展开时不显示 New Task', async () => {
+  it('左上浮层（FrameTopOverlay）在场：展开时不显示 New Task；后退/前进常驻且空历史 disabled', async () => {
     const { stop } = await mount();
     const overlay = screen.getByTestId('web-top-overlay');
     expect(overlay.getAttribute('data-height')).toBe('48');
     expect(overlay.getAttribute('data-collapsed')).toBe('false');
     expect(screen.queryByRole('button', { name: 'New Task' })).toBeNull();
+    // Z10-3：会话历史上两枚按钮常驻（ZCode 逐字 aria-label），空历史 → disabled
+    expect((screen.getByRole('button', { name: '后退' }) as HTMLButtonElement).disabled).toBe(true);
+    expect((screen.getByRole('button', { name: '前进' }) as HTMLButtonElement).disabled).toBe(true);
     stop();
   });
 });

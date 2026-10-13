@@ -84,6 +84,78 @@ describe('DesktopTopOverlay（Z-01：无 topbar，绝对定位浮层）', () => 
   });
 });
 
+describe('DesktopTopOverlay 会话历史「后退 / 前进」（Z10-3）', () => {
+  it('常驻渲染两枚 28×28 方钮（aria-label 逐字 后退/前进）；缺省历史 props → 均 disabled', () => {
+    render(
+      <DesktopTopOverlay
+        platform="win32"
+        sidebarCollapsed={false}
+        sidebarWidth={264}
+        onToggleSidebar={vi.fn()}
+        onNewTask={vi.fn()}
+      />,
+    );
+    const back = screen.getByRole('button', { name: '后退' }) as HTMLButtonElement;
+    const forward = screen.getByRole('button', { name: '前进' }) as HTMLButtonElement;
+    expect(back.disabled).toBe(true);
+    expect(forward.disabled).toBe(true);
+    expect(back.className).toContain('desktop-top-overlay-nav');
+    expect(forward.className).toContain('desktop-top-overlay-nav');
+    // 最左两枚：先于品牌标记之后的侧栏开关出现
+    const bar = screen.getByTestId('desktop-top-overlay');
+    expect(bar.firstElementChild).toBe(back);
+    expect(back.nextElementSibling).toBe(forward);
+  });
+
+  it('canGoBack/canGoForward + 回调 → 可点并各触发一次', () => {
+    const onBack = vi.fn();
+    const onForward = vi.fn();
+    render(
+      <DesktopTopOverlay
+        platform="win32"
+        sidebarCollapsed={false}
+        sidebarWidth={264}
+        onToggleSidebar={vi.fn()}
+        onNewTask={vi.fn()}
+        canGoBack
+        canGoForward
+        onBack={onBack}
+        onForward={onForward}
+      />,
+    );
+    const back = screen.getByRole('button', { name: '后退' }) as HTMLButtonElement;
+    const forward = screen.getByRole('button', { name: '前进' }) as HTMLButtonElement;
+    expect(back.disabled).toBe(false);
+    expect(forward.disabled).toBe(false);
+    fireEvent.click(back);
+    fireEvent.click(forward);
+    expect(onBack).toHaveBeenCalledTimes(1);
+    expect(onForward).toHaveBeenCalledTimes(1);
+  });
+
+  it('边界 disabled：canGoBack=false（有回调）→ 后退不可点、点击不触发', () => {
+    const onBack = vi.fn();
+    render(
+      <DesktopTopOverlay
+        platform="win32"
+        sidebarCollapsed={false}
+        sidebarWidth={264}
+        onToggleSidebar={vi.fn()}
+        onNewTask={vi.fn()}
+        canGoBack={false}
+        canGoForward
+        onBack={onBack}
+        onForward={vi.fn()}
+      />,
+    );
+    const back = screen.getByRole('button', { name: '后退' }) as HTMLButtonElement;
+    expect(back.disabled).toBe(true);
+    expect((screen.getByRole('button', { name: '前进' }) as HTMLButtonElement).disabled).toBe(false);
+    fireEvent.click(back);
+    expect(onBack).not.toHaveBeenCalled();
+  });
+});
+
 describe('平台派生（Z-02 / Z-04）', () => {
   it('windowFrameClass：win 5 / linux 16（最大化去圆角）/ mac 6 / 未知空', () => {
     expect(windowFrameClass('win32', false)).toBe('desktop-window-frame-win');

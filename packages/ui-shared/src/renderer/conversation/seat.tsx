@@ -44,6 +44,7 @@ import {
 } from './composer/attachments.js';
 import {
   Composer,
+  type ComposerContextChipsProps,
   type ComposerIO,
   type ComposerModeSwitchProps,
   type ComposerModelSelectProps,
@@ -280,6 +281,11 @@ export interface ConversationSeatProps {
   /** Z10-2b 右簇思考档位数据面（壳注入；undefined = 无通道/模型未声明档位 → 控件不渲染） */
   readonly thoughtLevel?: ComposerThoughtLevelProps;
   /**
+   * Z10-2 composer 上方「项目」「Git 分支」上下文 chip 数据面（壳注入；undefined = 整行不渲染）。
+   * 缺省不渲染；无切换通道的壳把 chip 渲染为只读（disabled + title，见 composer/context-chips.tsx）。
+   */
+  readonly contextChips?: ComposerContextChipsProps;
+  /**
    * P0「添加上下文」选择器数据面（壳注入）。缺省（web）= 无目录通道 → 面板**仍渲染**并如实
    * 显示「web 无目录通道」（与左右簇控件「undefined = 不渲染」不同：本按钮是 ZCode 常驻项）。
    */
@@ -495,6 +501,7 @@ export function ConversationSeat(props: ConversationSeatProps): ReactNode {
           {...(props.modeSwitch !== undefined ? { modeSwitch: props.modeSwitch } : {})}
           {...(props.modelSelect !== undefined ? { modelSelect: props.modelSelect } : {})}
           {...(props.thoughtLevel !== undefined ? { thoughtLevel: props.thoughtLevel } : {})}
+          {...(props.contextChips !== undefined ? { contextChips: props.contextChips } : {})}
           {...(props.contextPicker !== undefined ? { contextPicker: props.contextPicker } : {})}
           {...(props.imageIO !== undefined ? { imageIO: props.imageIO } : {})}
         />

@@ -5,6 +5,19 @@
 export { AppFrame } from './AppFrame.js';
 export { FrameTopOverlay, type FrameTopOverlayProps } from './top-overlay.js';
 export {
+  SESSION_NAV_HISTORY_LIMIT,
+  SessionNavHistory,
+  canGoBack,
+  canGoForward,
+  currentHistoryEntry,
+  initialSessionNavHistory,
+  recordHistoryEntry,
+  sessionNavHistory,
+  stepHistoryBack,
+  stepHistoryForward,
+  type SessionNavHistoryState,
+} from './session-nav-history.js';
+export {
   AUTO_COLLAPSE_RESIZE_IDLE_MS,
   AUTO_COLLAPSE_RIGHTBAR_CONVERSATION_WIDTH,
   AUTO_COLLAPSE_SIDEBAR_CONVERSATION_WIDTH,
