@@ -10,17 +10,17 @@
 //   * `modelsApi` —— serve 无模型配置路由 → 不提供（models 分区不进导航）。
 //
 // 分区白名单（`sectionAllowList`）按「**端口满足且数据面齐备**」原则逐分区判定，只开数据可如实渲染者：
-//   进：general（本地偏好）、appearance（主题/字号）、approval（cfg.approval 在读载荷里，真实）、
+//   进：general（本地偏好）、appearance（主题/字号）、approval（cfg.approval，真实）、
+//       memory / browser / subagent（cfg.* 真实读取，且带「保存」按钮经 updateConfig 写回）、
+//       plugins / mcp / hooks（cfg.plugins / cfg.mcpServers / cfg.hooks 真实只读展示）、
+//       gateway（cfg.gateways 真实读取 + auth 掩码；策略可写、凭据只读如实降级）、
 //       shortcuts / cron / sessions / about（静态事实，无数据面依赖）、skill（getSkills 端点）、
 //       diagnostics（doctor + crash 端点）。
+//      （Z9-6c：core `GET /api/settings/config` 已改为返回完整 config 形状 —— memory/browser/plugins/
+//       mcpServers/subagent/hooks/gateways 段都可如实读取，故上述分区放开；此前因「读载荷过窄 →
+//       保存会用 schema 缺省覆盖用户真实配置」而被排除的顾虑已消除。）
 //   不进（并在报告写明原因）：
-//     - models：serve 无模型配置路由（不提供 modelsApi）；
-//     - memory / browser / plugins / mcp / subagent / hooks：serve `GET /api/settings/config` 的读载荷
-//       （core `buildConfigReport`）**只含 providers/roles/approval**，不含这些段 → 若渲染会显示 schema
-//       缺省值，且这些分区带「保存」按钮 → 保存会把缺省回写、**覆盖用户真实配置**（数据丢失风险）→ 不进；
-//     - gateway：同上，`config.gateways` 不可回读（策略/启用会显示缺省并在保存时覆盖）→ 不进；
-//       其 auth 掩码（getAuthMasked）虽真实，但分区整体数据面不齐 → 一并排除。
-//   （补齐路径：enrich serve 读端点返回完整 config，即可开放上述分区 —— 见 Z9-6b 报告「未尽」。）
+//     - models：serve 无模型配置路由（不提供 modelsApi）→ 无法如实读写模型文档，保持不进。
 import { useMemo, useState, type ReactNode } from 'react';
 import { SettingsPage, type SettingsPorts } from '@harness2/ui-shared/renderer/settings/index.js';
 import {
@@ -44,15 +44,23 @@ import { useWebShell } from './web-shell-context.js';
 
 /**
  * web 导航保留的分区（**端口满足且数据面齐备**；判定依据见模块头注释）。
- * 顺序按 `SETTINGS_SECTION_META`（组 × 组内 order）；未列入者不进导航（隐藏，而非摆禁用假控件）。
+ * 顺序**必须**与 `SETTINGS_SECTION_META`（组 × 组内 order）一致（装配层按该顺序过滤渲染）。
+ * 未列入者不进导航（隐藏，而非摆禁用假控件）——当前仅 `models`（serve 无模型配置路由）。
  */
 export const WEB_SETTINGS_SECTIONS: readonly string[] = [
   'general',
   'appearance',
+  'browser',
   'approval',
   'shortcuts',
+  'memory',
+  'subagent',
+  'plugins',
+  'mcp',
   'skill',
   'cron',
+  'hooks',
+  'gateway',
   'sessions',
   'diagnostics',
   'about',
@@ -79,7 +87,7 @@ export interface WebSettingsDataPorts {
 
 /**
  * 用 serve 客户端构造 web 设置数据端口（薄适配；各端点在 `serve-client` 里已适配成共享形状）。
- * `getAuthMasked` 一并提供（Z9-6b 交付要求），当前无消费分区（gateway 不进导航），待 serve 读补齐后可开。
+ * `getAuthMasked` 一并提供（Z9-6b 交付要求）；Z9-6c 起 gateway 分区已进导航并消费它（凭据只读掩码）。
  */
 export function createWebSettingsDataPorts(
   client: Pick<

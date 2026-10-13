@@ -174,3 +174,34 @@ describe('网关 / IM 分区', () => {
     expect(document.querySelector('[data-gateway-unavailable]')).not.toBeNull();
   });
 });
+
+describe('Z9-6c 配置读失败：分区如实报错（不再停在「加载中…」）', () => {
+  it('getConfig 抛错 → cfg 依赖分区显示可读错误，不显示「加载中…」也不谎称成功', async () => {
+    const ports = makePorts({
+      getConfig: async () => {
+        throw new Error('配置读取失败：HTTP 500');
+      },
+    });
+    render(<SettingsPage open onClose={() => {}} ports={ports} />);
+    await screen.findByRole('dialog', { name: '设置' });
+    fireEvent.click(document.querySelector(`[data-section-nav="memory"]`) as HTMLElement);
+
+    // 错误如实暴露到分区（含原始消息）
+    expect(await screen.findByText(/配置读取失败：HTTP 500/)).toBeTruthy();
+    expect(document.querySelector('[data-settings-load-error]')).not.toBeNull();
+    // 反向钉：不再停留在「加载中…」，也没有成功态
+    expect(screen.queryByText('加载中…')).toBeNull();
+  });
+
+  it('config 读失败 → gateway 分区（有端口）同样如实报错而非「加载中…」', async () => {
+    const ports = makePorts({
+      getConfig: async () => {
+        throw new Error('配置读取失败：HTTP 503');
+      },
+    });
+    await renderAt(ports, 'gateway');
+    expect(await screen.findByText(/配置读取失败：HTTP 503/)).toBeTruthy();
+    expect(screen.queryByText('加载中…')).toBeNull();
+    expect(document.querySelector('[data-gateway-unavailable]')).toBeNull();
+  });
+});

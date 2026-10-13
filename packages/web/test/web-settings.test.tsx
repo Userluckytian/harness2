@@ -28,16 +28,23 @@ const SESSION: SessionSummaryShape = {
   lastSeq: 0,
 };
 
-/** 脱敏 config 视图（approval 有真实值；其余段是「不渲染的占位」——对应分区不进 allowList） */
+/** 完整 config 视图（Z9-6c：各段为真实读取值；对应分区已进 allowList） */
 const CFG: SettingsConfigShape = {
   providers: { ds: { protocol: 'openai', baseUrl: 'https://api.test/v1', envKey: 'DS_KEY', models: { 'm-1': {} } } },
   roles: { main: { channel: 'ds', model: 'm-1' } },
   approval: { mode: 'bypass', tools: { write: 'ask' } },
-  memory: { mode: 'off', nudgeInterval: 10 },
-  browser: { enabled: true, idleDestroyMs: 300_000, maxConcurrent: 2 },
-  plugins: { enabled: true, allow: [] },
-  mcpServers: {},
-  subagent: { maxDepth: 1, maxTurns: 25 },
+  memory: { mode: 'ask', nudgeInterval: 30 },
+  browser: { enabled: false, idleDestroyMs: 120_000, maxConcurrent: 4 },
+  plugins: { enabled: true, allow: ['plugin-x'] },
+  mcpServers: { echo: { command: 'node', args: ['echo.mjs'] } },
+  subagent: { maxDepth: 2, maxTurns: 40 },
+  hooks: {
+    enabled: true,
+    timeoutMs: 3000,
+    maxOutputBytes: 1024,
+    entries: [{ event: 'turnEnd', command: 'echo done' }],
+  },
+  gateways: { qq: { enabled: true, appId: 'qq-app-id', dmPolicy: 'open' } },
   sources: { global: true, project: false },
   warnings: [],
   errors: [],
@@ -138,11 +145,30 @@ describe('web 设置覆层（Z9-6b：与桌面对齐）', () => {
     expect(document.querySelector('[data-section="general"]')).not.toBeNull();
     // ④ 防回归：导航集合与顺序 = WEB_SETTINGS_SECTIONS（数量与集合一致）
     expect(navIds()).toEqual([...WEB_SETTINGS_SECTIONS]);
-    expect(WEB_SETTINGS_SECTIONS).toHaveLength(9);
-    // 无数据面的分区不进导航（隐藏而非摆禁用假控件）
-    for (const absent of ['models', 'memory', 'browser', 'plugins', 'mcp', 'subagent', 'hooks', 'gateway']) {
-      expect(navIds()).not.toContain(absent);
-    }
+    expect(WEB_SETTINGS_SECTIONS).toHaveLength(16);
+    // Z9-6c：数据面齐备的分区放开进导航（deep 等值集合）
+    expect(new Set(navIds())).toEqual(
+      new Set([
+        'general',
+        'appearance',
+        'browser',
+        'approval',
+        'shortcuts',
+        'memory',
+        'subagent',
+        'plugins',
+        'mcp',
+        'skill',
+        'cron',
+        'hooks',
+        'gateway',
+        'sessions',
+        'diagnostics',
+        'about',
+      ]),
+    );
+    // 仅 models 仍不进导航（serve 无模型配置路由）
+    expect(navIds()).not.toContain('models');
     stop();
   });
 
@@ -204,6 +230,26 @@ describe('web 设置覆层（Z9-6b：与桌面对齐）', () => {
 
     await waitFor(() => expect(updateConfig).toHaveBeenCalledWith({ approval: { mode: 'plan' } }));
     expect(await screen.findByText('已保存')).toBeTruthy();
+    stop();
+  });
+
+  // ② Z9-6c：新放开分区（memory）的读写路径——读真实值 + 保存经 updateConfig 写 patch
+  it('记忆：新放开分区渲染真实 cfg.memory 值；保存经 updateConfig 写 patch', async () => {
+    const updateConfig = vi.fn(async () => ({ ok: true, config: CFG }));
+    const stop = await mount(fakeDataPorts({ updateConfig }));
+    await openSettings();
+    await gotoSection('memory');
+
+    // 读：真实值（mode=ask →「询问」选中；nudgeInterval=30）
+    const on = document.querySelector('[data-section="memory"] .seg-on');
+    expect(on?.textContent).toContain('询问');
+    const interval = document.querySelector('[data-section="memory"] input[type="number"]') as HTMLInputElement;
+    expect(interval.value).toBe('30');
+
+    // 写：改间隔 → 保存
+    fireEvent.change(interval, { target: { value: '45' } });
+    fireEvent.click(screen.getByRole('button', { name: '保存' }));
+    await waitFor(() => expect(updateConfig).toHaveBeenCalledWith({ memory: { mode: 'ask', nudgeInterval: 45 } }));
     stop();
   });
 

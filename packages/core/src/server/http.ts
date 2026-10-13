@@ -48,7 +48,13 @@ import {
 import { attachWsServer, type WsPlane } from './ws.js';
 import { createTerminalManager, type TerminalManager } from '../terminal/manager.js';
 import { runDoctor } from '../doctor/index.js';
-import { readAuthMaskedView, readCrashReports, readSkillsView, updateGlobalConfig } from './settings.js';
+import {
+  readAuthMaskedView,
+  readCrashReports,
+  readSettingsConfigView,
+  readSkillsView,
+  updateGlobalConfig,
+} from './settings.js';
 import { isTrustedHost, isTrustedOrigin, normalizeOriginHeader } from './trust.js';
 import {
   createServeSecurityStats,
@@ -719,10 +725,12 @@ async function route(
   }
   // —— Z9-6a：web 设置数据端点（只读 + 配置写；凭据写不开放）——
   // 统一前缀 /api/settings/*；token 与 Origin/Host 门禁已在 handleRequest 统一施加（沿既有路径，无旁路）。
-  // GET /api/settings/config → 脱敏 config 视图（与 GET /api/config 同一 buildConfigPayload，不另造读取语义）
+  // GET /api/settings/config → 与桌面 settings:getConfig **同一完整形状**（readSettingsConfigView，复用 core
+  //   loadConfig；覆盖 providers/roles/approval + memory/browser/plugins/mcpServers/subagent/gateways/hooks）。
+  //   与既有 GET /api/config（buildConfigPayload 脱敏报告，保持原样）**分属两种语义**，互不影响。
   if (pathname === '/api/settings/config') {
     if (req.method === 'GET') {
-      sendJson(res, 200, buildConfigPayload(env));
+      sendJson(res, 200, readSettingsConfigView(env));
       return;
     }
     // PUT/POST /api/settings/config → 白名单顶层 key 深合并写回全局 config.json（口径同桌面 settings:updateConfig）
@@ -733,7 +741,7 @@ async function route(
         sendJson(res, 400, { error: redactSecrets(result.error) });
         return;
       }
-      sendJson(res, 200, { ok: true, warnings: result.warnings, config: buildConfigPayload(env) });
+      sendJson(res, 200, { ok: true, warnings: result.warnings, config: readSettingsConfigView(env) });
       return;
     }
     sendJson(res, 405, { error: `方法 ${req.method} 不被支持（可用：GET/PUT/POST /api/settings/config）` });

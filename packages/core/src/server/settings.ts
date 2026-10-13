@@ -23,7 +23,8 @@ import {
   DEFAULT_SUBAGENT_CONFIG,
   parseConfig,
 } from '../config/schema.js';
-import { deepMerge, defaultConfigPaths } from '../config/load.js';
+import type { HarnessConfig } from '../config/schema.js';
+import { deepMerge, defaultConfigPaths, loadConfig } from '../config/load.js';
 import { readAuthFile } from '../config/auth.js';
 import { redactSecrets } from '../config/redact.js';
 import { SkillStore, defaultSkillsRoot, projectSkillsRoot } from '../skills/store.js';
@@ -150,6 +151,153 @@ export function updateGlobalConfig(
     return { ok: false, error: `config.json 写入失败: ${redactSecrets((e as Error).message)}` };
   }
   return { ok: true, warnings: result.warnings };
+}
+
+/** 单渠道脱敏视图（与桌面 `SettingsProviderShape` 同形；envKey 是具名变量引用，非密钥值） */
+export interface SettingsProviderView {
+  protocol: 'openai' | 'anthropic';
+  baseUrl: string;
+  envKey?: string;
+  models?: Record<string, { contextWindow?: number; maxOutputTokens?: number }>;
+}
+
+/** 单条 hook 的只读视图（与桌面 `SettingsHookEntryShape` 同形） */
+export interface SettingsHookEntryView {
+  event: string;
+  matcher?: string;
+  command: string;
+  timeoutMs?: number;
+  enabled?: boolean;
+  async?: boolean;
+}
+
+/** hooks 段视图（与桌面 `SettingsHooksShape` 同形；未配置 = 不出现） */
+export interface SettingsHooksView {
+  enabled: boolean;
+  timeoutMs: number;
+  maxOutputBytes: number;
+  entries: SettingsHookEntryView[];
+}
+
+/**
+ * GET /api/settings/config 的完整脱敏视图（**与桌面主进程 `readSettingsConfig` 逐字同形**）。
+ * 覆盖 providers/roles/approval/memory/browser/plugins/mcpServers/subagent/gateways/hooks
+ * 全部真实配置段 + sources/warnings/errors —— web 设置各分区据此可**如实读取**再渲染/保存，
+ * 不再退化为 schema 缺省值（因此带「保存」按钮的分区不再有覆盖用户真实配置的风险）。
+ * 红线：密钥只落 auth.json；本视图只读 config.json（其契约上无 key 字段），绝不回显任何密钥。
+ */
+export interface SettingsConfigView {
+  providers: Record<string, SettingsProviderView>;
+  roles: Record<string, { channel: string; model: string }>;
+  approval: { mode: string; tools?: Record<string, string> };
+  memory: { mode: string; nudgeInterval: number };
+  browser: { enabled: boolean; idleDestroyMs: number; maxConcurrent: number };
+  plugins: { enabled: boolean; allow: string[] };
+  mcpServers: Record<string, unknown>;
+  subagent: { maxDepth: number; maxTurns: number };
+  gateways?: Record<string, unknown>;
+  hooks?: SettingsHooksView;
+  sources: { global: boolean; project: boolean };
+  warnings: string[];
+  errors: string[];
+}
+
+/** 单台 MCP 服务器视图：stdio（command/args/env/cwd）或 http（url/headers），与桌面同口径 */
+function mapMcpServer(entry: HarnessConfig['mcpServers'][string]): Record<string, unknown> {
+  if ('command' in entry) {
+    return {
+      command: entry.command,
+      ...(entry.args !== undefined ? { args: entry.args } : {}),
+      ...(entry.env !== undefined ? { env: entry.env } : {}),
+      ...(entry.cwd !== undefined ? { cwd: entry.cwd } : {}),
+    };
+  }
+  return { url: entry.url, ...(entry.headers !== undefined ? { headers: entry.headers } : {}) };
+}
+
+/**
+ * 读合并视图（复用 core `loadConfig` 的全局/项目合并 + schema 校验，**不另造读取语义**）：
+ * 与桌面 `readSettingsConfig` 的实现一一对应；config 为 null（两文件均不存在/解析失败）时回
+ * schema 缺省段 + sources/warnings/errors（如实，不伪造用户配置）。纯读，无写副作用。
+ */
+export function readSettingsConfigView(env: { root: string; home?: string }): SettingsConfigView {
+  const paths = defaultConfigPaths(env.root, env.home);
+  const loaded = loadConfig({
+    root: env.root,
+    ...(env.home !== undefined ? { home: env.home } : {}),
+    globalPath: paths.globalConfig,
+    projectPath: paths.projectConfig,
+  });
+  const sources = loaded.sources;
+  const warnings = [...loaded.warnings];
+  const errors = [...loaded.errors];
+  const cfg = loaded.config;
+  if (cfg === null) {
+    return {
+      providers: {},
+      roles: {},
+      approval: { mode: 'default' },
+      memory: { ...DEFAULT_MEMORY_CONFIG },
+      browser: { ...DEFAULT_BROWSER_CONFIG },
+      plugins: { ...DEFAULT_PLUGINS_CONFIG },
+      mcpServers: {},
+      subagent: { ...DEFAULT_SUBAGENT_CONFIG },
+      sources,
+      warnings,
+      errors,
+    };
+  }
+  const providers: Record<string, SettingsProviderView> = {};
+  for (const [name, p] of Object.entries(cfg.providers)) {
+    providers[name] = {
+      protocol: p.protocol,
+      baseUrl: p.baseUrl,
+      ...(p.envKey !== undefined ? { envKey: p.envKey } : {}),
+      ...(p.models !== undefined ? { models: p.models } : {}),
+    };
+  }
+  const roles: Record<string, { channel: string; model: string }> = {};
+  for (const [name, r] of Object.entries(cfg.roles)) roles[name] = { channel: r.channel, model: r.model };
+  const mcpServers: Record<string, unknown> = {};
+  for (const [name, entry] of Object.entries(cfg.mcpServers)) mcpServers[name] = mapMcpServer(entry);
+  return {
+    providers,
+    roles,
+    approval: {
+      mode: cfg.approval.mode ?? 'default',
+      ...(cfg.approval.tools !== undefined ? { tools: cfg.approval.tools } : {}),
+    },
+    memory: { mode: cfg.memory.mode, nudgeInterval: cfg.memory.nudgeInterval },
+    browser: {
+      enabled: cfg.browser.enabled,
+      idleDestroyMs: cfg.browser.idleDestroyMs,
+      maxConcurrent: cfg.browser.maxConcurrent,
+    },
+    plugins: { enabled: cfg.plugins.enabled, allow: cfg.plugins.allow },
+    mcpServers,
+    subagent: { maxDepth: cfg.subagent.maxDepth, maxTurns: cfg.subagent.maxTurns },
+    ...(cfg.gateways !== undefined ? { gateways: cfg.gateways as unknown as Record<string, unknown> } : {}),
+    ...(cfg.hooks !== undefined
+      ? {
+          hooks: {
+            enabled: cfg.hooks.enabled,
+            timeoutMs: cfg.hooks.timeoutMs,
+            maxOutputBytes: cfg.hooks.maxOutputBytes,
+            entries: cfg.hooks.entries.map((e) => ({
+              event: e.event,
+              command: e.command,
+              ...(e.matcher !== undefined ? { matcher: e.matcher } : {}),
+              ...(e.timeoutMs !== undefined ? { timeoutMs: e.timeoutMs } : {}),
+              ...(e.enabled !== undefined ? { enabled: e.enabled } : {}),
+              ...(e.async !== undefined ? { async: e.async } : {}),
+            })),
+          },
+        }
+      : {}),
+    sources,
+    warnings,
+    errors,
+  };
 }
 
 /** auth.json 掩码视图（与桌面 `readAuthMasked` 同口径，永不回显明文密钥） */

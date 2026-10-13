@@ -58,43 +58,63 @@ function clientWith(handler: (rec: Recorded) => { status: number; body: unknown 
   return { client, calls };
 }
 
+// serve 读载荷（Z9-6c：完整 config 视图，与桌面 settings:getConfig 同形 —— 覆盖所有真实配置段）
 const CONFIG_PAYLOAD = {
-  ok: true,
   errors: [],
   warnings: ['未知字段 x（已忽略）'],
   sources: { global: true, project: false },
-  report: {
-    providers: [
-      {
-        channel: 'ds',
-        protocol: 'openai',
-        baseUrl: 'https://api.test/v1',
-        envKey: 'DS_KEY',
-        models: ['m-1', 'm-2'],
-        keySource: 'auth.json',
-      },
-    ],
-    roles: [{ role: 'main', channel: 'ds', model: 'm-1' }],
-    approval: { mode: 'bypass', tools: { write: 'ask' } },
+  providers: {
+    ds: {
+      protocol: 'openai',
+      baseUrl: 'https://api.test/v1',
+      envKey: 'DS_KEY',
+      models: { 'm-1': { contextWindow: 128000, maxOutputTokens: 4096 }, 'm-2': {} },
+    },
   },
+  roles: { main: { channel: 'ds', model: 'm-1' } },
+  approval: { mode: 'bypass', tools: { write: 'ask' } },
+  memory: { mode: 'ask', nudgeInterval: 30 },
+  browser: { enabled: false, idleDestroyMs: 120_000, maxConcurrent: 4 },
+  plugins: { enabled: true, allow: ['plugin-x'] },
+  mcpServers: { echo: { command: 'node', args: ['echo.mjs'] } },
+  subagent: { maxDepth: 2, maxTurns: 40 },
+  hooks: {
+    enabled: true,
+    timeoutMs: 3000,
+    maxOutputBytes: 1024,
+    entries: [{ event: 'turnEnd', command: 'echo done' }],
+  },
+  gateways: { qq: { enabled: true, appId: 'qq-app-id' } },
 };
 
-describe('Z9-6b GET /api/settings/config → SettingsConfigShape 适配', () => {
-  it('打 GET 端点（带 token），脱敏报告映射为 providers/roles/approval + 来源/告警', async () => {
+describe('Z9-6c GET /api/settings/config → SettingsConfigShape 适配（完整段）', () => {
+  it('打 GET 端点（带 token）；完整 config 段如实映射（不再回退 schema 缺省）', async () => {
     const { client, calls } = clientWith(() => ({ status: 200, body: CONFIG_PAYLOAD }));
     const cfg = await client.getSettingsConfig();
     expect(calls).toHaveLength(1);
     expect(calls[0]).toMatchObject({ method: 'GET', path: '/api/settings/config', token: TOKEN });
 
     expect(cfg.providers['ds']).toMatchObject({ protocol: 'openai', baseUrl: 'https://api.test/v1', envKey: 'DS_KEY' });
-    expect(Object.keys(cfg.providers['ds']!.models!)).toEqual(['m-1', 'm-2']); // 只给 id，不臆造容量
+    expect(Object.keys(cfg.providers['ds']!.models!)).toEqual(['m-1', 'm-2']);
+    expect(cfg.providers['ds']!.models!['m-1']).toEqual({ contextWindow: 128000, maxOutputTokens: 4096 });
     expect(cfg.roles['main']).toEqual({ channel: 'ds', model: 'm-1' });
     expect(cfg.approval).toEqual({ mode: 'bypass', tools: { write: 'ask' } });
+    // Z9-6c：此前缺的段现在是真实读取值（非缺省占位）
+    expect(cfg.memory).toEqual({ mode: 'ask', nudgeInterval: 30 });
+    expect(cfg.browser).toEqual({ enabled: false, idleDestroyMs: 120_000, maxConcurrent: 4 });
+    expect(cfg.plugins).toEqual({ enabled: true, allow: ['plugin-x'] });
+    expect(cfg.mcpServers).toEqual({ echo: { command: 'node', args: ['echo.mjs'] } });
+    expect(cfg.subagent).toEqual({ maxDepth: 2, maxTurns: 40 });
+    expect(cfg.hooks).toEqual({
+      enabled: true,
+      timeoutMs: 3000,
+      maxOutputBytes: 1024,
+      entries: [{ event: 'turnEnd', command: 'echo done' }],
+    });
+    expect(cfg.gateways).toEqual({ qq: { enabled: true, appId: 'qq-app-id' } });
     expect(cfg.sources).toEqual({ global: true, project: false });
     expect(cfg.warnings).toEqual(['未知字段 x（已忽略）']);
     expect(cfg.errors).toEqual([]);
-    // serve 读载荷不含 gateways 段 → 适配结果不臆造该键
-    expect(cfg.gateways).toBeUndefined();
   });
 
   it('读失败（500/401）→ 如实抛出可读错误（不返回假空配置）', async () => {
@@ -104,16 +124,26 @@ describe('Z9-6b GET /api/settings/config → SettingsConfigShape 适配', () => 
     }
   });
 
-  it('plain 函数：ok=false（无 report）→ 空 providers/roles + approval 缺省 + errors 如实', () => {
-    const cfg = mapServeConfigPayload({ ok: false, errors: ['config 解析失败'], warnings: [] });
+  it('plain 函数：无任何段 → 空 providers/roles + 各段 schema 缺省 + errors 如实', () => {
+    const cfg = mapServeConfigPayload({ errors: ['config 解析失败'], warnings: [] });
     expect(cfg.providers).toEqual({});
     expect(cfg.roles).toEqual({});
     expect(cfg.approval).toEqual({ mode: 'default' });
+    expect(cfg.memory).toEqual({ mode: 'off', nudgeInterval: 10 });
+    expect(cfg.mcpServers).toEqual({});
+    expect(cfg.gateways).toBeUndefined();
+    expect(cfg.hooks).toBeUndefined();
     expect(cfg.errors).toEqual(['config 解析失败']);
+  });
+
+  it('plain 函数：载荷无 gateways/hooks 段 → 不臆造该键', () => {
+    const cfg = mapServeConfigPayload({ providers: {}, roles: {}, approval: { mode: 'default' } });
+    expect(cfg.gateways).toBeUndefined();
+    expect(cfg.hooks).toBeUndefined();
   });
 });
 
-describe('Z9-6b PUT /api/settings/config → 写白名单 patch', () => {
+describe('Z9-6c PUT /api/settings/config → 写白名单 patch', () => {
   it('成功：PUT + 体为 patch；返回 ok + 适配后的最新 config', async () => {
     const { client, calls } = clientWith(() => ({
       status: 200,
@@ -125,6 +155,20 @@ describe('Z9-6b PUT /api/settings/config → 写白名单 patch', () => {
     expect(res.ok).toBe(true);
     expect(res.config?.approval.mode).toBe('bypass');
     expect(res.warnings).toEqual([]);
+  });
+
+  // Z9-6c：新放开分区（memory）的写路径——method/path/body 逐一断言
+  it('新放开分区写路径：memory patch 打 PUT /api/settings/config，体为 patch', async () => {
+    const { client, calls } = clientWith(() => ({
+      status: 200,
+      body: { ok: true, warnings: [], config: CONFIG_PAYLOAD },
+    }));
+    const patch = { memory: { mode: 'ask', nudgeInterval: 45 } };
+    const res = await client.updateSettingsConfig(patch);
+    expect(calls).toHaveLength(1);
+    expect(calls[0]).toMatchObject({ method: 'PUT', path: '/api/settings/config', token: TOKEN, body: patch });
+    expect(res.ok).toBe(true);
+    expect(res.config?.memory).toEqual({ mode: 'ask', nudgeInterval: 30 });
   });
 
   it('失败（400 白名单/500/405）→ {ok:false, error: 可读}，绝不假装成功', async () => {

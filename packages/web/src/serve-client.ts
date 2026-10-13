@@ -34,6 +34,7 @@ import type {
   SettingsConfigShape,
   SettingsCrashReportShape,
   SettingsDoctorReportShape,
+  SettingsHooksShape,
   SettingsProviderShape,
   SettingsRoleShape,
   SettingsSkillsShape,
@@ -375,8 +376,8 @@ export function createServeClient(options: ServeClientOptions = {}): ServeClient
     // —— Z9-6b 设置数据面（serve /api/settings/*；web 设置页各分区按端口可用性降级）——
 
     async getSettingsConfig(): Promise<SettingsConfigShape> {
-      // serve 的读载荷是脱敏报告（providers/roles/approval + sources/warnings/errors）——形状与
-      // 共享设置页的 SettingsConfigShape 不同，这里做**单一适配**（不另造第二套读取语义）。
+      // Z9-6c：serve 读载荷已是与桌面 settings:getConfig 同形的**完整 config 视图**
+      // （core readSettingsConfigView）；此处仍统一过一遍 mapServeConfigPayload 做形状归一（单一适配点）。
       return mapServeConfigPayload(await http('/api/settings/config'));
     },
     async updateSettingsConfig(patch: Record<string, unknown>): Promise<ServeConfigUpdateResult> {
@@ -412,65 +413,148 @@ export function createServeClient(options: ServeClientOptions = {}): ServeClient
   };
 }
 
-/** core `buildConfigPayload`（GET /api/settings/config）的读载荷最小形状（与 buildConfigReport 同源） */
-interface ServeConfigPayloadShape {
-  ok?: boolean;
-  errors?: string[];
-  warnings?: string[];
-  sources?: { global?: boolean; project?: boolean };
-  report?: {
-    providers: Array<{ channel: string; protocol: string; baseUrl: string; envKey?: string; models: string[] }>;
-    roles: Array<{ role: string; channel: string; model: string }>;
-    approval: { mode: string; tools?: Record<string, string> };
+/** core `readSettingsConfigView`（GET /api/settings/config）的读载荷形状（与桌面 settings:getConfig 同形） */
+interface ServeConfigViewPayloadShape {
+  errors?: unknown;
+  warnings?: unknown;
+  sources?: { global?: unknown; project?: unknown };
+  providers?: unknown;
+  roles?: unknown;
+  approval?: unknown;
+  memory?: unknown;
+  browser?: unknown;
+  plugins?: unknown;
+  mcpServers?: unknown;
+  subagent?: unknown;
+  gateways?: unknown;
+  hooks?: unknown;
+}
+
+function asRecord(v: unknown): Record<string, unknown> {
+  return typeof v === 'object' && v !== null && !Array.isArray(v) ? (v as Record<string, unknown>) : {};
+}
+
+function asStringArray(v: unknown): string[] {
+  return Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string') : [];
+}
+
+function mapProviderModels(v: unknown): Record<string, { contextWindow?: number; maxOutputTokens?: number }> {
+  const out: Record<string, { contextWindow?: number; maxOutputTokens?: number }> = {};
+  for (const [id, raw] of Object.entries(asRecord(v))) {
+    const m = asRecord(raw);
+    out[id] = {
+      ...(typeof m.contextWindow === 'number' ? { contextWindow: m.contextWindow } : {}),
+      ...(typeof m.maxOutputTokens === 'number' ? { maxOutputTokens: m.maxOutputTokens } : {}),
+    };
+  }
+  return out;
+}
+
+function mapHookEntry(v: unknown): SettingsHooksShape['entries'][number] {
+  const e = asRecord(v);
+  return {
+    event: typeof e.event === 'string' ? e.event : '',
+    command: typeof e.command === 'string' ? e.command : '',
+    ...(typeof e.matcher === 'string' ? { matcher: e.matcher } : {}),
+    ...(typeof e.timeoutMs === 'number' ? { timeoutMs: e.timeoutMs } : {}),
+    ...(typeof e.enabled === 'boolean' ? { enabled: e.enabled } : {}),
+    ...(typeof e.async === 'boolean' ? { async: e.async } : {}),
+  };
+}
+
+function mapHooks(v: unknown): SettingsHooksShape {
+  const h = asRecord(v);
+  return {
+    enabled: typeof h.enabled === 'boolean' ? h.enabled : true,
+    timeoutMs: typeof h.timeoutMs === 'number' ? h.timeoutMs : 0,
+    maxOutputBytes: typeof h.maxOutputBytes === 'number' ? h.maxOutputBytes : 0,
+    entries: Array.isArray(h.entries) ? h.entries.map(mapHookEntry) : [],
   };
 }
 
 /**
- * serve 脱敏 config 载荷 → 共享设置页 `SettingsConfigShape`（Z9-6b 的唯一适配点）。
+ * serve 脱敏 config 载荷 → 共享设置页 `SettingsConfigShape`（Z9-6b 的唯一适配点；Z9-6c 起读载荷已是完整形状）。
  *
- * **已知限制（如实登记，见 web-settings.tsx 分区判定）**：serve 的读载荷只含
- * providers / roles / approval 三段（`buildConfigReport`）；memory / browser / plugins /
- * mcpServers / subagent / gateways / hooks **不在读载荷里**。为避免「显示 schema 缺省值并在保存时
- * 回写覆盖用户真实配置」，依赖这些段的分区**不进 web 导航**；此处仅为满足类型给缺省占位（永不渲染）。
+ * Z9-6c：serve `GET /api/settings/config` 已改为返回与桌面 `settings:getConfig` **同一完整形状**
+ * （core `readSettingsConfigView`：providers/roles/approval + memory/browser/plugins/mcpServers/
+ * subagent/gateways/hooks + sources/warnings/errors）。此处逐段**如实映射**（不做任何合并/补全语义，
+ * 缺段才回 schema 缺省），因此依赖这些段的分区可如实渲染与保存，不再显示缺省值并覆盖用户真实配置。
+ * 密钥边界：config.json 契约上无 key 字段；本适配不引入 auth 数据，密钥仍绝不出现。
  */
 export function mapServeConfigPayload(payload: unknown): SettingsConfigShape {
-  const p = (typeof payload === 'object' && payload !== null ? payload : {}) as ServeConfigPayloadShape;
-  const errors = Array.isArray(p.errors) ? p.errors : [];
-  const warnings = Array.isArray(p.warnings) ? p.warnings : [];
-  const report = p.report;
+  const p = asRecord(payload) as ServeConfigViewPayloadShape;
+  const errors = asStringArray(p.errors);
+  const warnings = asStringArray(p.warnings);
+  const sources = asRecord(p.sources);
+
   const providers: Record<string, SettingsProviderShape> = {};
-  const roles: Record<string, SettingsRoleShape> = {};
-  if (report !== undefined) {
-    for (const row of report.providers ?? []) {
-      providers[row.channel] = {
-        protocol: row.protocol === 'anthropic' ? 'anthropic' : 'openai',
-        baseUrl: row.baseUrl,
-        ...(typeof row.envKey === 'string' ? { envKey: row.envKey } : {}),
-        // 报告只给模型 id 清单（无容量元数据）→ 逐 id 建空条目，不臆造 contextWindow
-        models: Object.fromEntries((row.models ?? []).map((id) => [id, {}])),
-      };
-    }
-    for (const row of report.roles ?? []) roles[row.role] = { channel: row.channel, model: row.model };
+  for (const [name, raw] of Object.entries(asRecord(p.providers))) {
+    const r = asRecord(raw);
+    const models = mapProviderModels(r.models);
+    providers[name] = {
+      protocol: r.protocol === 'anthropic' ? 'anthropic' : 'openai',
+      baseUrl: typeof r.baseUrl === 'string' ? r.baseUrl : '',
+      ...(typeof r.envKey === 'string' ? { envKey: r.envKey } : {}),
+      ...(Object.keys(models).length > 0 ? { models } : {}),
+    };
   }
+
+  const roles: Record<string, SettingsRoleShape> = {};
+  for (const [name, raw] of Object.entries(asRecord(p.roles))) {
+    const r = asRecord(raw);
+    roles[name] = {
+      channel: typeof r.channel === 'string' ? r.channel : '',
+      model: typeof r.model === 'string' ? r.model : '',
+    };
+  }
+
+  const approvalRaw = asRecord(p.approval);
+  const approvalTools = asRecord(approvalRaw.tools);
   const approval =
-    report?.approval !== undefined
+    Object.keys(approvalRaw).length > 0
       ? {
-          mode: report.approval.mode,
-          ...(report.approval.tools !== undefined ? { tools: report.approval.tools } : {}),
+          mode: typeof approvalRaw.mode === 'string' ? approvalRaw.mode : 'default',
+          ...(Object.keys(approvalTools).length > 0
+            ? { tools: Object.fromEntries(Object.entries(approvalTools).map(([k, v]) => [k, String(v)])) }
+            : {}),
         }
       : { mode: 'default' };
+
+  const memoryRaw = asRecord(p.memory);
+  const memory = {
+    mode: typeof memoryRaw.mode === 'string' ? memoryRaw.mode : 'off',
+    nudgeInterval: typeof memoryRaw.nudgeInterval === 'number' ? memoryRaw.nudgeInterval : 10,
+  };
+  const browserRaw = asRecord(p.browser);
+  const browser = {
+    enabled: typeof browserRaw.enabled === 'boolean' ? browserRaw.enabled : true,
+    idleDestroyMs: typeof browserRaw.idleDestroyMs === 'number' ? browserRaw.idleDestroyMs : 300_000,
+    maxConcurrent: typeof browserRaw.maxConcurrent === 'number' ? browserRaw.maxConcurrent : 2,
+  };
+  const pluginsRaw = asRecord(p.plugins);
+  const plugins = {
+    enabled: typeof pluginsRaw.enabled === 'boolean' ? pluginsRaw.enabled : true,
+    allow: asStringArray(pluginsRaw.allow),
+  };
+  const subagentRaw = asRecord(p.subagent);
+  const subagent = {
+    maxDepth: typeof subagentRaw.maxDepth === 'number' ? subagentRaw.maxDepth : 1,
+    maxTurns: typeof subagentRaw.maxTurns === 'number' ? subagentRaw.maxTurns : 25,
+  };
+  const hooks = p.hooks !== undefined ? mapHooks(p.hooks) : undefined;
+
   return {
     providers,
     roles,
     approval,
-    // 以下为**不渲染的占位**（对应分区不进 allowList）：serve 读载荷不含这些段，若填真实值需 enrich
-    // serve 读端点；填 schema 缺省仅为满足类型，绝不作为「已读到的真实配置」呈现。
-    memory: { mode: 'off', nudgeInterval: 10 },
-    browser: { enabled: true, idleDestroyMs: 300_000, maxConcurrent: 2 },
-    plugins: { enabled: true, allow: [] },
-    mcpServers: {},
-    subagent: { maxDepth: 1, maxTurns: 25 },
-    sources: { global: p.sources?.global === true, project: p.sources?.project === true },
+    memory,
+    browser,
+    plugins,
+    mcpServers: asRecord(p.mcpServers),
+    subagent,
+    ...(p.gateways !== undefined ? { gateways: asRecord(p.gateways) } : {}),
+    ...(hooks !== undefined ? { hooks } : {}),
+    sources: { global: sources['global'] === true, project: sources['project'] === true },
     warnings,
     errors,
   };

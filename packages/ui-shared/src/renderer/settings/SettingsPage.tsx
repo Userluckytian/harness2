@@ -540,6 +540,18 @@ function LoadingPane(): React.ReactNode {
   return <div className="settings-desc">加载中…</div>;
 }
 
+/** 配置/数据读失败的如实错误态（红线⑩：不谎称成功、不假装空数据、不停在「加载中…」） */
+function LoadErrorPane({ message }: { message: string }): React.ReactNode {
+  return (
+    <SettingsSectionBlock title="数据载入失败" desc="配置读取出错——分区内容不可用，如实报错">
+      <p className="settings-warn" data-settings-load-error>
+        无法读取设置数据：{message}
+      </p>
+      <p className="settings-note">排查：确认 serve / 主进程可用后重开设置页；错误原文如上，未做任何掩饰。</p>
+    </SettingsSectionBlock>
+  );
+}
+
 /** 数据面不可用时的如实占位（缺端口 = 该壳未提供，不摆假控件） */
 function UnavailablePane({ what }: { what: string }): React.ReactNode {
   return (
@@ -568,6 +580,8 @@ export function SettingsPage({ open, onClose, ports, defaultSectionId }: Setting
   const [cfg, setCfg] = useState<SettingsConfigShape | null>(null);
   const [auth, setAuth] = useState<SettingsAuthMaskedShape | null>(null);
   const [prefsNote, setPrefsNote] = useState<string | null>(null);
+  /** 数据载入失败的可读错误（红线⑩）：非 null 时 cfg 相关分区显示错误态而非停留在「加载中…」 */
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   // 端口面经 ref 读取：宿主每次渲染可传新对象而不触发重载循环（只在 open 变化时重新取数）。
   const portsRef = useRef(ports);
@@ -588,9 +602,11 @@ export function SettingsPage({ open, onClose, ports, defaultSectionId }: Setting
       if (pr !== null) setPrefs(pr);
       if (c !== null) setCfg(c);
       if (a !== null) setAuth(a);
+      setLoadError(null);
     } catch (e) {
-      // 数据载入失败：保持上次状态
+      // 数据载入失败：把错误暴露到界面（分区级错误态），不再只 console.error 后停留在「加载中…」
       console.error('settings load error', e);
+      setLoadError(e instanceof Error ? e.message : String(e));
     }
   }, []);
 
@@ -661,6 +677,9 @@ export function SettingsPage({ open, onClose, ports, defaultSectionId }: Setting
       onSaveConfig: saveCfg,
       ...(modelsContribution?.props ?? {}),
     };
+    // cfg 依赖分区的统一门：有数据 → 渲染正文；读失败 → 如实错误态；否则「加载中…」。
+    const cfgPane = (render: (c: SettingsConfigShape) => React.ReactNode): React.ReactNode =>
+      cfg !== null ? render(cfg) : loadError !== null ? <LoadErrorPane message={loadError} /> : <LoadingPane />;
     const metas =
       allow === undefined ? SETTINGS_SECTION_META : SETTINGS_SECTION_META.filter((m) => allow.includes(m.id));
     return metas.map((meta): SettingsSectionDefinition => {
@@ -704,61 +723,39 @@ export function SettingsPage({ open, onClose, ports, defaultSectionId }: Setting
             render: () =>
               ModelsComponent !== undefined ? (
                 <ModelsComponent {...modelsProps} />
-              ) : cfg !== null ? (
-                <ModelsTransitionSection cfg={cfg} onSave={saveCfg} />
               ) : (
-                <LoadingPane />
+                cfgPane((c) => <ModelsTransitionSection cfg={c} onSave={saveCfg} />)
               ),
           };
         case 'approval':
-          return {
-            ...meta,
-            render: () => (cfg !== null ? <ApprovalSettingsSection cfg={cfg} onSave={saveCfg} /> : <LoadingPane />),
-          };
+          return { ...meta, render: () => cfgPane((c) => <ApprovalSettingsSection cfg={c} onSave={saveCfg} />) };
         case 'memory':
-          return {
-            ...meta,
-            render: () => (cfg !== null ? <MemorySection cfg={cfg} onSave={saveCfg} /> : <LoadingPane />),
-          };
+          return { ...meta, render: () => cfgPane((c) => <MemorySection cfg={c} onSave={saveCfg} />) };
         case 'browser':
-          return {
-            ...meta,
-            render: () => (cfg !== null ? <BrowserSection cfg={cfg} onSave={saveCfg} /> : <LoadingPane />),
-          };
+          return { ...meta, render: () => cfgPane((c) => <BrowserSection cfg={c} onSave={saveCfg} />) };
         case 'cron':
           return { ...meta, render: () => <CronSection /> };
         case 'plugins':
-          return {
-            ...meta,
-            render: () => (cfg !== null ? <PluginsSection cfg={cfg} /> : <LoadingPane />),
-          };
+          return { ...meta, render: () => cfgPane((c) => <PluginsSection cfg={c} />) };
         case 'mcp':
-          return {
-            ...meta,
-            render: () => (cfg !== null ? <McpServersSection cfg={cfg} /> : <LoadingPane />),
-          };
+          return { ...meta, render: () => cfgPane((c) => <McpServersSection cfg={c} />) };
         case 'skill':
           return { ...meta, render: () => <SkillsSection /> };
         case 'hooks':
-          return {
-            ...meta,
-            render: () => (cfg !== null ? <HooksSection cfg={cfg} /> : <LoadingPane />),
-          };
+          return { ...meta, render: () => cfgPane((c) => <HooksSection cfg={c} />) };
         case 'subagent':
-          return {
-            ...meta,
-            render: () => (cfg !== null ? <SubagentSection cfg={cfg} onSave={saveCfg} /> : <LoadingPane />),
-          };
+          return { ...meta, render: () => cfgPane((c) => <SubagentSection cfg={c} onSave={saveCfg} />) };
         case 'gateway':
           return {
             ...meta,
             render: () => {
               if (cfg === null || auth === null) {
-                // 无 config/auth 数据面（如 web）→ 如实「只读指引」态，不摆假条目/假开关（红线⑩）。
+                // 无 config/auth 数据面（如 web 未接端口）→ 如实「只读指引」态，不摆假条目/假开关（红线⑩）。
                 if (ports.getConfig === undefined || ports.getAuthMasked === undefined) {
                   return <GatewayUnavailable guidance={ports.gatewayGuidance} />;
                 }
-                return <LoadingPane />;
+                // 端口在但读取失败 → 如实错误态（不再停在「加载中…」）
+                return loadError !== null ? <LoadErrorPane message={loadError} /> : <LoadingPane />;
               }
               const writeCfg = ports.updateConfig !== undefined ? saveCfg : undefined;
               const writeAuth =
@@ -793,7 +790,7 @@ export function SettingsPage({ open, onClose, ports, defaultSectionId }: Setting
     });
     // 分区渲染闭包捕获上述数据/回调；数据未变时不重建分区表
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [prefs, cfg, auth, theme, uiFontSize, prefsNote, modelsContribution, allow]);
+  }, [prefs, cfg, auth, theme, uiFontSize, prefsNote, loadError, modelsContribution, allow]);
 
   // 左栏页脚（Z-88 底部）：ZCode 是账号菜单（仅可用项）；我们无账号体系 → 只放版本号（About 数据）
   const version = ports.versionLabel ?? APP_VERSION_LABEL;
