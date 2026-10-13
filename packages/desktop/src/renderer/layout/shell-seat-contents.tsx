@@ -193,11 +193,9 @@ function SidebarSeatContent(): React.ReactNode {
           : undefined
       }
       // Z-49：删除会话（软删 controller.deleteSession：metadata deleted + 列表移除；
-      // 确认对话框在 SessionBrowser 内承载）。metadata 通道缺失时不接线（菜单不出现该项，
-      // controller 会如实降级为「仅当前视图移除」——但按红线⑩只在有通道时摆入口）。
-      onDeleteSession={
-        window.harness2.metadataSet !== undefined ? (id: string) => controller.deleteSession(id) : undefined
-      }
+      // 确认对话框在 SessionBrowser 内承载）。controller 内部已按通道能力如实降级
+      // （无持久化通道 = 仅从视图移除 + info toast），故此处恒接线，不重复探测。
+      onDeleteSession={(id: string) => controller.deleteSession(id)}
       // 任务区头「新建任务」= 与 SidebarRoot 新会话入口同一真源；未连接时不给动作（占位钮，不可点即坏）
       onNewTask={
         state.status === 'connected'

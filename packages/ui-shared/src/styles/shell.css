@@ -865,6 +865,69 @@ button.composer-context-chip-readonly:hover {
 .composer-status[data-kind='error'] {
   color: var(--color-destructive);
 }
+/* Z-96：composer 上方常驻错误横幅（独立 surface，先于 composer，非 toast）。
+   结构依据 refs-zcode.md Z-96 `ChatErrorBanner.tsx`：图标 + 单行截断消息 + 详情/复制 + 右上 X。
+   配色走 Zai 语义 token（destructive 文本 + card 底 + border 描边），不引一次性色值。 */
+.chat-error-banner {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  flex: none;
+  margin-bottom: 8px;
+  padding: 8px 10px;
+  border: 1px solid var(--color-border);
+  border-left: 3px solid var(--color-destructive);
+  border-radius: 8px;
+  background: var(--color-card);
+  color: var(--color-foreground);
+  font-size: 12px;
+}
+.chat-error-banner-icon {
+  color: var(--color-destructive);
+}
+.chat-error-banner-message {
+  min-width: 0;
+  flex: 1 1 auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.chat-error-banner-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  flex: none;
+}
+.chat-error-banner-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 6px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--color-foreground-subtle);
+  font-size: 12px;
+  cursor: pointer;
+}
+.chat-error-banner-btn:hover {
+  background: var(--color-surface-hover);
+  color: var(--color-foreground);
+}
+.chat-error-banner-close:hover {
+  color: var(--color-destructive);
+}
+.chat-error-detail-pre {
+  max-height: 40vh;
+  overflow: auto;
+  margin: 0;
+  padding: 10px;
+  border-radius: 8px;
+  background: var(--color-muted);
+  color: var(--color-foreground);
+  font-size: 12px;
+}
 /* Z3-04：发送/停止主按钮改用 ui-shared Button（Z-75 icon-md + bg-brand），此处旧 .btn-send/.btn-stop 移除 */
 .unread-badge {
   background: var(--color-primary);

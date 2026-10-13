@@ -335,6 +335,21 @@ export function Composer(props: ComposerProps): ReactNode {
     stopAvailable,
   };
   const main = resolveMainButton(policyInput);
+  /**
+   * Z-96「改进」（brief 明示超出 ZCode：ZCode 不解释禁用原因）：发送钮禁用时给出原因 ——
+   * tooltip 文案 + 并入 aria-label。范围按口径三类：connecting / 无会话锁定 / 等待附件；
+   * 「空草稿」不附解释（视觉即答案，且保持既有标签口径稳定）。Stop 态不需要原因。
+   */
+  const sendDisabledReason =
+    main.kind === 'send' && main.disabled
+      ? props.locked === true
+        ? '未连接：正在连接或连接中断，恢复后即可发送'
+        : props.sessionId === undefined
+          ? '未选择会话：先从左侧选择或新建会话'
+          : uploadsPending
+            ? '附件仍在上传，等待上传完成后可发送'
+            : undefined
+      : undefined;
 
   const submitWith = (intent: SubmitIntentShape, placement: SubmissionPlacement): void => {
     if (!canSubmit(policyInput)) return;
@@ -697,30 +712,39 @@ export function Composer(props: ComposerProps): ReactNode {
               )}
               <TooltipProvider>
                 <Tooltip>
+                  {/* 禁用钮自身 pointer-events-none（button.tsx 基类），hover 拿不到 →
+                      触发点包一层 span：禁用原因的 tooltip 依然可达（Z-96 改进）。
+                      span 不改布局（inline-flex 贴合按钮尺寸）。 */}
                   <TooltipTrigger asChild>
-                    <Button
-                      type="button"
-                      size="icon-md"
-                      className="rounded-lg bg-brand text-primary-foreground"
-                      data-testid="composer-primary"
-                      data-kind={main.kind}
-                      data-label-kind={main.labelKind}
-                      disabled={main.disabled}
-                      aria-label={main.label}
-                      onClick={onPrimary}
-                    >
-                      {main.kind === 'stop' ? (
-                        <SquareIcon className="size-4" />
-                      ) : inFlightSubmits > 0 ? (
-                        // Z-94：pending 时显示 Spinner（乐观提交的 await 窗口，如实反映）
-                        <Spinner className="size-4" />
-                      ) : (
-                        <ArrowUpIcon className="size-4" />
-                      )}
-                    </Button>
+                    <span className="inline-flex">
+                      <Button
+                        type="button"
+                        size="icon-md"
+                        className="rounded-lg bg-brand text-primary-foreground"
+                        data-testid="composer-primary"
+                        data-kind={main.kind}
+                        data-label-kind={main.labelKind}
+                        disabled={main.disabled}
+                        aria-label={
+                          sendDisabledReason !== undefined ? `${main.label}（${sendDisabledReason}）` : main.label
+                        }
+                        {...(sendDisabledReason !== undefined ? { 'data-disabled-reason': sendDisabledReason } : {})}
+                        onClick={onPrimary}
+                      >
+                        {main.kind === 'stop' ? (
+                          <SquareIcon className="size-4" />
+                        ) : inFlightSubmits > 0 ? (
+                          // Z-94：pending 时显示 Spinner（乐观提交的 await 窗口，如实反映）
+                          <Spinner className="size-4" />
+                        ) : (
+                          <ArrowUpIcon className="size-4" />
+                        )}
+                      </Button>
+                    </span>
                   </TooltipTrigger>
-                  {/* Z-94：停止钮 tooltip 标 Esc；发送钮 tooltip 跟随主指针标签 */}
-                  <TooltipContent>{main.kind === 'stop' ? 'Esc' : main.label}</TooltipContent>
+                  {/* Z-94：停止钮 tooltip 标 Esc；发送钮 tooltip 跟随主指针标签；
+                      Z-96 改进：禁用发送时说明原因（connecting/无会话/等待附件/空草稿） */}
+                  <TooltipContent>{main.kind === 'stop' ? 'Esc' : (sendDisabledReason ?? main.label)}</TooltipContent>
                 </Tooltip>
               </TooltipProvider>
             </div>
