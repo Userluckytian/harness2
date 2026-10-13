@@ -55,9 +55,10 @@
 | --- | --- | --- | --- |
 | 问候语 | 「下午好呀，接下来交给我吧」，居中加粗 | **同文**，居中 | ✅ 一致 |
 | 水印 | 问候语正上方，浅灰**细线描边**几何图形（形似倾斜平行四边形/Z），约 480–500px 宽 | 问候语正上方，浅灰**填充块状**（叶子/水滴观感），约 200px 宽 | ⚠️ **形状与占位尺寸不同**（spec G5：我们是本仓中性占位，非 ZCode 商标） |
-| composer 位置 | 主区**中部偏上**（内容组占上 ~60%，下方 40% 留白） | 同（顶部留白 → 水印+问候 → composer → chips） | ✅ 一致 |
-| composer 形态 | 卡片，白底、大圆角、柔和阴影，宽约主区 55–60% | 卡片，圆角、独立背景，宽约 60% | ✅ 接近 |
-| composer 顶部 | **项目 ▾ ｜ 分支 ▾** 选择条（卡内顶带） | 只有卡外一个 `ws` 标签 | ⚠️ **缺项目/分支选择条**（spec G25） |
+| composer 位置 | `[510,382,672,105]` = 中部偏上（内容组占上 ~60%，下方 40% 留白） | ~~`[264,681,1176,191]` = 贴底全宽浮层~~ → **已修**：`[516,353,672,134]` | ❌→✅ **已对齐**（2026-10-13 修复，见 §7） |
+| composer 形态 | **卡片**：白底、`rounded-2xl`(16px)、`shadow-xl/5` 柔和阴影 | ~~通栏白条：直角 0px、无阴影、`border-top` 分隔~~ → **已修**：`border-radius:16px` + `--color-card` + `shadow-xl/5` | ❌→✅ **已对齐** |
+| 输入区（编辑器） | **无自己的边框/背景/圆角**，与卡片融为一体 | ~~自带 1px 描边 + 8px 圆角 + card 背景~~ → **已修**：`border:0; background:transparent; border-radius:0` | ❌→✅ **已对齐** |
+| composer 顶部 | **项目 ▾ ｜ 分支 ▾** 选择条（卡内顶带 `p-1.5`） | 卡内顶带位置已就位，但只有项目 chip（`ws`）；**分支 chip 在 web 壳恒不出**（无 git 通道，桌面壳有） | ⚠️ **部分**：顶带结构已对齐；web 缺分支（如实降级，非假值） |
 | 占位符 | 向 **ZCode** 提问，使用 @ 添加上下文，使用 / 选择命令或能力 | 向 **harness2** 提问，使用 @ 添加上下文，使用 / 选择命令或能力 | 差异属品牌命名，待拍板 |
 | 控件行 | `＋` ｜ 手形图标**变更前确认** ▾ ｜ 模型 ▾ ｜ 地球图标**最高** ▾ ｜ 发送 | `＋` ｜ **引用** ｜ **附件** ｜ 盾牌图标**默认** ｜ 模型 ｜ 地球图标**高** ｜ 发送 | ⚠️ **文案不一致**（变更前确认/默认、最高/高）+ 我们多 引用/附件 两个按钮 |
 | 快捷入口 | 周报总结 / 报错修复 / PPT 制作 / 闲时任务 | **同四条** | ✅ 一致 |
@@ -103,3 +104,26 @@
 - 已**闭合**（本次截图确认）：问候语逐字、字号自适应、水印绝对定位、composer 卡片宽度与四个快捷入口、分组/项目三图标。
 - 仍**开放**：G5 水印图形、G17 耗时文案、G18 用户气泡、G22 轮次导航、G23 状态面板、G25 composer 顶部项目/分支条。
 - 本次**新增**登记：侧栏多搜索框、项目组计数徽标、无会话初始态语义、会话态 composer 应为无卡片。
+
+## 7 修复记录：草稿态 composer 卡片化（2026-10-13）
+
+**触发**：用户看 web 端后反馈「中间对话区域……我觉得还是不一样呀（对话框）」。上一版对照表把 composer 判成「✅ 一致」是**错的**——当时的结论来自视觉描述的字面估计，没有量 rect；量了之后差得很明显。
+
+**实测（1440×900，主列 x=268 起、宽 1172）**：
+
+| | 修前 | 修后 | ZCode |
+| --- | --- | --- | --- |
+| composer rect | `[264, 681, 1176, 191]` | `[516, 353, 672, 134]` | `[510, 382, 672, 105]` |
+| 圆角 / 背景 / 阴影 | `0px` / 通栏白条 / 无 | `16px` / `--color-card` / `shadow-xl/5` | `16px` / `bg-surface` / `shadow-xl/5` |
+| 编辑器 | 自带 1px 边框 + 8px 圆角 | 无边框无背景（融进卡片） | 无边框无背景 |
+
+**改法**（依据 `refs/ZCode/packages/ui/src/v4/ConversationComposer.tsx:2202-2238` + `ConversationTimeline.tsx:1759-1776`）：
+
+- `seat.tsx`：把原本内联在建议 chip 条件里的草稿判据提成**唯一真相** `isDraft`，并新增 `isDraftInFlow = isDraft && 队列为空 && 审批为空`；在 `.conversation-seat` 与 `.composer-overlay` 上输出 `data-draft` / `data-draft-inflow`。
+- `shell.css`：新增 `[data-draft='true']` 段（672px 居中 + `rounded-2xl` + `bg-surface` + `shadow-xl/5` + `p-1.5`；编辑器去壳；焦点环从编辑器移到卡片 `:focus-within`）与 `[data-draft-inflow='true']` 段（`.chat`/`.messages` 不再撑满、`.h2-empty` 顶部 `max(52px,29dvh)` 留白、`.composer-overlay` 切 `position:static`、`::after` 吃剩余高度）。
+- **只在队列与审批 dock 都为空时才切在流内**；有条目时回落贴底浮层（卡片视觉仍生效），保证审批/队列不破版。条件与原因写在 `seat.tsx:435-438` 与 `shell.css:1067-1075` 注释里。
+- 新增 `packages/ui-shared/test/conversation-draft-composer.test.tsx`（DOM 级锁定 `data-draft` / `data-draft-inflow` 的有无）。
+
+**验收**（编排者亲跑）：ui-shared **641**、web **150**、desktop **1203 + 1 skip**、typecheck 6/6。浏览器实测：草稿态 `.composer` = `672×134 @ (516,353)`、`border-radius:16px`、白底、`shadow-xl/5`、编辑器 `background:transparent; border:0`；排布 = 顶部留白 → 水印 → 问候 → 卡片 → 建议 chips → 下方留白。**会话态（有消息）回归**：`data-draft` 为 `null`、composer 仍为贴底全宽 `[264,729,1176,143]`、编辑器仍自带 8px 方框 —— 未被改坏。
+
+**踩坑（已记）**：`@harness2/ui-shared` 的 **TSX 走 `dist/`**（`exports` 指向 `dist/esm/*.js`），而 **CSS 走 `src/`**（`./styles/*.css` → `src/styles/*.css`）。所以改了 ui-shared 的组件后，**必须 `pnpm --filter @harness2/ui-shared build`**，web/desktop 的 dev server 才会看到；只改 CSS 则 vite 直接热更。第一次复核 `data-draft` 恒为 null 就是这个原因（不是逻辑错）。
