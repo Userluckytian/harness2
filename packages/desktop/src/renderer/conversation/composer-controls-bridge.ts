@@ -28,12 +28,14 @@ import {
   approvalModePatch,
   buildModelMenu,
   buildThoughtLevel,
+  firstAvailableModel,
   modelSelectionPatch,
   nextApprovalMode,
   nextThoughtLevel,
   thoughtLevelPatch,
   COMPOSER_MAIN_ROLE,
 } from '@harness2/ui-shared/renderer/conversation/composer/composer-config.js';
+import type { ComposerModelRef } from '@harness2/ui-shared/renderer/conversation/composer/composer-config.js';
 import type { SettingsConfigShape } from '../../shared/protocol.js';
 import { openSettingsAtSection } from '../layout/shell-overlays.js';
 import { MODELS_SECTION_ID } from '@harness2/ui-shared/renderer/settings/shell/contributions.js';
@@ -121,7 +123,8 @@ export interface ComposerControls {
 
 /**
  * 由 config 视图装配 composer 控件 props：
- *   - `roles.main` 缺失 → 不出模型选择（没有「当前模型」可如实展示）；
+ *   - 模型选择初值 = roles.main（优先）；roles.main 缺失 → 回落 providers 列表首项（3b），
+ *     两者都没有（无任何 provider/models 声明）才不渲染模型选择；
  *   - 权限模式恒可切换（未设置时按 core 缺省 default 展示与写盘）；
  *   - 思考档位仅当所引模型声明了 `reasoning.values` 才出（无档位可选时不摆控件）。
  */
@@ -129,7 +132,10 @@ export function composerControlsOf(config: SettingsConfigShape | null): Composer
   if (config === null) return {};
   if ((globalThis as { __Z304_DISABLE__?: boolean }).__Z304_DISABLE__ === true) return {};
   const role = config.roles?.main;
-  const modelSelect = role === undefined ? undefined : buildModelSelect(config, role);
+  // 3b：roles.main 优先；缺失回落列表首项（初值可解释、选择器不消失）。写回时 patch 到
+  // roles.main（首次点选即把回落值真正落盘，此后初值 = 磁盘真值）。
+  const initial: ComposerModelRef | undefined = role ?? firstAvailableModel(config);
+  const modelSelect = initial === undefined ? undefined : buildModelSelect(config, initial);
   const thoughtLevel = buildThoughtLevel(config);
   const modeSwitch: ComposerModeSwitchProps = {
     mode: config.approval?.mode,
@@ -155,11 +161,8 @@ export function composerControlsOf(config: SettingsConfigShape | null): Composer
   };
 }
 
-function buildModelSelect(
-  config: SettingsConfigShape,
-  role: { channel: string; model: string },
-): ComposerModelSelectProps | undefined {
-  const menu = buildModelMenu(config);
+function buildModelSelect(config: SettingsConfigShape, role: ComposerModelRef): ComposerModelSelectProps | undefined {
+  const menu = buildModelMenu(config, role);
   if (menu === undefined) return undefined;
   return {
     menu,

@@ -70,10 +70,31 @@ describe('composerControlsOf：config → 控件 props 装配', () => {
     expect(typeof controls.modelSelect?.onManageModels).toBe('function');
   });
 
-  it('roles.main 缺失 → 不出 modelSelect（没有「当前模型」可如实展示）；modeSwitch 仍可切换', () => {
+  // 3b（§81 观察项）：初值来源 = roles.main（磁盘真值，经 settings:getConfig 通道）。
+  // 两模型列表 + roles.main 指向第二个 → 选择器初值 = 第二个（不是列表首项、不是硬序）。
+  it('3b：roles.main 指向列表第二项 → 选择器 current = 第二项（初值不被列表序绑架）', () => {
+    const controls = composerControlsOf(
+      configOf({ roles: { main: { channel: 'zai', model: 'glm-5-air' } } }),
+    );
+    expect(controls.modelSelect?.menu.current).toEqual({ channel: 'zai', model: 'glm-5-air' });
+    // 选中态标注也在第二项
+    const currentGroup = controls.modelSelect?.menu.groups[0];
+    const selected = currentGroup?.items.filter((i) => i.selected).map((i) => i.model);
+    expect(selected).toEqual(['glm-5-air']);
+  });
+
+  // 3b 回落：roles.main 缺失 → 初值回落 providers 列表首项（渠道名升序 → 模型名升序），
+  // 选择器不再消失（有可解释初值与切换入口；用户点选即把 roles.main 真值落盘）。
+  it('3b：roles.main 缺失 → 回落列表首项为初值（模型选择器仍在场）', () => {
     const controls = composerControlsOf(configOf({ roles: {} }));
-    expect(controls.modelSelect).toBeUndefined();
+    // providers：anthropic（首，claude-sonnet）→ zai；回落 = anthropic/claude-sonnet
+    expect(controls.modelSelect?.menu.current).toEqual({ channel: 'anthropic', model: 'claude-sonnet' });
     expect(controls.modeSwitch?.mode).toBe('default');
+  });
+
+  it('3b 边界：roles.main 缺失且无任何 provider/models 声明 → 控件不渲染（无从选择）', () => {
+    const controls = composerControlsOf(configOf({ roles: {}, providers: {} }));
+    expect(controls.modelSelect).toBeUndefined();
   });
 
   it('approval.mode 缺失（运行期 JSON 可省略；类型面声明为必有）→ modeSwitch 以 undefined 传入（UI 按 core 缺省 default 展示，不臆造）', () => {
