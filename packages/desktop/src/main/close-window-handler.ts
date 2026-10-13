@@ -30,6 +30,12 @@ export interface CloseWindowDeps {
   close: () => void;
   /** 宽限调度（真实实现 = setTimeout(fn, 400)；注入以便测试驱动） */
   scheduleClose: (fn: () => void) => ReturnType<typeof setTimeout>;
+  /**
+   * Z-47：本次关闭最终**不会**导致退出的回调（用户取消 / 保持后台运行 / 弹窗失败保守不关）。
+   * 显式退出链路中（托盘「退出」→ app.quit → close 事件 → 对话框）主进程据此回滚
+   * explicitQuit 标志，避免陈旧标志让后续关窗绕过 hide 裁决。可选：旧夹具无需改动。
+   */
+  onQuitAborted?: () => void;
 }
 
 export function createCloseWindowHandler(deps: CloseWindowDeps): (event: { preventDefault(): void }) => void {
@@ -50,10 +56,14 @@ export function createCloseWindowHandler(deps: CloseWindowDeps): (event: { preve
       .then(({ response }) => {
         const choice = CLOSE_DIALOG_BUTTONS[response]?.choice ?? 'cancel';
         const decision = decideCloseAction(runtime.busy, choice);
-        if (decision.action === 'stay-open') return;
+        if (decision.action === 'stay-open') {
+          deps.onQuitAborted?.();
+          return;
+        }
         if (decision.action === 'close-window-keep-serving' && choice === 'keep-running') {
           // 「保持后台运行」= 最小化窗口（进程与 serve 继续；用户可从任务栏恢复，不设陷阱）
           deps.minimize();
+          deps.onQuitAborted?.();
           return;
         }
         // 请求停止并退出：先让渲染端取消全部运行中工作，再关闭
@@ -65,6 +75,7 @@ export function createCloseWindowHandler(deps: CloseWindowDeps): (event: { preve
       })
       .catch(() => {
         // 弹窗失败：保守起见不关闭（避免静默丢弃运行中任务）
+        deps.onQuitAborted?.();
       });
   };
 }

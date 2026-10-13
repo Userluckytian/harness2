@@ -15,7 +15,13 @@ files:
 extraResources:
   - from: ../cli/dist-bundle
     to: cli
+  # Z-47：托盘图标独立映射到 resources/tray_icon.ico（win 通知区域用独立 .ico，
+  # 避免 exe 内嵌图标在高 DPI 托盘下模糊；dev 态由 main/tray.ts 直读 assets/icon.ico）。
+  - from: assets/icon.ico
+    to: tray_icon.ico
 win:
+  # Z-47：应用/任务栏图标（与托盘同源 assets/icon.ico，含 16/24/32/48/256 五档）。
+  icon: assets/icon.ico
   target:
     - target: nsis
       arch:

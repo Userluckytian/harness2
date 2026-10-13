@@ -14,6 +14,7 @@ import type {
   SettingsEventFrame,
   StatusDetail,
   TerminalEventFrame,
+  TrayUiEvent,
   WindowStateShape,
   WsFrame,
 } from '../shared/protocol.js';
@@ -25,6 +26,7 @@ const IPC_STOP_ALL = 'harness2:stop-all';
 const IPC_SETTINGS_EVENT = 'harness2:settings-event';
 const IPC_WINDOW_STATE = 'harness2:window-state';
 const IPC_TERMINAL_EVENT = 'harness2:terminal-event';
+const IPC_TRAY_EVENT = 'harness2:tray-event';
 
 /** Z2-01b：preload 同步暴露 process.platform（渲染端拿不到 Node，只能由此派生平台特化） */
 function resolvePlatform(): DesktopPlatform {
@@ -145,6 +147,16 @@ const api: Harness2Api = {
   terminalResize: (id: string, cols: number, rows: number) =>
     ipcRenderer.invoke(IPC_INVOKE, { cmd: 'terminal:resize', id, cols, rows }),
   terminalClose: (id: string) => ipcRenderer.invoke(IPC_INVOKE, { cmd: 'terminal:close', id }),
+  // —— Z-47：托盘状态 / 关窗驻留偏好 / 托盘事件（渲染端 T3 接线；通道先就绪） ——
+  trayStatus: () => ipcRenderer.invoke(IPC_INVOKE, { cmd: 'tray:status' }),
+  traySetCloseToTray: (enabled: boolean) => ipcRenderer.invoke(IPC_INVOKE, { cmd: 'tray:setCloseToTray', enabled }),
+  onTrayEvent: (listener: (event: TrayUiEvent) => void) => {
+    const wrapped = (_e: Electron.IpcRendererEvent, event: TrayUiEvent): void => listener(event);
+    ipcRenderer.on(IPC_TRAY_EVENT, wrapped);
+    return () => {
+      ipcRenderer.removeListener(IPC_TRAY_EVENT, wrapped);
+    };
+  },
   onWindowState: (listener: (state: WindowStateShape) => void) => {
     const wrapped = (_e: Electron.IpcRendererEvent, state: WindowStateShape): void => listener(state);
     ipcRenderer.on(IPC_WINDOW_STATE, wrapped);

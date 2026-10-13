@@ -79,6 +79,15 @@ describe('shared/preferences 规范化', () => {
     expect(n.theme).toBe('system');
     expect(n.defaultPaneCount).toBe(1);
   });
+
+  // Z-47：closeToTray 加性可选字段——布尔保留；缺失保持缺失（= 平台默认）；脏值回落缺失
+  it('closeToTray（Z-47）：布尔保留 / 缺失不补 / 非布尔回落缺失', () => {
+    expect(normalizePreferences({ closeToTray: true }).closeToTray).toBe(true);
+    expect(normalizePreferences({ closeToTray: false }).closeToTray).toBe(false);
+    expect('closeToTray' in normalizePreferences({})).toBe(false);
+    expect('closeToTray' in normalizePreferences({ closeToTray: 'yes' })).toBe(false);
+    expect('closeToTray' in defaultPreferences()).toBe(false);
+  });
 });
 
 describe('settings:getConfig 契约', () => {

@@ -11,6 +11,7 @@ import {
   IPC_STATUS,
   IPC_STOP_ALL,
   IPC_TERMINAL_EVENT,
+  IPC_TRAY_EVENT,
   IPC_WINDOW_STATE,
 } from '../src/shared/protocol.js';
 
@@ -75,6 +76,17 @@ describe('preload IPC 常量一致性', () => {
       expect(preloadSource, `preload 缺少 ${cmd}`).toContain(`'${cmd}'`);
       expect(bridgeSource, `bridge 未分发 ${cmd}`).toContain(`case '${cmd}'`);
     }
+  });
+
+  it('Z-47 托盘命令在 protocol / preload / bridge 三处同名；托盘事件通道 preload 内联一致', () => {
+    for (const cmd of ['tray:status', 'tray:setCloseToTray'] as const) {
+      expect(protocolSource, `protocol 缺少 ${cmd}`).toContain(`'${cmd}'`);
+      expect(preloadSource, `preload 缺少 ${cmd}`).toContain(`'${cmd}'`);
+      expect(bridgeSource, `bridge 未分发 ${cmd}`).toContain(`case '${cmd}'`);
+    }
+    // 主进程 → 渲染端托盘事件通道（新建会话/添加项目意图）
+    expect(extractConstant(preloadSource, 'IPC_TRAY_EVENT')).toBe(IPC_TRAY_EVENT);
+    expect(IPC_TRAY_EVENT).toBe('harness2:tray-event');
   });
 
   it('preload 源码不允许 require 相对模块 / Node 内建（sandbox 红线）', () => {

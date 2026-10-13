@@ -51,6 +51,12 @@ export interface DesktopPreferences {
   codeWordWrap: boolean;
   /** Z10-7：代码字号（12–20，默认 13） */
   codeFontSize: number;
+  /**
+   * Z-47：关闭窗口时隐藏到托盘（仅 win32/linux 生效；mac 无托盘、恒不参与）。
+   * **缺省 = 平台默认**（win 开 / linux 关，裁决见 main/window-lifecycle.ts）；
+   * 用户在托盘落地前不写此字段，避免设置页整体写回时覆盖平台默认（加性字段）。
+   */
+  closeToTray?: boolean;
 }
 
 export function defaultPreferences(): DesktopPreferences {
@@ -64,6 +70,7 @@ export function defaultPreferences(): DesktopPreferences {
     codeLineNumbers: true,
     codeWordWrap: false,
     codeFontSize: CODE_FONT_SIZE_DEFAULT,
+    // closeToTray 缺省（= 平台默认，win 开 / linux 关）；仅用户显式设置后写入
   };
 }
 
@@ -101,6 +108,8 @@ export function normalizePreferences(raw: unknown): DesktopPreferences {
     codeLineNumbers: typeof o['codeLineNumbers'] === 'boolean' ? o['codeLineNumbers'] : fallback.codeLineNumbers,
     codeWordWrap: typeof o['codeWordWrap'] === 'boolean' ? o['codeWordWrap'] : fallback.codeWordWrap,
     codeFontSize,
+    // Z-47：可选布尔（缺失保持缺失 = 平台默认；非布尔脏值回落缺失，不强行 true/false）
+    ...(typeof o['closeToTray'] === 'boolean' ? { closeToTray: o['closeToTray'] } : {}),
   };
 }
 

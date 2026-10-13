@@ -18,7 +18,8 @@ import type {
 } from '../shared/protocol.js';
 import { readLayout, writeLayout } from './layout-file.js';
 import type { ServeManager } from './serve-manager.js';
-import { readPreferences, writePreferences } from './preferences-file.js';
+import { readPreferences, setCloseToTray, writePreferences } from './preferences-file.js';
+import { resolveCloseToTray } from './window-lifecycle.js';
 import { readMetadata, writeMetadataPatch } from './metadata-file.js';
 import { addProjectEntry, readProjects, removeProjectEntry } from './projects-file.js';
 import { readDrafts, writeDrafts } from './drafts-file.js';
@@ -166,6 +167,11 @@ export interface BridgeDeps {
   sendSettingsEvent?: (frame: SettingsEventFrame) => void;
   /** D4：运行态上报（main 据此在关窗口前提示；关 UI ≠ 已停任务） */
   setBusy?: (info: { busy: boolean; runningTurns: number; backgroundTasks: number }) => void;
+  /**
+   * Z-47：托盘创建成功查询（main 接线；缺省 = false，smoke 不建托盘）。
+   * 仅 `tray:status` / `tray:setCloseToTray` 响应读取，不参与任何 HTTP。
+   */
+  isTrayCreated?: () => boolean;
 }
 
 export interface Bridge {
@@ -670,6 +676,25 @@ export function createBridge(deps: BridgeDeps): Bridge {
       case 'terminal:close': {
         getTerminalTransport().close(typeof args['id'] === 'string' ? args['id'] : '');
         return null;
+      }
+      // —— Z-47：托盘状态 / 关窗驻留偏好（调试 + smoke 断言；偏好持久化进 desktop-preferences.json） ——
+      case 'tray:status': {
+        const stored = readPreferences(deps.home).closeToTray;
+        return {
+          created: deps.isTrayCreated?.() ?? false,
+          platform: process.platform,
+          closeToTray: resolveCloseToTray(stored, process.platform),
+        };
+      }
+      case 'tray:setCloseToTray': {
+        const enabled = args['enabled'];
+        if (typeof enabled !== 'boolean') throw new InvokeError('tray:setCloseToTray 需要布尔 enabled');
+        setCloseToTray(deps.home, enabled);
+        return {
+          created: deps.isTrayCreated?.() ?? false,
+          platform: process.platform,
+          closeToTray: enabled,
+        };
       }
       case 'settings:getConfig':
         return readSettingsConfig(deps.home, deps.root);
