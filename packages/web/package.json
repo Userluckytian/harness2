@@ -1,6 +1,6 @@
 {
   "name": "@harness2/web",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "private": true,
   "description": "harness2 web 壳（最小可用）：会话列表 + 对话页 + 流式回复 + 停止；呈现层全部复用 @harness2/ui-shared，接入走 serve HTTP/WS",
   "type": "module",

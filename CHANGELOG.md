@@ -2,6 +2,18 @@
 
 本文件记录面向使用者的显著变更。发布素材源自 `docs/diary/`（每日日志的 Release note 段）。
 
+## 1.0.1 — 安装包启动崩溃修复（2026-10-13）
+
+**修的是什么**：v1.0.0 的五个安装包（win nsis / win portable / mac dmg arm64+x64 / linux AppImage）装完启动即弹 `A JavaScript error occurred in the main process` —— `Error [ERR_PACKAGE_PATH_NOT_EXPORTED]: Package subpath '/v3' is not defined by "exports" … imported from …zod-compat.js`，**全部不可用**（三平台共用同一份打包内容，故不只 Windows 受影响）。
+
+**根因**：`@modelcontextprotocol/sdk` 的 ESM 侧要 `zod/v3`、`zod/v4`、`zod/v4-mini` 等子路径，而打进包里的 zod 是 **3.24.1**（其 `exports` 只有 `.` / `./package.json` / `./locales/*`，没有这些子路径）。zod 之所以是旧版：`@harness2/core` 从未声明 zod（而 sdk 把它列为必需 peer），pnpm 在开发态把它解析到工作区里的 4.5.4（有 `./v3`）所以本地一直正常；打包只收生产依赖，zod 唯一的来源是 `shadcn`——它被错挂在 `@harness2/ui-shared` 的 `dependencies` 里（实为代码生成 CLI），依赖 `zod@^3.24.1`。
+
+**修复**：`@harness2/core` 显式声明 `zod ^4.5.4`；`shadcn` 移入 ui-shared 的 `devDependencies`（顺带把 zod 3.24.1 与 @babel/@ts-morph/browserslist 等开发工具清出安装包，asar 116.7MB → 105.1MB）；Windows NSIS 安装器改 `oneClick: false` + `allowToChangeInstallationDirectory: true`（v1.0.0 的安装包不给选安装路径，本次一并修）。
+
+**影响面**：仅打包物料与依赖声明，**无运行时行为变更**——core 公开导出面零变化（api-surface 快照未动），六包测试全绿。
+
+> 版本口径：本次仍落在 1.0.x——上方 Unreleased 段的 Z 程序（GUI 复刻）改动其实**已经在这两个版本的构建里**（见 1.0.0 节补记），下个 npm 发布按 semver 递增。
+
 ## Unreleased — Z 程序「GUI 按 ZCode 完全还原 + 能力补齐」（2026-10-10 起，进行中）
 
 **GUI（桌面/Web 双端同构，Z0–Z7）**：全面对齐 ZCode 骨架与视觉——无顶栏（浮层条 z-20）· 侧栏 264px/折叠 4px 无轨道 · 右栏默认收起且零 tab（「打开标签页」启器，tab 可关/可拖拽排序/横向滚动，内存 LRU50）· 对话主区去视图环（trajectory 迁右栏 tab）· 分屏工作台（二叉分割树 ≤4 格、边缘 32% 投放）· 嵌套分栏（对话|浏览器 / 对话|终端）· 状态面板（Git/Plan/Agents + 真实容器查询 mini 胶囊）· 审批迁会话底部 dock · Composer 控件（模型配置选择 + Plan 复选框/权限单选 + 发送/停止）· 思考块一等行 · 工具卡三态 · 行类型补缺（压缩/回退/重试标记 + 子代理徽章）· 设置页（Z-88 全屏 68/268 骨架 + 数据驱动分区 + 界面字号 12–20）· Zai 浅/深双主题 + 跟随系统 + 首屏防闪。技术基底：Tailwind v4（CSS-first）+ shadcn/Radix 原语 + `@harness2/ui-shared` 共享壳装配。
