@@ -159,6 +159,64 @@ describe('ApprovalQueue 单元：多并发卡 / ack / 过期 / scope / 授权缓
     expect(queue.grantFor('S').has('bash')).toBe(false); // 同会话其他工具无授权
     expect(queue.grantFor('OTHER').has('write')).toBe(false); // 跨会话不泄漏
   });
+
+  it('Z10-5 allow-session：once 卡也写会话授权（后续同会话同工具短路）；allow 本次不写', () => {
+    const queue = new ApprovalQueue();
+    queue.register(makeCard({ requestId: 's1', sessionId: 'S', tool: 'write' }));
+    queue.respond('s1', 'allow'); // 本次
+    expect(queue.grantFor('S').size).toBe(0); // allow 不产生会话授权
+    queue.register(makeCard({ requestId: 's2', sessionId: 'S', tool: 'write' }));
+    expect(queue.respond('s2', 'allow-session')).toEqual({ requestId: 's2', state: 'applied' });
+    expect([...queue.grantFor('S')]).toEqual(['write']); // 本会话授权
+    expect(queue.grantFor('OTHER').size).toBe(0); // 不跨会话
+  });
+
+  it('Z10-5 allow-always / deny-always：写全局规则并通知持久化缝；deny-always 按拒绝落定', () => {
+    const persisted: Array<[string, string, string]> = [];
+    const queue = new ApprovalQueue({ onAlways: (sid, tool, rule) => persisted.push([sid, tool, rule]) });
+    const settled: Array<[boolean, ApprovalSettleReason]> = [];
+    queue.register({
+      ...makeCard({ requestId: 'a1', sessionId: 'S', tool: 'write' }),
+      settle: (allowed, reason) => settled.push([allowed, reason]),
+    });
+    expect(queue.respond('a1', 'allow-always')).toEqual({ requestId: 'a1', state: 'applied' });
+    expect(queue.alwaysRuleFor('write')).toBe('allow');
+    expect(settled).toEqual([[true, 'response']]);
+
+    queue.register({
+      ...makeCard({ requestId: 'a2', sessionId: 'S', tool: 'bash' }),
+      settle: (allowed, reason) => settled.push([allowed, reason]),
+    });
+    expect(queue.respond('a2', 'deny-always')).toEqual({ requestId: 'a2', state: 'applied' });
+    expect(queue.alwaysRuleFor('bash')).toBe('deny');
+    expect(settled[1]).toEqual([false, 'response']);
+    expect(persisted).toEqual([
+      ['S', 'write', 'allow'],
+      ['S', 'bash', 'deny'],
+    ]);
+  });
+
+  it('Z10-5 过期卡不写任何全局规则（fail-closed，绝不事后授权）', () => {
+    const queue = new ApprovalQueue({
+      onAlways: () => {
+        throw new Error('不应被调用');
+      },
+    });
+    queue.register(makeCard({ requestId: 'e2', sessionId: 'S', tool: 'write', expiresAt: past() }));
+    expect(queue.respond('e2', 'allow-always')).toEqual({ requestId: 'e2', state: 'expired' });
+    expect(queue.alwaysRuleFor('write')).toBeUndefined();
+  });
+
+  it('Z10-5 持久化缝异常不回写内核：规则仍进程内生效', () => {
+    const queue = new ApprovalQueue({
+      onAlways: () => {
+        throw new Error('磁盘只读');
+      },
+    });
+    queue.register(makeCard({ requestId: 'a3', sessionId: 'S', tool: 'write' }));
+    expect(queue.respond('a3', 'allow-always')).toEqual({ requestId: 'a3', state: 'applied' });
+    expect(queue.alwaysRuleFor('write')).toBe('allow');
+  });
 });
 
 describe('SessionHub 接线：无授权不自动 allow / child 审批对父可见', () => {
@@ -256,6 +314,97 @@ describe('SessionHub 接线：无授权不自动 allow / child 审批对父可�
     expect(hub.respondApproval(d.card.requestId, 'allow')).toEqual({ requestId: d.card.requestId, state: 'applied' });
     await waitFor(() => childLog.length > 0);
     expect(childLog).toEqual(['child_probe']);
+    await hub.close();
+  });
+});
+
+describe('SessionHub 接线：Z10-5 决策语义（本次 / 本会话 / 始终）', () => {
+  const toolTurn = (name: string): Array<Record<string, unknown>> => [
+    { toolCalls: [{ id: `${name}-c`, name, arguments: '{}' }] },
+    { textChunks: [`${name} done`] },
+  ];
+
+  it('allow 只放行本次（下次仍问）；allow-session 后续同会话不再问', async () => {
+    const root = tmpDir('h2-z105-session-');
+    const manager = new SessionManager(join(root, 'sessions'));
+    const toolLog: string[] = [];
+    const tools = new ToolRegistry();
+    tools.register(toolDef('probe_once', toolLog));
+    const hub = new SessionHub({
+      manager,
+      provider: new MockProvider([...toolTurn('probe_once'), ...toolTurn('probe_once'), ...toolTurn('probe_once')]),
+      tools,
+      cwd: root,
+      decide: () => 'ask',
+      approvalTimeoutMs: 3000,
+      hooks: {},
+    });
+    const asked: ApprovalRequestContract[] = [];
+    hub.addHooks({ onApprovalRequest: (a) => asked.push(a) });
+    const id = hub.create(root).id;
+
+    // turn1：allow（本次）→ 执行
+    hub.sendUserMessage(id, 't1');
+    await waitFor(() => asked.length === 1);
+    expect(hub.respondApproval(asked[0]!.requestId, 'allow')).toEqual({
+      requestId: asked[0]!.requestId,
+      state: 'applied',
+    });
+    await waitFor(() => toolLog.length === 1);
+
+    // turn2：allow 只本次 → 仍要问；改选 allow-session
+    hub.sendUserMessage(id, 't2');
+    await waitFor(() => asked.length === 2);
+    expect(hub.respondApproval(asked[1]!.requestId, 'allow-session')).toEqual({
+      requestId: asked[1]!.requestId,
+      state: 'applied',
+    });
+    await waitFor(() => toolLog.length === 2);
+
+    // turn3：会话级授权短路 → 不再问，直接执行
+    hub.sendUserMessage(id, 't3');
+    await waitFor(() => toolLog.length === 3);
+    await new Promise((r) => setTimeout(r, 50));
+    expect(asked.length).toBe(2); // 没有第三张卡
+    await hub.close();
+  });
+
+  it('allow-always 全局生效（新会话也不再问）并触发持久化缝', async () => {
+    const root = tmpDir('h2-z105-always-');
+    const manager = new SessionManager(join(root, 'sessions'));
+    const toolLog: string[] = [];
+    const tools = new ToolRegistry();
+    tools.register(toolDef('probe_always', toolLog));
+    const persisted: Array<[string, string]> = [];
+    const hub = new SessionHub({
+      manager,
+      provider: new MockProvider([...toolTurn('probe_always'), ...toolTurn('probe_always')]),
+      tools,
+      cwd: root,
+      decide: () => 'ask',
+      approvalTimeoutMs: 3000,
+      hooks: {},
+      persistApprovalRule: (tool, rule) => persisted.push([tool, rule]),
+    });
+    const asked: ApprovalRequestContract[] = [];
+    hub.addHooks({ onApprovalRequest: (a) => asked.push(a) });
+    const idA = hub.create(root).id;
+
+    hub.sendUserMessage(idA, 'a1');
+    await waitFor(() => asked.length === 1);
+    expect(hub.respondApproval(asked[0]!.requestId, 'allow-always')).toEqual({
+      requestId: asked[0]!.requestId,
+      state: 'applied',
+    });
+    await waitFor(() => toolLog.length === 1);
+    expect(persisted).toEqual([['probe_always', 'allow']]);
+
+    // 新会话（全局规则跨会话）：不再问，直接执行
+    const idB = hub.create(root).id;
+    hub.sendUserMessage(idB, 'b1');
+    await waitFor(() => toolLog.length === 2);
+    await new Promise((r) => setTimeout(r, 50));
+    expect(asked.length).toBe(1);
     await hub.close();
   });
 });

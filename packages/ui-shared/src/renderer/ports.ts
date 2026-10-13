@@ -13,6 +13,7 @@
 // 「可选」语义：端口里带 `?` 的成员属于**壳可选择提供**的能力。缺失时共享层必须如实降级
 // （显示「此壳未提供该通道」/ 仅内存生效），**绝不**伪造成功、绝不摆假入口。
 import type {
+  ApprovalDecisionShape,
   CapabilityReportShape,
   ChangeSetShape,
   ConnectionStatus,
@@ -50,8 +51,8 @@ export interface HarnessClient {
   sendMessage(sessionId: string, text: string): Promise<void>;
   /** 中止当前 turn（旧通道；三态结论见 cancel） */
   abort(sessionId: string): Promise<void>;
-  /** 审批应答（WS `op:'approval-response'`） */
-  respondApproval(requestId: string, decision: 'allow' | 'deny'): Promise<void>;
+  /** 审批应答（WS `op:'approval-response'`；Z10-5 五态） */
+  respondApproval(requestId: string, decision: ApprovalDecisionShape): Promise<void>;
   /** 主动查一次连接状态（只订阅可能错过启动前的 connected） */
   getStatus(): Promise<{ status: ConnectionStatus; detail?: StatusDetail }>;
   /** 订阅服务事件帧；返回退订函数 */

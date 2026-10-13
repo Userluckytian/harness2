@@ -159,6 +159,12 @@ export interface SessionHubOptions {
   providerMeta?: SessionHubProviderMeta;
   /** S7：审批策略装配来源（config.approval 同源；缺省 = default 空规则） */
   approvalConfig?: ApprovalConfig;
+  /**
+   * Z10-5：审批卡「始终允许 / 始终拒绝」决策的持久化缝（写 config.approval.tools.<tool>）。
+   * 缺省 = 不落盘（仅进程内 alwaysRules 生效）。serve 装配时由启动器注入（写全局 config.json）。
+   * 回调 best-effort：写失败不影响本次审批落定（进程内规则已生效）。
+   */
+  persistApprovalRule?: (tool: string, rule: 'allow' | 'deny') => void;
   /** S7：roles.main 模型容量元数据（config.providers.<channel>.models 派生；缺省不声明） */
   contextWindow?: number;
   /** S7：roles.main 模型 maxOutputTokens（config.providers.<channel>.models 派生；缺省不声明） */

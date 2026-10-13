@@ -1,13 +1,19 @@
 // 审批卡的纯模型（D-6x `ui-approval` 对应物的语义半部）。
 //
 // 语义归 core（`packages/core/src/approval/**` + serve 的 `sessions-approval` 协议）：
-//   决定只有 allow / deny 两态；scope 只有 once / session；过期卡片服务端拒收迟到决策。
-// 桌面侧**只呈现与回传决定**，不推断、不放宽、不新增第三态（本模块无「总是允许」等假动作）。
+//   Z10-5 决定五态：allow / allow-session / allow-always / deny / deny-always；
+//   scope 只有 once / session；过期卡片服务端拒收迟到决策。
+// 桌面侧**只呈现与回传决定**，不推断、不放宽；不摆 core 不认的按钮（无 bypass/完全访问、无拒绝理由输入）。
 //
 // 本文件不 import main / preload，也不碰任何浏览器存储（纯函数，node 环境可测）。
 
-/** 审批决定（与 core / serve 协议同值域：`respondApproval(requestId, 'allow' | 'deny')`） */
-export type ApprovalDecision = 'allow' | 'deny';
+/**
+ * 审批决定（与 core / serve 协议同值域，Z10-5 五态）：
+ *   - `allow` / `deny`：一次性（本次放行 / 本次拒绝）；
+ *   - `allow-session`：本会话内该工具后续调用不再询问；
+ *   - `allow-always` / `deny-always`：全局（写 config.approval.tools；跨会话/重启生效）。
+ */
+export type ApprovalDecision = 'allow' | 'allow-session' | 'allow-always' | 'deny' | 'deny-always';
 
 /** 审批范围（store 把协议 `{ mode }` 摊平成这个值域；once = 仅此一次；session = 本会话） */
 export type ApprovalScope = 'once' | 'session';
@@ -16,13 +22,22 @@ export type ApprovalScope = 'once' | 'session';
  * 决定值域守卫（从线上帧/未知来源取决定时用；不合法一律 false，不默认放行）。
  */
 export function isApprovalDecision(value: unknown): value is ApprovalDecision {
-  return value === 'allow' || value === 'deny';
+  return (
+    value === 'allow' ||
+    value === 'allow-session' ||
+    value === 'allow-always' ||
+    value === 'deny' ||
+    value === 'deny-always'
+  );
 }
 
-/** 决定文案（审批卡按钮；allow/deny 的默认中文） */
+/** 决定文案（审批卡按钮默认中文；与 ZCode 选项集对齐：允许/本会话/始终允许/拒绝/始终拒绝） */
 export const APPROVAL_DECISION_LABEL: Record<ApprovalDecision, string> = {
   allow: '允许',
+  'allow-session': '本会话内允许',
+  'allow-always': '始终允许',
   deny: '拒绝（不执行）',
+  'deny-always': '始终拒绝',
 };
 
 /** 范围文案（once → 一次；session → 本会话；缺省不显示该项） */

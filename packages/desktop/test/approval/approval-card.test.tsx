@@ -23,12 +23,22 @@ afterEach(cleanup);
 const base: ApprovalCardModel = { requestId: 'r1', tool: 'write', args: { file_path: 'a.txt' } };
 
 describe('审批卡纯模型（与 core 语义对齐）', () => {
-  it('决定值域只有 allow / deny（无第三态：不放宽、不新增"总是允许"）', () => {
+  it('决定值域为 Z10-5 五态（allow/allow-session/allow-always/deny/deny-always；无 bypass/反馈等假动作）', () => {
     expect(isApprovalDecision('allow')).toBe(true);
+    expect(isApprovalDecision('allow-session')).toBe(true);
+    expect(isApprovalDecision('allow-always')).toBe(true);
     expect(isApprovalDecision('deny')).toBe(true);
+    expect(isApprovalDecision('deny-always')).toBe(true);
     expect(isApprovalDecision('always')).toBe(false);
+    expect(isApprovalDecision('bypass')).toBe(false);
     expect(isApprovalDecision(undefined)).toBe(false);
-    expect(Object.keys(APPROVAL_DECISION_LABEL)).toEqual(['allow', 'deny']);
+    expect(Object.keys(APPROVAL_DECISION_LABEL)).toEqual([
+      'allow',
+      'allow-session',
+      'allow-always',
+      'deny',
+      'deny-always',
+    ]);
   });
 
   it('范围文案：once→一次 / session→本会话；未知/缺省不猜（undefined）', () => {
@@ -53,7 +63,7 @@ describe('审批卡纯模型（与 core 语义对齐）', () => {
 });
 
 describe('审批卡 card 形态（右栏审批中心）', () => {
-  it('展示工具 + 参数 + 范围/过期元数据，两个决定按钮回传 allow/deny', () => {
+  it('展示工具 + 参数 + 范围/过期元数据，五态决定按钮回传对应 decision', () => {
     const onDecision = vi.fn();
     render(
       <ApprovalCard
@@ -66,16 +76,25 @@ describe('审批卡 card 形态（右栏审批中心）', () => {
     expect(screen.getByText('{"file_path":"a.txt"}')).toBeTruthy();
     expect(screen.getByText('范围: 本会话')).toBeTruthy();
     expect(screen.getByText('cwd: D:/proj')).toBeTruthy();
-    // 只有 allow/deny 两个动作按钮（无第三态）
+    // Z10-5：五态按钮与 core 支持的 decision 一一对应
     expect(screen.getByRole('button', { name: '允许' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: '本会话内允许' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: '始终允许' })).toBeTruthy();
     expect(screen.getByRole('button', { name: '拒绝（不执行）' })).toBeTruthy();
-    expect(document.querySelectorAll('.approval-actions button').length).toBe(2);
+    expect(screen.getByRole('button', { name: '始终拒绝' })).toBeTruthy();
+    expect(document.querySelectorAll('.approval-actions button').length).toBe(5);
 
     fireEvent.click(screen.getByRole('button', { name: '允许' }));
     expect(onDecision).toHaveBeenCalledWith('allow');
+    fireEvent.click(screen.getByRole('button', { name: '本会话内允许' }));
+    expect(onDecision).toHaveBeenCalledWith('allow-session');
+    fireEvent.click(screen.getByRole('button', { name: '始终允许' }));
+    expect(onDecision).toHaveBeenCalledWith('allow-always');
     fireEvent.click(screen.getByRole('button', { name: '拒绝（不执行）' }));
     expect(onDecision).toHaveBeenCalledWith('deny');
-    expect(onDecision).toHaveBeenCalledTimes(2);
+    fireEvent.click(screen.getByRole('button', { name: '始终拒绝' }));
+    expect(onDecision).toHaveBeenCalledWith('deny-always');
+    expect(onDecision).toHaveBeenCalledTimes(5);
   });
 
   it('在途（提交中）：两个按钮都被反馈文案替换（连点无入口），但卡片仍在（可重试）', () => {

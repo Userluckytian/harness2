@@ -126,7 +126,7 @@ export abstract class SessionHubCore {
   /** 每会话运行中的 turn 取消源 */
   protected readonly running = new Map<string, AbortController>();
   /** 多并发结构化审批队列（requestId 级独立卡片；含授权缓存与已落定记忆） */
-  protected readonly approvals = new ApprovalQueue();
+  protected readonly approvals: ApprovalQueue;
   /** subagent 血缘：childId → parentId（hub 层记录；交付链 / 后代待审批展开用） */
   protected readonly subagentChildren = new Map<string, string>();
   /** 运行中 turn 的 promise 集（close 时等待收尾） */
@@ -179,6 +179,12 @@ export abstract class SessionHubCore {
 
   constructor(protected readonly options: SessionHubOptions) {
     this.approvalTimeoutMs = options.approvalTimeoutMs ?? 120_000;
+    // Z10-5：审批队列的「始终允许/始终拒绝」持久化缝（缺省 = 仅进程内生效）
+    this.approvals = new ApprovalQueue(
+      options.persistApprovalRule !== undefined
+        ? { onAlways: (sid, tool, rule) => options.persistApprovalRule!(tool, rule) }
+        : {},
+    );
     // S5：协调器缺省由 hub 自建（recorder 落到任务归属会话的 runtime journal；S3a 账本单写）
     this.tasks = options.taskCoordinator ?? new TaskCoordinator({ recorder: this.makeTaskRecorder() });
     // 审查 P2-1 fail-fast：ask 模式缺 pending 装配时 buildTurnTools 每次 turn 抛错、

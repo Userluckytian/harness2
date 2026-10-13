@@ -2,7 +2,7 @@
 // 消息契约（全部 JSON 单帧）：
 //   → {op:'subscribe'|'unsubscribe', sessionId} / {op:'abort', sessionId}
 //   → {op:'user-message', sessionId, text}          # 触发 runTurn（同会话串行排队）
-//   → {op:'approval-response', requestId, decision} # 审批往返（allow/deny）
+//   → {op:'approval-response', requestId, decision} # 审批往返（Z10-5 五态：allow/allow-session/allow-always/deny/deny-always）
 //   → {op:'resume-subscription', sessionId, lastSeq, epoch}  # S3c1 带水位重连握手 → resume-snapshot
 //   → {op:'cancel', requestId, target:{kind,id}, expectedId?, expectedTurnGeneration?} # S3c1 取消 ack（三态；FixB turn 代次加性）
 //   → {op:'submit', clientMessageId, sessionId, rawText, intent, references?, expectedTurnId?} # S3c1 帧+校验
@@ -77,7 +77,12 @@ export type WsClientMessage =
   | { op: 'unsubscribe'; sessionId: string }
   | { op: 'abort'; sessionId: string }
   | { op: 'user-message'; sessionId: string; text: string }
-  | { op: 'approval-response'; requestId: string; decision: 'allow' | 'deny' }
+  | {
+      op: 'approval-response';
+      requestId: string;
+      /** Z10-5 加性五态：allow/deny 一次性；allow-session 本会话；allow-always/deny-always 全局 */
+      decision: 'allow' | 'allow-session' | 'allow-always' | 'deny' | 'deny-always';
+    }
   | { op: 'fork'; sessionId: string; atSeq?: number }
   // S3c1 新增帧（对齐 S0 共享契约；旧客户端不感知）
   | { op: 'resume-subscription'; sessionId: string; lastSeq: number; epoch: number }
@@ -669,7 +674,15 @@ export function parseClientMessage(data: unknown): WsClientMessage {
       };
     case 'approval-response': {
       const decision = m['decision'];
-      if (decision !== 'allow' && decision !== 'deny') throw new Error("decision 必须是 'allow' | 'deny'");
+      if (
+        decision !== 'allow' &&
+        decision !== 'allow-session' &&
+        decision !== 'allow-always' &&
+        decision !== 'deny' &&
+        decision !== 'deny-always'
+      ) {
+        throw new Error("decision 必须是 'allow' | 'allow-session' | 'allow-always' | 'deny' | 'deny-always'");
+      }
       return { op, requestId: requireString(m['requestId'], 'requestId'), decision };
     }
     case 'fork': {

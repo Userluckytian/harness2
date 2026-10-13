@@ -17,23 +17,29 @@ afterEach(cleanup);
 
 const base: ApprovalCardModel = { requestId: 'r1', tool: 'write', args: { file_path: 'a.txt' } };
 
-describe('审批 dock 选项纯模型（2 态协议摊平）', () => {
-  it('范围缺省 → 允许 / 拒绝两行，无范围 chip（不臆造服务端没有的范围）', () => {
+describe('审批 dock 选项纯模型（Z10-5 五态摊平）', () => {
+  it('范围缺省 → 五态行与 core decision 一一对应；仅 allow 无 chip，其余带范围 chip', () => {
     const options = approvalDockOptions(base);
-    expect(options.map((o) => o.label)).toEqual(['允许', '拒绝']);
-    expect(options.map((o) => o.decision)).toEqual(['allow', 'deny']);
-    expect(options.every((o) => o.scopeLabel === undefined)).toBe(true);
+    expect(options.map((o) => o.label)).toEqual(['允许', '本会话内允许', '始终允许', '拒绝', '始终拒绝']);
+    expect(options.map((o) => o.decision)).toEqual(['allow', 'allow-session', 'allow-always', 'deny', 'deny-always']);
+    // allow 无卡声明范围 → 无 chip；会话/全局项带 chip 如实说明影响面；deny（本次）无 chip
+    expect(options.map((o) => o.scopeLabel)).toEqual([undefined, '本会话', '全局', undefined, '全局']);
   });
 
   it('范围 once → 允许（一次）带「一次」chip；session → 允许（本会话）带「本会话」chip', () => {
     const once = approvalDockOptions({ ...base, scope: 'once' });
     expect(once[0]).toMatchObject({ label: '允许（一次）', scopeLabel: '一次', decision: 'allow' });
-    expect(once[1]).toMatchObject({ label: '拒绝', decision: 'deny' });
 
     const session = approvalDockOptions({ ...base, scope: 'session' });
     expect(session[0]).toMatchObject({ label: '允许（本会话）', scopeLabel: '本会话', decision: 'allow' });
-    // 每张卡只有一个允许行：范围由请求卡声明，应答不携带 scope（协议无此通道）
-    expect(session).toHaveLength(2);
+    expect(session).toHaveLength(5);
+  });
+
+  it('不摆 core 不认的选项：无 bypass「完全访问」行、无拒绝理由输入行', () => {
+    const decisions = approvalDockOptions(base).map((o) => o.decision);
+    expect(decisions).not.toContain('bypass');
+    expect(decisions).not.toContain('allow-bypass');
+    expect(decisions).not.toContain('feedback');
   });
 
   it('高亮移动 clamp：不越界、不回卷', () => {
@@ -55,7 +61,13 @@ describe('ApprovalDock 组件（numbered listbox + 确认 + 键盘）', () => {
     render(<ApprovalDock approvals={[{ ...base, scope: 'once' }]} onDecision={onDecision} />);
     expect(screen.getByRole('listbox')).toBeTruthy();
     const options = screen.getAllByRole('option');
-    expect(options.map((o) => o.getAttribute('data-decision'))).toEqual(['allow', 'deny']);
+    expect(options.map((o) => o.getAttribute('data-decision'))).toEqual([
+      'allow',
+      'allow-session',
+      'allow-always',
+      'deny',
+      'deny-always',
+    ]);
     expect(screen.getByText('允许（一次）')).toBeTruthy();
     expect(screen.getByText('一次')).toBeTruthy(); // 范围 chip
     expect(screen.getByText(APPROVAL_DOCK_HINT)).toBeTruthy();
@@ -65,14 +77,24 @@ describe('ApprovalDock 组件（numbered listbox + 确认 + 键盘）', () => {
     expect(onDecision).toHaveBeenCalledWith('r1', 'allow');
   });
 
-  it('键盘：↑↓ 移动高亮，Enter 确认当前高亮（默认首行 allow，下移后为 deny）', () => {
+  it('键盘：↑↓ 移动高亮，Enter 确认当前高亮（默认首行 allow，下移后为 allow-session）', () => {
     const onDecision = vi.fn();
     render(<ApprovalDock approvals={[base]} onDecision={onDecision} />);
     const listbox = screen.getByRole('listbox');
     fireEvent.keyDown(listbox, { key: 'ArrowDown' });
     expect(screen.getAllByRole('option')[1]!.getAttribute('aria-selected')).toBe('true');
     fireEvent.keyDown(listbox, { key: 'Enter' });
-    expect(onDecision).toHaveBeenCalledWith('r1', 'deny');
+    expect(onDecision).toHaveBeenCalledWith('r1', 'allow-session');
+  });
+
+  it('键盘：下移到「始终允许」并确认 → 回传 allow-always（五态可达）', () => {
+    const onDecision = vi.fn();
+    render(<ApprovalDock approvals={[base]} onDecision={onDecision} />);
+    const listbox = screen.getByRole('listbox');
+    fireEvent.keyDown(listbox, { key: 'ArrowDown' });
+    fireEvent.keyDown(listbox, { key: 'ArrowDown' });
+    fireEvent.keyDown(listbox, { key: 'Enter' });
+    expect(onDecision).toHaveBeenCalledWith('r1', 'allow-always');
   });
 
   it('键盘：Esc 不提交', () => {

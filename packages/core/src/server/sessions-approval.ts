@@ -59,9 +59,14 @@ export abstract class SessionHubApproval extends SessionHubTasks {
   ): ApprovalHandler {
     const decide = this.options.decide;
     return {
-      // 「本会话总是」授权缓存预检：已授权工具直接 allow（队列授权语义，不重问 UI）；
-      // 否则落策略（缺省 ask——绝不静默允许；旧执行器级 allow-all 默认仍由 loop 级保留）。
+      // 授权缓存预检（Z10-5 扩展）：
+      //   1) 全局「始终」规则（allow-always / deny-always）优先——deny 永不被会话授权解禁；
+      //   2) 「本会话总是」授权缓存命中 → 直接 allow；
+      //   3) 否则落策略（缺省 ask——绝不静默允许；旧执行器级 allow-all 默认仍由 loop 级保留）。
       decide: (input: ApprovalInput): ApprovalDecision => {
+        const always = this.approvals.alwaysRuleFor(input.tool);
+        if (always === 'allow') return 'allow';
+        if (always === 'deny') return 'deny';
         if (this.approvals.grantFor(sessionId).has(input.tool)) return 'allow';
         return decide?.(input) ?? 'ask';
       },

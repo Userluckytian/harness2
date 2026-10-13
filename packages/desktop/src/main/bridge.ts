@@ -471,13 +471,24 @@ export function createBridge(deps: BridgeDeps): Bridge {
       case 'abort':
         wsSendOrThrow({ op: 'abort', sessionId: requireSessionId(args) });
         return null;
-      case 'respondApproval':
+      case 'respondApproval': {
+        // Z10-5：五态透传（不认识的取值 fail-closed 落 deny，绝不误放行）
+        const raw = args['decision'];
+        const decision =
+          raw === 'allow' ||
+          raw === 'allow-session' ||
+          raw === 'allow-always' ||
+          raw === 'deny' ||
+          raw === 'deny-always'
+            ? raw
+            : 'deny';
         wsSendOrThrow({
           op: 'approval-response',
           requestId: typeof args['requestId'] === 'string' ? args['requestId'] : '',
-          decision: args['decision'] === 'allow' ? 'allow' : 'deny',
+          decision,
         });
         return null;
+      }
       // —— D0：S7 只读查询端点（GET，纯投影） ——
       case 'runConfig': {
         const sid = requireSessionId(args);

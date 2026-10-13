@@ -320,6 +320,9 @@ export async function startServe(options: StartServeOptions = {}): Promise<Serve
   let subagent: SessionHubSubagent | undefined = options.subagent;
   let providerMeta: SessionHubProviderMeta | undefined = options.providerMeta;
   let approvalConfig: import('../config/schema.js').ApprovalConfig | undefined;
+  // Z10-5：审批卡「始终允许/始终拒绝」→ 写全局 config.approval.tools 的持久化缝
+  // （仅在真实配置路径下注入；注入 provider 的测试/mock 路径缺省不落盘，避免污染用户 home）
+  let persistApprovalRule: ((tool: string, rule: 'allow' | 'deny') => void) | undefined;
   // Z6-A09：config.hooks → 运行器（缺省未配置 = 零 hook 行为）
   let hookRunner: HookRunner | undefined;
   let contextWindow: number | undefined;
@@ -353,6 +356,10 @@ export async function startServe(options: StartServeOptions = {}): Promise<Serve
       maxOutputTokens = modelCfg?.maxOutputTokens;
     }
     approvalConfig = loaded.config.approval;
+    // Z10-5：始终允许/始终拒绝持久化到全局 config.json（best-effort；失败不阻断审批落定）
+    persistApprovalRule = (tool, rule) => {
+      updateGlobalConfig(home, { approval: { tools: { [tool]: rule } } });
+    };
     // P7-A：经验造技能（config.skills.authoring=on 才注册 skill_author；缺省 off）
     if (skillsAuthoring === undefined && loaded.config.skills?.authoring === 'on') {
       skillsAuthoring = new SkillAuthoringStore(projectSkillsRoot(root));
@@ -451,6 +458,7 @@ export async function startServe(options: StartServeOptions = {}): Promise<Serve
     // S7：run-config 只读投影的装配来源（真实状态，非自造）
     ...(providerMeta !== undefined ? { providerMeta } : {}),
     ...(approvalConfig !== undefined ? { approvalConfig } : {}),
+    ...(persistApprovalRule !== undefined ? { persistApprovalRule } : {}),
     ...(contextWindow !== undefined ? { contextWindow } : {}),
     ...(maxOutputTokens !== undefined ? { maxOutputTokens } : {}),
   });

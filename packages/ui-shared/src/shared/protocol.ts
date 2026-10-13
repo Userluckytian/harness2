@@ -237,6 +237,8 @@ export type CancelAckStateShape = 'stopping' | 'cancelled' | 'unknown';
 export type QueueItemStateShape = 'queued' | 'paused';
 export type SubmitIntentShape = 'queue' | 'steer';
 export type ApprovalScopeShape = { mode: 'once' } | { mode: 'session'; sessionId: string };
+/** Z10-5 审批决定五态（与 core ApprovalResponseDecision 同值域；跨壳 UI 复用同一名字） */
+export type ApprovalDecisionShape = 'allow' | 'allow-session' | 'allow-always' | 'deny' | 'deny-always';
 export type TaskStateShape =
   | 'registered'
   | 'queued'
@@ -341,7 +343,16 @@ export type WsClientOp =
   | { op: 'unsubscribe'; sessionId: string }
   | { op: 'abort'; sessionId: string }
   | { op: 'user-message'; sessionId: string; text: string }
-  | { op: 'approval-response'; requestId: string; decision: 'allow' | 'deny' }
+  | {
+      op: 'approval-response';
+      requestId: string;
+      /**
+       * Z10-5 加性五态（与 core `interaction/types.ts` ApprovalResponseDecision 同值域）：
+       * allow/deny 一次性；allow-session 本会话内该工具不再问；
+       * allow-always/deny-always 全局（写 config.approval.tools；跨会话/重启生效）。
+       */
+      decision: ApprovalDecisionShape;
+    }
   | { op: 'fork'; sessionId: string; atSeq?: number }
   | { op: 'resume-subscription'; sessionId: string; lastSeq: number; epoch: number }
   | {

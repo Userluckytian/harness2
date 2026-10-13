@@ -168,8 +168,15 @@ export interface ApprovalRequestContract {
   expiresAt: string;
 }
 
-/** respond 的决策只有 allow | deny（区别于 tools.types 的策略决策 allow|deny|ask） */
-export type ApprovalResponseDecision = 'allow' | 'deny';
+/**
+ * respond 的决策（Z10-5 加性扩展）。
+ *   - `allow` / `deny`：一次性（本次放行 / 本次拒绝）；
+ *   - `allow-session`：本会话内该工具后续调用直接放行（会话级授权缓存）；
+ *   - `allow-always`：该工具后续调用直接放行（全局，写 config.approval.tools.<tool>='allow'）；
+ *   - `deny-always`：该工具后续调用直接拒绝（全局，写 config.approval.tools.<tool>='deny'）。
+ * 与 tools.types 的策略决策 allow|deny|ask 不同（策略是询问前的推导，本值是询问后的用户决定）。
+ */
+export type ApprovalResponseDecision = 'allow' | 'allow-session' | 'allow-always' | 'deny' | 'deny-always';
 
 export interface ApprovalResponse {
   requestId: RequestId;
@@ -184,8 +191,9 @@ export interface ApprovalResponseAck {
   state: ApprovalResponseAckState;
 }
 
+/** 决策值域守卫（Z10-5：五态；未知值一律 false，调用方按 unknown 处理、不默认放行） */
 export function isApprovalDecision(v: unknown): v is ApprovalResponseDecision {
-  return v === 'allow' || v === 'deny';
+  return v === 'allow' || v === 'allow-session' || v === 'allow-always' || v === 'deny' || v === 'deny-always';
 }
 
 /** 过期判定：ISO8601 已过/非法（无法解析）→ 视为过期，fail-closed */

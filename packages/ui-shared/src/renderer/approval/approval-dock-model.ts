@@ -3,10 +3,9 @@
 // 依据：docs/refs/refs-zcode-layout.md `Z-20`（权限 = 底部 dock 卡片）+ docs/refs/refs-zcode.md
 // §8 `PermissionDialog` 行（numbered listbox + 确认按钮 + 键盘）。
 //
-// 语义仍归 core（见 approval-model.ts 头注）：决定只有 allow | deny；范围（once | session）由
-// **服务端请求卡**声明，客户端只能如实呈现，**不能**在应答里改范围 —— serve 的 `respondApproval`
-// 契约只带 `decision`，没有 scope 字段。因此每张卡只有一个「允许」行（范围取卡自身声明），
-// 不会出现「让用户挑范围」的假选项（那需要协议里不存在的 scope 回传通道）。
+// 语义归 core（见 approval-model.ts 头注）：Z10-5 决定五态 —— allow（本次）/ allow-session（本会话）/
+// allow-always（始终允许，全局）/ deny（本次）/ deny-always（始终拒绝，全局）。选项集**严格等于
+// core 真支持的 decision 集合**：core 不认的选项（如 bypass「完全访问」、拒绝理由输入）不摆。
 //
 // 本文件不 import main / preload，不碰浏览器存储（纯函数，node 环境可测）。
 
@@ -21,11 +20,11 @@ import {
 export interface ApprovalDockOption {
   /** 稳定 id（requestId + decision；listbox 的 aria-activedescendant 用） */
   readonly id: string;
-  /** 该行提交的决定（协议值域只有 allow | deny） */
+  /** 该行提交的决定（与 core 协议五态同值域） */
   readonly decision: ApprovalDecision;
-  /** 行标签（允许（一次）/ 允许（本会话）/ 拒绝） */
+  /** 行标签（允许 / 本会话内允许 / 始终允许 / 拒绝 / 始终拒绝） */
   readonly label: string;
-  /** 范围 chip 文案（无范围声明 = undefined → 不渲染 chip，不猜） */
+  /** 范围 chip 文案（本次 / 本会话 / 全局；无范围声明 = undefined → 不渲染 chip，不猜） */
   readonly scopeLabel?: string;
 }
 
@@ -45,13 +44,14 @@ function allowOptionLabel(scope: ApprovalCardModel['scope']): string {
 /**
  * 由请求卡摊平出选项行（Z-20 numbered listbox）。
  *
- * 行集：
- *   1. 允许 —— 范围取**请求卡声明的 scope**（once → 「允许（一次）」；session → 「允许（本会话）」；
- *      未声明 → 「允许」）；
- *   2. 拒绝 —— deny 无范围语义，恒不带 chip。
+ * 行集（Z10-5 五态，与 core 协议一一对应）：
+ *   1. 允许（allow）—— 范围取请求卡声明的 scope（once → 「允许（一次）」；session → 「允许（本会话）」）；
+ *   2. 本会话内允许（allow-session）—— 本会话内该工具后续调用不再问；chip「本会话」；
+ *   3. 始终允许（allow-always）—— 全局写 config.approval.tools.<tool>='allow'；chip「全局」；
+ *   4. 拒绝（deny）—— 仅本次；无 chip；
+ *   5. 始终拒绝（deny-always）—— 全局写 config.approval.tools.<tool>='deny'；chip「全局」。
  *
- * 协议只有 allow | deny 两态、应答不携带 scope，故「一次 / 本会话」不是本行可选的范围：
- * 范围由服务端按卡声明落定，客户端只呈现。**不臆造服务端没有的范围**（core 契约冻结）。
+ * 「始终」两行会持久化到全局配置（跨会话/重启生效），故带「全局」chip 如实说明影响面。
  */
 export function approvalDockOptions(card: ApprovalCardModel): ApprovalDockOption[] {
   const scopeLabel = approvalScopeLabel(card.scope);
@@ -62,7 +62,25 @@ export function approvalDockOptions(card: ApprovalCardModel): ApprovalDockOption
       label: allowOptionLabel(card.scope),
       ...(scopeLabel !== undefined ? { scopeLabel } : {}),
     },
+    {
+      id: `${card.requestId}:allow-session`,
+      decision: 'allow-session',
+      label: APPROVAL_DECISION_LABEL['allow-session'],
+      scopeLabel: '本会话',
+    },
+    {
+      id: `${card.requestId}:allow-always`,
+      decision: 'allow-always',
+      label: APPROVAL_DECISION_LABEL['allow-always'],
+      scopeLabel: '全局',
+    },
     { id: `${card.requestId}:deny`, decision: 'deny', label: APPROVAL_DOCK_DENY_LABEL },
+    {
+      id: `${card.requestId}:deny-always`,
+      decision: 'deny-always',
+      label: APPROVAL_DECISION_LABEL['deny-always'],
+      scopeLabel: '全局',
+    },
   ];
 }
 

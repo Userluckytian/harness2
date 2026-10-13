@@ -148,6 +148,23 @@ describe('WS 面：握手与 op 形状（与 core WsClientMessage 同形）', ()
     expect(fixture.ops[5]).toEqual({ op: 'abort', sessionId: 's1' });
   });
 
+  it('Z10-5：审批五态透传（allow-session / allow-always / deny-always 原样上线，不折叠为 deny）', async () => {
+    const fixture = await start();
+    const client = clientFor(fixture);
+    await waitFor(() => client.status() === 'connected');
+
+    await client.respondApproval('apr-a', 'allow-session');
+    await client.respondApproval('apr-b', 'allow-always');
+    await client.respondApproval('apr-c', 'deny-always');
+    await waitFor(() => fixture.ops.length >= 3);
+
+    expect(fixture.ops).toEqual([
+      { op: 'approval-response', requestId: 'apr-a', decision: 'allow-session' },
+      { op: 'approval-response', requestId: 'apr-b', decision: 'allow-always' },
+      { op: 'approval-response', requestId: 'apr-c', decision: 'deny-always' },
+    ]);
+  });
+
   it('未连接时的 op 如实失败（不假装已送达）', async () => {
     const fixture = await start();
     const client = createServeClient({

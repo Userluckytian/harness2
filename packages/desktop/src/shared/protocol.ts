@@ -19,6 +19,7 @@ export const IPC_TERMINAL_EVENT = 'harness2:terminal-event';
 
 // 本文件保留段内部要用的线协议名字（`export type *` 只做再导出、不引入本地名字）。
 import type {
+  ApprovalDecisionShape,
   CapabilityReportShape,
   ChangeSetShape,
   ConnectionStatus,
@@ -121,7 +122,7 @@ export type InvokeCommand =
   | { cmd: 'unsubscribe'; sessionId: string }
   | { cmd: 'sendMessage'; sessionId: string; text: string }
   | { cmd: 'abort'; sessionId: string }
-  | { cmd: 'respondApproval'; requestId: string; decision: 'allow' | 'deny' }
+  | { cmd: 'respondApproval'; requestId: string; decision: ApprovalDecisionShape }
   | { cmd: 'loadLayout' }
   | { cmd: 'saveLayout'; layout: unknown }
   | { cmd: 'getStatus' }
@@ -287,7 +288,7 @@ export interface Harness2Api
   unsubscribe(sessionId: string): Promise<void>;
   sendMessage(sessionId: string, text: string): Promise<void>;
   abort(sessionId: string): Promise<void>;
-  respondApproval(requestId: string, decision: 'allow' | 'deny'): Promise<void>;
+  respondApproval(requestId: string, decision: ApprovalDecisionShape): Promise<void>;
   loadLayout(): Promise<unknown>;
   saveLayout(layout: unknown): Promise<void>;
   /** 主动查询当前连接状态（onConnectionStatus 只订阅、可能错过启动前已发出的 connected，用于补齐初始状态） */

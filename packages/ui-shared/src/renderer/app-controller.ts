@@ -2,7 +2,13 @@
 // 纯逻辑（可注入假 api 单测）；React 组件只读 store + 调 controller 方法。
 // 切换会话流程（多会话切换不断流核心路径）：subscribe → /events 全量重放（store 判重）
 // → 后续增量由 WS 帧按 seq 去重追加；后台会话的帧持续缓冲进各自 SessionStream。
-import type { MessageReferenceShape, SubmitIntentShape, UndoRedoResponseShape, WsFrame } from '../shared/protocol.js';
+import type {
+  ApprovalDecisionShape,
+  MessageReferenceShape,
+  SubmitIntentShape,
+  UndoRedoResponseShape,
+  WsFrame,
+} from '../shared/protocol.js';
 import type { HarnessClient } from './ports.js';
 import { newCancelRequestId, newClientMessageId } from '../shared/ids.js';
 import { decideUndo, summarizeRedoConflict, summarizeUndoPreview } from './features/workspace/change-review-model.js';
@@ -68,7 +74,7 @@ export interface Controller {
     | { blocked: true; externallyModified: number; reason: 'conflict' | 'no-baseline' }
     | undefined
   >;
-  respondApproval(requestId: string, decision: 'allow' | 'deny'): Promise<void>;
+  respondApproval(requestId: string, decision: ApprovalDecisionShape): Promise<void>;
   /** D0：拉取 S7 只读契约（run-config / plan-state / execution-view / change-review） */
   refreshRunConfig(id: string): Promise<void>;
   refreshPlanState(id: string): Promise<void>;
@@ -562,7 +568,7 @@ export function createController(store: AppStore, api: HarnessClient): Controlle
         store.applyFrame({ type: 'error', error: `撤销失败: ${(e as Error).message}` });
       }
     },
-    async respondApproval(requestId: string, decision: 'allow' | 'deny'): Promise<void> {
+    async respondApproval(requestId: string, decision: ApprovalDecisionShape): Promise<void> {
       // PD4：断线/慢网连点幂等 —— 同一决定在途时忽略后续点击（后端只收一次）；
       // 提交失败（如断线）不移除审批卡片（服务端仍在等），如实报错供重试。
       if (respondingApprovals.has(requestId)) return;

@@ -367,9 +367,31 @@ describe('对话 UI（jsdom）', () => {
     // Z-20：审批不再出现在转录流里，而是会话底部 dock（numbered listbox + 确认）
     expect(await screen.findByTestId('approval-dock')).toBeTruthy();
     expect(screen.queryByText(/允许执行/)).toBeNull(); // 转录内联审批条已移除
-    fireEvent.click(screen.getByRole('option', { name: /允许/ }));
+    // Z10-5：五态选项；默认高亮首行「允许」→ 确认回传 allow
+    fireEvent.click(screen.getAllByRole('option')[0]!);
     fireEvent.click(screen.getByRole('button', { name: '确认' }));
     expect(api.respondApproval).toHaveBeenCalledWith('r1', 'allow');
+  });
+
+  it('审批 dock：Z10-5 五态选项透传（选「始终允许」→ respondApproval allow-always）', async () => {
+    const api = makeFakeApi();
+    const App = (await bootApp(api)) as { App: () => React.ReactNode };
+    render(<App.App />);
+    fireEvent.click(await screen.findByRole('button', { name: /第一句/ }));
+    expect(await screen.findByText('第一句回复')).toBeTruthy();
+
+    api.emit({
+      type: 'approval-request',
+      sessionId: 's1',
+      tool: 'write',
+      args: { file_path: 'a.txt' },
+      requestId: 'r2',
+    });
+    expect(await screen.findByTestId('approval-dock')).toBeTruthy();
+    // 五态选项：index 2 = 始终允许（allow-always）→ 原样透传给 respondApproval
+    fireEvent.click(screen.getAllByRole('option')[2]!);
+    fireEvent.click(screen.getByRole('button', { name: '确认' }));
+    expect(api.respondApproval).toHaveBeenCalledWith('r2', 'allow-always');
   });
 
   it('后台帧缓冲：选中 s1 时 s2 的 assistant/message 计未读并显示徽标', async () => {

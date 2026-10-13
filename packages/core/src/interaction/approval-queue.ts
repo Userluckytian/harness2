@@ -26,12 +26,28 @@ export const APPROVAL_SETTLED_MAX = 512;
 /** 空授权集缓存（避免每次 grantFor 分配） */
 const EMPTY_GRANT: ReadonlySet<string> = new Set();
 
+/** 全局「始终」规则值域（写 config.approval.tools 的两种取值） */
+export type ApprovalAlwaysRule = 'allow' | 'deny';
+
+/** 「始终允许 / 始终拒绝」落定后的持久化缝（hub 注入；缺省 = 仅进程内生效、不落盘） */
+export interface ApprovalQueueOptions {
+  /**
+   * allow-always / deny-always 落定后回调（hub 据此写 config.approval.tools；best-effort）。
+   * 无论是否注入，进程内 alwaysRules 都会生效（后续同类调用短路），回调只负责跨重启持久化。
+   */
+  onAlways?: (sessionId: string, tool: string, rule: ApprovalAlwaysRule) => void;
+}
+
 export class ApprovalQueue {
   private readonly pendings = new Map<string, ApprovalQueueCard>();
   /** 已落定记忆：requestId → 响应落定为 applied / 其余为 expired */
   private readonly settledRegistry = new Map<string, 'applied' | 'expired'>();
   /** 「本会话总是」授权缓存：sessionId → 已授权工具集 */
   private readonly grants = new Map<string, Set<string>>();
+  /** 「始终允许 / 始终拒绝」全局规则（进程内；tool → allow|deny）；deny 优先于会话授权 */
+  private readonly alwaysRules = new Map<string, ApprovalAlwaysRule>();
+
+  constructor(private readonly options: ApprovalQueueOptions = {}) {}
 
   /** 校验并登记：scope 跨 session（或重复 requestId）→ false（调用方按拒绝处理，不悬挂） */
   register(node: ApprovalQueueCard): boolean {
@@ -44,6 +60,13 @@ export class ApprovalQueue {
   /**
    * 审批响应：live+未过期 → applied（按 decision 落定）；live+已过期 → expired（按拒绝落定）；
    * 迟到响应按已落定记忆返回（applied→duplicate，其余→expired）；从未见过 → unknown。
+   *
+   * Z10-5 语义落点（五态）：
+   *   - allow / deny：仅本次放行 / 拒绝；
+   *   - allow-session：本次放行 + 写入本会话授权缓存（后续同会话同工具直接 allow）；
+   *   - allow-always：本次放行 + 记全局规则 allow（后续任意会话同工具直接 allow；经 onAlways 持久化）；
+   *   - deny-always：本次拒绝 + 记全局规则 deny（后续任意会话同工具直接 deny；经 onAlways 持久化）。
+   * 过期一律 fail-closed（按拒绝落定），**不**写任何缓存 / 规则。
    */
   respond(requestId: string, decision: ApprovalResponseDecision): ApprovalResponseAck {
     const node = this.pendings.get(requestId);
@@ -52,7 +75,17 @@ export class ApprovalQueue {
         this.settle(requestId, false, 'expired');
         return { requestId, state: 'expired' };
       }
-      this.settle(requestId, decision === 'allow', 'response');
+      const allow = decision === 'allow' || decision === 'allow-session' || decision === 'allow-always';
+      this.settle(requestId, allow, 'response');
+      if (allow) {
+        if (decision === 'allow-session') {
+          this.grant(node.approval.sessionId, node.approval.tool);
+        } else if (decision === 'allow-always') {
+          this.setAlwaysRule(node.approval.sessionId, node.approval.tool, 'allow');
+        }
+      } else if (decision === 'deny-always') {
+        this.setAlwaysRule(node.approval.sessionId, node.approval.tool, 'deny');
+      }
       return { requestId, state: 'applied' };
     }
     const prior = this.settledRegistry.get(requestId);
@@ -94,6 +127,21 @@ export class ApprovalQueue {
   /** 该会话已获「本会话总是」授权工具集（只读；未授权会话 = 空集） */
   grantFor(sessionId: string): ReadonlySet<string> {
     return this.grants.get(sessionId) ?? EMPTY_GRANT;
+  }
+
+  /** 该工具的全局「始终」规则（allow|deny）；未设置 = undefined。deny 优先于会话授权（策略缝先查它） */
+  alwaysRuleFor(tool: string): ApprovalAlwaysRule | undefined {
+    return this.alwaysRules.get(tool);
+  }
+
+  /** 记录全局「始终」规则并通知持久化缝（best-effort；回调异常不回写内核） */
+  private setAlwaysRule(sessionId: string, tool: string, rule: ApprovalAlwaysRule): void {
+    this.alwaysRules.set(tool, rule);
+    try {
+      this.options.onAlways?.(sessionId, tool, rule);
+    } catch {
+      // 持久化缝异常不影响落定（进程内规则已生效）
+    }
   }
 
   private grant(sessionId: string, tool: string): void {

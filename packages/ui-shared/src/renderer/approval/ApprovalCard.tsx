@@ -1,9 +1,9 @@
 // 审批卡（D-6x `ui-approval` 对应物的呈现半部）：**一份实现，两种形态**
 //   variant='card' —— 右栏审批中心的卡片（含 cwd / 范围 / 任务状态 / 过期元数据）
-//   variant='bar'  —— 会话内联审批条（一行「允许执行 X？」+ 允许/拒绝）
+//   variant='bar'  —— 会话内联审批条（一行「允许执行 X？」+ 决定按钮组）
 // 两种形态共用同一套决定按钮、在途反馈与过期口径 → 不会出现「两套审批 UI 行为不一致」。
 //
-// 语义仍归 core（见 approval-model.ts 头注）：本组件只做两件事 —— 呈现卡片、回传 allow/deny。
+// 语义仍归 core（见 approval-model.ts 头注）：本组件只做两件事 —— 呈现卡片、回传决定（Z10-5 五态）。
 import {
   APPROVAL_DECISION_LABEL,
   APPROVAL_EXPIRED_TEXT,
@@ -17,6 +17,15 @@ import {
 
 /** 卡片形态（card = 右栏卡片；bar = 会话内联条） */
 export type ApprovalCardVariant = 'card' | 'bar';
+
+/** 卡片决定按钮顺序（与 core 五态一一对应；不摆 core 不认的选项） */
+export const APPROVAL_CARD_DECISIONS: readonly ApprovalDecision[] = [
+  'allow',
+  'allow-session',
+  'allow-always',
+  'deny',
+  'deny-always',
+];
 
 export interface ApprovalCardLabels {
   readonly allow?: string;
@@ -51,12 +60,26 @@ function DecisionButtons({
   if (responding) return <span className="approval-note">{APPROVAL_PENDING_TEXT}</span>;
   return (
     <>
-      <button type="button" className="btn-allow" onClick={() => onDecision('allow')}>
-        {labels?.allow ?? APPROVAL_DECISION_LABEL.allow}
-      </button>
-      <button type="button" className="btn-deny" onClick={() => onDecision('deny')}>
-        {labels?.deny ?? APPROVAL_DECISION_LABEL.deny}
-      </button>
+      {APPROVAL_CARD_DECISIONS.map((decision) => {
+        const allowLike = decision !== 'deny' && decision !== 'deny-always';
+        const label =
+          decision === 'allow'
+            ? (labels?.allow ?? APPROVAL_DECISION_LABEL.allow)
+            : decision === 'deny'
+              ? (labels?.deny ?? APPROVAL_DECISION_LABEL.deny)
+              : APPROVAL_DECISION_LABEL[decision];
+        return (
+          <button
+            key={decision}
+            type="button"
+            className={allowLike ? 'btn-allow' : 'btn-deny'}
+            data-decision={decision}
+            onClick={() => onDecision(decision)}
+          >
+            {label}
+          </button>
+        );
+      })}
     </>
   );
 }

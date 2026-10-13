@@ -4,6 +4,7 @@
 // 与 shared/protocol.ts 保持一致（test/protocol.test.ts 有静态一致性校验）。
 import { contextBridge, ipcRenderer } from 'electron';
 import type {
+  ApprovalDecisionShape,
   ConnectionStatus,
   DesktopPlatform,
   Harness2Api,
@@ -45,7 +46,7 @@ const api: Harness2Api = {
   sendMessage: (sessionId: string, text: string) =>
     ipcRenderer.invoke(IPC_INVOKE, { cmd: 'sendMessage', sessionId, text }),
   abort: (sessionId: string) => ipcRenderer.invoke(IPC_INVOKE, { cmd: 'abort', sessionId }),
-  respondApproval: (requestId: string, decision: 'allow' | 'deny') =>
+  respondApproval: (requestId: string, decision: ApprovalDecisionShape) =>
     ipcRenderer.invoke(IPC_INVOKE, { cmd: 'respondApproval', requestId, decision }),
   loadLayout: () => ipcRenderer.invoke(IPC_INVOKE, { cmd: 'loadLayout' }),
   saveLayout: (layout: unknown) => ipcRenderer.invoke(IPC_INVOKE, { cmd: 'saveLayout', layout }),
