@@ -42,10 +42,32 @@ jobs:
         run: pnpm build
 
       - name: Typecheck
-        run: pnpm -r typecheck
+        run: pnpm -r --no-bail run typecheck
 
-      - name: Test
-        run: pnpm test
+      # 测试与 ci.yml 完全同口径：**逐包顺序**各一步（单点红不遮蔽其余包）。
+      # 原实现是一步全量 `pnpm test` = `pnpm -r run test` **并行**跑六包 —— 4 核 runner 上
+      # 峰值过载，cli 的 spawn 型用例（crash-drill/export/memory，默认 5s 超时）偶发红：
+      # 2026-10-13 v1.0.0 run 38388019115 的 test (windows-latest) 即败于此步（同码 40 分钟前
+      # ci.yml 分包版 windows 全绿，可对照；flaky 模式亦见 docs/issue-log/OPEN.md「cli 全量
+      # spawn 型用例超时 flaky」）。分包顺序跑把并发峰值降回与 CI 一致，不需要放宽超时。
+      - name: Test core
+        run: pnpm --filter @harness2/core test
+
+      - name: Test gateway
+        run: pnpm --filter @harness2/gateway test
+
+      # cli 的包名就是 harness2（非 @harness2/cli），此处不能写成 scope 形式
+      - name: Test cli
+        run: pnpm --filter harness2 test
+
+      - name: Test desktop
+        run: pnpm --filter @harness2/desktop test
+
+      - name: Test ui-shared
+        run: pnpm --filter @harness2/ui-shared test
+
+      - name: Test web
+        run: pnpm --filter @harness2/web test
 
   publish:
     name: publish (npm)
