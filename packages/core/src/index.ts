@@ -95,5 +95,8 @@ export * from './team/index.js';
 // 轻量解析（无 tree-sitter）提取定义/引用 + 增量落盘（~/.harness2/codeindex）+ 查询 API
 // + `/codeindex` 命令面。core 全新建设，GUI 渲染留后续批次。
 export * from './codeindex/index.js';
+// Z9-1（2026-10-13）加性导出：core 终端管理器（PTY）——单份管理器 + 注入式 spawnPty；
+// 默认 shell / TerminalUnavailableError 如实失败；传输层（IPC/WS）留后续批次薄壳实现。
+export * from './terminal/index.js';
 
 export { CORE_VERSION } from './version.js';

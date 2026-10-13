@@ -1526,3 +1526,162 @@ body,
     padding-left: 40px;
   }
 }
+
+/* =============================================================================
+ * Z9-4 终端面板（.h2-terminal-*）
+ * -----------------------------------------------------------------------------
+ * 颜色一律引用既有语义 token（styles.css 的 --color-* / --color-terminal-*），
+ * 不新增 token、不出现一次性色值。xterm 自身的配色由组件经 getComputedStyle
+ * 读同一批 token 映射（见 renderer/terminal/TerminalPanel.tsx），此处只管容器
+ * 与标签条的盒子/排版。
+ * ========================================================================== */
+.h2-terminal {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  background: var(--color-background);
+  color: var(--color-foreground);
+}
+
+.h2-terminal__tabstrip {
+  display: flex;
+  flex: none;
+  align-items: stretch;
+  gap: 2px;
+  height: 32px;
+  padding: 0 4px;
+  border-bottom: 1px solid var(--color-border);
+  background: var(--color-tab);
+  overflow-x: auto;
+}
+
+.h2-terminal__tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex: none;
+  max-width: 160px;
+  padding: 0 4px 0 8px;
+  border-radius: 6px;
+  font-size: var(--text-ui-sm);
+  color: var(--color-foreground-subtle);
+  cursor: pointer;
+  user-select: none;
+  outline: none;
+}
+.h2-terminal__tab:hover {
+  background: var(--color-surface-hover);
+  color: var(--color-foreground);
+}
+.h2-terminal__tab:focus-visible {
+  box-shadow: inset 0 0 0 1px var(--color-border-hover);
+}
+.h2-terminal__tab--active {
+  background: var(--color-tab-active);
+  color: var(--color-foreground);
+}
+.h2-terminal__tab-label {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.h2-terminal__tab-close {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--color-foreground-subtle);
+  font-size: 14px;
+  line-height: 1;
+  cursor: pointer;
+}
+.h2-terminal__tab-close:hover {
+  background: var(--color-surface-hover);
+  color: var(--color-foreground);
+}
+.h2-terminal__new-tab {
+  display: inline-flex;
+  flex: none;
+  align-self: center;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  margin-left: 2px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--color-foreground-subtle);
+  font-size: 14px;
+  cursor: pointer;
+}
+.h2-terminal__new-tab:hover {
+  background: var(--color-surface-hover);
+  color: var(--color-foreground);
+}
+
+.h2-terminal__bodies {
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+.h2-terminal__body {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+}
+.h2-terminal__xterm {
+  width: 100%;
+  height: 100%;
+  padding: 4px 6px;
+  background: var(--color-background);
+}
+.h2-terminal__xterm .xterm {
+  height: 100%;
+}
+
+.h2-terminal__status {
+  position: absolute;
+  bottom: 8px;
+  left: 8px;
+  max-width: calc(100% - 16px);
+  padding: 2px 8px;
+  border-radius: 6px;
+  background: var(--color-muted);
+  color: var(--color-foreground-subtle);
+  font-size: var(--text-ui-xs);
+  pointer-events: none;
+}
+.h2-terminal__status--error {
+  background: var(--color-destructive);
+  color: var(--color-destructive-foreground);
+}
+
+.h2-terminal--unavailable {
+  align-items: center;
+  justify-content: center;
+}
+.h2-terminal__notice {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 12px 16px;
+  text-align: center;
+}
+.h2-terminal__notice-title {
+  margin: 0;
+  font-size: var(--text-ui-sm);
+  color: var(--color-foreground-subtle);
+}
+.h2-terminal__notice-reason {
+  margin: 0;
+  font-size: var(--text-ui-xs);
+  color: var(--color-foreground-subtlest);
+}
