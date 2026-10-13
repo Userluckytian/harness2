@@ -31,6 +31,7 @@
 1. **空态 overlay 窗控**：桌面壳层（AppFrame 顶层）常驻三键（win/linux；复用既有 `ConversationHeader` 内组件或提为共享组件），空态/多态并存时不得出现两套窗控（会话头部内嵌的那组在 overlay 存在时隐藏——选一种收敛方案并全仓一致）。drag/no-drag 分区与 28px 键、136px 右安全区按 Z-46。断言：`selectedId=null` 时 `data-testid="window-controls"` 在 DOM。
 2. **侧栏操作面**：a) 项目组头 hover 出现「在此项目新建会话」→ `createSession(projectCwd)`（controller→`api.createSession` 现带 cwd 参数，见 `bridge.ts:433-440`，渲染层只是传参）；b) 会话行 hover/⋯菜单加「删除」：running 禁用（Denia 语义）；点击=ConfirmDialog → 调用已存在的 `controller.deleteSession(id)`（软删，零新后端）；c) 「移出项目」加确认（组内有 running 会话才弹，Z-49 文案口径）。
 3. **发送可见化**：composer 上方错误横幅（新组件，样式对齐 Z-96 结构：图标+单行截断+查看详情 Dialog+复制报错+右上 X；ZCode 视觉语言内实现）；`onSubmitError` 在**桌面与 web 两壳**接到横幅（现全仓零调用点）；发送失败草稿保留（现还原逻辑已有，补断言）；禁用发送钮补 tooltip 说明原因（connecting/无会话/锁定）。
+3b. **默认模型一致性（排查+修，§81 观察项）**：用户实机 `config.json roles.main = buddyhub/global:deepseek-v4.1-flash`，实际会话却是 `local/big-pickle`。查桌面 composer 模型选择器初值来源（大概率取 models 列表首项而非 roles.main）；修法=首选项读 roles.main、找不到才回落列表首项，并让选择器如实显示当前通道/模型名。只动 renderer/ui-shared 与 desktop 主进程桥，禁触 core。
 验收：ui-shared+desktop 两包测试全绿；`pnpm --filter @harness2/desktop smoke` B4 不破；typecheck/eslint/prettier 过。commit 可按子任务拆 2-3 个。
 
 ## T4（性能/终态批：Z-97 + Denia 手法 + B1）
