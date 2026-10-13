@@ -98,7 +98,17 @@ describe('app-frame.css 契约（Z2-01b：窗口外壳 / 浮层 / 拖拽区）',
     expect(css).toMatch(/\.app-frame-sidebar-drag \{\s*flex: none;\s*height: 48px;[\s\S]*?-webkit-app-region: drag;/);
   });
 
-  it('自绘窗控三键：Z-04 的 136px 量级（3 × 45px）', () => {
-    expect(css).toMatch(/\.window-controls-btn \{[\s\S]*?width: 45px;/);
+  // Z-46 修订：窗控从「列头内嵌 45px 键」改为「壳层常驻 overlay（48px 标题带 × 136px 右安全区 × 28px 键）」。
+  it('窗控 overlay（Z-46）：136px 右安全区、48px 标题带、28px 键、本体 pointer-events-none、键体 no-drag', () => {
+    expect(css).toMatch(
+      /\.window-controls-overlay \{[\s\S]*?width: 136px;[\s\S]*?height: 48px;[\s\S]*?pointer-events: none;/,
+    );
+    expect(css).toMatch(/\.window-controls-btn \{[\s\S]*?width: 28px;[\s\S]*?height: 28px;/);
+    expect(css).toMatch(
+      /\.window-controls-overlay \.window-controls \{[\s\S]*?pointer-events: auto;[\s\S]*?-webkit-app-region: no-drag;/,
+    );
+    expect(css).toMatch(/\.window-controls-overlay-drag \{[\s\S]*?-webkit-app-region: drag;/);
+    // overlay 在场时列头让出安全区（单实例：窗控不内嵌列头）
+    expect(css).toMatch(/\.desktop-window-frame\.window-controls-active \.pane-header \{[\s\S]*?padding-right: 140px;/);
   });
 });
