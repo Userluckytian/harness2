@@ -38,7 +38,7 @@
 先读 **Z-97** 全节 + `docs/design-inputs/denia-ui-analysis.md`「⑤」与「性能手法」节。域：`packages/ui-shared/src/renderer/**`（对话渲染/store）、`packages/desktop/src/main/bridge.ts`（仅 pickFolder 审计）、两包 test。
 1. **轮次耗时行**：会话面板回合头显示「工作中 {duration}」（1s tick，**memo 叶子自持计时、起点取事件时间戳**——Denia WorkIndicator 法）；完成「已工作 {duration}」；数据源=store 现有事件时间戳，无终态不显示完成值。
 2. **悬挂回合兜底（痛点⑤核心）**：store/replay 路径中，`running` 且无 `turn-end` 的回合，若会话 WS 无该 turnId 活帧超过 30s（或重放时事件流尾部 step/end 后无任何后续且非 running 会话）→ 本地合成终态 `interrupted`（仅 UI 态，不落盘、不改 core）。测试：构造无 turn-end 的事件流 + fake timers 推进 30s → `turnEnds[turnId].stopReason==='interrupted'` 且 spinner 消失。
-3. **工具行渲染核对**：若现实现为旋转 spinner，替换为静态图标+文案扫光（Z-97 原注理由：流式期动画占渲染）；已是扫光则补断言锁行为。
+3. **工具行渲染核对（已预查，直接照办）**：`packages/ui-shared/src/renderer/tool/ToolCard.tsx:339` 现实现为 `status==='running' && <LoaderIcon className="animate-spin">` → 按 Z-97 替换为「静态图标 + kindLabel 文案扫光」（CSS 动画类走 transform/opacity，尊重 `prefers-reduced-motion`；running→completed 边沿自动收起展开若已有则不动，无则补）。改完锁断言。
 4. **B1 微基准**：vitest 用例——构造 1000 事件会话流，`store` 重放/投影（`projectChatItems` 路径）耗时 ≤200ms（性能断言用 `expect(Date.now()-t0).toBeLessThanOrEqual(200)`，jsdom 计时宽容可设 250ms 并在注释说明）。若不过 → 停下报告（触发 T7 条件任务，勿自行上虚拟化）。
 5. pickFolder 零 await 审计：静态 grep 证明 handler 到 showOpenDialog 间无 await/HTTP（报告给编排者，不强制改码）。
 验收：两包测试 + typecheck + smoke B4。
