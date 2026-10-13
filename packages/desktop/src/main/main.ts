@@ -9,6 +9,7 @@ import { createBridge, registerBridgeIpc, type Bridge } from './bridge.js';
 import { ServeManager } from './serve-manager.js';
 import { createCloseWindowHandler } from './close-window-handler.js';
 import { startTerminal, stopTerminal } from './terminal.js';
+import { resolveDefaultWorkspaceRoot } from './workspace-root.js';
 import type {
   ConnectionStatus,
   SettingsEventFrame,
@@ -27,9 +28,11 @@ function resolveCliEntry(): string {
   return join(__dirname, '..', '..', '..', 'cli', 'dist', 'index.js');
 }
 
-/** 仓库根（dev 模式的 serve --root：工具执行 cwd + 会话分组） */
-function resolveRepoRoot(): string {
-  return join(__dirname, '..', '..', '..');
+/** 默认工作区根（serve --root：工具执行 cwd + 无 cwd 新建会话的分组根 + 终端根）。
+ *  R0-3②：旧 resolveRepoRoot 打包态解析到安装目录（缺陷），现委托纯函数：
+ *  dev = 仓库根（harness2/），打包态 = 用户主目录。见 workspace-root.ts。 */
+function defaultWorkspaceRoot(): string {
+  return resolveDefaultWorkspaceRoot({ isPackaged: app.isPackaged, dirname: __dirname, homeDir: homedir() });
 }
 
 interface DesktopHandles {
@@ -42,6 +45,8 @@ interface DesktopHandles {
 
 function startDesktop(opts: { show: boolean; provider: 'mock' | 'config'; home?: string }): DesktopHandles {
   const home = opts.home ?? homedir();
+  /** R0-3②：默认工作区根（serve --root / bridge deps.root / terminal root 共用一处求值） */
+  const workspaceRoot = defaultWorkspaceRoot();
   /** D4：渲染端上报的运行态（关窗口提示依据） */
   const runtime = { busy: false, runningTurns: 0, backgroundTasks: 0 };
   let resolveReady!: (v: { port: number }) => void;
@@ -77,7 +82,7 @@ function startDesktop(opts: { show: boolean; provider: 'mock' | 'config'; home?:
 
   const serve = new ServeManager({
     cliEntry: resolveCliEntry(),
-    root: resolveRepoRoot(),
+    root: workspaceRoot,
     home, // home = opts.home ?? homedir()（上方已计算）：dev 启动也有 home，serve.lock token 可读、健康检查可过
     provider: opts.provider,
     onStatus: (status, detail) => {
@@ -91,7 +96,7 @@ function startDesktop(opts: { show: boolean; provider: 'mock' | 'config'; home?:
 
   const bridge = createBridge({
     serve,
-    root: resolveRepoRoot(),
+    root: workspaceRoot,
     home,
     sendEvent,
     sendStatus,
@@ -105,7 +110,7 @@ function startDesktop(opts: { show: boolean; provider: 'mock' | 'config'; home?:
   });
   registerBridgeIpc(bridge);
   // Z9-3：启动进程级终端传输（core TerminalManager 单例；不 spawn 任何 PTY 直到 open）
-  startTerminal({ root: resolveRepoRoot(), sendEvent: sendTerminalEvent });
+  startTerminal({ root: workspaceRoot, sendEvent: sendTerminalEvent });
 
   const win = new BrowserWindow({
     width: 1280,
