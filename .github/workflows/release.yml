@@ -123,6 +123,16 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      # 必须先 build 全仓：dist:* 里的 `pnpm --filter harness2 bundle` 用 esbuild 打包
+      # `src/serve-entry.ts`，其中 `import ... from '@harness2/core'` 经 node 解析落到
+      # `packages/core/dist/index.js`（core 的 exports 只指 dist，全仓也没有 tsconfig paths 别名）。
+      # 干净 runner 上 dist 不存在 → bundle 直接 ERR_PNPM_RECURSIVE_RUN_FIRST_FAIL。
+      # 2026-10-13 实测取证：把 packages/core/dist 临时改名后复跑 `pnpm --filter harness2 bundle`
+      # 必红（Exit status 1）。ci.yml 的 build-desktop job 本就有这步，release 的 desktop job 漏了，
+      # 首次真跑必失败——补上与 ci.yml 同口径的 build。
+      - name: Build packages
+        run: pnpm build
+
       - name: Package（unsigned）
         run: pnpm --filter @harness2/desktop ${{ matrix.script }}
 

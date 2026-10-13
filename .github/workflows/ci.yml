@@ -1,5 +1,8 @@
 # harness2 CI：三平台 matrix，typecheck + test（mock provider，零 API key）。
-# 注意：本仓库暂无远程；首次真实运行待用户建远程并授权 push（见 docs/issue-log/OPEN.md）。
+# 远程：https://github.com/Userluckytian/harness2（2026-10-13 复核：origin/main 停在 fa61b63
+# = 2026-09-17 的最后一次 push，本地 main 领先 93 个提交且此后未再 push）。
+# 即：本 workflow 只在 push/PR 时触发，本地未 push 的提交**不会被 CI 验证**。首次在当前代码上
+# 的真实运行结果未经确认（2026-10-13 本机 `gh` 未登录，无法查 Actions 历史）。
 name: CI
 
 on:
