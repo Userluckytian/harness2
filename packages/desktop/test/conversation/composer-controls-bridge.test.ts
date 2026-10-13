@@ -73,9 +73,7 @@ describe('composerControlsOf：config → 控件 props 装配', () => {
   // 3b（§81 观察项）：初值来源 = roles.main（磁盘真值，经 settings:getConfig 通道）。
   // 两模型列表 + roles.main 指向第二个 → 选择器初值 = 第二个（不是列表首项、不是硬序）。
   it('3b：roles.main 指向列表第二项 → 选择器 current = 第二项（初值不被列表序绑架）', () => {
-    const controls = composerControlsOf(
-      configOf({ roles: { main: { channel: 'zai', model: 'glm-5-air' } } }),
-    );
+    const controls = composerControlsOf(configOf({ roles: { main: { channel: 'zai', model: 'glm-5-air' } } }));
     expect(controls.modelSelect?.menu.current).toEqual({ channel: 'zai', model: 'glm-5-air' });
     // 选中态标注也在第二项
     const currentGroup = controls.modelSelect?.menu.groups[0];
