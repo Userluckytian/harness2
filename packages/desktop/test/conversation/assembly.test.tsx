@@ -34,7 +34,7 @@ import {
   type ConversationComposerPort,
 } from '../../src/renderer/conversation/assembly.js';
 import { createImageUrlCache } from '@harness2/ui-shared/renderer/conversation/views/image-url-cache.js';
-import { EMPTY_STATE_SUGGESTIONS } from '@harness2/ui-shared/renderer/conversation/EmptyState.js';
+import { EMPTY_STATE_SUGGESTIONS, timeGreetingForHour } from '@harness2/ui-shared/renderer/conversation/EmptyState.js';
 import { composerPrefill } from '@harness2/ui-shared/renderer/conversation/composer/prefill.js';
 import { COMPOSER_INSET_VAR } from '@harness2/ui-shared/renderer/trajectory/index.js';
 import type { FileRefReader } from '@harness2/ui-shared/shared/file-ref.js';
@@ -1006,7 +1006,10 @@ describe('Z10-1 空态：Logo mark + 时间问候 + 4 建议 chip', () => {
     const empty = screen.getByTestId('conversation-empty');
     expect(empty).toBeTruthy();
     expect(screen.getByTestId('conversation-empty-mark').querySelector('svg')).not.toBeNull();
-    expect(screen.getByTestId('conversation-empty-greeting').textContent).toMatch(/，有什么想让我帮忙的吗$/);
+    // 问候文案 = 当前小时对应的 ZCode i18n 逐字档（6 句不同，不再统一句式）
+    expect(screen.getByTestId('conversation-empty-greeting').textContent).toBe(
+      timeGreetingForHour(new Date().getHours()),
+    );
 
     // ② composer 之下：4 建议 chip（实测文案逐字）
     expect(screen.getAllByTestId('conversation-empty-suggestion').map((c) => c.textContent)).toEqual([

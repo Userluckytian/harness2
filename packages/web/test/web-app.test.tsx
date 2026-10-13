@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import React from 'react';
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { createAppShell } from '@harness2/ui-shared/renderer/app-shell.js';
+import { timeGreetingForHour } from '@harness2/ui-shared/renderer/conversation/EmptyState.js';
 import { toast, toastStore } from '@harness2/ui-shared/renderer/toast/index.js';
 import { workbenchStore } from '@harness2/ui-shared/renderer/layout/workbench/store.js';
 import { sessionNavHistory } from '@harness2/ui-shared/renderer/layout/session-nav-history.js';
@@ -217,7 +218,10 @@ describe('web 页面装配', () => {
     // 空态新组件（会话已加载、0 条目）
     await waitFor(() => expect(screen.getByTestId('conversation-empty')).toBeTruthy());
     expect(screen.getByTestId('conversation-empty-mark').querySelector('svg')).not.toBeNull();
-    expect(screen.getByTestId('conversation-empty-greeting').textContent).toMatch(/，有什么想让我帮忙的吗$/);
+    // 问候文案 = 当前小时对应的 ZCode i18n 逐字档（6 句不同，不再统一句式）
+    expect(screen.getByTestId('conversation-empty-greeting').textContent).toBe(
+      timeGreetingForHour(new Date().getHours()),
+    );
     expect(screen.getAllByTestId('conversation-empty-suggestion').map((c) => c.textContent)).toEqual([
       '周报总结',
       '报错修复',

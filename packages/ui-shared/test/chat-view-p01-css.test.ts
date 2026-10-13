@@ -3,7 +3,7 @@
 // conversation/turn-rail-css.test.ts 同一手法）：
 //   1. 用户消息右对齐 + bg-secondary + px-4 py-3 + 圆角（ZCode MessageContent message.tsx:114,127）；
 //   2. 助手消息无气泡（无背景/无内边距，正常流）；
-//   3. 轮次头无文案（只有分隔线/间距声明，不再有任何文字样式的角色标签规则）；
+//   3. 轮次头无文案（G15 起轮次分隔 = 纯留白 padding-top，不再有 border 分隔线）；
 //   4. 动作行 hover 显现（opacity 0 → hover/focus-within 1）；
 //   5. composer 占位层：subtlest 语义色 + pointer-events:none（点击穿透）。
 import { readFileSync } from 'node:fs';
@@ -54,12 +54,14 @@ describe('P0-1 消息气泡的样式声明（对齐 ZCode message.tsx）', () =>
     expect(declarations).not.toMatch(/\.bubble-\w+\s+\.role/);
   });
 
-  it('.turn-header：无文案（无 color/font-size 文字样式；只有分隔与间距）', () => {
+  it('.turn-header：无文案（无 color/font-size 文字样式；轮次分隔 = 纯留白，无分隔线）', () => {
+    // G15（ZCode ConversationTurnGroup.tsx:1302-1310）：轮次之间只有 pt-14 留白，**无 border**。
+    // 本仓 turn-header 是零内容标记行：padding-top 36px（+ 前后 gap-5 20px = 轮间 76px）。
     const rules = block('.turn-header');
     expect(rules).not.toMatch(/font-size:/);
     expect(rules).not.toMatch(/color:/);
-    expect(rules).toMatch(/border-top:/); // 极细分组线
-    expect(rules).toMatch(/margin-top:/);
+    expect(rules).not.toMatch(/border-top:/); // 去掉旧分隔线
+    expect(rules).toMatch(/padding-top:\s*36px/);
   });
 
   it('.message-actions：默认隐藏，hover / 键盘聚焦显现（ZCode 完成态动作行口径）', () => {

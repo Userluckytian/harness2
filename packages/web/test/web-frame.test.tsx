@@ -8,7 +8,7 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it } from 'vitest';
 import React from 'react';
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { createAppShell } from '@harness2/ui-shared/renderer/app-shell.js';
 import { workbenchStore } from '@harness2/ui-shared/renderer/layout/workbench/store.js';
 import { sessionNavHistory } from '@harness2/ui-shared/renderer/layout/session-nav-history.js';
@@ -142,6 +142,26 @@ describe('Z7 四席位骨架（与桌面同构）', () => {
     // Z10-3：会话历史上两枚按钮常驻（ZCode 逐字 aria-label），空历史 → disabled
     expect((screen.getByRole('button', { name: '后退' }) as HTMLButtonElement).disabled).toBe(true);
     expect((screen.getByRole('button', { name: '前进' }) as HTMLButtonElement).disabled).toBe(true);
+    stop();
+  });
+
+  it('侧栏开关 hover 图标切换（win/linux：品牌 mark ↔ 开关图标）；New Task 常驻 DOM 由 aria-hidden 控可见', async () => {
+    const { stop } = await mount();
+    const toggle = screen.getByRole('button', { name: '侧栏开关' });
+    const mark = within(toggle).getByTestId('frame-top-overlay-toggle-mark');
+    const icon = within(toggle).getByTestId('frame-top-overlay-toggle-icon');
+    expect(mark.className).not.toContain('is-hidden');
+    expect(icon.className).not.toContain('is-visible');
+    fireEvent.mouseOver(toggle);
+    expect(toggle.getAttribute('data-hover')).toBe('true');
+    expect(within(toggle).getByTestId('frame-top-overlay-toggle-icon').className).toContain('is-visible');
+    fireEvent.mouseOut(toggle);
+    expect(toggle.getAttribute('data-hover')).toBe('false');
+    // New Task 常驻 DOM：展开态 is-hidden + aria-hidden（宽度动画的 0 宽态）
+    const wrap = document.querySelector('.desktop-top-overlay-new-wrap') as HTMLElement;
+    expect(wrap).not.toBeNull();
+    expect(wrap.getAttribute('aria-hidden')).toBe('true');
+    expect(wrap.className).toContain('is-hidden');
     stop();
   });
 });

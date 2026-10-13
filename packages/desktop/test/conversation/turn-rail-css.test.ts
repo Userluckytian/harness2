@@ -1,6 +1,6 @@
 // Z2-09b 轮次导航的样式证据（node 环境读 CSS 文本；jsdom 测不了像素断点）：
-//   显隐双保险的 CSS 侧 —— .turn-rail 默认隐藏，@container (min-width: 864px) 展开；
-//   .chat 是断点容器（Z3-03 状态面板同一 @container 手法）。
+//   显隐双保险的 CSS 侧 —— .turn-rail 默认隐藏，@container conversation (min-width: 864px) 展开；
+//   .conversation-seat 是断点容器（G14：container-name: conversation，供消息区与 composer 共用）。
 // 阈值常量（2 轮 / 864px）的 JS 侧钉在 ui-shared turn-navigator.test.tsx（turnNavigatorVisible）。
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
@@ -25,22 +25,26 @@ describe('轮次导航 rail（Z-17：≥2 轮且容器 ≥864px，左侧细条�
     expect(rules).toContain('position: absolute');
   });
 
-  it('.chat 是 @container 断点容器（inline-size 包含）+ rail 定位上下文', () => {
-    expect(declarations).toMatch(/@container \(min-width: 864px\)/);
-    const chatBlocks = declarations.match(/\.chat\s*\{[^{}]*\}/g) ?? [];
-    const z2 = chatBlocks.find((b) => b.includes('container-type'));
-    expect(z2, '.chat 缺 Z2-09b 的容器声明').toBeDefined();
-    expect(z2).toContain('container-type: inline-size');
-    expect(z2).toContain('position: relative');
+  it('.conversation-seat 是 @container 断点容器（inline-size + name: conversation）', () => {
+    expect(declarations).toMatch(/@container conversation \(min-width: 864px\)/);
+    const seat = block('.conversation-seat');
+    expect(seat).toContain('container-type: inline-size');
+    expect(seat).toContain('container-name: conversation');
+    expect(seat).toContain('position: relative');
   });
 
-  it('≥864px 断点内：rail 展开为 flex，内容列预留左缘空间（ZCode 内容收窄的等价手法）', () => {
-    const query = /@container \(min-width: 864px\)\s*\{([\s\S]*?)\n\}/.exec(declarations);
+  it('.chat 只作 rail 定位上下文（断点容器已上移到 .conversation-seat）', () => {
+    const chatBlocks = declarations.match(/\.chat\s*\{[^{}]*\}/g) ?? [];
+    const railCtx = chatBlocks.find((b) => b.includes('position: relative'));
+    expect(railCtx, '.chat 缺 rail 定位上下文').toBeDefined();
+    expect(railCtx).not.toContain('container-type');
+  });
+
+  it('≥864px 断点内：rail 展开为 flex', () => {
+    const query = /@container conversation \(min-width: 864px\)\s*\{([\s\S]*?)\n\}/.exec(declarations);
     expect(query).not.toBeNull();
     const body = query?.[1] ?? '';
     expect(body).toContain('.turn-rail');
     expect(body).toMatch(/display:\s*flex/);
-    expect(body).toContain('.messages');
-    expect(body).toContain('padding-left: 40px');
   });
 });

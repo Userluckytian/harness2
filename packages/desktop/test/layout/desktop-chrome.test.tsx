@@ -4,7 +4,7 @@
 //     New Task 仅侧栏收起时出现、按钮 no-drag（CSS 契约见 frame-styles.test.ts）；
 //   * 平台派生：windowFrameClass 圆角类 / topOverlayHeight / desktopPlatform 读取 preload 通道。
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import React from 'react';
 import { DesktopTopOverlay } from '../../src/renderer/layout/DesktopTopOverlay.js';
 import {
@@ -81,6 +81,99 @@ describe('DesktopTopOverlay（Z-01：无 topbar，绝对定位浮层）', () => 
     expect(bar.className).toContain('desktop-top-overlay-mac');
     fireEvent.click(screen.getByRole('button', { name: '侧栏开关' }));
     expect(onToggle).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('DesktopTopOverlay 侧栏开关图标切换 / New Task 宽度动画（ZCode 复刻）', () => {
+  it('win/linux：平时显品牌 mark，悬浮切开关图标（150ms class 切换）', () => {
+    render(
+      <DesktopTopOverlay
+        platform="win32"
+        sidebarCollapsed={false}
+        sidebarWidth={264}
+        onToggleSidebar={vi.fn()}
+        onNewTask={vi.fn()}
+      />,
+    );
+    const toggle = screen.getByRole('button', { name: '侧栏开关' });
+    expect(toggle.className).toContain('desktop-top-overlay-toggle');
+    // 平时：品牌 mark 在场且未隐藏；开关图标未激活
+    const mark = within(toggle).getByTestId('frame-top-overlay-toggle-mark');
+    const icon = within(toggle).getByTestId('frame-top-overlay-toggle-icon');
+    expect(mark.className).not.toContain('is-hidden');
+    expect(icon.className).not.toContain('is-visible');
+    expect(toggle.getAttribute('data-hover')).toBe('false');
+    // 悬浮（jsdom 无真实 :hover，用 mouseOver 触发 React onMouseEnter）
+    fireEvent.mouseOver(toggle);
+    expect(toggle.getAttribute('data-hover')).toBe('true');
+    expect(within(toggle).getByTestId('frame-top-overlay-toggle-mark').className).toContain('is-hidden');
+    expect(within(toggle).getByTestId('frame-top-overlay-toggle-icon').className).toContain('is-visible');
+    // 移出还原
+    fireEvent.mouseOut(toggle);
+    expect(toggle.getAttribute('data-hover')).toBe('false');
+    expect(within(toggle).getByTestId('frame-top-overlay-toggle-icon').className).not.toContain('is-visible');
+  });
+
+  it('mac：无品牌 mark、恒显开关图标（ZCode mac 分支）', () => {
+    render(
+      <DesktopTopOverlay
+        platform="darwin"
+        sidebarCollapsed={false}
+        sidebarWidth={300}
+        onToggleSidebar={vi.fn()}
+        onNewTask={vi.fn()}
+      />,
+    );
+    const toggle = screen.getByRole('button', { name: '侧栏开关' });
+    expect(within(toggle).queryByTestId('frame-top-overlay-toggle-mark')).toBeNull();
+    expect(within(toggle).getByTestId('frame-top-overlay-toggle-icon').className).toContain('is-visible');
+  });
+
+  it('New Task 常驻 DOM：展开态 aria-hidden + is-hidden（w-0），折叠态 is-visible（w-7）', () => {
+    const { rerender } = render(
+      <DesktopTopOverlay
+        platform="win32"
+        sidebarCollapsed={false}
+        sidebarWidth={264}
+        onToggleSidebar={vi.fn()}
+        onNewTask={vi.fn()}
+      />,
+    );
+    const hidden = document.querySelector('.desktop-top-overlay-new-wrap') as HTMLElement;
+    expect(hidden).not.toBeNull(); // 常驻（不再条件卸载）
+    expect(hidden.getAttribute('aria-hidden')).toBe('true');
+    expect(hidden.className).toContain('is-hidden');
+    expect(screen.queryByRole('button', { name: 'New Task' })).toBeNull();
+
+    rerender(
+      <DesktopTopOverlay
+        platform="win32"
+        sidebarCollapsed
+        sidebarWidth={264}
+        onToggleSidebar={vi.fn()}
+        onNewTask={vi.fn()}
+      />,
+    );
+    const shown = document.querySelector('.desktop-top-overlay-new-wrap') as HTMLElement;
+    expect(shown.getAttribute('aria-hidden')).toBe('false');
+    expect(shown.className).toContain('is-visible');
+    expect(screen.getByRole('button', { name: 'New Task' })).toBeTruthy();
+  });
+
+  it('showNewTaskButton 显式覆盖（ZCode showNewTaskButton ?? !isSidebarVisible）', () => {
+    render(
+      <DesktopTopOverlay
+        platform="win32"
+        sidebarCollapsed
+        showNewTaskButton={false}
+        sidebarWidth={264}
+        onToggleSidebar={vi.fn()}
+        onNewTask={vi.fn()}
+      />,
+    );
+    const wrap = document.querySelector('.desktop-top-overlay-new-wrap') as HTMLElement;
+    expect(wrap.getAttribute('aria-hidden')).toBe('true');
+    expect(screen.queryByRole('button', { name: 'New Task' })).toBeNull();
   });
 });
 

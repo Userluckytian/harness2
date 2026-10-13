@@ -20,6 +20,8 @@ export interface DesktopTopOverlayProps {
   /** 后退/前进动作（Z10-3 会话历史导航） */
   readonly onBack?: () => void;
   readonly onForward?: () => void;
+  /** New Task 是否可见（ZCode `showNewTaskButton ?? !isSidebarVisible`）；缺省 = 侧栏收起时可见 */
+  readonly showNewTaskButton?: boolean;
 }
 
 /**
@@ -40,6 +42,7 @@ export function DesktopTopOverlay(props: DesktopTopOverlayProps): React.ReactNod
       canGoForward={props.canGoForward === true}
       {...(props.onBack !== undefined ? { onBack: props.onBack } : {})}
       {...(props.onForward !== undefined ? { onForward: props.onForward } : {})}
+      {...(props.showNewTaskButton !== undefined ? { showNewTaskButton: props.showNewTaskButton } : {})}
       classBase="desktop-top-overlay"
       testId="desktop-top-overlay"
     />

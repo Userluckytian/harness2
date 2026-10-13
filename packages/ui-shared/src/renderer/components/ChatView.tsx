@@ -52,7 +52,8 @@ export function ChatItemView({
     case 'turn-header':
       // Z2-09b：data-turn-id 是轮次导航的定位锚点（jumpToTurn / activeTurnIdOf 查询此属性）。
       // P0-1：移除字面 `── turn` —— ZCode 是**分组渲染**，不渲染轮次文案；本行只作无文字分组
-      // 分隔（极细线/间距，见 shell.css .turn-header），并保留 `.turn-header` 类名供结构断言。
+      // 分隔（G15：纯留白 padding-top，见 shell.css .turn-header，**无分隔线**），
+      // 并保留 `.turn-header` 类名供结构断言。
       return <div className="turn-header" data-turn-id={item.turnId} />;
     case 'user':
       // P0-1：对齐 ZCode `MessageContent`（message.tsx:114,127）——用户消息右对齐 + 圆角气泡

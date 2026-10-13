@@ -202,11 +202,36 @@
 .desktop-top-overlay-fit {
   width: fit-content;
 }
-.desktop-top-overlay-brand {
+/* 侧栏开关（ZCode DesktopTopOverlay :134-161）：单按钮 + hover 图标切换。
+   win/linux 平时显品牌 mark，悬浮时 mark 淡出、开关图标淡入（150ms）；mac 恒显开关图标。 */
+.desktop-top-overlay-toggle {
+  position: relative;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  overflow: hidden;
+}
+.desktop-top-overlay-toggle-mark {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  color: var(--color-foreground-subtle);
+  transition: opacity 150ms ease;
+}
+.desktop-top-overlay-toggle-mark.is-hidden {
+  opacity: 0;
+}
+.desktop-top-overlay-toggle-icon {
+  position: absolute;
+  inset: 0;
+  margin: auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  transition: opacity 150ms ease;
+}
+.desktop-top-overlay-toggle-icon.is-visible {
+  opacity: 1;
 }
 .desktop-top-overlay-btn,
 .desktop-top-overlay-new {
@@ -228,8 +253,29 @@
   background: var(--color-surface-hover);
   color: var(--color-foreground);
 }
+/* New Task（ZCode :188-204）：宽度动画（可见 w-7 / 隐藏 w-0 + opacity + pointer-events-none）。
+   常驻 DOM，不可见态由 aria-hidden 标记；transition 300ms。 */
+.desktop-top-overlay-new-wrap {
+  display: inline-flex;
+  overflow: hidden;
+  transition:
+    opacity 300ms ease-out,
+    width 300ms ease-out;
+}
+.desktop-top-overlay-new-wrap.is-visible {
+  width: 28px;
+  opacity: 1;
+}
+.desktop-top-overlay-new-wrap.is-hidden {
+  width: 0;
+  opacity: 0;
+  pointer-events: none;
+}
 .desktop-top-overlay-new {
-  font-size: var(--text-ui-sm);
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  flex: none;
 }
 /* Z10-3：后退 / 前进（会话历史导航）—— ZCode 顶左最前两枚 28×28 方钮；
    disabled 时如实变灰不可点（常驻显示，不隐藏）。 */

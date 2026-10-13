@@ -106,27 +106,29 @@ body,
 .messages {
   flex: 1;
   overflow-y: auto;
-  padding: 12px 16px;
+  /* G14/G16（ZCode ConversationTurnGroup.tsx:1307 + conversationLayout.ts:3-9）：
+     内容列宽由 padding-inline 收窄（宽屏居中），行内 padding = px-4(16) / @md:px-6(24)。
+     顶部不留白 —— 首轮留白由 .turn-header 的 padding-top 承担（对齐 ZCode pt-14）。 */
+  padding-top: 0;
+  padding-inline: 16px;
   /* P2-2/D-46：Chat 的滚动叶容器**独自**承担 composer 浮层预留（+ 原有 16px 底距）。
      Z2-05：变量由 ConversationSeat 写在会话容器上（未测量 = 0px）；
      轨迹已迁右栏 tab（不浮在 composer 之下），预留只服务 chat。 */
   padding-bottom: calc(var(--composer-inset, 0px) + 16px);
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  /* G16（ZCode ConversationTurnGroup.tsx:1307）：轮内子项 gap-5 = 20px。 */
+  gap: 20px;
   /* D5（2026-10-11）：根字号回归 16px 后，转录正文不再继承 body 的旧 14px。
      按 ZCode 对齐（MessageContent / MessageResponse = text-ui-base = 14px）显式钉住，
-     使正文随 --ui-font-size 缩放，且不随根字号（rem 几何基准）漂移。 */
+     使正文随 --ui-font-size 缩放，不随根字号（rem 几何基准）漂移。 */
   font-size: var(--text-ui-base);
 }
-/* P0-1：轮次头**无文案**（ZCode 是分组渲染，不渲染轮次文字）—— 仅作极细分隔线 + 间距。 */
+/* G15（ZCode ConversationTurnGroup.tsx:1302-1310）：轮次分隔 = **纯留白 pt-14（56px）**，
+   **无分隔线、无文字头**。本仓 turn-header 是零内容标记行：padding-top 36px + 前后各
+   gap-5(20px) → 轮间 76px（= ZCode pb-5 20 + pt-14 56）；首轮 36 + 20 = 56（= pt-14）。 */
 .turn-header {
-  margin-top: 12px;
-  border-top: 1px solid var(--color-border);
-}
-.turn-header:first-child {
-  margin-top: 0;
-  border-top: none;
+  padding-top: 36px;
 }
 .bubble-user,
 .bubble-assistant {
@@ -677,6 +679,10 @@ body,
   min-height: 0;
   /* D-46：composer 是浮层，需要定位上下文 */
   position: relative;
+  /* G14：会话态内容列断点容器（ZCode `@container/conversation`）。放在席位而非 .chat，
+     使转录（.messages）与输入区（.composer）**共用同一列宽约束**（二者共同祖先）。 */
+  container-type: inline-size;
+  container-name: conversation;
 }
 
 /* —— 常驻 composer（P5-B / D-33：无会话也挂载，仅 inert；P6-C 起为 D-46 浮层） —— */
@@ -974,29 +980,57 @@ button.composer-context-chip-readonly:hover {
   align-items: center;
   justify-content: center;
   gap: 24px;
+  /* G5（ZCode ConversationDraftEmptyState.tsx:171-175）：外层块 `relative w-full max-w-2xl`
+     —— 既作水印绝对定位的参照，又限内容列宽 42rem=672px；isolation 把水印的负 z-index
+     关在本块内（水印压在问候之下，又不穿到祖先背景之后）。 */
+  position: relative;
+  isolation: isolate;
+  width: 100%;
+  max-width: 672px;
+  margin-inline: auto;
   padding: 48px 16px 8px;
   user-select: none;
 }
-/* Logo mark 占位容器：实测 400×320（Z10-1 §0.2）；窄屏按比例收缩，低对比度装饰件。 */
+/* G5：Logo = **绝对定位背景水印**（ZCode ConversationDraftEmptyState.tsx:177-185）：
+   `left-1/2 top-1/2 w-[min(72vw,25rem)] aspect-[5/4] -mt-10 -translate-x/y-1/2`
+   → 400×320 居中、上移 40px，foreground-subtlest，pointer-events:none，压在问候之下。
+   ⚠️ 位置为按源码 class 的**推断值**（文档 §1.2/U6），待真机复核。
+   本仓资源仍是**中性占位**（非 ZCode 商标），故保留 opacity 0.5 的既有低对比度。 */
 .h2-empty-mark {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  z-index: -1;
+  width: min(72vw, 25rem);
+  aspect-ratio: 5 / 4;
+  margin-top: -40px;
+  transform: translate(-50%, -50%);
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 100%;
-  max-width: 400px;
-  height: 320px;
   color: var(--color-foreground-subtlest);
   opacity: 0.5;
+  pointer-events: none;
 }
 .h2-empty-greeting {
-  /* Z10-1 实测：ZCode 问候语 36px（1440×900，[510,262 672×36]）。
-     36px 超出 --text-ui-* 刻度（最大 --text-ui-xl = --ui-font-size + 4px = 18px），
-     按实测显式给定字号（本计划 §0.2 的实测依据）。 */
-  font-size: 36px;
+  /* ZCode ConversationDraftEmptyState：字号自适应（上限 30px / 下限 20px），
+     由组件按「容器可用宽 / 30px 自然文本宽」写入 --h2-empty-greeting-font-size；
+     无测量时回退上限 30px（与 ZCode resolveGreetingFontSizePx 一致）。 */
+  position: relative;
+  width: 100%;
+  font-size: var(--h2-empty-greeting-font-size, 30px);
   line-height: 1.2;
   font-weight: 500;
   color: var(--color-foreground);
   text-align: center;
+}
+/* 自然宽测量用隐藏 span：固定 30px（ZCode text-3xl），不参与布局、不进可访问树。 */
+.h2-empty-greeting-measure {
+  position: absolute;
+  visibility: hidden;
+  white-space: nowrap;
+  font-size: 30px;
+  line-height: 1.2;
 }
 .h2-empty-suggestions {
   display: flex;
@@ -1614,14 +1648,13 @@ button.composer-context-chip-readonly:hover {
 /* =============================================================================
  * Z2-09b（Z-17 对话页区块补缺）：轮次导航 rail（左侧细条，按需出现）
  *   显隐 = 轮次 ≥2（JS 侧 TurnNavigator 自判）且容器 ≥864px（此处 @container 断点）。
- *   断点容器 = 会话列（.chat，Z3-03 状态面板同一手法）；阈值常量与纯函数
- *   turnNavigatorVisible 钉在 conversation/turn-navigator.tsx（jsdom 测不了像素，
- *   CSS 规则由 desktop 样式断言钉住——双保险）。
+ *   断点容器 = 会话席位（.conversation-seat，container-name: conversation；G14 起
+ *   .chat 只作 rail 定位上下文）；阈值常量与纯函数 turnNavigatorVisible 钉在
+ *   conversation/turn-navigator.tsx（jsdom 测不了像素，CSS 规则由 desktop 样式断言钉住）。
  * ========================================================================== */
 .chat {
-  /* rail 的定位上下文 + @container 断点容器（inline-size 包含：宽不依赖内容，布局无副作用） */
+  /* rail 的定位上下文（断点容器已上移到 .conversation-seat，供消息区与 composer 共用） */
   position: relative;
-  container-type: inline-size;
 }
 .turn-rail {
   /* <864px 隐藏（按需区块的默认态；Z-17「不持久化」——显隐纯由条件决定，无记忆） */
@@ -1659,13 +1692,41 @@ button.composer-context-chip-readonly:hover {
   background: var(--color-accent);
   color: var(--color-primary);
 }
-@container (min-width: 864px) {
+@container conversation (min-width: 864px) {
   .turn-rail {
     display: flex;
   }
-  /* rail 让位：宽容器下内容列预留左缘空间（ZCode ≥864px 内容收窄 w-[calc(100%-6rem)] 的等价手法） */
-  .messages {
-    padding-left: 40px;
+}
+
+/* =============================================================================
+ * G14（ZCode conversationLayout.ts:3-9 / ConversationTimeline.tsx:1803-1930）：
+ * 会话态内容列宽 —— ≥864px: min(calc(100% - 6rem), 56rem=4xl)；
+ * ≥1280px: min(calc(100% - 24rem), 72rem=6xl)。
+ * 消息行（.messages）与输入区（.composer）**共用同一列宽约束**（ZCode 同一
+ * contentWidthClassName 套在 virtual history + live tail + composer dock）。
+ * 手法：padding-inline = 侧栏留白 + 行内 padding（px-4/@md:px-6），实现「居中收窄」，
+ * 滚动条仍留在整列右缘（ZCode 滚动区全宽 + [scrollbar-gutter:stable]）。
+ * 断点容器 = .conversation-seat（container-name: conversation）。
+ * ========================================================================== */
+@container conversation (min-width: 768px) {
+  /* G16：ZCode `@md/conversation:px-6` = 24px（Tailwind md = 768px）。 */
+  .messages,
+  .composer {
+    padding-inline: 24px;
+  }
+}
+@container conversation (min-width: 864px) {
+  /* G14：列宽 min(calc(100% - 6rem), 56rem) → 左右留白 max(3rem, (100% - 56rem)/2)。 */
+  .messages,
+  .composer {
+    padding-inline: calc(max(3rem, (100% - 56rem) / 2) + 24px);
+  }
+}
+@container conversation (min-width: 1280px) {
+  /* G14：列宽 min(calc(100% - 24rem), 72rem) → 左右留白 max(12rem, (100% - 72rem)/2)。 */
+  .messages,
+  .composer {
+    padding-inline: calc(max(12rem, (100% - 72rem) / 2) + 24px);
   }
 }
 

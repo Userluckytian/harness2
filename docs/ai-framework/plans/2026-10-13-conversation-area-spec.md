@@ -13,15 +13,15 @@
 
 ## 0 证据与口径
 
-| 标记 | 含义 |
-| --- | --- |
-| `源码:行` | 直接读到 `refs/ZCode/packages/ui/src/...` 的源码行（权威） |
-| `class:` | Tailwind class 名（从源码 className 抄录） |
-| `i18n:行` | `refs/ZCode/packages/ui/src/i18n/locales/zh-CN.ts` 的中文文案行 |
-| `refs:` | `docs/refs/refs-zcode-layout.md` 条目 |
-| `实测` | Z10 计划 §0.2（1440×900 浏览器实测）记录 |
-| **推断** | 源码未直接给出、由 class/结构推出的结论 |
-| **未确证** | 无法从本快照源码确证（不编造，显式登记） |
+| 标记       | 含义                                                            |
+| ---------- | --------------------------------------------------------------- |
+| `源码:行`  | 直接读到 `refs/ZCode/packages/ui/src/...` 的源码行（权威）      |
+| `class:`   | Tailwind class 名（从源码 className 抄录）                      |
+| `i18n:行`  | `refs/ZCode/packages/ui/src/i18n/locales/zh-CN.ts` 的中文文案行 |
+| `refs:`    | `docs/refs/refs-zcode-layout.md` 条目                           |
+| `实测`     | Z10 计划 §0.2（1440×900 浏览器实测）记录                        |
+| **推断**   | 源码未直接给出、由 class/结构推出的结论                         |
+| **未确证** | 无法从本快照源码确证（不编造，显式登记）                        |
 
 - 行号均相对上表文件；ZCode 组件的 className 大量使用 `@container` 变体（`/conversation`、`/composer`、`/workspace-header`），
   断点以**会话列**为容器，不是视口。
@@ -43,15 +43,15 @@ ZCode 的「空态」= 会话已打开但尚无任何 row。主区只渲染
 GREETING_BOUNDARY_HOURS = [5, 9, 12, 14, 18, 23]
 ```
 
-| 档位 key | 小时区间 | 中文文案（`i18n:4221-4226`，逐字） |
-| --- | --- | --- |
-| `chat.empty.greeting.morningEarly` | `[5, 9)` | 早上好呀，新的一天开始啦 |
-| `chat.empty.greeting.morning` | `[9, 12)` | 上午好呀，有什么想让我帮忙的吗 |
-| `chat.empty.greeting.noon` | `[12, 14)` | 中午好呀，要不要先休息一下 |
-| `chat.empty.greeting.afternoon` | `[14, 18)` | 下午好呀，接下来交给我吧 |
-| `chat.empty.greeting.evening` | `[18, 23)` | 晚上好呀，今天辛苦啦 |
-| `chat.empty.greeting.lateNight` | `[23, 24) ∪ [0, 5)` | 夜深啦，别忘了照顾好自己哦 |
-| `chat.empty.greeting.office` | office 模式覆盖全部档 | 今天有什么工作，交给我吧（`i18n:1911`） |
+| 档位 key                           | 小时区间              | 中文文案（`i18n:4221-4226`，逐字）      |
+| ---------------------------------- | --------------------- | --------------------------------------- |
+| `chat.empty.greeting.morningEarly` | `[5, 9)`              | 早上好呀，新的一天开始啦                |
+| `chat.empty.greeting.morning`      | `[9, 12)`             | 上午好呀，有什么想让我帮忙的吗          |
+| `chat.empty.greeting.noon`         | `[12, 14)`            | 中午好呀，要不要先休息一下              |
+| `chat.empty.greeting.afternoon`    | `[14, 18)`            | 下午好呀，接下来交给我吧                |
+| `chat.empty.greeting.evening`      | `[18, 23)`            | 晚上好呀，今天辛苦啦                    |
+| `chat.empty.greeting.lateNight`    | `[23, 24) ∪ [0, 5)`   | 夜深啦，别忘了照顾好自己哦              |
+| `chat.empty.greeting.office`       | office 模式覆盖全部档 | 今天有什么工作，交给我吧（`i18n:1911`） |
 
 - office 档由 `useIsOfficeMode()` 决定：`isOfficeMode ? office : getChatEmptyGreetingMessageId(date)`（`源码:88`）。
 - **6 档文案是 6 句不同的完整句子**（不是「问候词 + 固定后缀」）。EN 版同样 6 句不同（`i18n en-US:4513-4518`）。
@@ -134,7 +134,7 @@ GREETING_BOUNDARY_HOURS = [5, 9, 12, 14, 18, 23]
 
 - **带建议（`responsiveCenteredEmptyLayout`，草稿态）**：
   `flex min-h-full flex-col items-center px-4` + 伪元素 `before:min-h-[52px] before:basis-[29dvh]`（顶部弹性留白）
-  + `after:min-h-4 after:flex-1`（底部弹性留白）。`px-4` = 左右 16px。
+  - `after:min-h-4 after:flex-1`（底部弹性留白）。`px-4` = 左右 16px。
 - **不带建议（`centeredEmptyLayout`）**：`flex min-h-full flex-col items-center justify-center gap-4 px-4`（`gap-4` = 16px）。
 - emptyState 包裹：`flex w-full max-w-2xl shrink-0 items-center justify-center`（`源码:1781`）→ 空态内容列**最大 2xl = 42rem = 672px**。
 - 底部 dock（composer + 建议）：
@@ -273,14 +273,14 @@ GREETING_BOUNDARY_HOURS = [5, 9, 12, 14, 18, 23]
 
 `ConversationComposer.tsx`：
 
-| 维度 | 草稿态 | 会话态 |
-| --- | --- | --- |
-| 外层 | `centered` → 加 `max-w-2xl`（`:2205`） | 不 `centered`，随内容列宽 |
-| 内层输入壳 | 有 `contextHeader` → `rounded-2xl bg-surface shadow-xl/5`（卡片）（`:2232`） | 无卡片（回落页面底色） |
-| contextHeader | workspace 菜单 + Git 分支，包 `p-1.5 flex flex-wrap gap-0`（`:2235-2238`） | 无 |
-| 定位 | 非 sticky（由 timeline `responsiveCenteredEmptyLayout` 的 `mt-3 shrink-0` 承载） | timeline `sticky bottom-0`（`ConversationTimeline.tsx:1918`） |
-| placeholder | `chat.placeholder.newTask` = 向 ZCode 提问，使用 @ 添加上下文，使用 / 选择命令或能力 | 有历史空闲 → `followUpAsk` = 提出后续修改要求；处理中 → `followUpQueue` = 继续输入以排队后续修改（`:1598-1606`，`i18n:4264-4268`） |
-| 编辑器 | `ChatPromptEditor`（@ 提及 / `/` 命令 / 附件 / 模式-模型-档位控件 / 发送） | 同左 |
+| 维度          | 草稿态                                                                               | 会话态                                                                                                                             |
+| ------------- | ------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------- |
+| 外层          | `centered` → 加 `max-w-2xl`（`:2205`）                                               | 不 `centered`，随内容列宽                                                                                                          |
+| 内层输入壳    | 有 `contextHeader` → `rounded-2xl bg-surface shadow-xl/5`（卡片）（`:2232`）         | 无卡片（回落页面底色）                                                                                                             |
+| contextHeader | workspace 菜单 + Git 分支，包 `p-1.5 flex flex-wrap gap-0`（`:2235-2238`）           | 无                                                                                                                                 |
+| 定位          | 非 sticky（由 timeline `responsiveCenteredEmptyLayout` 的 `mt-3 shrink-0` 承载）     | timeline `sticky bottom-0`（`ConversationTimeline.tsx:1918`）                                                                      |
+| placeholder   | `chat.placeholder.newTask` = 向 ZCode 提问，使用 @ 添加上下文，使用 / 选择命令或能力 | 有历史空闲 → `followUpAsk` = 提出后续修改要求；处理中 → `followUpQueue` = 继续输入以排队后续修改（`:1598-1606`，`i18n:4264-4268`） |
+| 编辑器        | `ChatPromptEditor`（@ 提及 / `/` 命令 / 附件 / 模式-模型-档位控件 / 发送）           | 同左                                                                                                                               |
 
 - 移动端另有 `chat.placeholder.newTaskMobile` = 向 ZCode 提问…（`i18n:4265`）。
 
@@ -292,43 +292,43 @@ GREETING_BOUNDARY_HOURS = [5, 9, 12, 14, 18, 23]
 
 ### 3.1 形态 1（草稿/空态）
 
-| # | ZCode 规格 | 我们现状 | 差距 | 批次 | 证据 |
-| --- | --- | --- | --- | --- | --- |
-| G1 | 6 档问候 = 6 句**不同**完整句（早上好呀，新的一天开始啦 / 上午好呀，有什么想让我帮忙的吗 / 中午好呀，要不要先休息一下 / 下午好呀，接下来交给我吧 / 晚上好呀，今天辛苦啦 / 夜深啦，别忘了照顾好自己哦） | `EmptyState.tsx:34-49` 6 档，但**只有「上午」档逐字对齐**；其余 5 档是「〈问候词〉，有什么想让我帮忙的吗」同句式自拟（清晨好呀/中午好呀/下午好呀/傍晚好呀/夜深了 + 固定后缀） | **文案逐字不一致（5/6 档）**；档位命名也不同（ZCode 无「清晨/傍晚」词） | B1 | `i18n:4221-4226` vs `我们:EmptyState.tsx:34-49` |
-| G2 | office 模式覆盖档 `chat.empty.greeting.office` = 今天有什么工作，交给我吧 | 无 office 概念 | 无此档（**未确证**我们是否需要 office 模式） | B3 | `i18n:1911`、`源码:88` |
-| G3 | 字号自适应：20–30px，按「问候容器可用宽 vs 30px 自然宽」实时缩放（`ResizeObserver`），行高 1.2 | `shell.css:991-1000` 固定 `font-size:36px`，无自适应、无测量 | **字号 36 vs 30、无自适应**；且 36 疑为实测把行盒高当字号（见 §1.1 冲突） | B1 | `源码:15-16,54-78` vs `我们:shell.css:995`、`实测` §0.2 |
-| G4 | 到点自动换档：`setTimeout` 到下一个边界（5/9/12/14/18/23 点，跨日取次日 5:00）自动重算 | 无定时；进入时取一次 `now` 后不再变 | **缺自动换档** | B1 | `源码:38-52,91-99` vs `我们:EmptyState.tsx:83-91` |
-| G5 | Logo 水印：`aspect-[5/4] w-[min(72vw,25rem)]` = 400×320，绝对居中 + `-mt-10` 上移、`foreground-subtlest`；浅色内联 SVG 400×320 + 向下渐隐遮罩；深色 `assets/Z.svg` | `EmptyState.tsx:58-69` 用**本仓中性鱼形占位** SVG（220×220），`shell.css:981-990` 容器 `max-width:400px; height:320px; opacity:.5` | 尺寸容器接近（400×320）但**资源完全不同**（占位非 ZCode 商标，已声明）；ZCode 是**背景水印**（绝对定位溢出），我们是普通块级居中；无深浅两套 | B1 | `源码:177-247` vs `我们:EmptyState.tsx:58-69`、`shell.css:981-990` |
-| G6 | 空态标题/描述 key 存在但**无组件消费**（不渲染） | 我们也不渲染标题/描述 | **一致**（无需改；仅登记） | — | 全量 grep（仅 locales 命中） |
-| G7 | 建议 prompts：条数/文案来自 **Client Scenes `draft-suggestion` scene**（远端配置，无固定条数） | `EmptyState.tsx:26` 硬编码 4 条「周报总结/报错修复/PPT 制作/闲时任务」（来自 Z10 §0.2 实测） | 数据源不同（静态 vs 远端）；ZCode 可随场景刷新，我们固定 | B2 | `draftSuggestedPromptItems.ts:76`、`Container:139-155` vs `我们:EmptyState.tsx:26` |
-| G8 | 建议 chip 单项：`Button outline size-lg h-8 rounded-lg px-3`，**带图标 `size-4`** + 文本 `max-w-64 truncate`；组 `gap-4` 居中；容器横向可滚无滚动条；入场 waterfall 逐项 65ms | `shell.css:1001-1030`：`h2-empty-suggestion` 高 32px、`padding 0 16px`、圆角 8px、**无图标**、间距 17px、无 waterfall | **尺寸接近（32 vs 32、8 vs 8px 圆角）但缺图标、缺入场动画、间距 17 vs 16** | B2 | `源码:288-349` vs `我们:shell.css:1001-1030` |
-| G9 | 建议 chip 点击 = **预填 composer**（不发送） | 点击 = `composerStore.insert-text` 预填（不发送） | **一致**（语义对齐） | — | `Container:238-252` vs `我们:seat.tsx:513-519` |
-| G10 | 建议 chip 位置 = composer **下方**（composer dock 内，`mt-6`） | `seat.tsx:508-519` 在 `.composer-overlay` 内、`Composer` **之后** | **一致**（均在 composer 下） | — | `SessionPane.tsx:4556-4570` vs `我们:seat.tsx:508-519` |
-| G11 | 空态垂直排布：顶部 `basis-[29dvh]` 弹性留白 → 内容（max-w-2xl）→ composer（mt-3）→ chips → 底部 `flex-1 min-h-4`；composer **非 sticky** | `shell.css:970-979` `.h2-empty` `flex:1; justify-content:center; gap:24px; padding:48px 16px 8px`；composer 是**绝对浮层**（`shell.css:683-689`） | **排布机制不同**：ZCode 用 29dvh 弹性上留白 + 内容自然流；我们靠 `justify-content:center` + composer 浮层预留；间距量级相近 | B1 | `ConversationTimeline.tsx:1759-1776,1906-1948` vs `我们:shell.css:970-979,683-689` |
+| #   | ZCode 规格                                                                                                                                                                                             | 我们现状                                                                                                                                                                      | 差距                                                                                                                                         | 批次 | 证据                                                                               |
+| --- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- | ---- | ---------------------------------------------------------------------------------- |
+| G1  | 6 档问候 = 6 句**不同**完整句（早上好呀，新的一天开始啦 / 上午好呀，有什么想让我帮忙的吗 / 中午好呀，要不要先休息一下 / 下午好呀，接下来交给我吧 / 晚上好呀，今天辛苦啦 / 夜深啦，别忘了照顾好自己哦） | `EmptyState.tsx:34-49` 6 档，但**只有「上午」档逐字对齐**；其余 5 档是「〈问候词〉，有什么想让我帮忙的吗」同句式自拟（清晨好呀/中午好呀/下午好呀/傍晚好呀/夜深了 + 固定后缀） | **文案逐字不一致（5/6 档）**；档位命名也不同（ZCode 无「清晨/傍晚」词）                                                                      | B1   | `i18n:4221-4226` vs `我们:EmptyState.tsx:34-49`                                    |
+| G2  | office 模式覆盖档 `chat.empty.greeting.office` = 今天有什么工作，交给我吧                                                                                                                              | 无 office 概念                                                                                                                                                                | 无此档（**未确证**我们是否需要 office 模式）                                                                                                 | B3   | `i18n:1911`、`源码:88`                                                             |
+| G3  | 字号自适应：20–30px，按「问候容器可用宽 vs 30px 自然宽」实时缩放（`ResizeObserver`），行高 1.2                                                                                                         | `shell.css:991-1000` 固定 `font-size:36px`，无自适应、无测量                                                                                                                  | **字号 36 vs 30、无自适应**；且 36 疑为实测把行盒高当字号（见 §1.1 冲突）                                                                    | B1   | `源码:15-16,54-78` vs `我们:shell.css:995`、`实测` §0.2                            |
+| G4  | 到点自动换档：`setTimeout` 到下一个边界（5/9/12/14/18/23 点，跨日取次日 5:00）自动重算                                                                                                                 | 无定时；进入时取一次 `now` 后不再变                                                                                                                                           | **缺自动换档**                                                                                                                               | B1   | `源码:38-52,91-99` vs `我们:EmptyState.tsx:83-91`                                  |
+| G5  | Logo 水印：`aspect-[5/4] w-[min(72vw,25rem)]` = 400×320，绝对居中 + `-mt-10` 上移、`foreground-subtlest`；浅色内联 SVG 400×320 + 向下渐隐遮罩；深色 `assets/Z.svg`                                     | `EmptyState.tsx:58-69` 用**本仓中性鱼形占位** SVG（220×220），`shell.css:981-990` 容器 `max-width:400px; height:320px; opacity:.5`                                            | 尺寸容器接近（400×320）但**资源完全不同**（占位非 ZCode 商标，已声明）；ZCode 是**背景水印**（绝对定位溢出），我们是普通块级居中；无深浅两套 | B1   | `源码:177-247` vs `我们:EmptyState.tsx:58-69`、`shell.css:981-990`                 |
+| G6  | 空态标题/描述 key 存在但**无组件消费**（不渲染）                                                                                                                                                       | 我们也不渲染标题/描述                                                                                                                                                         | **一致**（无需改；仅登记）                                                                                                                   | —    | 全量 grep（仅 locales 命中）                                                       |
+| G7  | 建议 prompts：条数/文案来自 **Client Scenes `draft-suggestion` scene**（远端配置，无固定条数）                                                                                                         | `EmptyState.tsx:26` 硬编码 4 条「周报总结/报错修复/PPT 制作/闲时任务」（来自 Z10 §0.2 实测）                                                                                  | 数据源不同（静态 vs 远端）；ZCode 可随场景刷新，我们固定                                                                                     | B2   | `draftSuggestedPromptItems.ts:76`、`Container:139-155` vs `我们:EmptyState.tsx:26` |
+| G8  | 建议 chip 单项：`Button outline size-lg h-8 rounded-lg px-3`，**带图标 `size-4`** + 文本 `max-w-64 truncate`；组 `gap-4` 居中；容器横向可滚无滚动条；入场 waterfall 逐项 65ms                          | `shell.css:1001-1030`：`h2-empty-suggestion` 高 32px、`padding 0 16px`、圆角 8px、**无图标**、间距 17px、无 waterfall                                                         | **尺寸接近（32 vs 32、8 vs 8px 圆角）但缺图标、缺入场动画、间距 17 vs 16**                                                                   | B2   | `源码:288-349` vs `我们:shell.css:1001-1030`                                       |
+| G9  | 建议 chip 点击 = **预填 composer**（不发送）                                                                                                                                                           | 点击 = `composerStore.insert-text` 预填（不发送）                                                                                                                             | **一致**（语义对齐）                                                                                                                         | —    | `Container:238-252` vs `我们:seat.tsx:513-519`                                     |
+| G10 | 建议 chip 位置 = composer **下方**（composer dock 内，`mt-6`）                                                                                                                                         | `seat.tsx:508-519` 在 `.composer-overlay` 内、`Composer` **之后**                                                                                                             | **一致**（均在 composer 下）                                                                                                                 | —    | `SessionPane.tsx:4556-4570` vs `我们:seat.tsx:508-519`                             |
+| G11 | 空态垂直排布：顶部 `basis-[29dvh]` 弹性留白 → 内容（max-w-2xl）→ composer（mt-3）→ chips → 底部 `flex-1 min-h-4`；composer **非 sticky**                                                               | `shell.css:970-979` `.h2-empty` `flex:1; justify-content:center; gap:24px; padding:48px 16px 8px`；composer 是**绝对浮层**（`shell.css:683-689`）                             | **排布机制不同**：ZCode 用 29dvh 弹性上留白 + 内容自然流；我们靠 `justify-content:center` + composer 浮层预留；间距量级相近                  | B1   | `ConversationTimeline.tsx:1759-1776,1906-1948` vs `我们:shell.css:970-979,683-689` |
 
 ### 3.2 形态 2（会话态）
 
-| # | ZCode 规格 | 我们现状 | 差距 | 批次 | 证据 |
-| --- | --- | --- | --- | --- | --- |
-| G12 | `ConversationHeader` 不占高度、无标题栏，只在有 pane 动作时右上角悬浮（`absolute left-2 top-2 z-20`）workspace 徽标 + 关窗格按钮 | 桌面 `ConversationHeader.tsx:169-237` 是 `.pane-header` **占高的横条**（cwd/branch/model/上下文水条 + 右栏开关 + 窗控） | **定位/职责不同**：我们的 `.pane-header` 实际对应 ZCode 的 `WorkspaceHeader`（h-12），不是 `ConversationHeader`；ZCode 的 pane 浮动动作（关闭/workspace 徽标）我们未做 | B3 | `ConversationHeader.tsx:36-49,93-113` vs `我们:ConversationHeader.tsx:169-237` |
-| G13 | 可见顶栏 `WorkspaceHeader`：`h-12 border-b p-2`，含任务标题 + 工作区标签 + **Git 分支切换器** + 动作区 | `.pane-header`：cwd + 分支 + **model** + **上下文占用水条** + 右栏开关 + 窗控；无任务标题、无工作区切换器 | 字段集不同（我们多 model/上下文条，少任务标题/工作区切换器/分支切换动作） | B3 | `WorkspaceHeader.tsx:139-157`、`WorkspaceHeaderSections.tsx` vs `我们:ConversationHeader.tsx:169-237` |
-| G14 | 内容列宽：≥864px `w-[calc(100%-6rem)] max-w-4xl`，≥1280px `w-[calc(100%-24rem)] max-w-6xl`（+ 面板让位 `-translate-x-42`） | `shell.css` 无内容列 max-width；`.chat` 通栏；仅 `.messages` `padding:12px 16px` | **缺内容列收窄**（宽屏正文会拉满整列，观感差最大之一） | B1 | `conversationLayout.ts:3-9` vs `我们:shell.css:103-121` |
-| G15 | 轮次分隔 = `pt-14`（56px）纯留白，**无分隔线、无文字头** | `.turn-header` 是 `border-top:1px solid; margin-top:12px` 的**细线** | **有分隔线 vs 无**；间距 12px vs 56px | B1 | `ConversationTurnGroup.tsx:1302-1310` vs `我们:shell.css:123-130` |
-| G16 | 轮次内边距 `px-4 @md:px-6 pb-5 gap-5` | `.messages` 统一 `padding:12px 16px; gap:8px`，无 `@md` 24px、无 `pb-5`/`gap-5` | 间距偏小且无断点 | B1 | 同上 vs `shell.css:106-121` |
-| G17 | 「耗时」文案：work-history 段头 `chat.history.workedFor` = **已工作 {duration}**（运行中 **工作中 {duration}**），时长支持 秒/分/时/天 | `chat-model.ts:104-107` `formatTurnDuration` → **「持续了 N 秒」**（只到秒、ceil、无分/时/天）；`ChatView.tsx:159-191` 渲染在 `turn-summary` | **文案与时长粒度都不同**；且 ZCode 是段头（`border-b`）而非轮尾摘要 | B1 | `ConversationTurnGroup.tsx:565-609`、`i18n:4322-4329` vs `我们:chat-model.ts:104-107` |
-| G18 | 用户消息：右对齐气泡 `rounded-xl rounded-tr-xs border bg-surface px-4 py-3`，≥624px `max-w-xl`，超 120px 折叠 + 渐隐 + 圆形展开钮 | `shell.css:138-144` `.bubble-user` 右对齐 `border-radius:8px; background:var(--color-secondary); padding:12px 16px`；无右上角小圆角、无 border、无折叠 | 圆角/边框/折叠**不一致**（无折叠是功能缺口：长输入会撑满） | B1 | `ConversationRowView.tsx:1257-1259`、`ConversationUserInputBody.tsx:7,104-142` vs `我们:shell.css:138-144` |
-| G19 | 助手正文：`w-full text-ui-base` + markdown 渲染，无气泡；轮尾动作 hover 显现（复制/分叉/重试/反馈） | `.bubble-assistant` 无背景/无内边距（一致）；`MessageActions` 有复制/分叉，**无赞/踩/重试**（已声明无后端） | 动作集少（赞踩/重试/反馈）——既有登记 | B3 | `ConversationRowView.tsx:1477-1541,1414-1435` vs `我们:ChatView.tsx:66-91` |
-| G20 | 工具行：图标 `foreground-subtlest`、kind 标签运行中扫光、展开箭头 hover 显现 `rotate-90`、内容 `pt-2` 延迟 300ms 卸载 | `ToolCard.tsx:305-404` 有 `tool-{status}`、状态色 `STATUS_TEXT_COLOR`、running LoaderIcon 旋转、展开动画 | **大体对齐**（细节：ZCode 图标非状态色、运行态用文字扫光而非旋转图标） | B3 | `ToolLayout.tsx:144-147`、`ToolSummaryRow.tsx:213-219` vs `我们:ToolCard.tsx:305-404` |
-| G21 | 工具行**无逐行右侧耗时**（耗时在 work-history 段头） | `ToolCard` 亦无逐行耗时（**推断**一致） | **一致**（登记） | — | `ToolLayout.tsx` 无耗时字段 |
-| G22 | 轮次导航：左侧**细条 rail**（`h-0.5 w-3` 条、`origin-left`、hover 缩放、悬停卡给「用户首句 + 助手摘要」），无序号文字 | `turn-navigator.tsx:119-142` 渲染**数字按钮**（`第 N 轮`、`turn-rail-item` 18×18 圆角）；`shell.css:1626-1670` | **形态不同（细条 vs 数字按钮）**；无悬停预览卡；显隐条件（≥2 且 ≥864px）**一致** | B2 | `ConversationTurnNavigator.tsx:133-244` vs `我们:turn-navigator.tsx:119-142` |
-| G23 | 状态面板：右上角浮层 `absolute top-0 pt-4`，`rounded-2xl border bg-popover shadow-md`；auto <1280 胶囊 / ≥1280 `w-80` 面板；Git/Goal/Plans/Plan 展开、Terminal/Workflow/Agent 收起 | `seat.tsx:447-457` 槽位在**会话列内、转录之上**（非浮层）；`ConversationStatusPanel.tsx` 结构对齐（auto/capsule、rounded-2xl 等） | 承载位置不同（列内 vs 浮层）；子块默认展开/收起**未确证**是否一致 | B3 | `ConversationStatusPanel.tsx:1858-1901` vs `我们:seat.tsx:447-457`、`status-panel/ConversationStatusPanel.tsx` |
-| G24 | 状态面板草稿态不渲染 | `seat.tsx:447-457` 由壳回调返回 null 决定；`statusPanelHasContent` 无内容返回 null | **大体一致**（登记） | — | `refs` Z-18 |
-| G25 | composer：草稿态**居中 max-w-2xl + `rounded-2xl bg-surface shadow-xl/5` 卡片 + contextHeader（项目/Git）**；会话态无卡片、sticky 吸底 | `Composer.tsx` 无 centered/卡片分支；`.composer` 恒 `border-top + bg-panel`；composer 是绝对浮层（非 sticky）；context chips 走 `contextChips` 行（Z10-2） | **缺草稿居中卡形态**；composer 定位机制不同（浮层 vs sticky） | B1/B3 | `ConversationComposer.tsx:2189-2238` vs `我们:Composer.tsx:556-640`、`shell.css:683-708` |
-| G26 | placeholder 动态三态：无历史 `newTask` / 有历史空闲 `followUpAsk` / 处理中 `followUpQueue` | `Composer.tsx:192-193,551` 仅二态：有会话 = 「向 harness2 提问，使用 @ 添加上下文，使用 / 选择命令或能力」，无会话 = 「选择会话后开始输入」 | **缺 followUpAsk/followUpQueue 两态**；且品牌名 harness2 vs ZCode（**品牌差异，可保留**） | B2 | `ConversationComposer.tsx:1598-1606`、`i18n:4264-4268` vs `我们:Composer.tsx:192-193` |
-| G27 | composer 右簇三件套（模式 / 模型 / 思考档位）常驻 | `composer-controls.tsx` 已实现，但由壳注入 `modeSwitch/modelSelect/thoughtLevel`；web 壳无通道则不渲染 | 桌面有、web 可能缺（既有总账已登记 P0） | B3 | `ConversationComposer.tsx` vs `我们:composer-controls.tsx`、`seat.tsx:500-505` |
-| G28 | 时间轴有「回到底部」圆钮（`ConversationBackToBottomButton`，composer dock 上/下） | `ChatView.tsx` 无回到底部按钮（grep 无命中） | **缺回到底部按钮** | B2 | `ConversationTimeline.tsx:1932-1958` vs `我们:ChatView.tsx:253-306` |
-| G29 | 时间轴虚拟化（`useVirtualizer`）、稳定 scrollbar-gutter | `.messages` 普通滚动 + 稳定滚动逻辑（`nextScrollTop`），无虚拟化 | 长会话性能差异（非观感；**推断**可暂缓） | B3 | `ConversationTimeline.tsx:1826-1853` vs `我们:ChatView.tsx:220-234` |
-| G30 | 消息动作行含复制/赞/踩/分叉/重试/编辑/反馈 | `MessageActions` 仅复制/分叉（赞踩重试无后端，已声明不做） | 动作集少（既有登记） | B3 | `ConversationRowView.tsx:1414-1435` vs `我们:ChatView.tsx:79-87` |
+| #   | ZCode 规格                                                                                                                                                                         | 我们现状                                                                                                                                                   | 差距                                                                                                                                                                   | 批次  | 证据                                                                                                           |
+| --- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----- | -------------------------------------------------------------------------------------------------------------- |
+| G12 | `ConversationHeader` 不占高度、无标题栏，只在有 pane 动作时右上角悬浮（`absolute left-2 top-2 z-20`）workspace 徽标 + 关窗格按钮                                                   | 桌面 `ConversationHeader.tsx:169-237` 是 `.pane-header` **占高的横条**（cwd/branch/model/上下文水条 + 右栏开关 + 窗控）                                    | **定位/职责不同**：我们的 `.pane-header` 实际对应 ZCode 的 `WorkspaceHeader`（h-12），不是 `ConversationHeader`；ZCode 的 pane 浮动动作（关闭/workspace 徽标）我们未做 | B3    | `ConversationHeader.tsx:36-49,93-113` vs `我们:ConversationHeader.tsx:169-237`                                 |
+| G13 | 可见顶栏 `WorkspaceHeader`：`h-12 border-b p-2`，含任务标题 + 工作区标签 + **Git 分支切换器** + 动作区                                                                             | `.pane-header`：cwd + 分支 + **model** + **上下文占用水条** + 右栏开关 + 窗控；无任务标题、无工作区切换器                                                  | 字段集不同（我们多 model/上下文条，少任务标题/工作区切换器/分支切换动作）                                                                                              | B3    | `WorkspaceHeader.tsx:139-157`、`WorkspaceHeaderSections.tsx` vs `我们:ConversationHeader.tsx:169-237`          |
+| G14 | 内容列宽：≥864px `w-[calc(100%-6rem)] max-w-4xl`，≥1280px `w-[calc(100%-24rem)] max-w-6xl`（+ 面板让位 `-translate-x-42`）                                                         | `shell.css` 无内容列 max-width；`.chat` 通栏；仅 `.messages` `padding:12px 16px`                                                                           | **缺内容列收窄**（宽屏正文会拉满整列，观感差最大之一）                                                                                                                 | B1    | `conversationLayout.ts:3-9` vs `我们:shell.css:103-121`                                                        |
+| G15 | 轮次分隔 = `pt-14`（56px）纯留白，**无分隔线、无文字头**                                                                                                                           | `.turn-header` 是 `border-top:1px solid; margin-top:12px` 的**细线**                                                                                       | **有分隔线 vs 无**；间距 12px vs 56px                                                                                                                                  | B1    | `ConversationTurnGroup.tsx:1302-1310` vs `我们:shell.css:123-130`                                              |
+| G16 | 轮次内边距 `px-4 @md:px-6 pb-5 gap-5`                                                                                                                                              | `.messages` 统一 `padding:12px 16px; gap:8px`，无 `@md` 24px、无 `pb-5`/`gap-5`                                                                            | 间距偏小且无断点                                                                                                                                                       | B1    | 同上 vs `shell.css:106-121`                                                                                    |
+| G17 | 「耗时」文案：work-history 段头 `chat.history.workedFor` = **已工作 {duration}**（运行中 **工作中 {duration}**），时长支持 秒/分/时/天                                             | `chat-model.ts:104-107` `formatTurnDuration` → **「持续了 N 秒」**（只到秒、ceil、无分/时/天）；`ChatView.tsx:159-191` 渲染在 `turn-summary`               | **文案与时长粒度都不同**；且 ZCode 是段头（`border-b`）而非轮尾摘要                                                                                                    | B1    | `ConversationTurnGroup.tsx:565-609`、`i18n:4322-4329` vs `我们:chat-model.ts:104-107`                          |
+| G18 | 用户消息：右对齐气泡 `rounded-xl rounded-tr-xs border bg-surface px-4 py-3`，≥624px `max-w-xl`，超 120px 折叠 + 渐隐 + 圆形展开钮                                                  | `shell.css:138-144` `.bubble-user` 右对齐 `border-radius:8px; background:var(--color-secondary); padding:12px 16px`；无右上角小圆角、无 border、无折叠     | 圆角/边框/折叠**不一致**（无折叠是功能缺口：长输入会撑满）                                                                                                             | B1    | `ConversationRowView.tsx:1257-1259`、`ConversationUserInputBody.tsx:7,104-142` vs `我们:shell.css:138-144`     |
+| G19 | 助手正文：`w-full text-ui-base` + markdown 渲染，无气泡；轮尾动作 hover 显现（复制/分叉/重试/反馈）                                                                                | `.bubble-assistant` 无背景/无内边距（一致）；`MessageActions` 有复制/分叉，**无赞/踩/重试**（已声明无后端）                                                | 动作集少（赞踩/重试/反馈）——既有登记                                                                                                                                   | B3    | `ConversationRowView.tsx:1477-1541,1414-1435` vs `我们:ChatView.tsx:66-91`                                     |
+| G20 | 工具行：图标 `foreground-subtlest`、kind 标签运行中扫光、展开箭头 hover 显现 `rotate-90`、内容 `pt-2` 延迟 300ms 卸载                                                              | `ToolCard.tsx:305-404` 有 `tool-{status}`、状态色 `STATUS_TEXT_COLOR`、running LoaderIcon 旋转、展开动画                                                   | **大体对齐**（细节：ZCode 图标非状态色、运行态用文字扫光而非旋转图标）                                                                                                 | B3    | `ToolLayout.tsx:144-147`、`ToolSummaryRow.tsx:213-219` vs `我们:ToolCard.tsx:305-404`                          |
+| G21 | 工具行**无逐行右侧耗时**（耗时在 work-history 段头）                                                                                                                               | `ToolCard` 亦无逐行耗时（**推断**一致）                                                                                                                    | **一致**（登记）                                                                                                                                                       | —     | `ToolLayout.tsx` 无耗时字段                                                                                    |
+| G22 | 轮次导航：左侧**细条 rail**（`h-0.5 w-3` 条、`origin-left`、hover 缩放、悬停卡给「用户首句 + 助手摘要」），无序号文字                                                              | `turn-navigator.tsx:119-142` 渲染**数字按钮**（`第 N 轮`、`turn-rail-item` 18×18 圆角）；`shell.css:1626-1670`                                             | **形态不同（细条 vs 数字按钮）**；无悬停预览卡；显隐条件（≥2 且 ≥864px）**一致**                                                                                       | B2    | `ConversationTurnNavigator.tsx:133-244` vs `我们:turn-navigator.tsx:119-142`                                   |
+| G23 | 状态面板：右上角浮层 `absolute top-0 pt-4`，`rounded-2xl border bg-popover shadow-md`；auto <1280 胶囊 / ≥1280 `w-80` 面板；Git/Goal/Plans/Plan 展开、Terminal/Workflow/Agent 收起 | `seat.tsx:447-457` 槽位在**会话列内、转录之上**（非浮层）；`ConversationStatusPanel.tsx` 结构对齐（auto/capsule、rounded-2xl 等）                          | 承载位置不同（列内 vs 浮层）；子块默认展开/收起**未确证**是否一致                                                                                                      | B3    | `ConversationStatusPanel.tsx:1858-1901` vs `我们:seat.tsx:447-457`、`status-panel/ConversationStatusPanel.tsx` |
+| G24 | 状态面板草稿态不渲染                                                                                                                                                               | `seat.tsx:447-457` 由壳回调返回 null 决定；`statusPanelHasContent` 无内容返回 null                                                                         | **大体一致**（登记）                                                                                                                                                   | —     | `refs` Z-18                                                                                                    |
+| G25 | composer：草稿态**居中 max-w-2xl + `rounded-2xl bg-surface shadow-xl/5` 卡片 + contextHeader（项目/Git）**；会话态无卡片、sticky 吸底                                              | `Composer.tsx` 无 centered/卡片分支；`.composer` 恒 `border-top + bg-panel`；composer 是绝对浮层（非 sticky）；context chips 走 `contextChips` 行（Z10-2） | **缺草稿居中卡形态**；composer 定位机制不同（浮层 vs sticky）                                                                                                          | B1/B3 | `ConversationComposer.tsx:2189-2238` vs `我们:Composer.tsx:556-640`、`shell.css:683-708`                       |
+| G26 | placeholder 动态三态：无历史 `newTask` / 有历史空闲 `followUpAsk` / 处理中 `followUpQueue`                                                                                         | `Composer.tsx:192-193,551` 仅二态：有会话 = 「向 harness2 提问，使用 @ 添加上下文，使用 / 选择命令或能力」，无会话 = 「选择会话后开始输入」                | **缺 followUpAsk/followUpQueue 两态**；且品牌名 harness2 vs ZCode（**品牌差异，可保留**）                                                                              | B2    | `ConversationComposer.tsx:1598-1606`、`i18n:4264-4268` vs `我们:Composer.tsx:192-193`                          |
+| G27 | composer 右簇三件套（模式 / 模型 / 思考档位）常驻                                                                                                                                  | `composer-controls.tsx` 已实现，但由壳注入 `modeSwitch/modelSelect/thoughtLevel`；web 壳无通道则不渲染                                                     | 桌面有、web 可能缺（既有总账已登记 P0）                                                                                                                                | B3    | `ConversationComposer.tsx` vs `我们:composer-controls.tsx`、`seat.tsx:500-505`                                 |
+| G28 | 时间轴有「回到底部」圆钮（`ConversationBackToBottomButton`，composer dock 上/下）                                                                                                  | `ChatView.tsx` 无回到底部按钮（grep 无命中）                                                                                                               | **缺回到底部按钮**                                                                                                                                                     | B2    | `ConversationTimeline.tsx:1932-1958` vs `我们:ChatView.tsx:253-306`                                            |
+| G29 | 时间轴虚拟化（`useVirtualizer`）、稳定 scrollbar-gutter                                                                                                                            | `.messages` 普通滚动 + 稳定滚动逻辑（`nextScrollTop`），无虚拟化                                                                                           | 长会话性能差异（非观感；**推断**可暂缓）                                                                                                                               | B3    | `ConversationTimeline.tsx:1826-1853` vs `我们:ChatView.tsx:220-234`                                            |
+| G30 | 消息动作行含复制/赞/踩/分叉/重试/编辑/反馈                                                                                                                                         | `MessageActions` 仅复制/分叉（赞踩重试无后端，已声明不做）                                                                                                 | 动作集少（既有登记）                                                                                                                                                   | B3    | `ConversationRowView.tsx:1414-1435` vs `我们:ChatView.tsx:79-87`                                               |
 
 > 说明：G6/G9/G10/G21/G24 为**已一致项**，登记以便后续回归时不误改。
 
@@ -385,24 +385,24 @@ GREETING_BOUNDARY_HOURS = [5, 9, 12, 14, 18, 23]
 
 ## 5 未确证 / 冲突 / 需产品决策项（不得当已确证使用）
 
-| # | 项 | 状态 |
-| --- | --- | --- |
-| U1 | 问候字号 36px（实测）vs 30px（源码） | **冲突**。本轮以源码 30px 为准；36 疑为 `30×1.2` 行盒高。需真机复测确认。 |
-| U2 | 建议 prompts 的默认条数/文案 | **未确证**。源码内条数来自远端 Client Scenes；`chat.draft.suggestedPrompt.*` i18n 在本快照**无消费方**（遗留）。我们 4 条来自实测，非源码常量。 |
-| U3 | `chat.empty.title` / `chat.empty.description` 的实际渲染 | **未确证/未使用**。本快照无组件引用（历史遗留 key）。 |
-| U4 | 工具行通用「状态色」映射 | **未确证**。`ToolLayout` 不硬编码颜色，由各 renderer 决定；未逐一核对 `ToolCallBlocks/renderers/*`。 |
-| U5 | 工具行是否有逐行右侧耗时 | **未确证**（通用路径无；个别 renderer 可能有）。 |
-| U6 | 空态水印的精确像素位置 | **推断**。源码是绝对定位居中 + `-mt-10`，精确 y 依赖容器高度与 29dvh；实测值需真机复测。 |
-| U7 | `conversationLayout.ts:4-7` 带/不带状态面板宽度类名完全相同 | **疑似源码冗余/遗留**，我们按「不因面板改变列宽」理解；是否影响 ZCode 真实行为**未确证**。 |
-| U8 | 轮次导航细条的 hover 缩放参数（`scaleX` 具体值） | **未确证**。在 `conversationTurnNavigatorHelpers.ts`（本轮未展开）；形态（细条/无序号）已确证。 |
-| U9 | 状态面板子块默认展开/收起清单 | 依据 `refs` Z-17（Git/Goal/Plans/Plan 展开、Terminal/Workflow/Agent 收起）；源码行号引自 refs，本轮未逐行复核。 |
-| U10 | 建议 chip 是否应改为远端 scene 数据源（G7） | **需产品决策**：改成远端配置成本高，且我们无对应 scene 通道。 |
-| U11 | 品牌名差异（placeholder「向 harness2 提问」vs「向 ZCode 提问」） | **需产品决策**：是否保留本仓品牌名（当前保留，属合理差异）。 |
+| #   | 项                                                               | 状态                                                                                                                                            |
+| --- | ---------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
+| U1  | 问候字号 36px（实测）vs 30px（源码）                             | **冲突**。本轮以源码 30px 为准；36 疑为 `30×1.2` 行盒高。需真机复测确认。                                                                       |
+| U2  | 建议 prompts 的默认条数/文案                                     | **未确证**。源码内条数来自远端 Client Scenes；`chat.draft.suggestedPrompt.*` i18n 在本快照**无消费方**（遗留）。我们 4 条来自实测，非源码常量。 |
+| U3  | `chat.empty.title` / `chat.empty.description` 的实际渲染         | **未确证/未使用**。本快照无组件引用（历史遗留 key）。                                                                                           |
+| U4  | 工具行通用「状态色」映射                                         | **未确证**。`ToolLayout` 不硬编码颜色，由各 renderer 决定；未逐一核对 `ToolCallBlocks/renderers/*`。                                            |
+| U5  | 工具行是否有逐行右侧耗时                                         | **未确证**（通用路径无；个别 renderer 可能有）。                                                                                                |
+| U6  | 空态水印的精确像素位置                                           | **推断**。源码是绝对定位居中 + `-mt-10`，精确 y 依赖容器高度与 29dvh；实测值需真机复测。                                                        |
+| U7  | `conversationLayout.ts:4-7` 带/不带状态面板宽度类名完全相同      | **疑似源码冗余/遗留**，我们按「不因面板改变列宽」理解；是否影响 ZCode 真实行为**未确证**。                                                      |
+| U8  | 轮次导航细条的 hover 缩放参数（`scaleX` 具体值）                 | **未确证**。在 `conversationTurnNavigatorHelpers.ts`（本轮未展开）；形态（细条/无序号）已确证。                                                 |
+| U9  | 状态面板子块默认展开/收起清单                                    | 依据 `refs` Z-17（Git/Goal/Plans/Plan 展开、Terminal/Workflow/Agent 收起）；源码行号引自 refs，本轮未逐行复核。                                 |
+| U10 | 建议 chip 是否应改为远端 scene 数据源（G7）                      | **需产品决策**：改成远端配置成本高，且我们无对应 scene 通道。                                                                                   |
+| U11 | 品牌名差异（placeholder「向 harness2 提问」vs「向 ZCode 提问」） | **需产品决策**：是否保留本仓品牌名（当前保留，属合理差异）。                                                                                    |
 
 ---
 
 ## 6 变更记录
 
-| 日期 | 变更 |
-| --- | --- |
+| 日期       | 变更                                                                                                                                                     |
+| ---------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | 2026-10-13 | 首建：从 `refs/ZCode@29628c9` 源码抽取对话区权威规格（形态 1/2 共 30 条对照），产出差距清单（30 项，含 5 项已一致登记）、3 批建议与 11 项未确证/决策项。 |
