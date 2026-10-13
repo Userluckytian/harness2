@@ -8,6 +8,35 @@ import type { Controller } from '../../app-controller.js';
 import { buildDiffRows } from '../../components/DiffCard.js';
 import type { AppStore } from '../../store.js';
 import { buildChangeReviewView, type ChangedFileView } from '../../features/workspace/change-review-model.js';
+import { changeLineStats } from './change-line-stats.js';
+
+/**
+ * Z10-6c：变更面板的筛选口径。ZCode 的 review tab 是「未暂存」下拉（git 语义）；
+ * 本仓**没有 git status 通道**，故不借用「未暂存/已暂存」字样，用我们真实有的语义命名：
+ *   - `dirty`   = 有外部改动（current ≠ lastKnown，被外部/用户改过）；
+ *   - `planned` = 与拟议一致（matchesPlan，仍等于拟议落点）。
+ */
+export type ChangeFileFilter = 'all' | 'dirty' | 'planned';
+
+/** 筛选下拉选项（标签如实命名，不写「未暂存」）。 */
+export const CHANGE_FILE_FILTERS: ReadonlyArray<{ readonly value: ChangeFileFilter; readonly label: string }> =
+  Object.freeze([
+    { value: 'all', label: '全部' },
+    { value: 'dirty', label: '有外部改动' },
+    { value: 'planned', label: '与拟议一致' },
+  ]);
+
+/** 按筛选语义过滤变更文件（纯函数；`all` 原样，其余按对应字段真值过滤）。 */
+export function filterChangedFiles(files: readonly ChangedFileView[], filter: ChangeFileFilter): ChangedFileView[] {
+  switch (filter) {
+    case 'all':
+      return [...files];
+    case 'dirty':
+      return files.filter((f) => f.dirty);
+    case 'planned':
+      return files.filter((f) => f.matchesPlan);
+  }
+}
 
 function FileEntry({
   file,
@@ -24,6 +53,8 @@ function FileEntry({
   const [expanded, setExpanded] = useState(false);
   const rows = buildDiffRows(file.plannedBefore, file.plannedAfter);
   const visible = expanded ? rows : rows.slice(0, 40);
+  // Z10-6c：每文件 +N/−M（由拟议 before/after 现算；两边都 null → null → 不显示计数）
+  const stats = changeLineStats(file.plannedBefore, file.plannedAfter);
   return (
     <div className={`change-file${file.dirty ? ' change-dirty' : ''}`}>
       <div className="change-head">
@@ -40,6 +71,12 @@ function FileEntry({
         ) : (
           <span className="change-path" title={file.file}>
             {file.file}
+          </span>
+        )}
+        {stats !== null && (
+          <span className="change-counts" data-change-counts={file.file} title="拟议 before→after 的行级增删">
+            <span className="change-count-add">+{stats.added}</span>
+            <span className="change-count-del">−{stats.deleted}</span>
           </span>
         )}
         {file.dirty ? (
@@ -92,6 +129,8 @@ export function ChangeReviewPanel({ store, controller, sessionId, onOpenFile }: 
   useSyncExternalStore(store.subscribe, store.getState);
   const [notice, setNotice] = useState<string | null>(null);
   const [pendingOverwrite, setPendingOverwrite] = useState<{ count: number; kind: 'undo' | 'redo' } | null>(null);
+  // Z10-6c：未暂存等价筛选（全部 / 有外部改动 / 与拟议一致）
+  const [filter, setFilter] = useState<ChangeFileFilter>('all');
   if (sessionId === null) return <div className="panel-empty">未选择会话</div>;
   const views = store.peekViews(sessionId);
   const view = buildChangeReviewView(views?.changeReview, views?.executionViews ?? []);
@@ -100,7 +139,7 @@ export function ChangeReviewPanel({ store, controller, sessionId, onOpenFile }: 
     return (
       <div className="panel change-panel">
         <div className="panel-head">
-          <span>变更</span>
+          <span>审查</span>
         </div>
         <div className="panel-empty">{views?.errors.changeReview ?? '尚未载入变更审查（切换会话或点刷新）'}</div>
         <div className="panel-foot">
@@ -159,15 +198,36 @@ export function ChangeReviewPanel({ store, controller, sessionId, onOpenFile }: 
       ? `检测到 ${pendingOverwrite.count} 个文件在撤销后被外部修改，重做会覆盖这些改动。`
       : `检测到 ${pendingOverwrite?.count ?? 0} 个文件被外部修改，撤销会覆盖这些改动。`;
 
+  const visibleFiles = filterChangedFiles(view.files, filter);
+
   return (
     <div className="panel change-panel">
       <div className="panel-head">
-        <span>变更</span>
+        <span>审查</span>
         <span className="panel-mode">
           文件 {view.changedFiles} · 外部改动 {view.dirtyFiles}
         </span>
       </div>
+      <div className="change-filter">
+        <span className="change-filter-label">筛选</span>
+        <select
+          className="change-filter-select"
+          data-testid="change-filter"
+          aria-label="变更筛选"
+          value={filter}
+          onChange={(e) => setFilter(e.target.value as ChangeFileFilter)}
+        >
+          {CHANGE_FILE_FILTERS.map((opt) => (
+            <option key={opt.value} value={opt.value}>
+              {opt.label}
+            </option>
+          ))}
+        </select>
+      </div>
       {view.files.length === 0 && <div className="panel-empty">本会话暂无可审查的文件变更</div>}
+      {view.files.length > 0 && visibleFiles.length === 0 && (
+        <div className="panel-empty">当前筛选下无文件（本会话共 {view.files.length} 个变更文件）</div>
+      )}
       {pendingOverwrite !== null && (
         <div className="change-conflict">
           <div>{conflictLine}</div>
@@ -191,7 +251,7 @@ export function ChangeReviewPanel({ store, controller, sessionId, onOpenFile }: 
       )}
       {notice !== null && <div className="panel-notice">{notice}</div>}
       <div className="change-list">
-        {view.files.map((f) => (
+        {visibleFiles.map((f) => (
           <FileEntry key={f.file} file={f} sessionId={sessionId} onUndo={() => void doUndo()} onOpenFile={onOpenFile} />
         ))}
       </div>

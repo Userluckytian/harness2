@@ -514,6 +514,39 @@ body,
   flex: 1;
   word-break: break-all;
 }
+/* Z10-6c：每文件 +N/−M（语义 token；与下方 diff 行同色系） */
+.change-counts {
+  display: inline-flex;
+  gap: 4px;
+  flex-shrink: 0;
+  font-family: monospace;
+  font-size: 0.8em;
+}
+.change-count-add {
+  color: var(--color-success);
+}
+.change-count-del {
+  color: var(--color-destructive);
+}
+/* Z10-6c：未暂存等价筛选（下拉；标签如实命名，不写 git 的「未暂存」） */
+.change-filter {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 6px;
+  font-size: 0.85em;
+}
+.change-filter-label {
+  color: var(--color-muted);
+}
+.change-filter-select {
+  background: var(--color-card);
+  color: var(--color-foreground);
+  border: 1px solid var(--color-border);
+  border-radius: 4px;
+  padding: 1px 4px;
+  font: inherit;
+}
 .change-badge {
   border-radius: 4px;
   padding: 0 6px;

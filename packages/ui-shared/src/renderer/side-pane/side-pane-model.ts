@@ -61,7 +61,7 @@ export const SIDE_PANE_TABS: readonly SidePaneTabDescriptor[] = Object.freeze([
   { id: 'background-tasks', label: '后台任务' },
   { id: 'automations', label: '自动化' },
   { id: 'approvals', label: '审批' },
-  { id: 'changes', label: '变更' },
+  { id: 'changes', label: '审查' },
   { id: 'workspace', label: '工作区' },
   { id: 'file', label: '文件' },
   { id: 'code-viewer', label: '代码查看器' },
@@ -121,7 +121,7 @@ export interface SidePaneLauncherCard {
 /**
  * 零 tab 启动器卡片清单（Z-13）。ZCode 启动器为「辅助对话 / 审查 / 终端」三卡，我们**只摆能
  * 诚实兑现**的目标：
- *   - 审查 → 我们已有的**变更** pane（`changes`，真）；
+ *   - 审查 → 我们已有的**审查** pane（`changes`，真；Z10-6c 起 tab 标签与卡片统一为「审查」）；
  *   - 终端 → **底部 dock** 的真开关（跨 surface；不为右栏再造第二套终端，见交付说明）；
  *   - 计划 → 我们已有的计划 pane（`plan`，真）—— ZCode 第三卡「辅助对话」我们**无对应能力**，
  *     按红线⑩**不摆假卡**；用一张真卡补足三卡形态（取舍见报告）。

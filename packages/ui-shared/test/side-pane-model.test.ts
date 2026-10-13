@@ -200,6 +200,8 @@ describe('side-pane-model：目录与启动器清单（vs ZCode 启动器差异�
     expect(sidePaneTabLabel('code-viewer')).toBe('代码查看器'); // Z10-7
     expect(sidePaneTabLabel('background-tasks')).toBe('后台任务'); // Z2-08
     expect(sidePaneTabLabel('automations')).toBe('自动化'); // P0-3a
+    // Z10-6c：变更 pane 的 tab 标签对齐启动器卡片与 ZCode，统一为「审查」（id 仍是 changes）
+    expect(sidePaneTabLabel('changes')).toBe('审查');
   });
 
   it('启动器不列「文件」「代码查看器」（Z-14 入口 = 打开文件/预览，不进加号菜单）；列「模型轨迹」「后台任务」与「自动化」', () => {
