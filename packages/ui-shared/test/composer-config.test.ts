@@ -6,6 +6,7 @@ import {
   COMPOSER_PLAN_ITEM,
   approvalModePatch,
   buildModelMenu,
+  buildThoughtLevel,
   decidePlanToggle,
   decideRadioSelect,
   displayApprovalMode,
@@ -13,6 +14,10 @@ import {
   isRadioApprovalMode,
   modelSelectionPatch,
   modelTriggerLabel,
+  nextApprovalMode,
+  nextThoughtLevel,
+  thoughtLevelLabel,
+  thoughtLevelPatch,
   type ComposerConfigSnapshot,
 } from '../src/renderer/conversation/composer/composer-config.js';
 
@@ -146,5 +151,84 @@ describe('权限模式映射（Z-94 V4ComposerModeSwitch：Plan 复选框 + 单�
     expect(COMPOSER_APPROVAL_ITEMS[0]?.description).toContain('逐个');
     expect(COMPOSER_APPROVAL_ITEMS[1]?.description).toContain('编辑类工具');
     expect(COMPOSER_APPROVAL_ITEMS[2]?.description).toContain('不再请求批准');
+  });
+
+  it('模式循环（cycleSessionMode）：default → acceptEdits → bypass → plan → default 回绕', () => {
+    expect(nextApprovalMode('default')).toBe('acceptEdits');
+    expect(nextApprovalMode('acceptEdits')).toBe('bypass');
+    expect(nextApprovalMode('bypass')).toBe('plan');
+    expect(nextApprovalMode('plan')).toBe('default');
+    // 未设置/未知值按 core 缺省 default 起算（不臆造起点）
+    expect(nextApprovalMode(undefined)).toBe('acceptEdits');
+    expect(nextApprovalMode('什么都不是')).toBe('acceptEdits');
+  });
+});
+
+describe('思考档位（Z-94 ThoughtLevelCycleControl；数据源 = roles.main.effort + 模型 reasoning.values）', () => {
+  const withReasoning = (partial: Partial<ComposerConfigSnapshot> = {}): ComposerConfigSnapshot =>
+    config({
+      providers: {
+        zai: {
+          models: {
+            'glm-5.3': { reasoning: { values: ['low', 'medium', 'high', 'xhigh'], default: 'medium' } },
+            'glm-5-air': {},
+          },
+        },
+      },
+      ...partial,
+    });
+
+  it('档位取值来自模型声明（顺序即菜单顺序），未自造枚举', () => {
+    const level = buildThoughtLevel(withReasoning());
+    expect(level?.values).toEqual(['low', 'medium', 'high', 'xhigh']);
+  });
+
+  it('当前值：config 显式 effort 优先（explicit=true）', () => {
+    const level = buildThoughtLevel(
+      withReasoning({ roles: { main: { channel: 'zai', model: 'glm-5.3', effort: 'high' } } }),
+    );
+    expect(level).toEqual({ current: 'high', values: ['low', 'medium', 'high', 'xhigh'], explicit: true });
+  });
+
+  it('未设置 effort → 用模型 reasoning.default（explicit=false）；default 不在 values 内则回落首档', () => {
+    expect(buildThoughtLevel(withReasoning())?.current).toBe('medium');
+    expect(buildThoughtLevel(withReasoning())?.explicit).toBe(false);
+    const noDefault = config({
+      providers: { zai: { models: { 'glm-5.3': { reasoning: { values: ['a', 'b'] } } } } },
+    });
+    expect(buildThoughtLevel(noDefault)?.current).toBe('a');
+    const badDefault = config({
+      providers: { zai: { models: { 'glm-5.3': { reasoning: { values: ['a', 'b'], default: 'z' } } } } },
+    });
+    expect(buildThoughtLevel(badDefault)?.current).toBe('a');
+  });
+
+  it('模型未声明 reasoning / 角色缺失 / 值为空 → undefined（无档位可选，控件不渲染）', () => {
+    expect(buildThoughtLevel(config({ providers: { zai: { models: { 'glm-5.3': {} } } } }))).toBeUndefined();
+    expect(buildThoughtLevel(config({ roles: {} }))).toBeUndefined();
+    expect(
+      buildThoughtLevel(config({ providers: { zai: { models: { 'glm-5.3': { reasoning: { values: [] } } } } } })),
+    ).toBeUndefined();
+  });
+
+  it('档位循环：values 顺序向后一格回绕；不足两档返回 undefined', () => {
+    expect(nextThoughtLevel('low', ['low', 'medium', 'high'])).toBe('medium');
+    expect(nextThoughtLevel('high', ['low', 'medium', 'high'])).toBe('low');
+    // 当前值不在清单（外部改过 config）→ 从首档起
+    expect(nextThoughtLevel('未知', ['low', 'high'])).toBe('low');
+    expect(nextThoughtLevel('low', ['low'])).toBeUndefined();
+  });
+
+  it('档位标签：已知名映射中文，未知值原样显示 provider 档位名', () => {
+    expect(thoughtLevelLabel('off')).toBe('关闭');
+    expect(thoughtLevelLabel('XHIGH')).toBe('极高');
+    expect(thoughtLevelLabel('max')).toBe('最高');
+    expect(thoughtLevelLabel('provider-private-name')).toBe('provider-private-name');
+  });
+
+  it('档位 patch：带 channel/model（深合并，其余角色字段不丢）', () => {
+    expect(thoughtLevelPatch('main', { channel: 'zai', model: 'glm-5.3' }, 'high')).toEqual({
+      roles: { main: { channel: 'zai', model: 'glm-5.3', effort: 'high' } },
+    });
   });
 });

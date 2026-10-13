@@ -22,11 +22,17 @@ import { useEffect, useMemo, useSyncExternalStore } from 'react';
 import type {
   ComposerModeSwitchProps,
   ComposerModelSelectProps,
+  ComposerThoughtLevelProps,
 } from '@harness2/ui-shared/renderer/conversation/composer/Composer.js';
 import {
   approvalModePatch,
   buildModelMenu,
+  buildThoughtLevel,
   modelSelectionPatch,
+  nextApprovalMode,
+  nextThoughtLevel,
+  thoughtLevelPatch,
+  COMPOSER_MAIN_ROLE,
 } from '@harness2/ui-shared/renderer/conversation/composer/composer-config.js';
 import type { SettingsConfigShape } from '../../shared/protocol.js';
 import { openSettingsAtSection } from '../layout/shell-overlays.js';
@@ -103,18 +109,21 @@ export function useComposerConfig(): SettingsConfigShape | null {
 export interface ComposerControls {
   readonly modelSelect?: ComposerModelSelectProps;
   readonly modeSwitch?: ComposerModeSwitchProps;
+  readonly thoughtLevel?: ComposerThoughtLevelProps;
 }
 
 /**
  * 由 config 视图装配 composer 控件 props：
  *   - `roles.main` 缺失 → 不出模型选择（没有「当前模型」可如实展示）；
- *   - 权限模式恒可切换（未设置时按 core 缺省 default 展示与写盘）。
+ *   - 权限模式恒可切换（未设置时按 core 缺省 default 展示与写盘）；
+ *   - 思考档位仅当所引模型声明了 `reasoning.values` 才出（无档位可选时不摆控件）。
  */
 export function composerControlsOf(config: SettingsConfigShape | null): ComposerControls {
   if (config === null) return {};
   if ((globalThis as { __Z304_DISABLE__?: boolean }).__Z304_DISABLE__ === true) return {};
   const role = config.roles?.main;
   const modelSelect = role === undefined ? undefined : buildModelSelect(config, role);
+  const thoughtLevel = buildThoughtLevel(config);
   const modeSwitch: ComposerModeSwitchProps = {
     mode: config.approval?.mode,
     onModeChange: (mode) => {
@@ -124,6 +133,18 @@ export function composerControlsOf(config: SettingsConfigShape | null): Composer
   return {
     ...(modelSelect !== undefined ? { modelSelect } : {}),
     modeSwitch,
+    ...(thoughtLevel !== undefined
+      ? {
+          thoughtLevel: {
+            current: thoughtLevel.current,
+            values: thoughtLevel.values,
+            onSelectLevel: (level) => {
+              if (role === undefined) return;
+              void patchComposerConfig(thoughtLevelPatch(COMPOSER_MAIN_ROLE, role, level)).catch(logPatchError);
+            },
+          } satisfies ComposerThoughtLevelProps,
+        }
+      : {}),
   };
 }
 
@@ -147,6 +168,32 @@ function buildModelSelect(
 export function useComposerControls(): ComposerControls {
   const config = useComposerConfig();
   return useMemo(() => composerControlsOf(config), [config]);
+}
+
+/**
+ * Ctrl+Shift+M（Z-94 cycleSessionMode）：按 config 当前 `approval.mode` 循环到下一模式并写回。
+ * config 未载入（缓存空）→ 无操作（不臆造起点，等首载完成后按键再生效）。
+ */
+export function cycleComposerMode(): void {
+  const config = cached;
+  if (config === null) return;
+  void patchComposerConfig(approvalModePatch(nextApprovalMode(config.approval?.mode))).catch(logPatchError);
+}
+
+/**
+ * Ctrl+T（Z-94 cycleThoughtLevel）：按模型声明的档位顺序循环到下一档并写回。
+ * config 未载入 / 模型未声明档位 / 档位不足两档 → 无操作（如实，不假造档位）。
+ */
+export function cycleComposerThoughtLevel(): void {
+  const config = cached;
+  if (config === null) return;
+  const level = buildThoughtLevel(config);
+  if (level === undefined) return;
+  const next = nextThoughtLevel(level.current, level.values);
+  if (next === undefined) return;
+  const role = config.roles?.[COMPOSER_MAIN_ROLE];
+  if (role === undefined) return;
+  void patchComposerConfig(thoughtLevelPatch(COMPOSER_MAIN_ROLE, role, next)).catch(logPatchError);
 }
 
 /**

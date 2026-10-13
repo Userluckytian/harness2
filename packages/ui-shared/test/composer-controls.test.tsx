@@ -2,14 +2,16 @@
 // 菜单内容与回调（选中打勾、其他 provider 模型、管理模型项、Plan↔单选联动）。
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { Composer } from '../src/renderer/conversation/composer/Composer.js';
 import type {
   ComposerModelSelectProps,
   ComposerModeSwitchProps,
+  ComposerThoughtLevelProps,
 } from '../src/renderer/conversation/composer/Composer.js';
 import { ComposerStore, createComposerState } from '../src/renderer/conversation/composer/composer-state.js';
 import { buildModelMenu } from '../src/renderer/conversation/composer/composer-config.js';
+import { requestOpenComposerModelMenu } from '../src/renderer/conversation/composer/composer-menu-signal.js';
 
 afterEach(cleanup);
 
@@ -21,6 +23,7 @@ const io = {
 function renderComposer(props: {
   readonly modelSelect?: ComposerModelSelectProps;
   readonly modeSwitch?: ComposerModeSwitchProps;
+  readonly thoughtLevel?: ComposerThoughtLevelProps;
 }): void {
   render(
     <Composer
@@ -29,6 +32,7 @@ function renderComposer(props: {
       io={io}
       {...(props.modelSelect !== undefined ? { modelSelect: props.modelSelect } : {})}
       {...(props.modeSwitch !== undefined ? { modeSwitch: props.modeSwitch } : {})}
+      {...(props.thoughtLevel !== undefined ? { thoughtLevel: props.thoughtLevel } : {})}
     />,
   );
 }
@@ -51,6 +55,7 @@ describe('props 缺省不渲染（web 壳无数据通道 = 控件整体不出现
     renderComposer({});
     expect(screen.queryByTestId('composer-model-select')).toBeNull();
     expect(screen.queryByTestId('composer-mode-switch')).toBeNull();
+    expect(screen.queryByTestId('composer-thought-level')).toBeNull();
     expect(screen.getByTestId('composer-reference')).toBeTruthy();
     expect(screen.getByTestId('composer-attach')).toBeTruthy();
     expect(screen.getByTestId('composer-primary')).toBeTruthy();
@@ -155,5 +160,46 @@ describe('模式切换（左簇 V4ComposerModeSwitch 对齐）', () => {
     openMenu('composer-mode-switch');
     fireEvent.click(screen.getByTestId('composer-mode-bypass'));
     expect(onModeChange).toHaveBeenCalledWith('bypass');
+  });
+});
+
+describe('思考档位（右簇 ThoughtLevelCycleControl 同族下拉）', () => {
+  it('trigger 显示当前档位标签（已知名映射中文）；菜单列出全部档位（顺序来自声明）', () => {
+    renderComposer({
+      thoughtLevel: { current: 'high', values: ['low', 'medium', 'high', 'xhigh'], onSelectLevel: vi.fn() },
+    });
+    expect(screen.getByTestId('composer-thought-level').getAttribute('aria-label')).toBe('思考档位：高');
+    openMenu('composer-thought-level');
+    const options = screen.getAllByTestId('composer-thought-level-option');
+    expect(options.map((o) => o.textContent)).toEqual(['低', '中', '高', '极高']);
+  });
+
+  it('选择某档位 → onSelectLevel 带其原始值（非展示标签）', () => {
+    const onSelectLevel = vi.fn();
+    renderComposer({
+      thoughtLevel: { current: 'low', values: ['low', 'medium', 'high'], onSelectLevel },
+    });
+    openMenu('composer-thought-level');
+    fireEvent.click(screen.getAllByTestId('composer-thought-level-option')[2]!);
+    expect(onSelectLevel).toHaveBeenCalledWith('high');
+  });
+
+  it('未知档位名原样显示（不臆造中文枚举）', () => {
+    renderComposer({ thoughtLevel: { current: 'turbo', values: ['turbo'], onSelectLevel: vi.fn() } });
+    expect(screen.getByTestId('composer-thought-level').getAttribute('aria-label')).toBe('思考档位：turbo');
+  });
+});
+
+describe('Ctrl+M openModelMenu（共享信号总线打开模型菜单）', () => {
+  it('广播打开信号 → 模型菜单展开（受控 open，不新增业务状态）', () => {
+    renderComposer({ modelSelect: { menu: MENU!, onSelectModel: vi.fn() } });
+    expect(screen.queryByTestId('composer-model-menu')).toBeNull();
+    act(() => requestOpenComposerModelMenu());
+    expect(screen.getByTestId('composer-model-menu')).toBeTruthy();
+  });
+
+  it('未挂载模型选择时广播 = no-op（不报错）', () => {
+    renderComposer({});
+    expect(() => act(() => requestOpenComposerModelMenu())).not.toThrow();
   });
 });

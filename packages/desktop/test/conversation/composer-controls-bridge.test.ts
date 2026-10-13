@@ -7,6 +7,8 @@ import type { Harness2Api, SettingsConfigShape } from '../../src/shared/protocol
 import {
   _resetComposerConfigForTest,
   composerControlsOf,
+  cycleComposerMode,
+  cycleComposerThoughtLevel,
   loadComposerConfig,
   peekComposerConfig,
   subscribeComposerConfig,
@@ -81,6 +83,28 @@ describe('composerControlsOf：config → 控件 props 装配', () => {
     });
     expect(controls.modeSwitch?.mode).toBeUndefined();
   });
+
+  it('模型声明 reasoning.values → 出 thoughtLevel（档位集合来自声明；当前值按 effort/缺省）', () => {
+    const controls = composerControlsOf(
+      configOf({
+        providers: {
+          zai: {
+            protocol: 'openai',
+            baseUrl: 'https://api.example.com',
+            models: { 'glm-5.3': { reasoning: { values: ['low', 'high', 'xhigh'], default: 'high' } } },
+          },
+        },
+        roles: { main: { channel: 'zai', model: 'glm-5.3', effort: 'xhigh' } },
+      }),
+    );
+    expect(controls.thoughtLevel?.current).toBe('xhigh');
+    expect(controls.thoughtLevel?.values).toEqual(['low', 'high', 'xhigh']);
+    expect(typeof controls.thoughtLevel?.onSelectLevel).toBe('function');
+  });
+
+  it('模型未声明 reasoning → 不出 thoughtLevel（无档位可选，不摆控件）', () => {
+    expect(composerControlsOf(configOf()).thoughtLevel).toBeUndefined();
+  });
 });
 
 describe('写回链路：patch 形状 + 响应回带 config 刷新（无第二次 IPC）', () => {
@@ -140,5 +164,55 @@ describe('loadComposerConfig：首载 + 幂等（多席位共享一次 IPC）', 
     expect(errorSpy).toHaveBeenCalled();
     expect(peekComposerConfig()).toBeNull();
     errorSpy.mockRestore();
+  });
+});
+
+describe('快捷键写路径（Ctrl+Shift+M / Ctrl+T 复用同一 config 通道）', () => {
+  const cyclingConfig = (): SettingsConfigShape =>
+    configOf({
+      providers: {
+        zai: {
+          protocol: 'openai',
+          baseUrl: 'https://api.example.com',
+          models: { 'glm-5.3': { reasoning: { values: ['low', 'high', 'xhigh'], default: 'low' } } },
+        },
+      },
+      roles: { main: { channel: 'zai', model: 'glm-5.3', effort: 'high' } },
+    });
+
+  it('config 未载入 → 两条循环均 no-op（不臆造起点、不发写请求）', () => {
+    const { updateConfig } = setWindowApi({});
+    cycleComposerMode();
+    cycleComposerThoughtLevel();
+    expect(updateConfig).not.toHaveBeenCalled();
+  });
+
+  it('cycleComposerMode → 写 approval.mode 的下一个模式', async () => {
+    const updateConfig = vi.fn(async () => ({ ok: true as const, config: configOf() }));
+    setWindowApi({ settingsGetConfig: vi.fn(async () => cyclingConfig()), settingsUpdateConfig: updateConfig });
+    await loadComposerConfig();
+    cycleComposerMode();
+    await new Promise<void>((resolve) => setTimeout(resolve, 0));
+    expect(updateConfig).toHaveBeenCalledWith({ approval: { mode: 'acceptEdits' } });
+  });
+
+  it('cycleComposerThoughtLevel → 写 roles.main.effort 的下一档', async () => {
+    const updateConfig = vi.fn(async () => ({ ok: true as const, config: cyclingConfig() }));
+    setWindowApi({ settingsGetConfig: vi.fn(async () => cyclingConfig()), settingsUpdateConfig: updateConfig });
+    await loadComposerConfig();
+    cycleComposerThoughtLevel();
+    await new Promise<void>((resolve) => setTimeout(resolve, 0));
+    expect(updateConfig).toHaveBeenCalledWith({
+      roles: { main: { channel: 'zai', model: 'glm-5.3', effort: 'xhigh' } },
+    });
+  });
+
+  it('模型未声明档位 → cycleComposerThoughtLevel no-op', async () => {
+    const updateConfig = vi.fn(async () => ({ ok: true as const }));
+    setWindowApi({ settingsGetConfig: vi.fn(async () => configOf()), settingsUpdateConfig: updateConfig });
+    await loadComposerConfig();
+    cycleComposerThoughtLevel();
+    await new Promise<void>((resolve) => setTimeout(resolve, 0));
+    expect(updateConfig).not.toHaveBeenCalled();
   });
 });

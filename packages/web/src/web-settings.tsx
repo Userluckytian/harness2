@@ -86,6 +86,8 @@ export const WEB_SETTINGS_COPY: SettingsCopy = {
     { keys: 'Ctrl+K / Cmd+K', label: '命令面板' },
     { keys: 'Ctrl+N / Cmd+N', label: '新建会话' },
     { keys: 'Ctrl+J / Cmd+J', label: '切换终端面板' },
+    { keys: 'Ctrl+M / Cmd+M', label: '打开模型菜单' },
+    { keys: 'Ctrl+Shift+M / Cmd+Shift+M', label: '循环权限模式' },
   ],
   cronNote:
     '侧栏「自动化」进入主区视图，可查看定时任务与「定时任务模板」；创建 / 增删经 CLI：harness2 cron add/remove/list。',

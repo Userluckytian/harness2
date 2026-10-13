@@ -16,17 +16,28 @@
 export type SettingsTheme = 'system' | 'zai-light' | 'zai-dark';
 export type SettingsNotifyDetails = 'minimal' | 'full';
 
+/** 模型声明的推理档位（core `reasoning`；values 按强度从低到高，每模型自声明，非全局枚举） */
+export interface SettingsModelReasoningShape {
+  values: string[];
+  default?: string;
+}
+
 /** settings:getConfig 的 provider 条目（脱敏后的可用字段；与 CLI 共用同一份 config.json） */
 export interface SettingsProviderShape {
   protocol: 'openai' | 'anthropic';
   baseUrl: string;
   envKey?: string;
-  models?: Record<string, { contextWindow?: number; maxOutputTokens?: number }>;
+  models?: Record<
+    string,
+    { contextWindow?: number; maxOutputTokens?: number; reasoning?: SettingsModelReasoningShape }
+  >;
 }
 
 export interface SettingsRoleShape {
   channel: string;
   model: string;
+  /** 当前推理档位（core `roles.<role>.effort`；未配置 = 用模型缺省档位） */
+  effort?: string;
 }
 
 /** A09：单条 hook 的只读展示形态（与 core config.schema 的 HookEntry 同源） */

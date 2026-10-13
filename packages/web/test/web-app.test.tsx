@@ -10,12 +10,16 @@ import { setShellTheme } from '@harness2/ui-shared/renderer/theme/index.js';
 import type { HarnessClient } from '@harness2/ui-shared/renderer/ports.js';
 import type { ConnectionStatus, SessionSummaryShape, WsFrame } from '@harness2/ui-shared/shared/protocol.js';
 import { WebApp } from '../src/app.js';
+import type { WebSettingsDataPorts } from '../src/web-settings.js';
+import { _resetWebComposerConfigForTest } from '../src/web-composer-controls.js';
 
 const TABBED_PLACEHOLDER = '搜索操作、任务或文件';
 
 afterEach(() => {
   cleanup();
   frameListeners.clear();
+  // Z10-2b：web composer 控件 config 缓存是模块级单例 —— 测试间复位，避免跨用例串味。
+  _resetWebComposerConfigForTest();
   // 分屏布局是**模块级单例**（Z2-06：内存态、D-14 不落盘）——测试间显式复位，
   // 否则上一用例的主格绑定会带进下一用例（主格头部会把会话标题再渲染一遍）。
   workbenchStore.reset();
@@ -83,11 +87,23 @@ function fakeClient(sessions: SessionSummaryShape[] = [SESSION]): HarnessClient 
   };
 }
 
-async function mount(options: { client?: HarnessClient; onNewSession?: () => void } = {}) {
+async function mount(
+  options: {
+    client?: HarnessClient;
+    onNewSession?: () => void;
+    settingsDataPorts?: WebSettingsDataPorts;
+  } = {},
+) {
   const shell = createAppShell(options.client ?? fakeClient());
   const stop = shell.controller.start();
   await shell.controller.refreshSessions();
-  render(React.createElement(WebApp, { shell, onNewSession: options.onNewSession ?? (() => undefined) }));
+  render(
+    React.createElement(WebApp, {
+      shell,
+      onNewSession: options.onNewSession ?? (() => undefined),
+      ...(options.settingsDataPorts !== undefined ? { settingsDataPorts: options.settingsDataPorts } : {}),
+    }),
+  );
   return { shell, stop };
 }
 
@@ -353,13 +369,12 @@ describe('Z10-4 快捷键扩展（源码权威键表）', () => {
     stop();
   });
 
-  it('反向钉：未兑现的键不触发任何动作（Ctrl+F / Ctrl+T / Ctrl+Shift+M / Ctrl+W / Ctrl+O）', async () => {
+  it('反向钉：仍未兑现的键不触发任何动作（Ctrl+F / Ctrl+T / Ctrl+W / Ctrl+O）', async () => {
     const { stop } = await mount();
     const collapsedBefore = seat('sidebar')?.getAttribute('data-collapsed');
     for (const combo of [
       { key: 'f', code: 'KeyF' },
-      { key: 't', code: 'KeyT' },
-      { key: 'm', code: 'KeyM', shiftKey: true },
+      { key: 't', code: 'KeyT' }, // Ctrl+T：思考档位 —— web 无数据面，如实不绑
       { key: 'w', code: 'KeyW' },
       { key: 'o', code: 'KeyO' },
     ]) {
@@ -368,6 +383,29 @@ describe('Z10-4 快捷键扩展（源码权威键表）', () => {
     expect(screen.queryByPlaceholderText(TABBED_PLACEHOLDER)).toBeNull();
     expect(screen.queryByRole('dialog', { name: '设置' })).toBeNull();
     expect(seat('sidebar')?.getAttribute('data-collapsed')).toBe(collapsedBefore);
+    stop();
+  });
+
+  it('Z10-2b Ctrl+Shift+M：权限模式循环经 PUT /api/settings/config 写回（与控件同一写路径）', async () => {
+    const updateConfig = vi.fn(async () => ({ ok: true as const, warnings: [] }));
+    const getConfig = vi.fn(async () => ({
+      providers: {},
+      roles: {},
+      approval: { mode: 'default' },
+      memory: { mode: 'off', nudgeInterval: 10 },
+      browser: { enabled: true, idleDestroyMs: 1, maxConcurrent: 1 },
+      plugins: { enabled: true, allow: [] },
+      mcpServers: {},
+      subagent: { maxDepth: 1, maxTurns: 1 },
+      sources: { global: false, project: false },
+      warnings: [],
+      errors: [],
+    }));
+    const settingsDataPorts = { getConfig, updateConfig } as unknown as WebSettingsDataPorts;
+    const { stop } = await mount({ settingsDataPorts });
+    await waitFor(() => expect(getConfig).toHaveBeenCalled());
+    fireEvent.keyDown(window, { key: 'm', code: 'KeyM', ctrlKey: true, shiftKey: true });
+    await waitFor(() => expect(updateConfig).toHaveBeenCalledWith({ approval: { mode: 'acceptEdits' } }));
     stop();
   });
 });

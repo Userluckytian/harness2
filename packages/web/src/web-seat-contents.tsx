@@ -53,6 +53,7 @@ import { TrajectoryViewContent } from '@harness2/ui-shared/renderer/trajectory/i
 import { buildSessionItems, resolveBuildVersion, SidebarRoot } from '@harness2/ui-shared/renderer/sidebar/index.js';
 import type { SlotRegistry } from '@harness2/ui-shared/renderer/slots/index.js';
 import { useWebShell } from './web-shell-context.js';
+import { useWebComposerControls } from './web-composer-controls.js';
 import { WebPaletteOverlay } from './web-command-palette.js';
 import { WebSettingsOverlay } from './web-settings.js';
 
@@ -248,9 +249,12 @@ function WebConversationSeat(props: ConversationSeatProps): ReactNode {
  * 布局只存内存（`workbenchStore` 单例，不落盘，D-14）。
  */
 function ConversationSeatContent(): ReactNode {
-  const { shell, newSessionBlockedReason } = useWebShell();
+  const { shell, newSessionBlockedReason, settingsDataPorts } = useWebShell();
   const state = shell.useAppState();
   const connected = state.status === 'connected';
+  // Z10-2b：composer 左右簇控件数据面经 serve 设置端口（getConfig/updateConfig）装配；
+  // 端口缺失（无 serve 客户端）→ 返回空对象 = 控件不渲染（红线⑩，绝不摆假控件）。
+  const composerControls = useWebComposerControls(settingsDataPorts);
 
   return (
     <div className="web-main">
@@ -268,7 +272,12 @@ function ConversationSeatContent(): ReactNode {
           {newSessionBlockedReason}
         </div>
       ) : null}
-      <WorkbenchHost store={shell.store} controller={shell.controller} seat={WebConversationSeat} />
+      <WorkbenchHost
+        store={shell.store}
+        controller={shell.controller}
+        seat={WebConversationSeat}
+        composerControls={composerControls}
+      />
     </div>
   );
 }

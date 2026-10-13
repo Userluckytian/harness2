@@ -100,9 +100,11 @@ function mapProvider(p: ProviderConfig | undefined): SettingsProviderShape | und
   };
 }
 
-function mapRole(r: { channel: string; model: string } | undefined): SettingsRoleShape | undefined {
+function mapRole(r: { channel: string; model: string; effort?: string } | undefined): SettingsRoleShape | undefined {
   if (r === undefined) return undefined;
-  return { channel: r.channel, model: r.model };
+  // Z10-2b：保留 effort（Z6-A03 推理档位）——composer 思考档位控件据它展示当前值；
+  // 丢弃会让控件无法如实反映 config（写回后视图不跟进 = 假状态）。
+  return { channel: r.channel, model: r.model, ...(r.effort !== undefined ? { effort: r.effort } : {}) };
 }
 
 /** settings:getConfig：读合并视图（复用 core loadConfig 的全局/项目合并 + 校验） */

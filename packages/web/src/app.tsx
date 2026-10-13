@@ -14,11 +14,13 @@ import { useDraftsUnloadGuard } from '@harness2/ui-shared/renderer/drafts-guard.
 import { isImeComposing } from '@harness2/ui-shared/renderer/features/composer/composer-model.js';
 import { AppFrame, FrameTopOverlay, useFrameState } from '@harness2/ui-shared/renderer/layout/index.js';
 import { getShellTheme, setShellTheme } from '@harness2/ui-shared/renderer/theme/index.js';
+import { requestOpenComposerModelMenu } from '@harness2/ui-shared/renderer/conversation/composer/composer-menu-signal.js';
 import type { TerminalPort } from '@harness2/ui-shared/renderer/terminal/port.js';
 import { toggleTerminalDock } from './terminal/toggle-dock.js';
 import { UNAVAILABLE_WEB_TERMINAL_PORT } from './terminal/web-port.js';
 import { assembleWebFrame } from './shell-registry.js';
 import { webAdjacentSessionId } from './web-command-palette.js';
+import { webCycleComposerMode } from './web-composer-controls.js';
 import { WebShellProvider, type WebShellValue } from './web-shell-context.js';
 import type { WebSettingsDataPorts } from './web-settings.js';
 
@@ -74,10 +76,10 @@ export function WebApp({
   // 忽略长按 repeat 与 IME 组合（isComposing / keyCode 229，与 composer 同一 isImeComposing 口径）。
   // 已兑现：Ctrl+K / Ctrl+Shift+P（命令面板别名）、Ctrl+,（设置覆层）、Ctrl+N（新任务，受可用性门控）、
   //        Ctrl+J（终端）、Ctrl+B（侧栏）、Ctrl+Alt+B（右栏）、Ctrl+Shift+L（切换主题，浏览器存储持久化）、
-  //        Ctrl+Shift+[ / ]（上/下一个会话）。
-  // 不绑（如实登记，见 Z10-4 报告）：Ctrl+O（web 无目录选择通道）、Ctrl+[ / ]（无会话历史栈）、
-  //        Ctrl+W（无「关闭当前上下文」动作）、Ctrl+Shift+M（模式切换未接壳）、Ctrl+T（思考档位无 UI）、
-  //        Ctrl+F / Ctrl+M / 缩放 / 双模式 / 引导 —— 均无对应真实动作/通道。
+  //        Ctrl+Shift+[ / ]（上/下一个会话）、Ctrl+M（打开模型菜单）、Ctrl+Shift+M（权限模式循环）。
+  // 不绑（如实登记，见 Z10-4/Z10-2b 报告）：Ctrl+O（web 无目录选择通道）、Ctrl+[ / ]（无会话历史栈）、
+  //        Ctrl+W（无「关闭当前上下文」动作）、**Ctrl+T（思考档位：serve config 视图不回 roles.effort
+  //        与 reasoning.values，web 无该数据面 → 控件不渲染、键不绑）**、Ctrl+F / 缩放 / 双模式 / 引导。
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent): void => {
       if (!(e.ctrlKey || e.metaKey)) return;
@@ -97,6 +99,9 @@ export function WebApp({
           e.preventDefault();
           const next = THEME_CYCLE[(THEME_CYCLE.indexOf(getShellTheme()) + 1) % THEME_CYCLE.length] ?? 'system';
           setShellTheme(next); // switchTheme；落盘经共享主题运行时镜像到 localStorage（D-14 例外 #1）
+        } else if (key === 'm') {
+          e.preventDefault();
+          webCycleComposerMode(settingsDataPorts); // cycleSessionMode（PUT 白名单 approval.mode）
         } else if (bracketLeft) {
           e.preventDefault();
           const id = webAdjacentSessionId(store.getState(), -1);
@@ -106,7 +111,7 @@ export function WebApp({
           const id = webAdjacentSessionId(store.getState(), 1);
           if (id !== null) void shell.controller.selectSession(id); // nextConversation
         }
-        // 其余 Shift 组合（Ctrl+Shift+M/U/O…）未兑现：不动作、不 preventDefault
+        // 其余 Shift 组合（Ctrl+Shift+U/O…）未兑现：不动作、不 preventDefault
         return;
       }
       if (altKey) {
@@ -139,11 +144,14 @@ export function WebApp({
       } else if (key === 'b') {
         e.preventDefault();
         frameDispatch({ type: 'sidebar/toggle' }); // toggleSidebar
+      } else if (key === 'm') {
+        e.preventDefault();
+        requestOpenComposerModelMenu(); // openModelMenu（无已挂载模型菜单时 no-op）
       }
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [newSessionEnabled, onNewSession, frameDispatch, store, shell.controller]);
+  }, [newSessionEnabled, onNewSession, frameDispatch, store, shell.controller, settingsDataPorts]);
 
   const shellValue: WebShellValue = {
     shell,

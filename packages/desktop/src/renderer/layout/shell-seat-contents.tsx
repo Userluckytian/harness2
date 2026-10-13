@@ -35,6 +35,7 @@ import { sidePaneStore, trajectoryTabId, type CronJobShape } from '@harness2/ui-
 import { AutomationsMainView, type AutomationTemplate } from '@harness2/ui-shared/renderer/automation/index.js';
 import { TerminalPanel } from '@harness2/ui-shared/renderer/terminal/index.js';
 import { ConversationSeat, type ConversationSeatProps } from '../conversation/assembly.js';
+import { useComposerControls } from '../conversation/composer-controls-bridge.js';
 import { composerPrefill } from '@harness2/ui-shared/renderer/conversation/composer/prefill.js';
 import { desktopTerminalPort } from '../terminal/desktop-port.js';
 import { useShellPalette } from './shell-context.js';
@@ -268,7 +269,17 @@ function DesktopConversationSeat(props: ConversationSeatProps): React.ReactNode 
 }
 
 function ConversationSeatContent(): React.ReactNode {
-  return <WorkbenchHost store={store} controller={controller} seat={DesktopConversationSeat} />;
+  // Z10-2b：在会话席位处装配 composer 左右簇控件数据面（config 经 settings:getConfig 读、
+  // 切换经 settings:updateConfig 写；模块级缓存多席位共享一次 IPC）→ 经工作台宿主下发到每格。
+  const composerControls = useComposerControls();
+  return (
+    <WorkbenchHost
+      store={store}
+      controller={controller}
+      seat={DesktopConversationSeat}
+      composerControls={composerControls}
+    />
+  );
 }
 
 /**

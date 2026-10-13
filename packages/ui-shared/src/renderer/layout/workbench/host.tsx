@@ -27,7 +27,11 @@ import type { AppStore } from '../../store.js';
 // Z7：席位组件由壳注入（桌面 = 桌面组装根 ConversationSeat，web = 共享 ConversationSeat 或 web 包装）。
 // 缺省用共享 ConversationSeat（壳无专属 header/statusPanel 注入时即它）。
 import { ConversationSeat as SharedConversationSeat, type ConversationSeatProps } from '../../conversation/seat.js';
-import type { ComposerModeSwitchProps, ComposerModelSelectProps } from '../../conversation/composer/Composer.js';
+import type {
+  ComposerModeSwitchProps,
+  ComposerModelSelectProps,
+  ComposerThoughtLevelProps,
+} from '../../conversation/composer/Composer.js';
 import { createComposerOverlayHost, type ComposerOverlayHost } from '../../trajectory/shell-contract.js';
 import { workbenchDrag } from './drag.js';
 import {
@@ -58,6 +62,7 @@ const HINT_MS = 2200;
 export interface WorkbenchComposerControls {
   readonly modelSelect?: ComposerModelSelectProps;
   readonly modeSwitch?: ComposerModeSwitchProps;
+  readonly thoughtLevel?: ComposerThoughtLevelProps;
 }
 
 interface DropTarget {
@@ -516,6 +521,9 @@ function WorkbenchLeaf({ leafId }: { leafId: string }): ReactNode {
         {...(isPrimary ? {} : { composerOverlayHost: overlayHost })}
         {...(api.composerControls?.modeSwitch !== undefined ? { modeSwitch: api.composerControls.modeSwitch } : {})}
         {...(api.composerControls?.modelSelect !== undefined ? { modelSelect: api.composerControls.modelSelect } : {})}
+        {...(api.composerControls?.thoughtLevel !== undefined
+          ? { thoughtLevel: api.composerControls.thoughtLevel }
+          : {})}
       />
       {isFocused && <div aria-hidden className="pointer-events-none absolute inset-0 z-10 border border-primary/40" />}
       {showClose && (

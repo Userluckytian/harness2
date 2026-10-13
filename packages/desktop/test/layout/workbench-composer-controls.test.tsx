@@ -9,6 +9,7 @@ import { AppStore } from '@harness2/ui-shared/renderer/store.js';
 import type {
   ComposerModeSwitchProps,
   ComposerModelSelectProps,
+  ComposerThoughtLevelProps,
 } from '@harness2/ui-shared/renderer/conversation/composer/Composer.js';
 import { WorkbenchHost } from '@harness2/ui-shared/renderer/layout/workbench/host.js';
 import { WorkbenchStore } from '@harness2/ui-shared/renderer/layout/workbench/store.js';
@@ -79,12 +80,19 @@ const modelSelect: ComposerModelSelectProps = {
 
 const modeSwitch: ComposerModeSwitchProps = { mode: 'default', onModeChange: () => undefined };
 
+const thoughtLevel: ComposerThoughtLevelProps = {
+  current: 'high',
+  values: ['low', 'medium', 'high'],
+  onSelectLevel: () => undefined,
+};
+
 describe('WorkbenchHost composerControls 下发（Z3-04 注入链）', () => {
   it('未下发 → 控件不渲染（缺省调用面不变）', () => {
     const booted = boot();
     render(<WorkbenchHost store={booted.store} controller={booted.controller} workbench={booted.workbench} />);
     expect(screen.queryByTestId('composer-model-select')).toBeNull();
     expect(screen.queryByTestId('composer-mode-switch')).toBeNull();
+    expect(screen.queryByTestId('composer-thought-level')).toBeNull();
     expect(screen.getByTestId('composer-primary')).toBeTruthy();
   });
 
@@ -108,5 +116,18 @@ describe('WorkbenchHost composerControls 下发（Z3-04 注入链）', () => {
     fireEvent.keyDown(screen.getByTestId('composer-model-select'), { key: 'Enter' });
     expect(screen.getAllByTestId('composer-model-option')).toHaveLength(1);
     expect(screen.getByTestId('composer-model-manage')).toBeTruthy();
+  });
+
+  it('下发 thoughtLevel → 每格出现思考档位 trigger（Z10-2b 新增下发给席位）', () => {
+    const booted = boot();
+    render(
+      <WorkbenchHost
+        store={booted.store}
+        controller={booted.controller}
+        workbench={booted.workbench}
+        composerControls={{ modeSwitch, thoughtLevel }}
+      />,
+    );
+    expect(screen.getByTestId('composer-thought-level').getAttribute('aria-label')).toBe('思考档位：高');
   });
 });

@@ -25,6 +25,8 @@ import { useWindowMaximized } from './window-state.js';
 import { toggleTerminalDock } from './terminal/toggle-dock.js';
 import { type PaletteCommand, type PaletteSession } from '@harness2/ui-shared/renderer/components/CommandPalette.js';
 import { controller, store, useAppState, newSessionCollapsingRightbar, THEME_CYCLE } from './app-shared.js';
+import { cycleComposerMode, cycleComposerThoughtLevel } from './conversation/composer-controls-bridge.js';
+import { requestOpenComposerModelMenu } from '@harness2/ui-shared/renderer/conversation/composer/composer-menu-signal.js';
 import type { AppState } from '@harness2/ui-shared/renderer/store.js';
 import { filterSessionList } from '@harness2/ui-shared/shared/metadata.js';
 import { SIDE_PANE_NO_SESSION_KEY, sidePaneStore } from '@harness2/ui-shared/renderer/side-pane/index.js';
@@ -150,9 +152,10 @@ export function App(): React.ReactNode {
   // 忽略长按 repeat 与 IME 组合（isComposing / keyCode 229，与 composer 同一 isImeComposing 口径）。
   // 已兑现：Ctrl+K / Ctrl+Shift+P（命令面板别名）、Ctrl+,（设置）、Ctrl+N（新任务）、Ctrl+J（终端）、
   //        Ctrl+B（侧栏）、Ctrl+Alt+B（右栏）、Ctrl+Shift+L（切换主题+持久化）、
-  //        Ctrl+Shift+[ / ]（上/下一个会话）、Ctrl+O（打开工作区）。
-  // 不可兑现（如实不绑，见 Z10-4 报告）：Ctrl+[ / ]（会话历史栈未落地）、Ctrl+W（无「关闭当前上下文」动作）、
-  //        Ctrl+Shift+M（模式切换未接壳）、Ctrl+T（思考档位无 UI）、Ctrl+F / Ctrl+M / 缩放 / 双模式 / 引导。
+  //        Ctrl+Shift+[ / ]（上/下一个会话）、Ctrl+O（打开工作区）、
+  //        Ctrl+M（打开模型菜单，经共享信号总线）、Ctrl+Shift+M（权限模式循环）、Ctrl+T（思考档位循环）。
+  // 不可兑现（如实不绑，见 Z10-4/Z10-2b 报告）：Ctrl+[ / ]（会话历史栈未落地）、Ctrl+W（无「关闭当前上下文」动作）、
+  //        Ctrl+F / 缩放 / 双模式 / 引导。Ctrl+Shift+M / Ctrl+T 读 config 缓存未就绪时不动作（不臆造起点）。
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent): void => {
       if (!(e.ctrlKey || e.metaKey)) return;
@@ -171,6 +174,9 @@ export function App(): React.ReactNode {
         } else if (key === 'l') {
           e.preventDefault();
           cycleThemeAndPersist(); // switchTheme
+        } else if (key === 'm') {
+          e.preventDefault();
+          cycleComposerMode(); // cycleSessionMode（写 config approval.mode，与控件同一写路径）
         } else if (bracketLeft) {
           e.preventDefault();
           stepSelectedSession(-1); // previousConversation
@@ -178,7 +184,7 @@ export function App(): React.ReactNode {
           e.preventDefault();
           stepSelectedSession(1); // nextConversation
         }
-        // 其余 Shift 组合（Ctrl+Shift+M/U/O…）未兑现：不动作、不 preventDefault
+        // 其余 Shift 组合（Ctrl+Shift+U/O…）未兑现：不动作、不 preventDefault
         return;
       }
       if (altKey) {
@@ -212,6 +218,12 @@ export function App(): React.ReactNode {
       } else if (key === 'o') {
         e.preventDefault();
         openWorkspaceFromPicker(); // openWorkspace（桌面有目录通道；web 无 → 不绑）
+      } else if (key === 'm') {
+        e.preventDefault();
+        requestOpenComposerModelMenu(); // openModelMenu（无已挂载模型菜单时 no-op）
+      } else if (key === 't') {
+        e.preventDefault();
+        cycleComposerThoughtLevel(); // cycleThoughtLevel（模型未声明档位时 no-op）
       }
     };
     window.addEventListener('keydown', onKeyDown);

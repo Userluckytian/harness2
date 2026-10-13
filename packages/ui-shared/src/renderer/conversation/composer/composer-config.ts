@@ -19,13 +19,30 @@ export interface ComposerModelRef {
   readonly model: string;
 }
 
+/** 角色条目快照：{channel, model} + 可选推理档位（core `roles.<role>.effort`） */
+export interface ComposerRoleSnapshot {
+  readonly channel: string;
+  readonly model: string;
+  /** 当前推理档位（Z6-A03；未配置 = 用模型声明的缺省档位） */
+  readonly effort?: string;
+}
+
+/** 模型声明的推理档位（core `providers.<c>.models.<m>.reasoning`；顺序 = 强度从低到高，非全局枚举） */
+export interface ComposerReasoningSpec {
+  readonly values: readonly string[];
+  readonly default?: string;
+}
+
 /**
  * 结构最小面：与桌面 `SettingsConfigShape` 的 providers/roles/approval 结构兼容
  * （壳直接传 config 视图即可，不要求整份形状）。
+ * 模型条目可携带 `reasoning`（档位来源）；壳视图未透出该字段时，档位控件如实不渲染。
  */
 export interface ComposerConfigSnapshot {
-  readonly roles?: Readonly<Record<string, ComposerModelRef>>;
-  readonly providers?: Readonly<Record<string, { readonly models?: Readonly<Record<string, unknown>> }>>;
+  readonly roles?: Readonly<Record<string, ComposerRoleSnapshot>>;
+  readonly providers?: Readonly<
+    Record<string, { readonly models?: Readonly<Record<string, { readonly reasoning?: ComposerReasoningSpec }>> }>
+  >;
   readonly approval?: { readonly mode?: string };
 }
 
@@ -191,3 +208,89 @@ export const COMPOSER_APPROVAL_ITEMS: readonly ComposerApprovalMenuItem[] = [
   { mode: 'acceptEdits', title: '自动接受编辑', description: '自动放行编辑类工具，其余仍逐个审批' },
   { mode: 'bypass', title: '全部放行', description: '不再请求批准，所有工具直接执行' },
 ];
+
+/** 模式循环顺序（Z-94 cycleSessionMode；含 Plan —— 它也是一种会话模式，首项复选框与它同源） */
+export const COMPOSER_APPROVAL_CYCLE: readonly ComposerApprovalMode[] = ['default', 'acceptEdits', 'bypass', 'plan'];
+
+/** 模式循环：默认 → 自动接受编辑 → 全部放行 → 计划 → 默认（回绕） */
+export function nextApprovalMode(current: string | undefined): ComposerApprovalMode {
+  const i = COMPOSER_APPROVAL_CYCLE.indexOf(displayApprovalMode(current));
+  return COMPOSER_APPROVAL_CYCLE[(i + 1) % COMPOSER_APPROVAL_CYCLE.length] ?? 'default';
+}
+
+// —— 思考档位（Z-94 ThoughtLevelCycleControl；数据面 = core `roles.<role>.effort` + 模型 reasoning.values）——
+
+/** 档位值 → 展示标签（ZCode 的通用档位名 → 中文；表外值原样显示 provider 自己的档位名，不臆造） */
+const THOUGHT_LEVEL_LABELS: Record<string, string> = {
+  off: '关闭',
+  disabled: '关闭',
+  none: '关闭',
+  no: '关闭',
+  nothink: '关闭',
+  enable: '开启',
+  enabled: '开启',
+  on: '开启',
+  minimal: '最低',
+  low: '低',
+  medium: '中',
+  high: '高',
+  'extra-high': '极高',
+  xhigh: '极高',
+  max: '最高',
+  ultra: '最高',
+};
+
+/** 档位展示标签：已知名映射为中文，未知值原样返回（不把 provider 私有档位名硬编码进枚举） */
+export function thoughtLevelLabel(value: string): string {
+  return THOUGHT_LEVEL_LABELS[value.trim().toLowerCase()] ?? value;
+}
+
+/** 当前思考档位（壳据此渲染与循环） */
+export interface ComposerThoughtLevel {
+  /** 当前档位值：config 显式设置优先，否则模型缺省档位，再否则 values[0] */
+  readonly current: string;
+  /** 可选档位（顺序即菜单/循环顺序，来自模型声明，非自造枚举） */
+  readonly values: readonly string[];
+  /** current 是否来自 config 的显式 `roles.<role>.effort`（false = 用模型缺省档位展示） */
+  readonly explicit: boolean;
+}
+
+/**
+ * 由 config 视图构造思考档位数据面。
+ *   - 角色缺失 / 所引模型缺失 / 模型未声明 `reasoning.values` → undefined（无档位可选，控件不渲染）；
+ *   - 当前值取 `roles.<role>.effort`（须在 values 内）；未设置时按 core 语义用模型 `reasoning.default`
+ *     （旧宿主视图可能未透出该字段，则回落 values[0]），此时 `explicit=false`。
+ */
+export function buildThoughtLevel(
+  config: ComposerConfigSnapshot,
+  role: string = COMPOSER_MAIN_ROLE,
+): ComposerThoughtLevel | undefined {
+  const ref = config.roles?.[role];
+  if (ref === undefined) return undefined;
+  const reasoning = config.providers?.[ref.channel]?.models?.[ref.model]?.reasoning;
+  const values = reasoning?.values;
+  if (reasoning === undefined || values === undefined || values.length === 0) return undefined;
+  const effort = ref.effort;
+  if (effort !== undefined && values.includes(effort)) {
+    return { current: effort, values: [...values], explicit: true };
+  }
+  const fallback =
+    reasoning.default !== undefined && values.includes(reasoning.default) ? reasoning.default : values[0]!;
+  return { current: fallback, values: [...values], explicit: false };
+}
+
+/** 档位循环：values 顺序向后一格回绕；不足两档返回 undefined（ZCode 同判据：无可循环） */
+export function nextThoughtLevel(current: string, values: readonly string[]): string | undefined {
+  if (values.length < 2) return undefined;
+  const i = values.indexOf(current);
+  return values[i < 0 ? 0 : (i + 1) % values.length];
+}
+
+/** 切换档位的 config patch（带 channel/model，深合并保证其余角色字段不丢） */
+export function thoughtLevelPatch(
+  role: string,
+  ref: ComposerModelRef,
+  effort: string,
+): { roles: Record<string, ComposerModelRef & { effort: string }> } {
+  return { roles: { [role]: { channel: ref.channel, model: ref.model, effort } } };
+}

@@ -26,7 +26,7 @@ import { ArrowUpIcon, SquareIcon } from 'lucide-react';
 import { Button } from '../../../components/ui/button.js';
 import { Spinner } from '../../../components/ui/spinner.js';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '../../../components/ui/tooltip.js';
-import { ComposerModeSwitch, ComposerModelSelect } from './composer-controls.js';
+import { ComposerModeSwitch, ComposerModelSelect, ComposerThoughtLevel } from './composer-controls.js';
 import { ComposerContextMenu, type ComposerContextPickerOptions } from './composer-context-menu.js';
 import type { ComposerApprovalMode, ComposerModelMenu, ComposerModelRef } from './composer-config.js';
 import {
@@ -103,6 +103,18 @@ export interface ComposerModeSwitchProps {
   readonly onModeChange: (mode: ComposerApprovalMode) => void;
 }
 
+/**
+ * Z10-2b 右簇「思考档位」数据面（壳注入；undefined = 该壳无通道或模型未声明档位 → 控件不渲染）。
+ * 档位集合来自 core `providers.<c>.models.<m>.reasoning.values`（每模型自声明，非全局枚举）；
+ * 当前值 = config `roles.<role>.effort`（未设置时按 core 语义取模型缺省档位）。
+ * ⚠️ 如实差异：同为 **config 级**选择，影响之后的会话；UI 只呈现 config 当前值。
+ */
+export interface ComposerThoughtLevelProps {
+  readonly current: string;
+  readonly values: readonly string[];
+  readonly onSelectLevel: (level: string) => void;
+}
+
 /** composer 的外部 IO 缝（接线棒注入真实实现；测试注入假实现） */
 export interface ComposerIO {
   readonly createClientMessageId: () => string;
@@ -145,6 +157,8 @@ export interface ComposerProps {
   readonly modelSelect?: ComposerModelSelectProps;
   /** Z3-04 左簇模式切换（壳注入；undefined = 不渲染该控件） */
   readonly modeSwitch?: ComposerModeSwitchProps;
+  /** Z10-2b 右簇思考档位（壳注入；undefined = 不渲染该控件） */
+  readonly thoughtLevel?: ComposerThoughtLevelProps;
   /**
    * P0「添加上下文」选择器数据面（壳注入）。
    * 与左右簇控件不同：**按钮恒渲染**（ZCode composer 常驻项）；`contextPicker` 只携带数据源，
@@ -651,7 +665,7 @@ export function Composer(props: ComposerProps): ReactNode {
                 <ComposerModeSwitch mode={props.modeSwitch.mode} onModeChange={props.modeSwitch.onModeChange} />
               )}
             </div>
-            {/* 右簇（Z-94）：模型选择 + 发送/停止 */}
+            {/* 右簇（Z-94）：模型选择 + 思考档位 + 发送/停止 */}
             <div className="composer-actions-right">
               {props.modelSelect !== undefined && (
                 <ComposerModelSelect
@@ -660,6 +674,13 @@ export function Composer(props: ComposerProps): ReactNode {
                   {...(props.modelSelect.onManageModels !== undefined
                     ? { onManageModels: props.modelSelect.onManageModels }
                     : {})}
+                />
+              )}
+              {props.thoughtLevel !== undefined && (
+                <ComposerThoughtLevel
+                  current={props.thoughtLevel.current}
+                  values={props.thoughtLevel.values}
+                  onSelectLevel={props.thoughtLevel.onSelectLevel}
                 />
               )}
               <TooltipProvider>

@@ -8,9 +8,17 @@
 //   * 「管理模型」仅当壳提供设置入口回调时渲染（web 壳无该通道 → 该项不渲染，不摆死入口）。
 //
 // 数据一律经 props 流入（壳注入），本组件不抓 IPC / 不抓全局单例；纯决策在 composer-config.ts。
-import { Fragment, useRef } from 'react';
+import { Fragment, useEffect, useRef, useState } from 'react';
 import type { ComponentType, ReactNode } from 'react';
-import { CheckIcon, FilePenLineIcon, LightbulbIcon, Settings2Icon, ShieldCheckIcon, ZapIcon } from 'lucide-react';
+import {
+  BrainIcon,
+  CheckIcon,
+  FilePenLineIcon,
+  LightbulbIcon,
+  Settings2Icon,
+  ShieldCheckIcon,
+  ZapIcon,
+} from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { Button } from '../../../components/ui/button.js';
 import {
@@ -32,11 +40,13 @@ import {
   isPlanMode,
   isRadioApprovalMode,
   modelTriggerLabel,
+  thoughtLevelLabel,
   type ComposerApprovalMode,
   type ComposerModelMenu,
   type ComposerModelRef,
   type ComposerRadioApprovalMode,
 } from './composer-config.js';
+import { subscribeComposerModelMenuRequest } from './composer-menu-signal.js';
 
 // —— 模型选择（右簇；Z-94 ModelConfigSelect）——
 
@@ -56,8 +66,12 @@ export interface ComposerModelSelectControlProps {
  */
 export function ComposerModelSelect(props: ComposerModelSelectControlProps): ReactNode {
   const { menu } = props;
+  // Ctrl+M（ZCode openModelMenu）经共享信号总线打开本菜单：受控 open + 订阅一次性信号，
+  // 不新增任何业务状态（菜单数据仍单一真源在 config）。分屏多格会同时展开（见信号模块头注释）。
+  const [open, setOpen] = useState(false);
+  useEffect(() => subscribeComposerModelMenuRequest(() => setOpen(true)), []);
   return (
-    <DropdownMenu>
+    <DropdownMenu open={open} onOpenChange={setOpen}>
       <DropdownMenuTrigger asChild>
         <Button
           type="button"
@@ -206,6 +220,59 @@ export function ComposerModeSwitch(props: ComposerModeSwitchControlProps): React
                 </span>
                 <span className="text-ui-xs text-foreground-subtlest">{item.description}</span>
               </span>
+            </DropdownMenuRadioItem>
+          ))}
+        </DropdownMenuRadioGroup>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}
+
+// —— 思考档位（右簇；Z-94 ThoughtLevelCycleControl，Ctrl+T）——
+
+export interface ComposerThoughtLevelControlProps {
+  /** 当前档位值（config `roles.<role>.effort`，未设置时 = 模型缺省档位） */
+  readonly current: string;
+  /** 可选档位（来自模型 reasoning.values 声明，顺序即菜单顺序；不在此处自造枚举） */
+  readonly values: readonly string[];
+  /** 选择一个档位（写盘由壳做） */
+  readonly onSelectLevel: (level: string) => void;
+  readonly disabled?: boolean;
+}
+
+/**
+ * 思考档位下拉（Z-94 右簇，位于模型选择与发送按钮之间）。trigger 显示当前档位标签
+ * （已知名映射为中文，未知值原样显示 provider 档位名 —— 与 ZCode `thoughtLevelLabelId` 同口径）。
+ */
+export function ComposerThoughtLevel(props: ComposerThoughtLevelControlProps): ReactNode {
+  const { current, values } = props;
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          data-testid="composer-thought-level"
+          disabled={props.disabled}
+          aria-label={`思考档位：${thoughtLevelLabel(current)}`}
+          className="rounded-lg text-foreground-subtle hover:text-foreground"
+        >
+          <BrainIcon className="size-4" />
+          <span>{thoughtLevelLabel(current)}</span>
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end" className="w-40" data-testid="composer-thought-level-menu">
+        <DropdownMenuRadioGroup value={current}>
+          {values.map((value) => (
+            <DropdownMenuRadioItem
+              key={value}
+              value={value}
+              data-testid="composer-thought-level-option"
+              data-selected={value === current ? 'true' : undefined}
+              onSelect={() => props.onSelectLevel(value)}
+            >
+              <span className="truncate">{thoughtLevelLabel(value)}</span>
             </DropdownMenuRadioItem>
           ))}
         </DropdownMenuRadioGroup>

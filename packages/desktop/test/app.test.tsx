@@ -15,6 +15,7 @@ import type {
 import { AppStore } from '@harness2/ui-shared/renderer/store.js';
 import { createController } from '@harness2/ui-shared/renderer/app-controller.js';
 import type { ChatItem } from '@harness2/ui-shared/renderer/chat-model.js';
+import { _resetComposerConfigForTest } from '../src/renderer/conversation/composer-controls-bridge.js';
 
 let seq = 0;
 function ev(type: string, payload: Record<string, unknown>): any {
@@ -829,7 +830,7 @@ describe('Z10-4 快捷键扩展（源码权威键表）', () => {
     await waitFor(() => expect(api.createSession).toHaveBeenCalledWith('D:/proj'));
   });
 
-  it('反向钉：未兑现的键不触发任何动作（Ctrl+F / Ctrl+T / Ctrl+Shift+M / Ctrl+W）', async () => {
+  it('反向钉：仍未兑现的键不触发任何动作（Ctrl+F / Ctrl+W）', async () => {
     const api = makeFakeApi();
     const App = (await bootApp(api)) as { App: () => React.ReactNode };
     render(<App.App />);
@@ -838,8 +839,6 @@ describe('Z10-4 快捷键扩展（源码权威键表）', () => {
     const rightbarBefore = seatOf('rightbar')?.hasAttribute('hidden');
     for (const combo of [
       { key: 'f', code: 'KeyF' },
-      { key: 't', code: 'KeyT' },
-      { key: 'm', code: 'KeyM', shiftKey: true },
       { key: 'w', code: 'KeyW' },
     ]) {
       fireEvent.keyDown(window, { ctrlKey: true, ...combo });
@@ -850,5 +849,63 @@ describe('Z10-4 快捷键扩展（源码权威键表）', () => {
     expect(seatOf('sidebar')?.getAttribute('data-collapsed')).toBe(collapsedBefore);
     expect(seatOf('rightbar')?.hasAttribute('hidden')).toBe(rightbarBefore);
     expect(api.settingsSetPreferences).not.toHaveBeenCalled();
+  });
+
+  it('Z10-2b Ctrl+Shift+M：权限模式循环写回 config（复用同一 settings:updateConfig 通道）', async () => {
+    _resetComposerConfigForTest();
+    const api = makeFakeApi();
+    api.settingsGetConfig = vi.fn(async () => ({
+      providers: {},
+      roles: {},
+      approval: { mode: 'default' },
+      memory: { mode: 'off', nudgeInterval: 10 },
+      browser: { enabled: true, idleDestroyMs: 300_000, maxConcurrent: 2 },
+      plugins: { enabled: true, allow: [] },
+      mcpServers: {},
+      subagent: { maxDepth: 1, maxTurns: 25 },
+      sources: { global: true, project: false },
+      warnings: [],
+      errors: [],
+    }));
+    const App = (await bootApp(api)) as { App: () => React.ReactNode };
+    render(<App.App />);
+    await screen.findByText(/第一句/);
+    await waitFor(() => expect(api.settingsGetConfig).toHaveBeenCalled());
+    fireEvent.keyDown(window, { key: 'm', code: 'KeyM', ctrlKey: true, shiftKey: true });
+    await waitFor(() => expect(api.settingsUpdateConfig).toHaveBeenCalledWith({ approval: { mode: 'acceptEdits' } }));
+  });
+
+  it('Z10-2b Ctrl+T：思考档位循环写回 config roles.main.effort（模型声明档位时）', async () => {
+    _resetComposerConfigForTest();
+    const api = makeFakeApi();
+    api.settingsGetConfig = vi.fn(async () => ({
+      providers: {
+        zai: {
+          protocol: 'openai' as const,
+          baseUrl: 'https://api.example.com',
+          models: { 'glm-5.3': { reasoning: { values: ['low', 'high'], default: 'low' } } },
+        },
+      },
+      roles: { main: { channel: 'zai', model: 'glm-5.3' } },
+      approval: { mode: 'default' },
+      memory: { mode: 'off', nudgeInterval: 10 },
+      browser: { enabled: true, idleDestroyMs: 300_000, maxConcurrent: 2 },
+      plugins: { enabled: true, allow: [] },
+      mcpServers: {},
+      subagent: { maxDepth: 1, maxTurns: 25 },
+      sources: { global: true, project: false },
+      warnings: [],
+      errors: [],
+    }));
+    const App = (await bootApp(api)) as { App: () => React.ReactNode };
+    render(<App.App />);
+    await screen.findByText(/第一句/);
+    await waitFor(() => expect(api.settingsGetConfig).toHaveBeenCalled());
+    fireEvent.keyDown(window, { key: 't', code: 'KeyT', ctrlKey: true });
+    await waitFor(() =>
+      expect(api.settingsUpdateConfig).toHaveBeenCalledWith({
+        roles: { main: { channel: 'zai', model: 'glm-5.3', effort: 'high' } },
+      }),
+    );
   });
 });
