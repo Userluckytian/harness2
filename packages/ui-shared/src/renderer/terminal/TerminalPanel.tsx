@@ -34,6 +34,34 @@ export interface TerminalPanelProps {
 /** 单标签内部状态：打开中 / 已连接 / 已退出 / 打开失败（如实呈现，不伪装） */
 type TabStatus = 'opening' | 'open' | 'exited' | 'error';
 
+/**
+ * 单标签在**面板级注册表**中的登记项。
+ *
+ * 键是 `port.open()` 返回的**终端 id**，值是持有该 id 的 xterm 实例与退出回调 —— 数据/退出
+ * 一律按 id 精确分发（`registry.get(id)`）：找不到对应实例（已关闭 / 未知 id）就**如实丢弃**，
+ * 绝不回落到「第一个 / 当前激活」实例。这样每标签的实例与 id 严格一一对应，不会因
+ * StrictMode 双调用 / 重复 effect 而错位。
+ */
+interface TerminalRegistration {
+  readonly term: Terminal;
+  /** 该终端退出时的回调（把退出码写回所属标签的 state）。 */
+  readonly onExit: (exitCode: number | undefined) => void;
+}
+
+/** 面板级注册表：终端 id → { xterm 实例, 退出回调 }。稳定单例，跨渲染存活（见 TerminalTabs）。 */
+type TerminalRegistry = Map<string, TerminalRegistration>;
+
+/**
+ * 开发期诊断：未知 id 的数据被如实丢弃时留一条线索。
+ *
+ * 默认静默（生产 / 测试不产生噪音），仅在宿主显式置 `globalThis.__HARNESS2_TERMINAL_DEBUG__ = true`
+ * 时输出 —— 不引用 node/`process`（本文件零宿主依赖）。
+ */
+function devLog(message: string): void {
+  const enabled = (globalThis as { __HARNESS2_TERMINAL_DEBUG__?: unknown }).__HARNESS2_TERMINAL_DEBUG__;
+  if (enabled === true) console.debug(`[h2-terminal] ${message}`);
+}
+
 /** 读一个语义 token 的计算值；空串（jsdom / 未加载样式）视为缺失，交由 xterm 默认值兜底 */
 function readToken(name: string): string | undefined {
   if (typeof window === 'undefined' || typeof document === 'undefined') return undefined;
@@ -88,21 +116,27 @@ function TerminalUnavailable({ reason }: { reason?: string }): ReactNode {
  * 单个终端标签的视图：拥有自己的 xterm 实例与生命周期。
  *
  * 挂载：new Terminal → 挂 FitAddon → `open(host)` → `fit()` 取整数 cols/rows →
- * `port.open({ cols, rows, cwd? })` 拿 id → 订阅 `onData`（写进本 xterm）/ `onExit`（显示退出码）。
- * 键入：`term.onData` → `port.write(id, data)`。
- * 尺寸：`ResizeObserver` / 标签激活 → `fit()` → 尺寸变化时 `port.resize(id, cols, rows)`。
- * 卸载：退订 + `port.close(id)` + `term.dispose()`（不泄漏）。
+ * `port.open({ cols, rows, cwd? })` 拿 id → 把 (id → { term, onExit }) **登记进面板级注册表**
+ * （数据/退出由面板**单一订阅**按 id 精确分发；本视图不再各自订阅）。键入：`term.onData` →
+ * `port.write(id, data)`。尺寸：`ResizeObserver` / 标签激活 → `fit()` → 尺寸变化时 `port.resize`。
+ * 卸载：从注册表注销 + `port.close(id)` + `term.dispose()`（不泄漏）。
+ *
+ * **幂等（StrictMode 双调用）**：id 用**本 effect run 自有**的局部变量 `ownedId`（不用共享「当前 id」），
+ * cleanup 只回收「本次真正开出」的 id 与登记项；被提前取消的那次 open 在拿到 id 后立即 close，
+ * 从不登记 —— 因此不会出现「id 已被 close、实例却仍挂着旧 id」的错位。
  */
 function TerminalTabView({
   port,
   cwd,
   theme,
   active,
+  registry,
 }: {
   port: TerminalPort;
   cwd?: string;
   theme?: 'light' | 'dark';
   active: boolean;
+  registry: TerminalRegistry;
 }): ReactNode {
   const hostRef = useRef<HTMLDivElement | null>(null);
   const termRef = useRef<Terminal | null>(null);
@@ -132,7 +166,7 @@ function TerminalTabView({
     port.resize(id, cols, rows);
   }, [port]);
 
-  // 生命周期：创建 xterm / open 端口 / 订阅数据与退出；卸载时全量回收。
+  // 生命周期：创建 xterm / open 端口 / 登记进注册表；卸载时全量回收。
   useEffect(() => {
     const host = hostRef.current;
     if (host === null) return;
@@ -149,11 +183,10 @@ function TerminalTabView({
     fitRef.current = fit;
 
     let cancelled = false;
-    let offData: (() => void) | undefined;
-    let offExit: (() => void) | undefined;
+    // 本 effect run **自有**的终端 id：cleanup 只回收它，与 term 实例严格一一对应。
+    let ownedId: string | null = null;
     const inputSub = term.onData((data) => {
-      const id = idRef.current;
-      if (id !== null) port.write(id, data);
+      if (ownedId !== null) port.write(ownedId, data);
     });
     const observer =
       typeof ResizeObserver !== 'undefined'
@@ -170,20 +203,27 @@ function TerminalTabView({
         const rows = Math.max(1, Math.round(term.rows));
         const opened = await port.open({ cols, rows, ...(cwd !== undefined ? { cwd } : {}) });
         if (cancelled) {
-          void port.close(opened.id); // 挂载期已被卸载：立即回收，避免泄漏真实 PTY
+          void port.close(opened.id); // 挂载期已被卸载：立即回收，避免泄漏真实 PTY（且从不登记）
           return;
         }
-        idRef.current = opened.id;
+        ownedId = opened.id;
+        idRef.current = opened.id; // 供 fitAndResize 定位（本 run 自有 id）
         lastSizeRef.current = { cols, rows };
-        offData = port.onData((id, data) => {
-          if (id === opened.id) term.write(data);
-        });
-        offExit = port.onExit((id, code) => {
-          if (id === opened.id) {
+        // 登记进面板级注册表：数据 / 退出从此**只**按该 id 分发到本实例的 xterm。
+        registry.set(opened.id, {
+          term,
+          onExit: (code) => {
             setExitCode(code);
             setStatus('exited');
-          }
+          },
         });
+        // 修复（dock 收起时挂载 → xterm 永远停在 1 行）：open 前若容器零尺寸，fit() 会把 PTY
+        // 建到 rows=1；而挂载期 ResizeObserver 回调在 id 就绪前会空跑（`fitAndResize` 见 idRef
+        // 为 null 直接 return），dock 展开这次回调可能恰逢 `await port.open` 未 resolve —— 于是
+        // open 之后再无任何 fit，尺寸永远停在 1 行。此处 open、id 与登记都就绪后**补一次 fit**：
+        // 容器已具真实尺寸 → 立即重算并经 `port.resize` 通知 PTY；仍为零尺寸 → 交由后续 RO 回调
+        // 纠正（那时 id 已就绪，不会再空跑）。`fitAndResize` 的 `lastSizeRef` 去重保证不误发。
+        fitAndResize();
         setStatus('open');
       } catch (err) {
         if (cancelled) return;
@@ -197,17 +237,18 @@ function TerminalTabView({
       cancelled = true;
       observer?.disconnect();
       inputSub.dispose();
-      offData?.();
-      offExit?.();
-      const id = idRef.current;
-      if (id !== null) void port.close(id);
+      if (ownedId !== null) {
+        // 注销该 id 的分发（close 后再来该 id 的数据 → 无实例 → 如实丢弃，不写进别的实例）
+        registry.delete(ownedId);
+        void port.close(ownedId);
+      }
       term.dispose();
       termRef.current = null;
       fitRef.current = null;
       idRef.current = null;
       lastSizeRef.current = null;
     };
-  }, [port, cwd, fitAndResize]);
+  }, [port, cwd, fitAndResize, registry]);
 
   // 主题切换：只更新已存在实例的 theme 选项，不重建终端（保留屏幕缓冲）。
   useEffect(() => {
@@ -253,6 +294,31 @@ function TerminalTabs({ port, cwd, theme }: { port: TerminalPort; cwd?: string; 
   const [tabKeys, setTabKeys] = useState<readonly number[]>(() => [0]);
   const [activeKey, setActiveKey] = useState<number | null>(0);
   const nextKeyRef = useRef(1);
+  // 面板级注册表（稳定单例，跨渲染存活）：终端 id → { xterm, onExit }。各标签把自己的实例登记进来，
+  // 面板**单一订阅**按 id 精确分发 —— 不用「当前激活 id」这类全局单值，杜绝跨实例错写。
+  const registryRef = useRef<TerminalRegistry>(new Map());
+
+  // **单一订阅**：只在 port 身份变化时重建（不随每次渲染 / 每个标签重建，订阅不会丢）。
+  // 数据只写进 id 对应的实例；找不到对应实例（已关闭 / 未知 id）→ 如实丢弃并留一条 dev 线索，
+  // **绝不**回落到第一个 / 激活实例。
+  useEffect(() => {
+    const registry = registryRef.current;
+    const offData = port.onData((id, data) => {
+      const entry = registry.get(id);
+      if (entry === undefined) {
+        devLog(`丢弃未知终端 id 的数据（无对应实例）：${id}`);
+        return;
+      }
+      entry.term.write(data);
+    });
+    const offExit = port.onExit((id, code) => {
+      registry.get(id)?.onExit(code);
+    });
+    return () => {
+      offData();
+      offExit();
+    };
+  }, [port]);
 
   const addTab = (): void => {
     const key = nextKeyRef.current;
@@ -320,7 +386,14 @@ function TerminalTabs({ port, cwd, theme }: { port: TerminalPort; cwd?: string; 
       </div>
       <div className="h2-terminal__bodies" data-testid="terminal-bodies">
         {tabKeys.map((key) => (
-          <TerminalTabView key={key} port={port} cwd={cwd} theme={theme} active={key === activeKey} />
+          <TerminalTabView
+            key={key}
+            port={port}
+            cwd={cwd}
+            theme={theme}
+            active={key === activeKey}
+            registry={registryRef.current}
+          />
         ))}
       </div>
     </div>

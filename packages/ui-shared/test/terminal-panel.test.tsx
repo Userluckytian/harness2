@@ -7,6 +7,7 @@
 // 是**面板与端口的接线契约**：可用性如实、open 参数、数据分发、键入回传、多标签、
 // 关闭回收、退出/失败如实显示。
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { StrictMode } from 'react';
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import type { TerminalPort } from '../src/renderer/terminal/port.js';
 import { TerminalPanel } from '../src/renderer/terminal/TerminalPanel.js';
@@ -37,8 +38,9 @@ const xtermMock = vi.hoisted(() => {
       this.options = options;
       instances.push(this as unknown as FakeTerminalInstance);
     }
-    loadAddon(): void {
-      /* addon 无行为需求，计数见 fits */
+    loadAddon(addon: { term?: FakeTerminal }): void {
+      // 让替身 FitAddon 能反向改写本终端的 cols/rows（模拟真实 FitAddon 依容器尺寸重算）。
+      addon.term = this;
     }
     open(): void {
       /* DOM 挂载由容器负责；替身不渲染 */
@@ -62,21 +64,35 @@ const xtermMock = vi.hoisted(() => {
       for (const h of [...this.handlers]) h(data);
     }
   }
-  const fits: Array<{ fitCount: number; disposed: boolean }> = [];
+  interface FakeFitInstance {
+    fitCount: number;
+    disposed: boolean;
+    /** 由 FakeTerminal.loadAddon 注入：fit() 时把 fitSize 写到该终端 */
+    term: FakeTerminal | null;
+  }
+  const fits: FakeFitInstance[] = [];
+  // 受控 fit 尺寸：非 null 时 `fit()` 把该 cols/rows 写入关联终端（模拟真实 fit 依容器尺寸重算）。
+  // 默认 null → 现有用例里 fit() 不改变 cols/rows（保持既有替身语义，零回归）。
+  const fitSize: { cols: number | null; rows: number | null } = { cols: null, rows: null };
   class FakeFitAddon {
     fitCount = 0;
     disposed = false;
+    term: FakeTerminal | null = null;
     constructor() {
-      fits.push(this as unknown as { fitCount: number; disposed: boolean });
+      fits.push(this as unknown as FakeFitInstance);
     }
     fit(): void {
       this.fitCount += 1;
+      if (this.term !== null && fitSize.cols !== null && fitSize.rows !== null) {
+        this.term.cols = fitSize.cols;
+        this.term.rows = fitSize.rows;
+      }
     }
     dispose(): void {
       this.disposed = true;
     }
   }
-  return { instances, fits, FakeTerminal, FakeFitAddon };
+  return { instances, fits, fitSize, FakeTerminal, FakeFitAddon };
 });
 
 vi.mock('@xterm/xterm', () => ({ Terminal: xtermMock.FakeTerminal }));
@@ -115,9 +131,11 @@ interface MockPort {
   closed: string[];
   emitData: (id: string, data: string) => void;
   emitExit: (id: string, exitCode: number | undefined) => void;
+  /** 仅 `manualOpen` 时可用：放行一次挂起的 open（resolve 对应 Promise） */
+  releaseOpen: () => void;
 }
 
-function createMockPort(opts: { available?: boolean } = {}): MockPort {
+function createMockPort(opts: { available?: boolean; manualOpen?: boolean } = {}): MockPort {
   const dataListeners = new Set<(id: string, data: string) => void>();
   const exitListeners = new Set<(id: string, exitCode: number | undefined) => void>();
   let nextId = 1;
@@ -125,12 +143,19 @@ function createMockPort(opts: { available?: boolean } = {}): MockPort {
   const writes: MockPort['writes'] = [];
   const resizes: MockPort['resizes'] = [];
   const closed: string[] = [];
+  const openReleases: Array<() => void> = [];
 
-  const open = vi.fn(async (o: { cols: number; rows: number; cwd?: string }) => {
+  const open = vi.fn((o: { cols: number; rows: number; cwd?: string }): Promise<{ id: string }> => {
     const id = `t${nextId}`;
     nextId += 1;
     opened.push({ id, cols: o.cols, rows: o.rows, cwd: o.cwd });
-    return { id };
+    if (opts.manualOpen === true) {
+      // 手动放行：用于精确模拟「open 尚未 resolve 时容器尺寸已变化」的时序。
+      return new Promise<{ id: string }>((resolve) => {
+        openReleases.push(() => resolve({ id }));
+      });
+    }
+    return Promise.resolve({ id });
   });
   const port: TerminalPort = {
     available: opts.available ?? true,
@@ -169,12 +194,17 @@ function createMockPort(opts: { available?: boolean } = {}): MockPort {
     emitExit: (id, exitCode) => {
       for (const cb of [...exitListeners]) cb(id, exitCode);
     },
+    releaseOpen: () => {
+      openReleases.shift()?.();
+    },
   };
 }
 
 beforeEach(() => {
   xtermMock.instances.length = 0;
   xtermMock.fits.length = 0;
+  xtermMock.fitSize.cols = null;
+  xtermMock.fitSize.rows = null;
   roMock.observers.length = 0;
   (globalThis as { ResizeObserver?: unknown }).ResizeObserver = roMock.FakeResizeObserver;
 });
@@ -332,5 +362,142 @@ describe('TerminalPanel · 主题取色', () => {
     const theme = xtermMock.instances[0]?.options.theme as Record<string, unknown> | undefined;
     expect(theme?.green).toBe('#123456');
     expect(theme?.background).toBe('#0a0a0a');
+  });
+});
+
+// Z9-4 回归：多实例按 **id 精确分发**（面板级注册表 + 单一订阅）。防「数据写进别的实例 /
+// StrictMode 双调用后订阅失效 / close 后幽灵写入」三类错位。
+describe('TerminalPanel · 多实例 id 精确分发（回归）', () => {
+  it('两个标签：id A 的 data 只进 A 的实例，id B 只进 B', async () => {
+    const m = createMockPort();
+    render(<TerminalPanel port={m.port} />);
+    await waitFor(() => expect(m.opened).toHaveLength(1));
+    fireEvent.click(screen.getByTestId('terminal-new-tab'));
+    await waitFor(() => expect(m.opened).toHaveLength(2));
+
+    const [instA, instB] = xtermMock.instances;
+    act(() => m.emitData('t1', 'A-DATA'));
+    act(() => m.emitData('t2', 'B-DATA'));
+
+    expect(instA?.writes).toEqual(['A-DATA']);
+    expect(instB?.writes).toEqual(['B-DATA']);
+  });
+
+  it('effect 重复执行（StrictMode 双调用）后，存活实例仍能收到 data（订阅不失效）', async () => {
+    const m = createMockPort();
+    render(
+      <StrictMode>
+        <TerminalPanel port={m.port} />
+      </StrictMode>,
+    );
+    // StrictMode 双调用：收到两次 open（t1 被 cleanup 关掉、t2 存活）
+    await waitFor(() => expect(m.opened.length).toBeGreaterThanOrEqual(2));
+    await waitFor(() => expect(m.closed).toContain('t1'));
+    await act(async () => {
+      await Promise.resolve(); // 让存活 open 的续体完成登记（registry.set 在 await 之后）
+    });
+    const liveInst = xtermMock.instances.find((i) => !i.disposed);
+    expect(liveInst).toBeDefined();
+    const liveId = m.opened[m.opened.length - 1]?.id as string;
+
+    act(() => m.emitData(liveId, 'STILL-ALIVE'));
+    expect(liveInst?.writes).toContain('STILL-ALIVE');
+    // 被关掉的那个实例绝不能收到数据
+    expect(xtermMock.instances[0]?.writes).toEqual([]);
+  });
+
+  it('关闭标签后再来该 id 的 data → 不写进任何实例（含仍存的激活实例）', async () => {
+    const m = createMockPort();
+    render(<TerminalPanel port={m.port} />);
+    await waitFor(() => expect(m.opened).toHaveLength(1));
+    fireEvent.click(screen.getByTestId('terminal-new-tab'));
+    await waitFor(() => expect(m.opened).toHaveLength(2));
+
+    const closeButtons = screen.getAllByTestId('terminal-tab-close');
+    fireEvent.click(closeButtons[1] as HTMLElement);
+    await waitFor(() => expect(m.port.close).toHaveBeenCalledWith('t2'));
+
+    act(() => m.emitData('t2', 'GHOST-AFTER-CLOSE'));
+    expect(xtermMock.instances.every((i) => !i.writes.includes('GHOST-AFTER-CLOSE'))).toBe(true);
+  });
+
+  it('未知 id 的 data 如实丢弃 —— 不回落到第一个 / 激活实例', async () => {
+    const m = createMockPort();
+    render(<TerminalPanel port={m.port} />);
+    await waitFor(() => expect(m.opened).toHaveLength(1));
+
+    act(() => m.emitData('no-such-id', 'ORPHAN'));
+    expect(xtermMock.instances.every((i) => i.writes.length === 0)).toBe(true);
+  });
+});
+
+// 缺陷回归（dock 收起时挂载 → xterm 永远停在 1 行）：
+// 挂载时容器零尺寸 → fit 只能得 rows=1，PTY 以 rows=1 创建；挂载期 ResizeObserver 回调在
+// `await port.open` 未 resolve（idRef 仍为 null）时空跑，此后若容器不再变化就再无 fit。
+// 修复：open resolve 且 id/登记就绪后补一次 fitAndResize。
+describe('TerminalPanel · dock 收起时挂载 → 展开后尺寸正确（回归）', () => {
+  it('open 期间容器展开（RO 在 id 就绪前空跑）→ open 后补 fit，port.resize 收到非 1 行', async () => {
+    const m = createMockPort({ manualOpen: true });
+    // 挂载时容器零尺寸：fit 只能得到 1x1
+    xtermMock.fitSize.cols = 1;
+    xtermMock.fitSize.rows = 1;
+    render(<TerminalPanel port={m.port} />);
+
+    // PTY 先以 rows=1 创建（根因现象：多行输出看不见）
+    expect(m.opened).toHaveLength(1);
+    expect(m.opened[0]?.rows).toBe(1);
+
+    const fit = xtermMock.fits.at(-1);
+    const fitCountBeforeRelease = fit?.fitCount ?? 0;
+
+    // dock 在 open resolve 之前展开：容器变为真实尺寸 → ResizeObserver 回调触发；
+    // 但此刻 id 尚未就绪，回调空跑（不 fit）。
+    xtermMock.fitSize.cols = 140;
+    xtermMock.fitSize.rows = 12;
+    act(() => roMock.observers.at(-1)?.trigger());
+    expect(fit?.fitCount ?? 0).toBe(fitCountBeforeRelease);
+
+    // open resolve（容器此时已展开）
+    await act(async () => {
+      m.releaseOpen();
+      await Promise.resolve();
+    });
+
+    // 修复：open 后补一次 fit → 重算为 140x12 并经 port.resize 通知 PTY
+    expect(fit?.fitCount ?? 0).toBeGreaterThan(fitCountBeforeRelease);
+    expect(m.port.resize).toHaveBeenCalledWith('t1', 140, 12);
+    expect(m.resizes.some((r) => r.rows !== 1)).toBe(true);
+  });
+
+  it('挂载零尺寸 → open resolve 后容器变非零 → fit 再次调用且 resize 非 1 行', async () => {
+    const m = createMockPort();
+    xtermMock.fitSize.cols = 1;
+    xtermMock.fitSize.rows = 1;
+    render(<TerminalPanel port={m.port} />);
+    await waitFor(() => expect(m.opened).toHaveLength(1));
+    expect(m.opened[0]?.rows).toBe(1);
+
+    const fit = xtermMock.fits.at(-1);
+    const fitCountAfterOpen = fit?.fitCount ?? 0;
+
+    // dock 展开后容器变为真实尺寸
+    xtermMock.fitSize.cols = 140;
+    xtermMock.fitSize.rows = 12;
+    act(() => roMock.observers.at(-1)?.trigger());
+
+    expect(fit?.fitCount ?? 0).toBeGreaterThan(fitCountAfterOpen);
+    expect(m.resizes.some((r) => r.cols === 140 && r.rows === 12)).toBe(true);
+  });
+
+  it('尺寸未变时不重复 port.resize（lastSizeRef 去重仍生效）', async () => {
+    const m = createMockPort();
+    render(<TerminalPanel port={m.port} />);
+    await waitFor(() => expect(m.opened).toHaveLength(1));
+
+    // 替身 fit 不改 cols/rows（80x24，与 open 时一致）→ 多次触发也不应发 resize
+    const ro = roMock.observers.at(-1);
+    act(() => ro?.trigger());
+    act(() => ro?.trigger());
+    expect(m.port.resize).not.toHaveBeenCalled();
   });
 });
