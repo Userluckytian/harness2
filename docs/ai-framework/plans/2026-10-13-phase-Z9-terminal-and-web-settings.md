@@ -84,12 +84,12 @@ export interface TerminalPort {
 
 | 批次                         | 内容                                                                                                        | 负责   | 验收（命令 + 期望）                                                                            |
 | ---------------------------- | ----------------------------------------------------------------------------------------------------------- | ------ | ---------------------------------------------------------------------------------------------- |
-| **Z9-1** core PTY 管理器     | `terminal/manager.ts` + 假 PTY 单测 + 真 PTY 冒烟（平台支持时）                                             | 代理 A | `pnpm --filter @harness2/core run test`：新增用例全绿，core 既有 1538 零回归；真冒烟跑出标记串 |
-| **Z9-2** 线协议 + serve 传输 | `shared/protocol.ts` 八帧 + `serve ws` 分发 + 鉴权/信任域沿既有路径                                         | 代理 A | core 测试新增帧用例；`ws` 既有用例零回归                                                       |
-| **Z9-3** 桌面传输            | IPC `terminal:*` 四件 + `TerminalPort` 桌面实现                                                             | 代理 A | desktop 测试：假 PTY 下 open/input/data/exit 往返                                              |
-| **Z9-4** 终端 UI             | `renderer/terminal/{port.ts,TerminalPanel.tsx}`（xterm 视图 + 标签条 + 新建/关闭）+ 单测（mock port）       | 代理 B | ui-shared 测试新增；既有 478 零回归；依赖 `@xterm/xterm`/`@xterm/addon-fit`                    |
-| **Z9-5** 两壳装配            | 注册进 `TERMINAL_SEAT`（桌面/ web 各一）+ 侧栏/命令面板「切换终端 Ctrl+J」由占位转真 + web 端口实现         | 代理 C | 两壳测试；浏览器复核：Ctrl+J 开合、键入有回显                                                  |
-| **Z9-6** web 设置对齐        | serve `GET/PUT /api/config`（分区级读写 + 密钥脱敏）+ web 设置端口接上（`sectionAllowList` 放开到桌面同集） | 代理 D | serve 测试（读写/脱敏/非法拒绝）+ web 设置页可开各分区；**写密钥另行拍板**（见 §4）            |
+| **Z9-1** core PTY 管理器     | `terminal/manager.ts` + 假 PTY 单测 + 真 PTY 冒烟（平台支持时）                                             | 代理 A | `pnpm --filter @harness2/core run test`：新增用例全绿，core 既有 1538 零回归；真冒烟跑出标记串 | — ✅ 已落地                         |
+| **Z9-2** 线协议 + serve 传输 | `shared/protocol.ts` 八帧 + `serve ws` 分发 + 鉴权/信任域沿既有路径                                         | 代理 A | core 测试新增帧用例；`ws` 既有用例零回归                                                       | — ✅ 已落地（客户端帧判别=op）      |
+| **Z9-3** 桌面传输            | IPC `terminal:*` 四件 + `TerminalPort` 桌面实现                                                             | 代理 A | desktop 测试：假 PTY 下 open/input/data/exit 往返                                              | — ✅ 已落地                         |
+| **Z9-4** 终端 UI             | `renderer/terminal/{port.ts,TerminalPanel.tsx}`（xterm 视图 + 标签条 + 新建/关闭）+ 单测（mock port）       | 代理 B | ui-shared 测试新增；既有 478 零回归；依赖 `@xterm/xterm`/`@xterm/addon-fit`                    | — ✅ 已落地                         |
+| **Z9-5** 两壳装配            | 注册进 `TERMINAL_SEAT`（桌面/ web 各一）+ 侧栏/命令面板「切换终端 Ctrl+J」由占位转真 + web 端口实现         | 代理 C | 两壳测试；浏览器复核：Ctrl+J 开合、键入有回显                                                  | — ✅ 已落地（＋浏览器复核通过）     |
+| **Z9-6** web 设置对齐        | serve `GET/PUT /api/config`（分区级读写 + 密钥脱敏）+ web 设置端口接上（`sectionAllowList` 放开到桌面同集） | 代理 D | serve 测试（读写/脱敏/非法拒绝）+ web 设置页可开各分区；**写密钥另行拍板**（见 §4）            | — ✅ 已落地（16 分区，仅差 models） |
 
 ## 3 实施纪律（沿用既有铁律）
 
@@ -108,3 +108,9 @@ export interface TerminalPort {
 ## 5 交接提示词（可直接粘贴）
 
 见本文件 §2 各批次「内容」列 + 冻结契约 §1；每个代理的交接书需包含：目标批次、冻结契约原文、涉及文件路径、验收命令与期望、红线、报告要求。
+
+## 6 收口记录（2026-10-13）
+
+全部批次落地并经编排者亲跑验收。**真机复核要点**：终端 Ctrl+J 开合、键入→回显→执行输出全绿（期间发现并修复「xterm 以 1 行初始化致下行不可见」缺陷，见 issue-log §57）；web 设置 16 分区实测可开、记忆分区显示真配置值。
+
+**剩余（登记）**：①`models` 分区在 web 仍不进（serve 无模型配置路由，需另立批次给 serve 加模型配置端点）；②web 写凭据（auth）保持 405，待用户单独拍板；③共享设置页的桌面措辞（general 描述/preferences 文件名、shortcuts 的 Ctrl+,、about 标题）待统一；④终端「添加终端标签」命令面板入口仍占位（面板内 ＋ 为真入口）。
