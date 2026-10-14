@@ -29,7 +29,7 @@ function render(size, scale) {
       for (let col = 0; col < 5; col++) {
         if ((g[r] ?? '')[col] !== '#') continue;
         for (let sy = 0; sy < scale; sy++)
-          for (let sx = 0; sx < scale; sx++) put(gx + col * scale + sx, r * scale + sy, FG);
+          for (let sx = 0; sx < scale; sx++) put(gx + col * scale + sx, oy + r * scale + sy, FG);
       }
     }
   };
