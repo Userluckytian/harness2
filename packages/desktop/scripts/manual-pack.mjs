@@ -41,7 +41,16 @@ const desktopDir = path.join(repoRoot, 'packages', 'desktop');
 const NM_LAYOUT_SRC = path.join(repoRoot, '.tmp-cmp', 'new-x', 'node_modules'); // 历史 asar 解包的 node_modules 布局
 const ASAR_LIB = path.join(repoRoot, 'node_modules', '.pnpm', '@electron+asar@3.4.1', 'node_modules', '@electron/asar');
 const RESEDIT_LIB = require_.resolve('resedit', {
-  paths: [path.join(repoRoot, 'node_modules', '.pnpm', 'app-builder-lib@26.15.3_dmg_c5739d9600ac3f98a55503c35c5a46a9', 'node_modules', 'app-builder-lib')],
+  paths: [
+    path.join(
+      repoRoot,
+      'node_modules',
+      '.pnpm',
+      'app-builder-lib@26.15.3_dmg_c5739d9600ac3f98a55503c35c5a46a9',
+      'node_modules',
+      'app-builder-lib',
+    ),
+  ],
 });
 const CLI_BUNDLE = path.join(repoRoot, 'packages', 'cli', 'dist-bundle', 'harness2-cli.cjs');
 const ICON_ICO = path.join(desktopDir, 'assets', 'icon.ico');
@@ -160,7 +169,12 @@ async function editExe(exePath) {
   vi.outputToResourceEntries(res.entries);
   const iconBuf = await fs.readFile(ICON_ICO);
   const iconFile = Data.IconFile.from(iconBuf);
-  Resource.IconGroupEntry.replaceIconsForResource(res.entries, 1, lang.lang, iconFile.icons.map((i) => i.data));
+  Resource.IconGroupEntry.replaceIconsForResource(
+    res.entries,
+    1,
+    lang.lang,
+    iconFile.icons.map((i) => i.data),
+  );
   res.outputResource(executable);
   await fs.writeFile(exePath, Buffer.from(executable.generate()));
   log(`resedit ok: ${path.basename(exePath)} version=${pkg.version} icon=embedded`);
