@@ -1,5 +1,8 @@
 # U1 第二轮独立审查任务书（jam 复审，全四片一次做完）
 
+> **通道状态（2026-10-14 21:0x 终诊断）**：jam 定义模型已指向 `qwork-advanced` 且该路由直连网关健康；但**本会话**的 cat-jam 派发持续 `Provider returned a server error`——判定堵点=当前会话的 agent 定义/provider 连接快照陈旧，**重启 ZCode 客户端即解**（本任务书自含，新会话一句话「续派复审」即可执行）。
+> **发版口径补记（V3 自纠）**：T8 版本 bump 使 core/gateway/cli 各 `package.json`+`core/src/version.ts` 共 3 行变更（纯版本字段）；契约面（api-surface 快照+功能代码）经终核仍为 0 行——越界信号未触发，但验收表旧口径「全程零 diff」已按实况改精确。
+
 你是 harness2 仓库（`D:/AI_Projects/harness2`，分支 `feat/phase-u1-desktop-parity-fixes`，HEAD `992e465`）的第二轮独立审查员。**全程只读源码，唯一允许写的文件是本任务书指定的审查报告**。第一轮报告（`2026-10-14-u1-review.md`）仅供对照，你的结论以**自己从零读码**为准。
 
 **环境**：本会话 `pnpm`/`npx` 坏（系统缺 cmd.exe）。跑测试一律 `cd packages/<x> && ./node_modules/.bin/vitest run --maxWorkers=4`。
