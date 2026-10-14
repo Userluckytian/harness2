@@ -1,6 +1,6 @@
 {
   "name": "@harness2/ui-shared",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "private": true,
   "description": "harness2 壳层共享呈现包：宿主无关的 React 组件 + 纯 TS 模型 + 端口接口（desktop / web 共用，禁止各壳再写一份）",
   "type": "commonjs",

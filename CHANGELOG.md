@@ -2,6 +2,21 @@
 
 本文件记录面向使用者的显著变更。发布素材源自 `docs/diary/`（每日日志的 Release note 段）。
 
+## 1.0.2 — 桌面端 ZCode 化修复与不卡顿收口（2026-10-14，阶段 U1）
+
+用户实机五项报障全部修复，行为规格对齐 ZCode v3.15.1（refs 新条目 Z-46~Z-49 / Z-96 / Z-97，源码行号级取证）：
+
+- **空态有窗控**：win/linux 无边框窗口此前只有「选中会话」才渲染最小化/最大化/关闭三键，冷启动空态一个按钮都没有——现改为桌面壳层常驻 overlay（含 ErrorBoundary 兜底，单实例保证）。
+- **系统托盘**：新增（win/linux）：左键/双击唤窗，右键「打开 harness2 / 新建会话 / 添加项目 / 导出日志(占位灰) / 退出」；「关闭隐藏到托盘」三重门（设置开 ∧ 托盘创建成功，win 默认开）+ 设置页开关，显式退出恒可用。
+- **侧栏闭环**：项目行悬浮出现「在此项目新建会话」（新会话以该文件夹为 cwd）；会话行新增「删除」（running 禁用 + 确认框 + 软删）；「移出项目」在组内有运行会话时先确认。
+- **发送失败可见化**：composer 上方错误横幅（详情/复制/关闭 X），草稿保留，`onSubmitError` 两壳接通；禁用发送钮补原因 tooltip。
+- **长任务终感与不卡顿**：轮次「工作中 {duration}/已工作 {duration}/已停止（无响应超时）」实时耗时；工具行运行态去旋转 spinner 改文案扫光；**悬挂回合 30s 本地收敛**（serve 静默/turn-end 丢失时不再永久转圈）；1000 事件重放微基准钉预算（实测 ~0.25ms）。
+- **修两个老缺陷**：新会话默认目录曾落在**安装目录**（模型开局翻安装包文件）——改为 dev=仓库根/打包=用户主目录，项目入口显式带 cwd；`serve` 未就绪期间**全部** IPC 连坐抛错（R0-3 第①层）——HTTP base 求值下移进真正需要的命令分支，窗口命令/设置/项目等 48 条免 serve 可用。
+
+独立审查（`docs/ai-framework/plans/2026-10-14-u1-review.md`）：P0=0 / P1=3 已修（看门狗重连路径漏挂、删除会话定时器泄漏、prettier）/ P2=5 登记不带病。红线：`packages/core`/`gateway` 与 api-surface 快照零改动。安装器同前（nsis 可选路径 + portable）。
+
+> 真机项（V6 清单见 `docs/ai-framework/plans/2026-10-14-u1-real-machine-checklist.md`）：安装向导目录页、托盘驻留体验、删除/新建交互观感等仍需人类点验；mac/linux 产物随 CI 矩阵另发。
+
 ## 1.0.1 — 安装包启动崩溃修复（2026-10-13）
 
 **修的是什么**：v1.0.0 的五个安装包（win nsis / win portable / mac dmg arm64+x64 / linux AppImage）装完启动即弹 `A JavaScript error occurred in the main process` —— `Error [ERR_PACKAGE_PATH_NOT_EXPORTED]: Package subpath '/v3' is not defined by "exports" … imported from …zod-compat.js`，**全部不可用**（三平台共用同一份打包内容，故不只 Windows 受影响）。
