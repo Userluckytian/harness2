@@ -405,6 +405,13 @@ export class AppStore {
 
   /** 从当前视图移除会话（删除/归档隐藏的渲染端清理）：侧栏去项 + 分栏解绑 + 选中清理 */
   removeSessionFromView(id: string): void {
+    // 审查 U1 P1-2：会话离开视图 = 永不接收帧，悬挂定时器必须随迁撤除——
+    // 否则 ≤30s 窗口内它仍会对已删流触发 converge（写合成终态 + 全局 notify 空转）。
+    const pending = this.hungTimers.get(id);
+    if (pending !== undefined) {
+      clearTimeout(pending);
+      this.hungTimers.delete(id);
+    }
     this.set({
       sessions: this.state.sessions.filter((s) => s.id !== id),
       // 分栏绑定已无渲染出口与写出口（P4-C 裁决 + P1-3）：这里只为让「只读兼容的旧文件绑定」

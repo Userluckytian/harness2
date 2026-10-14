@@ -202,6 +202,24 @@ describe('Z-97（T4a）悬挂回合惰性收敛', () => {
     expect(stream.turnEnds['t1']).toEqual({ stopReason: 'interrupted', synthetic: true });
   });
 
+  it('i) removeSessionFromView 撤除悬挂定时器（删除会话后定时器不再触发、不空转 notify）', () => {
+    const store = new AppStore();
+    store.applyFrame({ ...userMessageFrame(), sessionId: 'gone' });
+    // 视图列表同步加项（removeSessionFromView 的清理面按会话 id，与列表无关，这里只求真实形态）
+    let notifyAfterRemove = 0;
+    store.subscribe(() => {
+      notifyAfterRemove += 1;
+    });
+    store.removeSessionFromView('gone');
+    expect(store.peekStream('gone')?.running).toBe(true); // 流缓冲保留（既有语义），但定时器已撤
+    const before = notifyAfterRemove;
+    vi.advanceTimersByTime(HUNG_TURN_TIMEOUT_MS + 5_000);
+    // 定时器若泄漏：到点 converge → notify + 合成终态写进已删会话流。两者都不得发生。
+    expect(notifyAfterRemove).toBe(before);
+    expect(store.peekStream('gone')?.turnEnds['t1']).toBeUndefined();
+    expect(store.peekStream('gone')?.running).toBe(true);
+  });
+
   it.each([
     [5_000, '5 秒'],
     [65_000, '1 分 5 秒'],
