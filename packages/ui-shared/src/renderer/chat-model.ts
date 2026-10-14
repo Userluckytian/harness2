@@ -30,6 +30,12 @@ export interface TurnEndInfo {
   partialText?: string;
   error?: string;
   warning?: string;
+  /**
+   * Z-97（T4①，痛点⑤）：本地合成的 UI 终态标记 —— 悬挂回合（running 且超时无活帧）由
+   * store 惰性收敛补的 `interrupted`。**仅 UI 态，不是协议事实**：不写盘、不发网络；
+   * 真 turn-end 帧后到时无条件覆盖本条（真帧终态优先）。
+   */
+  synthetic?: boolean;
 }
 
 export interface ChatItem {
@@ -65,6 +71,17 @@ export interface ChatItem {
   /** P3：turn 终态文本判别 + 半截文本（partial 须标注「未完成/已中断」） */
   textOutcome?: 'final' | 'partial' | 'empty';
   partialText?: string;
+  /**
+   * Z-97（T4②）轮次耗时：墙钟差（ms）= 本轮首事件 ts → 终态落定时刻（真 turn-end / 合成终态
+   * 落定墙钟 / running 中的现算值）。**派生量，非协议事实**；数据不足（旧事件无 ts、终态未落定）
+   * 时缺省，渲染层不显示假值。
+   */
+  workDurationMs?: number;
+  /**
+   * Z-97（T4①）：终态为**本地合成**（悬挂回合收敛的 interrupted）。仅 UI 展示语义
+   * （文案「已停止（无响应超时）」与真停区分）；协议字段 `stopReason` 仍如实为 interrupted。
+   */
+  synthetic?: boolean;
 }
 
 /**
@@ -105,6 +122,34 @@ export function formatTurnDuration(durationMs: number | undefined): string | und
   if (durationMs === undefined || durationMs <= 0) return undefined;
   return `持续了 ${Math.max(1, Math.ceil(durationMs / 1000))} 秒`;
 }
+
+/**
+ * Z-97 轮次耗时格式化（口径 = ZCode `conversationWorkDuration.ts:16-39`：
+ * 天/时/分/秒四级、**最多 2 个单位**、零值单位跳过）：
+ *   - 亚秒 → 「不到 1 秒」（不足 1 秒按存在呈现，避免「0 秒」假值）
+ *   - 5 秒 → 「5 秒」；65 秒 → 「1 分 5 秒」；3600 秒 → 「1 时」；90061 秒 → 「1 天 1 时」
+ * 与 `formatTurnDuration`（P0-1 摘要「持续了 N 秒」既有文案）刻意分立：本函数服务
+ * 「工作中/已工作」行，两者文案不同不互替。
+ */
+export function formatWorkDuration(durationMs: number): string {
+  const totalSeconds = Math.floor(Math.max(0, durationMs) / 1000);
+  if (totalSeconds <= 0) return '不到 1 秒';
+  const units: Array<[number, string]> = [
+    [Math.floor(totalSeconds / 86400), '天'],
+    [Math.floor((totalSeconds % 86400) / 3600), '时'],
+    [Math.floor((totalSeconds % 3600) / 60), '分'],
+    [totalSeconds % 60, '秒'],
+  ];
+  const parts: string[] = [];
+  for (const [value, label] of units) {
+    if (value <= 0) continue;
+    parts.push(`${value} ${label}`);
+    if (parts.length === 2) break;
+  }
+  return parts.join(' ');
+}
+
+/** 轮次工作耗时格式化见 `conversation/turn-work.ts`（Z-97 派生与文案）；本包只做纯格式化 */
 
 /** 解析 subagent 工具 output JSON 中的 childSessionId（非 JSON / 缺字段 → undefined） */
 export function parseSubagentChildId(output: string | undefined): string | undefined {
