@@ -25,6 +25,7 @@ import {
   toolNavigation,
 } from '../tool/index.js';
 import { ConversationEmptyState } from '../conversation/EmptyState.js';
+import { WorkIndicator } from '../conversation/turn-work.js';
 import { MessageActions } from './MessageActions.js';
 import { ReasoningRow } from './ReasoningRow.js';
 import { TimelineMarkerRow } from '../conversation/TimelineMarkerRow.js';
@@ -54,7 +55,20 @@ export function ChatItemView({
       // P0-1：移除字面 `── turn` —— ZCode 是**分组渲染**，不渲染轮次文案；本行只作无文字分组
       // 分隔（G15：纯留白 padding-top，见 shell.css .turn-header，**无分隔线**），
       // 并保留 `.turn-header` 类名供结构断言。
-      return <div className="turn-header" data-turn-id={item.turnId} />;
+      // Z-97（T4b）：轮次耗时行挂本头（running「工作中」自持 tick / 终态「已工作」「已停止」
+      // 静态锁定 / synthetic「已停止（无响应超时）」）；字段缺省（旧数据无 ts/无终态时刻）
+      // → WorkIndicator 返回 null，本行回到零内容纯留白（既有结构断言不破）。
+      return (
+        <div className="turn-header" data-turn-id={item.turnId}>
+          <WorkIndicator
+            {...(item.workStartedAt !== undefined ? { startedAt: item.workStartedAt } : {})}
+            {...(item.workRunning !== undefined ? { running: item.workRunning } : {})}
+            {...(item.workDurationMs !== undefined ? { durationMs: item.workDurationMs } : {})}
+            {...(item.synthetic !== undefined ? { synthetic: item.synthetic } : {})}
+            {...(item.stopReason !== undefined ? { stopReason: item.stopReason } : {})}
+          />
+        </div>
+      );
     case 'user':
       // P0-1：对齐 ZCode `MessageContent`（message.tsx:114,127）——用户消息右对齐 + 圆角气泡
       // + bg-secondary + px-4 py-3；**不渲染角色标签**（ZCode 无「你」标签）。

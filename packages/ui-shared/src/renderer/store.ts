@@ -621,7 +621,12 @@ export class AppStore {
   chatItems(id: string): ChatItem[] {
     const s = this.streams.get(id);
     if (!s) return [];
-    return projectChatItems(s.events, s.live, s.turnEnds);
+    // Z-97（T4b）：注入轮次耗时上下文（终态落定墙钟 + running 标记）。刻意不传 now——
+    // running 耗时由 WorkIndicator 叶子自持 tick 现算（tick 纪律：时间流逝不重投影父链）。
+    return projectChatItems(s.events, s.live, s.turnEnds, {
+      turnEndedAt: s.turnEndedAt,
+      running: s.running,
+    });
   }
 
   /** 最近一条落盘 assistant 正文（通知摘要数据源；无 assistant 消息返回 ''） */

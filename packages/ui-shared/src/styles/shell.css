@@ -130,6 +130,17 @@ body,
 .turn-header {
   padding-top: 36px;
 }
+/* Z-97（T4b）轮次耗时行「工作中 / 已工作 / 已停止」：挂在 .turn-header 内（本轮开头，
+   ZCode ConversationTurnGroup 把耗时标签放轮组头部同位）。视觉纪律（Z-60～Z-64）：
+   字号只用 text-ui-caption、颜色只用语义 token（与 .turn-summary 同级的低存在文案）；
+   计时数字 tabular-nums 防抖（denia ⑤ WorkIndicator 工程点）。**刻意无动画**
+   （Z-97 不用旋转 spinner 的纪律延伸）→ 无 keyframes，无需 prefers-reduced-motion 降级块。
+   字段缺省（旧数据）时 WorkIndicator 不渲染，本行回到零内容纯留白，G15 断言不破。 */
+.turn-work {
+  font-size: var(--text-ui-caption);
+  color: var(--color-foreground-subtle);
+  font-variant-numeric: tabular-nums;
+}
 .bubble-user,
 .bubble-assistant {
   max-width: 82%;

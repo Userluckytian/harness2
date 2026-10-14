@@ -82,6 +82,17 @@ export interface ChatItem {
    * （文案「已停止（无响应超时）」与真停区分）；协议字段 `stopReason` 仍如实为 interrupted。
    */
   synthetic?: boolean;
+  /**
+   * Z-97（T4b）：本轮首事件的墙钟起点（epoch ms，来自事件 `ts`）。turn-header 携带；
+   * 旧数据 ts 缺失/不可解析 → 缺省（渲染层不显示假值，红线⑩）。
+   */
+  workStartedAt?: number;
+  /**
+   * Z-97（T4b）：本轮**正在运行**（会话 running 且本轮尚无终态）。turn-header 携带；
+   * 渲染层据此挂自持 tick 的 WorkIndicator（`now` 刻意不进派生层——耗时现算只发生在
+   * memo 叶子内部，父链重渲染不因时间流逝而发生，见 conversation/turn-work.tsx）。
+   */
+  workRunning?: boolean;
 }
 
 /**
@@ -169,21 +180,59 @@ export function parseSubagentChildId(output: string | undefined): string | undef
   return undefined;
 }
 
+/**
+ * Z-97（T4b）轮次耗时的投影上下文（store 注入；派生层保持纯函数）：
+ *   - `turnEndedAt`：终态落定墙钟（T4a store 记账，真 turn-end 与合成终态同表）；
+ *   - `running`：会话是否运行中（决定末轮 turn-header 是否标 `workRunning`）。
+ * **刻意不含 `now`**：running 耗时不在投影里现算——`now` 只进 WorkIndicator memo 叶子的
+ * 自持 tick（conversation/turn-work.tsx），时间流逝不触发父链重投影/重渲染（tick 纪律）。
+ */
+export interface TurnWorkContext {
+  turnEndedAt?: Readonly<Record<string, number>>;
+  running?: boolean;
+}
+
+/** 事件 ts（ISO 串）→ epoch ms；缺失/不可解析 → undefined（旧数据不显示假值，红线⑩） */
+function parseEventTs(ts: string | undefined): number | undefined {
+  if (ts === undefined || ts === '') return undefined;
+  const ms = Date.parse(ts);
+  return Number.isFinite(ms) ? ms : undefined;
+}
+
 export function projectChatItems(
   events: readonly ActiveEvent[],
   live: LiveDelta,
   turnEnds: Readonly<Record<string, TurnEndInfo>>,
+  work?: TurnWorkContext,
 ): ChatItem[] {
   const items: ChatItem[] = [];
   let currentTurnId: string | undefined;
   let currentDurationMs = 0;
   const toolIndex = new Map<string, number>(); // callId → items 下标
+  /** Z-97（T4b）：turnId → turn-header 条目下标（running 标记回填末轮头用） */
+  const headerIndex = new Map<string, number>();
 
-  const ensureTurnHeader = (turnId: string | undefined): void => {
+  const ensureTurnHeader = (turnId: string | undefined, ts?: string): void => {
     if (turnId === undefined || turnId === currentTurnId) return;
     currentTurnId = turnId;
     currentDurationMs = 0;
-    items.push({ kind: 'turn-header', turnId });
+    const header: ChatItem = { kind: 'turn-header', turnId };
+    // Z-97（T4b）轮次耗时派生：起点 = 本轮首事件 ts（切会话重放不重置——取协议事实）；
+    // 终态 = turnEndedAt 落定墙钟（真 turn-end / T4a 合成同表）→ 锁定差值，不随 tick 漂移。
+    // 数据不足（旧事件无 ts / 无终态时刻）→ 字段缺省，渲染层不显示假值（红线⑩）。
+    const startedAt = parseEventTs(ts);
+    if (startedAt !== undefined) header.workStartedAt = startedAt;
+    const end = turnEnds[turnId];
+    if (end !== undefined) {
+      header.stopReason = end.stopReason;
+      if (end.synthetic === true) header.synthetic = true;
+      const endedAt = work?.turnEndedAt?.[turnId];
+      if (startedAt !== undefined && endedAt !== undefined) {
+        header.workDurationMs = Math.max(0, endedAt - startedAt);
+      }
+    }
+    headerIndex.set(turnId, items.length);
+    items.push(header);
   };
 
   for (const e of events) {
@@ -191,12 +240,12 @@ export function projectChatItems(
     const p = e.payload as Record<string, unknown>;
     switch (e.type) {
       case 'user/message': {
-        ensureTurnHeader(str(p['turnId']));
+        ensureTurnHeader(str(p['turnId']), e.ts);
         items.push({ kind: 'user', seq: e.seq, turnId: str(p['turnId']), text: str(p['text']) });
         break;
       }
       case 'assistant/message': {
-        ensureTurnHeader(str(p['turnId']));
+        ensureTurnHeader(str(p['turnId']), e.ts);
         items.push({
           kind: 'assistant',
           seq: e.seq,
@@ -210,7 +259,7 @@ export function projectChatItems(
       case 'assistant/attempt': {
         // Z-92 retryNotice 语义（Z3-07）：失败/被取消的模型尝试以时间线错误标记呈现。
         // P3-b：半截文本仍以本事件为日志权威（append-only），展示须标注「未完成 / 已中断」。
-        ensureTurnHeader(str(p['turnId']));
+        ensureTurnHeader(str(p['turnId']), e.ts);
         items.push({
           kind: 'marker',
           variant: 'retry-notice',
@@ -245,7 +294,7 @@ export function projectChatItems(
         break;
       }
       case 'tool/call': {
-        ensureTurnHeader(str(p['turnId']));
+        ensureTurnHeader(str(p['turnId']), e.ts);
         toolIndex.set(str(p['callId']), items.length);
         items.push({
           kind: 'tool',
@@ -301,6 +350,16 @@ export function projectChatItems(
   }
 
   const lastTurnId = currentTurnId;
+  // Z-97（T4b）：末轮正在运行（会话 running 且本轮尚无终态）→ 标记 turn-header workRunning，
+  // 渲染层据此挂自持 tick 的 WorkIndicator（文案「工作中 {duration}」）。终态已落定则不标
+  // （走 workDurationMs 静态文案），避免既有终态又起表。
+  if (work?.running === true && lastTurnId !== undefined && turnEnds[lastTurnId] === undefined) {
+    const headerIdx = headerIndex.get(lastTurnId);
+    if (headerIdx !== undefined) {
+      const header = items[headerIdx]!;
+      if (header.kind === 'turn-header') header.workRunning = true;
+    }
+  }
   // turn 摘要（优先取运行时 turn-end 终态；纯重放没有 stopReason，只有耗时）
   if (lastTurnId !== undefined) {
     const end = turnEnds[lastTurnId];
