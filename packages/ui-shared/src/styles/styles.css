@@ -492,3 +492,41 @@
   mask-image: linear-gradient(to right, transparent, black 24px, black calc(100% - 24px), transparent);
   -webkit-mask-image: linear-gradient(to right, transparent, black 24px, black calc(100% - 24px), transparent);
 }
+
+/* Z-97（T4c）：工具行运行态文案扫光 —— 刻意不用旋转 spinner（流式期间工具行数量多且
+ * 持续更新，旋转 loading 图标会让动画长期占用渲染资源；ZCode ToolLayout.tsx:138-147 原注
+ * 即规格）。实现手法与 Z-92 .reasoning-shimmer-text 同源（背景裁切文字 + 只动
+ * background-position，合成器友好、不触发布局/重绘全页），但独立成类、独立 keyframes，
+ * 色带方向相反（工具行用 foreground → subtlest → foreground 的「暗带扫过亮底」，与思考行
+ * 的「亮带扫过暗底」区分层次）；颜色只引用既有语义 token，不新增 token。
+ * prefers-reduced-motion 降级为纯静态文本（无动画、无背景裁切、颜色还原继承值）。 */
+@keyframes harness-tool-running-shimmer {
+  0% {
+    background-position: 200% 0;
+  }
+  100% {
+    background-position: -200% 0;
+  }
+}
+.tool-running-shimmer {
+  background-image: linear-gradient(
+    90deg,
+    var(--color-foreground),
+    var(--color-foreground-subtlest),
+    var(--color-foreground)
+  );
+  background-size: 200% 100%;
+  background-clip: text;
+  -webkit-background-clip: text;
+  color: transparent;
+  animation: harness-tool-running-shimmer 2.4s linear infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .tool-running-shimmer {
+    animation: none;
+    background-image: none;
+    background-clip: border-box;
+    -webkit-background-clip: border-box;
+    color: inherit;
+  }
+}

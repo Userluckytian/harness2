@@ -27,7 +27,6 @@ import {
   CopyIcon,
   FilePenIcon,
   FileTextIcon,
-  LoaderIcon,
   SearchIcon,
   SquareTerminalIcon,
   WrenchIcon,
@@ -330,13 +329,19 @@ export function ToolCard({ card, sessionId, commandRow, actions }: ToolCardProps
             子代理
           </span>
         )}
-        <span className="tool-line min-w-0 flex-1 truncate">
+        {/* Z-97（T4c）：工具行运行态**刻意不用旋转 spinner** —— 流式期间工具行数量多且持续
+            更新，旋转 loading 图标会让动画长期占用渲染资源（ZCode ToolLayout.tsx:138-147 原注
+            即规格）。运行态改由「标题文案扫光（.tool-running-shimmer，只动 background-position）
+            + 状态文字」表达；图标（ToolGlyph）与展开箭头一律保持静态。 */}
+        <span
+          data-testid="tool-title-line"
+          className={`tool-line min-w-0 flex-1 truncate${status === 'running' ? ' tool-running-shimmer' : ''}`}
+        >
           &gt; {displayToolName(card.tool)} ({summarizeToolArgs(card.args)})
         </span>
         {status !== 'failed' ? (
           <span className="tool-status">
-            <span className={`flex items-center gap-1 ${STATUS_TEXT_COLOR[status]}`}>
-              {status === 'running' && <LoaderIcon size={11} aria-hidden className="animate-spin" />}
+            <span data-testid="tool-status-label" className={`flex items-center gap-1 ${STATUS_TEXT_COLOR[status]}`}>
               {toolStatusLabel(card.result)}
             </span>
           </span>
