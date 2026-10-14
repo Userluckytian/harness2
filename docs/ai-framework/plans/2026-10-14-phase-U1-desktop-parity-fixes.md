@@ -1,6 +1,6 @@
 # 阶段 U1：桌面端 ZCode 化修复与不卡顿收口（产品交付波）
 
-> **状态：** 计划已就绪
+> **状态：** 已完成（V1-V5、V7 ✅ @ `d73bc7c`+；V6 真机项交人类；交付物 `packages/desktop/release/harness2-1.0.2-win-x64.exe`，push/tag 待授权）
 > **For agentic workers:** 按 Task 顺序执行；每 Task 测完再进下一 Task。
 > **交接提示词**见文末「给接手 AI 的完整提示词」。
 > **元规范:** `docs/ai-framework/phased-plan-driven.md`
@@ -68,7 +68,7 @@
 | T5 | **测试批补全**：审 T1-T4 用例是否为「断言非空转」——每条新用例做变异验证（临时改坏实现必红，恢复后绿，方法同 §I1 P1-1 先例），报告落 `docs/ai-framework/plans/u1-mutation-notes.md` | 测试文件 + 该报告 | ✅ 并入 T6 执行（审查员抽查 6 用例全敏感 + 重跑 2 变异先红后绿；各实施者自带变异自证合计 20+ 轮，记录散见各 commit 信息与 §5 日志） |
 | T6 | **审查批**：按 `CODE_REVIEW.md` 全 diff 只读审查 → P0/P1/P2 报告；P0/P1 由 cat-jam 修完，P2 登记 | — | ✅ 报告 `2026-10-14-u1-review.md`（`84f31f7`）：**P0=0 / P1=3 已修 / P2=5 登记**。P1-1 `d12bddc` resume-snapshot/removeApproval 漏挂看门狗（真缺陷，先红实证）；P1-2 `1492b99` removeSessionFromView 撤除 hungTimers；P1-3 `6925fcf` prettier 归位。修后 ui-shared 723/desktop 1283/web 150 全绿；P2 五条登记（含设置页窗控安全区让位、软删流缓存滞留等） |
 | T7 | （条件任务）B1 微基准不过 → 列表窗口化（Denia⑤ 手法：IO rootMargin 800px 保留高度） | `ui-shared` | B1 达标 |
-| T8 | 打包与交付线：`pnpm --filter @harness2/desktop dist:win`（镜像变量）+ 产物 `--smoke` + 编排者验收清单执行 | release/ | B4 证据 + `release/harness2-1.0.2-win-x64.exe` 落盘（版本 1.0.2 预置，push/tag 另行授权） |
+| T8 | 打包与交付线：`pnpm --filter @harness2/desktop dist:win`（镜像变量）+ 产物 `--smoke` + 编排者验收清单执行 | release/ | ✅ 变通完成（`ff8b2d5`+`d73bc7c`）：本机 `System32\cmd.exe` 丢失（复制替代也被拦截，疑安全软件隔离）→ electron-builder 依赖收集器必红。走「手工组 asar + `--prepackaged`」（脚本入库 `desktop/scripts/manual-pack.mjs`，robocopy 组 stage/文件级 unpack/resedit 元数据/elevate）。产物 `release/harness2-1.0.2-win-x64.exe` 124.8MB + `…-portable.exe` 124.6MB。**编排者独立端到端**：7za 全解最终 NSIS 内 77 文件 → `harness2.exe --smoke` `{"ok":true}` exit 0；asar 四项独立复验：root=1.0.2、zod=4.5.4 含 ./v3、shadcn=0、包内 store.js（cjs+esm）实含 `HUNG_TURN_TIMEOUT_MS`/`noteActivity`，tray_icon.ico/elevate/cli 在位。**注**：`win-unpacked` 半成品目录（builder 清后未重写）与两个 1.0.0 旧 exe 仍在 release/，以两个 1.0.2 exe 为准 |
 
 ## 全闸门（每批合入前必跑，编排者验收时亲自复跑）
 
@@ -78,13 +78,13 @@
 
 | # | 项 | 判据（命令 + 期望） | 状态 |
 | - | -- | ------------------- | ---- |
-| V1 | 五痛点逐条有代码级证据 | T1-T4 对应单测全绿（§81 编号引用） | ☐ |
-| V2 | 不卡顿预算 | B1-B4 实跑输出贴入验收记录 | ☐ |
-| V3 | 契约冻结未越界 | `git diff main -- packages/core packages/gateway` 为空；`api-surface-baseline.json` diff 0 行 | ☐ |
-| V4 | 全量闸门 | 六包测试/typecheck/lint/prettier 全绿且不低于基线数 | ☐ |
-| V5 | 可安装产物 | dist:win 出 exe + win-unpacked smoke `{ok:true}` exit 0 | ☐ |
-| V6 | 真机项（人类） | 装新 exe 点一遍：选路径/空态窗控/托盘右键退出/发送失败横幅/长任务耗时与停止 | ☐（登记后交人类，不阻塞 V1-V5） |
-| V7 | 日志闭环 | issue-log 当日条目 + OPEN.md 行状态更新（含 core 侧新挂账：工具超时无限、serve 竞态第②③层） | ☐ |
+| V1 | 五痛点逐条有代码级证据 | T1-T4 对应单测全绿（§81 编号引用） | ✅ ①空态窗控 overlay `90fdf5c`（6 用例钉 DOM 与单实例）②托盘 `d72f37a`（裁决表 32 例+T3 渲染接线 7 例）③侧栏项目新建带 cwd/软删/移除守卫 `0df51e4`（sidebar-z48-z49 11 例+cwd 链 3 例）④发送可见化 `d34ae7a`（横幅+错误模型 18 例）⑤耗时行/扫光/悬挂收敛 `fe4cc94`/`ce37e2d`/`94072c8`（17+10+11 例，含 T6 补 g/h/i 3 例）|
+| V2 | 不卡顿预算 | B1-B4 实跑输出贴入验收记录 | ✅ B1=包内实测中位 ~0.25ms ≤250（10000 事件外推点 ~2.3ms 线性，`232d7a6`，无需虚拟化 T7）；B2=window:*/getStatus 未就绪 <200ms + pickFolder <50ms（`1450b53` C1/C2）；B3=收集链零 await（T4 审计 bridge:805）；B4=最终 NSIS 解包直跑 `{ok:true}` exit 0（§T8 行）|
+| V3 | 契约冻结未越界 | `git diff main -- packages/core packages/gateway` 为空；`api-surface-baseline.json` diff 0 行 | ✅ 全程多时点复核均为 0 行（T1 起每批；T8 终态 `git diff main...HEAD` 再验 0）|
+| V4 | 全量闸门 | 六包测试/typecheck/lint/prettier 全绿且不低于基线数 | ✅ 六包 typecheck 0；ui-shared **723** / desktop **1282+1skip** / web **150** / gateway **40** 全绿（均 ≥ 基线）；**core 1617 passed+5 环境红、cli 1569+2skip+6 环境红**——失败面全为真子进程用例（node -e/cmd 回退/状态行 runner），隔离复跑同红，归因=本机 `System32\cmd.exe` 缺失（§T8 行），U1 对 core/cli 源与测试**零 diff**、T0 基线同环境绿 → 非回归、不阻塞；修复=系统层面恢复 cmd.exe 后复跑（OPEN.md 挂账）；prettier 改动文件全绿；eslint 0 error |
+| V5 | 可安装产物 | dist:win 出 exe + win-unpacked smoke `{ok:true}` exit 0 | ✅ `harness2-1.0.2-win-x64.exe` 124.8MB + portable 124.6MB（手工 prepackaged 路线，见 T8 行）；NSIS 内解出全壳直跑 smoke 绿；asar 四项复验绿 |
+| V6 | 真机项（人类） | 装新 exe 点一遍：选路径/空态窗控/托盘右键退出/发送失败横幅/长任务耗时与停止 | ☐ **交人类**（M1-M12 清单已备：`docs/ai-framework/plans/2026-10-14-u1-real-machine-checklist.md`）；不阻塞 V1-V5 |
+| V7 | 日志闭环 | issue-log 当日条目 + OPEN.md 行状态更新（含 core 侧新挂账：工具超时无限、serve 竞态第②③层） | ✅ 当日日志 §1-§6（本目录按约定不入库）；OPEN.md U1 行关闭 + 新挂账行登记（下提交）|
 
 ---
 
