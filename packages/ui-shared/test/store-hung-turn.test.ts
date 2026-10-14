@@ -28,46 +28,46 @@ describe('Z-97（T4a）悬挂回合惰性收敛', () => {
   });
 
   /** 阈值前一瞬：不许提前合成 */
-    // 契约字面量：阈值口径 = 30s（口径对齐 ZCode 逻辑帧装配超时），刻意不取实现常量，
-    // 否则实现常量被改值时本用例失去自证能力（a/b 钉字面量，其余用例走常量）。
-    const THIRTY_SECONDS = 30_000;
+  // 契约字面量：阈值口径 = 30s（口径对齐 ZCode 逻辑帧装配超时），刻意不取实现常量，
+  // 否则实现常量被改值时本用例失去自证能力（a/b 钉字面量，其余用例走常量）。
+  const THIRTY_SECONDS = 30_000;
 
-    it('a) running + 30s 无任何帧 → 合成 interrupted(synthetic) 且 running 清除', () => {
-      const store = new AppStore();
-      store.applyFrame(userMessageFrame());
-      expect(store.peekStream('a')?.running).toBe(true);
+  it('a) running + 30s 无任何帧 → 合成 interrupted(synthetic) 且 running 清除', () => {
+    const store = new AppStore();
+    store.applyFrame(userMessageFrame());
+    expect(store.peekStream('a')?.running).toBe(true);
 
-      vi.advanceTimersByTime(THIRTY_SECONDS - 1);
-      expect(store.peekStream('a')?.running).toBe(true);
-      expect(store.peekStream('a')?.turnEnds['t1']).toBeUndefined();
+    vi.advanceTimersByTime(THIRTY_SECONDS - 1);
+    expect(store.peekStream('a')?.running).toBe(true);
+    expect(store.peekStream('a')?.turnEnds['t1']).toBeUndefined();
 
-      vi.advanceTimersByTime(1);
-      const stream = store.peekStream('a')!;
-      expect(stream.running).toBe(false);
-      expect(stream.turnEnds['t1']).toEqual({ stopReason: 'interrupted', synthetic: true });
-      // 合成终态同时落定墙钟（Z-97 T4② turnEndedAt 独立于纯协议事实的 turnEnds）
-      expect(stream.turnEndedAt['t1']).toBe(Date.now());
-      expect(stream.live.text).toBe('');
-    });
+    vi.advanceTimersByTime(1);
+    const stream = store.peekStream('a')!;
+    expect(stream.running).toBe(false);
+    expect(stream.turnEnds['t1']).toEqual({ stopReason: 'interrupted', synthetic: true });
+    // 合成终态同时落定墙钟（Z-97 T4② turnEndedAt 独立于纯协议事实的 turnEnds）
+    expect(stream.turnEndedAt['t1']).toBe(Date.now());
+    expect(stream.live.text).toBe('');
+  });
 
-    it('b) 25s 注入活帧 → 原 30s 时点不合成交；从该帧起再静默 30s 才合成', () => {
-      const store = new AppStore();
-      store.applyFrame(userMessageFrame());
-      vi.advanceTimersByTime(25_000);
-      // 活帧：delta 增量（running 维持、计时重置）
-      store.applyFrame({ type: 'delta', sessionId: 'a', kind: 'text', text: 'still alive' });
+  it('b) 25s 注入活帧 → 原 30s 时点不合成交；从该帧起再静默 30s 才合成', () => {
+    const store = new AppStore();
+    store.applyFrame(userMessageFrame());
+    vi.advanceTimersByTime(25_000);
+    // 活帧：delta 增量（running 维持、计时重置）
+    store.applyFrame({ type: 'delta', sessionId: 'a', kind: 'text', text: 'still alive' });
 
-      // 走到原 30s 时点（活帧后 5s）：不许合成
-      vi.advanceTimersByTime(5_000);
-      expect(store.peekStream('a')?.turnEnds['t1']).toBeUndefined();
-      expect(store.peekStream('a')?.running).toBe(true);
+    // 走到原 30s 时点（活帧后 5s）：不许合成
+    vi.advanceTimersByTime(5_000);
+    expect(store.peekStream('a')?.turnEnds['t1']).toBeUndefined();
+    expect(store.peekStream('a')?.running).toBe(true);
 
-      // 活帧起再静默满 30s → 收敛
-      vi.advanceTimersByTime(THIRTY_SECONDS - 5_000);
-      const stream = store.peekStream('a')!;
-      expect(stream.running).toBe(false);
-      expect(stream.turnEnds['t1']).toEqual({ stopReason: 'interrupted', synthetic: true });
-    });
+    // 活帧起再静默满 30s → 收敛
+    vi.advanceTimersByTime(THIRTY_SECONDS - 5_000);
+    const stream = store.peekStream('a')!;
+    expect(stream.running).toBe(false);
+    expect(stream.turnEnds['t1']).toEqual({ stopReason: 'interrupted', synthetic: true });
+  });
 
   it('c) 真 turn-end 先到：记录无 synthetic 标记；挂着的定时器到点也不再改写', () => {
     const store = new AppStore();
