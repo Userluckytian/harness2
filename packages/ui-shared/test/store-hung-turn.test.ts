@@ -146,6 +146,62 @@ describe('Z-97（T4a）悬挂回合惰性收敛', () => {
     expect(store.peekStream('a')?.turnEnds['t1']).toEqual({ stopReason: 'interrupted', synthetic: true });
   });
 
+  it('g) resume-snapshot 把 running 从 false 翻成 true（断线重连补在途 attempt）→ 必须重新挂表，静默 30s 后收敛', () => {
+    const store = new AppStore();
+    // 历史重放：有 turnId 供合成归属，但 replay 本身不置 running（旧值 false）
+    store.applyReplay({
+      id: 'a',
+      dir: 'dir-a',
+      header: { sessionId: 'a' },
+      events: [{ ...event(1, 'user/message', { turnId: 't1', text: 'q' }), active: true }],
+      warnings: [],
+      lastSeq: 1,
+    });
+    expect(store.peekStream('a')?.running).toBe(false);
+    // 重订阅快照报告在途 attempt → applyResumeSnapshot 翻转 running=false→true
+    // （applyFrame 开头的对表看到的还是旧值 false → 未挂表；翻转点必须补挂，否则痛点⑤复发）
+    store.applyFrame({
+      type: 'resume-snapshot',
+      sessionId: 'a',
+      epoch: 1,
+      snapshot: {
+        epoch: 1,
+        replay: { fromSeq: 0, toSeq: 1 },
+        activeAttempt: {
+          attemptId: 'x',
+          turnId: 't1',
+          textChunkOffset: 0,
+          reasoningChunkOffset: 0,
+          status: 'running',
+        },
+        tasks: [],
+        pendingApprovals: [],
+        queue: [],
+      },
+    });
+    expect(store.peekStream('a')?.running).toBe(true);
+    vi.advanceTimersByTime(HUNG_TURN_TIMEOUT_MS);
+    const stream = store.peekStream('a')!;
+    expect(stream.running).toBe(false);
+    expect(stream.turnEnds['t1']).toEqual({ stopReason: 'interrupted', synthetic: true });
+  });
+
+  it('h) 审批等待期定时器到点让路（不撤表不合成）→ removeApproval 清审批后必须重新挂表，否则永久转圈', () => {
+    const store = new AppStore();
+    store.applyFrame(userMessageFrame());
+    store.applyFrame({ type: 'approval-request', sessionId: 'a', requestId: 'r1', tool: 'bash', args: {} });
+    // 跨过阈值：定时器到点 → converge 因审批在等让路（返回 false），定时器已消费、running 仍真
+    vi.advanceTimersByTime(HUNG_TURN_TIMEOUT_MS);
+    expect(store.peekStream('a')?.running).toBe(true);
+    expect(store.peekStream('a')?.turnEnds['t1']).toBeUndefined();
+    // 审批清除：此刻无任何活帧到达 —— 若 removeApproval 不重挂表，running 永无收敛（P1 回归）
+    store.removeApproval('r1');
+    vi.advanceTimersByTime(HUNG_TURN_TIMEOUT_MS);
+    const stream = store.peekStream('a')!;
+    expect(stream.running).toBe(false);
+    expect(stream.turnEnds['t1']).toEqual({ stopReason: 'interrupted', synthetic: true });
+  });
+
   it.each([
     [5_000, '5 秒'],
     [65_000, '1 分 5 秒'],

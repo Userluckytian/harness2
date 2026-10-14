@@ -874,6 +874,10 @@ export class AppStore {
     // PD2：快照即权威 —— 有在途 attempt = 仍在跑（不因客户端断线假报停止）；
     // 无在途 attempt（turn 已在断线窗口内跑完）= 如实落定，不留本地乐观 running（否则永久「运行中」）。
     stream.running = snap.activeAttempt !== undefined;
+    // 审查 U1 P1-1：running 在本帧内翻转（false→true 是计划规格「reconnect 后无终态的
+    // running 回合」的正触发场景），applyFrame 开头对表看到的还是旧值 false → 未挂表。
+    // 翻转处补一次对表，否则断线重连补到的悬挂回合永不收敛（痛点⑤原样复发）。
+    this.armHungTurnWatch(stream);
   }
 
   /** 本地登记一次提交（乐观可见队列）；ack 到达前不计入确认态 */
@@ -962,6 +966,10 @@ export class AppStore {
     for (const stream of this.streams.values()) {
       if (stream.approvals.some((a) => a.requestId === requestId)) {
         stream.approvals = stream.approvals.filter((a) => a.requestId !== requestId);
+        // 审查 U1 P1-1：审批等待期内定时器到点会「让路」（converge 对审批返回 false、
+        // 不撤表也不重挂）——审批此刻清除，若不重新对表，该会话的悬挂回合永无收敛时机
+        // （除非恰好再有活帧到达）。重挂=从审批清除时刻起算静默。
+        this.armHungTurnWatch(stream);
       }
     }
     this.notify();
