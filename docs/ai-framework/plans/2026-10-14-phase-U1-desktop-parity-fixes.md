@@ -1,6 +1,6 @@
 # 阶段 U1：桌面端 ZCode 化修复与不卡顿收口（产品交付波）
 
-> **状态：** 已完成（V1-V5、V7 ✅ @ `d73bc7c`+；V6 真机项交人类；交付物 `packages/desktop/release/harness2-1.0.2-win-x64.exe`，push/tag 待授权）
+> **状态：** 已完成（V1-V5、V7 ✅；**二轮全量复审完成：P0=0/P1=2 已修（`4de407c`/`aa6b8ba`）/P2=8 登记，交付物重建（08:11）端到端复验绿——见 `u1-rereview-summary.md`**；V6 真机项交人类；push/tag v1.0.2 待授权）
 > **For agentic workers:** 按 Task 顺序执行；每 Task 测完再进下一 Task。
 > **交接提示词**见文末「给接手 AI 的完整提示词」。
 > **元规范:** `docs/ai-framework/phased-plan-driven.md`
