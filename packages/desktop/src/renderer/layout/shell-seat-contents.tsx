@@ -216,6 +216,9 @@ function SidebarSeatContent(): React.ReactNode {
       // 确认对话框在 SessionBrowser 内承载）。controller 内部已按通道能力如实降级
       // （无持久化通道 = 仅从视图移除 + info toast），故此处恒接线，不重复探测。
       onDeleteSession={(id: string) => controller.deleteSession(id)}
+      // U1 复审 P2：确认框的 live running 复查判据（controller 未暴露 running 查询，
+      // 用本文件已在用的 store.peekStream 直读，不新造 API）。
+      isSessionRunning={(id: string) => store.peekStream(id)?.running === true}
       // 任务区头「新建任务」= 与 SidebarRoot 新会话入口同一真源；未连接时不给动作（占位钮，不可点即坏）
       onNewTask={
         state.status === 'connected'

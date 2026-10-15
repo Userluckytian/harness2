@@ -151,6 +151,33 @@ describe('Z-49 行菜单「删除」+ 确认框', () => {
     expect(onDeleteSession).not.toHaveBeenCalled();
   });
 
+  // U1 复审 P2：对话框开着时会话转为运行 —— 确认时按 isSessionRunning 复查 live 状态，
+  // 命中则只关框不删（行菜单禁用不是最后防线）。
+  it('确认时 live running 复查：isSessionRunning=true → 只关框，不触发 onDeleteSession', async () => {
+    const onDeleteSession = vi.fn();
+    const isSessionRunning = vi.fn((id: string) => id === 'r1');
+    renderBrowser({ sessions: [item('r1')], rowMenu: {}, onDeleteSession, isSessionRunning });
+    fireEvent.contextMenu(screen.getByRole('button', { name: /会话 r1/ }));
+    const menu = await screen.findByTestId('session-row-menu');
+    fireEvent.click(menu.querySelector('[data-menu-action="delete"]')!);
+    await screen.findByTestId('confirm-dialog');
+    fireEvent.click(screen.getByTestId('confirm-dialog-confirm'));
+    await vi.waitFor(() => expect(screen.queryByTestId('confirm-dialog')).toBeNull());
+    expect(isSessionRunning).toHaveBeenCalledWith('r1');
+    expect(onDeleteSession).not.toHaveBeenCalled();
+  });
+
+  it('反向钉：不给 isSessionRunning → 确认正常删除（web 行为不变）', async () => {
+    const onDeleteSession = vi.fn().mockResolvedValue(undefined);
+    renderBrowser({ sessions: [item('n1')], rowMenu: {}, onDeleteSession });
+    fireEvent.contextMenu(screen.getByRole('button', { name: /会话 n1/ }));
+    const menu = await screen.findByTestId('session-row-menu');
+    fireEvent.click(menu.querySelector('[data-menu-action="delete"]')!);
+    await screen.findByTestId('confirm-dialog');
+    fireEvent.click(screen.getByTestId('confirm-dialog-confirm'));
+    await vi.waitFor(() => expect(onDeleteSession).toHaveBeenCalledWith('n1'));
+  });
+
   it('running 会话：「删除」项禁用（title 说明，点击不触发）', async () => {
     const onDeleteSession = vi.fn();
     renderBrowser({ sessions: [item('run', { running: true })], rowMenu: {}, onDeleteSession });

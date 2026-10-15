@@ -124,6 +124,11 @@ export interface SessionBrowserProps extends WorkspacesOwnerProps {
    * deleteSession* 族），确认后调用本回调。
    */
   onDeleteSession?: ((id: string) => Promise<void> | void) | undefined;
+  /**
+   * U1 复审 P2：删除确认框的 live running 复查判据（壳注入 = store.peekStream(id)?.running）。
+   * 确认时若在运行 → 只关框不删（不弹提示，最小改动）；缺省不传 = 不复查（行为不变）。
+   */
+  isSessionRunning?: ((id: string) => boolean) | undefined;
   /** 任务区（第二个 section）头「新建任务」真动作（与 SidebarRoot 的新会话入口同源）；缺省 = 不渲染该钮 */
   onNewTask?: (() => void) | undefined;
 }
@@ -570,6 +575,7 @@ export function SessionBrowser({
   onRemoveProject,
   onNewSessionInProject,
   onDeleteSession,
+  isSessionRunning,
   onNewTask,
 }: SessionBrowserProps): React.ReactNode {
   const [prefs, setPrefs] = useState<SidebarTaskPreferences>({
@@ -908,7 +914,8 @@ export function SessionBrowser({
         />
       ) : null}
       {/* Z-49：删除会话确认（文案族 = deleteSession*；确认后走真删除 onDeleteSession）。
-          running 行菜单已禁用；此处再兜一层（防对话框开着时该会话转为运行）。 */}
+          running 行菜单已禁用；确认时按 isSessionRunning 复查 live 状态兜一层（防对话框开着时
+          该会话转为运行）：命中只关框不删，不弹提示（最小改动）。 */}
       {deleteTarget !== null && onDeleteSession !== undefined ? (
         <ConfirmDialog
           open
@@ -920,6 +927,10 @@ export function SessionBrowser({
           onCancel={() => setDeleteTarget(null)}
           onConfirm={() => {
             const target = deleteTarget;
+            if (isSessionRunning?.(target.id) === true) {
+              setDeleteTarget(null);
+              return;
+            }
             setDeleting(true);
             void Promise.resolve(onDeleteSession(target.id))
               .then(
