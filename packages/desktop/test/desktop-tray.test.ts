@@ -44,6 +44,7 @@ function makeActions(): TrayActions {
     showMainWindow: vi.fn(),
     newSession: vi.fn(),
     addProject: vi.fn(),
+    showAbout: vi.fn(),
     quit: vi.fn(),
   };
 }
@@ -139,30 +140,31 @@ describe('createTray 平台门与失败回落', () => {
 });
 
 describe('托盘右键菜单（顺序照 Z-47）', () => {
-  it('模板顺序与 label：打开 harness2 ┃ 新建会话 / 添加项目 ┃ 分隔 ┃ 导出日志(disabled) ┃ 分隔 ┃ 退出', () => {
+  it('模板顺序与 label：打开 harness2 ┃ 新建会话 / 添加项目 ┃ 分隔 ┃ 关于 / 导出日志(disabled) ┃ 分隔 ┃ 退出', () => {
     const items = buildTrayMenuTemplate(makeActions());
     expect(items.map((i) => (i.type === 'separator' ? '──' : i.label))).toEqual([
       TRAY_LABELS.open,
       TRAY_LABELS.newSession,
       TRAY_LABELS.addProject,
       '──',
+      TRAY_LABELS.about,
       TRAY_LABELS.exportLogs,
       '──',
       TRAY_LABELS.quit,
     ]);
     // 导出日志：占位 disabled（现无成体系日志落盘通道——要么能点要么灰，不静默没反应）
-    expect(items[4]?.enabled).toBe(false);
+    expect(items[5]?.enabled).toBe(false);
     // 其余可点项不携带 disabled
-    for (const idx of [0, 1, 2, 6]) expect(items[idx]?.enabled).toBeUndefined();
+    for (const idx of [0, 1, 2, 4, 7]) expect(items[idx]?.enabled).toBeUndefined();
   });
 
   it('创建后 contextMenu 即此模板（经注入 buildMenu 断言真实接线）', () => {
     const env = makeEnv();
     createTray(env.deps);
-    expect(env.menuItems.length).toBe(7);
+    expect(env.menuItems.length).toBe(8);
   });
 
-  it('菜单动作：新建会话/添加项目 → 对应 actions；退出 → quit()（main 侧 mark+app.quit）', () => {
+  it('菜单动作：新建会话/添加项目 → 对应 actions；关于 → showAbout()；退出 → quit()（main 侧 mark+app.quit）', () => {
     const env = makeEnv();
     createTray(env.deps);
     const items = env.menuItems;
@@ -172,7 +174,9 @@ describe('托盘右键菜单（顺序照 Z-47）', () => {
     expect(env.actions.newSession).toHaveBeenCalledTimes(1);
     items[2]?.click?.(); // 添加项目
     expect(env.actions.addProject).toHaveBeenCalledTimes(1);
-    items[6]?.click?.(); // 退出
+    items[4]?.click?.(); // 关于
+    expect(env.actions.showAbout).toHaveBeenCalledTimes(1);
+    items[7]?.click?.(); // 退出
     expect(env.actions.quit).toHaveBeenCalledTimes(1);
   });
 });

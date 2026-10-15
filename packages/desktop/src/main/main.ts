@@ -203,6 +203,15 @@ function startDesktop(opts: {
         },
         newSession: () => sendTrayEvent({ type: 'tray:new-session' }),
         addProject: () => sendTrayEvent({ type: 'tray:add-project' }),
+        // 「关于」（复审 P1-1）：系统关于面板，版本号取 app.getVersion()（不硬编码）
+        showAbout: () => {
+          app.setAboutPanelOptions({
+            applicationName: 'harness2',
+            applicationVersion: app.getVersion(),
+            copyright: 'harness2',
+          });
+          app.showAboutPanel();
+        },
         // 退出写法（Z-47）：先 markExplicitQuit 再 app.quit——防止被「关窗即隐藏」吞掉
         quit: () => {
           quitIntent.mark('tray-quit');

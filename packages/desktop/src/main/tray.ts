@@ -6,7 +6,7 @@
 //   - 图标：打包态 process.resourcesPath/tray_icon.ico（electron-builder extraResources 映射），
 //     dev 态 packages/desktop/assets/icon.ico（scripts/gen-icon.mjs 生成，产物入库）；
 //   - 左键/双击 = show + focus 主窗（**不是 toggle 隐藏**）；tooltip「harness2」；
-//   - 右键菜单（顺序）：打开 harness2 ┃ 新建会话 / 添加项目 ┃ 分隔 ┃ 导出日志 ┃ 分隔 ┃ 退出；
+//   - 右键菜单（顺序）：打开 harness2 ┃ 新建会话 / 添加项目 ┃ 分隔 ┃ 关于 / 导出日志 ┃ 分隔 ┃ 退出；
 //   - 新建会话/添加项目 = 经 IPC_TRAY_EVENT 通道向渲染端发事件（T3 接监听；无监听者不报错）；
 //   - 导出日志：TODO(T3+/后续) —— 现仓库无成体系的运行日志落盘通道（serve stdout 不持久化，
 //     diagnostics 仅有 doctor/崩溃列表），故菜单项占位 disabled（灰显可解释，不静默没反应）；
@@ -21,6 +21,7 @@ export const TRAY_LABELS = {
   open: '打开 harness2',
   newSession: '新建会话',
   addProject: '添加项目',
+  about: '关于',
   exportLogs: '导出日志',
   quit: '退出',
 } as const;
@@ -35,6 +36,8 @@ export interface TrayActions {
   newSession(): void;
   /** 「添加项目」：向渲染端发 tray:add-project 事件 */
   addProject(): void;
+  /** 「关于」：弹出系统关于面板（接线在 main.ts） */
+  showAbout(): void;
   /** 「退出」：markExplicitQuit + app.quit（接线在 main.ts） */
   quit(): void;
 }
@@ -91,7 +94,7 @@ export function resolveTrayIconPath(env: { isPackaged: boolean; resourcesPath: s
 
 /**
  * 右键菜单模板（纯构造，供结构断言）：
- * 打开 harness2 ┃ 新建会话 / 添加项目 ┃ 分隔 ┃ 导出日志(disabled) ┃ 分隔 ┃ 退出
+ * 打开 harness2 ┃ 新建会话 / 添加项目 ┃ 分隔 ┃ 关于 / 导出日志(disabled) ┃ 分隔 ┃ 退出
  */
 export function buildTrayMenuTemplate(actions: TrayActions): TrayMenuItem[] {
   return [
@@ -99,6 +102,7 @@ export function buildTrayMenuTemplate(actions: TrayActions): TrayMenuItem[] {
     { label: TRAY_LABELS.newSession, click: () => actions.newSession() },
     { label: TRAY_LABELS.addProject, click: () => actions.addProject() },
     { type: 'separator' },
+    { label: TRAY_LABELS.about, click: () => actions.showAbout() },
     // TODO(Z-47 后续)：接入运行日志导出（需先在主进程落盘 serve/应用日志）；现占位灰显，
     // 保证「要么能点要么灰」，不摆可点即报错的假活钮。
     { label: TRAY_LABELS.exportLogs, enabled: false },
