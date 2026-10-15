@@ -2,9 +2,8 @@
 // 规格：Z-61 字号刻度 —— 对话域不用 2xs（9px 不可读），最小档 = text-ui-xs；
 // shell.css 对话域选择器不留裸 px / 相对 em（归 var(--text-ui-*) 刻度）。
 //
-// 执法范围 = U2 批C 登记的对话域组件文件（刻意排除：
-//   - ChatEmptyState.tsx —— 禁改域（E 波与清理单独做，其 :110 的 2xs 保留）；
-//   - tool/FilePreview.tsx —— 右栏文件预览皮肤，非对话流，未列入批C）。
+// 执法范围 = U2 批C 登记的对话域组件文件（+ U2 扫尾补登 ReasoningRow / FilePreview）：
+//   - ChatEmptyState.tsx —— 禁改域（E 波与清理单独做，其 :110 的 2xs 保留）。
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
@@ -22,6 +21,8 @@ const CONVERSATION_TSX = [
   'renderer/conversation/ChatErrorBanner.tsx',
   'renderer/conversation/status-panel/ConversationStatusPanel.tsx',
   'renderer/tool/ToolCard.tsx',
+  'renderer/tool/FilePreview.tsx',
+  'renderer/components/ReasoningRow.tsx',
 ];
 
 describe('U2-C1：对话域组件不再使用 text-ui-2xs（最小档 = text-ui-xs）', () => {

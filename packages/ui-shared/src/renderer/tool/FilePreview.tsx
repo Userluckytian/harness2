@@ -141,7 +141,7 @@ export function ToolFilePreviewPanel({
                     <button
                       type="button"
                       // 行号槽位入口：整行 hover（或键盘聚焦）才显现，覆盖行号不挤压行布局
-                      className="absolute inset-0 hidden rounded-sm bg-background text-center text-ui-2xs leading-[1.4rem] text-foreground-subtle group-focus-within/row:block group-hover/row:block hover:bg-surface-hover hover:text-foreground"
+                      className="absolute inset-0 hidden rounded-sm bg-background text-center text-ui-xs leading-[1.4rem] text-foreground-subtle group-focus-within/row:block group-hover/row:block hover:bg-surface-hover hover:text-foreground"
                       data-file-preview-quote={lineNo}
                       title={`引用第 ${lineNo} 行到对话输入`}
                       onClick={() => {
