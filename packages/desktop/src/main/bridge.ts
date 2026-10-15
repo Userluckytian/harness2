@@ -258,7 +258,7 @@ export function createBridge(deps: BridgeDeps): Bridge {
     const serveReady = deps.serve.status === 'connected';
     const unsupported = new Set<CapabilityIdShape>();
     if (serveReady && typeof sessionId === 'string' && sessionId.length > 0) {
-      const base = deps.serve.baseUrl;
+      const base = serveBase();
       const id = encodeURIComponent(sessionId);
       const endpoints: Array<{ cap: CapabilityIdShape; path: string }> = [
         { cap: 'run-config', path: `/api/sessions/${id}/run-config` },

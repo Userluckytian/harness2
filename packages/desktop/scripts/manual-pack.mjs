@@ -70,7 +70,7 @@ async function rmrf(p) {
   await fs.rm(p, { recursive: true, force: true });
 }
 
-/** robocopy 镜像一棵树（cmd.exe 不在场时最快最稳的 win32 递归拷贝；rc<=7 均为成功） */
+/** robocopy 递归拷贝一棵树（/E 非 /MIR，幂等，不删目标多余文件；cmd.exe 不在场时最快最稳的 win32 递归拷贝；rc<=7 均为成功） */
 import { execFile } from 'node:child_process';
 function robocopy(src, dest) {
   return new Promise((resolve, reject) => {

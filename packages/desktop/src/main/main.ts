@@ -311,7 +311,16 @@ function startDesktop(opts: {
     bridge.disconnectWs();
     stopTerminal();
     void serve.stop();
+    // 复审 P2：退出时销毁托盘，避免图标残留（smoke tray:false 时为 null，判空）
+    if (trayHandle !== null) {
+      trayHandle.destroy();
+      trayHandle = null;
+    }
   });
+
+  // 复审 P2：normal 模式无 await 者，防 serve 首起失败 unhandledRejection 噪声；
+  // smoke 的 await handles.ready 走原 promise，不受影响。
+  void ready.catch(() => {});
 
   return { serve, bridge, win, tray: trayHandle, quitIntent, ready };
 }
