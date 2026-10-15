@@ -433,8 +433,11 @@ describe('对话 UI（jsdom）', () => {
     api.emit({ type: 'event', sessionId: 's2', event: ev('assistant/message', { text: '后台产出', turnId: 'k' }) });
     api.emit({ type: 'turn-end', sessionId: 's2', stopReason: 'end_turn' });
     expect(App.store.peekStream('s2').unread).toBe(2);
-    // 侧栏徽标如实显示累计值（不是恒 0）
-    await waitFor(() => expect(document.querySelector('.h2-sidebar-unread')?.textContent).toBe('2'));
+    // 侧栏如实反映累计未读（不是恒 0）：U2 批D / D3 —— unread = 蓝点（无字），计数移到行 title
+    await waitFor(() =>
+      expect(document.querySelector('[data-session-id="s2"] [data-testid="session-unread"]')).not.toBeNull(),
+    );
+    expect(document.querySelector('[data-session-id="s2"]')?.getAttribute('title')).toContain('未读 2');
   });
 
   it('覆层走 shell.overlay 席位（D-10）：Ctrl+K 命令面板与 Ctrl+, 设置都在四席位装配内', async () => {

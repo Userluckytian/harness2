@@ -4,8 +4,9 @@
 //   b) 行菜单「删除」（壳给 onDeleteSession 才出现；恒最后 + 前置分隔）→ 确认框（Z-49 文案族）
 //      → 确认后回调真删除；取消不删；
 //   c) running 会话行的「删除」项禁用（title 说明，点击不回调）；
-//   d) 「移出项目」守卫：组内有 running 会话 → 先弹确认（Z-49 文案「移除运行中的项目？」），
-//      确认后才调 onRemoveProject；无 running → 直接移除不弹框。
+//   d) 「移出项目」守卫（U2 批D / D5：入口 = 组头「更多」⋯ 下拉末项「移除」，XIcon，同 Z-49 规格）：
+//      组内有 running 会话 → 先弹确认（Z-49 文案「移除运行中的项目？」），确认后才调 onRemoveProject；
+//      无 running → 直接移除不弹框。
 //   反向钉：不给 onDeleteSession/onNewSessionInProject = 菜单无删除项 / hover 无新建钮（web 行为不变）。
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createElement } from 'react';
@@ -61,6 +62,20 @@ function hoverProjectHead(cwd: string = ALPHA): void {
   fireEvent.mouseOver(headRow);
 }
 
+/** U2 批D（D5）：「移除」= 组头「更多」⋯ 下拉末项。hover 组头 → ⋯ mount → Enter 开菜单（jsdom 无 PointerEvent，同 session-row-menu 模式）。 */
+async function openGroupRemoveMenu(cwd: string = ALPHA): Promise<HTMLElement> {
+  hoverProjectHead(cwd);
+  const slug = `project-${cwd.replace(/[^A-Za-z0-9]/g, '-')}`;
+  const trigger = screen.getByTestId(`sidebar-group-more-${slug}`);
+  fireEvent.keyDown(trigger, { key: 'Enter' });
+  return screen.findByTestId(`sidebar-group-more-menu-${slug}`);
+}
+
+async function clickGroupRemove(cwd: string = ALPHA): Promise<void> {
+  const menu = await openGroupRemoveMenu(cwd);
+  fireEvent.click(menu.querySelector('[data-menu-action="remove-project"]')!);
+}
+
 describe('shouldMountRowActions（Z-48 纯判据）', () => {
   it('hover / focusWithin / menuOpen 任一为真才 mount；全假不 mount', () => {
     const base = { hovered: false, focusWithin: false, menuOpen: false };
@@ -105,8 +120,8 @@ describe('Z-48 项目组头「在此项目新建会话」', () => {
     renderBrowser({ projects: [{ cwd: ALPHA, addedAt: 1 }], sessions: [item('a1', { cwd: ALPHA })] });
     hoverProjectHead();
     expect(screen.queryByTestId('sidebar-group-new-session-project-D--p-alpha')).toBeNull();
-    // 「移出项目」仍按回调有无渲染（既有语义不变）
-    expect(screen.getByTestId('sidebar-group-remove-project-D--p-alpha')).toBeTruthy();
+    // U2 批D（D5）：「移除」入口改为 ⋯ 下拉，按回调有无渲染（无回调 = 菜单项 disabled 占位）
+    expect(screen.getByTestId('sidebar-group-more-project-D--p-alpha')).toBeTruthy();
   });
 });
 
@@ -199,7 +214,7 @@ describe('Z-49 行菜单「删除」+ 确认框', () => {
   });
 });
 
-describe('Z-49 「移出项目」运行守卫', () => {
+describe('Z-49 「移出项目」运行守卫（U2 批D / D5：入口 = 组头 ⋯ 下拉末项「移除」）', () => {
   it('组内有 running 会话 → 先弹确认（Z-49 文案），确认后才移除', async () => {
     const onRemoveProject = vi.fn();
     renderBrowser({
@@ -207,8 +222,7 @@ describe('Z-49 「移出项目」运行守卫', () => {
       sessions: [item('busy', { cwd: ALPHA, running: true })],
       onRemoveProject,
     });
-    hoverProjectHead();
-    fireEvent.click(screen.getByTestId('sidebar-group-remove-project-D--p-alpha'));
+    await clickGroupRemove();
     const dialog = await screen.findByTestId('confirm-dialog');
     expect(screen.getByTestId('confirm-dialog-title').textContent).toBe('移除运行中的项目？');
     expect(screen.getByTestId('confirm-dialog-description').textContent).toBe('历史任务不会被删除。');
@@ -220,25 +234,31 @@ describe('Z-49 「移出项目」运行守卫', () => {
     void dialog;
   });
 
-  it('组内无 running → 直接移除、不弹确认', () => {
+  it('组内无 running → 直接移除、不弹确认', async () => {
     const onRemoveProject = vi.fn();
     renderBrowser({
       projects: [{ cwd: ALPHA, addedAt: 1 }],
       sessions: [item('idle', { cwd: ALPHA })],
       onRemoveProject,
     });
-    hoverProjectHead();
-    fireEvent.click(screen.getByTestId('sidebar-group-remove-project-D--p-alpha'));
+    await clickGroupRemove();
     expect(onRemoveProject).toHaveBeenCalledWith(ALPHA);
     expect(screen.queryByTestId('confirm-dialog')).toBeNull();
   });
 
-  it('空项目组（无会话）→ 直接移除（无 running 可言）', () => {
+  it('空项目组（无会话）→ 直接移除（无 running 可言）', async () => {
     const onRemoveProject = vi.fn();
     renderBrowser({ projects: [{ cwd: ALPHA, addedAt: 1 }], onRemoveProject });
-    hoverProjectHead();
-    fireEvent.click(screen.getByTestId('sidebar-group-remove-project-D--p-alpha'));
+    await clickGroupRemove();
     expect(onRemoveProject).toHaveBeenCalledWith(ALPHA);
     expect(screen.queryByTestId('confirm-dialog')).toBeNull();
+  });
+
+  it('无 onRemoveProject 通道 → ⋯ 菜单里「移除」项 disabled + 说明（红线⑩，不摆可点即坏）', async () => {
+    renderBrowser({ projects: [{ cwd: ALPHA, addedAt: 1 }] });
+    const menu = await openGroupRemoveMenu();
+    const remove = menu.querySelector('[data-menu-action="remove-project"]')!;
+    expect(remove.getAttribute('data-disabled')).not.toBeNull();
+    expect(remove.getAttribute('title')).toBe(DEFAULT_SIDEBAR_LABELS.removeProjectTodo);
   });
 });

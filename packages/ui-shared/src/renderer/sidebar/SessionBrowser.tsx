@@ -21,17 +21,22 @@ import {
   FolderIcon,
   GripVerticalIcon,
   MessageCirclePlusIcon,
-  MinusIcon,
   PanelLeftIcon,
   PinIcon,
   PlusIcon,
   XIcon,
 } from 'lucide-react';
 import { ContextMenu, ContextMenuTrigger } from '../../components/ui/context-menu.js';
-import { DropdownMenu, DropdownMenuTrigger } from '../../components/ui/dropdown-menu.js';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '../../components/ui/dropdown-menu.js';
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '../../components/ui/dialog.js';
 import { Button } from '../../components/ui/button.js';
 import { ConfirmDialog } from '../components/ConfirmDialog.js';
+import { Spinner } from '../../components/ui/spinner.js';
 import type { SidebarSessionItem } from './session-items.js';
 import type { SidebarLabels } from './labels.js';
 import {
@@ -131,6 +136,15 @@ export interface SessionBrowserProps extends WorkspacesOwnerProps {
   isSessionRunning?: ((id: string) => boolean) | undefined;
   /** 任务区（第二个 section）头「新建任务」真动作（与 SidebarRoot 的新会话入口同源）；缺省 = 不渲染该钮 */
   onNewTask?: (() => void) | undefined;
+  /**
+   * U2 批D（D7）：项目表读取失败的行内轻提示（Alert 规格 Z-79）。
+   * 由桌面壳在 projectsList/add/remove 的 catch 里置位；null/缺省 = 不渲染。
+   */
+  projectsError?: string | null | undefined;
+  /** 失败条「重试」动作（壳重发 projectsList）；缺省 = 不渲染重试钮 */
+  onRetryProjects?: (() => void) | undefined;
+  /** 失败条「忽略」（dismiss）；缺省 = 不渲染关闭钮 */
+  onDismissProjectsError?: (() => void) | undefined;
 }
 
 /** Z-48：行/组头悬浮动作的 mount 判据（hover / focus-within / 菜单打开才挂，不用 CSS 隐藏） */
@@ -160,22 +174,32 @@ function rowMeta(item: SidebarSessionItem, nowMs: number): string {
   return relativeTime(item.mtimeMs, nowMs);
 }
 
-/** leading 槽（Z-09）：unread 徽标 > running spinner > pinned 图钉；都无 → 空占位 */
+/**
+ * leading 槽（Z-09）：unread 蓝点 > running spinner > pinned 图钉；都无 → 空占位。
+ * U2 批D（D3）：unread 从黑底计数胶囊改为 8px 蓝点（计数移入行 title / aria-label，见 SessionRow）；
+ * running 从绿环改为 Z-79 Spinner（LoaderIcon size-4 animate-spin，role=status）。
+ * error 红点无数据源维持不臆造（task-view.leadingSlot 注释）。
+ */
 function LeadingSlot({ item, labels }: { item: SidebarSessionItem; labels: SidebarLabels }): React.ReactNode {
   const kind = leadingSlot(item);
   if (kind === 'unread') {
     return (
       <span className="h2-sidebar-session-leading" data-testid="session-leading" data-kind="unread">
-        <span className="h2-sidebar-unread" aria-label={labels.unreadLabel}>
-          {item.unread}
-        </span>
+        <span
+          className="h2-sidebar-unread-dot"
+          data-testid="session-unread"
+          role="img"
+          aria-label={`${labels.unreadLabel}${item.unread > 0 ? ` ${item.unread}` : ''}`}
+        />
       </span>
     );
   }
   if (kind === 'running') {
     return (
       <span className="h2-sidebar-session-leading" data-testid="session-leading" data-kind="running">
-        <span className="h2-sidebar-running" data-testid="session-running" aria-label={labels.runningLabel} />
+        <span className="h2-sidebar-spinner" data-testid="session-running" title={labels.runningLabel}>
+          <Spinner loadingLabel={labels.runningLabel} />
+        </span>
       </span>
     );
   }
@@ -219,7 +243,10 @@ function findGroupByCwd(sections: readonly SidebarSection[], cwd: string): Sideb
   return undefined;
 }
 
-/** 单行渲染（列表区与 Pinned 区共用）；showUnpin 只在 Pinned 区为 true（取消置顶入口只此一处） */
+/** 单行渲染（列表区与 Pinned 区共用）；showUnpin 只在 Pinned 区为 true（取消置顶入口只此一处）。
+ * U2 批D（D4 / Z-48）：行右侧钮（取消置顶 ✕ / 更多 ⋯）从 CSS opacity 显隐改为
+ * **按交互态 mount**（复用组头同一判据 shouldMountRowActions：hover / focus-within / 菜单打开）；
+ * 菜单打开时不卸载（onOpenChange 驱动），否则下拉会被连根拔掉。 */
 function SessionRow({
   item,
   ctx,
@@ -230,11 +257,17 @@ function SessionRow({
   showUnpin?: boolean;
 }): React.ReactNode {
   const { selectedId, labels, nowMs, onOpenSession, onTogglePin, rowDrag, rowMenu } = ctx;
+  const [interacted, setInteracted] = useState<HoverActionState>({
+    hovered: false,
+    focusWithin: false,
+    menuOpen: false,
+  });
   const onDragStart = rowDrag?.onDragStart;
   const onDragEnd = rowDrag?.onDragEnd;
   const dragDisabled = rowDrag?.disabledIds?.has(item.id) === true;
   const draggable = onDragStart !== undefined && !dragDisabled;
   const unpin = showUnpin && onTogglePin !== undefined && item.pinned;
+  const mountActions = shouldMountRowActions(interacted);
   // P0-2：菜单动作可用才包装（一个回调都没有 → 不挂 ContextMenu，右键无空菜单）
   const menuActions =
     rowMenu === undefined
@@ -249,6 +282,7 @@ function SessionRow({
           canTrajectory: rowMenu.onInspectTrajectory !== undefined,
           canDelete: rowMenu.onDeleteSession !== undefined,
         });
+  const showMore = menuActions.length > 0 && rowMenu !== undefined;
   const rowButton = (
     <button
       type="button"
@@ -258,7 +292,8 @@ function SessionRow({
       data-archived={item.archived ? 'true' : 'false'}
       data-drag-disabled={dragDisabled ? 'true' : undefined}
       aria-current={selectedId === item.id ? 'true' : undefined}
-      title={item.title}
+      // U2 批D（D3 / Z-09）：unread 计数不进胶囊（蓝点无字），移到行 title（title 属性 + aria-label 同源）
+      title={item.unread > 0 ? `${item.title}（${labels.unreadLabel} ${item.unread}）` : item.title}
       {...(draggable ? { draggable: true } : {})}
       {...(draggable && onDragStart !== undefined
         ? { onDragStart: (event: React.DragEvent<HTMLButtonElement>) => onDragStart(item.id, event) }
@@ -284,7 +319,20 @@ function SessionRow({
     </button>
   );
   return (
-    <li className={`h2-sidebar-row${unpin ? ' h2-sidebar-row-pinned' : ''}`}>
+    <li
+      className={`h2-sidebar-row${mountActions && unpin ? ' h2-sidebar-row-pinned' : ''}`}
+      onMouseEnter={() => setInteracted((s) => ({ ...s, hovered: true }))}
+      // 指针离开行只收 hovered：菜单打开态由 Radix onOpenChange 归零（下拉渲染在 portal，
+      // 指针移进菜单必然触发行 mouseleave —— 若在此清 menuOpen 会把打开中的菜单连根拔掉）
+      onMouseLeave={() => setInteracted((s) => ({ ...s, hovered: false }))}
+      onFocusCapture={() => setInteracted((s) => ({ ...s, focusWithin: true }))}
+      onBlurCapture={(event) => {
+        // 焦点离开整行才算 focusWithin=false（钮 ↔ 行 之间切换不误收）
+        if (!event.currentTarget.contains(event.relatedTarget)) {
+          setInteracted((s) => ({ ...s, focusWithin: false }));
+        }
+      }}
+    >
       {menuActions.length > 0 && rowMenu !== undefined ? (
         <ContextMenu>
           <ContextMenuTrigger asChild>{rowButton}</ContextMenuTrigger>
@@ -293,7 +341,7 @@ function SessionRow({
       ) : (
         rowButton
       )}
-      {unpin && (
+      {mountActions && unpin && (
         <button
           type="button"
           className="h2-sidebar-unpin"
@@ -305,10 +353,10 @@ function SessionRow({
           <XIcon size={14} aria-hidden="true" />
         </button>
       )}
-      {/* P0-2/Z-10 第二入口：行右侧 ⋯（hover/聚焦显现；动作集与右键同源 rowMenuEntries）。
-          Pinned 区行与 unpin ✕ 并排时右移避让（见 sidebar.css .h2-sidebar-row-pinned 规则）。 */}
-      {menuActions.length > 0 && rowMenu !== undefined && (
-        <DropdownMenu>
+      {/* P0-2/Z-10 第二入口：行右侧 ⋯（Z-48：交互态才 mount；动作集与右键同源 rowMenuEntries）。
+          Pinned 行与 unpin ✕ 并排时右移避让（见 sidebar.css .h2-sidebar-row-pinned 规则）。 */}
+      {mountActions && showMore && (
+        <DropdownMenu onOpenChange={(open) => setInteracted((s) => ({ ...s, menuOpen: open }))}>
           <DropdownMenuTrigger asChild>
             <button
               type="button"
@@ -368,9 +416,11 @@ function HeadIconButton({
 }
 
 /**
- * 显式项目组头（Z-48）：动作钮（新建会话 / 移出项目）按交互态 mount
- * （hover / focus-within / 无 CSS 隐藏残留 —— 对齐 ZCode `WorkspaceSidebarItem.tsx:275-281`
- * shouldMountWorkspaceRowActions）。非显式组（聚合组，web 口径）恒无动作钮，现状不变。
+ * 显式项目组头（Z-48）：动作按交互态 mount（hover / focus-within / 菜单打开
+ * —— 对齐 ZCode `WorkspaceSidebarItem.tsx:275-281` shouldMountWorkspaceRowActions）。
+ * U2 批D（D5 / Z-49）：「移除」从组头独立 MinusIcon 钮收进「更多」⋯ 下拉末项
+ * （XIcon；ZCode `WorkspaceSidebarItem.tsx:938-956` 同型）；运行守卫（Z-49 确认框）不变。
+ * 非显式组（聚合组，web 口径）恒无动作钮，现状不变。
  */
 function ProjectGroupHead({
   group,
@@ -398,7 +448,9 @@ function ProjectGroupHead({
     <div
       className="h2-sidebar-group-head-row"
       onMouseEnter={() => setInteracted((s) => ({ ...s, hovered: true }))}
-      onMouseLeave={() => setInteracted((s) => ({ ...s, hovered: false, menuOpen: false }))}
+      // U2 批D（D5）：同 SessionRow —— mouseleave 只收 hovered，menuOpen 由 onOpenChange 归零
+      //（指针从组头移进 portal 里的 ⋯ 下拉不能把打开中的菜单拔掉）
+      onMouseLeave={() => setInteracted((s) => ({ ...s, hovered: false }))}
       onFocusCapture={() => setInteracted((s) => ({ ...s, focusWithin: true }))}
       onBlurCapture={(event) => {
         // 焦点离开整个组头行才算 focusWithin=false（钮 ↔ 钮 之间切换不误收）
@@ -439,14 +491,34 @@ function ProjectGroupHead({
               </span>
             </button>
           )}
-          <HeadIconButton
-            testId={`sidebar-group-remove-${slug}`}
-            icon={<MinusIcon size={14} />}
-            action={ctx.onRemoveProject === undefined ? undefined : () => ctx.onRemoveProject?.(group.cwd as string)}
-            label={labels.removeProject}
-            title={group.cwd}
-            todoTitle={labels.removeProjectTodo}
-          />
+          {/* U2 批D（D5 / Z-49）：「移除」收进「更多」⋯ 下拉末项（与行菜单同型）；
+              无通道 = 项 disabled + todoTitle 说明（红线⑩），不再摆独立占位钮。 */}
+          <DropdownMenu onOpenChange={(open) => setInteracted((s) => ({ ...s, menuOpen: open }))}>
+            <DropdownMenuTrigger asChild>
+              <button
+                type="button"
+                className="h2-sidebar-head-button"
+                data-testid={`sidebar-group-more-${slug}`}
+                aria-label={labels.removeProject}
+                title={labels.removeProject}
+              >
+                <span aria-hidden="true">
+                  <EllipsisIcon size={14} />
+                </span>
+              </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" data-testid={`sidebar-group-more-menu-${slug}`}>
+              <DropdownMenuItem
+                data-menu-action="remove-project"
+                disabled={ctx.onRemoveProject === undefined}
+                {...(ctx.onRemoveProject === undefined ? { title: labels.removeProjectTodo } : {})}
+                onSelect={() => ctx.onRemoveProject?.(group.cwd as string)}
+              >
+                <XIcon size={14} aria-hidden="true" />
+                {labels.menuRemoveProject}
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
         </>
       )}
     </div>
@@ -577,6 +649,9 @@ export function SessionBrowser({
   onDeleteSession,
   isSessionRunning,
   onNewTask,
+  projectsError,
+  onRetryProjects,
+  onDismissProjectsError,
 }: SessionBrowserProps): React.ReactNode {
   const [prefs, setPrefs] = useState<SidebarTaskPreferences>({
     ...DEFAULT_SIDEBAR_TASK_PREFERENCES,
@@ -773,7 +848,46 @@ export function SessionBrowser({
               />
             )}
           </div>
-          {!collapsed && (
+          {/* U2 批D（D7）：项目表读取失败 → 区头下行内轻条（Alert 规格 Z-79：rounded-lg border
+              px-2 py-1.5、destructive 前景），带「重试」与忽略（dismiss）。 */}
+          {section.kind === 'projects' && projectsError !== undefined && projectsError !== null && (
+            <div className="h2-sidebar-alert" data-testid="sidebar-projects-error" role="alert">
+              <span className="h2-sidebar-alert-text">
+                {`${labels.projectsLoadFailed}${projectsError.length > 0 ? `：${projectsError}` : ''}`}
+              </span>
+              {onRetryProjects !== undefined && (
+                <button
+                  type="button"
+                  className="h2-sidebar-alert-action"
+                  data-testid="sidebar-projects-retry"
+                  onClick={onRetryProjects}
+                >
+                  {labels.retry}
+                </button>
+              )}
+              {onDismissProjectsError !== undefined && (
+                <button
+                  type="button"
+                  className="h2-sidebar-alert-dismiss"
+                  data-testid="sidebar-projects-error-dismiss"
+                  aria-label={labels.dismiss}
+                  title={labels.dismiss}
+                  onClick={onDismissProjectsError}
+                >
+                  <XIcon size={14} aria-hidden="true" />
+                </button>
+              )}
+            </div>
+          )}
+          {!collapsed && section.groups.length === 0 && (
+            // U2 批D（D6）：空侧栏保骨架——项目区 0 组时区内如实「暂无项目」行（非假数据）
+            <ul className="h2-sidebar-list-inner">
+              <li className="h2-sidebar-group-empty" data-testid="sidebar-projects-empty">
+                {labels.noProjects}
+              </li>
+            </ul>
+          )}
+          {!collapsed && section.groups.length > 0 && (
             <GroupList
               groups={section.groups}
               collapsedGroups={collapsedGroups}
@@ -869,6 +983,14 @@ export function SessionBrowser({
       : sessions.length === 0 && archived.length > 0
         ? labels.allArchived
         : labels.noSessions;
+  // U2 批D（D6）：空侧栏保骨架——项目模式、非搜索、非归档视图、无归档滞留且无行时，
+  // 「项目」「任务」两区头照画、区内如实「暂无项目 / 暂无任务」（Z-16 #9 两区头恒在口径推及
+  // 真空态；红线⑩：真实空态）。allArchived 指向性文案仍走单条全局提示。
+  const skeleton: SidebarSection[] = [
+    { kind: 'projects', groups: [] },
+    { kind: 'conversations', items: [] },
+  ];
+  const showSkeleton = !hasRows && !searching && !archivedView && archived.length === 0 && prefs.viewMode === 'project';
 
   return (
     <section className="h2-sidebar-region" aria-label={labels.sessions}>
@@ -899,6 +1021,9 @@ export function SessionBrowser({
       >
         {hasRows ? (
           sections.map(renderSection)
+        ) : showSkeleton ? (
+          // U2 批D（D6）：空侧栏仍渲染「项目 / 任务」两区头 + 区内「暂无」行（骨架不塌）
+          skeleton.map(renderSection)
         ) : (
           <div className="h2-sidebar-empty" data-testid="sidebar-empty">
             {emptyLabel}

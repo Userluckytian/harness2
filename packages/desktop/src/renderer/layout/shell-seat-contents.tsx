@@ -10,12 +10,17 @@
 // P5-C 装配：会话席位内容 = renderer/conversation/assembly.tsx 的 ConversationSeat
 // （会话头 + 转录 + 常驻 Composer；Z2-05 起主区事实单一 chat，无视图环）。本文件只递
 // store/controller，不在这里写对话语义（composer 的接线全在 assembly.tsx）。
-import { useCallback, useEffect, useMemo, useState, useSyncExternalStore } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { CommandPalette } from '@harness2/ui-shared/renderer/components/CommandPalette.js';
 import { SettingsPage } from '../components/SettingsPage.js';
 import { SidePanel } from '../components/SidePanel.js';
 import { controller, store, useAppState, newSessionCollapsingRightbar, StatusBadge } from '../app-shared.js';
-import { SidebarRoot, buildSessionItems, resolveBuildVersion } from '@harness2/ui-shared/renderer/sidebar/index.js';
+import {
+  SidebarRoot,
+  buildSessionItems,
+  resolveBuildVersion,
+  SettingsIcon,
+} from '@harness2/ui-shared/renderer/sidebar/index.js';
 import type { ProjectGroupInput } from '@harness2/ui-shared/renderer/sidebar/project-groups.js';
 import type { ProjectsDocument } from '@harness2/ui-shared/shared/projects.js';
 import type { SlotRegistry } from '@harness2/ui-shared/renderer/slots/index.js';
@@ -72,22 +77,36 @@ function SidebarSeatContent(): React.ReactNode {
   // Harness2Api 的 ProjectsApi 面是 Partial（jsdom 夹具 / 旧宿主可能缺通道）→ 逐方法判空，
   // 缺通道时 projects 恒为空表、动作不接线 = 组件渲染 disabled 占位（红线⑩），不摆假功能。
   const [projects, setProjects] = useState<readonly ProjectGroupInput[]>([]);
+  // U2 批D（D7）：projects 读写失败不再静默吞（.catch(()=>{}) → 置错误态），
+  // 侧栏项目区头下渲染行内轻条 + 重试 + 忽略。失败不清用户数据、不伪造项目（红线如实）。
+  const [projectsError, setProjectsError] = useState<string | null>(null);
+  const mountedRef = useRef(true);
   useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
+  const projectsErrorMessage = (error: unknown): string => (error instanceof Error ? error.message : String(error));
+  const loadProjects = useCallback((): void => {
     const api = window.harness2;
     if (api.projectsList === undefined) return;
-    let cancelled = false;
     api
       .projectsList()
       .then((doc) => {
-        if (!cancelled) setProjects(toProjectInputs(doc));
+        if (mountedRef.current) {
+          setProjects(toProjectInputs(doc));
+          setProjectsError(null);
+        }
       })
-      .catch(() => {
-        // 读失败 = 如实保持空表（不伪造项目、不清用户数据）
+      .catch((error: unknown) => {
+        // 读失败 = 如实保持空表 + 行内提示（不伪造项目、不清用户数据）
+        if (mountedRef.current) setProjectsError(projectsErrorMessage(error));
       });
-    return () => {
-      cancelled = true;
-    };
   }, []);
+  useEffect(() => {
+    loadProjects();
+  }, [loadProjects]);
   /** 添加项目：系统目录选择器 → projects:add → 用写后整表刷新（取消 = null → 不写） */
   const addProject = (): void => {
     const api = window.harness2;
@@ -96,10 +115,16 @@ function SidebarSeatContent(): React.ReactNode {
       .projectsPickFolder()
       .then((cwd) => {
         if (cwd === null) return;
-        return api.projectsAdd?.(cwd).then((doc) => setProjects(toProjectInputs(doc)));
+        return api.projectsAdd?.(cwd).then((doc) => {
+          if (mountedRef.current) {
+            setProjects(toProjectInputs(doc));
+            setProjectsError(null);
+          }
+        });
       })
-      .catch(() => {
-        // IPC 失败：保持现表（不误清空、不伪造成功）
+      .catch((error: unknown) => {
+        // IPC 失败：保持现表（不误清空、不伪造成功）+ 行内提示（D7）
+        if (mountedRef.current) setProjectsError(projectsErrorMessage(error));
       });
   };
   /** 移出项目：projects:remove → 写后整表刷新（只删 projects.json 条目；会话与事件日志不动） */
@@ -108,9 +133,15 @@ function SidebarSeatContent(): React.ReactNode {
     if (api.projectsRemove === undefined) return;
     void api
       .projectsRemove(cwd)
-      .then((doc) => setProjects(toProjectInputs(doc)))
-      .catch(() => {
-        // 同上：失败保持现表
+      .then((doc) => {
+        if (mountedRef.current) {
+          setProjects(toProjectInputs(doc));
+          setProjectsError(null);
+        }
+      })
+      .catch((error: unknown) => {
+        // 同上：失败保持现表 + 行内提示（D7）
+        if (mountedRef.current) setProjectsError(projectsErrorMessage(error));
       });
   };
 
@@ -219,6 +250,10 @@ function SidebarSeatContent(): React.ReactNode {
       // U1 复审 P2：确认框的 live running 复查判据（controller 未暴露 running 查询，
       // 用本文件已在用的 store.peekStream 直读，不新造 API）。
       isSessionRunning={(id: string) => store.peekStream(id)?.running === true}
+      // U2 批D（D7）：项目表读写失败 → 侧栏行内轻条（重试 = 重发 projectsList；忽略 = 清错误态）
+      projectsError={projectsError}
+      onRetryProjects={loadProjects}
+      onDismissProjectsError={() => setProjectsError(null)}
       // 任务区头「新建任务」= 与 SidebarRoot 新会话入口同一真源；未连接时不给动作（占位钮，不可点即坏）
       onNewTask={
         state.status === 'connected'
@@ -270,15 +305,16 @@ function SidebarSeatContent(): React.ReactNode {
       renderAccountStatus={() => <StatusBadge status={state.status} error={state.statusDetail?.error} />}
       renderSettings={() => (
         <div className="flex items-center justify-end gap-2 px-1">
+          {/* U2 批D（D8 / Z-11、Z-74）：⚙ 文本字形 → lucide SettingsIcon size-4 图标钮（28×28 命中区）。 */}
           <button
             type="button"
-            className="text-ui-base text-foreground-subtle hover:text-foreground cursor-pointer"
+            className="hover:bg-surface-hover text-foreground-subtle hover:text-foreground inline-flex size-7 cursor-pointer items-center justify-center rounded-md border-none bg-transparent"
             data-testid="sidebar-settings"
             aria-label="设置"
             title="设置 (Ctrl+,)"
             onClick={() => setOverlay('settings', true)}
           >
-            ⚙
+            <SettingsIcon size={16} aria-hidden="true" />
           </button>
         </div>
       )}
