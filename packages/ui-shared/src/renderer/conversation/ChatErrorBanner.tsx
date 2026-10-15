@@ -3,6 +3,9 @@
 // 结构（Z-96 `ChatErrorBanner.tsx:280-363` 的视觉语言内实现）：
 //   图标 + 单行截断消息 +（有 detail 时）「查看详情」Dialog(`<pre>`) +「复制完整报错」+ 右上 X。
 //   * 单行截断：`truncate` + title 兜全文（长 reason 不撑破 composer 宽度）。
+//   * U2-C5：message 缺失（旧数据/上游没给 reason）→ 兜底文案「发送失败，请稍后重试。」；
+//     尾部小字「内容已保留，可直接重发」指向下一步动作（ZCode 横幅语言：说明 + 出路，
+//     不留用户猜「那我的稿子呢」—— D-34 乐观提交失败本就会还原草稿，这里只是把它说出来）。
 //   * 「复制完整报错」走 navigator.clipboard（缺通道如实禁用，红线⑩，不假报已复制）；
 //   * X = 关闭本条错误（onDismiss 携带指纹，装配层据此去重：同错误不立刻顶回）；
 //   * 刻意不用 Radix Tooltip 包裹横幅按钮（Z-96 注释：防 update-depth 循环）→ 用原生 title。
@@ -32,6 +35,9 @@ export function ChatErrorBanner({ message, detail, onDismiss, fingerprint }: Cha
     navigator.clipboard !== undefined &&
     typeof navigator.clipboard.writeText === 'function';
   const copyText = hasDetail ? (detail as string) : message;
+  // U2-C5（兜底文案）：message 缺失/空白（旧数据或上游未给 reason）→ 通用可操作文案，
+  // 不留空横幅（红线⑩：不假报具体原因，只说事实与下一步）。
+  const displayMessage = message.trim().length > 0 ? message : '发送失败，请稍后重试。';
   const onCopy = (): void => {
     void navigator.clipboard
       .writeText(copyText)
@@ -44,7 +50,12 @@ export function ChatErrorBanner({ message, detail, onDismiss, fingerprint }: Cha
     <div className="chat-error-banner" data-testid="chat-error-banner" data-fingerprint={fingerprint} role="alert">
       <CircleAlertIcon className="chat-error-banner-icon size-4 shrink-0" aria-hidden="true" />
       <span className="chat-error-banner-message truncate" title={message}>
-        {message}
+        {displayMessage}
+      </span>
+      {/* U2-C5（指向下一步）：失败后草稿/输入确实被 composer 保留（既有还原路径，有测试钉住），
+          小字如实告知「内容已保留」并给出动作指引（重发），避免用户以为丢稿后重复手打。 */}
+      <span className="chat-error-banner-hint" data-testid="chat-error-hint">
+        内容已保留，可直接重发
       </span>
       <div className="chat-error-banner-actions">
         {hasDetail && (

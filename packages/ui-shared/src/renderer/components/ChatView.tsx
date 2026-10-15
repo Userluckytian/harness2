@@ -13,17 +13,10 @@
 // 本文件只负责「聊天条目 → 该用哪个卡片」的装配（数据由 store/controller 注入）。
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import type { Controller } from '../app-controller.js';
-import { displayToolName, formatTurnDuration, type ChatItem } from '../chat-model.js';
+import type { ChatItem } from '../chat-model.js';
 import { buildToolRow, isAtBottom, nextScrollTop } from '../features/timeline/execution-log.js';
 import { activeTurnIdOf, deriveTurns, jumpToTurn, TurnNavigator } from '../conversation/turn-navigator.js';
-import {
-  ToolCard,
-  controllerToolActions,
-  summarizeToolArgs,
-  toolCardFromItem,
-  toolJumpActions,
-  toolNavigation,
-} from '../tool/index.js';
+import { ToolCard, controllerToolActions, toolCardFromItem, toolJumpActions, toolNavigation } from '../tool/index.js';
 import { ConversationEmptyState } from '../conversation/EmptyState.js';
 import { WorkIndicator } from '../conversation/turn-work.js';
 import { MessageActions } from './MessageActions.js';
@@ -148,35 +141,34 @@ export function ChatItemView({
     }
     case 'streaming':
       // Z-92：流式思考同样是一等行（渐变扫光「正在思考」+ 最后一行摘要）；不再用内联「（思考中…）」。
+      // U2-C8（pending 行同皮）：在途工具行不再是旧 `.tool-row.tool-pending` 第二套皮 ——
+      // 直接渲染 ToolCard（result 未落 → toolStatusOf = running → 与完成后的本卡同一形态：
+      // 图标 + 标题扫光 + 「运行中…」状态；无结果区 → 不可展开、不摆假箭头）。
+      // 中文化状态词（「ok」→空、「FAILED:」→「失败：」）见 tool-model.toolStatusLabel。
       return (
         <>
           {item.tool === undefined && item.reasoning !== undefined && item.reasoning.length > 0 && (
             <ReasoningRow text={item.reasoning} streaming />
           )}
-          <div className="bubble-assistant streaming">
-            {item.tool !== undefined ? (
-              <div className="tool-row tool-pending">
-                <span className="tool-line">
-                  &gt; {displayToolName(item.tool)} ({summarizeToolArgs(item.args)})
-                </span>
-                <span className="tool-status">运行中…</span>
-              </div>
-            ) : (
-              // 本分支 item.tool === undefined（工具行走上方分支）→ 流式正文同样可划词（Z4-03）
+          {item.tool !== undefined ? (
+            <ToolCard card={toolCardFromItem(item)} {...(sessionId !== undefined ? { sessionId } : {})} actions={{}} />
+          ) : (
+            // 本分支 item.tool === undefined（工具行走上方分支）→ 流式正文同样可划词（Z4-03）
+            <div className="bubble-assistant streaming">
               <div className="text" {...{ [QUOTE_ORIGIN_ATTR]: 'assistant' }}>
                 {item.text}
                 <span className="cursor">▌</span>
               </div>
-            )}
-          </div>
+            </div>
+          )}
         </>
       );
     case 'turn-summary': {
-      // P0-1：对齐 ZCode 摘要文案（`持续了 N 秒`）—— 数据取本轮真实耗时（step/end 聚合）；
-      // 取不到（undefined/0）则**省略该文案，不显示假值**（红线⑩）。不再渲染 `[已完成 · Xs]`。
-      const durationText = formatTurnDuration(item.durationMs);
+      // U2-C3（耗时双行收口）：本行**不再渲染耗时** —— ZCode 口径轮次耗时唯一源 = 轮首
+      // WorkIndicator（.turn-work，「已工作 N 秒」），摘要行再出一份「持续了 N 秒」是双行重复。
+      // 时长文案 `formatTurnDuration` 保留在 chat-model（旧调用面），本视图不再消费。
+      // 只保留状态语义：error / warning / partial（未完成/已中断 + 半截产出）/ empty。
       const hasBody =
-        durationText !== undefined ||
         item.error !== undefined ||
         item.warning !== undefined ||
         item.textOutcome === 'partial' ||
@@ -184,7 +176,6 @@ export function ChatItemView({
       if (!hasBody) return null;
       return (
         <div className="turn-summary">
-          {durationText !== undefined && <span className="sum-duration">{durationText}</span>}
           {item.error !== undefined && <span className="sum-err"> {item.error}</span>}
           {item.warning !== undefined && <span className="sum-warn"> {item.warning}</span>}
           {/* P3-b：partial 必须标注未完成/已中断（半截文本不得当完整正文） */}
@@ -278,7 +269,7 @@ export function ChatTranscript({ streamId, store, controller }: ChatTranscriptDe
           />
         ))}
         {/* Z10-1：会话已选中但无消息（新任务态）→ Logo mark + 时间问候。
-            建议 chip 不在此处：由会话席位渲染在 composer **之下**（与 ZCode 实测布局一致）。 */}
+          建议 chip 不在此处：由会话席位渲染在 composer **之下**（与 ZCode 实测布局一致）。 */}
         {items.length === 0 && <ConversationEmptyState />}
       </div>
       {/* Z2-09b：轮次导航（Z-17）——左缘细 rail；轮次 ≥2 才渲染，≥864px 由 CSS @container 显隐 */}
@@ -294,28 +285,49 @@ export function ChatTranscript({ streamId, store, controller }: ChatTranscriptDe
       {refReport !== undefined &&
         refReport.sources.length + refReport.skipped.length + refReport.notFound.length + refReport.unavailable.length >
           0 && (
-          <div className="ref-report" aria-label="引用来源">
-            {refReport.sources.length > 0 && (
-              <span className="ref-sources">
-                引用：{refReport.sources.map((s) => `${s.token}(${s.bytes}B${s.truncated ? ' 截断' : ''})`).join(' ')}
-              </span>
-            )}
-            {refReport.skipped.map((s) => (
-              <span key={s.token} className="ref-skipped">
-                {s.token} 未纳入（{s.reason === 'binary' ? '二进制' : '超出字节预算'}）
-              </span>
-            ))}
-            {refReport.unavailable.map((t) => (
-              <span key={t} className="ref-missing">
-                {t} 读取通道不可用
-              </span>
-            ))}
-            {refReport.notFound.map((t) => (
-              <span key={t} className="ref-missing">
-                {t} 未找到
-              </span>
-            ))}
-          </div>
+          // U2-C6：明细收进 <details>，摘要行只报「引用 N 项」—— 引用结果必须可见（D1 红线
+          // 不变：有数据才渲染），但不以逐 token 长串常驻打断转录流；展开才看明细。
+          <details
+            className="ref-report"
+            aria-label="引用来源"
+            data-ref-count={
+              refReport.sources.length +
+              refReport.skipped.length +
+              refReport.notFound.length +
+              refReport.unavailable.length
+            }
+          >
+            <summary className="ref-report-summary">
+              引用{' '}
+              {refReport.sources.length +
+                refReport.skipped.length +
+                refReport.notFound.length +
+                refReport.unavailable.length}{' '}
+              项
+            </summary>
+            <div className="ref-report-body">
+              {refReport.sources.length > 0 && (
+                <span className="ref-sources">
+                  引用：{refReport.sources.map((s) => `${s.token}(${s.bytes}B${s.truncated ? ' 截断' : ''})`).join(' ')}
+                </span>
+              )}
+              {refReport.skipped.map((s) => (
+                <span key={s.token} className="ref-skipped">
+                  {s.token} 未纳入（{s.reason === 'binary' ? '二进制' : '超出字节预算'}）
+                </span>
+              ))}
+              {refReport.unavailable.map((t) => (
+                <span key={t} className="ref-missing">
+                  {t} 读取通道不可用
+                </span>
+              ))}
+              {refReport.notFound.map((t) => (
+                <span key={t} className="ref-missing">
+                  {t} 未找到
+                </span>
+              ))}
+            </div>
+          </details>
         )}
     </div>
   );

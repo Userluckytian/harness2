@@ -11,6 +11,7 @@
 // 会重新显示并重置计时。关闭态只在内存（D-14），不落盘。
 import { useEffect, useState } from 'react';
 import type { ReactNode } from 'react';
+import { XIcon } from 'lucide-react';
 import { RESUME_BAR_AUTO_DISMISS_MS, resumeRecoveryText } from './resume-model.js';
 
 export interface ResumeBarProps {
@@ -46,7 +47,10 @@ export function ResumeBar({ resumeAt, inflight, autoDismissMs }: ResumeBarProps)
     <div
       data-testid="resume-bar"
       role="status"
-      className="flex flex-none items-center justify-between gap-2 border-b border-border bg-warning px-3 py-1 text-warning-foreground"
+      // U2-C4：满幅实底 bg-warning → 12% warning 轻底（对齐 approval-bar 的按需 dock 语言，
+      // Z-60 calm：状态提示不抢正文视觉）；文本走 text-warning 语义色；关闭钮换 lucide XIcon
+      // ghost（hover 才出轻底），不再是裸 `×` 文本钮。
+      className="resume-bar flex flex-none items-center justify-between gap-2 border-b border-border px-3 py-1 text-warning"
     >
       <span className="min-w-0 truncate text-ui-sm">{resumeRecoveryText(inflight)}</span>
       <button
@@ -54,10 +58,10 @@ export function ResumeBar({ resumeAt, inflight, autoDismissMs }: ResumeBarProps)
         data-testid="resume-bar-close"
         aria-label="关闭恢复提示"
         title="关闭（下次恢复会再次提示）"
-        className="flex-none cursor-pointer rounded px-1 text-ui-base leading-5 hover:opacity-80"
+        className="flex-none cursor-pointer rounded p-0.5 hover:bg-surface-hover"
         onClick={() => setDismissedAt(resumeAt)}
       >
-        ×
+        <XIcon size={16} aria-hidden />
       </button>
     </div>
   );

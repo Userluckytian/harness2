@@ -19,8 +19,15 @@ import { formatWorkDuration } from '../chat-model.js';
 /** running 计时 tick 间隔（ZCode ConversationTimeline.tsx:112 RUNNING_WORK_DURATION_TICK_MS 同值） */
 export const WORK_TICK_MS = 1_000;
 
-/** 真终态中按「已停止」呈现的 stopReason（用户主动停 / 中断；其余终态走「已工作 {duration}」） */
-const STOPPED_REASONS = new Set(['cancelled', 'interrupted']);
+// U2-C3 停因归因拆分（读 chat-model/store 语义的结论，登记于此；替代原
+// `STOPPED_REASONS = Set{cancelled, interrupted}` 的合并口径）：
+//   - `cancelled` = **用户主动停止**——唯一生产者：core loop.ts 的 signal abort（ws `op:'abort'`
+//     / stop 按钮 / stopAll）。「新消息」**不会** abort 运行中 turn：运行中提交走 queue/steer
+//     意图（S6 安全 step 边界消费 steer），turn 不因此终止 → 文案「已停止」；
+//   - `interrupted` 在本仓只有合成来源：store 悬挂收敛（synthetic=true，恒配 interrupted）
+//     → 由更早的 synthetic 分支给「已停止（无响应超时）」；非合成的 interrupted 属协议前向
+//     兼容（真实打断，如上游以新消息抢占回合）→ 这里给「已被新消息中断」。
+//   其余终态（end_turn/error/max_steps/…）走「已工作 {duration}」。
 
 export interface WorkIndicatorProps {
   /** 本轮首事件墙钟（epoch ms；派生层自事件 ts 解析，旧数据缺省） */
@@ -60,14 +67,24 @@ export const WorkIndicator = memo(function WorkIndicator({
 
   let label: string | null;
   if (synthetic === true) label = '已停止（无响应超时）';
-  else if (stopReason !== undefined && STOPPED_REASONS.has(stopReason)) label = '已停止';
+  // U2-C3 归因拆分：cancelled（主动停）→「已停止」；真帧 interrupted（前向兼容，本仓唯一
+  // 生产者恒 synthetic=已走上行分支）→「已被新消息中断」；其余终态走「已工作 {duration}」。
+  else if (stopReason === 'cancelled') label = '已停止';
+  else if (stopReason === 'interrupted') label = '已被新消息中断';
   else if (ticking) label = `工作中 ${formatWorkDuration(Math.max(0, now - startedAt!))}`;
   else if (durationMs !== undefined) label = `已工作 ${formatWorkDuration(durationMs)}`;
   else label = null;
 
   if (label === null) return null;
   return (
-    <div className="turn-work" role="status" data-running={ticking ? 'true' : undefined}>
+    <div
+      // U2-C8/C3：running 态复用工具行扫光类（styles.css .tool-running-shimmer —— 同一
+      // keyframes / 色带 / reduced-motion 降级；动画声明零复制。shell.css 仅做 specificity
+      // 桥接：`.turn-work` 的常态语义色不得压过扫光的透明裁切）。
+      className={`turn-work${ticking ? ' tool-running-shimmer' : ''}`}
+      role="status"
+      data-running={ticking ? 'true' : undefined}
+    >
       {label}
     </div>
   );

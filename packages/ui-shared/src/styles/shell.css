@@ -123,6 +123,11 @@ body,
      按 ZCode 对齐（MessageContent / MessageResponse = text-ui-base = 14px）显式钉住，
      使正文随 --ui-font-size 缩放，不随根字号（rem 几何基准）漂移。 */
   font-size: var(--text-ui-base);
+  /* U2-C7：G14 注释（「ZCode 滚动区全宽 + [scrollbar-gutter:stable]」）宣称但没写的两条
+     —— 滚动条槽常驻（内容不因滚动条出现被挤宽，消除忽宽忽窄抖动）；滚到边界不连锁到
+     外层祖先（转录内滚到头不把窗口/父容器一起带滚）。 */
+  scrollbar-gutter: stable;
+  overscroll-behavior: contain;
 }
 /* G15（ZCode ConversationTurnGroup.tsx:1302-1310）：轮次分隔 = **纯留白 pt-14（56px）**，
    **无分隔线、无文字头**。本仓 turn-header 是零内容标记行：padding-top 36px + 前后各
@@ -140,6 +145,17 @@ body,
   font-size: var(--text-ui-caption);
   color: var(--color-foreground-subtle);
   font-variant-numeric: tabular-nums;
+}
+/* U2-C3：running 态耗时行复用工具行扫光（动画声明只此一处来源 —— styles.css
+   .tool-running-shimmer 的 keyframes/色带/reduced-motion 降级，零复制）。本组合选择器
+   只做 specificity 桥：shell.css 在 styles.css 之后加载，同级单类会被上面的常态
+   foreground-subtle 盖掉 color:transparent（背景被不透明文字遮死）→ 提级把透明色钉回。
+   刻意包在 no-preference 媒体里：减压模式下桥不生效，styles.css 的降级块
+   （color:inherit + 撤背景）照常命中，文字回到常态色，不会出现「透明字看不见」。 */
+@media (prefers-reduced-motion: no-preference) {
+  .turn-work.tool-running-shimmer {
+    color: transparent;
+  }
 }
 .bubble-user,
 .bubble-assistant {
@@ -177,7 +193,7 @@ body,
 }
 .reasoning {
   margin-bottom: 6px;
-  font-size: 12px;
+  font-size: var(--text-ui-sm);
   color: var(--color-foreground-subtle);
 }
 .reasoning summary {
@@ -190,13 +206,15 @@ body,
   margin-top: 4px;
 }
 .reasoning-inline {
-  font-size: 12px;
+  font-size: var(--text-ui-sm);
   color: var(--color-foreground-subtle);
   margin-bottom: 4px;
 }
 .tool-row {
   font-family: Consolas, monospace;
-  font-size: 12.5px;
+  /* Z-61 刻度执法（U2-C2）：原 12.5px 裸值 → --text-ui-sm；等宽字体保留（代码域例外：
+     mono 字号走刻度，12.5→12 的 0.5px 差在刻度纪律内接受） */
+  font-size: var(--text-ui-sm);
   padding: 4px 8px;
   border-radius: 6px;
   background: var(--color-muted);
@@ -226,7 +244,7 @@ body,
 }
 .turn-summary {
   color: var(--color-foreground-subtle);
-  font-size: 12px;
+  font-size: var(--text-ui-sm);
   align-self: flex-start;
 }
 .sum-err {
@@ -234,6 +252,12 @@ body,
 }
 .sum-warn {
   color: var(--color-warning);
+}
+/* U2-C4：恢复条轻底（对齐 .approval-bar 的按需 dock 语言）—— 原 Tailwind `bg-warning`
+   满幅实底把整条打成警示块、抢转录视觉。改成 12% warning 透明底（比审批条 16% 更淡：
+   恢复条是 8s 即散的一次性提示，存在感更低）；文本色走 text-warning（组件内联）。 */
+.resume-bar {
+  background: color-mix(in srgb, var(--color-warning) 12%, transparent);
 }
 .approval-bar {
   border-top: 1px solid var(--color-warning);
@@ -268,8 +292,24 @@ body,
   flex-direction: column;
   gap: 4px;
   padding: 6px 16px;
-  border-top: 1px solid var(--color-border);
-  font-size: 0.85em;
+  /* U2-C6：ref-report 收进 <details>（ChatView），去 border-top —— 引用报告是次级
+     元信息，不再以分隔线打断转录流。 */
+  font-size: var(--text-ui-xs);
+}
+/* U2-C6：summary 行「引用 N 项」——低存在、可点（对齐标记行/次级元信息语言，颜色只用语义 token） */
+.ref-report-summary {
+  cursor: pointer;
+  color: var(--color-foreground-subtle);
+  list-style-position: inside;
+}
+.ref-report-summary:hover {
+  color: var(--color-foreground);
+}
+.ref-report-body {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding-left: 1em;
 }
 .ref-sources {
   color: var(--color-muted);
@@ -313,7 +353,7 @@ body,
   border-radius: 6px;
   padding: 6px 8px;
   background: var(--color-panel);
-  font-size: 0.85em;
+  font-size: var(--text-ui-sm);
 }
 .cmd-head {
   display: flex;
@@ -807,14 +847,14 @@ button.composer-context-chip-readonly:hover {
   border-radius: 4px;
   padding: 0 4px;
   margin: 0 2px;
-  font-size: 12px;
+  font-size: var(--text-ui-sm);
   white-space: nowrap;
 }
 .composer-attachments {
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
-  font-size: 12px;
+  font-size: var(--text-ui-sm);
   color: var(--color-foreground-subtle);
 }
 .composer-attachment.att-failed {
@@ -870,7 +910,7 @@ button.composer-context-chip-readonly:hover {
 /* 提交结果提示（P1-2 拒绝可见 / P2-1 placement 落点） */
 .composer-status {
   padding: 4px 2px;
-  font-size: 12px;
+  font-size: var(--text-ui-sm);
   color: var(--color-foreground-subtle);
 }
 .composer-status[data-kind='error'] {
@@ -892,7 +932,7 @@ button.composer-context-chip-readonly:hover {
   border-radius: 8px;
   background: var(--color-card);
   color: var(--color-foreground);
-  font-size: 12px;
+  font-size: var(--text-ui-sm);
 }
 .chat-error-banner-icon {
   color: var(--color-destructive);
@@ -902,6 +942,14 @@ button.composer-context-chip-readonly:hover {
   flex: 1 1 auto;
   overflow: hidden;
   text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* U2-C5：指向下一步的小字（「内容已保留，可直接重发」）——次级、不抢主消息，颜色走
+   foreground-subtle 语义 token，字号 --text-ui-xs（Z-61 刻度） */
+.chat-error-banner-hint {
+  flex: none;
+  color: var(--color-foreground-subtle);
+  font-size: var(--text-ui-xs);
   white-space: nowrap;
 }
 .chat-error-banner-actions {
@@ -919,7 +967,7 @@ button.composer-context-chip-readonly:hover {
   border-radius: 6px;
   background: transparent;
   color: var(--color-foreground-subtle);
-  font-size: 12px;
+  font-size: var(--text-ui-sm);
   cursor: pointer;
 }
 .chat-error-banner-btn:hover {
@@ -937,14 +985,14 @@ button.composer-context-chip-readonly:hover {
   border-radius: 8px;
   background: var(--color-muted);
   color: var(--color-foreground);
-  font-size: 12px;
+  font-size: var(--text-ui-sm);
 }
 /* Z3-04：发送/停止主按钮改用 ui-shared Button（Z-75 icon-md + bg-brand），此处旧 .btn-send/.btn-stop 移除 */
 .unread-badge {
   background: var(--color-primary);
   color: var(--color-primary-foreground);
   border-radius: 999px;
-  font-size: 11px;
+  font-size: var(--text-ui-xs);
   padding: 0 6px;
   margin-left: 6px;
 }
@@ -975,7 +1023,7 @@ button.composer-context-chip-readonly:hover {
   padding: 3px 10px;
   background: var(--color-muted);
   border-bottom: 1px solid var(--color-border);
-  font-size: 11px;
+  font-size: var(--text-ui-xs);
   color: var(--color-foreground-subtle);
   min-height: 22px;
 }
@@ -990,7 +1038,7 @@ button.composer-context-chip-readonly:hover {
   color: var(--color-foreground-subtlest);
 }
 .pane-header-branch-icon {
-  font-size: 12px;
+  font-size: var(--text-ui-sm);
 }
 .pane-header-model {
   white-space: nowrap;
@@ -1022,7 +1070,7 @@ button.composer-context-chip-readonly:hover {
   background: linear-gradient(90deg, var(--color-warning), var(--color-destructive));
 }
 .ctx-label {
-  font-size: 10px;
+  font-size: var(--text-ui-xs);
   color: var(--color-foreground-subtlest);
   min-width: 28px;
   text-align: right;
@@ -1235,7 +1283,7 @@ button.composer-context-chip-readonly:hover {
 /* 子会话跳转（阶段 8）：subagent 工具行的深链按钮 */
 .subagent-jump {
   margin-left: 8px;
-  font-size: 11px;
+  font-size: var(--text-ui-xs);
   color: var(--color-primary);
   background: none;
   border: 1px solid var(--color-primary);
@@ -1841,7 +1889,7 @@ button.composer-context-chip-readonly:hover {
   border-radius: 9px;
   background: transparent;
   color: var(--color-foreground-subtle);
-  font-size: 11px;
+  font-size: var(--text-ui-xs);
   line-height: 18px;
   cursor: pointer;
 }

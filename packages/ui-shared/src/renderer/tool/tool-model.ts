@@ -80,11 +80,12 @@ export function toolStatusOf(result: { ok: boolean } | undefined): ToolStatus {
   return result.ok ? 'ok' : 'failed';
 }
 
-/** 工具行状态文案（失败带错误原因；与既有 UI 文案一致） */
+/** 工具行状态文案（U2-C8 中文化 + 去冗余：成功**无状态词**（空串，ZCode 完成行不显示 ok；
+ *  状态色由 ToolCard 的三态 token 承担）；失败「失败：<error>」。与既有 UI 文案口径一致） */
 export function toolStatusLabel(result: { ok: boolean; error?: string } | undefined): string {
   if (result === undefined) return '运行中…';
-  if (result.ok) return 'ok';
-  return `FAILED${result.error !== undefined ? `: ${result.error}` : ''}`;
+  if (result.ok) return '';
+  return result.error !== undefined ? `失败：${result.error}` : '失败';
 }
 
 /** 是否渲染命令日志卡（D-86：终端类工具、有输出、或被取消时都要用 terminal 卡片如实呈现） */

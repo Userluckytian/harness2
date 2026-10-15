@@ -78,7 +78,9 @@ describe('工具卡纯模型', () => {
     expect(toolStatusOf({ ok: true })).toBe('ok');
     expect(toolStatusOf({ ok: false })).toBe('failed');
     expect(toolStatusLabel(undefined)).toBe('运行中…');
-    expect(toolStatusLabel({ ok: false, error: 'EACCES' })).toBe('FAILED: EACCES');
+    // U2-C8 中文化：成功无状态词（空串，ZCode 完成行不显示 ok）、失败「失败：<error>」
+    expect(toolStatusLabel({ ok: true })).toBe('');
+    expect(toolStatusLabel({ ok: false, error: 'EACCES' })).toBe('失败：EACCES');
     expect(shouldRenderCommandLog(commandRow({ tool: 'pwsh' }))).toBe(true); // 运行中的 pwsh
     expect(shouldRenderCommandLog(commandRow({ tool: 'read', outputRef: 'x' }))).toBe(true);
     expect(shouldRenderCommandLog(commandRow({ tool: 'read', status: 'cancelled' }))).toBe(true);
@@ -222,16 +224,16 @@ describe('工具卡：单视图与入口可用性', () => {
     );
   });
 
-  it('失败态（Z-93）：FAILED 带虚线下划线，tooltip 常驻 DOM（hover 显隐）内含复制按钮', async () => {
+  it('失败态（Z-93）：失败文案带虚线下划线，tooltip 常驻 DOM（hover 显隐）内含复制按钮', async () => {
     render(
       <ToolCard
         card={{ tool: 'bash', args: { command: 'x' }, result: { ok: false, error: 'exit 1' }, callId: 'c1' }}
       />,
     );
-    await waitFor(() => expect(screen.getByText('FAILED: exit 1')).toBeTruthy());
+    await waitFor(() => expect(screen.getByText('失败：exit 1')).toBeTruthy());
     expect(document.querySelector('[data-tool-status="failed"]')).not.toBeNull();
     // 虚线下划线（Z-93）：失败文字带 dashed 下边框
-    const failed = screen.getByText('FAILED: exit 1');
+    const failed = screen.getByText('失败：exit 1');
     expect(failed.className).toContain('border-dashed');
     expect(failed.className).toContain('text-destructive');
     // tooltip 在 DOM 中（CSS hover 显隐），含错误全文与复制按钮

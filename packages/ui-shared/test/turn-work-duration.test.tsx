@@ -151,13 +151,18 @@ describe('Z-97（T4b）WorkIndicator 三态文案与 tick', () => {
     setIntervalSpy.mockRestore();
   });
 
-  it('c) T4a 合成终态 →「已停止（无响应超时）」；真停（cancelled）→「已停止」两态区分', () => {
+  it('c) T4a 合成终态 →「已停止（无响应超时）」；真停（cancelled）→「已停止」两态区分（U2-C3 归因拆分）', () => {
     const synthetic = render(<WorkIndicator startedAt={0} durationMs={30_000} synthetic stopReason="interrupted" />);
     expect(synthetic.container.querySelector('.turn-work')?.textContent).toBe('已停止（无响应超时）');
     synthetic.unmount();
 
     const realStop = render(<WorkIndicator startedAt={0} durationMs={12_000} stopReason="cancelled" />);
     expect(realStop.container.querySelector('.turn-work')?.textContent).toBe('已停止');
+    realStop.unmount();
+
+    // U2-C3：非合成的 interrupted（协议前向兼容的真实打断来源）→ 与主动停区分，归因「已被新消息中断」
+    const interrupted = render(<WorkIndicator startedAt={0} durationMs={9_000} stopReason="interrupted" />);
+    expect(interrupted.container.querySelector('.turn-work')?.textContent).toBe('已被新消息中断');
   });
 
   it('d) 旧数据无 ts/无终态时刻 → 不渲染耗时行（无 undefined/NaN 字样）', () => {
@@ -213,6 +218,37 @@ function harness(): { store: AppStore; controller: ReturnType<typeof createContr
   const controller = createController(store, {} as never);
   return { store, controller };
 }
+
+describe('U2-C3 双行收口：一轮终态后，耗时全文案只出现一处（WorkIndicator）', () => {
+  it('turn-header（锁定耗时）+ turn-summary（带 durationMs 的旧数据形态）同轮渲染 → 「已工作」恰 1 处、无「持续了」', () => {
+    const { store, controller } = harness();
+    render(
+      <div className="messages">
+        <ChatItemView
+          item={{ kind: 'turn-header', turnId: 't1', workDurationMs: 65_000, stopReason: 'end_turn' }}
+          store={store}
+          controller={controller}
+        />
+        <ChatItemView
+          item={{
+            kind: 'turn-summary',
+            turnId: 't1',
+            durationMs: 65_000,
+            stopReason: 'end_turn',
+            textOutcome: 'final',
+          }}
+          store={store}
+          controller={controller}
+        />
+      </div>,
+    );
+    const text = document.querySelector('.messages')?.textContent ?? '';
+    expect(text).toContain('已工作 1 分 5 秒');
+    expect(text.match(/已工作|持续了/g)).toHaveLength(1); // 唯一源 = .turn-work；摘要不再双行
+    expect(document.querySelector('.turn-summary')).toBeNull(); // 纯成功摘要（无状态语义）整行不渲染
+    expect(text).not.toContain('持续了');
+  });
+});
 
 describe('Z-97（T4b）turn-header 挂载（ChatItemView）', () => {
   it('running item → turn-header 内渲染「工作中」行（role=status + tabular-nums 类）', () => {
