@@ -115,6 +115,8 @@ export interface SidebarRootProps extends SidebarSeats {
   onNewSessionInProject?: ((cwd: string) => void) | undefined;
   /** Z-49：删除会话真执行（软删）；缺省 = 行菜单不出现「删除」。确认对话框由 SessionBrowser 承载 */
   onDeleteSession?: ((id: string) => Promise<void> | void) | undefined;
+  /** U1 复审 P2：确认框 live running 复查判据，透传 SessionBrowser（ac0df60 补链）。 */
+  isSessionRunning?: ((id: string) => boolean) | undefined;
   /** 任务区头「新建任务」真动作；缺省 = 不渲染该钮 */
   onNewTask?: (() => void) | undefined;
   /** 文案覆盖（缺省中文） */
@@ -184,6 +186,7 @@ export function SidebarRoot(props: SidebarRootProps): React.ReactNode {
         {...(props.onRemoveProject !== undefined ? { onRemoveProject: props.onRemoveProject } : {})}
         {...(props.onNewSessionInProject !== undefined ? { onNewSessionInProject: props.onNewSessionInProject } : {})}
         {...(props.onDeleteSession !== undefined ? { onDeleteSession: props.onDeleteSession } : {})}
+        {...(props.isSessionRunning !== undefined ? { isSessionRunning: props.isSessionRunning } : {})}
         {...(props.onNewTask !== undefined ? { onNewTask: props.onNewTask } : {})}
       />
     ));
