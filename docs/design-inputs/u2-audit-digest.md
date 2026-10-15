@@ -30,6 +30,8 @@ jam 窗口 10:39:30 开启（watcher 命中）。本波：D3/D1/D2 审计与基�
 - [x] ZCode 正文 Markdown 基线定案 → **正文=Markdown**（streamdown@2.5.0 同款路线；三条实战约束：历史/完成态强制 static、animated=false、ErrorBoundary 降级 `<pre>`；代码块绕开内置 renderer 复用本仓 CodeViewer）。gp 代执行（jam 红）
 - [x] 实施批 B（`7bad054`）/ C（`f2ea8dc`）/ D（`1912992`）/ A（`4c56dd0`）→ 编排者亲跑全绿（ui-shared 70/767、desktop 129/1288+1s、web 150、双 tsc 0、prettier 2 文件机械修、eslint 0 error）
 - [x] 扫尾 2xs 补登（`43892b4`）；streamdown 依赖入库（`c14bd77`，pnpm 绕行=store v11 直调 11.13.0）
-- [~] 批E 实施中（报告=`plans/u2-e-report.md`，边做边更新；E-c 状态面板浮层化已论证放弃入专批）
+- [x] 批E 实施完成（`6d6368f`：MarkdownBlock 懒加载+三约束接线+7 用例；E-c 三坑论证放弃入注释；flaky 超时 jam 修）；审查波四份报告+F1-F3 修复入库（`39d8254`/`6f054b4`，P1×3 全修，D 批审查全零）
+- [x] **jam 终认证（严格口径闭环）**：ui-shared 71/776·desktop 129/1288+1s·web 13/150 全绿由 jam 亲跑；冻结区核验=core/gateway 仅版本 bump；B1 重放 0.22ms（预算 250ms）、主包 1163kB 持平、streamdown 懒加载不入首帧
+- [x] 重打包：双 exe（17:47）+ NSIS 解包端到端 smoke `{ok:true}` + asar 六项指纹全命中
+- [x] 截图前后对比（`.tmp-cmp/nsis-u2/screen-{win,old}.png`：新=骨架侧栏/居中空态/48px 窗控带/composer 卡；旧=裸文本贴顶/死白区）——**U2 交付线达成，发版就绪**
 - [ ] 待用户拍板（原四项收敛为三项：搜索框去留 / 计数徽标去留 / 侧栏宽度持久化——**Markdown 一项本波已自主定案实施**，用户可一票否）
-- [ ] U2 全链重建 → manual-pack 打包 → 截图前后对比（复用 §15 PowerShell 抓屏手法）
