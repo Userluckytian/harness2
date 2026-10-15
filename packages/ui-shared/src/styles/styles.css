@@ -91,8 +91,8 @@
   --color-hover: rgb(13 13 13 / 5%);
   --color-selected: rgb(13 13 13 / 5%);
   /* U2-B2：模态遮罩（settings-overlay / command-palette-overlay 的 rgba(0,0,0,.45) 语义化，
-   * 替代值消费方在后续批次接线）。默认 = Zai Light：.45（沿用既有实测值）；dark 提到 .6
-   * ——浅底 .45 黑纱已足够压暗，深底近黑、同透明度遮不住浮层边界（观感推定，待像素校准）。 */
+   * 非 ZCode 出处；light .45=本仓 shell.css 既有两处 rgba(0,0,0,.45) 实测值的 token 化（接线待后续批）；
+   * dark .6=深底观感推定，待像素校准。 */
   --color-scrim: rgb(0 0 0 / 45%);
   --color-border: rgb(13 13 13 / 10%);
   --color-border-hover: rgb(13 13 13 / 15%);
@@ -222,8 +222,8 @@
   --color-hover: rgb(13 13 13 / 5%);
   --color-selected: rgb(13 13 13 / 5%);
   /* U2-B2：模态遮罩（settings-overlay / command-palette-overlay 的 rgba(0,0,0,.45) 语义化，
-   * 替代值消费方在后续批次接线）。默认 = Zai Light：.45（沿用既有实测值）；dark 提到 .6
-   * ——浅底 .45 黑纱已足够压暗，深底近黑、同透明度遮不住浮层边界（观感推定，待像素校准）。 */
+   * 非 ZCode 出处；light .45=本仓 shell.css 既有两处 rgba(0,0,0,.45) 实测值的 token 化（接线待后续批）；
+   * dark .6=深底观感推定，待像素校准。 */
   --color-scrim: rgb(0 0 0 / 45%);
   --color-border: rgb(13 13 13 / 10%);
   --color-border-hover: rgb(13 13 13 / 15%);
@@ -349,7 +349,8 @@
   --color-tab-active: #161616;
   --color-hover: rgb(255 255 255 / 5%);
   --color-selected: rgb(255 255 255 / 10%);
-  /* U2-B2：深底近黑，.45 遮不住浮层边界，提到 .6（观感推定，待像素校准，见 §1 注释） */
+  /* U2-B2：非 ZCode 出处；light .45=本仓 shell.css 既有两处 rgba(0,0,0,.45) 实测值的 token 化（接线待后续批）；
+   * dark .6=深底观感推定，待像素校准。 */
   --color-scrim: rgb(0 0 0 / 60%);
   --color-border: rgb(255 255 255 / 10%);
   --color-border-hover: rgb(255 255 255 / 15%);

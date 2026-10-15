@@ -14,7 +14,11 @@
          BrowserWindow backgroundColor 同值，消除首帧白闪）——theme-boot 已按偏好同步写
          <html> 类，故类规则优先于 prefers-color-scheme（后者仅作 theme-boot 失败时的兜底）；
          ② 48px 顶部 drag 条：React 挂载前标题带也能拖动窗口；App 根（.desktop-window-frame）
-         挂载即被 :has 规则隐藏，不挡内容点击（Chromium ≥105 支持 :has，Electron 44 满足）。
+         挂载完成由 main.tsx 写入 body[data-shell-ready]（flushSync 同步提交），
+         CSS 仅依赖该确定性标志隐藏 boot-drag，避免 .desktop-window-frame 类名重构/挂载前抛错
+         时 drag 条永久盖住顶 48px。
+         另一口径（备用）：启动 3s 后若壳仍未挂载，脚本自行移除 #boot-drag 节点——本实现未采用，
+         保留供回退参考（main.tsx 钩子失效时启用）。
          style-src 'unsafe-inline' 已在 CSP 中放行内联样式。 -->
     <style>
       body {
@@ -40,7 +44,7 @@
         -webkit-app-region: drag;
         z-index: 0;
       }
-      body:has(.desktop-window-frame) #boot-drag {
+      body[data-shell-ready='1'] #boot-drag {
         display: none;
       }
     </style>

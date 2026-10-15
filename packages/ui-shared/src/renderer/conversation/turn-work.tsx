@@ -25,8 +25,9 @@ export const WORK_TICK_MS = 1_000;
 //     / stop 按钮 / stopAll）。「新消息」**不会** abort 运行中 turn：运行中提交走 queue/steer
 //     意图（S6 安全 step 边界消费 steer），turn 不因此终止 → 文案「已停止」；
 //   - `interrupted` 在本仓只有合成来源：store 悬挂收敛（synthetic=true，恒配 interrupted）
-//     → 由更早的 synthetic 分支给「已停止（无响应超时）」；非合成的 interrupted 属协议前向
-//     兼容（真实打断，如上游以新消息抢占回合）→ 这里给「已被新消息中断」。
+//     → 由更早的 synthetic 分支给「已停止（无响应超时）」；
+//     非合成的 interrupted 属协议前向兼容预留位（本仓 core TurnStopReason 暂无生产者；
+//     语义待协议方生产后按归因细化）→ 此处给中性文案「已停止」。
 //   其余终态（end_turn/error/max_steps/…）走「已工作 {duration}」。
 
 export interface WorkIndicatorProps {
@@ -67,10 +68,11 @@ export const WorkIndicator = memo(function WorkIndicator({
 
   let label: string | null;
   if (synthetic === true) label = '已停止（无响应超时）';
-  // U2-C3 归因拆分：cancelled（主动停）→「已停止」；真帧 interrupted（前向兼容，本仓唯一
-  // 生产者恒 synthetic=已走上行分支）→「已被新消息中断」；其余终态走「已工作 {duration}」。
+  // U2-C3 归因拆分：cancelled（主动停）→「已停止」；非合成 interrupted（协议前向兼容预留位，
+  // 本仓 core TurnStopReason 暂无生产者）→ 中性「已停止」（语义待协议方生产后按归因细化）；
+  // 其余终态走「已工作 {duration}」。
   else if (stopReason === 'cancelled') label = '已停止';
-  else if (stopReason === 'interrupted') label = '已被新消息中断';
+  else if (stopReason === 'interrupted') label = '已停止';
   else if (ticking) label = `工作中 ${formatWorkDuration(Math.max(0, now - startedAt!))}`;
   else if (durationMs !== undefined) label = `已工作 ${formatWorkDuration(durationMs)}`;
   else label = null;

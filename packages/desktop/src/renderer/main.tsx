@@ -1,6 +1,7 @@
 // React 入口：订阅 store + 启动 controller。
 // P6 装配（D-50～D-59）：模型配置页注册进设置壳的 models 分区（同 id 接管内建过渡面板）。
 import { createRoot } from 'react-dom/client';
+import { flushSync } from 'react-dom';
 import { App } from './App';
 import { ErrorBoundary } from './ErrorBoundary';
 import { registerModelsSettingsSection } from '@harness2/ui-shared/renderer/settings/models/index.js';
@@ -17,8 +18,13 @@ registerModelsSettingsSection();
 // 界面字号恢复（Z-90）：boot 脚本（首渲染前）之后的双保险；无存储值时不写任何东西
 initUiFontSize();
 
-createRoot(document.getElementById('root')!).render(
-  <ErrorBoundary>
-    <App />
-  </ErrorBoundary>,
-);
+const root = createRoot(document.getElementById('root')!);
+flushSync(() => {
+  root.render(
+    <ErrorBoundary>
+      <App />
+    </ErrorBoundary>,
+  );
+});
+// U2-F3：确定性壳就绪标志——index.html 的 boot-drag 仅据此隐藏（见选①）。
+document.body.dataset.shellReady = '1';

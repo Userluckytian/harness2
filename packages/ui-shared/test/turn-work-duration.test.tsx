@@ -160,9 +160,10 @@ describe('Z-97（T4b）WorkIndicator 三态文案与 tick', () => {
     expect(realStop.container.querySelector('.turn-work')?.textContent).toBe('已停止');
     realStop.unmount();
 
-    // U2-C3：非合成的 interrupted（协议前向兼容的真实打断来源）→ 与主动停区分，归因「已被新消息中断」
+    // U2-C3：非合成的 interrupted（协议前向兼容预留位；本仓 core TurnStopReason 暂无生产者）
+    // → 中性「已停止」（语义待协议方生产后按归因细化），与主动停（cancelled）同文案。
     const interrupted = render(<WorkIndicator startedAt={0} durationMs={9_000} stopReason="interrupted" />);
-    expect(interrupted.container.querySelector('.turn-work')?.textContent).toBe('已被新消息中断');
+    expect(interrupted.container.querySelector('.turn-work')?.textContent).toBe('已停止');
   });
 
   it('d) 旧数据无 ts/无终态时刻 → 不渲染耗时行（无 undefined/NaN 字样）', () => {

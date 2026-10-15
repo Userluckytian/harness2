@@ -3,13 +3,18 @@
 // shell.css 对话域选择器不留裸 px / 相对 em（归 var(--text-ui-*) 刻度）。
 //
 // 执法范围 = U2 批C 登记的对话域组件文件（+ U2 扫尾补登 ReasoningRow / FilePreview）：
-//   - ChatEmptyState.tsx —— 禁改域（E 波与清理单独做，其 :110 的 2xs 保留）。
+//   - ChatEmptyState.tsx —— 豁免（E 波死码清理对象：Z-10-1 新空态已取代、无生产引用；
+//     :110 的 2xs 保留至清理，Z-61 最小档执法待 E 波清理后收回；理由登记见
+//     docs/design-inputs/u2-audit-digest.md 与 Z10-1）。
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 
 const src = (rel: string): string => readFileSync(fileURLToPath(new URL(`../src/${rel}`, import.meta.url)), 'utf8');
 
+// 机制（豁免口子收口）：新增对话域组件/选择器默认入法；豁免必须写理由注释
+// （“新增选择器默认入法、豁免必须写理由注释”）。无理由注释的豁免一律不接受；
+// shell.css 选择器白名单同步维护。
 const CONVERSATION_TSX = [
   'renderer/components/ChatView.tsx',
   'renderer/conversation/composer/Composer.tsx',
@@ -50,7 +55,9 @@ describe('U2-C2：shell.css 对话域选择器字号归 var(--text-ui-*) 刻度�
   // 批C 逐条映射的对话域选择器（U2-C2 清单 + 相邻同源字号）：字号声明（若有）必须是刻度
   // var(--text-ui-*)，不得是裸 px / em。叶子选择器名（组选择器取其成员，如 `.queue-bar,
   // .ref-report` 的块用 block('.ref-report') 命中）。
-  const CONVERSATION_SELECTORS = [
+// 机制：shell.css 对话域选择器 whitespace 白名单默认入法；新增选择器先入白名单再写 CSS，
+// 豁免必须写理由注释（新增选择器默认入法、豁免必须写理由注释）。
+const CONVERSATION_SELECTORS = [
     '.reasoning',
     '.reasoning-inline',
     '.tool-row',
