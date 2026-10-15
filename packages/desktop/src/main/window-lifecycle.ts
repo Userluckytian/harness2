@@ -4,8 +4,10 @@
 //   (win32|linux) ∧ closeToTray 设置开 ∧ 托盘创建成功 ∧ ¬explicitQuit → hide + preventDefault；
 //   否则维持现状：放行 close →（D4 busy 对话框）→ 最后一个窗口销毁 → window-all-closed → app.quit()。
 // 说明：
-//   - 「能力双条件门」之二的 linux DBus StatusNotifierWatcher 探测已折叠进 trayCreated
-//     （托盘创建失败/探测不过 → createTray 返回 null → 裁决自然回落确认退出路径）；
+//   - 「能力双条件门」之二（linux DBus StatusNotifierWatcher 探测）由
+//     tray-support.probeTraySupport 提供（gdbus → busctl → qdbus 三级回退），
+//     main.ts 装配进 isTrayCreated / hide 门（本模块 trayCreated 入参即该双条件门结果；
+//     探测不过 → 门为假 → 裁决自然回落确认退出路径，绝不隐藏后失联）；
 //   - explicitQuit = 托盘「退出」/markExplicitQuit 之后的关窗：不得再被 hide 吞掉（Z-47 退出写法）；
 //   - mac 一律 proceed（本模块不改 mac 关窗语义；hide 门平台列表不含 darwin）。
 // 纯函数 + 注入式平台字符串：决策表可在 vitest 全覆盖，不起 Electron。

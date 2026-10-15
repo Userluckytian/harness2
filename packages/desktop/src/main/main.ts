@@ -2,15 +2,18 @@
 // --smoke 冒烟模式：无头窗口 + mock 服务就绪 + 渲染端加载完成后向 stdout 打一行 JSON 并退出
 // （自动化冒烟；窗口交互/拖拽等 GUI 项仍需真机人工验收，见 docs/issue-log/OPEN.md）。
 import { app, BrowserWindow, Menu, dialog, nativeImage, nativeTheme, Tray } from 'electron';
+import { execFile } from 'node:child_process';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { homedir, tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { promisify } from 'node:util';
 import { createBridge, registerBridgeIpc, type Bridge } from './bridge.js';
 import { ServeManager } from './serve-manager.js';
 import { createCloseWindowHandler } from './close-window-handler.js';
 import { startTerminal, stopTerminal } from './terminal.js';
 import { resolveDefaultWorkspaceRoot } from './workspace-root.js';
 import { createTray, type TrayHandle } from './tray.js';
+import { probeTraySupport } from './tray-support.js';
 import { createQuitIntent, decideWindowClose, resolveCloseToTray, type QuitIntent } from './window-lifecycle.js';
 import { readPreferences } from './preferences-file.js';
 import type {
@@ -67,6 +70,9 @@ function startDesktop(opts: {
   const quitIntent = createQuitIntent();
   /** Z-47：托盘句柄（下方窗口创建后按平台门/smoke 决定；null = 驻留能力不可用） */
   let trayHandle: TrayHandle | null = null;
+  /** 复审 P1-2（Z-47 能力双条件门）之二：linux DBus StatusNotifierWatcher 探测结果。
+   *  非 linux 无 DBus 概念直接为 true；linux 初值 false（探测未回前绝不 hide，安全默认）。 */
+  let trayProbeOk = process.platform !== 'linux';
   let resolveReady!: (v: { port: number }) => void;
   let rejectReady!: (e: Error) => void;
   const ready = new Promise<{ port: number }>((resolve, reject) => {
@@ -131,8 +137,9 @@ function startDesktop(opts: {
       runtime.runningTurns = info.runningTurns;
       runtime.backgroundTasks = info.backgroundTasks;
     },
-    // Z-47：tray:status 读托盘创建结果（trayHandle 在窗口创建后赋值，闭包晚绑定安全）
-    isTrayCreated: () => trayHandle !== null,
+    // Z-47：tray:status 读托盘创建结果（trayHandle 在窗口创建后赋值，闭包晚绑定安全；
+    // 复审 P1-2：叠加 linux DBus 能力探测——构造不抛≠图标可见，探测不过则驻留能力为假）
+    isTrayCreated: () => trayHandle !== null && trayProbeOk,
   });
   registerBridgeIpc(bridge);
   // Z9-3：启动进程级终端传输（core TerminalManager 单例；不 spawn 任何 PTY 直到 open）
@@ -219,6 +226,32 @@ function startDesktop(opts: {
         },
       },
     });
+    // 复审 P1-2（Z-47 能力双条件门）：托盘构造不抛 ≠ linux 图标真可见（GNOME 无 AppIndicator
+    // 扩展时 new Tray 静默失败）。构造成功后再跑一次 DBus watcher 探测，结果折入 isTrayCreated，
+    // 避免「无 host 也 hide」导致关窗后窗口消失且无托盘可唤回。探测是异步的，晚绑定安全：
+    // 首次 hide 裁决早于探测回时 trayProbeOk 仍为 false（linux 初值），按不驻留处理。
+    if (trayHandle !== null) {
+      const execFileAsync = promisify(execFile);
+      void probeTraySupport({
+        platform: process.platform,
+        execFile: async (cmd, args) => {
+          const { stdout } = await execFileAsync(cmd, args, { timeout: 1500, windowsHide: true });
+          return stdout;
+        },
+      }).then((ok) => {
+        trayProbeOk = ok;
+        if (!ok) {
+          // 单行 JSON，可 grep（照本文件 preload-error 的 console 风格）
+          console.warn(
+            JSON.stringify({
+              level: 'warn',
+              scope: 'tray-support',
+              message: 'linux 托盘能力探测失败：session DBus 无 org.kde.StatusNotifierWatcher，禁用关窗驻留',
+            }),
+          );
+        }
+      });
+    }
   }
   /** 关窗裁决（纯函数核见 window-lifecycle.ts）：hide 驻留托盘 or 放行既有 D4 链路 */
   const closeToTrayEnabled = (): boolean => resolveCloseToTray(readPreferences(home).closeToTray, process.platform);
@@ -249,7 +282,9 @@ function startDesktop(opts: {
       const action = decideWindowClose({
         platform: process.platform,
         closeToTrayEnabled: closeToTrayEnabled(),
-        trayCreated: trayHandle !== null,
+        // 复审 P1-2：与 bridge isTrayCreated 同口径（构造成功 ∧ linux DBus 探测通过），
+        // 否则 GNOME 无扩展时 hide 门全过 → 关窗后窗口消失且无托盘可唤回
+        trayCreated: trayHandle !== null && trayProbeOk,
         explicitQuit: quitIntent.isExplicit(),
       });
       if (action === 'hide-to-tray') {
