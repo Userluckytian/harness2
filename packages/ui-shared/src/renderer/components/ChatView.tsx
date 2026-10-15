@@ -20,6 +20,7 @@ import { ToolCard, controllerToolActions, toolCardFromItem, toolJumpActions, too
 import { ConversationEmptyState } from '../conversation/EmptyState.js';
 import { WorkIndicator } from '../conversation/turn-work.js';
 import { MessageActions } from './MessageActions.js';
+import { MarkdownBlock } from './MarkdownBlock.js';
 import { ReasoningRow } from './ReasoningRow.js';
 import { TimelineMarkerRow } from '../conversation/TimelineMarkerRow.js';
 import { QUOTE_ORIGIN_ATTR, SelectionAskLayer } from './selection-ask.js';
@@ -83,7 +84,11 @@ export function ChatItemView({
         <>
           {item.reasoning !== undefined && item.reasoning.length > 0 && <ReasoningRow text={item.reasoning} />}
           <div className="bubble-assistant" {...{ [QUOTE_ORIGIN_ATTR]: 'assistant' }}>
-            <div className="text">{item.text}</div>
+            {/* U2 批E（E-a）：助手正文 = Markdown（ZCode 基线）。完成态/历史**一律 static**
+                （ZCode 实证 streaming 用于历史消息触发 React #185 无限更新）。 */}
+            <div className="text">
+              <MarkdownBlock text={item.text ?? ''} />
+            </div>
             <MessageActions
               text={item.text ?? ''}
               {...(canFork
@@ -139,12 +144,15 @@ export function ChatItemView({
         />
       );
     }
-    case 'streaming':
+    case 'streaming': {
       // Z-92：流式思考同样是一等行（渐变扫光「正在思考」+ 最后一行摘要）；不再用内联「（思考中…）」。
       // U2-C8（pending 行同皮）：在途工具行不再是旧 `.tool-row.tool-pending` 第二套皮 ——
       // 直接渲染 ToolCard（result 未落 → toolStatusOf = running → 与完成后的本卡同一形态：
       // 图标 + 标题扫光 + 「运行中…」状态；无结果区 → 不可展开、不摆假箭头）。
       // 中文化状态词（「ok」→空、「FAILED:」→「失败：」）见 tool-model.toolStatusLabel。
+      // U2 批E（E-a）：turnIsRunning = 会话在途（store.peekStream.running，与 assistant 分支同源）；
+      // isLastTextItem 由投影层保证（live.text 在途条目恒为末条、带 streaming:true，chat-model）。
+      const streamIsRunning = sessionId !== undefined && store.peekStream(sessionId)?.running === true;
       return (
         <>
           {item.tool === undefined && item.reasoning !== undefined && item.reasoning.length > 0 && (
@@ -154,15 +162,18 @@ export function ChatItemView({
             <ToolCard card={toolCardFromItem(item)} {...(sessionId !== undefined ? { sessionId } : {})} actions={{}} />
           ) : (
             // 本分支 item.tool === undefined（工具行走上方分支）→ 流式正文同样可划词（Z4-03）
+            // 流式正文 = Markdown（mode=streaming + parseIncompleteMarkdown，半截 **bold / ```
+            // 在闭合前即时补全渲染）；光标 ▌ 保留在块外（落盘后随 assistant 分支切 static）。
             <div className="bubble-assistant streaming">
               <div className="text" {...{ [QUOTE_ORIGIN_ATTR]: 'assistant' }}>
-                {item.text}
+                <MarkdownBlock text={item.text ?? ''} streaming={streamIsRunning && item.streaming === true} />
                 <span className="cursor">▌</span>
               </div>
             </div>
           )}
         </>
       );
+    }
     case 'turn-summary': {
       // U2-C3（耗时双行收口）：本行**不再渲染耗时** —— ZCode 口径轮次耗时唯一源 = 轮首
       // WorkIndicator（.turn-work，「已工作 N 秒」），摘要行再出一份「持续了 N 秒」是双行重复。
@@ -186,7 +197,9 @@ export function ChatItemView({
               {item.partialText !== undefined && item.partialText.length > 0 && (
                 <details className="attempt-partial">
                   <summary>半截产出（{item.partialText.length} 字）</summary>
-                  <pre>{item.partialText}</pre>
+                  {/* U2 批E（E-a）：半截产出 = 终态冻结文本 → static（保守：partial 只在 turn-end
+                      后出现，`turnIsRunning && isLastTextItem` 恒 false，直接 static 等价） */}
+                  <MarkdownBlock text={item.partialText} />
                 </details>
               )}
             </span>

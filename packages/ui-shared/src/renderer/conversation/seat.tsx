@@ -517,7 +517,13 @@ export function ConversationSeat(props: ConversationSeatProps): ReactNode {
           {/* Z-17：状态面板挂在会话列内（头部之下、转录之上），右对齐；
               包裹行带 `@container` 供面板的容器查询断点（<1280 mini 胶囊 / ≥1280 面板）。
               有内容（statusPanel 返回非 null）才渲染包裹行 —— 空面板不留任何占位高度；
-              `empty:hidden` 兜底回调返回「渲染为空」的元素时也不占位（双保险）。 */}
+              `empty:hidden` 兜底回调返回「渲染为空」的元素时也不占位（双保险）。
+              U2-E-c 登记（浮层化放弃，2026-10-14）：absolute 化三坑未低风险收敛 ——
+              ① top 锚点 = shell 注入 header 之下，header 无高度测量通道（composer 的
+              --composer-inset 先例不存在于此），浮层 top 只能拍脑袋（违反「禁凭想象」）；
+              ② @container 断点挂在槽位自身，absolute 内容宽收缩 → 1280 判据失真（需
+              inset-x-0 全宽包裹重排）；③ 展开态 max-h 64dvh 浮层盖转录正文属设计变更，
+              需像素校准。配方已写入 docs/ai-framework/plans/u2-e-report.md，留待专批。 */}
           {(() => {
             const statusPanel = props.statusPanel?.({ sessionId });
             return statusPanel === null || statusPanel === undefined ? null : (
