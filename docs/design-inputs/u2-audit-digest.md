@@ -23,9 +23,13 @@
 
 jam 窗口 10:39:30 开启（watcher 命中）。本波：D3/D1/D2 审计与基线定案=jam（读类）；实施 A/C=jam 试派、B/D=gp（窗口间歇关闭会中途死，混合派降低整批团灭风险；执行者如实登记）。每批纪律：只落盘不 commit（编排者验收后统一提交）；跑 tsc+自身文件 eslint/prettier；样式类「不引新视觉、只对齐规格」。
 
-## 进度
+## 进度（2026-10-14 13:3x 更新）
 
-- [x] 审计三件套（对话区/侧栏/壳层）
-- [ ] jam 复核 U1 登记项×3 + 已修 P2 复认（kickoff 卡范围）
-- [ ] jam ZCode 正文 Markdown 基线定案
-- [ ] 实施 A/B/C/D → 编排者闸门+提交 → E 波 → 重建打包+截图对比
+- [x] 审计三件套（对话区/侧栏/壳层）— jam 执行 3/3
+- [x] U1 登记项×3 复核 + 已修 P2×5 复认 → **认=5/5，登记维持=3/3**（gp 代执行，复核节在 `u1-rereview-part3.md`，随 `56ded3c` 入库）
+- [x] ZCode 正文 Markdown 基线定案 → **正文=Markdown**（streamdown@2.5.0 同款路线；三条实战约束：历史/完成态强制 static、animated=false、ErrorBoundary 降级 `<pre>`；代码块绕开内置 renderer 复用本仓 CodeViewer）。gp 代执行（jam 红）
+- [x] 实施批 B（`7bad054`）/ C（`f2ea8dc`）/ D（`1912992`）/ A（`4c56dd0`）→ 编排者亲跑全绿（ui-shared 70/767、desktop 129/1288+1s、web 150、双 tsc 0、prettier 2 文件机械修、eslint 0 error）
+- [x] 扫尾 2xs 补登（`43892b4`）；streamdown 依赖入库（`c14bd77`，pnpm 绕行=store v11 直调 11.13.0）
+- [~] 批E 实施中（报告=`plans/u2-e-report.md`，边做边更新；E-c 状态面板浮层化已论证放弃入专批）
+- [ ] 待用户拍板（原四项收敛为三项：搜索框去留 / 计数徽标去留 / 侧栏宽度持久化——**Markdown 一项本波已自主定案实施**，用户可一票否）
+- [ ] U2 全链重建 → manual-pack 打包 → 截图前后对比（复用 §15 PowerShell 抓屏手法）
