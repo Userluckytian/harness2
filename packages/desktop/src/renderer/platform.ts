@@ -33,7 +33,9 @@ export function usesCustomWindowControls(platform: DesktopPlatform | null = desk
 export function windowFrameClass(platform: DesktopPlatform | null, maximized: boolean): string {
   switch (platform) {
     case 'win32':
-      return 'desktop-window-frame-win';
+      // U2-A4：win 最大化同样去圆角（贴边露角，与 linux 同理；主进程 maximize/unmaximize
+      // 事件已在推 window-state 通道，状态源无缺口）。
+      return `desktop-window-frame-win${maximized ? ' desktop-window-frame-maximized' : ''}`;
     case 'linux':
       // Z-02：最大化 → 去圆角（否则窗口贴边会露出四角裁切）
       return `desktop-window-frame-linux${maximized ? ' desktop-window-frame-maximized' : ''}`;

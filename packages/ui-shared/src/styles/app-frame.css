@@ -253,6 +253,12 @@
   background: var(--color-surface-hover);
   color: var(--color-foreground);
 }
+/* U2-A1（焦点可见性）：顶栏浮层按钮族键盘焦点 2px 主色内描边（与窗控/列头钮同规格）。
+   `.desktop-top-overlay-new` 的按钮同时带 `.desktop-top-overlay-btn` 类，此处一并覆盖。 */
+.desktop-top-overlay-btn:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: -2px;
+}
 /* New Task（ZCode :188-204）：宽度动画（可见 w-7 / 隐藏 w-0 + opacity + pointer-events-none）。
    常驻 DOM，不可见态由 aria-hidden 标记；transition 300ms。 */
 .desktop-top-overlay-new-wrap {

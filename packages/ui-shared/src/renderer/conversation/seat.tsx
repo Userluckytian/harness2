@@ -533,8 +533,38 @@ export function ConversationSeat(props: ConversationSeatProps): ReactNode {
           <ChatTranscript streamId={sessionId} store={session.store} controller={session.controller} />
         </>
       ) : (
+        /* U2-A6 空态兜底升级（无会话 = 冷启动无历史 / 列表清空后回落）：原先只有一行 `<p>`，
+           现在给「居中容器 + 品牌水印 + 主次文案层级 + 新建会话动作」。动作复用壳注入的
+           `controller.newSession()`（= App 三处新建入口同一唯一入口，见 desktop app-shared 注释）；
+           席位拿不到帧 dispatch（右栏收起属壳侧），且新会话 tab 桶本就为空，语义等价。
+           容器样式全部 Tailwind 工具类（空态非对话域，无 shell.css 依赖）。 */
         <div className="chat empty-pane">
-          <p>选择左侧会话开始对话（Ctrl+K 打开命令面板）</p>
+          <div className="flex flex-col items-center gap-6 px-4 text-center" data-testid="conversation-no-session">
+            {/* 水印鱼形 mark（与 EmptyState/顶栏品牌行同轮廓，纯装饰） */}
+            <span className="text-foreground-subtlest" aria-hidden="true">
+              <svg width={72} height={72} viewBox="0 0 24 24" fill="none" focusable="false">
+                <path
+                  d="M3 12c3.2-4.2 7.2-6.3 12-6.3 2.6 0 4.9.7 6 1.9-1.5.9-2.4 2.2-2.7 4.4-.3 2.2.4 3.9 2.7 4.6-1.1 1.2-3.4 1.9-6 1.9-4.8 0-8.8-2.1-12-6.5Z"
+                  fill="currentColor"
+                />
+              </svg>
+            </span>
+            <div className="flex flex-col gap-1.5">
+              <p className="text-ui-base text-foreground">选择左侧会话开始对话（Ctrl+K 打开命令面板）</p>
+              <p className="text-ui-xs text-foreground-subtlest">没有现成会话？直接新建一个开始新任务。</p>
+            </div>
+            <button
+              type="button"
+              data-testid="conversation-no-session-new"
+              className="inline-flex h-7 items-center justify-center gap-1.5 rounded-md bg-primary px-3 text-ui-base text-primary-foreground transition-opacity hover:opacity-90"
+              onClick={() => void controller.newSession()}
+            >
+              <svg width={12} height={12} viewBox="0 0 12 12" fill="none" aria-hidden="true" focusable="false">
+                <path d="M6 2.5v7M2.5 6h7" stroke="currentColor" strokeWidth={1.2} strokeLinecap="round" />
+              </svg>
+              新建会话
+            </button>
+          </div>
         </div>
       )}
       <div

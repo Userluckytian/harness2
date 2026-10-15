@@ -14,8 +14,8 @@ import { useWindowMaximized } from '../window-state.js';
 /** 最小化 */
 function MinimizeIcon(): React.ReactNode {
   return (
-    <svg width={12} height={12} viewBox="0 0 12 12" aria-hidden="true" focusable="false">
-      <path d="M2 6h8" stroke="currentColor" strokeWidth={1.2} strokeLinecap="round" />
+    <svg width={16} height={16} viewBox="0 0 12 12" aria-hidden="true" focusable="false">
+      <path d="M2 6h8" stroke="currentColor" strokeWidth={0.9} strokeLinecap="round" />
     </svg>
   );
 }
@@ -23,8 +23,8 @@ function MinimizeIcon(): React.ReactNode {
 /** 最大化 */
 function MaximizeIcon(): React.ReactNode {
   return (
-    <svg width={12} height={12} viewBox="0 0 12 12" fill="none" aria-hidden="true" focusable="false">
-      <rect x="2.2" y="2.2" width="7.6" height="7.6" rx="1" stroke="currentColor" strokeWidth={1.2} />
+    <svg width={16} height={16} viewBox="0 0 12 12" fill="none" aria-hidden="true" focusable="false">
+      <rect x="2.2" y="2.2" width="7.6" height="7.6" rx="1" stroke="currentColor" strokeWidth={0.9} />
     </svg>
   );
 }
@@ -32,12 +32,12 @@ function MaximizeIcon(): React.ReactNode {
 /** 还原（最大化态） */
 function RestoreIcon(): React.ReactNode {
   return (
-    <svg width={12} height={12} viewBox="0 0 12 12" fill="none" aria-hidden="true" focusable="false">
-      <rect x="2.2" y="3.6" width="6.2" height="6.2" rx="1" stroke="currentColor" strokeWidth={1.2} />
+    <svg width={16} height={16} viewBox="0 0 12 12" fill="none" aria-hidden="true" focusable="false">
+      <rect x="2.2" y="3.6" width="6.2" height="6.2" rx="1" stroke="currentColor" strokeWidth={0.9} />
       <path
         d="M4.2 3.6V2.6a1 1 0 0 1 1-1h4.2a1 1 0 0 1 1 1v4.2a1 1 0 0 1-1 1H9.4"
         stroke="currentColor"
-        strokeWidth={1.2}
+        strokeWidth={0.9}
       />
     </svg>
   );
@@ -46,8 +46,8 @@ function RestoreIcon(): React.ReactNode {
 /** 关闭 */
 function CloseIcon(): React.ReactNode {
   return (
-    <svg width={12} height={12} viewBox="0 0 12 12" aria-hidden="true" focusable="false">
-      <path d="M2.5 2.5l7 7M9.5 2.5l-7 7" stroke="currentColor" strokeWidth={1.2} strokeLinecap="round" />
+    <svg width={16} height={16} viewBox="0 0 12 12" aria-hidden="true" focusable="false">
+      <path d="M2.5 2.5l7 7M9.5 2.5l-7 7" stroke="currentColor" strokeWidth={0.9} strokeLinecap="round" />
     </svg>
   );
 }

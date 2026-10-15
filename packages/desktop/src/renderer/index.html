@@ -10,8 +10,43 @@
     <!-- Z1-05 首屏防闪：外部脚本（CSP 无 script-src，内联会被 default-src 'self' 拦截）；
          在模块脚本之前同步写 <html> 主题，避免 React 挂载前白闪。 -->
     <script src="/theme-boot.js"></script>
+    <!-- U2-A5 启动壳：① body 背景二分（深色 #161616 / 浅色 #f8f8f8，与主进程
+         BrowserWindow backgroundColor 同值，消除首帧白闪）——theme-boot 已按偏好同步写
+         <html> 类，故类规则优先于 prefers-color-scheme（后者仅作 theme-boot 失败时的兜底）；
+         ② 48px 顶部 drag 条：React 挂载前标题带也能拖动窗口；App 根（.desktop-window-frame）
+         挂载即被 :has 规则隐藏，不挡内容点击（Chromium ≥105 支持 :has，Electron 44 满足）。
+         style-src 'unsafe-inline' 已在 CSP 中放行内联样式。 -->
+    <style>
+      body {
+        background: #f8f8f8;
+      }
+      @media (prefers-color-scheme: dark) {
+        body {
+          background: #161616;
+        }
+      }
+      html.theme-zai-light body {
+        background: #f8f8f8;
+      }
+      html.theme-zai-dark body {
+        background: #161616;
+      }
+      #boot-drag {
+        position: fixed;
+        top: 0;
+        left: 0;
+        right: 0;
+        height: 48px;
+        -webkit-app-region: drag;
+        z-index: 0;
+      }
+      body:has(.desktop-window-frame) #boot-drag {
+        display: none;
+      }
+    </style>
   </head>
   <body>
+    <div id="boot-drag" aria-hidden="true"></div>
     <div id="root"></div>
     <script type="module" src="/main.tsx"></script>
   </body>
