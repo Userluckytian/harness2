@@ -56,9 +56,19 @@
   /* ---------- 字体（Z-70）---------- */
   --font-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Cascadia Mono', monospace;
 
-  /* ---------- L2 semantic 默认值 = Zai Light（Z-67）---------- */
+  /* ---------- L2 semantic 默认值 = Zai Light（Z-67）----------
+   * ⚠ 锚（U2-B1）：本块与 §2 `.theme-zai-light` 块**逐值重复**，是 Tailwind v4
+   * CSS-first 的结构性代价，不是疏漏：
+   *   1) @theme 必须含字面值才能编译期生成 utility（bg-background 等），无法 var 链到
+   *      运行时块；且 @theme 编译产物会被 tree-shake，不能反过来当运行时单一来源。
+   *   2) §2 块是运行时换肤权威（同元素 var 自引用会成环，无法反向引用 @theme）。
+   * 防漂移：两表逐值 diff 由 test/theme-token-parity.test.ts 逐值断言锁死——
+   * **增删改任何 --color-* 必须两处同步**，否则该用例即红。 */
   --color-background: #f8f8f8;
   --color-background-win-alt: #ececee;
+  /* U2-B2：mac 根背景（refs-zcode.md Z-67；ZCode packages/ui/src/styles.css:497 真值，
+   * oklab background 70% 混透明，非推定值） */
+  --color-background-alt: color-mix(in oklab, var(--color-background) 70%, transparent);
   --color-brand: #000000;
   --color-accent: #ebf4ff;
   --color-primary: #000000;
@@ -80,6 +90,10 @@
   --color-tab-active: #ffffff;
   --color-hover: rgb(13 13 13 / 5%);
   --color-selected: rgb(13 13 13 / 5%);
+  /* U2-B2：模态遮罩（settings-overlay / command-palette-overlay 的 rgba(0,0,0,.45) 语义化，
+   * 替代值消费方在后续批次接线）。默认 = Zai Light：.45（沿用既有实测值）；dark 提到 .6
+   * ——浅底 .45 黑纱已足够压暗，深底近黑、同透明度遮不住浮层边界（观感推定，待像素校准）。 */
+  --color-scrim: rgb(0 0 0 / 45%);
   --color-border: rgb(13 13 13 / 10%);
   --color-border-hover: rgb(13 13 13 / 15%);
   --color-card-border: rgb(13 13 13 / 10%);
@@ -173,6 +187,10 @@
 
 /* =============================================================================
  * 2. L2 semantic · Zai Light（显式一份，使切类即可切换）
+ * -----------------------------------------------------------------------------
+ * ⚠ 锚（U2-B1）：本块与 §1 @theme 的 --color-* 逐值重复（结构性代价，缘由见 §1 注释）；
+ * 本块是运行时换肤权威，逐值 parity 由 test/theme-token-parity.test.ts 断言锁死，
+ * 增删改 token 两处必须同步。
  * ========================================================================== */
 :root,
 .theme-zai-light,
@@ -180,6 +198,8 @@
   color-scheme: light;
   --color-background: #f8f8f8;
   --color-background-win-alt: #ececee;
+  /* U2-B2：mac 根背景（ZCode styles.css:497 真值，与 §1 逐字一致） */
+  --color-background-alt: color-mix(in oklab, var(--color-background) 70%, transparent);
   --color-brand: #000000;
   --color-accent: #ebf4ff;
   --color-primary: #000000;
@@ -201,6 +221,10 @@
   --color-tab-active: #ffffff;
   --color-hover: rgb(13 13 13 / 5%);
   --color-selected: rgb(13 13 13 / 5%);
+  /* U2-B2：模态遮罩（settings-overlay / command-palette-overlay 的 rgba(0,0,0,.45) 语义化，
+   * 替代值消费方在后续批次接线）。默认 = Zai Light：.45（沿用既有实测值）；dark 提到 .6
+   * ——浅底 .45 黑纱已足够压暗，深底近黑、同透明度遮不住浮层边界（观感推定，待像素校准）。 */
+  --color-scrim: rgb(0 0 0 / 45%);
   --color-border: rgb(13 13 13 / 10%);
   --color-border-hover: rgb(13 13 13 / 15%);
   --color-card-border: rgb(13 13 13 / 10%);
@@ -301,6 +325,9 @@
   color-scheme: dark;
   --color-background: #161616;
   --color-background-win-alt: #2b2b2b;
+  /* U2-B2：mac 根背景（ZCode styles.css:643 真值：win-alt 60% 混透明，与 light 的
+   * background 70% 不对称是 ZCode 原样，非笔误） */
+  --color-background-alt: color-mix(in oklab, var(--color-background-win-alt) 60%, transparent);
   --color-brand: #ffffff;
   --color-accent: #001d3d;
   --color-primary: #ffffff;
@@ -322,6 +349,8 @@
   --color-tab-active: #161616;
   --color-hover: rgb(255 255 255 / 5%);
   --color-selected: rgb(255 255 255 / 10%);
+  /* U2-B2：深底近黑，.45 遮不住浮层边界，提到 .6（观感推定，待像素校准，见 §1 注释） */
+  --color-scrim: rgb(0 0 0 / 60%);
   --color-border: rgb(255 255 255 / 10%);
   --color-border-hover: rgb(255 255 255 / 15%);
   --color-card-border: rgb(255 255 255 / 10%);
@@ -521,7 +550,13 @@
   color: transparent;
   animation: harness-tool-running-shimmer 2.4s linear infinite;
 }
+/* U2-B3：扫光降级合并 —— .reasoning-shimmer-text（Z-92）与 .tool-running-shimmer（Z-97）
+ * 同为「背景裁切文字 + 只动 background-position」，减压模式下必须同样还原为纯静态文本；
+ * 此前只有工具行有降级块，思考行残影（color:transparent 被全局 0.01ms 规则废掉动画后，
+ * 渐变带停在随机位置甚至整行透明）。选择器序：.tool-running-shimmer 必须紧邻 `{`——
+ * test/tool-running-shimmer-css.test.ts 以 /\.tool-running-shimmer\s*\{/ 定位降级块。 */
 @media (prefers-reduced-motion: reduce) {
+  .reasoning-shimmer-text,
   .tool-running-shimmer {
     animation: none;
     background-image: none;
