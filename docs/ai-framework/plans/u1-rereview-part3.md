@@ -75,3 +75,39 @@ $ cd packages/ui-shared && ./node_modules/.bin/vitest run --maxWorkers=4
 - **P2-2**：`WORK_TICK_MS=1_000` 与 ZCode `RUNNING_WORK_DURATION_TICK_MS=1000` 同值——口径登记即可，无需动作。
 
 **总体判定**：Z-97 域（悬挂收敛/耗时行/扫光/微基准）实现与规格一致、竞态推演闭合、测试断言敏感（变异自证已由 T4a-d 各批留痕，本轮未重复执行变异以让位并行约束）。**P0=0 / P1=0 / P2=1（P2-2 登记项），无阻塞项。**
+
+## 编排者复核节（2026-10-14 U2 波）
+
+> 复核人：编排者；模式：只读源码 + 实跑测试，HEAD `1912992`（批A–D 已入），工作树仅两个未跟踪文件。结论：**已修 P2×5 全部复认（认=5/5）；三条登记项维持性复核全部成立（维持=3/3）**。
+
+### ① 已修 P2 复认（5 项）
+
+| # | 提交 | 登记原判 | 复认证据 | 结论 |
+|---|------|----------|----------|------|
+| 1 | `ac0df60` | part2-P2-1：删除确认框「兜一层」注释撒谎 | `SessionBrowser.tsx:1042-1043` 注释与实现已对齐；`onConfirm` 内 `:1053-1058` 真复查 `isSessionRunning?.(target.id) === true` → 只 `setDeleteTarget(null)` 不删；测试双向钉：`sidebar-z48-z49.test.tsx:171-181`（命中只关框 + 断言调用参数）/`:185`（反向钉 web 不变） | **认** |
+| 2 | `1c7c71d` | ac0df60 断链：prop 未透传 | grep 三处接线全通：声明 `SessionBrowser.tsx:136`/解构 `:650`/消费 `:1055`；`SidebarRoot.tsx:119` 声明 + `:197` 条件透传（`!== undefined` 展开式，exactOptionalPropertyTypes 口径与邻行一致）；桌面装配 `shell-seat-contents.tsx:252` `store.peekStream(id)?.running === true` 直读 live（注释注明不新造 controller API）。web 不传 = 行为不变（有反向钉） | **认** |
+| 3 | `b09e4ca` | part1-P2-1：probeCapabilities 直读 baseUrl 与 :430 注释矛盾 | `bridge.ts:261` 已改 `serveBase()`；connected 护在位（`:259` `serveReady = deps.serve.status === 'connected'` 为普通字段读取、不抛；仅 `serveReady ∧ sessionId 非空` 才进 `:261`，:430 定义 `= deps.serve.baseUrl`）。serveBase 其余消费点仍全部在 HTTP case 分支首行（:440/:450/:460/:464/:475/:518/:523/:529/:537），无泄漏 | **认** |
+| 4 | `b09e4ca` | part1-P2-2：normal 模式 ready 无消费者 → unhandledRejection 噪声 | `main.ts:323` `void ready.catch(() => {})`；rejectReady 源 `:307`（serve.start 失败兜底）。smoke 路径 `handles.ready` 仍走原 promise 的 await，`:323` 只挂附加 handler，不改语义（注释 `:321-322` 如实） | **认** |
+| 5 | `b09e4ca` | part1-P2-3：trayHandle 无 destroy 调用点 | `main.ts:310-318` before-quit 内判空 `destroy()` + 置 null（smoke `tray:false` → null 安全；注释注明）。同提交附带 manual-pack.mjs robocopy 注释纠偏（/E 非 /MIR 幂等），纯文档面 | **认** |
+
+### ② 登记项「维持登记」复核（3 条）
+
+**(a) part1-P2-4 busy 双 close 重入 —— 维持登记。** 现状读码：`close-window-handler.ts:45` `if (!runtime.busy || stoppingForClose) return;`，而 `stoppingForClose` 直到 `:70`（用户选「请求停止」的 `.then` 内）才置真——**首次 `showDialog`（:47-48）await 挂起期间该标志为假**，第二次 close 事件会再过 :45 门、再进 `showDialog`，重入路径原样存在，登记的修法（`dialogOpen` 同步门）未实施。Electron 语义推演：`dialog.showMessageBox(win,…)` 对同一父窗**异步且模态串行**——第二调用排队/阻塞于首框之后，不是双框叠打；两框先后落定时 `.then` 各跑一次，最坏序列 = `requestStopAll`×2（幂等）+ `scheduleClose`×2 → `win.close()`×2（窗口已销毁后二次为 no-op）。缝隙窄、后果良性，与第一轮「P2 注记非 P1」定级一致。**维持登记，不升级不关闭。**
+
+**(b) part2-P2-② 设置页右上 136×48 窗控让位 —— 维持登记。** 层级核实：设置壳 `SettingsShell.tsx:103` `fixed inset-0 z-[100]` 全屏；窗控覆层 `desktop-window.css:57-70` z-130 本体 `pointer-events:none` 但透明 drag 条 `:72-76` `inset:0 + pointer-events:auto + -webkit-app-region:drag`——z-130 > z-100，设置页顶右角 136×48 被 drag 条吃掉（该区文案选不中、按下即拖窗）。让位规则 `:113-120` 仅覆盖 `.pane-header` 与 `side-pane-tabstrip`（根类 `window-controls-active` 由 `App.tsx:452-461` 恒挂，不辨设置页开合），设置壳与命令面板均未让位。影响面判据不变：设置页右上**无交互控件**——关闭走左栏「返回工作区」（`SettingsShell.tsx:108-118`），右栏顶行是 48px 面包屑（`h-12 px-4`，内容左对齐、右端留白），命令面板同例。毛刺级（选择/拖拽干扰），不吞按钮。**维持登记成立；批A–D 未触碰此面，修法照旧（覆层打开时 drag 带 `pointer-events:none` 开关，或两覆层头 `padding-right:140px`）。**
+
+**(c) part3-P2-1 误报改判 —— 改判成立，维持。** 独立重推（`store.ts` 现码与审片时同构）：`noteActivity`（:283-286）**先** `stream.lastFrameAt = Date.now()`（:284）**再** `armHungTurnWatch`（:285）；arm 内 `:296` `idle = Date.now() − (lastFrameAt ?? now)` 与 :284 同处一个同步 tick → `idle ≤ 1ms`，`:297` `remain = 30_000 − idle ≥ 29_999 > 0` → 帧入口路径（含随后 :704 event 判重早退者）**数学不可达** `:298` 同步收敛分支，只走 `:302-307` setTimeout，回调自带 `notify()`（:306）→ 原判「漏 notify」场景不存在，撤销正确。同步分支真实可达路径独立核：①`removeApproval`（:979 arm，审批挂起期 WS 已死则 lastFrameAt 陈旧 → 就地收敛）——其后 `:982` 方法级 `this.notify()` 无条件覆盖；②定时器回调走 `:306` 自 notify。六个直调点无一出现「收敛了但没人 notify」。改判（误报撤销 + 保留「调用纪律」纯防御注记不计问题数）**成立**。**维持登记。**
+
+### ③ 测试实跑（本机直调 vitest，2026-10-14）
+
+```
+$ cd packages/ui-shared && ./node_modules/.bin/vitest run --maxWorkers=4   # 第 2、3 次
+ Test Files  70 passed (70)
+      Tests  767 passed (767)
+
+$ cd packages/desktop && ./node_modules/.bin/vitest run --maxWorkers=4
+ Test Files  129 passed (129)
+      Tests  1288 passed | 1 skipped (1289)
+```
+
+与基线 70/767、129/1288+1skip 完全吻合。**如实登记一次抖动**：ui-shared 首跑报 `1 failed file / 2 failed tests`（当次 tail 未留存失败用例名）；同树第 2、3 跑均全绿零失败。期间工作树对 `packages/**` 零改动（`git status` 仅 `.zcodeignore` 与 `docs/design-inputs/u2-audit-digest.md` 两个未跟踪文件，与首跑时一致），且首跑时有 desktop 全量 vitest 并行占机——判为高并发下环境抖动（jsdom/timer 类敏感用例在 4 worker × 129 文件并行下偶发），**非批A 引入，未做任何 stash 验证（无主仓改动可归因）**。复现归因如需硬证据，可单跑首红文件对拍。
