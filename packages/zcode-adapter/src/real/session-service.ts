@@ -28,11 +28,15 @@ export function createSessionService(opts: SessionServiceOptions = {}): IZCodeSe
         updatedAt: s.mtimeMs,
       }));
     },
-    async initializeWorkspace(): Promise<{ available: boolean; workspaceKey: string }> {
-      return { available: true, workspaceKey: 'harness2' };
+    async initializeWorkspace(params?: { workspacePath?: string; workspaceIdentity?: string }): Promise<{ available: boolean; workspaceKey: string }> {
+      const ws = (params?.workspaceIdentity && params.workspaceIdentity.trim()) || params?.workspacePath || '';
+      return { available: true, workspaceKey: ws };
     },
-    async getWorkspaceRuntimeIdentity(): Promise<{ generation: number; identity: string; workspaceKey: string }> {
-      return { generation: 1, identity: 'harness2', workspaceKey: 'harness2' };
+    async getWorkspaceRuntimeIdentity(params?: { workspacePath?: string; workspaceIdentity?: string }): Promise<{ generation: number; identity: string; workspaceKey: string }> {
+      // Gate A (ZS2): identity 必须为空，避免 tab 被误判为 remote target
+      // (refs ZCode packages/ui/src/hooks/useWorkspaceServices.tsx:83-100 hasRemoteWorkspaceMetadata)。
+      const ws = (params?.workspaceIdentity && params.workspaceIdentity.trim()) || params?.workspacePath || '';
+      return { generation: 1, identity: '', workspaceKey: ws };
     },
     async readWorkspacePresentation(): Promise<unknown> {
       return { title: 'harness2' };

@@ -20,7 +20,7 @@ function readConfig(dataRoot?: string, home?: string) {
 export function createModelSelectionService(opts: ProviderViewsOptions = {}): IModelSelectionService {
   const home = opts.home ?? resolveHarness2Home();
   const impl = {
-    async getView(): Promise<unknown> {
+    async getView(input?: unknown): Promise<unknown> {
       try {
         const loaded = loadConfig({ root: process.cwd(), home });
         const cfg = loaded.config;
@@ -50,11 +50,59 @@ export function createModelSelectionService(opts: ProviderViewsOptions = {}): IM
         }
         // preferred selection from roles.main
         const mainRole = cfg.roles?.main;
-        return {
+        const preferredSelection = mainRole
+          ? { providerId: mainRole.channel, modelId: mainRole.model, options: { reasoningLevel: 'medium' } }
+          : undefined;
+
+        const result: Record<string, unknown> = {
           revision: 1,
           providers,
-          preferredSelection: mainRole ? { providerId: mainRole.channel, modelId: mainRole.model, options: { reasoningLevel: 'medium' } } : undefined,
+          ...(preferredSelection ? { preferredSelection } : {}),
         };
+
+        // Gate B (ZS2): UI 通过 getView(input) 传入当前草稿 selection，服务端必须回填
+        // effectiveSelection，否则 useDraftConfigControl 派生的 draftConfig.modelSelection
+        // 为空，Composer submissionReady 永远为 false → Send 按钮永久 disabled。
+        // 判据来源：refs ZCode packages/ui/src/v4/composer/useDraftConfigControl.ts:265-275
+        // 与 packages/provider/src/effective-model-selection.ts。
+        const inp = input as { selection?: { providerId?: string; modelId?: string; options?: { reasoningLevel?: string } } } | undefined;
+        if (inp !== undefined) {
+          const sel = inp?.selection ?? null;
+          if (!sel) {
+            result.effectiveSelection = null;
+            result.selectionIssue = 'selection-missing';
+          } else {
+            const provider = (providers as { providerId: string; models: { modelId: string; config: { optionSpecs: { reasoningLevel: { values: string[] } } } }[] }[]).find(
+              (p) => p.providerId === sel.providerId,
+            );
+            const model = provider?.models.find((m) => m.modelId === sel.modelId);
+            if (!provider) {
+              result.effectiveSelection = null;
+              result.selectionIssue = 'provider-not-found';
+            } else if (!model) {
+              result.effectiveSelection = null;
+              result.selectionIssue = 'model-not-found';
+            } else {
+              const reasoningLevel = sel.options?.reasoningLevel;
+              const values = model.config.optionSpecs.reasoningLevel.values;
+              const valid = reasoningLevel !== undefined && values.includes(reasoningLevel);
+              const effective: Record<string, unknown> = {
+                providerId: sel.providerId,
+                modelId: sel.modelId,
+              };
+              if (valid && sel.options) {
+                effective.options = { ...sel.options };
+              }
+              result.effectiveSelection = effective;
+              if (!valid) {
+                result.selectionIssue =
+                  reasoningLevel === undefined ? 'reasoning-level-missing' : 'reasoning-level-not-supported';
+              }
+            }
+          }
+        }
+
+        return result;
       } catch (e) {
         // redact secrets in error
         const msg = redactSecrets((e as Error).message ?? '');
@@ -124,7 +172,6 @@ export function createProviderSettingsService(opts: ProviderViewsOptions = {}): 
       'reorderPersonalProviders',
       'reorderPersonalModels',
       'addPersonalModel',
-      'renamePersonalModel',
       'deletePersonalModel',
       'savePersonalModelDraft',
       'setPersonalModelEnabled',

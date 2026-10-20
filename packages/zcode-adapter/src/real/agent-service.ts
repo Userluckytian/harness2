@@ -29,7 +29,7 @@ function makeControl(phase: string) {
     canStop: running,
     stopState: running ? 'stoppable' : 'idle',
     stopTargetKind: running ? 'assistant' : 'unknown',
-    activeWorks: running ? [{ kind: 'primaryTurn', startedAt: new Date().toISOString() }] : [],
+    activeWorks: running ? [{ kind: 'primaryTurn', startedAt: Date.now() }] : [],
     lastError: null,
     apiRetry: null,
   };
@@ -126,7 +126,7 @@ export function createAgentService(opts: AgentServiceOptions = {}): IZCodeAgentS
       subscriptionId: subId,
       fromSeq: 0,
       toSeq: sub.seq,
-      sentAt: new Date().toISOString(),
+      sentAt: Date.now(),
       payload: { kind: 'snapshot', snapshot: buildSnapshot(sub.sessionId, sub.seq, rows, phase) },
     };
     emitWire(subId, frame);
@@ -141,7 +141,7 @@ export function createAgentService(opts: AgentServiceOptions = {}): IZCodeAgentS
       subscriptionId: subId,
       fromSeq: sub.seq - 1,
       toSeq: sub.seq,
-      sentAt: new Date().toISOString(),
+      sentAt: Date.now(),
       payload: { kind: 'deltas', deltas },
     };
     emitWire(subId, frame);
@@ -161,7 +161,7 @@ export function createAgentService(opts: AgentServiceOptions = {}): IZCodeAgentS
     const turnHeaderRowId = nextRowId(sessionId);
     const assistantRowId = nextRowId(sessionId);
     const turnId = `turn-${Date.now()}`;
-    const now = new Date().toISOString();
+    const now = Date.now();
 
     const initialDeltas = [
       { op: 'row.appended', row: { rowId: userRowId, turnId, kind: 'userInput', text, origin: 'realUser', createdAt: now, createdAtSeq: 0 } },
@@ -214,10 +214,20 @@ export function createAgentService(opts: AgentServiceOptions = {}): IZCodeAgentS
   const impl: Record<string, unknown> = {
     async helloConversationV4(): Promise<unknown> {
       return {
+        kind: 'hello',
+        protocolVersion: 3,
         connectionId: 'zs2',
         clientMode: 'desktop-continuous',
         deliveryProfile: 'continuous',
-        capabilities: {},
+        serverTime: Date.now(),
+        capabilities: {
+          nativeDialogs: false,
+          localTerminal: false,
+          binaryFrames: false,
+          compression: 'none',
+          independentPlanState: true,
+        },
+        auth: {},
       };
     },
     async initializeConversationV4(): Promise<unknown> {

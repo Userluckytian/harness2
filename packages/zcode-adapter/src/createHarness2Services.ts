@@ -114,10 +114,22 @@ function wrapProbe(service: any, channel: string): any {
       const val = Reflect.get(target, prop, receiver);
       if (typeof val === 'function') {
         return (...args: any[]) => {
-          try {
-            require('node:fs').appendFileSync('D:/AI_Projects/harness2-zs1-build/zs2-probe.log', `[probe] ${channel}.${String(prop)} called\n`);
-          } catch {}
-          return val.apply(target, args);
+          const fs = require('node:fs');
+          const logPath = 'D:/AI_Projects/harness2-zs1-build/zs2-probe.log';
+          try { fs.appendFileSync(logPath, `[probe] ${channel}.${String(prop)} called args=${JSON.stringify(args).slice(0, 500)}\n`); } catch {}
+          const res = val.apply(target, args);
+          // log async result if promise
+          if (res && typeof res.then === 'function') {
+            return res.then((r: any) => {
+              try { fs.appendFileSync(logPath, `[probe] ${channel}.${String(prop)} result=${JSON.stringify(r).slice(0, 5000)}\n`); } catch {}
+              return r;
+            }).catch((e: any) => {
+              try { fs.appendFileSync(logPath, `[probe] ${channel}.${String(prop)} threw=${String(e?.message ?? e).slice(0, 300)}\n`); } catch {}
+              throw e;
+            });
+          }
+          try { fs.appendFileSync(logPath, `[probe] ${channel}.${String(prop)} result=${JSON.stringify(res).slice(0, 5000)}\n`); } catch {}
+          return res;
         };
       }
       return val;
