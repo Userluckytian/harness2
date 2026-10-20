@@ -109,7 +109,7 @@ describe('B 类显式 throw（v4 竖切 ZS2/ZS3）', () => {
     const workspace = await file.ensureConversationWorkspace();
     expect(workspace.workspacePurpose).toBe('conversation');
     expect(workspace.path).toContain('.zcode');
-    await expect(file.readdir({} as never)).rejects.toThrow(/ZS1: not implemented/);
+    await expect(file.readdir({} as never)).resolves.toBeDefined();
   });
 
   it('window-controller：空态方法空形状，变更动作 throw', async () => {
@@ -292,7 +292,7 @@ describe('与 @zcode/rpc ProxyChannel 的兼容性（服务端暴露路径集成
     const channel = ProxyChannel.fromService(services.getOptional(ISettingService)!);
     const settings = (await channel.call('host', 'get', [])) as { recentProjects: string[] };
     expect(settings.recentProjects).toEqual([]);
-    await expect(channel.call('host', 'update', [{}])).rejects.toThrow(/ZS1: not implemented/);
+    await expect(channel.call('host', 'update', [{}])).resolves.toBeDefined();
 
     const oauthChannel = ProxyChannel.fromService(services.getOptional(IOAuthService)!);
     const sessionEvent = oauthChannel.listen('host', 'onDidChangeSession');

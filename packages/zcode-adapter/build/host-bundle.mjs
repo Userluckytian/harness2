@@ -34,7 +34,7 @@ const result = await build({
   // 的包级 node_modules workspace 链接 + package.json exports 自然解析。
   tsconfig: resolve(packageRoot, 'tsconfig.json'),
   // node 内建由 platform 处理；zod 等 npm 依赖一并打包（运行期不依赖 scratch node_modules）
-  external: [],
+  external: ['playwright', 'playwright-core', 'chromium-bidi'],
   minify: false,
   sourcemap: false,
   logLevel: 'info',

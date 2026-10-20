@@ -71,6 +71,12 @@ import {
   IFeedbackService,
 } from '@zcode/services';
 import { CHANNEL_REGISTRY } from './channel-registry.js';
+import { createFileService } from './real/file-service.js';
+import { createSessionService } from './real/session-service.js';
+import { createTaskService } from './real/task-service.js';
+import { createAgentService } from './real/agent-service.js';
+import { createModelSelectionService, createProviderSettingsService } from './real/provider-views.js';
+import { createSettingsStore } from './real/settings-store.js';
 import { createStubService } from './stub-factory.js';
 import {
   commandsServiceStub,
@@ -100,32 +106,52 @@ import {
   zcodeAgentServiceStub,
 } from './root-mount-stubs.js';
 
-/** 显式桩表：频道名 → 已实例化的桩（其余频道按注册表分类现场生成默认桩） */
-const EXPLICIT_STUBS = new Map<string, unknown>([
-  [IBroadcastService.channelName, broadcastServiceStub],
-  [IBotsService.channelName, botsServiceStub],
-  [ICodingPlanSubscriptionService.channelName, codingPlanSubscriptionServiceStub],
-  [ICommandsService.channelName, commandsServiceStub],
-  [ICredentialService.channelName, credentialServiceStub],
-  [IFileService.channelName, fileServiceStub],
-  [IHooksService.channelName, hooksServiceStub],
-  [IMarketingTouchService.channelName, marketingTouchServiceStub],
-  [IMemoryService.channelName, memoryServiceStub],
-  [IModelSelectionService.channelName, modelSelectionServiceStub],
-  [IOnboardingRecordService.channelName, onboardingRecordServiceStub],
-  [IOAuthService.channelName, oauthServiceStub],
-  [IProjectService.channelName, projectServiceStub],
-  [IProviderSettingsService.channelName, providerSettingsServiceStub],
-  [IRemoteProjectService.channelName, remoteProjectServiceStub],
-  [ISettingService.channelName, settingServiceStub],
-  [ISkillsService.channelName, skillsServiceStub],
-  [ISourceServerManagementService.channelName, sourceServerManagementServiceStub],
-  [ISubagentsService.channelName, subagentsServiceStub],
-  [ITaskGroupService.channelName, taskGroupServiceStub],
-  [IUsageStatsService.channelName, usageStatsServiceStub],
-  [IWindowControllerService.channelName, windowControllerServiceStub],
-  [IZCodeAgentService.channelName, zcodeAgentServiceStub],
-]);
+  const realFileService = createFileService();
+  const realSessionService = createSessionService();
+  const realTaskService = createTaskService();
+  const realAgentService = createAgentService();
+  const realModelSelectionService = createModelSelectionService();
+  const realProviderSettingsService = createProviderSettingsService();
+  const realSettingsStore = createSettingsStore();
+  const realSettingService = createStubService<ISettingService>({
+    channelName: 'setting',
+    classification: 'A',
+    impl: {
+      async get() { return realSettingsStore.get(); },
+      async update(p: unknown) { return realSettingsStore.update(p as never); },
+      async updateDataBaseDir() { throw new Error('ZS2: not implemented'); },
+    },
+    throws: [],
+  });
+
+  /** 显式桩表：频道名 → 已实例化的桩（其余频道按注册表分类现场生成默认桩） */
+  const EXPLICIT_STUBS = new Map<string, unknown>([
+    [IBroadcastService.channelName, broadcastServiceStub],
+    [IBotsService.channelName, botsServiceStub],
+    [ICodingPlanSubscriptionService.channelName, codingPlanSubscriptionServiceStub],
+    [ICommandsService.channelName, commandsServiceStub],
+    [ICredentialService.channelName, credentialServiceStub],
+    [IFileService.channelName, realFileService],
+    [IHooksService.channelName, hooksServiceStub],
+    [IMarketingTouchService.channelName, marketingTouchServiceStub],
+    [IMemoryService.channelName, memoryServiceStub],
+    [IModelSelectionService.channelName, realModelSelectionService],
+    [IOnboardingRecordService.channelName, onboardingRecordServiceStub],
+    [IOAuthService.channelName, oauthServiceStub],
+    [IProjectService.channelName, projectServiceStub],
+    [IProviderSettingsService.channelName, realProviderSettingsService],
+    [IRemoteProjectService.channelName, remoteProjectServiceStub],
+    [ISettingService.channelName, realSettingService],
+    [ISkillsService.channelName, skillsServiceStub],
+    [ISourceServerManagementService.channelName, sourceServerManagementServiceStub],
+    [ISubagentsService.channelName, subagentsServiceStub],
+    [ITaskGroupService.channelName, taskGroupServiceStub],
+    [IUsageStatsService.channelName, usageStatsServiceStub],
+    [IWindowControllerService.channelName, windowControllerServiceStub],
+    [IZCodeAgentService.channelName, realAgentService],
+    [IZCodeSessionService.channelName, realSessionService],
+    [IZCodeTaskService.channelName, realTaskService],
+  ]);
 
 /** descriptor 表：频道名 → ServiceDescriptor（注册用） */
 const DESCRIPTORS = new Map<string, { channelName: string }>([

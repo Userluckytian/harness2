@@ -12,6 +12,10 @@ export default defineConfig({
   resolve: {
     alias: [
       {
+        find: /^@harness2\/core$/,
+        replacement: 'D:/AI_Projects/harness2/packages/core/src/index.ts',
+      },
+      {
         find: /^@zcode\/services$/,
         replacement: resolve(zcodeRoot, 'packages/services/src/index.ts'),
       },
