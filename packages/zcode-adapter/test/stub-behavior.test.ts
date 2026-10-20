@@ -1,15 +1,28 @@
-// 桩行为单测：C 静默 / B throw / Root 挂载 9 服务空态形状（V3 后半）
+// 桩行为单测：C 静默 / B throw / Root 挂载 9 服务空态形状（V3 后半）+
+// A 类 5 频道显式桩（ZS1 审查 P1-1：写路径显式 throw，不静默假成功）
 import { describe, expect, it } from "vitest";
 import { ProxyChannel, Event } from "@zcode/rpc";
 import {
   ICredentialService,
   IFileService,
+  IHooksService,
+  IMemoryService,
   IOAuthService,
   ISettingService,
+  ISkillsService,
+  ISubagentsService,
+  ICommandsService,
   ISystemService,
   IZCodeAgentService,
 } from "@zcode/services";
 import { createHarness2Services } from "../src/createHarness2Services.js";
+import {
+  commandsServiceStub,
+  hooksServiceStub,
+  memoryServiceStub,
+  skillsServiceStub,
+  subagentsServiceStub,
+} from "../src/a-class-stubs.js";
 import {
   broadcastServiceStub,
   codingPlanSubscriptionServiceStub,
@@ -182,6 +195,117 @@ describe("Root 挂载 9 服务空态形状（V3 关键判据）", () => {
       expect(typeof d.dispose).toBe("function");
       d.dispose();
     }
+  });
+});
+
+describe("A 类 5 频道显式桩（ZS1 审查 P1-1：写路径显式 throw，不静默假成功）", () => {
+  it("skills：list 空态 + buildPromptContext 无激活；setEnabled/copyToCommon/removeFromCommon/deleteSkill reject", async () => {
+    await expect(skillsServiceStub.list({ workspacePath: "/w" })).resolves.toEqual({
+      skills: [],
+      capability: { userScopeAvailable: false },
+      diagnostics: [],
+    });
+    await expect(
+      skillsServiceStub.buildPromptContext({ workspacePath: "/w", prompt: "hi" }),
+    ).resolves.toEqual({ prompt: "hi", activatedSkillNames: [] });
+    await expect(skillsServiceStub.setEnabled({} as never)).rejects.toThrow(/ZS1: not implemented/);
+    await expect(skillsServiceStub.copyToCommon({} as never)).rejects.toThrow(/ZS1: not implemented/);
+    await expect(skillsServiceStub.removeFromCommon({} as never)).rejects.toThrow(
+      /ZS1: not implemented/,
+    );
+    await expect(skillsServiceStub.deleteSkill({} as never)).rejects.toThrow(/ZS1: not implemented/);
+  });
+
+  it("subagents：list 空态；createAgent/updateAgent/deleteAgent/setEnabled/setBuiltInModelOverride/setPluginAgentModelOverride reject", async () => {
+    await expect(subagentsServiceStub.list({ workspacePath: "/w" })).resolves.toEqual({
+      agents: [],
+      userAgents: [],
+      pluginAgents: [],
+      capability: { userScopeAvailable: false },
+      diagnostics: [],
+    });
+    await expect(subagentsServiceStub.createAgent({} as never)).rejects.toThrow(/ZS1: not implemented/);
+    await expect(subagentsServiceStub.updateAgent({} as never)).rejects.toThrow(/ZS1: not implemented/);
+    await expect(subagentsServiceStub.deleteAgent({} as never)).rejects.toThrow(/ZS1: not implemented/);
+    await expect(subagentsServiceStub.setEnabled({} as never)).rejects.toThrow(/ZS1: not implemented/);
+    await expect(subagentsServiceStub.setBuiltInModelOverride({} as never)).rejects.toThrow(
+      /ZS1: not implemented/,
+    );
+    await expect(subagentsServiceStub.setPluginAgentModelOverride({} as never)).rejects.toThrow(
+      /ZS1: not implemented/,
+    );
+  });
+
+  it("commands：list 空态；writeCommandFile/updateCommandFile/deleteCommandFile/setCommandEnabled reject", async () => {
+    await expect(commandsServiceStub.list({})).resolves.toEqual({
+      commands: [],
+      userCommands: [],
+      pluginCommands: [],
+      capability: { userScopeAvailable: false },
+    });
+    await expect(commandsServiceStub.writeCommandFile({} as never)).rejects.toThrow(
+      /ZS1: not implemented/,
+    );
+    await expect(commandsServiceStub.updateCommandFile({} as never)).rejects.toThrow(
+      /ZS1: not implemented/,
+    );
+    await expect(commandsServiceStub.deleteCommandFile({} as never)).rejects.toThrow(
+      /ZS1: not implemented/,
+    );
+    await expect(commandsServiceStub.setCommandEnabled({} as never)).rejects.toThrow(
+      /ZS1: not implemented/,
+    );
+  });
+
+  it("hooks：loadHooks 空态（hooksEnabled=false 与 ZCode 实现口径一致）；saveHooks/grantWorkspaceHookTrust reject", async () => {
+    await expect(hooksServiceStub.loadHooks({ workspacePath: "/w" })).resolves.toEqual({
+      hooks: [],
+      hooksEnabled: false,
+    });
+    await expect(hooksServiceStub.saveHooks({} as never)).rejects.toThrow(/ZS1: not implemented/);
+    // grantWorkspaceHookTrust 为可选方法（接口 ?），桩恒提供 throwing 实现
+    await expect(hooksServiceStub.grantWorkspaceHookTrust!({} as never)).rejects.toThrow(
+      /ZS1: not implemented/,
+    );
+  });
+
+  it("memory：loadMemory null + listProjectMemories 空；saveMemory/clearMemory reject", async () => {
+    await expect(memoryServiceStub.loadMemory({ workspacePath: "/w", agentId: "claude" })).resolves.toEqual(
+      { memory: null },
+    );
+    await expect(memoryServiceStub.listProjectMemories()).resolves.toEqual([]);
+    await expect(memoryServiceStub.saveMemory({} as never)).rejects.toThrow(/ZS1: not implemented/);
+    await expect(memoryServiceStub.clearMemory({} as never)).rejects.toThrow(/ZS1: not implemented/);
+  });
+
+  it("装配接线：EXPLICIT_STUBS 生效——经 ServiceCollection 取到的 5 频道桩写路径同样 reject", async () => {
+    const { services } = createHarness2Services();
+    await expect(services.getOptional(ISkillsService)!.deleteSkill({} as never)).rejects.toThrow(
+      /ZS1: not implemented/,
+    );
+    await expect(services.getOptional(ISubagentsService)!.createAgent({} as never)).rejects.toThrow(
+      /ZS1: not implemented/,
+    );
+    await expect(
+      services.getOptional(ICommandsService)!.writeCommandFile({} as never),
+    ).rejects.toThrow(/ZS1: not implemented/);
+    await expect(services.getOptional(IHooksService)!.saveHooks({} as never)).rejects.toThrow(
+      /ZS1: not implemented/,
+    );
+    await expect(services.getOptional(IMemoryService)!.saveMemory({} as never)).rejects.toThrow(
+      /ZS1: not implemented/,
+    );
+  });
+
+  it("RPC 路径：ProxyChannel.call 下 5 频道写方法同样 reject（hooks.saveHooks 抽查）", async () => {
+    const { services } = createHarness2Services();
+    const channel = ProxyChannel.fromService(services.getOptional(IHooksService)!);
+    await expect(channel.call("host", "saveHooks", [{}])).rejects.toThrow(/ZS1: not implemented/);
+    const loadResult = (await channel.call("host", "loadHooks", [{ workspacePath: "/w" }])) as {
+      hooks: unknown[];
+      hooksEnabled: boolean;
+    };
+    expect(loadResult).toEqual({ hooks: [], hooksEnabled: false });
   });
 });
 

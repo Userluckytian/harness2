@@ -3,6 +3,8 @@
  *
  * 注册全部 57 个 service 频道（@zcode/shared ServiceChannels 56 + 字面量 "gen-ui"）：
  * - 空态实证触达的频道用 root-mount-stubs 的显式桩；
+ * - A 类 5 频道（skills/subagents/commands/hooks/memory）用 a-class-stubs 的显式桩
+ *   （ZS1 审查 P1-1：写路径显式 throw，不走工厂默认的静默 null）；
  * - 其余频道按 channel-registry 分类走工厂默认（A/C 读 null、B throw、事件 Event.None）。
  *
  * 返回 @zcode/services ServiceCollection，由 host-entry 在 ChannelServer 上
@@ -70,6 +72,13 @@ import {
 } from "@zcode/services";
 import { CHANNEL_REGISTRY } from "./channel-registry.js";
 import { createStubService } from "./stub-factory.js";
+import {
+  commandsServiceStub,
+  hooksServiceStub,
+  memoryServiceStub,
+  skillsServiceStub,
+  subagentsServiceStub,
+} from "./a-class-stubs.js";
 import { fileServiceStub } from "./file-stubs.js";
 import {
   botsServiceStub,
@@ -95,16 +104,21 @@ const EXPLICIT_STUBS = new Map<string, unknown>([
   [IBroadcastService.channelName, broadcastServiceStub],
   [IBotsService.channelName, botsServiceStub],
   [ICodingPlanSubscriptionService.channelName, codingPlanSubscriptionServiceStub],
+  [ICommandsService.channelName, commandsServiceStub],
   [ICredentialService.channelName, credentialServiceStub],
   [IFileService.channelName, fileServiceStub],
+  [IHooksService.channelName, hooksServiceStub],
   [IMarketingTouchService.channelName, marketingTouchServiceStub],
+  [IMemoryService.channelName, memoryServiceStub],
   [IModelSelectionService.channelName, modelSelectionServiceStub],
   [IOAuthService.channelName, oauthServiceStub],
   [IProjectService.channelName, projectServiceStub],
   [IProviderSettingsService.channelName, providerSettingsServiceStub],
   [IRemoteProjectService.channelName, remoteProjectServiceStub],
   [ISettingService.channelName, settingServiceStub],
+  [ISkillsService.channelName, skillsServiceStub],
   [ISourceServerManagementService.channelName, sourceServerManagementServiceStub],
+  [ISubagentsService.channelName, subagentsServiceStub],
   [ITaskGroupService.channelName, taskGroupServiceStub],
   [IUsageStatsService.channelName, usageStatsServiceStub],
   [IWindowControllerService.channelName, windowControllerServiceStub],
