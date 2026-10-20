@@ -147,17 +147,16 @@ export function createAgentService(opts: AgentServiceOptions = {}): IZCodeAgentS
     emitWire(subId, frame);
   }
 
-  async function runSession(sessionId: string, text: string) {
+  async function runSession(sessionId: string, text: string, dirHint?: string) {
     const targetSubs = [...subs.entries()].filter(([, s]) => s.sessionId === sessionId).map(([id]) => id);
     let resumed: any;
-    try {
+    if (dirHint) {
+      const cb = await import('./core-bridge.js');
+      resumed = { id: sessionId, dir: dirHint, writer: cb.SessionWriter.open(dirHint) };
+    } else {
       resumed = manager.resume(sessionId);
-    } catch {
-      const created = manager.create(process.cwd());
-      resumed = manager.resume(created.id);
-      // if mismatch, use created id for subs? subs already sessionId; best effort
     }
-    const counter = rowCounters;
+    const counter = rowCounters; void counter;
     const userRowId = nextRowId(sessionId);
     const turnHeaderRowId = nextRowId(sessionId);
     const assistantRowId = nextRowId(sessionId);
@@ -172,7 +171,7 @@ export function createAgentService(opts: AgentServiceOptions = {}): IZCodeAgentS
     for (const sid of targetSubs) emitDeltas(sid, initialDeltas);
 
     let accumulated = '';
-    const tools = new ToolRegistry();
+    const tools = { list: () => [] } as any;
     const ac = new AbortController();
     try {
       await runTurn(resumed.writer, {
@@ -200,8 +199,9 @@ export function createAgentService(opts: AgentServiceOptions = {}): IZCodeAgentS
         },
       });
     } catch (e) {
-      // ignore
+      console.error('[zs2] runTurn failed:', (e as Error)?.message ?? e);
     }
+    try { resumed.writer.close(); } catch (e) { console.error('[zs2] close failed', (e as Error)?.message); }
 
     for (const sid of targetSubs) {
       emitDeltas(sid, [
@@ -248,10 +248,11 @@ export function createAgentService(opts: AgentServiceOptions = {}): IZCodeAgentS
       const env = params?.envelope ?? {};
       if (env.type === 'createSession') {
         const created = manager.create(process.cwd());
+        try { created.writer.close(); } catch {}
         const sid = created.id;
         const firstInput = env?.payload?.firstInput;
         if (firstInput?.text) {
-          setTimeout(() => { runSession(sid, firstInput.text).catch(() => {}); }, 0);
+          setTimeout(() => { runSession(sid, firstInput.text, created.dir).catch((e) => console.error('[zs2] runSession failed:', (e as Error)?.message ?? e)); }, 0);
         }
         return {
           commandId: env.commandId,
@@ -262,12 +263,15 @@ export function createAgentService(opts: AgentServiceOptions = {}): IZCodeAgentS
       }
       if (env.type === 'sendText') {
         let sid = env.sessionId;
+        let dirHint: string | undefined;
         if (!sid) {
           const created = manager.create(process.cwd());
+          try { created.writer.close(); } catch {}
           sid = created.id;
+          dirHint = created.dir;
         }
         const text = env?.payload?.text ?? '';
-        setTimeout(() => { runSession(sid, text).catch(() => {}); }, 0);
+        setTimeout(() => { runSession(sid, text, dirHint).catch((e) => console.error('[zs2] runSession failed:', (e as Error)?.message ?? e)); }, 0);
         return {
           commandId: env.commandId,
           status: 'accepted',
@@ -306,6 +310,7 @@ export function createAgentService(opts: AgentServiceOptions = {}): IZCodeAgentS
     },
     async createSession(params: { workspacePath?: string }): Promise<unknown> {
       const created = manager.create(params?.workspacePath ?? process.cwd());
+      try { created.writer.close(); } catch {}
       return { sessionId: created.id };
     },
     async resumeSession(params: { sessionId: string }): Promise<unknown> {

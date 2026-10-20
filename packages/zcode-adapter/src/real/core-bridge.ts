@@ -10,7 +10,7 @@ export function resolveHarness2Home(): string {
 import type {
   HarnessConfig,
   ChatProvider,
-  SessionWriter,
+  SessionWriter as SessionWriterType,
   SessionAppender,
   ToolRegistry as ToolRegistryType,
 } from '@harness2/core';
@@ -54,10 +54,12 @@ export const redactSecrets = core.redactSecrets;
 export const readAuthFile = core.readAuthFile;
 export const runTurn = core.runTurn;
 export const loadSession = core.loadSession;
+export const SessionWriter = core.SessionWriter;
 export const ToolRegistry = core.ToolRegistry;
 export const MockProvider = core.MockProvider;
 
-export type { HarnessConfig, ChatProvider, SessionWriter, SessionAppender };
+export type { HarnessConfig, ChatProvider, SessionAppender };
+export type SessionWriter = SessionWriterType;
 export type ToolRegistryTypeExport = ToolRegistryType;
 
 export function resolveSessionsRoot(homeOverride?: string): string {
