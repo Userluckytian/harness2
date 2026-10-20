@@ -399,12 +399,17 @@ lockfile 净增 321 行 = zcode-adapter devDeps（与既有包同版本：typesc
 | # | 结论 | 证据（编排者亲跑，非转抄） |
 |---|------|------------------------------|
 | V1 | ✅ | 编排者亲启桩 host 新壳（ZS1_HOST_MODULE_PATH + ZCODE_DATA_BASE_DIR 指向 scratch）：40s 后 scratch 路径下 **6 个 electron 进程存活**（main 158MB / renderer 220MB / gpu / host / scheduler / network），验收后仅清理 scratch 进程 |
-| V2 | ✅（行为证据） | rpc:call 全 OK + 主壳签名（listTaskList / ensureConversationWorkspace / onboarding）+ signed-out 对照轮差异（执行记录 Task 3）；截图 `docs/screenshots/zs1/t3-stub-host-empty-state.png` 在档——**编排者会话模型无图像输入，视觉终验归用户**（残留手工清单 #1） |
-| V3 | ✅ | `pnpm --filter @harness2/zcode-adapter test` 编排者亲跑 **24/24 绿**（channels 4 + stub-behavior 20，3.12s） |
+| V2 | ✅（灰屏事件→修复→CDP 复核） | **用户实机发现窗口纯灰**（视觉模型双确认）→ 两层根因定位（真实 setting 污染 + onboarding 桩缺显式 false，见「V2 灰屏根因与修复」节 + `docs/research/2026-10-20-zs-first-paint-contract.md`）→ 修复 `e7139ca`。**编排者亲跑 CDP 探针复核**：`DOM TEXT` 非空含主壳界面文字（"No tasks yet / harness2 / Ask ZCode / Projects / Tasks / No model available..."）、截图 `t3-cdp-page.png` 322KB/3695 采样色（灰屏时=1 色）。**用户终验进行中**（隔离实例已启动在案）。观察项见文末结论 |
+| V3 | ✅ | 编排者亲跑 `pnpm --filter @harness2/zcode-adapter test`：首轮 24/24；P1+灰屏修复后复跑 **32/32 绿**（channels 4 + stub-behavior 28）；typecheck 0 |
 | V4 | ✅ | scratch `git status` 干净（编排者复核）；packages/ui `diff -rq` exit 0（实施代理，执行记录 T4） |
 | V5 | ✅ | `git diff --stat feb9526..HEAD -- 六包` 输出为空（编排者亲跑） |
 | V6 | ✅ | 六包全量全绿（实施代理跑；ui-shared 13 红 / desktop 10 红隔离复跑 42/42、75/75 全绿——OPEN.md 既登记的并行负载抖动模式，非回归） |
-| V7 | ✅ | LICENSE-ZCODE.md + bundle banner + scratch LICENSE（实施代理；V8 审查代理复核中） |
-| V8 | ⏳ | 独立只读审查代理已派（审查面：红线⑩ / 无登录门安全性 / UI 零改动 / Apache-2.0 / 桩类型对齐 / 事故复核），报告回来后定 ✅/⚠️/❌ |
+| V7 | ✅ | LICENSE-ZCODE.md 与 refs 原版 LICENSE **逐字节一致** + bundle banner（`build/host-bundle.mjs:41-49` 与产物头部均在位）+ scratch LICENSE——**独立审查代理逐字节复核属实** |
+| V8 | ✅（P1 闭环） | 独立只读审查：**⚠️ 有条件通过（无 P0 / P1×2 / P2×4）**；审查面逐项复核属实（UI 零改动逐字节、六包零 diff、57 频道对账、无登录门判据链、事故清理、变异推演非空转）。P1-1 五频道写路径显式 throw（`531c538`，编排者复验测试绿 + 零改动不破）+ P1-2 logout/Rewards 登记（`c06030e`）→ **定论通过**。P2×4 登记不修（throws 无编译期校验 / package.json exports 死映射与 license 字段 / tsconfig 硬编码 scratch 路径 / 两处测试小项） |
 
-**结论：V1–V7 通过（V2 以行为证据核定，视觉终验归用户）；V8 审查中——ZS1 阶段状态 = 已交付待审查收口。**
+**结论：V1–V8 全部通过（`e7139ca` 后状态）——ZS1 阶段收口，待用户终验一眼。**
+
+**V2 观察项（用户终验时留意，均非阻塞）**：
+1. 首帧 DOM 出现 radix dialog + `bg-black/60` 遮罩节点（疑似命令面板浮层自动打开）——若窗口内有半透明遮罩按 Esc 关闭即可；根因待 ZS2 复核（可能为桩触发焦点/快捷键路径异常）。
+2. 空 provider 桩的预期空态横幅「No model available. Upgrade or set a custom model.」带「Upgrade」按钮——ZS2 接真实 `config.providers` 后自然消失（届时按红线⑩决定该入口去留）。
+3. footer 显示桩身份「harness2」+「退出登录/奖励」可点必败（残留风险 #7/#8，归 ZS4/ZS6 隐藏清单）。
