@@ -26,12 +26,12 @@ import {
 } from "../src/root-mount-stubs.js";
 
 describe("C 类静默空实现（调用返回空值不炸）", () => {
-  it("oauth 读路径：getProviders→[]、getActiveProvider→null、restoreCachedSessionState→signed-out", async () => {
+  it("oauth 读路径：getProviders→[]、restoreCachedSessionState→authenticated 本地身份（无登录门，编排者 2026-10-20 指示）", async () => {
     await expect(oauthServiceStub.getProviders()).resolves.toEqual([]);
     await expect(oauthServiceStub.getActiveProvider()).resolves.toBeNull();
-    await expect(oauthServiceStub.restoreCachedSession()).resolves.toBeNull();
     await expect(oauthServiceStub.restoreCachedSessionState()).resolves.toEqual({
-      status: "signed-out",
+      status: "authenticated",
+      userInfo: { id: "harness2-local", username: "harness2", displayName: "harness2" },
     });
   });
 
@@ -92,9 +92,12 @@ describe("B 类显式 throw（v4 竖切 ZS2/ZS3）", () => {
     ).rejects.toThrow(/ZS1: not implemented/);
   });
 
-  it("file：未实现方法 throw（workspace 文件索引归 ZS2/ZS3）", async () => {
+  it("file：空态方法（ensureConversationWorkspace）返回隔离数据根路径，其余 throw（workspace 文件索引归 ZS2/ZS3）", async () => {
     const { services } = createHarness2Services();
     const file = services.getOptional(IFileService)!;
+    const workspace = await file.ensureConversationWorkspace();
+    expect(workspace.workspacePurpose).toBe("conversation");
+    expect(workspace.path).toContain(".zcode");
     await expect(file.readdir({} as never)).rejects.toThrow(/ZS1: not implemented/);
   });
 
@@ -135,10 +138,11 @@ describe("B 类显式 throw（v4 竖切 ZS2/ZS3）", () => {
 });
 
 describe("Root 挂载 9 服务空态形状（V3 关键判据）", () => {
-  it("setting.get → 空态 AppSettings；update throw（不假成功）", async () => {
+  it("setting.get → 空态 AppSettings + providerFamilyDomain（登录门判据要求非空）；update throw（不假成功）", async () => {
     const settings = await settingServiceStub.get();
     expect(settings.recentProjects).toEqual([]);
     expect(typeof settings.locale).toBe("string");
+    expect(settings.providerFamilyDomain).toBeTruthy();
     await expect(settingServiceStub.update({} as never)).rejects.toThrow(/ZS1: not implemented/);
   });
 

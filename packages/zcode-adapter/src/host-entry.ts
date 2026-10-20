@@ -19,7 +19,13 @@
  */
 import process from "node:process";
 import { randomUUID } from "node:crypto";
-import { ChannelServer, MessagePortProtocol, type MessagePortLike, type MessagePortPayload } from "@zcode/rpc";
+import {
+  ChannelServer,
+  LoggingChannelServer,
+  MessagePortProtocol,
+  type MessagePortLike,
+  type MessagePortPayload,
+} from "@zcode/rpc";
 import { HostMessageTypes, HostResponseTypes } from "@zcode/shared";
 import { createHarness2Services } from "./createHarness2Services.js";
 
@@ -101,10 +107,12 @@ function publishReady(state: DatabaseStartupStateReady): void {
 function exposeServicesOnPort(port: ElectronMessagePortMainLike): void {
   const { services } = createHarness2Services();
   const protocol = new MessagePortProtocol(wrapElectronPort(port));
-  const server = new ChannelServer(protocol, "host", 1000, false);
+  const rawServer = new ChannelServer(protocol, "host", 1000, false);
+  // rpc:call 日志层（与原版 host 同款中间件）：T3 取证用——证明 renderer 在消费桩
+  const server = new LoggingChannelServer(rawServer, (message) => log("info", message));
   services.exposeOnChannelServer(server);
   port.once("close", () => {
-    server.dispose();
+    rawServer.dispose();
     protocol.disconnect();
   });
 }

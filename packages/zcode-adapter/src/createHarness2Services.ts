@@ -70,6 +70,7 @@ import {
 } from "@zcode/services";
 import { CHANNEL_REGISTRY } from "./channel-registry.js";
 import { createStubService } from "./stub-factory.js";
+import { fileServiceStub } from "./file-stubs.js";
 import {
   botsServiceStub,
   broadcastServiceStub,
@@ -95,6 +96,7 @@ const EXPLICIT_STUBS = new Map<string, unknown>([
   [IBotsService.channelName, botsServiceStub],
   [ICodingPlanSubscriptionService.channelName, codingPlanSubscriptionServiceStub],
   [ICredentialService.channelName, credentialServiceStub],
+  [IFileService.channelName, fileServiceStub],
   [IMarketingTouchService.channelName, marketingTouchServiceStub],
   [IModelSelectionService.channelName, modelSelectionServiceStub],
   [IOAuthService.channelName, oauthServiceStub],

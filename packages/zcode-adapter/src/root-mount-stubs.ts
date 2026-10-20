@@ -18,6 +18,7 @@ import type {
   MarketingTouchSnapshot,
   OAuthCachedSessionRestoreResult,
   SourceServerManagementSnapshot,
+  UserInfo,
   ZCodeTaskMeta,
 } from "@zcode/shared";
 import type {
@@ -59,9 +60,17 @@ import { createStubService } from "./stub-factory.js";
 // ── A 类：Root 挂载 9 服务之 setting / credential / provider-settings / model-selection ──
 
 const settingServiceImpl: Pick<ISettingService, "get"> = {
-  // Root.tsx:397-399 用 !== false / === true 判定，undefined 均有缺省语义
+  // Root.tsx:397-399 用 !== false / === true 判定，undefined 均有缺省语义。
+  // providerFamilyDomain（编排者 2026-10-20 指示：harness2 无账户体系、壳不得有登录门）：
+  // 登录门判据 `!providerFamilyDomain || (!user && !hasUsableProvider)`（useProviderAvailabilityLoginEntryGuard）
+  // 要求该字段非空才可能关门；类型只有 "zai"|"bigmodel" 两值，取 "zai" 占位（ZS4/ZS6 正式隐藏账户面）。
   async get(): Promise<AppSettings> {
-    return { recentProjects: [], locale: "en-US" };
+    return {
+      recentProjects: [],
+      locale: "en-US",
+      providerFamilyDomain: "zai",
+      providerFamilyDomainMigrated: true,
+    };
   },
 };
 /** A: 映射 core settings ZS2+；读空态形状，写 throw */
@@ -231,6 +240,13 @@ export const taskGroupServiceStub: ITaskGroupService = createStubService<ITaskGr
 
 // ── C 类空态触达：oauth / coding-plan-subscription / bots / remote-projects / source-server-management / marketing-touch ──
 
+/** harness2 本地身份（无账户体系；编排者 2026-10-20 指示「无登录门」的桩身份） */
+const harness2LocalUserInfo: UserInfo = {
+  id: "harness2-local",
+  username: "harness2",
+  displayName: "harness2",
+};
+
 const oauthServiceImpl: Pick<
   IOAuthService,
   | "getProviders"
@@ -240,19 +256,24 @@ const oauthServiceImpl: Pick<
   | "restoreSession"
 > = {
   async getProviders(): Promise<[]> {
-    return []; // 无可用 OAuth provider → 登录入口显示空列表
+    return []; // 无可用 OAuth provider（harness2 无账户体系）
   },
   async getActiveProvider(): Promise<null> {
-    return null; // 未登录
-  },
-  async restoreCachedSession(): Promise<null> {
+    // null：refreshRestoredOAuthProviderFamilyAfterStartup 对 null 直接返回，
+    // 不触发 family selection 写入（setting.update 是 throw 桩）
     return null;
+  },
+  async restoreCachedSession(): Promise<UserInfo> {
+    return harness2LocalUserInfo;
   },
   async restoreCachedSessionState(): Promise<OAuthCachedSessionRestoreResult> {
-    return { status: "signed-out" }; // 从未登录（非 jwt-expired，避免触发重登流程）
+    // 编排者 2026-10-20 指示：无登录门——桩报告稳定的「已登录·本地身份」，
+    // 使 useProviderAvailabilityLoginEntryGuard 判 shouldOpenLoginEntry=false，
+    // UI 跳过 WelcomeScreen 直达主壳空工作区。onDidChangeSession 永不触发（身份恒定）。
+    return { status: "authenticated", userInfo: harness2LocalUserInfo };
   },
-  async restoreSession(): Promise<null> {
-    return null;
+  async restoreSession(): Promise<UserInfo> {
+    return harness2LocalUserInfo;
   },
 };
 /** C: ZCode OAuth；读路径未登录态；登录动作 throw（ZS2 映射 core auth 或 ZS6 隐藏） */

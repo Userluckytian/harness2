@@ -282,3 +282,36 @@
 - `node build/host-bundle.mjs` → `dist/host-entry.cjs 1.5mb`；`node dist/host-entry.cjs` → 守卫报「must run inside Electron utilityProcess」exit 1（bundle 可加载性冒烟）
 
 **残留（T3 实测兜底）**：C 类默认 null 的频道（usage-stats/client-config/client-scenes/cloud-content/cua 等）空态不触达（boot log 实证），若 T3 启动路径触达则补显式形状并登记。
+
+### Task 3：host 装配替换 + 启动到空工作区（无登录门）✅
+
+**目标态按无登录门执行（编排者 2026-10-20 指示：「我们不需要账户登录哦，这点和 zcode 有点不同」）**——Task 3 原文「渲染出 ZCode 空态/WelcomeScreen」修正为「直达主壳空工作区，无登录门」；总纲/计划正式修订由编排者交卷后落盘。
+
+**P1 patch 落地（scratch 内 `packages/desktop/src/main/desktopRuntimeEnv.ts:86`）**：
+
+```diff
+- export const hostModulePath = join(import.meta.dirname, "../host/index.js");
++ // ZS1-P1（harness2 装配点 patch，登记于 ZS1 计划执行记录）：
++ export const hostModulePath =
++   process.env.ZS1_HOST_MODULE_PATH?.trim() || join(import.meta.dirname, "../host/index.js");
+```
+
+唯一装配点改动；tsup 重建 main 后生效。数据根隔离沿用 ZCode 原生 `ZCODE_DATA_BASE_DIR`（env 通道，非 patch）指向 `D:\AI_Projects\harness2-zs1-build\zs1-data`——**ZS1 桩不写真实数据**；字面 `~/.harness2` 根（paths.ts 改造）归 ZS2 真实数据流时再做。
+
+**无登录门实现（方案 1：桩报告已登录·本地身份）**：
+
+- 登录门判据（实测定位）：`useProviderAvailabilityLoginEntryGuard` 的 `shouldOpenLoginEntry = !providerFamilyDomain || (!user && !hasUsableProvider)`；桌面 UI 无「本地模式」开关（`shouldEnableProviderAvailabilityLoginEntryGuard` 仅排除 Web 远控）→ 必须走桩侧满足判据。
+- `setting.get` → 增加 `providerFamilyDomain: "zai"`（类型只有 "zai"|"bigmodel"，占位取 "zai"；ZS4/ZS6 正式隐藏账户面）+ `providerFamilyDomainMigrated: true`（防迁移写路径）。
+- `oauth.restoreCachedSessionState` → `{status: "authenticated", userInfo: harness2LocalUserInfo}`（id=harness2-local）；`onDidChangeSession` 永不触发（身份恒定）；`getActiveProvider` 保持 null（`refreshRestoredOAuthProviderFamilyAfterStartup` 对 null 直接返回，不触发 family selection 写入）。
+- **空态触达点补形状（按计划风险表预案登记）**：`file.ensureConversationWorkspace`（Root.tsx:1176-1214 启动兜底，失败会显示 workspace 错误横幅）→ 返回 `{path: {ZCODE_DATA_BASE_DIR}/.zcode/workspace/default, created: false, workspacePurpose: "conversation"}`；目录由启动步骤预建（scratch 数据根内，非真实数据）。
+
+**证据（真实命令输出，boot log `zs1-t3-final.log`）：**
+
+1. **host 装配替换**：`[spawnHostProcess] host module path: D:\AI_Projects\harness2\packages\zcode-adapter\dist\host-entry.cjs`（main 日志）+ `[zs1-stub-host] zs1 stub host started`（桩 bundle 自身日志经 parentPort 中继）。
+2. **进程存活**：50s 检查 6 个 electron.exe（main/renderer/gpu/host/scheduler/network）。
+3. **无登录门直达主壳空工作区**：rpc:call 全 OK（**0 FAIL**），调用面与原版 T1 空态对齐且含主壳签名——`file.ensureConversationWorkspace OK`（工作区引导成功）、`window-controller.listTaskList`（侧栏任务列表）、`onboarding-record.shouldOnboard/getLatestEntry/claimAnonymousRecord`（引导流程静默通过）、`project.readTree`/`task-groups.read`/`remote-projects.readDirectory`；signed-out 对照轮（zs1-t3-nogate 前身）无 listTaskList 且 ensureConversationWorkspace FAIL——翻转前后行为差异实证。
+4. **变异验证**：`modelSelectionServiceStub.getView` 临时改 throw → `model-selection.getView FAIL ×4`（rpc 日志）+ 截屏 150 distinct colors（对照健康态 1435——UI 落错误/降级态而非空态，Root.tsx:283-291 加载失败 toast 路径）；恢复后复绿（getView OK + 1435 colors）。工作树无残留（变异代码已还原）。
+5. **截图**：`docs/screenshots/zs1/t3-stub-host-empty-state.png`（真实运行截取 2560x1440；像素统计 1435 distinct colors；实施代理模型无视觉输入，内容留编排者核图）。窗口标题 `ZCode`。
+6. **refs 仓零污染**：`D:/AI_Projects/refs/ZCode` git status 仍为初始态（3c5b2276 + 原有 1 个非本任务未跟踪文件）。
+
+**连带口径（登记）**：oauth/codingPlanSubscription/用量升级/登录登出全部 C 类静默；footer 账户菜单会显示桩身份「harness2」（cosmetic，ZS4/ZS6 隐藏）；设置页 providerFamilyDomain 占位 "zai" 的账户面入口在空数据下无可点支付/登录动作（读路径空值）。
