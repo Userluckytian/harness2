@@ -315,3 +315,50 @@
 6. **refs 仓零污染**：`D:/AI_Projects/refs/ZCode` git status 仍为初始态（3c5b2276 + 原有 1 个非本任务未跟踪文件）。
 
 **连带口径（登记）**：oauth/codingPlanSubscription/用量升级/登录登出全部 C 类静默；footer 账户菜单会显示桩身份「harness2」（cosmetic，ZS4/ZS6 隐藏）；设置页 providerFamilyDomain 占位 "zai" 的账户面入口在空数据下无可点支付/登录动作（读路径空值）。
+
+### Task 4：收口核查 ✅
+
+**V5 冻结区零改动**：`git diff --stat feb9526..HEAD -- packages/core packages/gateway packages/cli packages/desktop packages/ui-shared packages/web` → **0 行**（输出为空）。
+
+**V4 UI 零改动（源码级对照）**：`diff -rq --exclude=node_modules --exclude=dist refs/ZCode/packages/ui scratch/packages/ui` → **exit 0（完全一致）**；`packages/desktop` 全量对照仅 `src/main/desktopRuntimeEnv.ts` 一处差异（=登记的 P1 patch，git diff 5 insertions/1 deletion）；refs 仓 `git status` 保持初始态（3c5b2276 + 1 个非本任务未跟踪文件）。
+
+**V6 六包旧测试（全量 + 隔离复跑定性）**：
+
+| 包 | 全量（并行） | 隔离复跑 | 定性 |
+| --- | --- | --- | --- |
+| core | 110 files / **1623 passed + 2 skipped（全绿）** | — | ≥基线（1232+2 → 已随后续阶段增至 1623） |
+| gateway | **40/40 全绿** | — | =基线 |
+| web | **150/150 全绿** | — | =基线 |
+| cli | 93 files / **1575 passed + 2 skipped（全绿）** | — | =基线 |
+| ui-shared | 763 passed + 13 failed | 3 红文件复跑 **42/42 全绿** | 并行负载计时抖动（OPEN.md 既登记模式），非回归 |
+| desktop | 1278 passed + 10 failed + 1 skipped | 8 红文件复跑 **75/75 全绿** | 同上（红用例均 17–29s 超时形态） |
+
+lockfile 净增 321 行 = zcode-adapter devDeps（与既有包同版本：typescript 7.0.2 / vitest 5.0.0 / @types/node 26.4.1 / esbuild 0.25.0）+ 1 处传递依赖 `@bramus/specificity` 2.4.2→2.4.x（CSS 工具，与测试无关）。
+
+**V7 Apache-2.0 随附**：scratch 根 `LICENSE` 在位（robocopy 原样拷贝）；`packages/zcode-adapter/LICENSE-ZCODE.md` 随附原许可证；host bundle 产物带衍生作品 banner（build/host-bundle.mjs）。
+
+**事故登记（已恢复，留痕）**：收口期 `pnpm -r build` 首跑时，zcode-adapter 旧 build 脚本（`tsc -p tsconfig.build.json`）因 rootDir 外部源码（scratch paths）把 **1465 个编译产物（.js/.d.ts/.map × 366 模块）发射进 scratch 的 rpc/services/shared src 目录**，导致后续 esbuild 解析到类型已擦除的 .js 报 "No matching export"。处置：scratch `git clean -f -- packages/{rpc,services,shared}/src` 精确清除（scratch git status 复核回 P1+原有文件初始态）；build 脚本改为 `tsc --noEmit && node build/host-bundle.mjs`（包的唯一构建产物即 host bundle，tsconfig.build.json 删除）。**T3 全部取证（boot log/截图/变异验证）均在该事故发生前采集，证据有效**；事故后重建 bundle + 复跑 24/24 测试 + 最终冒烟（6 进程存活 40s、43 rpc:call 全 OK、主壳调用面完整、host=本仓 bundle）复验通过。
+
+**V8 代码审查**：⬜ 独立只读子代理审查未在本代理职权内执行（实施代理不可自审）——审查面建议：UI 零改动核查（P1 清单 vs 实际 diff）/ 红线⑩（C 类静默不产生假入口；登录门绕过的桩身份口径）/ core 与旧壳零改动 / LICENSE 合规 / 桩类型对齐。留编排者派发。
+
+### 验收标准总表自评（V1–V8）
+
+| # | 标准 | 自评 | 证据 |
+|---|------|------|------|
+| V1 | 新壳启动存活 | ✅ | 桩 host 下 6 进程 ≥40s 存活（tasklist，t3-final 与 t4-smoke 两轮） |
+| V2 | 空态渲染 | ✅（目标态已按编排者指示修正为「无登录门直达主壳空工作区」） | 截图 `docs/screenshots/zs1/t3-stub-host-empty-state.png`（1435 colors）+ 主壳调用面（listTaskList/ensureConversationWorkspace/onboarding 全 OK）；截图内容需编排者核图（实施代理无视觉） |
+| V3 | 频道桩 | ✅ | 57 频道枚举对账单测 + C 静默/B throw 断言 + 9 服务空态形状 + ProxyChannel 集成测，24/24 全绿；typecheck 0 |
+| V4 | UI 零改动 | ✅ | packages/ui 源码 diff exit 0；desktop 仅 P1 一处（登记） |
+| V5 | 旧壳/core 零改动 | ✅ | 六包 git diff = 0 行 |
+| V6 | 六包旧测试 | ✅ | core/gateway/web/cli 全量全绿；ui-shared/desktop 红点隔离复跑全绿（并行负载抖动，既登记模式） |
+| V7 | Apache-2.0 | ✅ | scratch LICENSE + adapter LICENSE-ZCODE.md + bundle banner |
+| V8 | 代码审查 | ⬜ | 留编排者派独立子代理（实施代理不可自审）；审查面建议见 Task 4 节 |
+
+### 残留风险（交卷）
+
+1. **scratch 依赖**：zcode-adapter 的 typecheck/test/bundle 依赖仓外 `D:/AI_Projects/harness2-zs1-build/ZCode`（路线 B 既定；其他机器需先按执行记录步骤重建 scratch）。长期 vendored 路线归 ZS6。
+2. **C 类默认 null 频道**（usage-stats/client-config/client-scenes/cloud-content/cua 等）：空态不触达（boot log 实证）；用户主动点开相关入口可能显示异常——ZS4/ZS6 隐藏清单处理。
+3. **桩身份口径**：footer 显示「harness2」本地身份、providerFamilyDomain 占位 "zai"（类型仅两值）——ZS4/ZS6 正式隐藏账户面时替换。
+4. **B 类可点入口**：插件市场/远程连接/会话分享等入口点击会显式报「ZS1: not implemented」——显式失败优于假成功（红线⑩口径），ZS2/ZS3 补能力或 ZS6 隐藏。
+5. **登录门绕过为桩侧方案**（编排者授权的方案 1）：ZCode UI 无本地模式开关（实测确认）；若上游出现真实无账户路径，ZS2+ 优先切换。
+6. **zcode-agent/bots syncAppRuntimePreferences 未在桩启动日志出现**（原版 T1 出现 1 次）——Root effect 依赖数组时序细节，无功能影响（ZS2 接真实偏好同步时复核）。
