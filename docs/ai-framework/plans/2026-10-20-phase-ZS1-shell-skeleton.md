@@ -204,3 +204,50 @@
 
 1. 用户真机点验新壳空态观感（ZCode 原版视觉）。
 2. 用户确认「这就是我要的壳」后，ZS2 计划启动。
+
+---
+
+## 执行记录（2026-10-20 实施回填，分支 feat/phase-zs1-shell-skeleton）
+
+### Task 0：路线决策 —— **选路线 B（scratch 构建 + host 注入）**
+
+**实测过程（全部真实命令，本机 win32 / cmd.exe 缺失环境）：**
+
+1. 拷贝：`robocopy D:\AI_Projects\refs\ZCode D:\AI_Projects\harness2-zs1-build\ZCode /E /XD node_modules`（含 .git，401M；refs 仓零触碰，收口用其 `git status` 复核）。
+2. 依赖：`ELECTRON_MIRROR=https://npmmirror.com/mirrors/electron/ node <pnpm.mjs> install`（pnpm 直调通道，2026-10-14 §17）→ **Done in 3m25s**（2253 包，store 硬链接为主；electron postinstall 经镜像下载成功；node-pty 走 win32 prebuild 跳过 rebuild；根 prepare=husky+tsc --noEmit 通过）。engine 警告（要 node≥24，本机 22.23.1）无碍——Electron 41 内置 Node 24，构建期脚本在 22 上全过。
+3. 构建（绕开 cmd.exe，直调 node 入口）：
+   - `node scripts/build-metadata.mjs`（desktop）→ build-meta.json（commit=3c5b2276）
+   - `NODE_ENV=production ../../node_modules/.bin/tsup`（desktop；.bin 的 sh shim 在 git-bash 可直跑）→ out/main + out/host(1.87MB) + out/preload 全出
+   - `NODE_ENV=production ../../node_modules/.bin/vite build` → renderer ✓ built in 22.10s
+   - agent bundle：`ZCODE_BOOTSTRAP_WITH_REMOTE=1 node scripts/build-desktop-agent-cli.mjs`（ZCode 原生的纯 node 构建通道，不经 pnpm/cmd.exe）→ `dist/zcode.cjs 14.5mb`，staged 到 `bundled-agents/win32-x64/glm/`
+4. 启动：`ZCODE_DATA_BASE_DIR=D:\AI_Projects\harness2-zs1-build\zs1-data ../../node_modules/electron/dist/electron.exe .`（cwd=packages/desktop）。
+
+**决策理由：**
+
+- 路线 A（vendor 进仓）要把 ZCode 依赖闭包（10+ workspace 包 + apps/zcode-cli 子 workspace + 2.5G node_modules）接进 harness2 workspace：两仓 packageManager 版本不同（harness2 pnpm 11.13 vs ZCode 锁 pnpm 10.33）、allowBuilds/补丁体系冲突风险大，且 400M 源码进主仓污染历史——成本远高于路线 B。
+- 路线 B 实测全通（上述 1–4 步），构建完全隔离在仓外 scratch，主仓零污染；host 注入点唯一且已定位：`packages/desktop/src/main/desktopRuntimeEnv.ts:86` `hostModulePath = join(import.meta.dirname, "../host/index.js")`。
+- 长期 vendored 路线归 ZS6 决策（总纲既定），ZS1 不预支。
+
+**关键机制发现（后续阶段复用）：**
+
+- **数据根隔离**：`ZCODE_DATA_BASE_DIR` 环境变量（`packages/services/src/paths.ts` 优先级：setDataBaseDir() > env > homedir()）+ main 的 `buildHostProcessEnv` 显式下发到 host——原版启动与桩启动都不碰用户真实 `~/.zcode`。
+- **原版 host 启动硬依赖 agent bundle**：`prepareSessionStorage`（storagePreparationProcesses.ts:99）在无 zcode.cjs 时报 `unsupported_runtime`，renderer 落数据库失败屏——agent bundle 是原版空态的前置条件（桩 host 无此依赖，Task 3 自行报 ready）。
+- **main↔host 协议**（桩 host 必须实现的最小集）：InitLocal（带转移 MessagePort）→ parentPort 回 `DatabaseStartupState`（phase=ready，startupId 用 InitLocal 下发的 databaseStartupId 原样回填，schema 见 shared/database-startup.ts，strict 校验）→ 在 port 上开 ChannelServer 注册服务；Dispose → 退出。renderer 侧 DatabaseStartupAdmission 按 startupId 配对 state+port 才放行业务 Root。
+
+**patch 清单（scratch 内，非 refs；随 Task 3 落地后在此登记 diff）：**
+
+| # | 文件（scratch 内） | 内容 | 理由 |
+| --- | --- | --- | --- |
+| P1 | `packages/desktop/src/main/desktopRuntimeEnv.ts` | hostModulePath 支持 `ZS1_HOST_MODULE_PATH` 环境变量注入 | 唯一装配点 patch：把 host 进程模块指向本仓 zcode-adapter 构建的 host bundle（Task 3） |
+
+构建绕行全部使用 ZCode 原生环境开关（非 patch）：`ZCODE_BOOTSTRAP_WITH_REMOTE=1`（纯 node 构建通道）、`ZCODE_DATA_BASE_DIR`（数据根）、`ELECTRON_MIRROR`（二进制下载）。
+
+### Task 1：壳原版启动达标 ✅
+
+- **进程存活**：启动后 40s 检查 `tasklist` → 6 个 electron.exe（main 76124 / host 42088 / renderer 74008 / gpu+utility 等），远超 30s 判据。
+- **数据库启动**：`[database-startup] terminal { status: 'ready', durationMs: 3512 }`（agent bundle 就位后一次通过；首次无 bundle 时为 `unsupported_runtime`，已定位并修复——见上）。
+- **空态/登录界面证据**（boot log，zs1-t1-boot2.log）：
+  - 46 条 `[rpc:call] ... OK`（window-controller.listTaskList / remote-projects.readDirectory / project.readTree / provider-settings.getView / model-selection.getView / oauth.getProviders / oauth.getActiveProvider / credential.load 等）——renderer 已过 DB loading 屏、业务 Root 挂载成功；
+  - `[zcode-agent-service] ZCode agent 等待 provider/model 就绪 …"当前没有可用的模型供应商和模型，请先登录或配置 API Key。"`——未登录空态。
+- **截图**：`docs/screenshots/zs1/t1-original-shell.png`（真实运行截取，PowerShell CopyFromScreen 全屏 2560x1440；像素统计 514 distinct colors、浅色为主，与 ZCode 浅色主题一致。实施代理模型无视觉输入，截图内容留编排者核图）。
+- 现场已清（taskkill electron 全灭）。
