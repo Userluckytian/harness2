@@ -362,6 +362,8 @@ lockfile 净增 321 行 = zcode-adapter devDeps（与既有包同版本：typesc
 4. **B 类可点入口**：插件市场/远程连接/会话分享等入口点击会显式报「ZS1: not implemented」——显式失败优于假成功（红线⑩口径），ZS2/ZS3 补能力或 ZS6 隐藏。
 5. **登录门绕过为桩侧方案**（编排者授权的方案 1）：ZCode UI 无本地模式开关（实测确认）；若上游出现真实无账户路径，ZS2+ 优先切换。
 6. **zcode-agent/bots syncAppRuntimePreferences 未在桩启动日志出现**（原版 T1 出现 1 次）——Root effect 依赖数组时序细节，无功能影响（ZS2 接真实偏好同步时复核）。
+7. **footer「退出登录」可点必败且失败无用户可见反馈**（独立审查 P1-2 登记）：无登录门桩身份（`restoreCachedSessionState`→authenticated，编排者授权方案，不改）使 footer 渲染该入口；点击 confirm 后 `oauthService.logout()` 桩 throw，错误无用户可见反馈（静默）。归 ZS4/ZS6 隐藏清单；ZS2 若引入真实登出语义再定桩口径。
+8. **footer「奖励」打开云端 webview 必加载失败**（独立审查 P1-2 登记）：同上桩身份使 footer 渲染该入口；harness2 无账户体系，点击打开的云端 Rewards webview 必加载失败。归 ZS4/ZS6 隐藏清单；ZS2 若引入真实账户/登出语义再定桩口径。
 
 ---
 
