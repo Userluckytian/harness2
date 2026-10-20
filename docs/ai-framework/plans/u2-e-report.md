@@ -6,13 +6,13 @@
 
 ## 总览（当前时刻）
 
-| 项 | 状态 | 说明 |
-| --- | --- | --- |
-| E-a MarkdownBlock + ChatView 接线 | 未动（设计已定案，见下） | 探索 100% 完成，即刻开工 |
-| E-b shell.css .markdown-body + scrim + 死类 | 未动（侦查完成） | 死类零引用已核实 |
-| E-c seat.tsx 状态面板浮层化 | 进行中→倾向 ⛔ 放弃登记 | 详见 §E-c 评估（20 分钟预算制） |
-| E-d markdown-block.test.tsx + perf B1 | 未动 | 依赖 E-a |
-| 闸门（tsc/vitest/dist/desktop/web/lint） | 未动 | |
+| 项                                          | 状态                     | 说明                            |
+| ------------------------------------------- | ------------------------ | ------------------------------- |
+| E-a MarkdownBlock + ChatView 接线           | 未动（设计已定案，见下） | 探索 100% 完成，即刻开工        |
+| E-b shell.css .markdown-body + scrim + 死类 | 未动（侦查完成）         | 死类零引用已核实                |
+| E-c seat.tsx 状态面板浮层化                 | 进行中→倾向 ⛔ 放弃登记  | 详见 §E-c 评估（20 分钟预算制） |
+| E-d markdown-block.test.tsx + perf B1       | 未动                     | 依赖 E-a                        |
+| 闸门（tsc/vitest/dist/desktop/web/lint）    | 未动                     |                                 |
 
 ## 卡点报告（回应编排者质询）
 
@@ -34,7 +34,7 @@ ChatView/streaming 数据面、CSS token 面、seat 状态面板容器查询结�
    - `case 'streaming'`（:157-161）同 `.text` + `.cursor` ▌ → 流式态：
      `MarkdownBlock streaming=true`（mode=streaming + parseIncompleteMarkdown，光标保留在块外）。
    - :189 partial `<pre>` → MarkdownBlock **static**（半截产出=终态冻结，`turnIsRunning &&
-     isLastTextItem` 恒 false：partial 只在 turn-end 后出现；直接保守 static 正确，报告注明）。
+isLastTextItem` 恒 false：partial 只在 turn-end 后出现；直接保守 static 正确，报告注明）。
 2. **streaming 判定可得性**：ChatView 已有 `store.peekStream(sessionId)?.running`
    （:80 现算 `running`）→ turnIsRunning 可得；`item.streaming===true` 即 isLastTextItem
    （投影层保证在途 live.text 条目恒为末条，chat-model.ts:386-391）。

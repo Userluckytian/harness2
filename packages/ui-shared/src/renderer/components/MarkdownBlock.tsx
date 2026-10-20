@@ -17,7 +17,7 @@
 // **动态 import + React.lazy**；Suspense fallback 即纯文本降级（边界=加载期也不闪白）。
 // ESM dist 由 vite 壳（desktop renderer / web）消费，chunk 拆分是加分项：
 // 不用 Markdown 的界面不会下载解析器。
-import { Component, lazy, memo, Suspense, type ComponentProps, type ReactNode } from 'react';
+import { Component, lazy, memo, Suspense, type ReactNode } from 'react';
 // streamdown 是 ESM-only：静态值 import 会让 CJS 产物触发 TS1479 / 运行期 ERR_REQUIRE_ESM，
 // 静态 type-only import 在 CJS 构建下又触发 TS1541（须 resolution-mode 属性）。
 // → 值走**动态 import + React.lazy**（下方 StreamdownLazy），类型走**内联 `import()` 类型**

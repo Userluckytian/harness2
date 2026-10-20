@@ -31,3 +31,8 @@ scripts/tui-parity/**/__pycache__/
 
 # 测试/对照临时环境（含 auth.json 密钥，永不入库）
 .tmp-*/
+
+# ZS1 壳构建 scratch 区（实际位于仓外 D:/AI_Projects/harness2-zs1-build/，不入 git；
+# 此条防御性拦截仓内同名目录误创建）
+harness2-zs1-build/
+scratch-zs1/

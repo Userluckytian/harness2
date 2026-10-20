@@ -9,12 +9,14 @@
 ### 1. Z-46 窗控 —— OK（1 项第一轮 P2 未修，如实带过）
 
 **单实例**：
+
 - `WindowControlsOverlay` 全仓挂载点恰两处：`packages/desktop/src/renderer/App.tsx:485`（壳层常驻）与 `packages/desktop/src/renderer/ErrorBoundary.tsx:69`（fallback 内）。两处互斥渲染（fallback 触发时 App 子树整体不渲染），屏上恒一套。grep `WindowControls|window-controls` 全仓（desktop/web/ui-shared，排除 css）无其他挂载。
 - `WindowControls.tsx:59-94` 本体（三键 28px、aria-label/title 中文、`data-testid="window-controls"`）仅被 overlay（`:102-113`）引用，无内嵌第二实例。
 - `ConversationHeader.tsx` 残留核：文件内**零**窗控代码（import、 JSX、通道调用均无；`:5-7` 只剩说明注释指明「三键不再内嵌本头」，右侧动作区只剩右栏开关 `:143-156`）——**无残留，不判 P1**。反向断言在测试里：`packages/desktop/test/conversation-header.test.tsx:204,212` `queryByTestId('window-controls')` 为 null；`window-controls-overlay.test.tsx:125`「选中会话后屏上仍恰有一套」。
 - `seat.tsx`（`packages/ui-shared/src/renderer/conversation/seat.tsx`，606 行）grep `WindowControls|window-controls|isDesktop|variant="draft"` **零命中**——无孤儿引用；header 缝 `:516` 只渲染注入的 `header?.()`，空态（`selectedId=null`）时整条 chat 席位由 overlay 覆盖，不依赖 header。装配点 `packages/desktop/src/renderer/conversation/assembly.tsx:127-128,173` 注入 `ConversationHeader`（会话态），与 ZCode「draft 只隐藏标题区」不同但 overlay 模式下行为等价（计划 §49 认可的落点二：壳层常驻）。
 
 **overlay 交互分区**：
+
 - CSS `packages/desktop/src/renderer/layout/desktop-window.css:57-81`：overlay 容器 `pointer-events: none`（`:70`）、z-130（高于设置 z-[100]/面板 z-[110]，注释 `:60-61` 说明是刻意为之）；drag 条 `position:absolute; inset:0; -webkit-app-region: drag` + `pointer-events:auto`（`:72-76`）；键体 `.window-controls-overlay .window-controls { position:relative; pointer-events:auto; -webkit-app-region:no-drag }`（`:78-82`）——drag 条在键体之下（DOM 序 `:109` drag span 在前 + 键体 relative 提层），不吃三键点击。分区结构正确。
 - 让位规则：`.window-controls-active .pane-header` / `[data-testid='side-pane-tabstrip']` 各 `padding-right:140px`（`:113-120`），根类由 `App.tsx:453-459` 同一判据挂载。
 
@@ -29,6 +31,7 @@
 ### 2. Z-48/Z-49 侧栏 —— OK（cwd 链核全；1 项注释/实现不符，P2）
 
 **「在此项目新建会话」cwd 传递链（逐环核全，无断点 = 不判 P1）**：
+
 1. `SessionBrowser.tsx:420-436` `ProjectGroupHead`：hover/focus mount（`shouldMountRowActions` `:139-141`，非 CSS 隐藏，对齐 ZCode `WorkspaceSidebarItem.tsx:275-281`），显式组（`source==='project' && cwd!==undefined` `:390-391`）才出钮，点击 `ctx.onNewSessionInProject?.(group.cwd as string)`（`:430`）——**cwd 入参第一环，带上**。
 2. `shell-seat-contents.tsx:207-214`：`onNewSessionInProject={state.status==='connected' && createSession 通道在场 ? (cwd)=>{backToConversation(); newSessionCollapsingRightbar(frameDispatch, cwd)} : undefined}`——**cwd 透传，未连接/无通道 = 钮不渲染（红线⑩）**。
 3. `app-shared.tsx:35-38` `newSessionCollapsingRightbar(dispatch, cwd?)`：`dispatch(rightbar/collapse); void controller.newSession(cwd)`——**cwd 第三环透传**。
@@ -39,6 +42,7 @@
 **顶部「+」保持空白新会话不被项目态污染**：`shell-seat-contents.tsx:234-237` `onNewSession={() => {backToConversation(); newSessionCollapsingRightbar(frameDispatch)}}`（无 cwd 实参）→ `controller.newSession()` 无参 → `api.createSession()` 无 cwd → 主进程 `deps.root`。`DesktopTopOverlay` 的 `onNewTask`（`App.tsx:474-477`）与 Ctrl+N（`App.tsx:230-235`）同样不带 cwd。测试 `sidebar-project-actions.test.tsx:125`「顶部『+』仍是不带 cwd 的空白新会话（两入口区分）」反向钉。**OK**。
 
 **会话行「删除」只走 controller.deleteSession**：
+
 - 入口：`session-row-menu.tsx:94-153` `delete` 恒末位 + 前置分隔（`:122-123`），`canDelete` 仅当壳给 `onDeleteSession`（`:89`），确认框由 `SessionBrowser.tsx:598-609` 截胡 `onDeleteSession` 为「打开 `ConfirmDialog`」（`:912-936`），确认后 `onDeleteSession(target.id)` → `shell-seat-contents.tsx:218` `onDeleteSession={(id)=>controller.deleteSession(id)}` → `app-controller.ts:682-701`（`store.updateMetadata(id,{deleted:true})` + `api.metadataSet(id,{deleted:true})` + `removeSessionFromView`）。
 - 绕道核：全仓 `deleted: true` 写入仅 `app-controller.ts:687,695` 两处（均在 deleteSession 内）；渲染端无旁路 `metadataSet(...deleted)` 直写——**无绕道，不判 P1**。软删语义（覆层标记 + 视图移除、事件日志保留）与注释/红线一致。
 - running 禁用**实时性**：`session-row-menu.tsx:93` `deleteDisabled = item.running === true`。`item.running` 来源 `buildSessionItems flagsOf`（`shell-seat-contents.tsx:122-128`）每帧读 `store.peekStream(id).running`（live，非挂载快照）；`SidebarSeatContent` 用 `useAppState`（`app-shell.tsx:28` `useSyncExternalStore(store.subscribe, store.getState)`）订阅，store 每次 running 变更 `notify()` bump rev 产生新引用（`store.ts:257-260`）触发重渲 → 禁用判据**随实时状态更新**，不是快照。**OK。**
@@ -53,6 +57,7 @@
 ### 3. Z-96 发送可见化 —— OK（1 项已知遗留，非新缺陷）
 
 **数据源（submitAcks unknown/rejected）**：
+
 - `chat-error-model.ts:38-47` `latestSubmitAckError`：遍历 `Object.values(acks)` 取**最后一条**（键序=插入序，store 每次 `{...prev,[id]:ack}` 重建 `store.ts:837-845`），`state∈{unknown,rejected}` → 横幅候选、`accepted` → null（重发成功旧失败自然消失，无需手动关）。
 - 生产者：channel 失败 → `app-controller.ts:475-483` 立即 `applyFrame submit-ack unknown`（reason `提交未送达: msg`）；5s 超时 → `store.ts:915-926` `expirePendingSubmits` 标 unknown；serve 拒绝 → `rejected` 帧经 `resolveSubmitAck`（`store.ts:836-853`）。**unknown/rejected 双源覆盖，事实源唯一。**
 - seat 装配 `seat.tsx:452,458-460`：每帧现算（不 memo，注释 `:454-457` 说明 stream 引用恒定 memo 会拿旧 ack），`banner = ackError && !dismissed.has(fp) ? mergeErrorDetail(ackError,lastFailure) : null`。
@@ -78,10 +83,10 @@
 
 **P2 = 2**（1 新发现 + 1 第一轮遗留未修）
 
-| ID   | 位置 | 描述 | 修法（不修，登记） | 影响 |
-| ---- | ---- | ---- | ---- | ---- |
-| P2-1（新） | `packages/ui-shared/src/renderer/sidebar/SessionBrowser.tsx:911-935` | 注释声称确认框「running 再兜一层」，但 `ConfirmDialog.onConfirm` 未复查 `deleteTarget.running`：对话框打开后会话转为运行（他格提交/队列放行等）时，确认仍删除运行中会话（软删不停 turn，后台 turn 继续跑） | `onConfirm` 内先 `if (store.peekStream(target.id)?.running === true) { 关框/提示 }`（SessionBrowser 无 store 引用时改由回调方判），或如实删掉注释中不存在的兜底层 | 破坏性窗口窄（主门禁实时有效），但注释与实现不符误导维护者 |
-| P2-2（第一轮 P2-3 带过，仍未修） | `desktop-window.css:57-82` + `SettingsShell.tsx:99`（z-100）/ 命令面板 | 覆层打开时右上 136×48 透明 drag 带（z-130）盖过覆层角：该区文案选不中、拖拽会动窗口；无交互控件故不吞按钮 | 覆层态给 drag 带加 `pointer-events:none` 开关，或两覆层头 `padding-right:140px`（同 `.pane-header` 手法） | 视觉/交互毛刺；Z-46「全场景常驻」达成，仅让位规则未覆盖覆层态 |
+| ID                               | 位置                                                                   | 描述                                                                                                                                                                                                       | 修法（不修，登记）                                                                                                                                                | 影响                                                          |
+| -------------------------------- | ---------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------- |
+| P2-1（新）                       | `packages/ui-shared/src/renderer/sidebar/SessionBrowser.tsx:911-935`   | 注释声称确认框「running 再兜一层」，但 `ConfirmDialog.onConfirm` 未复查 `deleteTarget.running`：对话框打开后会话转为运行（他格提交/队列放行等）时，确认仍删除运行中会话（软删不停 turn，后台 turn 继续跑） | `onConfirm` 内先 `if (store.peekStream(target.id)?.running === true) { 关框/提示 }`（SessionBrowser 无 store 引用时改由回调方判），或如实删掉注释中不存在的兜底层 | 破坏性窗口窄（主门禁实时有效），但注释与实现不符误导维护者    |
+| P2-2（第一轮 P2-3 带过，仍未修） | `desktop-window.css:57-82` + `SettingsShell.tsx:99`（z-100）/ 命令面板 | 覆层打开时右上 136×48 透明 drag 带（z-130）盖过覆层角：该区文案选不中、拖拽会动窗口；无交互控件故不吞按钮                                                                                                  | 覆层态给 drag 带加 `pointer-events:none` 开关，或两覆层头 `padding-right:140px`（同 `.pane-header` 手法）                                                         | 视觉/交互毛刺；Z-46「全场景常驻」达成，仅让位规则未覆盖覆层态 |
 
 **次要观察（不立案）**：① channel 失败时 composer 内联 `setSubmitStatus`（`Composer.tsx:409-414`）与常驻横幅并存，双通道提示同一错误（ZCode 亦有落点提示+横幅并存，非破版）；② `latestSubmitAckError` 的「最后一条」依赖 `Object.values` 插入序（`chat-error-model.ts:33-40`）——`cm:` 前缀非数字键成立，注释已声明，可接受；③ `draftModelReadinessError` 数据源支未实现为交付时如实登记的遗留（计划 §66），不计新缺陷。
 

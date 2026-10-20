@@ -55,9 +55,9 @@ describe('U2-C2：shell.css 对话域选择器字号归 var(--text-ui-*) 刻度�
   // 批C 逐条映射的对话域选择器（U2-C2 清单 + 相邻同源字号）：字号声明（若有）必须是刻度
   // var(--text-ui-*)，不得是裸 px / em。叶子选择器名（组选择器取其成员，如 `.queue-bar,
   // .ref-report` 的块用 block('.ref-report') 命中）。
-// 机制：shell.css 对话域选择器 whitespace 白名单默认入法；新增选择器先入白名单再写 CSS，
-// 豁免必须写理由注释（新增选择器默认入法、豁免必须写理由注释）。
-const CONVERSATION_SELECTORS = [
+  // 机制：shell.css 对话域选择器 whitespace 白名单默认入法；新增选择器先入白名单再写 CSS，
+  // 豁免必须写理由注释（新增选择器默认入法、豁免必须写理由注释）。
+  const CONVERSATION_SELECTORS = [
     '.reasoning',
     '.reasoning-inline',
     '.tool-row',

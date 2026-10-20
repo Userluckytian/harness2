@@ -13,6 +13,7 @@ $ git diff main...HEAD -- packages/core packages/gateway | grep -E "^[+-][^+-]"
 -  "version": "1.0.1",
 +  "version": "1.0.2",
 ```
+
 逐行=core/package.json、core/src/version.ts、gateway/package.json 各一对版本字符串，**无任何其他行**。
 `git diff main...HEAD --name-only -- packages/core/test/fixtures/api-surface-baseline.json` → **0 行**。
 **判定：PASS**（越界信号未触发；版本 bump 属 T8 发布物料，计划 §80 先例同型）。
@@ -24,6 +25,7 @@ $ git diff main...HEAD --stat -- packages/web packages/cli
  packages/cli/package.json | 2 +-
  packages/web/package.json | 2 +-
 ```
+
 各仅版本行；web 的 3b 一度改动已被 `b34f327` 回退为净零（与计划 T3 行登记一致）。**判定：PASS**。
 
 ## 3 密钥/凭据扫 diff
@@ -32,6 +34,7 @@ $ git diff main...HEAD --stat -- packages/web packages/cli
 $ git diff main...HEAD | grep -inE "sk-[A-Za-z0-9]{8,}|api[_-]?key[[:space:]]*[:=][[:space:]]*['\"][^'\"]{12,}|Bearer [A-Za-z0-9_-]{20,}"
 (零命中)
 ```
+
 **判定：PASS**（无凭据入 diff；auth token 均为运行时生成/注入逻辑，无字面量）。
 
 ## 4 全量 lint/format（68 个 diff 文件）
@@ -43,6 +46,7 @@ $ ./node_modules/.bin/eslint $FILES
 $ ./node_modules/.bin/prettier --check $FILES
 All matched files use Prettier code style!
 ```
+
 0 error；唯一 warning=`App.tsx:173` react-hooks 依赖（**既有代码区**，T3 报告已如实登记非新引入）。**判定：PASS**。
 
 ## 5 manual-pack.mjs 审读
@@ -56,6 +60,7 @@ All matched files use Prettier code style!
 $ git log main..HEAD --oneline | wc -l
 42
 ```
+
 格式抽验：正则粗筛 18 条「不匹配」全因 scope 大写（`(U1)`），逐条人工过目——**42/42 符合** `<gitmoji><type>(<scope>): 中文`。**判定：PASS**。
 
 ## 片4 清单
