@@ -8,6 +8,7 @@ import {
   IHooksService,
   IMemoryService,
   IOAuthService,
+  IOnboardingRecordService,
   ISettingService,
   ISkillsService,
   ISubagentsService,
@@ -29,6 +30,7 @@ import {
   credentialServiceStub,
   modelSelectionServiceStub,
   oauthServiceStub,
+  onboardingRecordServiceStub,
   projectServiceStub,
   providerSettingsServiceStub,
   settingServiceStub,
@@ -78,6 +80,12 @@ describe("C 类静默空实现（调用返回空值不炸）", () => {
       abandonedPathCount: 0,
       migrationCounts: [],
     });
+  });
+
+  it("onboarding-record：claimAnonymousRecord void、shouldOnboard false、getLatestEntry null（契约表 §5，灰屏根因修复）", async () => {
+    await expect(onboardingRecordServiceStub.claimAnonymousRecord()).resolves.toBeUndefined();
+    await expect(onboardingRecordServiceStub.shouldOnboard("dev-1")).resolves.toBe(false);
+    await expect(onboardingRecordServiceStub.getLatestEntry()).resolves.toBeNull();
   });
 
   it("C 类默认（未显式实现的方法）返回 null 不炸：usage-stats 抽查", async () => {

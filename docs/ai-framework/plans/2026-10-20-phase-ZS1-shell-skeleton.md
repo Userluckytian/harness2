@@ -200,7 +200,34 @@
 
 ---
 
-## 残留手工验收清单
+
+## V2 灰屏根因与修复（2026-10-20 晚）
+
+### 两层根因
+
+1. **真实 setting 污染（已用 ZCODE_DESKTOP_HOME_DIR 解决）**：Git Bash 的 `HOME` 优先级抢在 `ZCODE_DESKTOP_HOME_DIR` 之前命中真实 `C:\Users\ASUS\.zcode`；启动必须带全套隔离 env（`ZCODE_DESKTOP_HOME_DIR`/`HOME`/`USERPROFILE`/`APPDATA`/`LOCALAPPDATA`），并确认 stdout 日志 `writing settings to:` 不再指向 `C:\Users\ASUS`。本代理全程按该隔离 env 启动。
+2. **桩缺驱动环（本代理修复）**：`onboardingRecordService` 在 adapter 里无显式桩（`createHarness2Services.ts` 频道已注册但走工厂默认 = 所有方法返回 null）。渲染链：`useOnboardingTrigger`（ZCode `packages/ui/src/onboarding/useOnboardingTrigger.ts:69-75`）调 `claimAnonymousRecord()` → `shouldOnboard()` → 得到 **null**（非报错、非「无服务」；3s 兜底只覆盖异常路径，null 被当 resolved 值直通）→ `needsOnboarding === null` 停在「判定进行中」→ `OccupationOnboarding.tsx:131`：`!requested && needsOnboarding===null && !settings.onboardingOccupation` → **return null，children 不渲染** → 即使 `workspaceShellPath` 非空（`file.ensureConversationWorkspace` 兜底桩已满足），整个主内容也被 `OccupationOnboarding` 这层 null 吞掉 = 灰。根因分析全文：`docs/research/2026-10-20-zs-first-paint-contract.md`（契约表 §5）。
+
+### 选的路
+
+**第二路（onboarding 欢迎屏/跳过引导）**：按契约表 §5 给 `onboardingRecordService` 显式桩——`claimAnonymousRecord` → `void`、`shouldOnboard` → **`false`**（关键——显式 false 才会跳过全屏引导、渲染 children）、`getLatestEntry` → `null`；其余方法（appendRecord/dismissOnboarding/syncSettingsFromRecord/updateRecordPreferences/getRecords/clearRecords）显式 impl。次要保险：`settingService.get` 返回追加 `onboardingOccupation: "other"`（契约 §6-2）。未改 `file.ensureConversationWorkspace` 兜底桩（形状已正确）。未动六包/core/gateway/refs。
+
+### CDP 证据
+
+- 启动命令按任务书隔离 env + `ZS1_HOST_MODULE_PATH=.../dist/host-entry.cjs` + `ZCODE_DATA_BASE_DIR=.../zs1-data`。
+- 重建 bundle：`pnpm --filter @harness2/zcode-adapter build` → `dist/host-entry.cjs 1.5mb`。
+- 验证：`node .tmp-cdp-page-capture.cjs` → `SAVED .../t3-cdp-page.png 322716 bytes`，`DOM: KIDS: ... || TEXT: Command palette Search and run commands ... harness2 ... No model available. Upgrade or set a custom model. ... Ask ZCode`（非空，含界面文字）。
+- 截图：`docs/screenshots/zs1/t3-cdp-page.png`（322716 bytes）/ 复制 `docs/screenshots/zs1/t3-onboarding-fixed.png`。
+
+### 执行记录修正（V2）
+
+V2 原结论「空态渲染以行为证据核定，截图留编排者核图」修正为：**灰屏事件 → onboarding 桩缺显式 false 根因定位 → 修复（onboardingRecordService 显式桩 + setting.onboardingOccupation 保险）→ CDP 探针 DOM TEXT 非空（截图 `docs/screenshots/zs1/t3-cdp-page.png` 322716 bytes）为证**。V1–V7 通过；V8 独立审查仍留编排者派发。
+
+### adapter 测试
+
+- `pnpm --filter @harness2/zcode-adapter test` → **32 passed (32)**（基线 31 + 新增 onboarding-record 断言 1）。
+- `pnpm --filter @harness2/zcode-adapter typecheck` → 0 error。
+- 新增断言：`onboarding-record：claimAnonymousRecord void、shouldOnboard false、getLatestEntry null`。
 
 1. 用户真机点验新壳空态观感（ZCode 原版视觉）。
 2. 用户确认「这就是我要的壳」后，ZS2 计划启动。

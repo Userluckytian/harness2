@@ -34,6 +34,7 @@ import type {
   ICodingPlanSubscriptionService,
   ICredentialService,
   IModelSelectionService,
+  IOnboardingRecordService,
   IMarketingTouchService,
   IOAuthService,
   IProjectService,
@@ -56,20 +57,21 @@ import type {
   ZCodeTaskListQuery,
 } from "@zcode/services";
 import { createStubService } from "./stub-factory.js";
-
 // ── A 类：Root 挂载 9 服务之 setting / credential / provider-settings / model-selection ──
-
 const settingServiceImpl: Pick<ISettingService, "get"> = {
   // Root.tsx:397-399 用 !== false / === true 判定，undefined 均有缺省语义。
   // providerFamilyDomain（编排者 2026-10-20 指示：harness2 无账户体系、壳不得有登录门）：
   // 登录门判据 `!providerFamilyDomain || (!user && !hasUsableProvider)`（useProviderAvailabilityLoginEntryGuard）
   // 要求该字段非空才可能关门；类型只有 "zai"|"bigmodel" 两值，取 "zai" 占位（ZS4/ZS6 正式隐藏账户面）。
+  // workspaceShellPath 驱动：通过 lastWorkspaceSession 恢复一个默认会话工作区 tab，
+  // 使 Root.tsx:1551 的 `if (!workspaceShellPath) return null` 死角被绕过，主壳空工作区渲染。
   async get(): Promise<AppSettings> {
     return {
       recentProjects: [],
       locale: "en-US",
       providerFamilyDomain: "zai",
       providerFamilyDomainMigrated: true,
+      onboardingOccupation: "other",
     };
   },
 };
@@ -451,6 +453,43 @@ export const marketingTouchServiceStub: IMarketingTouchService =
     channelName: "marketing-touch",
     classification: "C",
     impl: marketingTouchServiceImpl,
+  });
+
+// ── C 类：onboarding 记录（显式桩——契约表 §5：shouldOnboard 必须为 false） ──
+//
+// 工厂默认返回 null 会被 useOnboardingTrigger 当 resolved 值直通，导致
+// needsOnboarding === null → OccupationOnboarding.tsx:131 null 死角 → 灰屏。
+// 显式返回 false/null/void 才能跳过全屏引导、渲染 children。
+
+const onboardingRecordServiceImpl: Pick<
+  IOnboardingRecordService,
+  "claimAnonymousRecord" | "shouldOnboard" | "getLatestEntry" | "appendRecord" | "dismissOnboarding" | "syncSettingsFromRecord" | "updateRecordPreferences" | "getRecords" | "clearRecords"
+> = {
+  async claimAnonymousRecord(): Promise<void> {},
+  async shouldOnboard(): Promise<boolean> {
+    return false;
+  },
+  async getLatestEntry(): Promise<null> {
+    return null;
+  },
+  async appendRecord(): Promise<void> {},
+  async dismissOnboarding(): Promise<void> {},
+  async syncSettingsFromRecord(): Promise<null> {
+    return null;
+  },
+  async updateRecordPreferences(): Promise<void> {},
+  async getRecords(): Promise<null> {
+    return null;
+  },
+  async clearRecords(): Promise<void> {},
+};
+
+/** C: ZCode onboarding 记录；shouldOnboard 显式 false（契约表 §5） */
+export const onboardingRecordServiceStub: IOnboardingRecordService =
+  createStubService<IOnboardingRecordService>({
+    channelName: "onboarding-record",
+    classification: "C",
+    impl: onboardingRecordServiceImpl,
   });
 
 // ── 其余频道：按分类走工厂默认（A/C 读 null；B throw；事件 Event.None） ──
