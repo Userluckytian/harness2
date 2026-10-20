@@ -182,7 +182,28 @@
 
 ---
 
-## 给接手 AI 的完整提示词
+## 执行记录（2026-10-21）
+
+### 提交列表
+
+- `8f...` T1-T2 进程内 core 集成骨架（core-bridge/会话读面/任务写面/v4 投影/provider 视图/文件与设置真实化）
+- `3c6997c` core-bridge 运行时加载修正 + host bundle external 调整
+
+### 验证证据
+
+- typecheck: 0 error
+- zcode-adapter tests: 37 passed (3 files)
+- core/gateway/cli/desktop/ui-shared/web: 未改动 (git diff stat = 0)
+- host bundle build: dist/host-entry.cjs 1.5mb
+- host 启动: database-startup ready
+- CDP 截图: docs/screenshots/zs1/t3-cdp-page.png (UI 仍显示 "当前没有可用模型"，provider 视图在隔离 env 无 real config → 空态，符合预期)
+
+### 残留风险
+
+- v4 帧真实渲染未端到端验证（agent service 返回 ack 但未推送 ConversationTopicFrame；UI 主对话区渲染依赖 v4 帧，需 ZS3 补全）
+- 真模型轮（minimax-m3.1-flash）未在 e2e 执行（isolated env 无 real harness2 config；需非隔离运行）
+- T0 探针脚本为占位，未实测 composer 发送调用面
+
 
 将下面整段粘贴给执行 AI 即可开工：
 
