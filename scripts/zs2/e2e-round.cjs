@@ -24,15 +24,15 @@ function getJson(p) {
   });
 }
 
-const ROW_SEL = '.bubble-assistant';
+const ROW_SEL = '[data-testid^="v4-row-"]';
 
 (async () => {
   for (let i = 0; i < 60; i++) {
     try { await getJson('/json/list'); break; } catch (e) { await new Promise(r => setTimeout(r, 1000)); }
   }
-  const targets = await getJson('/json/list');
-  const page = targets.find((t) => t.type === 'page');
-  if (!page) { console.error('NO PAGE'); process.exit(1); }
+const targets = await getJson('/json/list');
+const page = targets.find((t) => t.type === 'page' && /localhost:5174|127\.0\.0\.1:5174|harness2-zs1-build/.test(t.url) && !/packages\/desktop\/dist\/renderer/.test(t.url));
+if (!page) { console.error('WRONG INSTANCE/NOT UP'); process.exit(3); }
   const ws = new WebSocket(page.webSocketDebuggerUrl, { maxPayload: 256 * 1024 * 1024 });
   let id = 0;
   const pending = new Map();
@@ -55,7 +55,15 @@ const ROW_SEL = '.bubble-assistant';
       await send('Runtime.evaluate', { expression: `(() => { const b = Array.from(document.querySelectorAll('button')).find(x => (x.getAttribute('aria-label')||'').includes('新建会话')); if (b) b.click(); return !!b; })()` });
       await new Promise(r => setTimeout(r, 1000));
 
-      await send('Runtime.evaluate', { expression: `document.querySelector('[contenteditable=true]').focus()` });
+      // bypass first-run onboarding if present
+      await send('Runtime.evaluate', { expression: `(() => { const b = Array.from(document.querySelectorAll('button')).find(x => (x.innerText||'').includes('Start ZCode')); if (b) { b.click(); return 'clicked'; } return 'none'; })()` });
+      await new Promise(r => setTimeout(r, 2000));
+
+      // create a new session/task if button present
+      const nb = await send('Runtime.evaluate', { expression: `(() => { const b = Array.from(document.querySelectorAll('button')).find(x => (x.getAttribute('aria-label')||x.innerText||'').includes('新建会话') || (x.getAttribute('aria-label')||x.innerText||'').includes('New task')); if (b) { b.click(); return 'clicked'; } return 'none'; })()` });
+      await new Promise(r => setTimeout(r, 1500));
+
+      await send('Runtime.evaluate', { expression: `document.querySelector('[contenteditable=true]') && document.querySelector('[contenteditable=true]').focus()` });
       await send('Input.insertText', { text: TEXT });
       await new Promise(r => setTimeout(r, 300));
       await send('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Enter', code: 'Enter', windowsVirtualKeyCode: 13 });
@@ -68,7 +76,7 @@ const ROW_SEL = '.bubble-assistant';
       let lastReply = '';
       for (let i = 0; i < 40; i++) {
         await new Promise(r => setTimeout(r, 500));
-        const r = await send('Runtime.evaluate', { expression: `(() => { const rows = Array.from(document.querySelectorAll('${ROW_SEL}')); const texts = rows.map(x => (x.innerText||'').trim()); const replyRows = texts.filter(t => t && t !== ${JSON.stringify(TEXT)}); const replyText = replyRows.join(' ').trim(); return JSON.stringify({ rowCount: rows.length, rowTextLen: texts.join('\\n').length, replyText }); })()` });
+        const r = await send('Runtime.evaluate', { expression: `(() => { const rows = Array.from(document.querySelectorAll('${ROW_SEL}')); const arows = rows.filter(r => !r.querySelector('[data-v4-user-input-bubble]')); const texts = arows.map(x => (x.innerText||'').trim()); const replyText = texts.join(' ').trim().replace(/\\s*Copy\\s*/g,'').trim(); return JSON.stringify({ rowCount: rows.length, rowTextLen: texts.join('\\n').length, replyText }); })()` });
         const v = JSON.parse(r.result?.result?.value || '{}');
         if (v.rowCount > lastRowCount || v.rowTextLen > lastRowTextLen) { growthCount++; lastRowCount = v.rowCount; lastRowTextLen = v.rowTextLen; }
         if (v.replyText) lastReply = v.replyText;
