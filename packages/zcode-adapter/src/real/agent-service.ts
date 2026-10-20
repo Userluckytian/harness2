@@ -13,6 +13,7 @@ import {
 import type { IZCodeAgentService } from '@zcode/services';
 import type { MockScript } from '@harness2/core';
 import { encodeTopicWireFrames, measureTopicNotificationEnvelopeBytes } from '@zcode/shared/zcode-protocol-v4';
+import { trackCreatedTask } from './project-service.js';
 
 export interface AgentServiceOptions {
   dataRoot?: string;
@@ -98,6 +99,14 @@ export function createAgentService(opts: AgentServiceOptions = {}): IZCodeAgentS
   const rowCounters = new Map<string, number>();
   const toolRowByCall = new Map<string, number>();
 
+  // Per-session conversation state retained so that a later subscribe/resync
+  // (the UI re-subscribes after promoting a draft session) can rebuild the
+  // projection instead of starting from an empty snapshot. See task: UI not
+  // rendering reply in draft prewarm flow.
+  const sessionRows = new Map<string, any[]>();
+  const sessionPhase = new Map<string, string>();
+  const sessionSeq = new Map<string, number>();
+
   function nextRowId(sessionId: string): number {
     const c = (rowCounters.get(sessionId) ?? 0) + 1;
     rowCounters.set(sessionId, c);
@@ -121,14 +130,16 @@ export function createAgentService(opts: AgentServiceOptions = {}): IZCodeAgentS
   function emitSnapshot(subId: string, rows: any[], phase: string) {
     const sub = subs.get(subId);
     if (!sub) return;
+    const seq = sessionSeq.get(sub.sessionId) ?? sub.seq;
     const frame = {
       topic: `conversation/${sub.sessionId}`,
       subscriptionId: subId,
       fromSeq: 0,
-      toSeq: sub.seq,
+      toSeq: seq,
       sentAt: Date.now(),
-      payload: { kind: 'snapshot', snapshot: buildSnapshot(sub.sessionId, sub.seq, rows, phase) },
+      payload: { kind: 'snapshot', snapshot: buildSnapshot(sub.sessionId, seq, rows, phase) },
     };
+    sub.seq = seq;
     emitWire(subId, frame);
   }
 
@@ -144,6 +155,7 @@ export function createAgentService(opts: AgentServiceOptions = {}): IZCodeAgentS
       sentAt: Date.now(),
       payload: { kind: 'deltas', deltas },
     };
+    sessionSeq.set(sub.sessionId, sub.seq);
     emitWire(subId, frame);
   }
 
@@ -156,17 +168,24 @@ export function createAgentService(opts: AgentServiceOptions = {}): IZCodeAgentS
     } else {
       resumed = manager.resume(sessionId);
     }
-    const counter = rowCounters; void counter;
     const userRowId = nextRowId(sessionId);
     const turnHeaderRowId = nextRowId(sessionId);
     const assistantRowId = nextRowId(sessionId);
     const turnId = `turn-${Date.now()}`;
     const now = Date.now();
 
+    const rows: any[] = [
+      { rowId: userRowId, turnId, kind: 'userInput', text, origin: 'realUser', createdAt: now, createdAtSeq: 0 },
+      { rowId: turnHeaderRowId, turnId, kind: 'turnHeader', origin: 'userInput', state: 'running', startedAt: now, createdAt: now, createdAtSeq: 0 },
+      { rowId: assistantRowId, turnId, kind: 'assistantText', text: '', state: 'streaming', createdAt: now, createdAtSeq: 0 },
+    ];
+    sessionRows.set(sessionId, rows);
+    sessionPhase.set(sessionId, 'running');
+
     const initialDeltas = [
-      { op: 'row.appended', row: { rowId: userRowId, turnId, kind: 'userInput', text, origin: 'realUser', createdAt: now, createdAtSeq: 0 } },
-      { op: 'row.appended', row: { rowId: turnHeaderRowId, turnId, kind: 'turnHeader', origin: 'userInput', state: 'running', startedAt: now, createdAt: now, createdAtSeq: 0 } },
-      { op: 'row.appended', row: { rowId: assistantRowId, turnId, kind: 'assistantText', text: '', state: 'streaming', createdAt: now, createdAtSeq: 0 } },
+      { op: 'row.appended', row: rows[0] },
+      { op: 'row.appended', row: rows[1] },
+      { op: 'row.appended', row: rows[2] },
     ];
     for (const sid of targetSubs) emitDeltas(sid, initialDeltas);
 
@@ -189,10 +208,14 @@ export function createAgentService(opts: AgentServiceOptions = {}): IZCodeAgentS
           } else if (chunk.type === 'tool-call') {
             const tr = nextRowId(sessionId);
             toolRowByCall.set(chunk.call.id, tr);
-            for (const sid of targetSubs) emitDeltas(sid, [{ op: 'row.appended', row: { rowId: tr, turnId, kind: 'toolCall', toolCallId: chunk.call.id, toolName: chunk.call.name, status: 'running', inputText: chunk.call.arguments ?? '', createdAt: now, createdAtSeq: 0 } }]);
+            const toolRow = { rowId: tr, turnId, kind: 'toolCall', toolCallId: chunk.call.id, toolName: chunk.call.name, status: 'running', inputText: chunk.call.arguments ?? '', createdAt: now, createdAtSeq: 0 };
+            rows.push(toolRow);
+            for (const sid of targetSubs) emitDeltas(sid, [{ op: 'row.appended', row: toolRow }]);
           } else if (chunk.type === 'tool-result') {
             const tr = toolRowByCall.get(chunk.callId);
             if (tr) {
+              const idx = rows.findIndex((r) => r.rowId === tr);
+              if (idx >= 0) rows[idx] = { ...rows[idx], status: chunk.ok ? 'success' : 'error' };
               for (const sid of targetSubs) emitDeltas(sid, [{ op: 'row.upserted', row: { rowId: tr, turnId, kind: 'toolCall', toolCallId: chunk.callId, toolName: '', status: chunk.ok ? 'success' : 'error', inputText: '', createdAt: now, createdAtSeq: 0 } }]);
             }
           }
@@ -202,6 +225,15 @@ export function createAgentService(opts: AgentServiceOptions = {}): IZCodeAgentS
       console.error('[zs2] runTurn failed:', (e as Error)?.message ?? e);
     }
     try { resumed.writer.close(); } catch (e) { console.error('[zs2] close failed', (e as Error)?.message); }
+
+    const assistantRow = rows.find((r) => r.rowId === assistantRowId);
+    if (assistantRow) {
+      assistantRow.text = accumulated || 'done';
+      assistantRow.state = 'complete';
+    }
+    sessionPhase.set(sessionId, 'completedSuccess');
+    sessionRows.set(sessionId, rows);
+    sessionSeq.set(sessionId, (sessionSeq.get(sessionId) ?? 0));
 
     for (const sid of targetSubs) {
       emitDeltas(sid, [
@@ -234,13 +266,15 @@ export function createAgentService(opts: AgentServiceOptions = {}): IZCodeAgentS
       return { ok: true };
     },
     async subscribeConversationV4(params: { sessionId?: string; base?: { seq: number } }): Promise<unknown> {
-      if (process.env.ZS2_PROBE === '1') console.error('[zs2-probe] agent-service.subscribeConversationV4', params?.sessionId);
       const sessionId = params?.sessionId ?? 'default';
       const subscriptionId = `zs2-${sessionId}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-      subs.set(subscriptionId, { sessionId, seq: params?.base?.seq ?? 0, ordinal: 1 });
-      // emit initial snapshot
+      const baseSeq = params?.base?.seq;
+      const initialSeq = baseSeq !== undefined ? baseSeq : (sessionSeq.get(sessionId) ?? 0);
+      subs.set(subscriptionId, { sessionId, seq: initialSeq, ordinal: 1 });
+      const rows = sessionRows.get(sessionId) ?? [];
+      const phase = sessionPhase.get(sessionId) ?? 'running';
       setTimeout(() => {
-        emitSnapshot(subscriptionId, [], 'running');
+        emitSnapshot(subscriptionId, rows, phase);
       }, 0);
       return {
         ack: { subscriptionId, mode: params?.base ? 'resume' : 'snapshot', logEpoch: 'zs2-epoch' },
@@ -249,7 +283,17 @@ export function createAgentService(opts: AgentServiceOptions = {}): IZCodeAgentS
     async resyncConversationV4(params: { subscriptionId?: string; base?: { seq: number } | null }): Promise<unknown> {
       const sid = params?.subscriptionId ?? '';
       const sub = subs.get(sid);
-      if (sub && params?.base?.seq !== undefined) sub.seq = params.base.seq;
+      if (sub) {
+        if (params?.base?.seq !== undefined) {
+          sub.seq = params.base.seq;
+          sessionSeq.set(sub.sessionId, params.base.seq);
+        }
+        const rows = sessionRows.get(sub.sessionId) ?? [];
+        const phase = sessionPhase.get(sub.sessionId) ?? 'running';
+        setTimeout(() => {
+          emitSnapshot(sid, rows, phase);
+        }, 0);
+      }
       return { ack: { subscriptionId: sid, mode: 'snapshot', logEpoch: 'zs2-epoch' } };
     },
     async unsubscribeConversationV4(params: { subscriptionId?: string }): Promise<void> {
@@ -257,11 +301,16 @@ export function createAgentService(opts: AgentServiceOptions = {}): IZCodeAgentS
     },
     async sendConversationCommandV4(params: { workspacePath?: string; envelope?: any }): Promise<unknown> {
       const env = params?.envelope ?? {};
-      if (process.env.ZS2_PROBE === '1') console.error('[zs2-probe] agent-service.sendConversationCommandV4', env?.type, env?.sessionId);
       if (env.type === 'createSession') {
         const created = manager.create(process.cwd());
         try { created.writer.close(); } catch {}
         const sid = created.id;
+        const __wp = params?.workspacePath ?? process.cwd();
+        trackCreatedTask(sid, __wp);
+        sessionRows.set(sid, []);
+        sessionPhase.set(sid, 'running');
+        sessionSeq.set(sid, 0);
+        rowCounters.set(sid, 0);
         const firstInput = env?.payload?.firstInput;
         if (firstInput?.text) {
           setTimeout(() => { runSession(sid, firstInput.text, created.dir).catch((e) => console.error('[zs2] runSession failed:', (e as Error)?.message ?? e)); }, 0);
@@ -281,6 +330,12 @@ export function createAgentService(opts: AgentServiceOptions = {}): IZCodeAgentS
           try { created.writer.close(); } catch {}
           sid = created.id;
           dirHint = created.dir;
+          const __wp2 = params?.workspacePath ?? process.cwd();
+          trackCreatedTask(sid, __wp2);
+          sessionRows.set(sid, []);
+          sessionPhase.set(sid, 'running');
+          sessionSeq.set(sid, 0);
+          rowCounters.set(sid, 0);
         }
         const text = env?.payload?.text ?? '';
         setTimeout(() => { runSession(sid, text, dirHint).catch((e) => console.error('[zs2] runSession failed:', (e as Error)?.message ?? e)); }, 0);
@@ -323,6 +378,11 @@ export function createAgentService(opts: AgentServiceOptions = {}): IZCodeAgentS
     async createSession(params: { workspacePath?: string }): Promise<unknown> {
       const created = manager.create(params?.workspacePath ?? process.cwd());
       try { created.writer.close(); } catch {}
+      trackCreatedTask(created.id, params?.workspacePath ?? process.cwd());
+      sessionRows.set(created.id, []);
+      sessionPhase.set(created.id, 'running');
+      sessionSeq.set(created.id, 0);
+      rowCounters.set(created.id, 0);
       return { sessionId: created.id };
     },
     async resumeSession(params: { sessionId: string }): Promise<unknown> {
@@ -347,7 +407,7 @@ export function createAgentService(opts: AgentServiceOptions = {}): IZCodeAgentS
     async readSessionDebug(): Promise<unknown> {
       return {};
     },
-    async sendPrompt(): Promise<void> { if (process.env.ZS2_PROBE === '1') console.error('[zs2-probe] agent-service.sendPrompt (deprecated)'); },
+    async sendPrompt(): Promise<void> {},
     async compactSession(): Promise<void> {},
     async goalSession(): Promise<void> {},
     async closeSession(): Promise<boolean> {
@@ -368,8 +428,8 @@ export function createAgentService(opts: AgentServiceOptions = {}): IZCodeAgentS
   };
 
   return createStubService<IZCodeAgentService>({
-    channelName: 'zcode-agent',
-    classification: 'B',
+    channelName: "zcode-agent",
+    classification: "B",
     impl,
   });
 }

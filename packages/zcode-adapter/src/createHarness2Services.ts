@@ -73,6 +73,7 @@ import {
 } from '@zcode/services';
 import { CHANNEL_REGISTRY } from './channel-registry.js';
 import { createFileService } from './real/file-service.js';
+import { createProjectService } from './real/project-service.js';
 import { createSessionService } from './real/session-service.js';
 import { createTaskService } from './real/task-service.js';
 import { createAgentService } from './real/agent-service.js';
@@ -96,7 +97,6 @@ import {
   modelSelectionServiceStub,
   oauthServiceStub,
   onboardingRecordServiceStub,
-  projectServiceStub,
   providerSettingsServiceStub,
   remoteProjectServiceStub,
   settingServiceStub,
@@ -250,7 +250,7 @@ export function createHarness2Services(opts: Harness2ServicesOptions = {}): Harn
     [IModelSelectionService.channelName, realModelSelectionService],
     [IOnboardingRecordService.channelName, onboardingRecordServiceStub],
     [IOAuthService.channelName, oauthServiceStub],
-    [IProjectService.channelName, projectServiceStub],
+    [IProjectService.channelName, createProjectService()],
     [IProviderSettingsService.channelName, realProviderSettingsService],
     [IRemoteProjectService.channelName, remoteProjectServiceStub],
     [ISettingService.channelName, realSettingService],

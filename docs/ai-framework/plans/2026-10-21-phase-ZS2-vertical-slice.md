@@ -251,3 +251,13 @@
 - 帧契约：`agent-service.helloConversationV4` 补全 helloMessageSchema 必填字段；`sentAt`/`startedAt`/`createdAt` 改为 number；`independentPlanState: true`。
 - projectService 补全 `resolveSessionDirectories`。
 - 验证：adapter 38 tests 绿；typecheck 0；protected packages diff = 0；e2e 证明 sendConversationCommandV4 被走到并落盘 JSONL（user/message + assistant/message）。
+
+### ZS2 cat-jam 最终修复（UI 渲染回复）
+
+- 根因：draft 预热会话 promote 后 UI 重新订阅，adapter 的 `resyncConversationV4` 只回 ack 不投送快照，且 `projectService.readTree` 为空导致首发 commit 不触发导航，会话不打开、回复不渲染。
+- 修复：`agent-service.ts` 保留 per-session rows/phase/seq，subscribe/resync 投送 snapshot；新增 `real/project-service.ts` 跟踪已创建 task 并在 `readTree` 返回，触发 pending commit 导航。
+- 验证：
+  - e2e：消息容器出现 `Hello from harness2 mock provider.`（截图 `docs/screenshots/zs2/final-ui-pass.png`，334325 bytes）。
+  - 落盘：`C:/Users/ASUS/.harness2/sessions/D--AI_Projects--harness2-zs1-build--ZCode--packages--desktop/20261020-222703-eaae17/session.v1.jsonl`，事件 `session/header:1, user/message:1, step/start:1, assistant/message:1, step/end:1`。
+  - `loadSession` 重放：user+assistant 各 1 条。
+  - adapter tests: 38 passed; typecheck 0; protected packages diff = 0.
