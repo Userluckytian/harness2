@@ -1,0 +1,26 @@
+{
+  "name": "@harness2/zcode-adapter",
+  "version": "1.0.2",
+  "private": true,
+  "description": "ZCode 壳后端适配层（ZS1 骨架）：IServiceAccessor 全频道桩注册 + 桩 host 进程入口。类型与运行时依赖经路径映射指向 ZS1 scratch 构建区（D:/AI_Projects/harness2-zs1-build/ZCode，Apache-2.0，见 LICENSE-ZCODE.md）；长期 vendored 路线归 ZS6 决策",
+  "license": "MIT",
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "build:host-bundle": "node build/host-bundle.mjs",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run"
+  },
+  "devDependencies": {
+    "@types/node": "^26.4.1",
+    "esbuild": "^0.25.0",
+    "typescript": "^7.0.2",
+    "vitest": "^5.0.0"
+  }
+}

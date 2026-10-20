@@ -1,0 +1,18 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "types": ["node"],
+    "noUncheckedIndexedAccess": false,
+    "verbatimModuleSyntax": false,
+    "paths": {
+      "@zcode/services": ["../../../harness2-zs1-build/ZCode/packages/services/src/index.ts"],
+      "@zcode/rpc": ["../../../harness2-zs1-build/ZCode/packages/rpc/src/index.ts"],
+      "@zcode/shared": ["../../../harness2-zs1-build/ZCode/packages/shared/src/index.ts"],
+      "@zcode/shared/zcode-protocol-v4": [
+        "../../../harness2-zs1-build/ZCode/packages/shared/src/zcode-protocol-v4/index.ts"
+      ]
+    }
+  },
+  "include": ["src", "test", "build", "vitest.config.mts"]
+}

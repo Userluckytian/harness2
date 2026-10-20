@@ -251,3 +251,34 @@
   - `[zcode-agent-service] ZCode agent 等待 provider/model 就绪 …"当前没有可用的模型供应商和模型，请先登录或配置 API Key。"`——未登录空态。
 - **截图**：`docs/screenshots/zs1/t1-original-shell.png`（真实运行截取，PowerShell CopyFromScreen 全屏 2560x1440；像素统计 514 distinct colors、浅色为主，与 ZCode 浅色主题一致。实施代理模型无视觉输入，截图内容留编排者核图）。
 - 现场已清（taskkill electron 全灭）。
+
+### Task 2：zcode-adapter 骨架 ✅（57 频道桩）
+
+**实测频道数**：`@zcode/shared` ServiceChannels **56** + 字面量 `"gen-ui"`（services/src/gen-ui/contract.ts）= **57**（spike「约 60」的实数；accessor 65 属性中有复合属性与可选属性，频道注册以 57 为全集）。
+
+**交付（`packages/zcode-adapter/`）**：
+
+- `src/stub-factory.ts`：`createStubService<T>()`——Proxy 桩工厂；`on*`→`Event.None`（@zcode/rpc 基准）、`onDynamic*`→返回 Event.None、方法默认按分类（A/C→`async () => null`、B→async throw）；`throws`/`nulls` 可覆盖。**async throw**（RPC 语义：远端错误总是 rejected promise，同步 throw 会炸穿 ProxyChannel.call 调用点——单测实证后修正）。
+- `src/channel-registry.ts`：57 频道逐条 A/B/C 分类 + 依据备注（spike §5 + A 类映射详表）；`assertRegistryMatchesServiceChannels()` 与 shared 全集对账。
+- `src/root-mount-stubs.ts`：Root 挂载 9 服务 + boot log 空态 19 方法的显式类型化桩（形状经 TS 接口对齐）。要点：setting.get→`{recentProjects:[],locale:"en-US"}`；model-selection.getView→`{revision:0,providers:[]}`；provider-settings.getView→空 view；oauth 读路径未登录态（restoreCachedSessionState→`signed-out`）+ 登录动作 throw；coding-plan getDynamicWorkflowClientConfig→`disabled/default`（fail-closed）；window-controller listTaskList→空列表 + subscribeV4→snapshot ack；project.readTree→空树；broadcast send no-op/tryClaim true/onMessage 永不触发；zcode-agent/bots syncAppRuntimePreferences→void。
+- `src/createHarness2Services.ts`：57 频道全注册进真实 `@zcode/services` ServiceCollection（非仿制）。
+- `src/host-entry.ts`：桩 host 进程入口——main↔host 协议最小集（InitLocal→DatabaseStartupState ready（startupId 原样回填）→ChannelServer 暴露；AttachServicePort/DatabaseStartupControl/Dispose 处理；其余消息静默）。端口适配复刻 ZCode electronPort.ts（Apache-2.0）。
+- `build/host-bundle.mjs`：esbuild 打包 host-entry + @zcode/rpc/services/shared 依赖闭包 → `dist/host-entry.cjs`（1.5MB，含 Apache-2.0 衍生作品 banner）；模块解析走包内 tsconfig paths（精确匹配）+ scratch 包级 node_modules 自然解析。
+- `LICENSE-ZCODE.md`：随附 ZCode Apache-2.0 原许可证（V7）。
+
+**设计决策（登记）**：
+
+1. A 类读路径空态形状、**写路径 throw**（假成功比 throw 危险，如 setting.update）；
+2. C 类读路径空值（入口显示空数据，红线⑩），动作路径（登录/支付/连接）throw——空数据下这些入口自然不可达；
+3. **source-server-management 必须注册**：与 A 类映射详表「accessor 可不提供」结论不同——renderer 侧 RemoteServiceAccess 恒提供代理（懒失败），boot log 空态实证调用 getSnapshot 4 次，不注册会 RPC 报错；已注册并返回空 snapshot；
+4. tsconfig/vitest/esbuild 的 `@zcode/*` 映射必须**精确匹配**（字符串 alias 是前缀匹配，会破坏 `@zcode/shared/model-config` 等子路径解析——vitest 实证后改正则/tsconfig paths）；
+5. 包级 tsconfig 放宽 `noUncheckedIndexedAccess`/`verbatimModuleSyntax`（ZCode 源码约定不同，不放宽则外部源码 30+ 报错）。
+
+**证据（真实命令输出）**：
+
+- `tsc -p tsconfig.json --noEmit` → **0 error**（类型对齐达成）
+- `vitest run` → **24 passed (24)**：57 频道枚举对账（无缺无多）/ C 静默（oauth/coding-plan/source-server/usage-stats 不炸）/ B throw（zcode-agent v4、file、window-controller 变更动作）/ 9 服务空态形状 / **ProxyChannel 集成测**（fromService(stub) 的 call/listen/动态事件全通——桩与真实 RPC 层兼容性实证）
+- `pnpm -r --no-bail run typecheck` → **7/7 包全绿**（core/gateway/cli/desktop/ui-shared/web 无回归 + zcode-adapter 新增）
+- `node build/host-bundle.mjs` → `dist/host-entry.cjs 1.5mb`；`node dist/host-entry.cjs` → 守卫报「must run inside Electron utilityProcess」exit 1（bundle 可加载性冒烟）
+
+**残留（T3 实测兜底）**：C 类默认 null 的频道（usage-stats/client-config/client-scenes/cloud-content/cua 等）空态不触达（boot log 实证），若 T3 启动路径触达则补显式形状并登记。
