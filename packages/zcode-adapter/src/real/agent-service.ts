@@ -81,7 +81,9 @@ export function createAgentService(opts: AgentServiceOptions = {}): IZCodeAgentS
 
   // provider
   const defaultMock: MockScript = [{ text: 'Hello from harness2 mock provider.' }];
-  const __diag=(m:any)=>{try{require('node:fs').appendFileSync('D:/AI_Projects/harness2-zs1-build/zs2-diag.log','[agent] '+m);}catch(e){}};
+  const __diagPath = (process.env.ZS2_DIAG_PATH || (require('node:path').join(require('node:os').tmpdir(), 'zs2-diag.log')));
+const __diagEnabled = process.env.ZS2_DIAG === '1';
+const __diag=(m:any)=>{ if(!__diagEnabled) return; try{require('node:fs').appendFileSync(__diagPath,'[agent] '+m);}catch(e){}};
   __diag('cwd='+process.cwd()+' home='+home+' HARNESS2_HOME='+process.env.HARNESS2_HOME);
   let provider: unknown;
   try {

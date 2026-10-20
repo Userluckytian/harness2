@@ -54,6 +54,7 @@ export function createTaskService(opts: TaskServiceOptions = {}): IZCodeTaskServ
     async createTask(params: { workspacePath?: string; modelSelection?: unknown }): Promise<{ taskId: string }> {
       const cwd = params?.workspacePath ?? process.cwd();
       const created = manager.create(cwd);
+      try { created.writer.close(); } catch {}
       return { taskId: created.id };
     },
     async sendPrompt(params: { taskId: string; content: string | unknown }): Promise<void> {
@@ -74,6 +75,7 @@ export function createTaskService(opts: TaskServiceOptions = {}): IZCodeTaskServ
           onStream: () => {},
         });
       } finally {
+        try { resumed.writer.close(); } catch {}
         aborts.delete(id);
       }
     },

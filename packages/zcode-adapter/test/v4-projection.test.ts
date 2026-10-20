@@ -48,4 +48,23 @@ describe('v4-projection', () => {
     const r = projectEvents(events);
     expect(r.rows.some((x) => x.kind === 'assistantText' && x.text === 'x')).toBe(true);
   });
+
+  it('resume contract: rowIds unique monotonic; append beyond lastSeq keeps prior ids', () => {
+    const base = [
+      ev(1, 'user/message', { text: 'hi', turnId: 't1' }),
+      ev(2, 'assistant/message', { text: 'hello', reasoning: 'think', turnId: 't1' }),
+    ];
+    const r1 = projectEvents(base);
+    const ids1 = r1.rows.map((x) => x.rowId);
+    expect(new Set(ids1).size).toBe(ids1.length);
+    for (let i = 1; i < ids1.length; i++) expect(ids1[i]).toBeGreaterThan(ids1[i - 1]);
+    expect(r1.lastSeq).toBe(2);
+
+    const extended = [...base, ev(3, 'assistant/message', { text: 'more', turnId: 't1' })];
+    const r2 = projectEvents(extended);
+    expect(r2.rows.slice(0, r1.rows.length).map((x) => x.rowId)).toEqual(ids1);
+    const newId = r2.rows[r1.rows.length].rowId;
+    expect(newId).toBeGreaterThan(ids1[ids1.length - 1]);
+    expect(r2.lastSeq).toBe(3);
+  });
 });

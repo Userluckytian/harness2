@@ -57,12 +57,21 @@ export function projectEvents(events: AnySessionEvent[]): ProjectionResult {
   // 先按 seq 排序
   const sorted = [...events].sort((a, b) => a.seq - b.seq);
 
+  // rowId 分配：每行唯一整数，事件 seq 为基，同事件多行用稳定偏移；全局单调。
+  let rowCounter = 0;
+  const allocRowId = (seq: number): number => {
+    if (seq > rowCounter) rowCounter = seq - 1;
+    rowCounter += 1;
+    if (rowCounter < seq) rowCounter = seq;
+    return rowCounter;
+  };
+
   for (const e of sorted) {
     switch (e.type) {
       case 'user/message': {
         const p = e.payload as { text: string; turnId?: string };
         rows.push({
-          rowId: e.seq,
+          rowId: allocRowId(e.seq),
           kind: 'userInput',
           turnId: p.turnId,
           text: p.text,
@@ -71,7 +80,7 @@ export function projectEvents(events: AnySessionEvent[]): ProjectionResult {
         });
         // turnHeader 合成：由 user/message 触发
         rows.push({
-          rowId: e.seq + 0.5, // fractional to keep ordering; but rowId should be int. Use seq+? We'll use seq for header too? Conflict.
+          rowId: allocRowId(e.seq),
           kind: 'turnHeader',
           turnId: p.turnId,
           state: 'running',
@@ -83,7 +92,7 @@ export function projectEvents(events: AnySessionEvent[]): ProjectionResult {
         const p = e.payload as { text: string; model?: string; usage?: { inputTokens?: number; outputTokens?: number }; reasoning?: string; turnId?: string };
         if (p.reasoning) {
           rows.push({
-            rowId: e.seq,
+            rowId: allocRowId(e.seq),
             kind: 'reasoning',
             turnId: p.turnId,
             text: p.reasoning,
@@ -92,7 +101,7 @@ export function projectEvents(events: AnySessionEvent[]): ProjectionResult {
           });
         }
         rows.push({
-          rowId: e.seq + (p.reasoning ? 1 : 0), // keep unique
+          rowId: allocRowId(e.seq),
           kind: 'assistantText',
           turnId: p.turnId,
           text: p.text,
@@ -108,7 +117,7 @@ export function projectEvents(events: AnySessionEvent[]): ProjectionResult {
       case 'assistant/attempt': {
         const p = e.payload as { error: string; text?: string; model?: string; turnId?: string };
         rows.push({
-          rowId: e.seq,
+          rowId: allocRowId(e.seq),
           kind: 'assistantText',
           turnId: p.turnId,
           text: p.text ?? '',
@@ -120,7 +129,7 @@ export function projectEvents(events: AnySessionEvent[]): ProjectionResult {
       case 'tool/call': {
         const p = e.payload as { callId: string; tool: string; args?: unknown; turnId?: string };
         rows.push({
-          rowId: e.seq,
+          rowId: allocRowId(e.seq),
           kind: 'toolCall',
           turnId: p.turnId,
           toolName: p.tool,
@@ -152,12 +161,6 @@ export function projectEvents(events: AnySessionEvent[]): ProjectionResult {
       }
     }
   }
-
-  // Note: rowId fractional issue. Let's normalize rowId to integer monotonic by index.
-  // Reassign rowId as incremental based on insertion order to keep uniqueness.
-  rows.forEach((r, i) => {
-    r.rowId = i + 1;
-  });
 
   // control phase: need turn end stopReason. If no explicit, infer from last assistant.
   // We don't have stopReason in events; default completedSuccess if any assistant message.

@@ -25,7 +25,8 @@ export function createModelSelectionService(opts: ProviderViewsOptions = {}): IM
         const loaded = loadConfig({ root: process.cwd(), home });
         const cfg = loaded.config;
         if (!cfg) return { revision: 0, providers: [] };
-        const auth = readAuthFile(join(home, '.harness2', 'auth.json')) as { channels?: Record<string, { apiKey?: string }> };
+        const authResult = readAuthFile(join(home, '.harness2', 'auth.json'));
+const auth = authResult.auth;
         const providers: unknown[] = [];
         for (const [channel, pcfg] of Object.entries(cfg.providers ?? {})) {
           const p = pcfg as { protocol?: string; baseUrl?: string; models?: Record<string, { contextWindow?: number }>; envKey?: string };
@@ -128,7 +129,8 @@ export function createProviderSettingsService(opts: ProviderViewsOptions = {}): 
         const loaded = loadConfig({ root: process.cwd(), home });
         const cfg = loaded.config;
         if (!cfg) return { revision: 0, providerTemplates: [], providerOrder: [], providers: [] };
-        const auth = readAuthFile(join(home, '.harness2', 'auth.json')) as { channels?: Record<string, { apiKey?: string }> };
+        const authResult = readAuthFile(join(home, '.harness2', 'auth.json'));
+const auth = authResult.auth;
         const providers: unknown[] = [];
         for (const [channel, pcfg] of Object.entries(cfg.providers ?? {})) {
           const p = pcfg as { models?: Record<string, unknown>; envKey?: string };
