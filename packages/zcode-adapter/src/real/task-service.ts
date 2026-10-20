@@ -7,8 +7,9 @@ import {
   createProvider,
   runTurn,
 } from './core-bridge.js';
-import { MockProvider, type MockScript } from '@harness2/core';
+import { MockProvider } from './core-bridge.js';
 import type { IZCodeTaskService } from '@zcode/services';
+import type { MockScript } from '@harness2/core';
 
 export interface TaskServiceOptions {
   dataRoot?: string;
@@ -78,7 +79,7 @@ export function createTaskService(opts: TaskServiceOptions = {}): IZCodeTaskServ
       if (ac) ac.abort();
     },
     async listTasks(): Promise<unknown[]> {
-      return manager.list().map((s) => ({ taskId: s.id, title: s.title ?? s.firstUserText }));
+      return manager.list().map((s: { id: string; title?: string; firstUserText?: string }) => ({ taskId: s.id, title: s.title ?? s.firstUserText }));
     },
     async listTaskList(): Promise<{ items: unknown[]; total: number; hasMore: boolean }> {
       return { items: [], total: 0, hasMore: false };

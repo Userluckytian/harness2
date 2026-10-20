@@ -16,9 +16,9 @@ export function createSessionService(opts: SessionServiceOptions = {}): IZCodeSe
     async listSessions(params: { workspacePath?: string }): Promise<unknown[]> {
       const cwd = params?.workspacePath;
       const summaries = manager.list(cwd);
-      return summaries.map((s) => ({
+      return summaries.map((s: { id: string; title?: string; firstUserText?: string; mtimeMs: number }) => ({
         sessionId: s.id,
-        workspace: cwd ?? s.cwd ?? '',
+        workspace: cwd ?? '',
         title: s.title ?? s.firstUserText ?? '',
         mode: 'agent',
         status: 'idle',

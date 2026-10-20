@@ -1,7 +1,7 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { homedir } from 'node:os';
-import { loadConfig, defaultConfigPaths, readAuthFile, redactSecrets } from '@harness2/core';
+import { loadConfig, defaultConfigPaths, readAuthFile, redactSecrets } from './core-bridge.js';
 import type { IModelSelectionService, IProviderSettingsService } from '@zcode/services';
 import { createStubService } from '../stub-factory.js';
 
