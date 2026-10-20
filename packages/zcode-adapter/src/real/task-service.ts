@@ -57,6 +57,7 @@ export function createTaskService(opts: TaskServiceOptions = {}): IZCodeTaskServ
       return { taskId: created.id };
     },
     async sendPrompt(params: { taskId: string; content: string | unknown }): Promise<void> {
+      if (process.env.ZS2_PROBE === '1') console.error('[zs2-probe] task-service.sendPrompt', params?.taskId);
       const id = params.taskId;
       const text = typeof params.content === 'string' ? params.content : JSON.stringify(params.content);
       const resumed = manager.resume(id);

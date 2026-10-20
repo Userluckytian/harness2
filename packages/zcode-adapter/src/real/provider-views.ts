@@ -25,19 +25,27 @@ export function createModelSelectionService(opts: ProviderViewsOptions = {}): IM
         const loaded = loadConfig({ root: process.cwd(), home });
         const cfg = loaded.config;
         if (!cfg) return { revision: 0, providers: [] };
-        const auth = readAuthFile(join(home, '.harness2', 'auth.json'));
+        const auth = readAuthFile(join(home, '.harness2', 'auth.json')) as { channels?: Record<string, { apiKey?: string }> };
         const providers: unknown[] = [];
         for (const [channel, pcfg] of Object.entries(cfg.providers ?? {})) {
           const p = pcfg as { protocol?: string; baseUrl?: string; models?: Record<string, { contextWindow?: number }>; envKey?: string };
           const models = Object.keys(p.models ?? {});
-          const keyExists = !!auth.auth?.channels?.[channel]?.apiKey;
+          const keyExists = !!auth?.channels?.[channel]?.apiKey;
           const envKey = p.envKey;
           const envExists = envKey ? !!process.env[envKey] : false;
           const executable = keyExists || envExists;
           providers.push({
             providerId: channel,
             config: p,
-            models: models.map((m) => ({ modelId: m, ...(p.models?.[m] ?? {}) })),
+            models: models.map((m) => ({
+              modelId: m,
+              config: {
+                optionSpecs: {
+                  reasoningLevel: { values: ['medium'], map: {} },
+                },
+              },
+              ...(p.models?.[m] ?? {}),
+            })),
           });
         }
         // preferred selection from roles.main
@@ -45,7 +53,7 @@ export function createModelSelectionService(opts: ProviderViewsOptions = {}): IM
         return {
           revision: 1,
           providers,
-          preferredSelection: mainRole ? { providerId: mainRole.channel, modelId: mainRole.model } : undefined,
+          preferredSelection: mainRole ? { providerId: mainRole.channel, modelId: mainRole.model, options: { reasoningLevel: 'medium' } } : undefined,
         };
       } catch (e) {
         // redact secrets in error
@@ -72,11 +80,11 @@ export function createProviderSettingsService(opts: ProviderViewsOptions = {}): 
         const loaded = loadConfig({ root: process.cwd(), home });
         const cfg = loaded.config;
         if (!cfg) return { revision: 0, providerTemplates: [], providerOrder: [], providers: [] };
-        const auth = readAuthFile(join(home, '.harness2', 'auth.json'));
+        const auth = readAuthFile(join(home, '.harness2', 'auth.json')) as { channels?: Record<string, { apiKey?: string }> };
         const providers: unknown[] = [];
         for (const [channel, pcfg] of Object.entries(cfg.providers ?? {})) {
           const p = pcfg as { models?: Record<string, unknown>; envKey?: string };
-          const keyExists = !!auth.auth?.channels?.[channel]?.apiKey;
+          const keyExists = !!auth?.channels?.[channel]?.apiKey;
           const envKey = p.envKey;
           const envExists = envKey ? !!process.env[envKey] : false;
           const executable = keyExists || envExists;
@@ -85,6 +93,8 @@ export function createProviderSettingsService(opts: ProviderViewsOptions = {}): 
             enabled: true,
             executable,
             issues: executable ? [] : ['no_api_key'],
+            effectiveConfig: { access: null },
+            accountState: { availability: executable ? 'available' : 'unavailable', unavailableReason: executable ? undefined : 'no_api_key' },
             models: Object.keys(p.models ?? {}).map((m) => ({ modelId: m })),
           });
         }

@@ -26,12 +26,12 @@ export class SettingsStore {
     try {
       if (existsSync(this.filePath)) {
         const raw = JSON.parse(readFileSync(this.filePath, 'utf8'));
-        return { recentProjects: [], locale: 'en-US', ...raw };
+        return { recentProjects: [], locale: 'en-US', providerFamilyConnectionSelections: {}, ...raw };
       }
     } catch {
       // fall through
     }
-    return { recentProjects: [], locale: 'en-US', providerFamilyDomain: 'zai', providerFamilyDomainMigrated: true, onboardingOccupation: 'other' } as AppSettings;
+    return { recentProjects: [], locale: 'en-US', providerFamilyDomain: 'zai', providerFamilyDomainMigrated: true, onboardingOccupation: 'other', providerFamilyConnectionSelections: {} } as AppSettings;
   }
 
   update(patch: Partial<AppSettings>): AppSettings {

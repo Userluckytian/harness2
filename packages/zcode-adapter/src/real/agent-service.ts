@@ -224,6 +224,7 @@ export function createAgentService(opts: AgentServiceOptions = {}): IZCodeAgentS
       return { ok: true };
     },
     async subscribeConversationV4(params: { sessionId?: string; base?: { seq: number } }): Promise<unknown> {
+      if (process.env.ZS2_PROBE === '1') console.error('[zs2-probe] agent-service.subscribeConversationV4', params?.sessionId);
       const sessionId = params?.sessionId ?? 'default';
       const subscriptionId = `zs2-${sessionId}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
       subs.set(subscriptionId, { sessionId, seq: params?.base?.seq ?? 0, ordinal: 1 });
@@ -244,8 +245,9 @@ export function createAgentService(opts: AgentServiceOptions = {}): IZCodeAgentS
     async unsubscribeConversationV4(params: { subscriptionId?: string }): Promise<void> {
       if (params?.subscriptionId) subs.delete(params.subscriptionId);
     },
-    async sendConversationCommandV4(params: { envelope?: any }): Promise<unknown> {
+    async sendConversationCommandV4(params: { workspacePath?: string; envelope?: any }): Promise<unknown> {
       const env = params?.envelope ?? {};
+      if (process.env.ZS2_PROBE === '1') console.error('[zs2-probe] agent-service.sendConversationCommandV4', env?.type, env?.sessionId);
       if (env.type === 'createSession') {
         const created = manager.create(process.cwd());
         try { created.writer.close(); } catch {}
@@ -335,7 +337,7 @@ export function createAgentService(opts: AgentServiceOptions = {}): IZCodeAgentS
     async readSessionDebug(): Promise<unknown> {
       return {};
     },
-    async sendPrompt(): Promise<void> {},
+    async sendPrompt(): Promise<void> { if (process.env.ZS2_PROBE === '1') console.error('[zs2-probe] agent-service.sendPrompt (deprecated)'); },
     async compactSession(): Promise<void> {},
     async goalSession(): Promise<void> {},
     async closeSession(): Promise<boolean> {

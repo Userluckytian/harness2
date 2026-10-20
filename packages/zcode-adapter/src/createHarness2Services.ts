@@ -107,7 +107,23 @@ import {
   zcodeAgentServiceStub,
 } from './root-mount-stubs.js';
 
-// (real services built lazily inside createHarness2Services)
+function wrapProbe(service: any, channel: string): any {
+  if (process.env.ZS2_PROBE !== '1') return service;
+  return new Proxy(service, {
+    get(target, prop, receiver) {
+      const val = Reflect.get(target, prop, receiver);
+      if (typeof val === 'function') {
+        return (...args: any[]) => {
+          try {
+            require('node:fs').appendFileSync('D:/AI_Projects/harness2-zs1-build/zs2-probe.log', `[probe] ${channel}.${String(prop)} called\n`);
+          } catch {}
+          return val.apply(target, args);
+        };
+      }
+      return val;
+    },
+  });
+}
 
 /** descriptor 表：频道名 → ServiceDescriptor（注册用） */
 const DESCRIPTORS = new Map<string, { channelName: string }>([
@@ -250,7 +266,7 @@ export function createHarness2Services(opts: Harness2ServicesOptions = {}): Harn
         channelName: entry.channel,
         classification: entry.classification,
       });
-    services.register(descriptor as never, stub);
+    services.register(descriptor as never, wrapProbe(stub, entry.channel));
     registeredChannels.push(entry.channel);
   }
   return { services, registeredChannels };
