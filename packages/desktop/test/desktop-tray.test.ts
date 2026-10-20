@@ -2,6 +2,7 @@
 // 平台门（mac 不建）、图标空/构造抛错 → null、tooltip、菜单模板顺序与 label、
 // 「导出日志」占位 disabled（不许静默没反应）、左键/双击 = show+focus（不 toggle）、
 // 菜单动作转发（newSession/addProject/quit 各回调一次）。
+import { join } from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 import {
   buildTrayMenuTemplate,
@@ -83,13 +84,16 @@ describe('resolveTrayIconPath（Z-47：打包 resources/tray_icon.ico / dev asse
       /tray_icon\.ico$/,
     );
   });
-  it('dev 态 = desktop/assets/icon.ico（从 dist-electron/main 上跳两级）', () => {
+  it('dev 态 = desktop/assets/icon.ico（从 dist-electron/main 上跳两级；平台中立路径）', () => {
+    // 断言不得硬编码 Windows 反斜杠 dirname：path.join 在 POSIX 不把 \ 当分隔符（CI linux/mac 必红，2026-10-20 实证）。
+    // dirname 语义 = src/main 的 ESM 模块 dirname(import.meta.url)——测试用当前平台风格任意合法前缀构造。
+    const fakeRoot = join(process.cwd(), 'desktop-dev-test-root');
     const p = resolveTrayIconPath({
       isPackaged: false,
-      resourcesPath: '/irrelevant',
-      dirname: 'D:\\repo\\packages\\desktop\\dist-electron\\main',
+      resourcesPath: join(fakeRoot, 'irrelevant'),
+      dirname: join(fakeRoot, 'packages', 'desktop', 'dist-electron', 'main'),
     });
-    expect(p.replace(/\\/g, '/')).toBe('D:/repo/packages/desktop/assets/icon.ico');
+    expect(p).toBe(join(fakeRoot, 'packages', 'desktop', 'assets', 'icon.ico'));
   });
 });
 

@@ -25,9 +25,7 @@ function getJson(path) {
   const targets = await getJson('/json/list');
   console.log(
     'targets:',
-    JSON.stringify(
-      targets.map((t) => ({ type: t.type, title: t.title, url: String(t.url).slice(0, 60) })),
-    ),
+    JSON.stringify(targets.map((t) => ({ type: t.type, title: t.title, url: String(t.url).slice(0, 60) }))),
   );
   const page = targets.find((t) => t.type === 'page' && String(t.url).startsWith('file://') && t.webSocketDebuggerUrl);
   if (!page) {

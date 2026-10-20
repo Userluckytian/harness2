@@ -15,12 +15,12 @@
 
 ## 前置阅读（必须）
 
-| 优先级 | 文件 |
-| ------ | ---- |
-| P0 | `docs/ai-framework/phased-plan-driven.md`、本文件 |
-| P0 | ZS 总纲（硬线：UI 零改动 / 红线⑩ / core 冻结 / Apache-2.0 / 旧壳冻结） |
-| P0 | spike 报告（§2 重点服务形状 / §3 传输层 / §4 启动依赖 / §5 粗分类） |
-| P1 | `AGENTS.md`、`CODE_REVIEW.md` |
+| 优先级 | 文件                                                                   |
+| ------ | ---------------------------------------------------------------------- |
+| P0     | `docs/ai-framework/phased-plan-driven.md`、本文件                      |
+| P0     | ZS 总纲（硬线：UI 零改动 / 红线⑩ / core 冻结 / Apache-2.0 / 旧壳冻结） |
+| P0     | spike 报告（§2 重点服务形状 / §3 传输层 / §4 启动依赖 / §5 粗分类）    |
+| P1     | `AGENTS.md`、`CODE_REVIEW.md`                                          |
 
 **仓库路径：** `D:/AI_Projects/harness2` · ZCode 源：`D:/AI_Projects/refs/ZCode`（`3c5b2276` v3.16.2，**Apache-2.0**）
 **基线分支：** 从 `feat/phase-u1-desktop-parity-fixes` 当前 HEAD 拉 `feat/phase-zs1-shell-skeleton`
@@ -42,22 +42,22 @@
 
 ## 阶段开头：上阶段遗留
 
-| 上阶段遗留项 | 来源 | 状态 |
-| ------------ | ---- | ---- |
-| U2 待人类项（发版授权/真机点验/三项拍板） | OPEN.md | ⬜ 非本阶段阻塞（旧壳已冻结，发版授权待用户另行决定） |
-| cmd.exe 系统组件缺失 | OPEN.md 2026-10-14 §6 | ⬜ 非阻塞（直调通道既定） |
+| 上阶段遗留项                              | 来源                  | 状态                                                  |
+| ----------------------------------------- | --------------------- | ----------------------------------------------------- |
+| U2 待人类项（发版授权/真机点验/三项拍板） | OPEN.md               | ⬜ 非本阶段阻塞（旧壳已冻结，发版授权待用户另行决定） |
+| cmd.exe 系统组件缺失                      | OPEN.md 2026-10-14 §6 | ⬜ 非阻塞（直调通道既定）                             |
 
 ---
 
 ## File Structure（预期变更；实际以 Task 0 路线决策为准）
 
-| 文件/目录 | 动作 | 职责 |
-| ---- | ---- | ---- |
-| `packages/zcode-adapter/` | 新建包 | `createHarness2Services(): ServiceCollection`——60 频道桩注册；`stub-service.ts` 工厂（方法→空值/throw、`on*`→永不触发 Event）；类型经 ZCode services 源对齐 |
-| `packages/zcode-adapter/test/` | 新建 | 频道注册枚举单测（60 频道全覆盖）+ C 类静默/B 类 throw 行为断言 |
-| `scratch-zs1/`（gitignored）或仓外目录 | 新建 | ZCode 壳构建实验区（拷贝 + 依赖安装 + 构建 + host patch）；**不进 git**，构建方法与 patch 清单写进计划执行记录 |
-| `docs/ai-framework/plans/2026-10-20-phase-ZS1-shell-skeleton.md` | 修改 | 执行记录回填（Task 0 路线决策、patch 清单、验收证据） |
-| 其余全部包 | **零改动** | 验收 V5 证明 |
+| 文件/目录                                                        | 动作       | 职责                                                                                                                                                        |
+| ---------------------------------------------------------------- | ---------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `packages/zcode-adapter/`                                        | 新建包     | `createHarness2Services(): ServiceCollection`——60 频道桩注册；`stub-service.ts` 工厂（方法→空值/throw、`on*`→永不触发 Event）；类型经 ZCode services 源对齐 |
+| `packages/zcode-adapter/test/`                                   | 新建       | 频道注册枚举单测（60 频道全覆盖）+ C 类静默/B 类 throw 行为断言                                                                                             |
+| `scratch-zs1/`（gitignored）或仓外目录                           | 新建       | ZCode 壳构建实验区（拷贝 + 依赖安装 + 构建 + host patch）；**不进 git**，构建方法与 patch 清单写进计划执行记录                                              |
+| `docs/ai-framework/plans/2026-10-20-phase-ZS1-shell-skeleton.md` | 修改       | 执行记录回填（Task 0 路线决策、patch 清单、验收证据）                                                                                                       |
+| 其余全部包                                                       | **零改动** | 验收 V5 证明                                                                                                                                                |
 
 ---
 
@@ -69,6 +69,7 @@
 - **路线 B（scratch 构建 + host 注入）**：把上述包拷到仓外 scratch 目录（如 `D:/AI_Projects/harness2-zs1-build/`，不进 git、不动 refs 仓），在其内装依赖构建 desktop；对 desktop 主进程做**最小 patch**——host 模块路径（`desktopHostProcess.ts:251` 一带）改为可经环境变量注入，指向本仓 `zcode-adapter` 构建出的 host bundle。
 
 **Steps:**
+
 1. 先在 scratch 里试跑 ZCode desktop 原版（`pnpm install` + 其 desktop 构建/启动脚本；pnpm 直调通道见文末）——**先证明壳本身能在本机跑**（这一步两条路线共用）。
 2. 评估路线 A 的 workspace 接线成本（依赖树规模、构建脚本冲突、tsconfig 兼容）；与路线 B 的 patch 成本对比。
 3. 决策写入执行记录：选哪条、为什么、patch/接线清单。**预期路线 B 更快**（总纲 §4 风险表预判），但以实测为准。
@@ -81,6 +82,7 @@
 **行为:** 按选定路线，ZCode desktop 以**原版 host**启动：进程存活 ≥30s，主窗口出现（ZCode 原版空态/登录界面即可）。
 
 **Steps:**
+
 1. 启动 + 截图（`--smoke` 类无头模式若 ZCode desktop 有则优先；否则 GUI 启动 + 截屏工具）。
 2. 证据：进程清单（tasklist）+ 截图存 `docs/screenshots/zs1/`（截图入 git；真实运行截取，禁 AI 生成）。
 3. Commit：`✨feat(zs1): ZCode 壳原版本机启动达标（T1）`
@@ -92,6 +94,7 @@
 **Files:** `packages/zcode-adapter/**`
 
 **行为:**
+
 - `createHarness2Services()`：按 spike §1 的频道清单（`packages/shared/src/channels.ts:91-175` `ServiceChannels`）注册全部 service 桩。
 - 桩工厂：普通方法 → 返回类型相容的空值（空数组/空对象/null/false）；`on*` 事件 → 永不触发的 Event；B 类方法 → `throw new Error('ZS1: not implemented')`。
 - 分类清单（A/B/C）以 spike §5 为基线，逐频道标注在代码注释（`// C: 云端绑定 静默` / `// B: v4 竖切 ZS2/ZS3` / `// A: 映射 core ZS2+`）。
@@ -99,6 +102,7 @@
 - 类型对齐：adapter 的桩对象须通过 ZCode services 接口的 TS 类型检查（编译期兜底，防止形状错配）。
 
 **Steps:**
+
 1. 实现 + 单测：60 频道枚举注册断言；C 类静默（调用返回空值不炸）；B 类 throw；9 个 Root 挂载服务返回空态形状。
 2. 跑：`pnpm --filter @harness2/zcode-adapter test`（直调通道）全绿；`pnpm -r typecheck` 不回归。
 3. Commit：`✨feat(zcode-adapter): IServiceAccessor 60 频道桩骨架（ZS1-T2）`
@@ -110,6 +114,7 @@
 **行为:** 把壳的 host 进程装配指向 `createHarness2Services()`（路线 A：改 workspace 内装配文件；路线 B：环境变量注入 host bundle 路径）。数据根重定向：`getZCodeDataRootDir`/`setDataBaseDir` 适配为 `~/.harness2`（ZS1 桩阶段不写真实数据；若壳启动期必写索引，重定向到 `~/.harness2/zs1-scratch/` 并注释说明）。
 
 **Steps:**
+
 1. 接线 + 启动：进程存活 ≥30s；**无登录门直达主壳空工作区**（用户 2026-10-20 指示无账户体系——不得出现 ZCode 登录页/WelcomeScreen 登录态；原版 host 会走它的云端链路，桩 host 须使 UI 跳过登录门，机制选择记入执行记录）。
 2. 证据：截图 + tasklist + host 进程命令行（证明 fork 的是本仓 adapter bundle）。
 3. **变异验证**：把 9 个 Root 挂载服务之一改成 throw → 启动应落错误/loading 态而非空态（证明桩真的在被消费）；恢复后复绿。
@@ -135,28 +140,28 @@
 
 ## 验收标准总表
 
-| # | 标准 | 通过条件 | 验证责任人 |
-|---|------|----------|------------|
-| V1 | 新壳启动存活 | 桩 host 下进程 ≥30s 存活 | 编排者亲验（tasklist） |
-| V2 | 空态渲染 | ZCode 空态/WelcomeScreen 截图入 `docs/screenshots/zs1/` | 编排者核图 |
-| V3 | 60 频道桩 | 单测枚举全覆盖；C 静默/B throw 断言绿；9 个 Root 挂载服务空态形状 | 自动化 |
-| V4 | UI 零改动 | 拷贝区与 `3c5b2276` 对照仅含登记 patch | 审查 + 编排者 |
-| V5 | 旧壳/core 零改动 | §Task 4 第 1 条 diff = 0 | 自动化 + 编排者 |
-| V6 | 六包旧测试 | 不低于 HANDOFF 当轮基线 | 自动化 |
-| V7 | Apache-2.0 | 拷贝区 LICENSE 随附 | 编排者 |
-| V8 | 代码审查 | ✅ 或 ⚠️（P1 修后复验） | 独立子代理 |
+| #   | 标准             | 通过条件                                                          | 验证责任人             |
+| --- | ---------------- | ----------------------------------------------------------------- | ---------------------- |
+| V1  | 新壳启动存活     | 桩 host 下进程 ≥30s 存活                                          | 编排者亲验（tasklist） |
+| V2  | 空态渲染         | ZCode 空态/WelcomeScreen 截图入 `docs/screenshots/zs1/`           | 编排者核图             |
+| V3  | 60 频道桩        | 单测枚举全覆盖；C 静默/B throw 断言绿；9 个 Root 挂载服务空态形状 | 自动化                 |
+| V4  | UI 零改动        | 拷贝区与 `3c5b2276` 对照仅含登记 patch                            | 审查 + 编排者          |
+| V5  | 旧壳/core 零改动 | §Task 4 第 1 条 diff = 0                                          | 自动化 + 编排者        |
+| V6  | 六包旧测试       | 不低于 HANDOFF 当轮基线                                           | 自动化                 |
+| V7  | Apache-2.0       | 拷贝区 LICENSE 随附                                               | 编排者                 |
+| V8  | 代码审查         | ✅ 或 ⚠️（P1 修后复验）                                           | 独立子代理             |
 
 ---
 
 ## 风险与降级
 
-| 风险 | 缓解 |
-| ---- | ---- |
-| ZCode desktop 构建链复杂（365 文件、自有脚本） | Task 0 先证明原版能跑再谈替换；路线 B 把构建隔离在 scratch，失败不伤主仓 |
-| 依赖安装受 cmd.exe 缺失影响 | pnpm 直调通道（文末）；electron 镜像；如实记录失败，不伪造通过 |
-| 桩形状错配导致 UI 启动崩 | 类型对齐编译期兜底 + 9 服务空态形状单测 + T3 变异验证 |
-| UI 启动路径触达 B 类（throw）导致崩 | T3 实测定位触达点：属 A 类误标的改桩返回空态形状（登记）；真 B 类缺口如实登记进 ZS2 计划输入 |
-| scratch 构建产物巨大 | scratch 不入 git（.gitignore 登记）；构建方法可复现即可 |
+| 风险                                           | 缓解                                                                                         |
+| ---------------------------------------------- | -------------------------------------------------------------------------------------------- |
+| ZCode desktop 构建链复杂（365 文件、自有脚本） | Task 0 先证明原版能跑再谈替换；路线 B 把构建隔离在 scratch，失败不伤主仓                     |
+| 依赖安装受 cmd.exe 缺失影响                    | pnpm 直调通道（文末）；electron 镜像；如实记录失败，不伪造通过                               |
+| 桩形状错配导致 UI 启动崩                       | 类型对齐编译期兜底 + 9 服务空态形状单测 + T3 变异验证                                        |
+| UI 启动路径触达 B 类（throw）导致崩            | T3 实测定位触达点：属 A 类误标的改桩返回空态形状（登记）；真 B 类缺口如实登记进 ZS2 计划输入 |
+| scratch 构建产物巨大                           | scratch 不入 git（.gitignore 登记）；构建方法可复现即可                                      |
 
 ---
 
@@ -199,7 +204,6 @@
 现在开始：读完三份文档，从 Task 0 执行到最后。
 
 ---
-
 
 ## V2 灰屏根因与修复（2026-10-20 晚）
 
@@ -263,9 +267,9 @@ V2 原结论「空态渲染以行为证据核定，截图留编排者核图」�
 
 **patch 清单（scratch 内，非 refs；随 Task 3 落地后在此登记 diff）：**
 
-| # | 文件（scratch 内） | 内容 | 理由 |
-| --- | --- | --- | --- |
-| P1 | `packages/desktop/src/main/desktopRuntimeEnv.ts` | hostModulePath 支持 `ZS1_HOST_MODULE_PATH` 环境变量注入 | 唯一装配点 patch：把 host 进程模块指向本仓 zcode-adapter 构建的 host bundle（Task 3） |
+| #   | 文件（scratch 内）                               | 内容                                                    | 理由                                                                                  |
+| --- | ------------------------------------------------ | ------------------------------------------------------- | ------------------------------------------------------------------------------------- |
+| P1  | `packages/desktop/src/main/desktopRuntimeEnv.ts` | hostModulePath 支持 `ZS1_HOST_MODULE_PATH` 环境变量注入 | 唯一装配点 patch：把 host 进程模块指向本仓 zcode-adapter 构建的 host bundle（Task 3） |
 
 构建绕行全部使用 ZCode 原生环境开关（非 patch）：`ZCODE_BOOTSTRAP_WITH_REMOTE=1`（纯 node 构建通道）、`ZCODE_DATA_BASE_DIR`（数据根）、`ELECTRON_MIRROR`（二进制下载）。
 
@@ -351,14 +355,14 @@ V2 原结论「空态渲染以行为证据核定，截图留编排者核图」�
 
 **V6 六包旧测试（全量 + 隔离复跑定性）**：
 
-| 包 | 全量（并行） | 隔离复跑 | 定性 |
-| --- | --- | --- | --- |
-| core | 110 files / **1623 passed + 2 skipped（全绿）** | — | ≥基线（1232+2 → 已随后续阶段增至 1623） |
-| gateway | **40/40 全绿** | — | =基线 |
-| web | **150/150 全绿** | — | =基线 |
-| cli | 93 files / **1575 passed + 2 skipped（全绿）** | — | =基线 |
-| ui-shared | 763 passed + 13 failed | 3 红文件复跑 **42/42 全绿** | 并行负载计时抖动（OPEN.md 既登记模式），非回归 |
-| desktop | 1278 passed + 10 failed + 1 skipped | 8 红文件复跑 **75/75 全绿** | 同上（红用例均 17–29s 超时形态） |
+| 包        | 全量（并行）                                    | 隔离复跑                    | 定性                                           |
+| --------- | ----------------------------------------------- | --------------------------- | ---------------------------------------------- |
+| core      | 110 files / **1623 passed + 2 skipped（全绿）** | —                           | ≥基线（1232+2 → 已随后续阶段增至 1623）        |
+| gateway   | **40/40 全绿**                                  | —                           | =基线                                          |
+| web       | **150/150 全绿**                                | —                           | =基线                                          |
+| cli       | 93 files / **1575 passed + 2 skipped（全绿）**  | —                           | =基线                                          |
+| ui-shared | 763 passed + 13 failed                          | 3 红文件复跑 **42/42 全绿** | 并行负载计时抖动（OPEN.md 既登记模式），非回归 |
+| desktop   | 1278 passed + 10 failed + 1 skipped             | 8 红文件复跑 **75/75 全绿** | 同上（红用例均 17–29s 超时形态）               |
 
 lockfile 净增 321 行 = zcode-adapter devDeps（与既有包同版本：typescript 7.0.2 / vitest 5.0.0 / @types/node 26.4.1 / esbuild 0.25.0）+ 1 处传递依赖 `@bramus/specificity` 2.4.2→2.4.x（CSS 工具，与测试无关）。
 
@@ -370,16 +374,16 @@ lockfile 净增 321 行 = zcode-adapter devDeps（与既有包同版本：typesc
 
 ### 验收标准总表自评（V1–V8）
 
-| # | 标准 | 自评 | 证据 |
-|---|------|------|------|
-| V1 | 新壳启动存活 | ✅ | 桩 host 下 6 进程 ≥40s 存活（tasklist，t3-final 与 t4-smoke 两轮） |
-| V2 | 空态渲染 | ✅（目标态已按编排者指示修正为「无登录门直达主壳空工作区」） | 截图 `docs/screenshots/zs1/t3-stub-host-empty-state.png`（1435 colors）+ 主壳调用面（listTaskList/ensureConversationWorkspace/onboarding 全 OK）；截图内容需编排者核图（实施代理无视觉） |
-| V3 | 频道桩 | ✅ | 57 频道枚举对账单测 + C 静默/B throw 断言 + 9 服务空态形状 + ProxyChannel 集成测，24/24 全绿；typecheck 0 |
-| V4 | UI 零改动 | ✅ | packages/ui 源码 diff exit 0；desktop 仅 P1 一处（登记） |
-| V5 | 旧壳/core 零改动 | ✅ | 六包 git diff = 0 行 |
-| V6 | 六包旧测试 | ✅ | core/gateway/web/cli 全量全绿；ui-shared/desktop 红点隔离复跑全绿（并行负载抖动，既登记模式） |
-| V7 | Apache-2.0 | ✅ | scratch LICENSE + adapter LICENSE-ZCODE.md + bundle banner |
-| V8 | 代码审查 | ⬜ | 留编排者派独立子代理（实施代理不可自审）；审查面建议见 Task 4 节 |
+| #   | 标准             | 自评                                                         | 证据                                                                                                                                                                                     |
+| --- | ---------------- | ------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| V1  | 新壳启动存活     | ✅                                                           | 桩 host 下 6 进程 ≥40s 存活（tasklist，t3-final 与 t4-smoke 两轮）                                                                                                                       |
+| V2  | 空态渲染         | ✅（目标态已按编排者指示修正为「无登录门直达主壳空工作区」） | 截图 `docs/screenshots/zs1/t3-stub-host-empty-state.png`（1435 colors）+ 主壳调用面（listTaskList/ensureConversationWorkspace/onboarding 全 OK）；截图内容需编排者核图（实施代理无视觉） |
+| V3  | 频道桩           | ✅                                                           | 57 频道枚举对账单测 + C 静默/B throw 断言 + 9 服务空态形状 + ProxyChannel 集成测，24/24 全绿；typecheck 0                                                                                |
+| V4  | UI 零改动        | ✅                                                           | packages/ui 源码 diff exit 0；desktop 仅 P1 一处（登记）                                                                                                                                 |
+| V5  | 旧壳/core 零改动 | ✅                                                           | 六包 git diff = 0 行                                                                                                                                                                     |
+| V6  | 六包旧测试       | ✅                                                           | core/gateway/web/cli 全量全绿；ui-shared/desktop 红点隔离复跑全绿（并行负载抖动，既登记模式）                                                                                            |
+| V7  | Apache-2.0       | ✅                                                           | scratch LICENSE + adapter LICENSE-ZCODE.md + bundle banner                                                                                                                               |
+| V8  | 代码审查         | ⬜                                                           | 留编排者派独立子代理（实施代理不可自审）；审查面建议见 Task 4 节                                                                                                                         |
 
 ### 残留风险（交卷）
 
@@ -396,20 +400,21 @@ lockfile 净增 321 行 = zcode-adapter devDeps（与既有包同版本：typesc
 
 ## 编排者验收记录（2026-10-20；V8 审查另派独立代理）
 
-| # | 结论 | 证据（编排者亲跑，非转抄） |
-|---|------|------------------------------|
-| V1 | ✅ | 编排者亲启桩 host 新壳（ZS1_HOST_MODULE_PATH + ZCODE_DATA_BASE_DIR 指向 scratch）：40s 后 scratch 路径下 **6 个 electron 进程存活**（main 158MB / renderer 220MB / gpu / host / scheduler / network），验收后仅清理 scratch 进程 |
-| V2 | ✅（灰屏事件→修复→CDP 复核） | **用户实机发现窗口纯灰**（视觉模型双确认）→ 两层根因定位（真实 setting 污染 + onboarding 桩缺显式 false，见「V2 灰屏根因与修复」节 + `docs/research/2026-10-20-zs-first-paint-contract.md`）→ 修复 `e7139ca`。**编排者亲跑 CDP 探针复核**：`DOM TEXT` 非空含主壳界面文字（"No tasks yet / harness2 / Ask ZCode / Projects / Tasks / No model available..."）、截图 `t3-cdp-page.png` 322KB/3695 采样色（灰屏时=1 色）。**用户终验进行中**（隔离实例已启动在案）。观察项见文末结论 |
-| V3 | ✅ | 编排者亲跑 `pnpm --filter @harness2/zcode-adapter test`：首轮 24/24；P1+灰屏修复后复跑 **32/32 绿**（channels 4 + stub-behavior 28）；typecheck 0 |
-| V4 | ✅ | scratch `git status` 干净（编排者复核）；packages/ui `diff -rq` exit 0（实施代理，执行记录 T4） |
-| V5 | ✅ | `git diff --stat feb9526..HEAD -- 六包` 输出为空（编排者亲跑） |
-| V6 | ✅ | 六包全量全绿（实施代理跑；ui-shared 13 红 / desktop 10 红隔离复跑 42/42、75/75 全绿——OPEN.md 既登记的并行负载抖动模式，非回归） |
-| V7 | ✅ | LICENSE-ZCODE.md 与 refs 原版 LICENSE **逐字节一致** + bundle banner（`build/host-bundle.mjs:41-49` 与产物头部均在位）+ scratch LICENSE——**独立审查代理逐字节复核属实** |
-| V8 | ✅（P1 闭环） | 独立只读审查：**⚠️ 有条件通过（无 P0 / P1×2 / P2×4）**；审查面逐项复核属实（UI 零改动逐字节、六包零 diff、57 频道对账、无登录门判据链、事故清理、变异推演非空转）。P1-1 五频道写路径显式 throw（`531c538`，编排者复验测试绿 + 零改动不破）+ P1-2 logout/Rewards 登记（`c06030e`）→ **定论通过**。P2×4 登记不修（throws 无编译期校验 / package.json exports 死映射与 license 字段 / tsconfig 硬编码 scratch 路径 / 两处测试小项） |
+| #   | 结论                         | 证据（编排者亲跑，非转抄）                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
+| --- | ---------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| V1  | ✅                           | 编排者亲启桩 host 新壳（ZS1_HOST_MODULE_PATH + ZCODE_DATA_BASE_DIR 指向 scratch）：40s 后 scratch 路径下 **6 个 electron 进程存活**（main 158MB / renderer 220MB / gpu / host / scheduler / network），验收后仅清理 scratch 进程                                                                                                                                                                                                                                                  |
+| V2  | ✅（灰屏事件→修复→CDP 复核） | **用户实机发现窗口纯灰**（视觉模型双确认）→ 两层根因定位（真实 setting 污染 + onboarding 桩缺显式 false，见「V2 灰屏根因与修复」节 + `docs/research/2026-10-20-zs-first-paint-contract.md`）→ 修复 `e7139ca`。**编排者亲跑 CDP 探针复核**：`DOM TEXT` 非空含主壳界面文字（"No tasks yet / harness2 / Ask ZCode / Projects / Tasks / No model available..."）、截图 `t3-cdp-page.png` 322KB/3695 采样色（灰屏时=1 色）。**用户终验进行中**（隔离实例已启动在案）。观察项见文末结论 |
+| V3  | ✅                           | 编排者亲跑 `pnpm --filter @harness2/zcode-adapter test`：首轮 24/24；P1+灰屏修复后复跑 **32/32 绿**（channels 4 + stub-behavior 28）；typecheck 0                                                                                                                                                                                                                                                                                                                                 |
+| V4  | ✅                           | scratch `git status` 干净（编排者复核）；packages/ui `diff -rq` exit 0（实施代理，执行记录 T4）                                                                                                                                                                                                                                                                                                                                                                                   |
+| V5  | ✅                           | `git diff --stat feb9526..HEAD -- 六包` 输出为空（编排者亲跑）                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| V6  | ✅                           | 六包全量全绿（实施代理跑；ui-shared 13 红 / desktop 10 红隔离复跑 42/42、75/75 全绿——OPEN.md 既登记的并行负载抖动模式，非回归）                                                                                                                                                                                                                                                                                                                                                   |
+| V7  | ✅                           | LICENSE-ZCODE.md 与 refs 原版 LICENSE **逐字节一致** + bundle banner（`build/host-bundle.mjs:41-49` 与产物头部均在位）+ scratch LICENSE——**独立审查代理逐字节复核属实**                                                                                                                                                                                                                                                                                                           |
+| V8  | ✅（P1 闭环）                | 独立只读审查：**⚠️ 有条件通过（无 P0 / P1×2 / P2×4）**；审查面逐项复核属实（UI 零改动逐字节、六包零 diff、57 频道对账、无登录门判据链、事故清理、变异推演非空转）。P1-1 五频道写路径显式 throw（`531c538`，编排者复验测试绿 + 零改动不破）+ P1-2 logout/Rewards 登记（`c06030e`）→ **定论通过**。P2×4 登记不修（throws 无编译期校验 / package.json exports 死映射与 license 字段 / tsconfig 硬编码 scratch 路径 / 两处测试小项）                                                  |
 
 **结论：V1–V8 全部通过（`e7139ca` 后状态）——ZS1 阶段收口，待用户终验一眼。**
 
 **V2 观察项（用户终验时留意，均非阻塞）**：
+
 1. 首帧 DOM 出现 radix dialog + `bg-black/60` 遮罩节点（疑似命令面板浮层自动打开）——若窗口内有半透明遮罩按 Esc 关闭即可；根因待 ZS2 复核（可能为桩触发焦点/快捷键路径异常）。
 2. 空 provider 桩的预期空态横幅「No model available. Upgrade or set a custom model.」带「Upgrade」按钮——ZS2 接真实 `config.providers` 后自然消失（届时按红线⑩决定该入口去留）。
 3. footer 显示桩身份「harness2」+「退出登录/奖励」可点必败（残留风险 #7/#8，归 ZS4/ZS6 隐藏清单）。

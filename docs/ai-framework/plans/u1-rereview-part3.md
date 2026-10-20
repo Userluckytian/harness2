@@ -10,20 +10,20 @@
 
 ### 1.1 调用点穷举表（全量 grep + 逐处读码核对）
 
-| 点位 | 函数 | 行号 | 语义 |
-| --- | --- | --- | --- |
-| 帧入口 | `applyFrame` → `noteActivity(stream)` | 701 | 任何有会话归属的帧（含随后被 seq 判重丢弃的 event，704 早退前已刷水位）；置 `lastFrameAt=Date.now()`（284）后对表 |
-| markSending | `markSending` → `noteActivity` | 956 | 提交时刻 = 静默起点；此后 957 notify |
-| delta 复活 | `applyFrame` delta 分支 → `dropSyntheticEnd` + `armHungTurnWatch` | 717-718 | running=true（714）后删合成、重挂表 |
-| text/reasoning-delta | `applyFrame` → `dropSyntheticEnd(frame.turnId)` + `armHungTurnWatch` | 724-725 | 水位判重 return（734）前先摆正计时（注释 723） |
-| turn-end 真帧 | `applyFrame` → `turnEnds[turnId]=`整体覆盖 + `turnEndedAt[turnId]=Date.now()` | 752-762 | 真终态对象替换（synthetic 一并消失）；running=false（764）、审批清空（768） |
-| absorbEvent 翻转 | `user/message` → `armHungTurnWatch` | 937-940 | running 帧内翻转（入口对表见旧值），补挂表 |
-| resume-snapshot | `applyResumeSnapshot` → `armHungTurnWatch` | 883, 887 | PD2 权威翻转 + P1-1 修复（断线重连补到的悬挂回合可收敛） |
-| clearRunning | `armHungTurnWatch` | 966 | running=false → 291-295 clearTimeout 撤表 |
-| removeApproval | `armHungTurnWatch` | 979 | P1-1：审批「让路」后清卡时刻重新对表（此刻起算静默） |
-| 对表本体 | `armHungTurnWatch` | 289-309 | 先清旧定时器（291-294）→ running=false 撤表返回（295）→ `idle = now − (lastFrameAt ?? now)`（296）→ remain≤0 就地 `convergeHungTurn`（298-301，不 notify，由调用方负责）→ 否则挂**单次** setTimeout（302-308，回调先 delete 自身再按返回值决定 notify） |
-| 收敛本体 | `convergeHungTurn` | 316-330 | running 假→false 短路（317）；**审批豁免**：`stream.approvals.length > 0` → 不合成不撤表（319）；写 `turnEnds[turnId]={stopReason:'interrupted',synthetic:true}` + `turnEndedAt[turnId]`（321-324，仅当该 turnId 无真终态）；清 running/live/liveAttemptId/activeAttempt（325-328） |
-| 撤表（视图移除） | `removeSessionFromView` | 410-414 | P1-2：清 `hungTimers` 该项，防 ≤30s 窗口内对已删流触发合成 + 空转 notify |
+| 点位                 | 函数                                                                          | 行号     | 语义                                                                                                                                                                                                                                                                                |
+| -------------------- | ----------------------------------------------------------------------------- | -------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 帧入口               | `applyFrame` → `noteActivity(stream)`                                         | 701      | 任何有会话归属的帧（含随后被 seq 判重丢弃的 event，704 早退前已刷水位）；置 `lastFrameAt=Date.now()`（284）后对表                                                                                                                                                                   |
+| markSending          | `markSending` → `noteActivity`                                                | 956      | 提交时刻 = 静默起点；此后 957 notify                                                                                                                                                                                                                                                |
+| delta 复活           | `applyFrame` delta 分支 → `dropSyntheticEnd` + `armHungTurnWatch`             | 717-718  | running=true（714）后删合成、重挂表                                                                                                                                                                                                                                                 |
+| text/reasoning-delta | `applyFrame` → `dropSyntheticEnd(frame.turnId)` + `armHungTurnWatch`          | 724-725  | 水位判重 return（734）前先摆正计时（注释 723）                                                                                                                                                                                                                                      |
+| turn-end 真帧        | `applyFrame` → `turnEnds[turnId]=`整体覆盖 + `turnEndedAt[turnId]=Date.now()` | 752-762  | 真终态对象替换（synthetic 一并消失）；running=false（764）、审批清空（768）                                                                                                                                                                                                         |
+| absorbEvent 翻转     | `user/message` → `armHungTurnWatch`                                           | 937-940  | running 帧内翻转（入口对表见旧值），补挂表                                                                                                                                                                                                                                          |
+| resume-snapshot      | `applyResumeSnapshot` → `armHungTurnWatch`                                    | 883, 887 | PD2 权威翻转 + P1-1 修复（断线重连补到的悬挂回合可收敛）                                                                                                                                                                                                                            |
+| clearRunning         | `armHungTurnWatch`                                                            | 966      | running=false → 291-295 clearTimeout 撤表                                                                                                                                                                                                                                           |
+| removeApproval       | `armHungTurnWatch`                                                            | 979      | P1-1：审批「让路」后清卡时刻重新对表（此刻起算静默）                                                                                                                                                                                                                                |
+| 对表本体             | `armHungTurnWatch`                                                            | 289-309  | 先清旧定时器（291-294）→ running=false 撤表返回（295）→ `idle = now − (lastFrameAt ?? now)`（296）→ remain≤0 就地 `convergeHungTurn`（298-301，不 notify，由调用方负责）→ 否则挂**单次** setTimeout（302-308，回调先 delete 自身再按返回值决定 notify）                             |
+| 收敛本体             | `convergeHungTurn`                                                            | 316-330  | running 假→false 短路（317）；**审批豁免**：`stream.approvals.length > 0` → 不合成不撤表（319）；写 `turnEnds[turnId]={stopReason:'interrupted',synthetic:true}` + `turnEndedAt[turnId]`（321-324，仅当该 turnId 无真终态）；清 running/live/liveAttemptId/activeAttempt（325-328） |
+| 撤表（视图移除）     | `removeSessionFromView`                                                       | 410-414  | P1-2：清 `hungTimers` 该项，防 ≤30s 窗口内对已删流触发合成 + 空转 notify                                                                                                                                                                                                            |
 
 `turnEndedAt` 读写：声明 121-127（与纯协议事实的 `turnEnds` 刻意分表）；初始 468；写 = 合成 323 / 真帧 762；读 = `chatItems` 注入 `TurnWorkContext`（633-636）→ `chat-model.ts:229` 算锁定 `workDurationMs`。
 
@@ -42,6 +42,7 @@
 ## 2. conversation/turn-work.tsx（tick 双门 / clearInterval / 锁值 / role=status）
 
 **结论：OK**。证据（`packages/ui-shared/src/renderer/conversation/turn-work.tsx`）：
+
 - tick 双门：`ticking = running === true && startedAt !== undefined`（:52）；effect 仅 ticking 时 `setInterval(..., WORK_TICK_MS=1_000)`（:20/:57），cleanup `clearInterval(id)`（:58），依赖数组 `[ticking]` → 终态翻转/卸载即停表，无常驻。
 - 锁值不漂移：完成态走 `workDurationMs`（store 注入的 `turnEndedAt−startedAt` 派生值），文案「已工作 {formatWorkDuration}」；用例 b 钉「无 running 不起表、不随 tick 变」（`test/turn-work-duration.test.tsx:138`）。
 - 无 ts 防御：startedAt 缺省 → ticking=false → 不渲染秒表（三态优先级末路，数据不足返回 null 路径见 :60-70）。
@@ -51,6 +52,7 @@
 ## 3. tool/ToolCard.tsx + styles.css（running 动效降级）
 
 **结论：OK**。证据：
+
 - `ToolCard.tsx` grep `animate-spin` = **0 命中**；运行态标题行挂 `.tool-running-shimmer`（测试正向钉 `tool-card-shimmer.test.tsx:20-27`：running 全卡无 animate-spin + 标题行有扫光类 + 图标静态；completed 恢复静态；failed 无扫光）。
 - `styles.css:503-522`：`@keyframes harness-tool-running-shimmer` 只动 background-position（注释 :498 明示与 Z-92 `.reasoning-shimmer-text` 同源手法）；:525 起局部 `prefers-reduced-motion` 降级块（animation:none+还原继承色），另有全局 :447 兜底。**`.reasoning-shimmer-text`（:467-486）未被误动**（测试含反向钉：两 keyframes 独立）。
 
@@ -65,6 +67,7 @@ $ cd packages/ui-shared && ./node_modules/.bin/vitest run --maxWorkers=4
  Test Files  67 passed (67)
       Tests  723 passed (723)
 ```
+
 （编排者 2026-10-15 07:4x 复跑；含 store-hung-turn 14、turn-work-duration 17、tool-card-shimmer 4、tool-running-shimmer-css 6、perf-replay-b1 2。）
 
 ## 结论与问题清单
@@ -82,13 +85,13 @@ $ cd packages/ui-shared && ./node_modules/.bin/vitest run --maxWorkers=4
 
 ### ① 已修 P2 复认（5 项）
 
-| # | 提交 | 登记原判 | 复认证据 | 结论 |
-|---|------|----------|----------|------|
-| 1 | `ac0df60` | part2-P2-1：删除确认框「兜一层」注释撒谎 | `SessionBrowser.tsx:1042-1043` 注释与实现已对齐；`onConfirm` 内 `:1053-1058` 真复查 `isSessionRunning?.(target.id) === true` → 只 `setDeleteTarget(null)` 不删；测试双向钉：`sidebar-z48-z49.test.tsx:171-181`（命中只关框 + 断言调用参数）/`:185`（反向钉 web 不变） | **认** |
-| 2 | `1c7c71d` | ac0df60 断链：prop 未透传 | grep 三处接线全通：声明 `SessionBrowser.tsx:136`/解构 `:650`/消费 `:1055`；`SidebarRoot.tsx:119` 声明 + `:197` 条件透传（`!== undefined` 展开式，exactOptionalPropertyTypes 口径与邻行一致）；桌面装配 `shell-seat-contents.tsx:252` `store.peekStream(id)?.running === true` 直读 live（注释注明不新造 controller API）。web 不传 = 行为不变（有反向钉） | **认** |
-| 3 | `b09e4ca` | part1-P2-1：probeCapabilities 直读 baseUrl 与 :430 注释矛盾 | `bridge.ts:261` 已改 `serveBase()`；connected 护在位（`:259` `serveReady = deps.serve.status === 'connected'` 为普通字段读取、不抛；仅 `serveReady ∧ sessionId 非空` 才进 `:261`，:430 定义 `= deps.serve.baseUrl`）。serveBase 其余消费点仍全部在 HTTP case 分支首行（:440/:450/:460/:464/:475/:518/:523/:529/:537），无泄漏 | **认** |
-| 4 | `b09e4ca` | part1-P2-2：normal 模式 ready 无消费者 → unhandledRejection 噪声 | `main.ts:323` `void ready.catch(() => {})`；rejectReady 源 `:307`（serve.start 失败兜底）。smoke 路径 `handles.ready` 仍走原 promise 的 await，`:323` 只挂附加 handler，不改语义（注释 `:321-322` 如实） | **认** |
-| 5 | `b09e4ca` | part1-P2-3：trayHandle 无 destroy 调用点 | `main.ts:310-318` before-quit 内判空 `destroy()` + 置 null（smoke `tray:false` → null 安全；注释注明）。同提交附带 manual-pack.mjs robocopy 注释纠偏（/E 非 /MIR 幂等），纯文档面 | **认** |
+| #   | 提交      | 登记原判                                                         | 复认证据                                                                                                                                                                                                                                                                                                                                                  | 结论   |
+| --- | --------- | ---------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------ |
+| 1   | `ac0df60` | part2-P2-1：删除确认框「兜一层」注释撒谎                         | `SessionBrowser.tsx:1042-1043` 注释与实现已对齐；`onConfirm` 内 `:1053-1058` 真复查 `isSessionRunning?.(target.id) === true` → 只 `setDeleteTarget(null)` 不删；测试双向钉：`sidebar-z48-z49.test.tsx:171-181`（命中只关框 + 断言调用参数）/`:185`（反向钉 web 不变）                                                                                     | **认** |
+| 2   | `1c7c71d` | ac0df60 断链：prop 未透传                                        | grep 三处接线全通：声明 `SessionBrowser.tsx:136`/解构 `:650`/消费 `:1055`；`SidebarRoot.tsx:119` 声明 + `:197` 条件透传（`!== undefined` 展开式，exactOptionalPropertyTypes 口径与邻行一致）；桌面装配 `shell-seat-contents.tsx:252` `store.peekStream(id)?.running === true` 直读 live（注释注明不新造 controller API）。web 不传 = 行为不变（有反向钉） | **认** |
+| 3   | `b09e4ca` | part1-P2-1：probeCapabilities 直读 baseUrl 与 :430 注释矛盾      | `bridge.ts:261` 已改 `serveBase()`；connected 护在位（`:259` `serveReady = deps.serve.status === 'connected'` 为普通字段读取、不抛；仅 `serveReady ∧ sessionId 非空` 才进 `:261`，:430 定义 `= deps.serve.baseUrl`）。serveBase 其余消费点仍全部在 HTTP case 分支首行（:440/:450/:460/:464/:475/:518/:523/:529/:537），无泄漏                             | **认** |
+| 4   | `b09e4ca` | part1-P2-2：normal 模式 ready 无消费者 → unhandledRejection 噪声 | `main.ts:323` `void ready.catch(() => {})`；rejectReady 源 `:307`（serve.start 失败兜底）。smoke 路径 `handles.ready` 仍走原 promise 的 await，`:323` 只挂附加 handler，不改语义（注释 `:321-322` 如实）                                                                                                                                                  | **认** |
+| 5   | `b09e4ca` | part1-P2-3：trayHandle 无 destroy 调用点                         | `main.ts:310-318` before-quit 内判空 `destroy()` + 置 null（smoke `tray:false` → null 安全；注释注明）。同提交附带 manual-pack.mjs robocopy 注释纠偏（/E 非 /MIR 幂等），纯文档面                                                                                                                                                                         | **认** |
 
 ### ② 登记项「维持登记」复核（3 条）
 

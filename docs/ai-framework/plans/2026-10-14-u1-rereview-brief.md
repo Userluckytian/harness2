@@ -8,6 +8,7 @@
 **环境**：本会话 `pnpm`/`npx` 坏（系统缺 cmd.exe）。跑测试一律 `cd packages/<x> && ./node_modules/.bin/vitest run --maxWorkers=4`。
 
 **必读基准**（先读这几份再开工）：
+
 - `CODE_REVIEW.md`（P0/P1/P2 定义）
 - `docs/ai-framework/plans/2026-10-14-phase-U1-desktop-parity-fixes.md`（设计规格摘要+验收表）
 - `docs/refs/refs-zcode-layout.md` 的 Z-46/Z-47/Z-48/Z-49 + `docs/refs/refs-zcode.md` 的 Z-96/Z-97
@@ -43,8 +44,9 @@
 3. 若中途 provider 报错中断：把已完成片的进度写进报告文件（节标题加「（未完，进度：…）」）再退出——编排者按文件续派。
 
 ## 派发策略修订（22:0x，实测后）
+
 - **整单派发失败实录**：新 spawn 与 resume 实例各跑 ~9 分钟均死于 `Provider returned a server error`；直连探针得 `FreeTierError`（OpenCode 免费额度间歇放行：今日 13:25/19:55 两窗口成功，21:5x/22:0x 关闭）。
 - **改用「单片派发」**：一次 Agent 调用只跑上表一片（几分钟），且**边审边写盘**（每小节 Edit 立即落盘）；通道一开即插即走。片序按约束价值=「先复审非 jam 执行的批次」：**片1 主进程(T1/T2) → 片2 渲染端(T3) → 片4 红线卫生 → 片3 性能终态(jam 自审，最后)**。
-^- **片4 增补（§10 教训）**：复核 `dee288b`（gen-icon oy 修复+图标再生）正确性；确认交付 exe（22:11）内嵌图标与 `assets/icon.ico` 一致（resedit 读回或 file 五帧断言）；第一轮「eslint 0 error」漏报已实证，本片须独立全量跑 eslint/prettier 不得引用旧结论。
+  ^- **片4 增补（§10 教训）**：复核 `dee288b`（gen-icon oy 修复+图标再生）正确性；确认交付 exe（22:11）内嵌图标与 `assets/icon.ico` 一致（resedit 读回或 file 五帧断言）；第一轮「eslint 0 error」漏报已实证，本片须独立全量跑 eslint/prettier 不得引用旧结论。
 - 全部片完成后：报告尾部加「总结论」节，P0/P1 清单交编排者派修（修=jam 或按当日授权口径执行），修后仅复跑受影响包 vitest + 红线 git diff 复验，不需重审已通过片。
 - 若某片红：等 3-5 分钟重试该片一次；连续两红则该窗放弃、回报编排者改期——不许整单重发浪费放行窗口。

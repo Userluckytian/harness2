@@ -17,13 +17,13 @@
 
 ## 前置阅读（必须）
 
-| 优先级 | 文件 |
-| ------ | ---- |
-| P0 | `docs/ai-framework/phased-plan-driven.md` |
-| P0 | 本文件 |
-| P0 | `docs/refs/refs-zcode-layout.md` §Z-48/Z-49/Z-50/Z-51 |
-| P1 | `AGENTS.md`、`CODE_REVIEW.md` |
-| P1 | `packages/ui-shared/src/shared/metadata.ts`（软标记体系现状） |
+| 优先级 | 文件                                                          |
+| ------ | ------------------------------------------------------------- |
+| P0     | `docs/ai-framework/phased-plan-driven.md`                     |
+| P0     | 本文件                                                        |
+| P0     | `docs/refs/refs-zcode-layout.md` §Z-48/Z-49/Z-50/Z-51         |
+| P1     | `AGENTS.md`、`CODE_REVIEW.md`                                 |
+| P1     | `packages/ui-shared/src/shared/metadata.ts`（软标记体系现状） |
 
 **仓库路径：** `D:/AI_Projects/harness2`
 **基线分支：** 从 `feat/phase-u1-desktop-parity-fixes`（当前 HEAD `3acd156`）拉 `feat/phase-s1-session-bulk-cleanup`
@@ -48,10 +48,10 @@
 
 ## 阶段开头：上阶段遗留（必填小节）
 
-| 上阶段遗留项 | 来源 | 未通过原因 | 状态 |
-| ------------ | ---- | ---------- | ---- |
-| U2 待人类项：v1.0.2 发版授权 / M1-M12 真机点验 / 三项拍板（侧栏搜索框/计数徽标/宽度持久化） | U2 收口（OPEN.md 2026-10-14 行） | 非缺陷，待人类 | ⬜ 非本阶段阻塞，如实挂账 |
-| cmd.exe 系统组件缺失（pnpm 通道绕行已建立；打包走 manual-pack） | OPEN.md 2026-10-14 §6 | 待人类修系统 | ⬜ 非阻塞（用既定绕行通道） |
+| 上阶段遗留项                                                                                | 来源                             | 未通过原因     | 状态                        |
+| ------------------------------------------------------------------------------------------- | -------------------------------- | -------------- | --------------------------- |
+| U2 待人类项：v1.0.2 发版授权 / M1-M12 真机点验 / 三项拍板（侧栏搜索框/计数徽标/宽度持久化） | U2 收口（OPEN.md 2026-10-14 行） | 非缺陷，待人类 | ⬜ 非本阶段阻塞，如实挂账   |
+| cmd.exe 系统组件缺失（pnpm 通道绕行已建立；打包走 manual-pack）                             | OPEN.md 2026-10-14 §6            | 待人类修系统   | ⬜ 非阻塞（用既定绕行通道） |
 
 ---
 
@@ -63,31 +63,31 @@
 
 ## 与前后阶段
 
-| 阶段 | 状态 | 交付 |
-| ---- | ---- | ---- |
-| U2（页面设计优化波） | ✅ 发版就绪 | 双 exe + 终认证（待人类发版授权） |
-| **本阶段 S1** | ⬜ 计划待审 | 批量归档/物理删除；**core 能力（deleteSession）在后续「ZCode 壳迁移」后仍存活**——内心不随壳扔 |
-| 下阶段 | 勿塞进本阶段 | 「ZCode 壳 + harness2 内心」迁移程序（spike 盘点进行中，另立总纲）；观测性（崩溃捕获/运行日志/监控卡片）并入该程序 |
+| 阶段                 | 状态         | 交付                                                                                                               |
+| -------------------- | ------------ | ------------------------------------------------------------------------------------------------------------------ |
+| U2（页面设计优化波） | ✅ 发版就绪  | 双 exe + 终认证（待人类发版授权）                                                                                  |
+| **本阶段 S1**        | ⬜ 计划待审  | 批量归档/物理删除；**core 能力（deleteSession）在后续「ZCode 壳迁移」后仍存活**——内心不随壳扔                      |
+| 下阶段               | 勿塞进本阶段 | 「ZCode 壳 + harness2 内心」迁移程序（spike 盘点进行中，另立总纲）；观测性（崩溃捕获/运行日志/监控卡片）并入该程序 |
 
 ---
 
 ## File Structure（预期变更）
 
-| 文件 | 动作 | 职责 |
-| ---- | ---- | ---- |
-| `packages/core/src/session/manager.ts` | 修改 | `deleteSession(id)`：定位会话目录（跨根扫描同 list 口径）→ `fs.rm` recursive force → 返回布尔；目录不存在 = false 不抛 |
-| `packages/core/src/index.ts` | 修改（如需） | 导出保持既有口径（若 SessionManager 方法随类导出则零改动） |
-| `packages/core/test/fixtures/api-surface-baseline.json` | 修改 | 基线同步（预期净增 ≤1） |
-| `packages/core/test/manager-delete.test.ts` | 新建 | 删除 round-trip / list 不再含 / 不存在 id / 只读保护（若 manager 有只读模式）/ 并发删除幂等 |
-| `packages/desktop/src/main/metadata-file.ts` | 修改 | `writeMetadataPatchMany(ids, patch)`：一次读-合-写，原子 temp+rename 同既有单条路径 |
-| `packages/desktop/src/main/bridge.ts` | 修改 | `metadata:patchMany`（ids[] + 白名单 patch）与 `sessions:deleteMany`（ids[] → 逐 id `core.deleteSession` + 覆层条目清理，返回 `{deleted, skippedRunning?, failed, errors[]}` 计数；**运行中判定由渲染端传入的排除集负责**，主进程对删除失败逐 id 容错不中断） |
-| `packages/desktop/test/bridge-bulk-ops.test.ts` | 新建 | patchMany 单次落盘断言（注入 fake write 计数）/ deleteMany 计数与容错 / 白名单校验 |
-| `packages/ui-shared/src/renderer/sidebar/SessionBrowser.tsx` | 修改 | 行菜单（ContextMenu + hover DropdownMenu 同步）新增「归档其他会话」「删除其他会话…」（Z-50/Z-51）；批量确认对话框（数量+不可恢复+destructive）；结果 toast；已归档区单条「彻底删除…」+「清空归档…」 |
-| `packages/ui-shared/src/renderer/sidebar/labels.ts` | 修改 | 新文案（中英） |
-| `packages/ui-shared/src/renderer/app-controller.ts` | 修改 | `archiveOthers(keepId)` / `deleteOthers(keepId)`（组装目标集：当前列表除 keepId，排除 running——`peekStream(id)?.running`——与当前会话）/ `purgeArchived()` |
-| `packages/ui-shared/src/renderer/sidebar/session-items.ts` | 修改（如需） | 菜单项可用性谓词 |
-| `packages/desktop/src/renderer/layout/shell-seat-contents.tsx` | 修改 | 接线三个新回调到 IPC |
-| `packages/ui-shared/test/**`、`packages/desktop/test/**` | 新建/扩展 | 见各 Task |
+| 文件                                                           | 动作         | 职责                                                                                                                                                                                                                                                          |
+| -------------------------------------------------------------- | ------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `packages/core/src/session/manager.ts`                         | 修改         | `deleteSession(id)`：定位会话目录（跨根扫描同 list 口径）→ `fs.rm` recursive force → 返回布尔；目录不存在 = false 不抛                                                                                                                                        |
+| `packages/core/src/index.ts`                                   | 修改（如需） | 导出保持既有口径（若 SessionManager 方法随类导出则零改动）                                                                                                                                                                                                    |
+| `packages/core/test/fixtures/api-surface-baseline.json`        | 修改         | 基线同步（预期净增 ≤1）                                                                                                                                                                                                                                       |
+| `packages/core/test/manager-delete.test.ts`                    | 新建         | 删除 round-trip / list 不再含 / 不存在 id / 只读保护（若 manager 有只读模式）/ 并发删除幂等                                                                                                                                                                   |
+| `packages/desktop/src/main/metadata-file.ts`                   | 修改         | `writeMetadataPatchMany(ids, patch)`：一次读-合-写，原子 temp+rename 同既有单条路径                                                                                                                                                                           |
+| `packages/desktop/src/main/bridge.ts`                          | 修改         | `metadata:patchMany`（ids[] + 白名单 patch）与 `sessions:deleteMany`（ids[] → 逐 id `core.deleteSession` + 覆层条目清理，返回 `{deleted, skippedRunning?, failed, errors[]}` 计数；**运行中判定由渲染端传入的排除集负责**，主进程对删除失败逐 id 容错不中断） |
+| `packages/desktop/test/bridge-bulk-ops.test.ts`                | 新建         | patchMany 单次落盘断言（注入 fake write 计数）/ deleteMany 计数与容错 / 白名单校验                                                                                                                                                                            |
+| `packages/ui-shared/src/renderer/sidebar/SessionBrowser.tsx`   | 修改         | 行菜单（ContextMenu + hover DropdownMenu 同步）新增「归档其他会话」「删除其他会话…」（Z-50/Z-51）；批量确认对话框（数量+不可恢复+destructive）；结果 toast；已归档区单条「彻底删除…」+「清空归档…」                                                           |
+| `packages/ui-shared/src/renderer/sidebar/labels.ts`            | 修改         | 新文案（中英）                                                                                                                                                                                                                                                |
+| `packages/ui-shared/src/renderer/app-controller.ts`            | 修改         | `archiveOthers(keepId)` / `deleteOthers(keepId)`（组装目标集：当前列表除 keepId，排除 running——`peekStream(id)?.running`——与当前会话）/ `purgeArchived()`                                                                                                     |
+| `packages/ui-shared/src/renderer/sidebar/session-items.ts`     | 修改（如需） | 菜单项可用性谓词                                                                                                                                                                                                                                              |
+| `packages/desktop/src/renderer/layout/shell-seat-contents.tsx` | 修改         | 接线三个新回调到 IPC                                                                                                                                                                                                                                          |
+| `packages/ui-shared/test/**`、`packages/desktop/test/**`       | 新建/扩展    | 见各 Task                                                                                                                                                                                                                                                     |
 
 ---
 
@@ -127,6 +127,7 @@
 **Files:** `packages/desktop/src/main/metadata-file.ts`、`packages/desktop/src/main/bridge.ts`、`packages/desktop/src/main/core.ts`（导出 `deleteSession` 经 requireCore 桥）、`packages/desktop/test/bridge-bulk-ops.test.ts`
 
 **行为:**
+
 - `metadata:patchMany`：ids 数组 + 白名单 patch（archived 布尔），一次读-合-写（temp+rename 原子），返回 written 数；空数组直接返回 0 不写盘。
 - `sessions:deleteMany`：逐 id 调 core `deleteSession`；每 id 独立 try/catch（EBUSY/EPERM 等计入 failed，不中断批次）；成功者同步从 metadata 覆层移除条目（一次合批写）；返回计数 + errors 摘要（过 `redactSecrets`）。**handler 为 async，fs.promises 不阻塞主进程事件循环**（window:* 命令期间仍可响应——B2 口径）。
 - preload 通道白名单 + `protocol.test.ts` 静态一致性照既有模式同步。
@@ -145,6 +146,7 @@
 **Files:** `packages/ui-shared/src/renderer/sidebar/SessionBrowser.tsx`、`labels.ts`、`app-controller.ts`、`session-items.ts`、相关测试
 
 **行为:**
+
 - 行级菜单（ContextMenu 与 hover DropdownMenu **两处同步**加项，位置在既有「归档/删除」之后、分隔线之前）：
   - 「归档其他会话」（Z-50）：回调可选 `onArchiveOthers`；一键执行无确认；toast「已归档 N 个会话」；N=0 时菜单项禁用。
   - 「删除其他会话…」（Z-51）：回调可选 `onDeleteOthers`；弹强确认（「将永久删除 N 个会话目录（不可恢复）」+ destructive「删除」/「取消」）；确认后执行，toast 报「已删除 x，失败 y」。
@@ -193,12 +195,12 @@
 
 **审查面：** 物理删除安全语义（确认/跳过/计数/取消路径）/ core 加性与基线 / 批量单次落盘 / 红线⑩ / web 零回归 / 密钥与错误消息脱敏。
 
-| 审查项 | 结论 | 问题清单 |
-| ------ | ---- | -------- |
-| 安全语义 | | |
-| 架构红线 | | |
-| 测试完整性 | | |
-| API 契约 | | |
+| 审查项     | 结论 | 问题清单 |
+| ---------- | ---- | -------- |
+| 安全语义   |      |          |
+| 架构红线   |      |          |
+| 测试完整性 |      |          |
+| API 契约   |      |          |
 
 **结论：** ✅ / ⚠️（P1 修复后复验）/ ❌（阻塞）
 
@@ -206,27 +208,27 @@
 
 ## 验收标准总表
 
-| # | 标准 | 通过条件 | 验证责任人 |
-|---|------|----------|------------|
-| V1 | core 加性 | api-surface 基线 0 removed / 0 kindChanged（净增 ≤1）；gateway 零改动 | 自动化 + 编排者复跑 |
-| V2 | 六包测试 | 不低于 HANDOFF 当轮基线（core 1519+2 / ui-shared 776 / desktop 1288+1 / web 150 / gateway 40 / cli 1575+2） | 自动化（执行方）+ 编排者抽跑 |
-| V3 | 批量预算 | 副本库 1400+ 会话：patchMany ≤ 500ms；deleteMany ≤ 60s 且期间 window:* 响应正常 | 编排者亲测（Task 5） |
-| V4 | 安全语义 | 确认框含数量+不可恢复；running/当前会话跳过并计数；取消零执行；变异验证留痕 | 自动化 + 审查 |
-| V5 | web 零回归 | web 测试全绿；新菜单项在 web 不出现 | 自动化 |
-| V6 | 代码审查 | ✅ 或 ⚠️（P1 已修）；❌ 阻塞 | 独立子代理 |
-| V7 | 真机观感 | 右键菜单/确认框/计数 toast 真机点验 | 用户（残留手工清单） |
+| #   | 标准       | 通过条件                                                                                                    | 验证责任人                   |
+| --- | ---------- | ----------------------------------------------------------------------------------------------------------- | ---------------------------- |
+| V1  | core 加性  | api-surface 基线 0 removed / 0 kindChanged（净增 ≤1）；gateway 零改动                                       | 自动化 + 编排者复跑          |
+| V2  | 六包测试   | 不低于 HANDOFF 当轮基线（core 1519+2 / ui-shared 776 / desktop 1288+1 / web 150 / gateway 40 / cli 1575+2） | 自动化（执行方）+ 编排者抽跑 |
+| V3  | 批量预算   | 副本库 1400+ 会话：patchMany ≤ 500ms；deleteMany ≤ 60s 且期间 window:* 响应正常                             | 编排者亲测（Task 5）         |
+| V4  | 安全语义   | 确认框含数量+不可恢复；running/当前会话跳过并计数；取消零执行；变异验证留痕                                 | 自动化 + 审查                |
+| V5  | web 零回归 | web 测试全绿；新菜单项在 web 不出现                                                                         | 自动化                       |
+| V6  | 代码审查   | ✅ 或 ⚠️（P1 已修）；❌ 阻塞                                                                                | 独立子代理                   |
+| V7  | 真机观感   | 右键菜单/确认框/计数 toast 真机点验                                                                         | 用户（残留手工清单）         |
 
 ---
 
 ## 风险与降级
 
-| 风险 | 缓解 |
-| ---- | ---- |
-| Windows 句柄占用（serve 持有 writer）删除失败 | 逐 id 容错计 failed；渲染端已排除 running；EBUSY 天然兜底 |
-| 1465 真实库误删 | 端到端一律用副本根目录；真实清理由用户真机亲自执行（残留手工清单） |
-| metadata 覆层膨胀 | deleteMany 成功后合批移除条目（Task 2） |
-| 批量删除期间 UI 无进度 | 首版同步等待 + toast spinner（fs.promises 不阻塞主进程）；进度事件流为后续增强，本阶段不做 |
-| 子代理通道故障（cat-jam 上游） | 降级等职能子代理（U1 先例，如实登记）；编排者不写功能代码 |
+| 风险                                          | 缓解                                                                                       |
+| --------------------------------------------- | ------------------------------------------------------------------------------------------ |
+| Windows 句柄占用（serve 持有 writer）删除失败 | 逐 id 容错计 failed；渲染端已排除 running；EBUSY 天然兜底                                  |
+| 1465 真实库误删                               | 端到端一律用副本根目录；真实清理由用户真机亲自执行（残留手工清单）                         |
+| metadata 覆层膨胀                             | deleteMany 成功后合批移除条目（Task 2）                                                    |
+| 批量删除期间 UI 无进度                        | 首版同步等待 + toast spinner（fs.promises 不阻塞主进程）；进度事件流为后续增强，本阶段不做 |
+| 子代理通道故障（cat-jam 上游）                | 降级等职能子代理（U1 先例，如实登记）；编排者不写功能代码                                  |
 
 ---
 

@@ -10,7 +10,7 @@
  * 返回 @zcode/services ServiceCollection，由 host-entry 在 ChannelServer 上
  * exposeOnChannelServer 暴露（桌面 local clientMode 无曝光过滤）。
  */
-import { ServiceCollection } from "@zcode/services";
+import { ServiceCollection } from '@zcode/services';
 import {
   IBroadcastService,
   IBotsService,
@@ -69,17 +69,17 @@ import {
   ICuaPermissionService,
   ICuaPipSessionService,
   IFeedbackService,
-} from "@zcode/services";
-import { CHANNEL_REGISTRY } from "./channel-registry.js";
-import { createStubService } from "./stub-factory.js";
+} from '@zcode/services';
+import { CHANNEL_REGISTRY } from './channel-registry.js';
+import { createStubService } from './stub-factory.js';
 import {
   commandsServiceStub,
   hooksServiceStub,
   memoryServiceStub,
   skillsServiceStub,
   subagentsServiceStub,
-} from "./a-class-stubs.js";
-import { fileServiceStub } from "./file-stubs.js";
+} from './a-class-stubs.js';
+import { fileServiceStub } from './file-stubs.js';
 import {
   botsServiceStub,
   broadcastServiceStub,
@@ -98,7 +98,7 @@ import {
   usageStatsServiceStub,
   windowControllerServiceStub,
   zcodeAgentServiceStub,
-} from "./root-mount-stubs.js";
+} from './root-mount-stubs.js';
 
 /** 显式桩表：频道名 → 已实例化的桩（其余频道按注册表分类现场生成默认桩） */
 const EXPLICIT_STUBS = new Map<string, unknown>([

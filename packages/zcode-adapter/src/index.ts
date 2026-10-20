@@ -7,6 +7,10 @@
  *
  * 类型与运行时依赖：ZS1 scratch 构建区（Apache-2.0，随附 LICENSE-ZCODE.md）。
  */
-export { createStubService, notImplementedError, type StubClassification, type StubSpec } from "./stub-factory.js";
-export { CHANNEL_REGISTRY, assertRegistryMatchesServiceChannels, type ChannelRegistryEntry } from "./channel-registry.js";
-export { createHarness2Services, type Harness2ServicesResult } from "./createHarness2Services.js";
+export { createStubService, notImplementedError, type StubClassification, type StubSpec } from './stub-factory.js';
+export {
+  CHANNEL_REGISTRY,
+  assertRegistryMatchesServiceChannels,
+  type ChannelRegistryEntry,
+} from './channel-registry.js';
+export { createHarness2Services, type Harness2ServicesResult } from './createHarness2Services.js';

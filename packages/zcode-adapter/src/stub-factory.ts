@@ -16,10 +16,10 @@
  * ZCode 自家先例：conversationShare.ts 的 createUnsupportedConversationShareService
  * （动作 reject / 事件 None / 只读查询 null）——本工厂是同一语义的泛化。
  */
-import { Event } from "@zcode/rpc";
+import { Event } from '@zcode/rpc';
 
 /** A: 映射 core（ZS2+）· B: v4 竖切/UI 支撑（ZS2/ZS3）· C: 云端绑定/专有（静默或 ZS6 隐藏） */
-export type StubClassification = "A" | "B" | "C";
+export type StubClassification = 'A' | 'B' | 'C';
 
 export interface StubSpec {
   /** 频道名（ServiceChannels 值），用于报错定位 */
@@ -38,20 +38,16 @@ export interface StubSpec {
 
 export function notImplementedError(channelName: string, method: string): Error {
   const error = new Error(`ZS1: not implemented (channel=${channelName}, method=${method})`);
-  (error as Error & { code?: string }).code = "ZS1_NOT_IMPLEMENTED";
+  (error as Error & { code?: string }).code = 'ZS1_NOT_IMPLEMENTED';
   return error;
 }
 
 function isEventName(name: string): boolean {
-  return (
-    name.length >= 3 && name[0] === "o" && name[1] === "n" && name.charCodeAt(2) >= 65 &&
-    name.charCodeAt(2) <= 90
-  );
+  return name.length >= 3 && name[0] === 'o' && name[1] === 'n' && name.charCodeAt(2) >= 65 && name.charCodeAt(2) <= 90;
 }
 
 function isDynamicEventName(name: string): boolean {
-  return name.length >= 10 && name.startsWith("onDynamic") && name.charCodeAt(9) >= 65 &&
-    name.charCodeAt(9) <= 90;
+  return name.length >= 10 && name.startsWith('onDynamic') && name.charCodeAt(9) >= 65 && name.charCodeAt(9) <= 90;
 }
 
 /**
@@ -65,9 +61,9 @@ export function createStubService<T extends object>(spec: StubSpec): T {
   const impl = (spec.impl ?? {}) as Record<string, unknown>;
   return new Proxy(impl as T, {
     get(target, prop, receiver) {
-      if (typeof prop !== "string") return Reflect.get(target, prop, receiver);
+      if (typeof prop !== 'string') return Reflect.get(target, prop, receiver);
       // thenable 探测（React/日志工具会读 then；返回 undefined 避免被误判为 Promise）
-      if (prop === "then") return undefined;
+      if (prop === 'then') return undefined;
       if (Object.prototype.hasOwnProperty.call(target, prop)) {
         return Reflect.get(target, prop, receiver);
       }
@@ -87,7 +83,7 @@ export function createStubService<T extends object>(spec: StubSpec): T {
       if (spec.nulls?.includes(prop)) {
         return async () => null;
       }
-      if (spec.classification === "B") {
+      if (spec.classification === 'B') {
         return async (): Promise<never> => {
           throw notImplementedError(spec.channelName, prop);
         };

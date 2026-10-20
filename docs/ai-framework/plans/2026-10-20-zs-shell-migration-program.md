@@ -14,16 +14,16 @@
 
 ## 0 决策与前提（2026-10-20）
 
-| 项 | 结论 | 依据 |
-| --- | --- | --- |
-| 方向 | 用户拍板：ZCode 壳 + harness2 内心，外观不变 | 用户 2026-10-20 两次原话确认 |
-| **旧壳投入** | **2026-10-20 用户追加指示：「不要管这个了，直接走 ZCode 壳方向」——旧壳全面冻结（不再投入任何修复，含 P0/P1）**。附实测备案：1.0.2 portable 本机可正常启动并稳定运行（5 进程存活 30s+、解包 exe smoke exit 0），用户此前「完全不可用」源于安装版 v1.0.0 已知缺陷 | 用户原话 + 编排者 2026-10-20 实测 |
-| **账户体系** | **无账户登录（用户 2026-10-20 指示：「我们不需要账户登录哦，这点和 zcode 有点不同」）**——oauth/订阅/用量升级/登录登出全 C 类隐藏；**壳不得出现任何登录门**（ZCode 未登录收敛 WelcomeScreen 的路径必须绕过，直达主壳空工作区）。ZS1 已按「桩报告已登录·本地身份」实现（`restoreCachedSessionState` 恒 authenticated + `getActiveProvider` 恒 null 防写路径）；上游若出现真实无账户路径则优先切换 | 用户原话 + ZS1 执行记录 Task 3 |
-| 法律 | **Apache-2.0**，vendored 代码须保留版权与 LICENSE 声明 | `D:/AI_Projects/refs/ZCode/LICENSE` 实查 |
-| 上游锚点 | `3c5b2276`（v3.16.2，2026-10-20 拉取成功） | refs 基线表 |
-| 可行性 | 耦合面 = `IServiceAccessor` 单门面 + 频道 + 自动代理；换后端不动 UI | spike §3 |
-| 最大工程量 | `IZCodeAgentService` v4 conversation 竖切 + `IZCodeTaskService` task 索引/派发管线 | spike §2/§5 |
-| 并行关系 | S1（会话批量清理）走旧壳快速通道；其 core 能力（deleteSession）被 ZS4 复用；Z-50/Z-51 语义在新壳 task 菜单重接线 | S1 计划 |
+| 项           | 结论                                                                                                                                                                                                                                                                                                                                                                                            | 依据                                     |
+| ------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------- |
+| 方向         | 用户拍板：ZCode 壳 + harness2 内心，外观不变                                                                                                                                                                                                                                                                                                                                                    | 用户 2026-10-20 两次原话确认             |
+| **旧壳投入** | **2026-10-20 用户追加指示：「不要管这个了，直接走 ZCode 壳方向」——旧壳全面冻结（不再投入任何修复，含 P0/P1）**。附实测备案：1.0.2 portable 本机可正常启动并稳定运行（5 进程存活 30s+、解包 exe smoke exit 0），用户此前「完全不可用」源于安装版 v1.0.0 已知缺陷                                                                                                                                 | 用户原话 + 编排者 2026-10-20 实测        |
+| **账户体系** | **无账户登录（用户 2026-10-20 指示：「我们不需要账户登录哦，这点和 zcode 有点不同」）**——oauth/订阅/用量升级/登录登出全 C 类隐藏；**壳不得出现任何登录门**（ZCode 未登录收敛 WelcomeScreen 的路径必须绕过，直达主壳空工作区）。ZS1 已按「桩报告已登录·本地身份」实现（`restoreCachedSessionState` 恒 authenticated + `getActiveProvider` 恒 null 防写路径）；上游若出现真实无账户路径则优先切换 | 用户原话 + ZS1 执行记录 Task 3           |
+| 法律         | **Apache-2.0**，vendored 代码须保留版权与 LICENSE 声明                                                                                                                                                                                                                                                                                                                                          | `D:/AI_Projects/refs/ZCode/LICENSE` 实查 |
+| 上游锚点     | `3c5b2276`（v3.16.2，2026-10-20 拉取成功）                                                                                                                                                                                                                                                                                                                                                      | refs 基线表                              |
+| 可行性       | 耦合面 = `IServiceAccessor` 单门面 + 频道 + 自动代理；换后端不动 UI                                                                                                                                                                                                                                                                                                                             | spike §3                                 |
+| 最大工程量   | `IZCodeAgentService` v4 conversation 竖切 + `IZCodeTaskService` task 索引/派发管线                                                                                                                                                                                                                                                                                                              | spike §2/§5                              |
+| 并行关系     | S1（会话批量清理）走旧壳快速通道；其 core 能力（deleteSession）被 ZS4 复用；Z-50/Z-51 语义在新壳 task 菜单重接线                                                                                                                                                                                                                                                                                | S1 计划                                  |
 
 ## 1 目标架构
 
@@ -41,15 +41,15 @@ harness2/
 
 ## 2 阶段划分（每阶段独立计划 + 独立验收）
 
-| 阶段 | 内容 | 出口判据（闸门） |
-| --- | --- | --- |
-| **ZS0** ✅ | spike：services 契约面盘点（本总纲依据） | 报告入库（research/） |
-| **ZS1 骨架空跑** | vendored ZCode 壳编译链打通；zcode-adapter 骨架（60 频道注册：C 类空实现、B 类 throw、A 类 TODO）；数据根重定向；启动路径 loading→空态→WelcomeScreen | 新壳进程起、显示 ZCode 空态界面；Root 挂载期 9 个服务（spike §4）stub 返回空数据不崩；零旧壳代码参与 |
-| **ZS2 垂直切片** | 一个真实 harness2 会话跑通：`zcodeTaskService.createTask/list/initialize` → core SessionManager；v4 最小竖切（hello/initialize/subscribe）→ core 事件投影；`IFileService` 最小（readdir/stat/readTextFile）；mock provider 一轮对话 | 新壳内完成一轮真实对话（发送→流式渲染→终态）；会话落 `~/.harness2/sessions` JSONL |
-| **ZS3 对话区完整** | v4 全竖切（rowsRange 行分页/resync/plans）；`SessionRealtimePort` 审批（respond_permission/respond_elicitation/hook 审阅）→ core approval；工具卡流事件；composer 附件管线（`IPromptAttachmentTransferService`）+ 图片；真实 provider | 审批/工具/长会话分页/断线 resync 全通；composer 全交互（用户此前「输入框难用」在此终结） |
-| **ZS4 侧栏与周边** | task 索引/置顶/归档（**接线 Z-50/Z-51 批量语义 + core deleteSession**）；轨迹 `getModelTrajectory` → core trajectory；settings/provider/model selection → core provider+auth；commands/skills/memory/hooks/subagents/automations(cron)/MCP 状态 | 侧栏全功能（含批量归档/物理删除）；设置页可用 |
-| **ZS5 观测性与监控卡片** | crashReporter + uncaughtException/unhandledRejection 落盘（`~/.harness2/crash/`）；结构化运行日志（`~/.harness2/logs/`）；启动分段计时；soak/内存曲线采集；**悬浮监控小卡片**（主进程/renderer/host 三进程资源占用 + 日志 tail，快捷键/命令面板开关）——用户 2026-10-20 三项需求内建于此 | 崩溃可归因（复现一次崩溃能拿到报告）；监控卡片可用；soak ≥30min 内存平稳判据 |
-| **ZS6 收尾与切换** | C 类隐藏清单执行（feature-gate 逐项核对）；旧 desktop renderer/ui-shared 退役决策（web 壳去留：ZCode web build vs 旧 web）；打包（manual-pack 通道）+ 发版（**major**：架构变更）；上游 re-sync 流程文档化 | 新壳成为唯一桌面入口；红线⑩全量自查；发版授权（人类） |
+| 阶段                     | 内容                                                                                                                                                                                                                                                                                    | 出口判据（闸门）                                                                                     |
+| ------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------- |
+| **ZS0** ✅               | spike：services 契约面盘点（本总纲依据）                                                                                                                                                                                                                                                | 报告入库（research/）                                                                                |
+| **ZS1 骨架空跑**         | vendored ZCode 壳编译链打通；zcode-adapter 骨架（60 频道注册：C 类空实现、B 类 throw、A 类 TODO）；数据根重定向；启动路径 loading→空态→WelcomeScreen                                                                                                                                    | 新壳进程起、显示 ZCode 空态界面；Root 挂载期 9 个服务（spike §4）stub 返回空数据不崩；零旧壳代码参与 |
+| **ZS2 垂直切片**         | 一个真实 harness2 会话跑通：`zcodeTaskService.createTask/list/initialize` → core SessionManager；v4 最小竖切（hello/initialize/subscribe）→ core 事件投影；`IFileService` 最小（readdir/stat/readTextFile）；mock provider 一轮对话                                                     | 新壳内完成一轮真实对话（发送→流式渲染→终态）；会话落 `~/.harness2/sessions` JSONL                    |
+| **ZS3 对话区完整**       | v4 全竖切（rowsRange 行分页/resync/plans）；`SessionRealtimePort` 审批（respond_permission/respond_elicitation/hook 审阅）→ core approval；工具卡流事件；composer 附件管线（`IPromptAttachmentTransferService`）+ 图片；真实 provider                                                   | 审批/工具/长会话分页/断线 resync 全通；composer 全交互（用户此前「输入框难用」在此终结）             |
+| **ZS4 侧栏与周边**       | task 索引/置顶/归档（**接线 Z-50/Z-51 批量语义 + core deleteSession**）；轨迹 `getModelTrajectory` → core trajectory；settings/provider/model selection → core provider+auth；commands/skills/memory/hooks/subagents/automations(cron)/MCP 状态                                         | 侧栏全功能（含批量归档/物理删除）；设置页可用                                                        |
+| **ZS5 观测性与监控卡片** | crashReporter + uncaughtException/unhandledRejection 落盘（`~/.harness2/crash/`）；结构化运行日志（`~/.harness2/logs/`）；启动分段计时；soak/内存曲线采集；**悬浮监控小卡片**（主进程/renderer/host 三进程资源占用 + 日志 tail，快捷键/命令面板开关）——用户 2026-10-20 三项需求内建于此 | 崩溃可归因（复现一次崩溃能拿到报告）；监控卡片可用；soak ≥30min 内存平稳判据                         |
+| **ZS6 收尾与切换**       | C 类隐藏清单执行（feature-gate 逐项核对）；旧 desktop renderer/ui-shared 退役决策（web 壳去留：ZCode web build vs 旧 web）；打包（manual-pack 通道）+ 发版（**major**：架构变更）；上游 re-sync 流程文档化                                                                              | 新壳成为唯一桌面入口；红线⑩全量自查；发版授权（人类）                                                |
 
 ## 3 Global Constraints（全程序硬线）
 
@@ -63,14 +63,14 @@ harness2/
 
 ## 4 风险与对策
 
-| 风险 | 对策 |
-| --- | --- |
-| v4 conversation 协议面大（B 类最大项） | ZS2 先最小竖切、ZS3 分批补；每批以 ZCode UI 实际调用路径为准（不是全实现协议，是「UI 用到什么实现什么」） |
-| 上游漂移（v3.14→3.16 仅两周） | 锚定 `3c5b2276`；re-sync 作为独立小阶段（合入前跑全量闸门）；不追 HEAD |
-| ZCode 构建链引入成本（365+501 文件） | ZS1 实测两条路线后定：vendored 源码进仓 vs 源码路径引用（决策记录进 ZS1 计划） |
-| 双壳维护成本 | 旧壳冻结（只修 P0/P1）；ZS6 前明确切换日期，避免长期双轨 |
-| 事件语义错配（ZCode 流事件 vs core 事件日志词表） | ZS2 起建「事件词表映射表」随阶段扩充；投影层单测覆盖每类事件 |
-| 子代理通道故障 | 降级等职能子代理（U1 先例，如实登记） |
+| 风险                                              | 对策                                                                                                      |
+| ------------------------------------------------- | --------------------------------------------------------------------------------------------------------- |
+| v4 conversation 协议面大（B 类最大项）            | ZS2 先最小竖切、ZS3 分批补；每批以 ZCode UI 实际调用路径为准（不是全实现协议，是「UI 用到什么实现什么」） |
+| 上游漂移（v3.14→3.16 仅两周）                     | 锚定 `3c5b2276`；re-sync 作为独立小阶段（合入前跑全量闸门）；不追 HEAD                                    |
+| ZCode 构建链引入成本（365+501 文件）              | ZS1 实测两条路线后定：vendored 源码进仓 vs 源码路径引用（决策记录进 ZS1 计划）                            |
+| 双壳维护成本                                      | 旧壳冻结（只修 P0/P1）；ZS6 前明确切换日期，避免长期双轨                                                  |
+| 事件语义错配（ZCode 流事件 vs core 事件日志词表） | ZS2 起建「事件词表映射表」随阶段扩充；投影层单测覆盖每类事件                                              |
+| 子代理通道故障                                    | 降级等职能子代理（U1 先例，如实登记）                                                                     |
 
 ## 5 验收与闸门（每阶段通用）
 
@@ -82,13 +82,13 @@ harness2/
 
 ## 6 与既有程序/挂账的关系
 
-| 项 | 关系 |
-| --- | --- |
-| S1 会话批量清理（已批准后改向） | **2026-10-20 用户指示「直接走 ZS」→ S1 整体并入 ZS4**（task 侧栏接线时一并交付 Z-50/Z-51 批量语义 + core `deleteSession`）；S1 计划文档保留作语义与验收依据，不再按旧壳快速通道执行 |
-| 观测性/监控卡片/composer 重构（用户 2026-10-20 需求） | 全部并入本程序（ZS3 composer / ZS5 观测性），不再单独立项 |
-| U2 发版（v1.0.2 待授权） | 不受影响，独立执行；ZS 完成后的发版为 major |
-| refs 文档 | Z-* 条目继续是交互语义权威；本程序实现的是「ZCode 原生壳」，ZS4 接线时按条目核对语义（如 Z-50/Z-51） |
-| 旧 Z 程序（Z0–Z7 复刻） | 历史成果保留（ui-shared/web 壳仍在用）；ZS6 时随旧壳一并决策去留 |
+| 项                                                    | 关系                                                                                                                                                                                |
+| ----------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| S1 会话批量清理（已批准后改向）                       | **2026-10-20 用户指示「直接走 ZS」→ S1 整体并入 ZS4**（task 侧栏接线时一并交付 Z-50/Z-51 批量语义 + core `deleteSession`）；S1 计划文档保留作语义与验收依据，不再按旧壳快速通道执行 |
+| 观测性/监控卡片/composer 重构（用户 2026-10-20 需求） | 全部并入本程序（ZS3 composer / ZS5 观测性），不再单独立项                                                                                                                           |
+| U2 发版（v1.0.2 待授权）                              | 不受影响，独立执行；ZS 完成后的发版为 major                                                                                                                                         |
+| refs 文档                                             | Z-* 条目继续是交互语义权威；本程序实现的是「ZCode 原生壳」，ZS4 接线时按条目核对语义（如 Z-50/Z-51）                                                                                |
+| 旧 Z 程序（Z0–Z7 复刻）                               | 历史成果保留（ui-shared/web 壳仍在用）；ZS6 时随旧壳一并决策去留                                                                                                                    |
 
 ---
 

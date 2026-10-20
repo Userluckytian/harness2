@@ -38,11 +38,7 @@ const PROBE_COMMANDS: ReadonlyArray<{ cmd: string; args: string[] }> = [
   { cmd: 'busctl', args: ['--user', 'list'] },
   {
     cmd: 'qdbus',
-    args: [
-      'org.freedesktop.DBus',
-      '/org/freedesktop/DBus',
-      'org.freedesktop.DBus.ListNames',
-    ],
+    args: ['org.freedesktop.DBus', '/org/freedesktop/DBus', 'org.freedesktop.DBus.ListNames'],
   },
 ];
 

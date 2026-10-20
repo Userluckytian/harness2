@@ -17,22 +17,22 @@
  * ZS1 桩阶段不写真实数据：无 SQLite、无 agent 子进程；数据根重定向经
  * ZCODE_DATA_BASE_DIR 由壳 main 进程下发（本入口不触碰磁盘业务数据）。
  */
-import process from "node:process";
-import { randomUUID } from "node:crypto";
+import process from 'node:process';
+import { randomUUID } from 'node:crypto';
 import {
   ChannelServer,
   LoggingChannelServer,
   MessagePortProtocol,
   type MessagePortLike,
   type MessagePortPayload,
-} from "@zcode/rpc";
-import { HostMessageTypes, HostResponseTypes } from "@zcode/shared";
-import { createHarness2Services } from "./createHarness2Services.js";
+} from '@zcode/rpc';
+import { HostMessageTypes, HostResponseTypes } from '@zcode/shared';
+import { createHarness2Services } from './createHarness2Services.js';
 
 interface ElectronMessagePortMainLike {
-  on(event: "message", listener: (e: { data: unknown }) => void): unknown;
-  once(event: "close", listener: () => void): unknown;
-  off(event: "message", listener: (e: { data: unknown }) => void): unknown;
+  on(event: 'message', listener: (e: { data: unknown }) => void): unknown;
+  once(event: 'close', listener: () => void): unknown;
+  off(event: 'message', listener: (e: { data: unknown }) => void): unknown;
   postMessage(message: unknown): unknown;
   start(): unknown;
   close(): unknown;
@@ -41,11 +41,11 @@ interface ElectronMessagePortMainLike {
 /** 复刻 ZCode electronPort.ts 的适配（Apache-2.0） */
 function wrapElectronPort(port: ElectronMessagePortMainLike): MessagePortLike {
   return {
-    addEventListener(_type: "message", listener: (e: { data: MessagePortPayload }) => void) {
-      port.on("message", listener as (e: { data: unknown }) => void);
+    addEventListener(_type: 'message', listener: (e: { data: MessagePortPayload }) => void) {
+      port.on('message', listener as (e: { data: unknown }) => void);
     },
-    removeEventListener(_type: "message", listener: (e: { data: MessagePortPayload }) => void) {
-      port.off("message", listener as (e: { data: unknown }) => void);
+    removeEventListener(_type: 'message', listener: (e: { data: MessagePortPayload }) => void) {
+      port.off('message', listener as (e: { data: unknown }) => void);
     },
     postMessage(data: MessagePortPayload) {
       port.postMessage(data);
@@ -59,17 +59,19 @@ function wrapElectronPort(port: ElectronMessagePortMainLike): MessagePortLike {
   };
 }
 
-const parentPort = (process as typeof process & {
-  parentPort?: ElectronMessagePortMainLike;
-}).parentPort;
+const parentPort = (
+  process as typeof process & {
+    parentPort?: ElectronMessagePortMainLike;
+  }
+).parentPort;
 
 function postToMain(message: unknown): void {
-  if (!parentPort) throw new Error("parentPort unavailable");
+  if (!parentPort) throw new Error('parentPort unavailable');
   parentPort.postMessage(message);
 }
 
-const log = (level: "info" | "warn" | "error", message: string): void => {
-  postToMain({ type: HostResponseTypes.Log, level, source: "zs1-stub-host", message });
+const log = (level: 'info' | 'warn' | 'error', message: string): void => {
+  postToMain({ type: HostResponseTypes.Log, level, source: 'zs1-stub-host', message });
 };
 
 interface DatabaseStartupStateReady {
@@ -79,8 +81,8 @@ interface DatabaseStartupStateReady {
   sequence: number;
   startedAt: number;
   updatedAt: number;
-  phase: "ready";
-  databasePhase: "ready";
+  phase: 'ready';
+  databasePhase: 'ready';
   disk: never[];
 }
 
@@ -93,8 +95,8 @@ function readyState(startupId: string, attemptId: string, startedAt: number): Da
     sequence: 1,
     startedAt,
     updatedAt: Date.now(),
-    phase: "ready",
-    databasePhase: "ready",
+    phase: 'ready',
+    databasePhase: 'ready',
     disk: [],
   };
 }
@@ -107,11 +109,11 @@ function publishReady(state: DatabaseStartupStateReady): void {
 function exposeServicesOnPort(port: ElectronMessagePortMainLike): void {
   const { services } = createHarness2Services();
   const protocol = new MessagePortProtocol(wrapElectronPort(port));
-  const rawServer = new ChannelServer(protocol, "host", 1000, false);
+  const rawServer = new ChannelServer(protocol, 'host', 1000, false);
   // rpc:call 日志层（与原版 host 同款中间件）：T3 取证用——证明 renderer 在消费桩
-  const server = new LoggingChannelServer(rawServer, (message) => log("info", message));
+  const server = new LoggingChannelServer(rawServer, (message) => log('info', message));
   services.exposeOnChannelServer(server);
-  port.once("close", () => {
+  port.once('close', () => {
     rawServer.dispose();
     protocol.disconnect();
   });
@@ -119,42 +121,40 @@ function exposeServicesOnPort(port: ElectronMessagePortMainLike): void {
 
 if (!parentPort) {
   // utilityProcess 外被直接执行（如单测误跑）：明确报错退出
-  console.error("[zs1-stub-host] must run inside Electron utilityProcess (parentPort required)");
+  console.error('[zs1-stub-host] must run inside Electron utilityProcess (parentPort required)');
   process.exit(1);
 }
 
 let startupStartedAt = Date.now();
-let currentStartupId = "";
-let currentAttemptId = "";
+let currentStartupId = '';
+let currentAttemptId = '';
 
-parentPort.on("message", (e: { data?: unknown }) => {
+parentPort.on('message', (e: { data?: unknown }) => {
   const raw = e.data as { type?: string; [key: string]: unknown } | undefined;
-  if (!raw || typeof raw.type !== "string") return;
-  const port = (e as { ports?: unknown[] }).ports?.[0] as
-    | ElectronMessagePortMainLike
-    | undefined;
+  if (!raw || typeof raw.type !== 'string') return;
+  const port = (e as { ports?: unknown[] }).ports?.[0] as ElectronMessagePortMainLike | undefined;
 
   switch (raw.type) {
     case HostMessageTypes.InitLocal: {
       const msg = raw as { databaseStartupId?: string };
       startupStartedAt = Date.now();
-      currentStartupId = msg.databaseStartupId ?? "zs1-stub";
+      currentStartupId = msg.databaseStartupId ?? 'zs1-stub';
       currentAttemptId = `zs1-${randomUUID()}`;
-      log("info", `InitLocal received (startupId=${currentStartupId}); exposing stub services`);
+      log('info', `InitLocal received (startupId=${currentStartupId}); exposing stub services`);
       if (!port) {
-        log("error", "init-local message missing MessagePort");
+        log('error', 'init-local message missing MessagePort');
         return;
       }
       // 1) 报 ready（renderer 的 DatabaseStartupAdmission 按 startupId 配对 state+port）
       publishReady(readyState(currentStartupId, currentAttemptId, startupStartedAt));
       // 2) 在端口上暴露全部桩频道
       exposeServicesOnPort(port);
-      log("info", "stub services exposed on ChannelServer (all channels registered)");
+      log('info', 'stub services exposed on ChannelServer (all channels registered)');
       return;
     }
     case HostMessageTypes.DatabaseStartupControl: {
       const control = (raw as { control?: { action?: string } }).control;
-      if (control?.action === "snapshot" || control?.action === "retry") {
+      if (control?.action === 'snapshot' || control?.action === 'retry') {
         // 桩无失败态可重试：重发当前 ready 状态（sequence 递增以通过 relay 去重）
         publishReady({ ...readyState(currentStartupId, currentAttemptId, startupStartedAt), sequence: 2 });
       }
@@ -162,7 +162,7 @@ parentPort.on("message", (e: { data?: unknown }) => {
     }
     case HostMessageTypes.AttachServicePort: {
       if (port) {
-        log("info", "AttachServicePort: exposing stub services (ZS1 remote sessions not truly supported)");
+        log('info', 'AttachServicePort: exposing stub services (ZS1 remote sessions not truly supported)');
         exposeServicesOnPort(port);
       }
       return;
@@ -172,7 +172,7 @@ parentPort.on("message", (e: { data?: unknown }) => {
       return;
     }
     case HostMessageTypes.Dispose: {
-      log("info", "Dispose received, exiting");
+      log('info', 'Dispose received, exiting');
       process.exit(0);
       return;
     }
@@ -182,4 +182,4 @@ parentPort.on("message", (e: { data?: unknown }) => {
   }
 });
 
-log("info", `zs1 stub host started (pid=${process.pid})`);
+log('info', `zs1 stub host started (pid=${process.pid})`);

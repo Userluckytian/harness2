@@ -12,74 +12,74 @@
 判据：发 HTTP 者必须分支内取 `serveBase()`（漏=P0）；不发 HTTP 者不得触 `deps.serve.baseUrl`/`wsUrl` getter（触=P1）。
 `serveBase()` 定义 :430（`= deps.serve.baseUrl`，未就绪同步抛错，getter 见 serve-manager.ts:194-202）。switch 之前无任何 serve getter 读取（R0-3 惰性化保持完好）。
 
-| # | case | 行号 | 发 HTTP | 经 serveBase() |
-|---|------|-----:|:------:|:-------------:|
-| 1 | listSessions | 439 | 是 | 是（:440 首行） |
-| 2 | createSession | 449 | 是 | 是（:450） |
-| 3 | events | 459 | 是 | 是（:460） |
-| 4 | undo | 463 | 是 | 是（:464） |
-| 5 | redo | 474 | 是 | 是（:475） |
-| 6 | subscribe | 482 | 否（WS） | — |
-| 7 | unsubscribe | 485 | 否（WS） | — |
-| 8 | sendMessage | 488 | 否（WS） | — |
-| 9 | abort | 495 | 否（WS） | — |
-| 10 | respondApproval | 498 | 否（WS） | — |
-| 11 | runConfig | 517 | 是 | 是（:518） |
-| 12 | planState | 522 | 是 | 是（:523，经 httpJsonOptional 404→null） |
-| 13 | executionViews | 528 | 是 | 是（:529） |
-| 14 | changeReview | 536 | 是 | 是（:537） |
-| 15 | fork | 542 | 否（WS） | — |
-| 16 | submit | 552 | 否（WS） | — |
-| 17 | cancel | 573 | 否（WS） | — |
-| 18 | resumeSubscription | 594 | 否（WS） | — |
-| 19 | capabilities | 601 | 条件（仅 connected∧sessionId） | 分支内受护读取（见下） |
-| 20 | runtime:setBusy | 603 | 否 | — |
-| 21 | loadLayout | 610 | 否 | — |
-| 22 | saveLayout | 612 | 否 | — |
-| 23 | getStatus | 614 | 否 | —（调 `serve.getStatus()` 普通方法 :190-192，不触抛错 getter） |
-| 24 | platform:setTitleBarTheme | 617 | 否 | — |
-| 25 | window:minimize | 623 | 否 | — |
-| 26 | window:toggleMaximize | 627 | 否 | — |
-| 27 | window:close | 635 | 否 | — |
-| 28 | window:getState | 640 | 否 | — |
-| 29 | terminal:open | 645 | 否 | — |
-| 30 | terminal:write | 660 | 否 | — |
-| 31 | terminal:resize | 668 | 否 | — |
-| 32 | terminal:close | 676 | 否 | — |
-| 33 | tray:status | 681 | 否 | —（isTrayCreated?.() ?? false，缺省安全） |
-| 34 | tray:setCloseToTray | 689 | 否 | — |
-| 35 | settings:getConfig | 699 | 否 | — |
-| 36 | settings:updateConfig | 701 | 否 | — |
-| 37 | settings:getAuthMasked | 703 | 否 | — |
-| 38 | settings:updateAuth | 705 | 否 | — |
-| 39 | settings:getModels | 708 | 否 | — |
-| 40 | settings:updateModels | 710 | 否 | — |
-| 41 | settings:deleteProvider | 727 | 否 | — |
-| 42 | settings:writeChannelKey | 739 | 否 | — |
-| 43 | settings:getCredentialStatus | 749 | 否 | — |
-| 44 | settings:ackModelsDeclaration | 754 | 否 | — |
-| 45 | settings:discoverModels | 756 | 否（不触 serve；见补注） | — |
-| 46 | settings:getPreferences | 762 | 否 | — |
-| 47 | settings:setPreferences | 764 | 否 | — |
-| 48 | metadata:get | 766 | 否 | — |
-| 49 | metadata:set | 768 | 否 | — |
-| 50 | drafts:get | 788 | 否 | — |
-| 51 | drafts:set | 790 | 否 | — |
-| 52 | projects:list | 793 | 否 | — |
-| 53 | projects:add | 795 | 否 | — |
-| 54 | projects:remove | 800 | 否 | — |
-| 55 | projects:pickFolder | 805 | 否 | — |
-| 56 | settings:getDoctorReport | 816 | 否 | — |
-| 57 | settings:getCrashReports | 818 | 否 | — |
-| 58 | settings:getSkills | 821 | 否 | — |
-| 59 | cron:list | 824 | 否 | — |
-| 60 | cron:add | 827 | 否 | — |
-| 61 | gitBranch | 834 | 否 | — |
-| 62 | getContextUsage | 838 | 否 | — |
-| 63 | getSnapshotForCall | 843 | 否 | — |
-| 64 | listDir | 855 | 否 | — |
-| 65 | readFileForRef | 861 | 否 | — |
-| 66 | notify | 866 | 否 | — |
+| #   | case                          | 行号 |            发 HTTP             |                         经 serveBase()                         |
+| --- | ----------------------------- | ---: | :----------------------------: | :------------------------------------------------------------: |
+| 1   | listSessions                  |  439 |               是               |                        是（:440 首行）                         |
+| 2   | createSession                 |  449 |               是               |                           是（:450）                           |
+| 3   | events                        |  459 |               是               |                           是（:460）                           |
+| 4   | undo                          |  463 |               是               |                           是（:464）                           |
+| 5   | redo                          |  474 |               是               |                           是（:475）                           |
+| 6   | subscribe                     |  482 |            否（WS）            |                               —                                |
+| 7   | unsubscribe                   |  485 |            否（WS）            |                               —                                |
+| 8   | sendMessage                   |  488 |            否（WS）            |                               —                                |
+| 9   | abort                         |  495 |            否（WS）            |                               —                                |
+| 10  | respondApproval               |  498 |            否（WS）            |                               —                                |
+| 11  | runConfig                     |  517 |               是               |                           是（:518）                           |
+| 12  | planState                     |  522 |               是               |            是（:523，经 httpJsonOptional 404→null）            |
+| 13  | executionViews                |  528 |               是               |                           是（:529）                           |
+| 14  | changeReview                  |  536 |               是               |                           是（:537）                           |
+| 15  | fork                          |  542 |            否（WS）            |                               —                                |
+| 16  | submit                        |  552 |            否（WS）            |                               —                                |
+| 17  | cancel                        |  573 |            否（WS）            |                               —                                |
+| 18  | resumeSubscription            |  594 |            否（WS）            |                               —                                |
+| 19  | capabilities                  |  601 | 条件（仅 connected∧sessionId） |                     分支内受护读取（见下）                     |
+| 20  | runtime:setBusy               |  603 |               否               |                               —                                |
+| 21  | loadLayout                    |  610 |               否               |                               —                                |
+| 22  | saveLayout                    |  612 |               否               |                               —                                |
+| 23  | getStatus                     |  614 |               否               | —（调 `serve.getStatus()` 普通方法 :190-192，不触抛错 getter） |
+| 24  | platform:setTitleBarTheme     |  617 |               否               |                               —                                |
+| 25  | window:minimize               |  623 |               否               |                               —                                |
+| 26  | window:toggleMaximize         |  627 |               否               |                               —                                |
+| 27  | window:close                  |  635 |               否               |                               —                                |
+| 28  | window:getState               |  640 |               否               |                               —                                |
+| 29  | terminal:open                 |  645 |               否               |                               —                                |
+| 30  | terminal:write                |  660 |               否               |                               —                                |
+| 31  | terminal:resize               |  668 |               否               |                               —                                |
+| 32  | terminal:close                |  676 |               否               |                               —                                |
+| 33  | tray:status                   |  681 |               否               |           —（isTrayCreated?.() ?? false，缺省安全）            |
+| 34  | tray:setCloseToTray           |  689 |               否               |                               —                                |
+| 35  | settings:getConfig            |  699 |               否               |                               —                                |
+| 36  | settings:updateConfig         |  701 |               否               |                               —                                |
+| 37  | settings:getAuthMasked        |  703 |               否               |                               —                                |
+| 38  | settings:updateAuth           |  705 |               否               |                               —                                |
+| 39  | settings:getModels            |  708 |               否               |                               —                                |
+| 40  | settings:updateModels         |  710 |               否               |                               —                                |
+| 41  | settings:deleteProvider       |  727 |               否               |                               —                                |
+| 42  | settings:writeChannelKey      |  739 |               否               |                               —                                |
+| 43  | settings:getCredentialStatus  |  749 |               否               |                               —                                |
+| 44  | settings:ackModelsDeclaration |  754 |               否               |                               —                                |
+| 45  | settings:discoverModels       |  756 |    否（不触 serve；见补注）    |                               —                                |
+| 46  | settings:getPreferences       |  762 |               否               |                               —                                |
+| 47  | settings:setPreferences       |  764 |               否               |                               —                                |
+| 48  | metadata:get                  |  766 |               否               |                               —                                |
+| 49  | metadata:set                  |  768 |               否               |                               —                                |
+| 50  | drafts:get                    |  788 |               否               |                               —                                |
+| 51  | drafts:set                    |  790 |               否               |                               —                                |
+| 52  | projects:list                 |  793 |               否               |                               —                                |
+| 53  | projects:add                  |  795 |               否               |                               —                                |
+| 54  | projects:remove               |  800 |               否               |                               —                                |
+| 55  | projects:pickFolder           |  805 |               否               |                               —                                |
+| 56  | settings:getDoctorReport      |  816 |               否               |                               —                                |
+| 57  | settings:getCrashReports      |  818 |               否               |                               —                                |
+| 58  | settings:getSkills            |  821 |               否               |                               —                                |
+| 59  | cron:list                     |  824 |               否               |                               —                                |
+| 60  | cron:add                      |  827 |               否               |                               —                                |
+| 61  | gitBranch                     |  834 |               否               |                               —                                |
+| 62  | getContextUsage               |  838 |               否               |                               —                                |
+| 63  | getSnapshotForCall            |  843 |               否               |                               —                                |
+| 64  | listDir                       |  855 |               否               |                               —                                |
+| 65  | readFileForRef                |  861 |               否               |                               —                                |
+| 66  | notify                        |  866 |               否               |                               —                                |
 
 **计数**：HTTP 9（全部 :440/:450/:460/:464/:475/:518/:523/:529/:537 分支首行取 base）；WS op 9（全部走 `wsSendOrThrow` :415-420，只查 `ws.readyState`，零 serve getter）；capabilities 1（条件 HTTP，受护）；其余 47 零 serve 触碰。**结论：无 P0（漏取 base）、无 P1（非 HTTP case 连坐触 getter）。**
 

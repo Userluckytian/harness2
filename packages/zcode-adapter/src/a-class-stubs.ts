@@ -29,7 +29,7 @@ import type {
   ISubagentsService,
   ICommandsService,
   ProjectMemoryWorkspaceSummary,
-} from "@zcode/services";
+} from '@zcode/services';
 import type {
   AgentsListResult,
   CommandsListResult,
@@ -37,10 +37,10 @@ import type {
   Memory,
   SkillsListResult,
   SkillsPromptContext,
-} from "@zcode/shared";
-import { createStubService } from "./stub-factory.js";
+} from '@zcode/shared';
+import { createStubService } from './stub-factory.js';
 
-const skillsServiceImpl: Pick<ISkillsService, "list" | "buildPromptContext"> = {
+const skillsServiceImpl: Pick<ISkillsService, 'list' | 'buildPromptContext'> = {
   async list(): Promise<SkillsListResult> {
     return {
       skills: [],
@@ -54,13 +54,13 @@ const skillsServiceImpl: Pick<ISkillsService, "list" | "buildPromptContext"> = {
 };
 /** A: 映射 core skills/ ZS2+；list 空态、buildPromptContext 无激活；启停/复制/移除/删除写路径 throw */
 export const skillsServiceStub: ISkillsService = createStubService<ISkillsService>({
-  channelName: "skills",
-  classification: "A",
+  channelName: 'skills',
+  classification: 'A',
   impl: skillsServiceImpl,
-  throws: ["setEnabled", "copyToCommon", "removeFromCommon", "deleteSkill"],
+  throws: ['setEnabled', 'copyToCommon', 'removeFromCommon', 'deleteSkill'],
 });
 
-const subagentsServiceImpl: Pick<ISubagentsService, "list"> = {
+const subagentsServiceImpl: Pick<ISubagentsService, 'list'> = {
   async list(): Promise<AgentsListResult> {
     return {
       agents: [],
@@ -73,20 +73,20 @@ const subagentsServiceImpl: Pick<ISubagentsService, "list"> = {
 };
 /** A: 映射 core agent/subagent.ts（执行引擎有、定义文件 CRUD 缺口→ZS4）；list 空态；CRUD/启停/模型覆盖写路径 throw */
 export const subagentsServiceStub: ISubagentsService = createStubService<ISubagentsService>({
-  channelName: "subagents",
-  classification: "A",
+  channelName: 'subagents',
+  classification: 'A',
   impl: subagentsServiceImpl,
   throws: [
-    "createAgent",
-    "updateAgent",
-    "deleteAgent",
-    "setEnabled",
-    "setBuiltInModelOverride",
-    "setPluginAgentModelOverride",
+    'createAgent',
+    'updateAgent',
+    'deleteAgent',
+    'setEnabled',
+    'setBuiltInModelOverride',
+    'setPluginAgentModelOverride',
   ],
 });
 
-const commandsServiceImpl: Pick<ICommandsService, "list"> = {
+const commandsServiceImpl: Pick<ICommandsService, 'list'> = {
   async list(): Promise<CommandsListResult> {
     return {
       commands: [],
@@ -98,26 +98,26 @@ const commandsServiceImpl: Pick<ICommandsService, "list"> = {
 };
 /** A: 映射 core commands/ ZS2+（builtin 胶水）；list 空态；命令文件写/启停路径 throw */
 export const commandsServiceStub: ICommandsService = createStubService<ICommandsService>({
-  channelName: "commands",
-  classification: "A",
+  channelName: 'commands',
+  classification: 'A',
   impl: commandsServiceImpl,
-  throws: ["writeCommandFile", "updateCommandFile", "deleteCommandFile", "setCommandEnabled"],
+  throws: ['writeCommandFile', 'updateCommandFile', 'deleteCommandFile', 'setCommandEnabled'],
 });
 
-const hooksServiceImpl: Pick<IHooksService, "loadHooks"> = {
+const hooksServiceImpl: Pick<IHooksService, 'loadHooks'> = {
   async loadHooks(): Promise<{ hooks: Hook[]; hooksEnabled: boolean }> {
     return { hooks: [], hooksEnabled: false };
   },
 };
 /** A: 映射 core hooks/ ZS2+；loadHooks 空态；saveHooks 与信任授予（写 trust store）throw */
 export const hooksServiceStub: IHooksService = createStubService<IHooksService>({
-  channelName: "hooks",
-  classification: "A",
+  channelName: 'hooks',
+  classification: 'A',
   impl: hooksServiceImpl,
-  throws: ["saveHooks", "grantWorkspaceHookTrust"],
+  throws: ['saveHooks', 'grantWorkspaceHookTrust'],
 });
 
-const memoryServiceImpl: Pick<IMemoryService, "loadMemory" | "listProjectMemories"> = {
+const memoryServiceImpl: Pick<IMemoryService, 'loadMemory' | 'listProjectMemories'> = {
   async loadMemory(): Promise<{ memory: Memory | null }> {
     return { memory: null }; // 无 memory 文件
   },
@@ -127,8 +127,8 @@ const memoryServiceImpl: Pick<IMemoryService, "loadMemory" | "listProjectMemorie
 };
 /** A: 映射 core memory/ ZS2+；loadMemory null、listProjectMemories 空；saveMemory/clearMemory throw */
 export const memoryServiceStub: IMemoryService = createStubService<IMemoryService>({
-  channelName: "memory",
-  classification: "A",
+  channelName: 'memory',
+  classification: 'A',
   impl: memoryServiceImpl,
-  throws: ["saveMemory", "clearMemory"],
+  throws: ['saveMemory', 'clearMemory'],
 });

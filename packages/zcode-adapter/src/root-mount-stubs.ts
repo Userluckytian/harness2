@@ -11,7 +11,7 @@
  *   动作路径（登录/支付/连接）throw——空数据下这些入口自然不可达；
  * - B 类除空态实证触达的方法外全部 throw。
  */
-import { randomUUID } from "node:crypto";
+import { randomUUID } from 'node:crypto';
 import type {
   AppSettings,
   DynamicWorkflowClientConfig,
@@ -20,14 +20,14 @@ import type {
   SourceServerManagementSnapshot,
   UserInfo,
   ZCodeTaskMeta,
-} from "@zcode/shared";
+} from '@zcode/shared';
 import type {
   ControllerSubscribeResult,
   ControllerResyncParams,
   ControllerSubscribeParams,
   ControllerUnsubscribeParams,
   WindowHostTaskAddress,
-} from "@zcode/shared/zcode-protocol-v4";
+} from '@zcode/shared/zcode-protocol-v4';
 import type {
   IBroadcastService,
   IBotsService,
@@ -55,10 +55,10 @@ import type {
   VirtualProject,
   WindowHostControllerTaskListResult,
   ZCodeTaskListQuery,
-} from "@zcode/services";
-import { createStubService } from "./stub-factory.js";
+} from '@zcode/services';
+import { createStubService } from './stub-factory.js';
 // ── A 类：Root 挂载 9 服务之 setting / credential / provider-settings / model-selection ──
-const settingServiceImpl: Pick<ISettingService, "get"> = {
+const settingServiceImpl: Pick<ISettingService, 'get'> = {
   // Root.tsx:397-399 用 !== false / === true 判定，undefined 均有缺省语义。
   // providerFamilyDomain（编排者 2026-10-20 指示：harness2 无账户体系、壳不得有登录门）：
   // 登录门判据 `!providerFamilyDomain || (!user && !hasUsableProvider)`（useProviderAvailabilityLoginEntryGuard）
@@ -68,32 +68,32 @@ const settingServiceImpl: Pick<ISettingService, "get"> = {
   async get(): Promise<AppSettings> {
     return {
       recentProjects: [],
-      locale: "en-US",
-      providerFamilyDomain: "zai",
+      locale: 'en-US',
+      providerFamilyDomain: 'zai',
       providerFamilyDomainMigrated: true,
-      onboardingOccupation: "other",
+      onboardingOccupation: 'other',
     };
   },
 };
 /** A: 映射 core settings ZS2+；读空态形状，写 throw */
 export const settingServiceStub: ISettingService = createStubService<ISettingService>({
-  channelName: "setting",
-  classification: "A",
+  channelName: 'setting',
+  classification: 'A',
   impl: settingServiceImpl,
-  throws: ["update", "updateDataBaseDir"],
+  throws: ['update', 'updateDataBaseDir'],
 });
 
-const credentialServiceImpl: Pick<ICredentialService, "load"> = {
+const credentialServiceImpl: Pick<ICredentialService, 'load'> = {
   async load(): Promise<string | null> {
     return null; // 未登录：无凭据
   },
 };
 /** A: 映射 core auth.json ZS2+ */
 export const credentialServiceStub: ICredentialService = createStubService<ICredentialService>({
-  channelName: "credential",
-  classification: "A",
+  channelName: 'credential',
+  classification: 'A',
   impl: credentialServiceImpl,
-  throws: ["save", "delete"],
+  throws: ['save', 'delete'],
 });
 
 const emptyProviderSettingsView: ProviderSettingsView = {
@@ -102,10 +102,7 @@ const emptyProviderSettingsView: ProviderSettingsView = {
   providerOrder: [],
   providers: [],
 };
-const providerSettingsServiceImpl: Pick<
-  IProviderSettingsService,
-  "getView" | "refresh"
-> = {
+const providerSettingsServiceImpl: Pick<IProviderSettingsService, 'getView' | 'refresh'> = {
   async getView(): Promise<ProviderSettingsView> {
     return emptyProviderSettingsView;
   },
@@ -114,53 +111,51 @@ const providerSettingsServiceImpl: Pick<
   },
 };
 /** A: 映射 core provider/ ZS2+；空 view（无 provider） */
-export const providerSettingsServiceStub: IProviderSettingsService =
-  createStubService<IProviderSettingsService>({
-    channelName: "provider-settings",
-    classification: "A",
-    impl: providerSettingsServiceImpl,
-    throws: [
-      "createPersonalProvider",
-      "savePersonalProviderOverlay",
-      "deletePersonalProvider",
-      "reorderPersonalProviders",
-      "reorderPersonalModels",
-      "addPersonalModel",
-      "renamePersonalModel",
-      "deletePersonalModel",
-      "savePersonalModelDraft",
-      "setPersonalModelEnabled",
-      "testModelConnectivity",
-    ],
-  });
+export const providerSettingsServiceStub: IProviderSettingsService = createStubService<IProviderSettingsService>({
+  channelName: 'provider-settings',
+  classification: 'A',
+  impl: providerSettingsServiceImpl,
+  throws: [
+    'createPersonalProvider',
+    'savePersonalProviderOverlay',
+    'deletePersonalProvider',
+    'reorderPersonalProviders',
+    'reorderPersonalModels',
+    'addPersonalModel',
+    'renamePersonalModel',
+    'deletePersonalModel',
+    'savePersonalModelDraft',
+    'setPersonalModelEnabled',
+    'testModelConnectivity',
+  ],
+});
 
-const modelSelectionServiceImpl: Pick<IModelSelectionService, "getView"> = {
+const modelSelectionServiceImpl: Pick<IModelSelectionService, 'getView'> = {
   async getView(): Promise<ModelSelectionView> {
     return { revision: 0, providers: [] }; // 无 provider → UI 落 WelcomeScreen
   },
 };
 /** A: 映射 core provider/ ZS2+ */
-export const modelSelectionServiceStub: IModelSelectionService =
-  createStubService<IModelSelectionService>({
-    channelName: "model-selection",
-    classification: "A",
-    impl: modelSelectionServiceImpl,
-  });
+export const modelSelectionServiceStub: IModelSelectionService = createStubService<IModelSelectionService>({
+  channelName: 'model-selection',
+  classification: 'A',
+  impl: modelSelectionServiceImpl,
+});
 
 // ── B 类空态触达：zcode-agent / broadcast / window-controller / project / task-groups ──
 
-const zcodeAgentServiceImpl: Pick<IZCodeAgentService, "syncAppRuntimePreferences"> = {
+const zcodeAgentServiceImpl: Pick<IZCodeAgentService, 'syncAppRuntimePreferences'> = {
   // Root.tsx:396-411 空态初始化运行时偏好；ZS1 无 agent runtime，静默接受
   async syncAppRuntimePreferences(): Promise<void> {},
 };
 /** B: v4 conversation 竖切 ZS2/ZS3（最大项）；syncAppRuntimePreferences 空态 void */
 export const zcodeAgentServiceStub: IZCodeAgentService = createStubService<IZCodeAgentService>({
-  channelName: "zcode-agent",
-  classification: "B",
+  channelName: 'zcode-agent',
+  classification: 'B',
   impl: zcodeAgentServiceImpl,
 });
 
-const broadcastServiceImpl: Pick<IBroadcastService, "send" | "tryClaim"> = {
+const broadcastServiceImpl: Pick<IBroadcastService, 'send' | 'tryClaim'> = {
   // ZS1 单窗口：send 丢弃（无接收者）、tryClaim 恒 true（无竞争者）；
   // acquireClaim/commitClaim/releaseClaim 走 throws（跨窗口 claim 能力不可用，显式失败）
   async send(): Promise<void> {},
@@ -170,10 +165,10 @@ const broadcastServiceImpl: Pick<IBroadcastService, "send" | "tryClaim"> = {
 };
 /** B: 跨窗口广播；onMessage 永不触发（工厂默认 Event.None） */
 export const broadcastServiceStub: IBroadcastService = createStubService<IBroadcastService>({
-  channelName: "broadcast",
-  classification: "B",
+  channelName: 'broadcast',
+  classification: 'B',
   impl: broadcastServiceImpl,
-  throws: ["acquireClaim", "commitClaim", "releaseClaim"],
+  throws: ['acquireClaim', 'commitClaim', 'releaseClaim'],
 });
 
 const windowControllerServiceImpl: {
@@ -188,12 +183,12 @@ const windowControllerServiceImpl: {
   },
   async subscribeControllerV4(): Promise<ControllerSubscribeResult> {
     return {
-      ack: { subscriptionId: `zs1-${randomUUID()}`, mode: "snapshot", logEpoch: "zs1-stub" },
+      ack: { subscriptionId: `zs1-${randomUUID()}`, mode: 'snapshot', logEpoch: 'zs1-stub' },
     };
   },
   async resyncControllerV4(): Promise<ControllerSubscribeResult> {
     return {
-      ack: { subscriptionId: `zs1-${randomUUID()}`, mode: "snapshot", logEpoch: "zs1-stub" },
+      ack: { subscriptionId: `zs1-${randomUUID()}`, mode: 'snapshot', logEpoch: 'zs1-stub' },
     };
   },
   async unsubscribeControllerV4(): Promise<void> {},
@@ -202,13 +197,12 @@ const windowControllerServiceImpl: {
   },
 };
 /** B: 窗口聚合投影；空态方法空形状（boot log 高频触达），变更动作 throw */
-export const windowControllerServiceStub: IWindowControllerService =
-  createStubService<IWindowControllerService>({
-    channelName: "window-controller",
-    classification: "B",
-    impl: windowControllerServiceImpl,
-    throws: ["mutateTask", "deleteArchivedTask", "deleteArchivedTasks"],
-  });
+export const windowControllerServiceStub: IWindowControllerService = createStubService<IWindowControllerService>({
+  channelName: 'window-controller',
+  classification: 'B',
+  impl: windowControllerServiceImpl,
+  throws: ['mutateTask', 'deleteArchivedTask', 'deleteArchivedTasks'],
+});
 
 const projectServiceImpl: {
   readTree(params?: { includeDeleted?: boolean; includeDeletedTasks?: boolean; hostId?: string }): Promise<ProjectTree>;
@@ -223,20 +217,20 @@ const projectServiceImpl: {
 };
 /** B: 项目树；readTree/readProjects 空态空形状（boot log 3 次触达） */
 export const projectServiceStub: IProjectService = createStubService<IProjectService>({
-  channelName: "project",
-  classification: "B",
+  channelName: 'project',
+  classification: 'B',
   impl: projectServiceImpl,
 });
 
-const taskGroupServiceImpl: Pick<ITaskGroupService, "read"> = {
+const taskGroupServiceImpl: Pick<ITaskGroupService, 'read'> = {
   async read(): Promise<TaskGroupStructure> {
     return { groups: [], members: [], order: [] };
   },
 };
 /** B: 任务分组；read 空态空结构（boot log 2 次触达） */
 export const taskGroupServiceStub: ITaskGroupService = createStubService<ITaskGroupService>({
-  channelName: "task-groups",
-  classification: "B",
+  channelName: 'task-groups',
+  classification: 'B',
   impl: taskGroupServiceImpl,
 });
 
@@ -244,18 +238,14 @@ export const taskGroupServiceStub: ITaskGroupService = createStubService<ITaskGr
 
 /** harness2 本地身份（无账户体系；编排者 2026-10-20 指示「无登录门」的桩身份） */
 const harness2LocalUserInfo: UserInfo = {
-  id: "harness2-local",
-  username: "harness2",
-  displayName: "harness2",
+  id: 'harness2-local',
+  username: 'harness2',
+  displayName: 'harness2',
 };
 
 const oauthServiceImpl: Pick<
   IOAuthService,
-  | "getProviders"
-  | "getActiveProvider"
-  | "restoreCachedSession"
-  | "restoreCachedSessionState"
-  | "restoreSession"
+  'getProviders' | 'getActiveProvider' | 'restoreCachedSession' | 'restoreCachedSessionState' | 'restoreSession'
 > = {
   async getProviders(): Promise<[]> {
     return []; // 无可用 OAuth provider（harness2 无账户体系）
@@ -272,7 +262,7 @@ const oauthServiceImpl: Pick<
     // 编排者 2026-10-20 指示：无登录门——桩报告稳定的「已登录·本地身份」，
     // 使 useProviderAvailabilityLoginEntryGuard 判 shouldOpenLoginEntry=false，
     // UI 跳过 WelcomeScreen 直达主壳空工作区。onDidChangeSession 永不触发（身份恒定）。
-    return { status: "authenticated", userInfo: harness2LocalUserInfo };
+    return { status: 'authenticated', userInfo: harness2LocalUserInfo };
   },
   async restoreSession(): Promise<UserInfo> {
     return harness2LocalUserInfo;
@@ -280,37 +270,37 @@ const oauthServiceImpl: Pick<
 };
 /** C: ZCode OAuth；读路径未登录态；登录动作 throw（ZS2 映射 core auth 或 ZS6 隐藏） */
 export const oauthServiceStub: IOAuthService = createStubService<IOAuthService>({
-  channelName: "oauth",
-  classification: "C",
+  channelName: 'oauth',
+  classification: 'C',
   impl: oauthServiceImpl,
   throws: [
-    "startOAuth",
-    "startOAuthWithPolling",
-    "pollPendingOAuth",
-    "handleCallback",
-    "refreshToken",
-    "logout",
-    "logoutAll",
-    "cancelPending",
+    'startOAuth',
+    'startOAuthWithPolling',
+    'pollPendingOAuth',
+    'handleCallback',
+    'refreshToken',
+    'logout',
+    'logoutAll',
+    'cancelPending',
   ],
 });
 
 const disabledDynamicWorkflowConfig: DynamicWorkflowClientConfig = {
-  mode: "disabled",
+  mode: 'disabled',
   enabled: false,
-  source: "default",
-  offeredMode: "disabled",
+  source: 'default',
+  offeredMode: 'disabled',
 };
 const codingPlanSubscriptionServiceImpl: Pick<
   ICodingPlanSubscriptionService,
-  | "getDynamicWorkflowClientConfig"
-  | "getOffPeakClientConfig"
-  | "getStaticProducts"
-  | "getStaticTeamProducts"
-  | "getStartPlanPreview"
-  | "getBillingDiscount"
-  | "getRequestVerificationConfig"
-  | "getForceUpdateConfig"
+  | 'getDynamicWorkflowClientConfig'
+  | 'getOffPeakClientConfig'
+  | 'getStaticProducts'
+  | 'getStaticTeamProducts'
+  | 'getStartPlanPreview'
+  | 'getBillingDiscount'
+  | 'getRequestVerificationConfig'
+  | 'getForceUpdateConfig'
 > = {
   // fail-closed：动态工作流关闭（红线⑩——不暴露未实现入口）
   async getDynamicWorkflowClientConfig(): Promise<DynamicWorkflowClientConfig> {
@@ -341,69 +331,60 @@ const codingPlanSubscriptionServiceImpl: Pick<
 /** C: 订阅购买；读路径空数据（订阅页显示空产品 → 无可点支付入口），支付动作 throw */
 export const codingPlanSubscriptionServiceStub: ICodingPlanSubscriptionService =
   createStubService<ICodingPlanSubscriptionService>({
-    channelName: "coding-plan-subscription",
-    classification: "C",
+    channelName: 'coding-plan-subscription',
+    classification: 'C',
     impl: codingPlanSubscriptionServiceImpl,
     throws: [
-      "batchPreview",
-      "getManualClaimPlanPreviews",
-      "claimManualPlan",
-      "getModelContextBudgetStrategy",
-      "productInfo",
-      "preview",
-      "createSign",
-      "updateSign",
-      "checkPayment",
-      "checkPendingOrders",
-      "queryStripeCards",
-      "bindStripeCard",
-      "unbindStripeCard",
-      "payStripe",
-      "checkPaypalSupport",
-      "createPaypalSetupToken",
-      "subscribePaypal",
-      "getEnterprisePricing",
-      "getEnterpriseBalance",
-      "calculateEnterpriseOrder",
-      "createEnterpriseOrder",
-      "getEnterprisePendingOrders",
-      "cancelEnterpriseOrder",
-      "continueEnterpriseOrderPayment",
-      "checkEnterpriseOrderStatus",
+      'batchPreview',
+      'getManualClaimPlanPreviews',
+      'claimManualPlan',
+      'getModelContextBudgetStrategy',
+      'productInfo',
+      'preview',
+      'createSign',
+      'updateSign',
+      'checkPayment',
+      'checkPendingOrders',
+      'queryStripeCards',
+      'bindStripeCard',
+      'unbindStripeCard',
+      'payStripe',
+      'checkPaypalSupport',
+      'createPaypalSetupToken',
+      'subscribePaypal',
+      'getEnterprisePricing',
+      'getEnterpriseBalance',
+      'calculateEnterpriseOrder',
+      'createEnterpriseOrder',
+      'getEnterprisePendingOrders',
+      'cancelEnterpriseOrder',
+      'continueEnterpriseOrderPayment',
+      'checkEnterpriseOrderStatus',
     ],
   });
 
-const botsServiceImpl: Pick<IBotsService, "syncAppRuntimePreferences"> = {
+const botsServiceImpl: Pick<IBotsService, 'syncAppRuntimePreferences'> = {
   async syncAppRuntimePreferences(): Promise<void> {},
 };
 /** C: ZCode 绑定码体系（≠harness2 gateway QQ bot）；syncAppRuntimePreferences 空态 void */
 export const botsServiceStub: IBotsService = createStubService<IBotsService>({
-  channelName: "bots",
-  classification: "C",
+  channelName: 'bots',
+  classification: 'C',
   impl: botsServiceImpl,
 });
 
-const remoteProjectsServiceImpl: Pick<IRemoteProjectService, "readDirectory"> = {
+const remoteProjectsServiceImpl: Pick<IRemoteProjectService, 'readDirectory'> = {
   async readDirectory(): Promise<RemoteProjectDirectory> {
     return { hosts: [], entries: [] }; // 空目录（boot log 空态 6 次触达）
   },
 };
 /** C: 远程 host 体系；readDirectory 空目录；连接动作 throw（ZS6 隐藏清单项） */
-export const remoteProjectServiceStub: IRemoteProjectService =
-  createStubService<IRemoteProjectService>({
-    channelName: "remote-projects",
-    classification: "C",
-    impl: remoteProjectsServiceImpl,
-    throws: [
-      "connectHost",
-      "saveHost",
-      "bindHost",
-      "removeHost",
-      "addEntry",
-      "refreshEntry",
-      "removeEntry",
-    ],
-  });
+export const remoteProjectServiceStub: IRemoteProjectService = createStubService<IRemoteProjectService>({
+  channelName: 'remote-projects',
+  classification: 'C',
+  impl: remoteProjectsServiceImpl,
+  throws: ['connectHost', 'saveHost', 'bindHost', 'removeHost', 'addEntry', 'refreshEntry', 'removeEntry'],
+});
 
 const emptySourceServerSnapshot: SourceServerManagementSnapshot = {
   generation: 0,
@@ -415,10 +396,7 @@ const emptySourceServerSnapshot: SourceServerManagementSnapshot = {
   abandonedPathCount: 0,
   migrationCounts: [],
 };
-const sourceServerManagementServiceImpl: Pick<
-  ISourceServerManagementService,
-  "getSnapshot"
-> = {
+const sourceServerManagementServiceImpl: Pick<ISourceServerManagementService, 'getSnapshot'> = {
   async getSnapshot(): Promise<SourceServerManagementSnapshot> {
     return emptySourceServerSnapshot;
   },
@@ -430,30 +408,29 @@ const sourceServerManagementServiceImpl: Pick<
  */
 export const sourceServerManagementServiceStub: ISourceServerManagementService =
   createStubService<ISourceServerManagementService>({
-    channelName: "source-server-management",
-    classification: "C",
+    channelName: 'source-server-management',
+    classification: 'C',
     impl: sourceServerManagementServiceImpl,
   });
 
-const marketingTouchServiceImpl: Pick<IMarketingTouchService, "query" | "report"> = {
-  async query(input: { locale: "zh-CN" | "en-US" }): Promise<MarketingTouchSnapshot & { scope: string }> {
+const marketingTouchServiceImpl: Pick<IMarketingTouchService, 'query' | 'report'> = {
+  async query(input: { locale: 'zh-CN' | 'en-US' }): Promise<MarketingTouchSnapshot & { scope: string }> {
     return {
       serverTime: 0,
       language: input.locale,
       deliveries: [],
       rejectedCount: 0,
-      scope: "zs1-stub",
+      scope: 'zs1-stub',
     };
   },
   async report(): Promise<void> {},
 };
 /** C: 运营位；query 空快照（无投放），report 静默 void */
-export const marketingTouchServiceStub: IMarketingTouchService =
-  createStubService<IMarketingTouchService>({
-    channelName: "marketing-touch",
-    classification: "C",
-    impl: marketingTouchServiceImpl,
-  });
+export const marketingTouchServiceStub: IMarketingTouchService = createStubService<IMarketingTouchService>({
+  channelName: 'marketing-touch',
+  classification: 'C',
+  impl: marketingTouchServiceImpl,
+});
 
 // ── C 类：onboarding 记录（显式桩——契约表 §5：shouldOnboard 必须为 false） ──
 //
@@ -463,7 +440,15 @@ export const marketingTouchServiceStub: IMarketingTouchService =
 
 const onboardingRecordServiceImpl: Pick<
   IOnboardingRecordService,
-  "claimAnonymousRecord" | "shouldOnboard" | "getLatestEntry" | "appendRecord" | "dismissOnboarding" | "syncSettingsFromRecord" | "updateRecordPreferences" | "getRecords" | "clearRecords"
+  | 'claimAnonymousRecord'
+  | 'shouldOnboard'
+  | 'getLatestEntry'
+  | 'appendRecord'
+  | 'dismissOnboarding'
+  | 'syncSettingsFromRecord'
+  | 'updateRecordPreferences'
+  | 'getRecords'
+  | 'clearRecords'
 > = {
   async claimAnonymousRecord(): Promise<void> {},
   async shouldOnboard(): Promise<boolean> {
@@ -485,17 +470,16 @@ const onboardingRecordServiceImpl: Pick<
 };
 
 /** C: ZCode onboarding 记录；shouldOnboard 显式 false（契约表 §5） */
-export const onboardingRecordServiceStub: IOnboardingRecordService =
-  createStubService<IOnboardingRecordService>({
-    channelName: "onboarding-record",
-    classification: "C",
-    impl: onboardingRecordServiceImpl,
-  });
+export const onboardingRecordServiceStub: IOnboardingRecordService = createStubService<IOnboardingRecordService>({
+  channelName: 'onboarding-record',
+  classification: 'C',
+  impl: onboardingRecordServiceImpl,
+});
 
 // ── 其余频道：按分类走工厂默认（A/C 读 null；B throw；事件 Event.None） ──
 
 /** C: 用量快照；空态不触达（boot log 实证），默认 null，T3 实测兜底 */
 export const usageStatsServiceStub: IUsageStatsService = createStubService<IUsageStatsService>({
-  channelName: "usage-stats",
-  classification: "C",
+  channelName: 'usage-stats',
+  classification: 'C',
 });

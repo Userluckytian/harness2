@@ -52,6 +52,8 @@ function run(a) {
     console.error(`[zs1-guard] unknown action or entry unresolved: ${a}`);
     return false;
   }
-  const r = spawnSync(process.execPath, cmd, { stdio: 'inherit' });
+  const [entry, args] = cmd;
+  // spawnSync 的 args 必须是扁平字符串数组：嵌套数组会被 String() 成逗号串（tsc 报 Unknown compiler option 实证）
+  const r = spawnSync(process.execPath, [entry, ...args], { stdio: 'inherit' });
   return (r.status ?? 1) === 0;
 }

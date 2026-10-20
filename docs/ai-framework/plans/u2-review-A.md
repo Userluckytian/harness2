@@ -28,6 +28,7 @@ A审: P0=0 P1=1 P2=2
 ## ③ 测试断言同步
 
 本提交未修改任何测试文件；现有断言仍与多数变更对齐：
+
 - `desktop-chrome.test.tsx` 仅断言 `windowFrameClass('win32', false)`，未断言 maximized，因此新增 win maximize 类不会直接破坏；但包内平台测试未覆盖新增分支，属于覆盖缺口，不是弱化。
 - `frame-styles.test.ts` 匹配 `.window-controls-btn` 的 `width: 28px; height: 28px;` 仍成立；未断言 win-maximized，新增规则不破坏。
 - App 集成测试仍以 `选择左侧会话开始对话` 文案识别空态，文案保持；新增 `conversation-no-session-new` 按钮为增量，不影响既有断言。

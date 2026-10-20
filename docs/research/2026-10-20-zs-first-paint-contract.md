@@ -70,49 +70,49 @@ Root.tsx:193 RootInner
 
 ## 4 启动期 RPC 调用清单（boot → 首帧）
 
-| # | 服务.方法 | 调用点 | 目的 | 失败/空值 UI 行为 |
-|---|---|---|---|---|
-| 1 | settingService.get | useSettingService.ts:~188 | 读 AppSettings，恢复 tab | 失败保留旧快照；loading 结束 |
-| 2 | oauthService.restoreCachedSessionState | useRootOAuthEffects.ts:150 | 恢复本地登录态 | 失败→isRestoringOAuthSession false，user 保持 null |
-| 3 | oauthService.getActiveProvider | useRootOAuthEffects.ts:162/184 | provider family 选择 | null→不写 family |
-| 4 | modelSelectionService.getView | useModelSelectionView.ts (read) via Root.tsx:306 | provider 可用性 | 失败→error 态 + 重试；空 providers→无可用 provider |
-| 5 | providerSettingsService.getView | providerSettingsSnapshot.ts:read (Root.tsx:537) | provider 设置快照 | 失败保留 LKG 或 error |
-| 6 | providerSettingsService.refresh | useRootProviderStateRefresh (Root.tsx:536) | 刷新 registry | catch warn，不阻断 |
-| 7 | zcodeAgentService.syncAppRuntimePreferences | Root.tsx:396-411 | 运行时偏好 | catch warn |
-| 8 | botsService.syncAppRuntimePreferences | Root.tsx:404-411 | Bot 偏好 | catch warn |
-| 9 | fileService.ensureConversationWorkspace | Root.tsx:1183 / useRemoteWorkspaceHistory.ts:1739 | 兜底/恢复会话工作区 | 失败→workspaceActionError 横幅；不切主壳 |
-| 10 | onboardingRecord.claimAnonymousRecord / shouldOnboard / getLatestEntry | useOnboardingTrigger.ts:69-75 / OccupationOnboarding.tsx:~256 | 首启引导判定 | 超时 3s→false；失败→false；null 服务→false |
-| 11 | broadcastService.onMessage (subscribe) | Root.tsx:335 | 跨窗口广播 | Event.None 永不触发 |
-| 12 | settingService.update (CAS) | oauthProviderFamilySelectionRefresh 等 | 写 family | throw 时 catch warn |
-| 13 | windowController.listTaskList | v4/windowControllerTaskListRegistry.ts:267 | 侧栏任务列表 | 空列表 |
-| 14 | projectService.readTree | project-sidebar/project-tree-reader.ts:15-18 | 项目树 | 空树 |
-| 15 | remoteProjectService.readDirectory | project-tree-reader.ts:13 | 远程 host | 空目录 |
-| 16 | taskGroupService.read | project-sidebar/useTaskGroups.ts:27 | 任务分组 | 空结构 |
+| #   | 服务.方法                                                              | 调用点                                                        | 目的                     | 失败/空值 UI 行为                                  |
+| --- | ---------------------------------------------------------------------- | ------------------------------------------------------------- | ------------------------ | -------------------------------------------------- |
+| 1   | settingService.get                                                     | useSettingService.ts:~188                                     | 读 AppSettings，恢复 tab | 失败保留旧快照；loading 结束                       |
+| 2   | oauthService.restoreCachedSessionState                                 | useRootOAuthEffects.ts:150                                    | 恢复本地登录态           | 失败→isRestoringOAuthSession false，user 保持 null |
+| 3   | oauthService.getActiveProvider                                         | useRootOAuthEffects.ts:162/184                                | provider family 选择     | null→不写 family                                   |
+| 4   | modelSelectionService.getView                                          | useModelSelectionView.ts (read) via Root.tsx:306              | provider 可用性          | 失败→error 态 + 重试；空 providers→无可用 provider |
+| 5   | providerSettingsService.getView                                        | providerSettingsSnapshot.ts:read (Root.tsx:537)               | provider 设置快照        | 失败保留 LKG 或 error                              |
+| 6   | providerSettingsService.refresh                                        | useRootProviderStateRefresh (Root.tsx:536)                    | 刷新 registry            | catch warn，不阻断                                 |
+| 7   | zcodeAgentService.syncAppRuntimePreferences                            | Root.tsx:396-411                                              | 运行时偏好               | catch warn                                         |
+| 8   | botsService.syncAppRuntimePreferences                                  | Root.tsx:404-411                                              | Bot 偏好                 | catch warn                                         |
+| 9   | fileService.ensureConversationWorkspace                                | Root.tsx:1183 / useRemoteWorkspaceHistory.ts:1739             | 兜底/恢复会话工作区      | 失败→workspaceActionError 横幅；不切主壳           |
+| 10  | onboardingRecord.claimAnonymousRecord / shouldOnboard / getLatestEntry | useOnboardingTrigger.ts:69-75 / OccupationOnboarding.tsx:~256 | 首启引导判定             | 超时 3s→false；失败→false；null 服务→false         |
+| 11  | broadcastService.onMessage (subscribe)                                 | Root.tsx:335                                                  | 跨窗口广播               | Event.None 永不触发                                |
+| 12  | settingService.update (CAS)                                            | oauthProviderFamilySelectionRefresh 等                        | 写 family                | throw 时 catch warn                                |
+| 13  | windowController.listTaskList                                          | v4/windowControllerTaskListRegistry.ts:267                    | 侧栏任务列表             | 空列表                                             |
+| 14  | projectService.readTree                                                | project-sidebar/project-tree-reader.ts:15-18                  | 项目树                   | 空树                                               |
+| 15  | remoteProjectService.readDirectory                                     | project-tree-reader.ts:13                                     | 远程 host                | 空目录                                             |
+| 16  | taskGroupService.read                                                  | project-sidebar/useTaskGroups.ts:27                           | 任务分组                 | 空结构                                             |
 
 ## 5 最小渲染契约表（桩必须返回）
 
-| 服务.方法 | 必须返回形状（字段级） | 渲染结果 |
-|---|---|---|
-| settingService.get | `{recentProjects:[], locale, providerFamilyDomain:"zai", providerFamilyDomainMigrated:true}` (+lastActiveWorkspace null/undefined) | 无 startup block 后进入 fallback |
-| oauthService.restoreCachedSessionState | `{status:"authenticated", userInfo:{id,username,displayName}}` | user 非空，跳过 WelcomeScreen |
-| oauthService.getActiveProvider | `null` | 不触发 family 写入 |
-| modelSelectionService.getView | `{revision:number, providers:[]}` | hasUsableProvider false 但 guard 关闭 |
-| providerSettingsService.getView | `{revision:0, providerTemplates:[], providerOrder:[], providers:[]}` | 设置页空态 |
-| credentialService.load | `null` | 无凭据 |
-| fileService.ensureConversationWorkspace | `{path:string, created:boolean, workspacePurpose:"conversation"}` | 兜底 tab → workspaceShellPath 非空 → 主壳 |
-| onboardingRecordService.claimAnonymousRecord | `void` | 认领匿名记录 |
-| onboardingRecordService.shouldOnboard | `false` | 跳过 OccupationOnboarding 全屏引导 |
-| onboardingRecordService.getLatestEntry | `null` | 无预填 |
-| zcodeAgentService.syncAppRuntimePreferences | `void` | 无 throw |
-| botsService.syncAppRuntimePreferences | `void` | 无 throw |
-| broadcastService.onMessage/send/tryClaim | `Event.None` / `void` / `true` | 单窗口无广播 |
-| windowControllerService.listTaskList | `{items:[], total:0, hasMore:false}` | 空任务列表 |
-| windowControllerService.subscribeControllerV4/resync | `{ack:{subscriptionId,mode:"snapshot",logEpoch}}` | 订阅成功 |
-| projectService.readTree | `{projects:[], tasks:[]}` (+deletedTasks 可省) | 空项目树 |
-| taskGroupService.read | `{groups:[], members:[], order:[]}` | 空分组 |
-| remoteProjectService.readDirectory | `{hosts:[], entries:[]}` | 空远程目录 |
-| sourceServerManagementService.getSnapshot | `{generation:0, profiles:[], servers:[], workspaceHistory:[], states:[], failedPathCount:0, abandonedPathCount:0, migrationCounts:[]}` | 空源服务器 |
-| marketingTouchService.query | `{serverTime, language, deliveries:[], rejectedCount:0, scope}` | 无运营位 |
+| 服务.方法                                            | 必须返回形状（字段级）                                                                                                                 | 渲染结果                                  |
+| ---------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------- |
+| settingService.get                                   | `{recentProjects:[], locale, providerFamilyDomain:"zai", providerFamilyDomainMigrated:true}` (+lastActiveWorkspace null/undefined)     | 无 startup block 后进入 fallback          |
+| oauthService.restoreCachedSessionState               | `{status:"authenticated", userInfo:{id,username,displayName}}`                                                                         | user 非空，跳过 WelcomeScreen             |
+| oauthService.getActiveProvider                       | `null`                                                                                                                                 | 不触发 family 写入                        |
+| modelSelectionService.getView                        | `{revision:number, providers:[]}`                                                                                                      | hasUsableProvider false 但 guard 关闭     |
+| providerSettingsService.getView                      | `{revision:0, providerTemplates:[], providerOrder:[], providers:[]}`                                                                   | 设置页空态                                |
+| credentialService.load                               | `null`                                                                                                                                 | 无凭据                                    |
+| fileService.ensureConversationWorkspace              | `{path:string, created:boolean, workspacePurpose:"conversation"}`                                                                      | 兜底 tab → workspaceShellPath 非空 → 主壳 |
+| onboardingRecordService.claimAnonymousRecord         | `void`                                                                                                                                 | 认领匿名记录                              |
+| onboardingRecordService.shouldOnboard                | `false`                                                                                                                                | 跳过 OccupationOnboarding 全屏引导        |
+| onboardingRecordService.getLatestEntry               | `null`                                                                                                                                 | 无预填                                    |
+| zcodeAgentService.syncAppRuntimePreferences          | `void`                                                                                                                                 | 无 throw                                  |
+| botsService.syncAppRuntimePreferences                | `void`                                                                                                                                 | 无 throw                                  |
+| broadcastService.onMessage/send/tryClaim             | `Event.None` / `void` / `true`                                                                                                         | 单窗口无广播                              |
+| windowControllerService.listTaskList                 | `{items:[], total:0, hasMore:false}`                                                                                                   | 空任务列表                                |
+| windowControllerService.subscribeControllerV4/resync | `{ack:{subscriptionId,mode:"snapshot",logEpoch}}`                                                                                      | 订阅成功                                  |
+| projectService.readTree                              | `{projects:[], tasks:[]}` (+deletedTasks 可省)                                                                                         | 空项目树                                  |
+| taskGroupService.read                                | `{groups:[], members:[], order:[]}`                                                                                                    | 空分组                                    |
+| remoteProjectService.readDirectory                   | `{hosts:[], entries:[]}`                                                                                                               | 空远程目录                                |
+| sourceServerManagementService.getSnapshot            | `{generation:0, profiles:[], servers:[], workspaceHistory:[], states:[], failedPathCount:0, abandonedPathCount:0, migrationCounts:[]}` | 空源服务器                                |
+| marketingTouchService.query                          | `{serverTime, language, deliveries:[], rejectedCount:0, scope}`                                                                        | 无运营位                                  |
 
 ## 6 harness2 zcode-adapter 差距清单
 

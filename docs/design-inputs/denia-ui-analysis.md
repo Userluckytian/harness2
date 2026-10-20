@@ -21,6 +21,7 @@
 - ⚠️ 反例：其标题栏 CSS 只在 `min-width:821px` 显示，窄窗口无窗控（`shell.css:15`）——harness2 做窄窗适配时别抄漏。
 
 ### ② 托盘 → **Denia 未实现**（搜过 tray/TrayIcon/minimize-to-tray/globalShortcut/single-instance，含 Rust/web/conf/capabilities；`tauri` features=[]，`Cargo.lock` 的 tray-icon 仅传递依赖）。替代做法两个：
+
 - `ExitGate`（`main.rs:251-295`）：拦 `ExitRequested`，先发停机信号等 serve 收尾（杀隧道、关 listener）才真退出——关窗=退出，但退得干净。
 - **隐藏控制台消黑框**（`crates/desktop/src/console.rs:1-34`）：GUI 子系统程序没有控制台，子进程（git/bash/MCP）默认各新建一个=每次 spawn 闪黑框；解法是启动时 AttachConsole/AllocConsole+立即隐藏，让**所有子进程继承这个隐藏控制台**，不必逐处补 CREATE_NO_WINDOW。⚠️ harness2 桌面 spawn serve/终端时大概率同病，值得单独立项验证。
 
@@ -66,6 +67,7 @@
 ## 值得借鉴 Top 5 / 不适合 Top 2
 
 **Top5**（按对本期目标的价值排序）：
+
 1. **常驻自绘标题栏**（结构上杜绝空态无窗控）+ 启动占位页兜底 → harness2 对应 Z-46 overlay 窗控方案的落地佐证。
 2. **组头 hover「在此项目新建」+ 行级删除(disabled=running) + 自定义 ConfirmDialog** → 直接补齐痛点③的入口密度；「空白会话离开即删」是列表治理巧招。
 3. **原生目录框「spawn 短命子进程夺前台」修 + pickDirectory 0 超时** → 痛点③「+」慢/落任务栏的根因级解法（Electron 下同理可用：主进程弹框失前台时可考虑 `win.setAlwaysOnTop` 短暂提升或 `parent` 绑定修复，先复现定位）。
@@ -73,5 +75,6 @@
 5. **性能组合拳**：增量 fold + markdown 块冻结 + IO 窗口化保留高度 + 指数收敛打字机 + 吸底心跳 + prefers-reduced-motion → 「不卡顿」诉求的工程清单模板，多数可在 ui-shared 层实施。
 
 **Top2 不适合**：
+
 1. **黑白无彩 token 体系**：harness2 已承诺「完全还原 ZCode 视觉」（refs-zcode Z-60~Z-67 的 Zai token 族），Denia 的无彩黑白与品牌暖白自成一套，视觉层只吸收其**语义 token 手法**（表面收拢），不吸收色板本身。
 2. **Tauri 专属细节**（drag-region=deep、remote ACL、ExitGate）与 **hide 原生 confirm、无归档/重命名**的功能缺口：前者不适用 Electron，后者低于 harness2 既有能力面，不倒退。
