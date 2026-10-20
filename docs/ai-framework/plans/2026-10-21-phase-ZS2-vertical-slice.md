@@ -261,3 +261,11 @@
   - 落盘：`C:/Users/ASUS/.harness2/sessions/D--AI_Projects--harness2-zs1-build--ZCode--packages--desktop/20261020-222703-eaae17/session.v1.jsonl`，事件 `session/header:1, user/message:1, step/start:1, assistant/message:1, step/end:1`。
   - `loadSession` 重放：user+assistant 各 1 条。
   - adapter tests: 38 passed; typecheck 0; protected packages diff = 0.
+
+### ZS2 cat-jam 真模型轮（最终）
+
+- 盲区根因：`agent-service` provider 构造传 `authPath: loaded.paths?.globalAuth`，但 core `loadConfig` 的 `paths` 为 undefined，导致 authPath=''，createProvider 报「渠道 local 缺少 API key」并回退 Mock。已改为 `path.join(home, '.harness2', 'auth.json')`。
+- 诊断：`zs2-diag.log` 现记录 cwd/home/provider/done；真模型轮 diag 无异常，`provider created: OpenAICompatProvider`，`runTurn done accumulated=146`。
+- 真模型轮 JSONL：`C:/Users/ASUS/.harness2/sessions/D--AI_Projects--harness2-zs1-build--ZCode--packages--desktop/20261020-224705-45aac2/session.v1.jsonl`，事件 `session/header:1, user/message:1, step/start:1, assistant/message:1, step/end:1`；`loadSession` 重放 2 条消息（user+assistant）。
+- 回复非 mock 固定文案（真实模型生成），截图 `docs/screenshots/zs2/final-ui-pass.png`。
+- mock 对照：此前 fallback Mock 轮已跑通（`Hello from harness2 mock provider.`），adapter 38 tests 覆盖。

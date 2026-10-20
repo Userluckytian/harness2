@@ -81,17 +81,22 @@ export function createAgentService(opts: AgentServiceOptions = {}): IZCodeAgentS
 
   // provider
   const defaultMock: MockScript = [{ text: 'Hello from harness2 mock provider.' }];
+  const __diag=(m:any)=>{try{require('node:fs').appendFileSync('D:/AI_Projects/harness2-zs1-build/zs2-diag.log','[agent] '+m);}catch(e){}};
+  __diag('cwd='+process.cwd()+' home='+home+' HARNESS2_HOME='+process.env.HARNESS2_HOME);
   let provider: unknown;
   try {
     const loaded = loadConfig({ root: process.cwd(), home });
+    __diag('loadConfig ok='+(!!loaded.config));
     if (loaded.config) {
       provider = createProvider(loaded.config, 'main', {
-        authPath: (loaded as { paths?: { globalAuth: string } }).paths?.globalAuth ?? '',
+        authPath: require('node:path').join(home, '.harness2', 'auth.json'),
       });
+      __diag('provider created: '+ (provider && provider.constructor && provider.constructor.name));
     } else {
       provider = new MockProvider(defaultMock);
     }
-  } catch {
+  } catch (e: any) {
+    __diag('provider load FAILED: '+(e&&e.message));
     provider = new MockProvider(defaultMock);
   }
 
@@ -160,6 +165,7 @@ export function createAgentService(opts: AgentServiceOptions = {}): IZCodeAgentS
   }
 
   async function runSession(sessionId: string, text: string, dirHint?: string) {
+    __diag('runSession start provider='+(provider && provider.constructor && provider.constructor.name)+' fetch='+(typeof globalThis.fetch));
     const targetSubs = [...subs.entries()].filter(([, s]) => s.sessionId === sessionId).map(([id]) => id);
     let resumed: any;
     if (dirHint) {
@@ -221,10 +227,12 @@ export function createAgentService(opts: AgentServiceOptions = {}): IZCodeAgentS
           }
         },
       });
-    } catch (e) {
+    } catch (e: any) {
+      __diag('runTurn FAILED: '+(e&&e.message));
       console.error('[zs2] runTurn failed:', (e as Error)?.message ?? e);
     }
-    try { resumed.writer.close(); } catch (e) { console.error('[zs2] close failed', (e as Error)?.message); }
+    __diag('runTurn done accumulated='+accumulated.length);
+    try { resumed.writer.close(); } catch (e: any) { __diag('close failed '+(e&&e.message)); console.error('[zs2] close failed', (e as Error)?.message); }
 
     const assistantRow = rows.find((r) => r.rowId === assistantRowId);
     if (assistantRow) {

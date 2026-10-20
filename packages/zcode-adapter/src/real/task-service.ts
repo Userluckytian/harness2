@@ -37,7 +37,7 @@ export function createTaskService(opts: TaskServiceOptions = {}): IZCodeTaskServ
       const loaded = loadConfig({ root: process.cwd(), home });
       if (loaded.config) {
         provider = createProvider(loaded.config, 'main', {
-          authPath: (loaded as { paths?: { globalAuth: string } }).paths?.globalAuth ?? '',
+          authPath: require('node:path').join(home, '.harness2', 'auth.json'),
         });
       } else {
         provider = new MockProvider(defaultMock);
