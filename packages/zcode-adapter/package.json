@@ -12,10 +12,9 @@
     }
   },
   "scripts": {
-    "build": "tsc -p tsconfig.json --noEmit && node build/host-bundle.mjs",
-    "build:host-bundle": "node build/host-bundle.mjs",
-    "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "vitest run"
+    "build": "node scripts/zs1-guard.mjs buildAll",
+    "typecheck": "node scripts/zs1-guard.mjs typecheck",
+    "test": "node scripts/zs1-guard.mjs test"
   },
   "devDependencies": {
     "@types/node": "^26.4.1",
