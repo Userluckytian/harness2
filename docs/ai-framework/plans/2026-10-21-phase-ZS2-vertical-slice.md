@@ -244,3 +244,10 @@
 
 1. 用户真机：新壳里亲手发一条消息、看流式回复（V8）。
 2. 用户确认 ZS2 观感后，ZS3（对话区完整）计划起草。
+
+### ZS2 收口（cat-jam）最终修正
+- Gate A：`session-service` 的 `getWorkspaceRuntimeIdentity`/`initializeWorkspace` 不再返回 `'harness2'` identity/workspaceKey，避免 tab 被误判为 remote target。
+- Gate B：`provider-views` 的 `getView` 接受 input selection 并回填 `effectiveSelection`，恢复 Composer submissionReady。
+- 帧契约：`agent-service.helloConversationV4` 补全 helloMessageSchema 必填字段；`sentAt`/`startedAt`/`createdAt` 改为 number；`independentPlanState: true`。
+- projectService 补全 `resolveSessionDirectories`。
+- 验证：adapter 38 tests 绿；typecheck 0；protected packages diff = 0；e2e 证明 sendConversationCommandV4 被走到并落盘 JSONL（user/message + assistant/message）。
