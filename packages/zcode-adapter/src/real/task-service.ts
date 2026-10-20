@@ -6,6 +6,7 @@ import {
   loadConfig,
   createProvider,
   runTurn,
+  resolveHarness2Home,
 } from './core-bridge.js';
 import { MockProvider } from './core-bridge.js';
 import type { IZCodeTaskService } from '@zcode/services';
@@ -19,7 +20,7 @@ export interface TaskServiceOptions {
 }
 
 export function createTaskService(opts: TaskServiceOptions = {}): IZCodeTaskService {
-  const home = opts.home;
+  const home = opts.home ?? resolveHarness2Home();
   const sessionsRoot = defaultSessionsRoot(home);
   const manager = createSessionManager(sessionsRoot);
   const aborts = new Map<string, AbortController>();

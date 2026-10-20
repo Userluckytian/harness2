@@ -1,7 +1,7 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { homedir } from 'node:os';
-import { loadConfig, defaultConfigPaths, readAuthFile, redactSecrets } from './core-bridge.js';
+import { loadConfig, defaultConfigPaths, readAuthFile, redactSecrets, resolveHarness2Home } from './core-bridge.js';
 import type { IModelSelectionService, IProviderSettingsService } from '@zcode/services';
 import { createStubService } from '../stub-factory.js';
 
@@ -18,7 +18,7 @@ function readConfig(dataRoot?: string, home?: string) {
 }
 
 export function createModelSelectionService(opts: ProviderViewsOptions = {}): IModelSelectionService {
-  const home = opts.home ?? homedir();
+  const home = opts.home ?? resolveHarness2Home();
   const impl = {
     async getView(): Promise<unknown> {
       try {
@@ -65,7 +65,7 @@ export function createModelSelectionService(opts: ProviderViewsOptions = {}): IM
 }
 
 export function createProviderSettingsService(opts: ProviderViewsOptions = {}): IProviderSettingsService {
-  const home = opts.home ?? homedir();
+  const home = opts.home ?? resolveHarness2Home();
   const impl = {
     async getView(): Promise<unknown> {
       try {

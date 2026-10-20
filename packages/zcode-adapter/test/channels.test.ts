@@ -39,7 +39,7 @@ describe('channel registry', () => {
     const b = createHarness2Services();
     expect(a.services).not.toBe(b.services);
     expect(a.registeredChannels).not.toBe(b.registeredChannels);
-    // 显式桩共享同一实例（无状态单例）；默认桩每次现场生成
-    expect(a.services.getOptional(ISettingService)).toBe(b.services.getOptional(ISettingService));
+    // ZS2 起真实服务按调用创建，无共享单例
+    expect(a.services.getOptional(ISettingService)).not.toBe(b.services.getOptional(ISettingService));
   });
 });

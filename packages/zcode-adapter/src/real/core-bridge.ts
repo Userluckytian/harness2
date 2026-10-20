@@ -1,5 +1,11 @@
 import { createRequire } from 'node:module';
+import { homedir } from 'node:os';
 import path from 'node:path';
+
+export function resolveHarness2Home(): string {
+  if (process.env.HARNESS2_HOME) return process.env.HARNESS2_HOME;
+  return homedir();
+}
 
 import type {
   HarnessConfig,

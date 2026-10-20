@@ -106,52 +106,7 @@ import {
   zcodeAgentServiceStub,
 } from './root-mount-stubs.js';
 
-  const realFileService = createFileService();
-  const realSessionService = createSessionService();
-  const realTaskService = createTaskService();
-  const realAgentService = createAgentService();
-  const realModelSelectionService = createModelSelectionService();
-  const realProviderSettingsService = createProviderSettingsService();
-  const realSettingsStore = createSettingsStore();
-  const realSettingService = createStubService<ISettingService>({
-    channelName: 'setting',
-    classification: 'A',
-    impl: {
-      async get() { return realSettingsStore.get(); },
-      async update(p: unknown) { return realSettingsStore.update(p as never); },
-      async updateDataBaseDir() { throw new Error('ZS2: not implemented'); },
-    },
-    throws: [],
-  });
-
-  /** 显式桩表：频道名 → 已实例化的桩（其余频道按注册表分类现场生成默认桩） */
-  const EXPLICIT_STUBS = new Map<string, unknown>([
-    [IBroadcastService.channelName, broadcastServiceStub],
-    [IBotsService.channelName, botsServiceStub],
-    [ICodingPlanSubscriptionService.channelName, codingPlanSubscriptionServiceStub],
-    [ICommandsService.channelName, commandsServiceStub],
-    [ICredentialService.channelName, credentialServiceStub],
-    [IFileService.channelName, realFileService],
-    [IHooksService.channelName, hooksServiceStub],
-    [IMarketingTouchService.channelName, marketingTouchServiceStub],
-    [IMemoryService.channelName, memoryServiceStub],
-    [IModelSelectionService.channelName, realModelSelectionService],
-    [IOnboardingRecordService.channelName, onboardingRecordServiceStub],
-    [IOAuthService.channelName, oauthServiceStub],
-    [IProjectService.channelName, projectServiceStub],
-    [IProviderSettingsService.channelName, realProviderSettingsService],
-    [IRemoteProjectService.channelName, remoteProjectServiceStub],
-    [ISettingService.channelName, realSettingService],
-    [ISkillsService.channelName, skillsServiceStub],
-    [ISourceServerManagementService.channelName, sourceServerManagementServiceStub],
-    [ISubagentsService.channelName, subagentsServiceStub],
-    [ITaskGroupService.channelName, taskGroupServiceStub],
-    [IUsageStatsService.channelName, usageStatsServiceStub],
-    [IWindowControllerService.channelName, windowControllerServiceStub],
-    [IZCodeAgentService.channelName, realAgentService],
-    [IZCodeSessionService.channelName, realSessionService],
-    [IZCodeTaskService.channelName, realTaskService],
-  ]);
+// (real services built lazily inside createHarness2Services)
 
 /** descriptor 表：频道名 → ServiceDescriptor（注册用） */
 const DESCRIPTORS = new Map<string, { channelName: string }>([
@@ -225,7 +180,61 @@ export interface Harness2ServicesResult {
  * 装配 harness2 ZS1 桩服务集合。
  * 幂等：每次调用返回全新实例（ServiceCollection 无全局状态）。
  */
-export function createHarness2Services(): Harness2ServicesResult {
+export interface Harness2ServicesOptions {
+  home?: string;
+  dataRoot?: string;
+}
+
+export function createHarness2Services(opts: Harness2ServicesOptions = {}): Harness2ServicesResult {
+  const home = opts.home ?? process.env.HARNESS2_HOME;
+  const dataRoot = opts.dataRoot ?? process.env.HARNESS2_DATA_ROOT;
+
+  const realFileService = createFileService({ dataRoot, home });
+  const realSessionService = createSessionService({ dataRoot, home });
+  const realTaskService = createTaskService({ dataRoot, home });
+  const realAgentService = createAgentService({ dataRoot, home });
+  const realModelSelectionService = createModelSelectionService({ dataRoot, home });
+  const realProviderSettingsService = createProviderSettingsService({ dataRoot, home });
+  const realSettingsStore = createSettingsStore({ dataRoot, home });
+  const realSettingService = createStubService<ISettingService>({
+    channelName: 'setting',
+    classification: 'A',
+    impl: {
+      async get() { return realSettingsStore.get(); },
+      async update(p: unknown) { return realSettingsStore.update(p as never); },
+      async updateDataBaseDir() { throw new Error('ZS2: not implemented'); },
+    },
+    throws: [],
+  });
+
+  const EXPLICIT_STUBS = new Map<string, unknown>([
+    [IBroadcastService.channelName, broadcastServiceStub],
+    [IBotsService.channelName, botsServiceStub],
+    [ICodingPlanSubscriptionService.channelName, codingPlanSubscriptionServiceStub],
+    [ICommandsService.channelName, commandsServiceStub],
+    [ICredentialService.channelName, credentialServiceStub],
+    [IFileService.channelName, realFileService],
+    [IHooksService.channelName, hooksServiceStub],
+    [IMarketingTouchService.channelName, marketingTouchServiceStub],
+    [IMemoryService.channelName, memoryServiceStub],
+    [IModelSelectionService.channelName, realModelSelectionService],
+    [IOnboardingRecordService.channelName, onboardingRecordServiceStub],
+    [IOAuthService.channelName, oauthServiceStub],
+    [IProjectService.channelName, projectServiceStub],
+    [IProviderSettingsService.channelName, realProviderSettingsService],
+    [IRemoteProjectService.channelName, remoteProjectServiceStub],
+    [ISettingService.channelName, realSettingService],
+    [ISkillsService.channelName, skillsServiceStub],
+    [ISourceServerManagementService.channelName, sourceServerManagementServiceStub],
+    [ISubagentsService.channelName, subagentsServiceStub],
+    [ITaskGroupService.channelName, taskGroupServiceStub],
+    [IUsageStatsService.channelName, usageStatsServiceStub],
+    [IWindowControllerService.channelName, windowControllerServiceStub],
+    [IZCodeAgentService.channelName, realAgentService],
+    [IZCodeSessionService.channelName, realSessionService],
+    [IZCodeTaskService.channelName, realTaskService],
+  ]);
+
   const services = new ServiceCollection();
   const registeredChannels: string[] = [];
   for (const entry of CHANNEL_REGISTRY) {

@@ -1,5 +1,6 @@
 import { createStubService } from '../stub-factory.js';
 import { createSessionManager, defaultSessionsRoot } from './core-bridge.js';
+import { resolveHarness2Home } from './core-bridge.js';
 import type { IZCodeSessionService } from '@zcode/services';
 
 export interface SessionServiceOptions {
@@ -8,7 +9,7 @@ export interface SessionServiceOptions {
 }
 
 export function createSessionService(opts: SessionServiceOptions = {}): IZCodeSessionService {
-  const home = opts.home;
+  const home = opts.home ?? resolveHarness2Home();
   const sessionsRoot = defaultSessionsRoot(home);
   const manager = createSessionManager(sessionsRoot);
 

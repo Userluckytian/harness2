@@ -4,15 +4,21 @@ import { homedir } from 'node:os';
 import type { AppSettings } from '@zcode/shared';
 
 export interface SettingsStoreOptions {
-  /** 数据根；默认 ~/.harness2 */
   dataRoot?: string;
+  home?: string;
+}
+
+function resolveHome(opts: SettingsStoreOptions): string {
+  if (opts.home) return opts.home;
+  if (process.env.HARNESS2_HOME) return process.env.HARNESS2_HOME;
+  return homedir();
 }
 
 export class SettingsStore {
   private readonly filePath: string;
 
   constructor(opts: SettingsStoreOptions = {}) {
-    const root = opts.dataRoot ?? join(homedir(), '.harness2');
+    const root = opts.dataRoot ?? join(resolveHome(opts), '.harness2');
     this.filePath = join(root, 'zs', 'setting.json');
   }
 

@@ -1,15 +1,17 @@
 import { existsSync, mkdirSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { join, resolve, isAbsolute } from 'node:path';
-import { homedir } from 'node:os';
 import { createStubService } from '../stub-factory.js';
+import { resolveHarness2Home } from './core-bridge.js';
 import type { IFileService } from '@zcode/services';
 
 export interface FileServiceOptions {
   dataRoot?: string;
+  home?: string;
 }
 
 export function createFileService(opts: FileServiceOptions = {}): IFileService {
-  const root = opts.dataRoot ?? join(homedir(), '.harness2');
+  const home = opts.home ?? resolveHarness2Home();
+  const root = opts.dataRoot ?? join(home, '.harness2');
   const impl: Record<string, unknown> = {
     async ensureConversationWorkspace(): Promise<unknown> {
       const p = join(root, '.zcode', 'workspace', 'default');
