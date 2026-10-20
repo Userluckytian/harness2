@@ -17,6 +17,7 @@ export interface TaskServiceOptions {
   home?: string;
   useMock?: boolean;
   mockScript?: string;
+  emitter?: unknown;
 }
 
 export function createTaskService(opts: TaskServiceOptions = {}): IZCodeTaskService {

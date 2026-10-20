@@ -10,6 +10,7 @@
  * 返回 @zcode/services ServiceCollection，由 host-entry 在 ChannelServer 上
  * exposeOnChannelServer 暴露（桌面 local clientMode 无曝光过滤）。
  */
+import { Emitter } from '@zcode/rpc';
 import { ServiceCollection } from '@zcode/services';
 import {
   IBroadcastService,
@@ -189,10 +190,11 @@ export function createHarness2Services(opts: Harness2ServicesOptions = {}): Harn
   const home = opts.home ?? process.env.HARNESS2_HOME;
   const dataRoot = opts.dataRoot ?? process.env.HARNESS2_DATA_ROOT;
 
+  const sharedEmitter = new Emitter<any>();
   const realFileService = createFileService({ dataRoot, home });
   const realSessionService = createSessionService({ dataRoot, home });
-  const realTaskService = createTaskService({ dataRoot, home });
-  const realAgentService = createAgentService({ dataRoot, home });
+  const realTaskService = createTaskService({ dataRoot, home, emitter: sharedEmitter });
+  const realAgentService = createAgentService({ dataRoot, home, emitter: sharedEmitter });
   const realModelSelectionService = createModelSelectionService({ dataRoot, home });
   const realProviderSettingsService = createProviderSettingsService({ dataRoot, home });
   const realSettingsStore = createSettingsStore({ dataRoot, home });

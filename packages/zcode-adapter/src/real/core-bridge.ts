@@ -53,6 +53,7 @@ export const createProvider = core.createProvider;
 export const redactSecrets = core.redactSecrets;
 export const readAuthFile = core.readAuthFile;
 export const runTurn = core.runTurn;
+export const loadSession = core.loadSession;
 export const ToolRegistry = core.ToolRegistry;
 export const MockProvider = core.MockProvider;
 
