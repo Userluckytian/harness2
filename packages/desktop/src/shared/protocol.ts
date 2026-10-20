@@ -16,6 +16,11 @@ export const IPC_SETTINGS_EVENT = 'harness2:settings-event';
 export const IPC_WINDOW_STATE = 'harness2:window-state';
 /** Z9-3：终端事件通道（data/exit）——主进程推终端输出/退出到渲染端（沿用事件通道形态） */
 export const IPC_TERMINAL_EVENT = 'harness2:terminal-event';
+/**
+ * Z-47：托盘 → 渲染端事件通道（「新建会话 / 添加项目」菜单项经主进程转发意图给渲染端）。
+ * 桌面壳专属通道（同 window-state 的桌面段归属），不进 ui-shared 线协议。
+ */
+export const IPC_TRAY_EVENT = 'harness2:tray-event';
 
 // 本文件保留段内部要用的线协议名字（`export type *` 只做再导出、不引入本地名字）。
 import type {
@@ -86,6 +91,22 @@ export interface WindowStateShape {
 export type TerminalEventFrame =
   | { type: 'terminal:data'; id: string; data: string }
   | { type: 'terminal:exit'; id: string; exitCode: number | undefined };
+
+/**
+ * Z-47：主进程 → 渲染端的托盘事件（右键菜单意图转发；渲染端 T3 接监听）。
+ * 无监听者时 webContents.send 静默无副作用（不报错），符合「主进程发出即可」。
+ */
+export type TrayUiEvent = { type: 'tray:new-session' } | { type: 'tray:add-project' };
+
+/** Z-47：`tray:status` 响应（调试 / smoke 断言：托盘是否建成、平台门、当前生效的关窗驻留偏好） */
+export interface TrayStatusShape {
+  /** 托盘实例创建成功（false = mac 平台门 / 创建失败 / smoke 未建） */
+  created: boolean;
+  /** process.platform 快照（裁决依据之一） */
+  platform: string;
+  /** 有效 closeToTray 偏好（显式存储 ?? 平台默认：win 开 / linux 关） */
+  closeToTray: boolean;
+}
 
 /** getContextUsage 响应（与终端 /context 同一数据源；value 为 0..1 或 null=未知） */
 export interface ContextUsageShape {
@@ -217,7 +238,10 @@ export type InvokeCommand =
   | { cmd: 'terminal:open'; cols: number; rows: number; cwd?: string }
   | { cmd: 'terminal:write'; id: string; data: string }
   | { cmd: 'terminal:resize'; id: string; cols: number; rows: number }
-  | { cmd: 'terminal:close'; id: string };
+  | { cmd: 'terminal:close'; id: string }
+  // —— Z-47：托盘状态查询 + 关窗驻留偏好开关（持久化进 desktop-preferences.json） ——
+  | { cmd: 'tray:status' }
+  | { cmd: 'tray:setCloseToTray'; enabled: boolean };
 
 /**
  * Z2-01b 窗口控件最小通道面（win/linux 自绘三键 + 最大化状态）。
@@ -274,9 +298,28 @@ export interface TerminalApi {
   onTerminalEvent(listener: (frame: TerminalEventFrame) => void): () => void;
 }
 
+/**
+ * Z-47：托盘通道面（以 Partial 并入 Harness2Api，同 WindowControlsApi/ProjectsApi 口径）。
+ * 生产 preload 必给；jsdom 测试夹具 / web 宿主缺通道时渲染端如实降级（设置页不摆托盘开关）。
+ * 渲染端接线属 T3；本阶段主进程侧能力与通道就绪即可。
+ */
+export interface TrayApi {
+  /** 托盘状态（created/platform/closeToTray；调试与 smoke 断言用） */
+  trayStatus(): Promise<TrayStatusShape>;
+  /** 设置「关闭窗口时隐藏到托盘」（写 desktop-preferences.json；返回写后有效值整像） */
+  traySetCloseToTray(enabled: boolean): Promise<TrayStatusShape>;
+  /** 订阅托盘菜单事件（tray:new-session / tray:add-project）；返回退订函数 */
+  onTrayEvent(listener: (event: TrayUiEvent) => void): () => void;
+}
+
 /** window.harness2 的形状（preload contextBridge 暴露） */
 export interface Harness2Api
-  extends Partial<ModelsSettingsApi>, Partial<WindowControlsApi>, Partial<ProjectsApi>, Partial<TerminalApi> {
+  extends
+    Partial<ModelsSettingsApi>,
+    Partial<WindowControlsApi>,
+    Partial<ProjectsApi>,
+    Partial<TerminalApi>,
+    Partial<TrayApi> {
   /** Z2-01b：桌面平台（preload 同步暴露）；非桌面宿主 / 旧夹具缺失时渲染端不启用平台特化 */
   readonly platform?: DesktopPlatform;
   listSessions(cwd?: string): Promise<SessionSummaryShape[]>;

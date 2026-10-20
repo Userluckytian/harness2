@@ -174,4 +174,37 @@ describe('createCloseWindowHandler（D4 关窗口接线，PD8 自动化）', () 
     expect(deps.calls.dialogs[0]?.cancelId).toBe(2);
     expect(deps.calls.dialogs[0]?.defaultId).toBe(0);
   });
+
+  // Z-47：onQuitAborted —— 本次关闭最终不会导致退出的三类路径都要回调
+  // （主进程据此回滚托盘「退出」的 explicitQuit 标志；request-stop 走真关闭 → 不回调）。
+  it('Z-47 onQuitAborted：取消 / 保持后台 / 弹窗失败 → 各回调一次；请求停止并退出 → 不回调', async () => {
+    // 取消（按钮 2）
+    const c = vi.fn();
+    let deps = makeDeps(true);
+    createCloseWindowHandler({ ...deps, onQuitAborted: c })({ preventDefault });
+    deps.respond(2);
+    await Promise.resolve();
+    expect(c).toHaveBeenCalledTimes(1);
+    // 保持后台运行（按钮 0，最小化但不退出）
+    deps = makeDeps(true);
+    createCloseWindowHandler({ ...deps, onQuitAborted: c })({ preventDefault });
+    deps.respond(0);
+    await Promise.resolve();
+    expect(c).toHaveBeenCalledTimes(2);
+    expect(deps.calls.minimize).toBe(1);
+    // 弹窗失败（保守不关）——catch 挂链上第二级，需多一个宏任务节拍
+    deps = makeDeps(true);
+    createCloseWindowHandler({ ...deps, onQuitAborted: c })({ preventDefault });
+    deps.failDialog(new Error('boom'));
+    await new Promise((r) => setTimeout(r, 0));
+    expect(c).toHaveBeenCalledTimes(3);
+    // 请求停止并退出：走真关闭链路 → 不回滚退出意图
+    deps = makeDeps(true);
+    createCloseWindowHandler({ ...deps, onQuitAborted: c })({ preventDefault });
+    deps.respond(1);
+    await Promise.resolve();
+    deps.flushClose();
+    expect(c).toHaveBeenCalledTimes(3);
+    expect(deps.calls.close).toBe(1);
+  });
 });

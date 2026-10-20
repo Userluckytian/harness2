@@ -6,7 +6,7 @@
 //   1. 用户消息右对齐气泡 / 助手消息无气泡（结构类）；
 //   2. 移除角色标签（「你」/ provider 名不出现于行内）；
 //   3. 轮次头无字面 `── turn`（纯无文案分组）；
-//   4. 摘要两态（有真实时长 → 「持续了 N 秒」；无时长 → 不显示假值，红线⑩）；
+//   4. 摘要收口（U2-C3：耗时唯一源 = 轮首 WorkIndicator，turn-summary 只留 error/warning/partial/empty）；
 //   5. MessageActions：复制动作流（点击→已复制→约 2s 还原；失败不谎报）、
 //      fork 可用性两态（无通道不渲染 / 运行中禁用+提示）、赞踩刻意不做（无后端反馈通道）；
 //   6. composer 占位符（空草稿显示 harness2 文案、有内容消失、不污染编辑器文本）。
@@ -14,7 +14,8 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { ChatItemView } from '../src/renderer/components/ChatView.js';
 import { MessageActions, copyMessageText, COPIED_REVERT_MS } from '../src/renderer/components/MessageActions.js';
-import { formatTurnDuration } from '../src/renderer/chat-model.js';
+// U2-C3：formatTurnDuration 不再由 turn-summary 消费（耗时唯一源 = WorkIndicator），
+// 纯函数单测已移除；函数保留在 chat-model（旧调用面）。
 import { Composer } from '../src/renderer/conversation/composer/Composer.js';
 import { ComposerStore, createComposerState } from '../src/renderer/conversation/composer/composer-state.js';
 import { createController } from '../src/renderer/app-controller.js';
@@ -98,37 +99,41 @@ describe('P0-1 轮次头：去掉字面 `── turn`（无文案分组，锚点
   });
 });
 
-// ═════════════════════════ 4：轮次摘要（持续了 N 秒 / 无时长省略）═════════════════════════
+// ═════════════════════════ 4：轮次摘要（U2-C3 收口：耗时归 WorkIndicator，摘要只留状态）═════════════════════════
 
-describe('P0-1 摘要文案：formatTurnDuration（ZCode 口径 + 红线⑩）', () => {
-  it('真实毫秒 → 「持续了 N 秒」（不足 1 秒按 1 秒计，避免「0 秒」假值）', () => {
-    expect(formatTurnDuration(1000)).toBe('持续了 1 秒');
-    expect(formatTurnDuration(2500)).toBe('持续了 3 秒');
-    expect(formatTurnDuration(1)).toBe('持续了 1 秒'); // ceil + max(1)
-  });
-  it('无时长（undefined / <=0）→ undefined：不显示假值', () => {
-    expect(formatTurnDuration(undefined)).toBeUndefined();
-    expect(formatTurnDuration(0)).toBeUndefined();
-    expect(formatTurnDuration(-5)).toBeUndefined();
-  });
-});
-
-describe('P0-1 turn-summary 渲染两态（有/无时长）', () => {
-  it('有时长 → 摘要行含「持续了 N 秒」，不再有 `[已完成 · Xs]` 停因串', () => {
+describe('U2-C3 turn-summary 收口：本行不再渲染耗时（唯一源 = 轮首 WorkIndicator）', () => {
+  it('有时长但无状态语义（纯 end_turn）→ 摘要行不渲染（耗时不再双行；红线⑩不误显示）', () => {
     renderItem({ kind: 'turn-summary', turnId: 't1', durationMs: 2000, stopReason: 'end_turn' });
-    const el = document.querySelector('.turn-summary');
-    expect(el?.textContent).toBe('持续了 2 秒');
-    expect(screen.queryByText(/已完成/)).toBeNull();
+    expect(document.querySelector('.turn-summary')).toBeNull();
   });
-  it('无时长且无错误/半截/空产出 → 整行不渲染（无数据不显示，红线⑩）', () => {
+  it('有错误 → 只渲染错误，不含耗时（不再有「持续了 N 秒」，也不含 .sum-duration）', () => {
+    renderItem({
+      kind: 'turn-summary',
+      turnId: 't1',
+      durationMs: 2000,
+      stopReason: 'error',
+      error: '上游失败',
+    });
+    const el = document.querySelector('.turn-summary');
+    expect(el?.textContent).toContain('上游失败');
+    expect(el?.textContent).not.toContain('持续了');
+    expect(el?.querySelector('.sum-duration')).toBeNull();
+  });
+  it('无状态语义（无错误/半截/空产出）→ 整行不渲染（红线⑩）', () => {
     renderItem({ kind: 'turn-summary', turnId: 't1', durationMs: 0, stopReason: 'end_turn' });
     expect(document.querySelector('.turn-summary')).toBeNull();
   });
-  it('无时长但有错误 → 仍渲染（错误如实可见，只有耗时被省略）', () => {
-    renderItem({ kind: 'turn-summary', turnId: 't1', durationMs: 0, stopReason: 'error', error: '上游失败' });
+  it('半截产出（partial）→ 标注「未完成 / 已中断」且不含耗时', () => {
+    renderItem({
+      kind: 'turn-summary',
+      turnId: 't1',
+      durationMs: 3000,
+      textOutcome: 'partial',
+      partialText: '半截',
+    });
     const el = document.querySelector('.turn-summary');
-    expect(el?.textContent).toContain('上游失败');
-    expect(el?.textContent).not.toContain('持续了'); // 无时长 → 省略该文案
+    expect(el?.textContent).toContain('未完成 / 已中断');
+    expect(el?.textContent).not.toContain('持续了');
   });
 });
 

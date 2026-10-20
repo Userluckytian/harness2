@@ -118,7 +118,21 @@ export interface SessionStream {
   };
   /** D4：最近一次收到该会话帧的时刻（ms epoch）——断流判定用，不永久 loading */
   lastFrameAt?: number;
+  /**
+   * Z-97（T4②）：回合终态的**落定墙钟**（turnId → ms）。真 turn-end 帧无时间戳、合成终态
+   * 也无落盘时刻——「已工作 {duration}」需要端点，这里记渲染端收到终态（或完成合成）的
+   * 墙钟。与 `turnEnds` 刻意分表：`turnEnds` 保持**纯协议事实**（既有测试逐字段钉住），
+   * 本表只服务展示推导，不写盘、不回传。
+   */
+  turnEndedAt: Record<string, number>;
 }
+
+/**
+ * Z-97（T4①，痛点⑤核心）：悬挂回合收敛阈值 —— 会话 `running` 且当前 turnId 无终态，
+ * 且**连续无活帧**超过本时长 → store 本地合成终态（interrupted，仅 UI 态，不写盘、不发网络）。
+ * 口径对齐 ZCode 逻辑帧装配超时 30s（`zcode-protocol-v4/core.ts:70`）。
+ */
+export const HUNG_TURN_TIMEOUT_MS = 30_000;
 
 /** 单会话的只读查询结果缓存（S7 四契约 + 能力盘点；面板渲染数据源） */
 export interface SessionViews {
@@ -245,6 +259,83 @@ export class AppStore {
     for (const l of [...this.listeners]) l();
   }
 
+  // —— Z-97（T4①，痛点⑤核心）：悬挂回合惰性收敛 ——
+  //
+  // 病灶：turn 被 cancel/断流后**没有终态帧落进 store**（真 turn-end 丢失/serve 静默死掉），
+  // `running` 无人清 → 界面永远转圈。既有 `clearRunning` 只覆盖「发送失败」一条路。
+  //
+  // 判据（事件驱动 + 单次挂钟 setTimeout 兜底，Denia「心跳自停」思想，不给每会话常驻 tick）：
+  //   - 每个**会话帧到达**、每次 **replay 完成**、每次 **resume-snapshot 落定**都刷新
+  //     `lastFrameAt` 水位并重新对表（活帧 = 计时重置，天然覆盖「25s 有帧 → 不合成交」）；
+  //   - `running` 时挂**一个**一次性 setTimeout：剩余静默时间到点 → 合成终态；
+  //   - 若对表时已静默超阈值（旧历史重放收尾、lastFrameAt 缺失兜底等）→ **就地同步收敛**；
+  //   - 收敛只写 UI 态：`turnEnds[turnId] = {stopReason:'interrupted', synthetic:true}` + 清
+  //     running/在途；不写盘、不发网络。真帧后到覆盖合成：真 turn-end 走既有赋值整体覆盖；
+  //     真增量帧（delta/text-delta/reasoning-delta）到达时删除该回合合成记录并复活 running。
+  //   - 审批在等待 = 用户侧显式等待（非静默悬挂），不收敛（卡片仍可操作，误报「已停止」反而破坏语义）。
+  /** 会话 id → 唯一挂钟兜底定时器（一计时一会话；触发/替换即清） */
+  private readonly hungTimers = new Map<string, ReturnType<typeof setTimeout>>();
+
+  /**
+   * 活帧登记：刷新静默水位并重新对表。applyFrame 对**任何**有会话归属的帧调用（含被
+   * seq 判重丢弃的 event —— 帧到达本身就是传输层活着的证据）；applyReplay / markSending 同路。
+   */
+  private noteActivity(stream: SessionStream): void {
+    stream.lastFrameAt = Date.now();
+    this.armHungTurnWatch(stream);
+  }
+
+  /** 对表：running=false 撤表；静默已超阈值 → 就地收敛（调用方负责 notify）；否则挂单次兜底定时器 */
+  private armHungTurnWatch(stream: SessionStream): void {
+    const pending = this.hungTimers.get(stream.id);
+    if (pending !== undefined) {
+      clearTimeout(pending);
+      this.hungTimers.delete(stream.id);
+    }
+    if (!stream.running) return;
+    const idle = Date.now() - (stream.lastFrameAt ?? Date.now());
+    const remain = HUNG_TURN_TIMEOUT_MS - idle;
+    if (remain <= 0) {
+      this.convergeHungTurn(stream);
+      return;
+    }
+    this.hungTimers.set(
+      stream.id,
+      setTimeout(() => {
+        this.hungTimers.delete(stream.id);
+        if (this.convergeHungTurn(stream)) this.notify();
+      }, remain),
+    );
+  }
+
+  /**
+   * 合成终态（返回是否发生状态变化，供定时器回调决定是否 notify）。
+   * turnId 取事件流最后一条携带 turnId 的事件（与 turn-end 帧归属同一推导）；无 turnId
+   * （纯 markSending 未落盘的悬挂提交）也要清 running —— 否则痛点原样复发。
+   */
+  private convergeHungTurn(stream: SessionStream): boolean {
+    if (!stream.running) return false;
+    // 审批等待不是静默悬挂：不合成、不撤卡（下一次活帧再对表）
+    if (stream.approvals.length > 0) return false;
+    const turnId = lastTurnId(stream.events);
+    if (turnId !== undefined && stream.turnEnds[turnId] === undefined) {
+      stream.turnEnds[turnId] = { stopReason: 'interrupted', synthetic: true };
+      stream.turnEndedAt[turnId] = Date.now();
+    }
+    stream.running = false;
+    stream.live = emptyLive();
+    stream.liveAttemptId = undefined;
+    stream.activeAttempt = undefined;
+    return true;
+  }
+
+  /** 真增量帧后到 → 删除该回合的合成终态（真实活动推翻「无响应超时」的判断） */
+  private dropSyntheticEnd(stream: SessionStream, turnId: string | undefined): void {
+    const id = turnId ?? lastTurnId(stream.events);
+    if (id === undefined) return;
+    if (stream.turnEnds[id]?.synthetic === true) delete stream.turnEnds[id];
+  }
+
   // —— 会话列表 /选中/状态 ——
 
   applyStatus(status: ConnectionStatus, detail?: StatusDetail): void {
@@ -314,6 +405,13 @@ export class AppStore {
 
   /** 从当前视图移除会话（删除/归档隐藏的渲染端清理）：侧栏去项 + 分栏解绑 + 选中清理 */
   removeSessionFromView(id: string): void {
+    // 审查 U1 P1-2：会话离开视图 = 永不接收帧，悬挂定时器必须随迁撤除——
+    // 否则 ≤30s 窗口内它仍会对已删流触发 converge（写合成终态 + 全局 notify 空转）。
+    const pending = this.hungTimers.get(id);
+    if (pending !== undefined) {
+      clearTimeout(pending);
+      this.hungTimers.delete(id);
+    }
     this.set({
       sessions: this.state.sessions.filter((s) => s.id !== id),
       // 分栏绑定已无渲染出口与写出口（P4-C 裁决 + P1-3）：这里只为让「只读兼容的旧文件绑定」
@@ -367,6 +465,7 @@ export class AppStore {
         tasks: [],
         epoch: 0,
         nudge: { running: false },
+        turnEndedAt: {},
       };
       this.streams.set(id, s);
     }
@@ -529,7 +628,12 @@ export class AppStore {
   chatItems(id: string): ChatItem[] {
     const s = this.streams.get(id);
     if (!s) return [];
-    return projectChatItems(s.events, s.live, s.turnEnds);
+    // Z-97（T4b）：注入轮次耗时上下文（终态落定墙钟 + running 标记）。刻意不传 now——
+    // running 耗时由 WorkIndicator 叶子自持 tick 现算（tick 纪律：时间流逝不重投影父链）。
+    return projectChatItems(s.events, s.live, s.turnEnds, {
+      turnEndedAt: s.turnEndedAt,
+      running: s.running,
+    });
   }
 
   /** 最近一条落盘 assistant 正文（通知摘要数据源；无 assistant 消息返回 ''） */
@@ -590,7 +694,11 @@ export class AppStore {
     }
     const id: string = frame.sessionId;
     const stream = this.ensureStream(id);
-    stream.lastFrameAt = Date.now(); // D4：断流判定水位（帧到达即刷新）
+    // D4：断流判定水位（帧到达即刷新）+ Z-97（T4a）悬挂回合对表。对**任何**有会话归属的
+    // 帧执行——含随后被 seq/水位判重丢弃的 event：帧到达本身就是传输层活证（旧行语义保留）。
+    // 此刻 `running` 还是本帧到达前的值；本帧内才置位的 running（delta / text-delta /
+    // absorbEvent / resume-snapshot）由各自分支在翻转处补一次 `armHungTurnWatch`。
+    this.noteActivity(stream);
     if (frame.type === 'event') {
       const applied = applyEvent(stream.events, stream.lastSeq, frame.event);
       if (applied === null) return; // 重复/落后（重放已覆盖）
@@ -604,10 +712,17 @@ export class AppStore {
       // PD2：增量帧 = 服务端正在真实产出 → turn 确实在跑（重连快照无在途 attempt 的
       // 首 token 延迟窗口由此自愈；不假报停止）
       stream.running = true;
+      // Z-97（T4a）：真实增量推翻「无响应超时」判断 → 删除该回合合成终态并重新挂表
+      // （delta 帧无 turnId 字段，归属推导走事件流尾部，与 turn-end 帧同一口径）
+      this.dropSyntheticEnd(stream, undefined);
+      this.armHungTurnWatch(stream);
     } else if (frame.type === 'text-delta' || frame.type === 'reasoning-delta') {
       const kind = frame.type === 'text-delta' ? 'text' : 'reasoning';
       // PD2：同上 —— 任何真实增量都证明 turn 在跑
       stream.running = true;
+      // Z-97（T4a）：同上；本帧可能被水位丢弃提前 return，判重前先把计时摆正
+      this.dropSyntheticEnd(stream, frame.turnId);
+      this.armHungTurnWatch(stream);
       // 新 attempt（含首块 offset=0）开始时清空在途文本，避免上一 attempt 残留拼接
       if (stream.liveAttemptId !== frame.attemptId) {
         stream.liveAttemptId = frame.attemptId;
@@ -634,6 +749,7 @@ export class AppStore {
     } else if (frame.type === 'turn-end') {
       const turnId = lastTurnId(stream.events);
       if (turnId !== undefined) {
+        // 真终态整体覆盖同 turnId 的合成记录（对象整体替换，`synthetic` 一并消失）
         stream.turnEnds[turnId] = {
           stopReason: frame.stopReason,
           ...(frame.textOutcome !== undefined ? { textOutcome: frame.textOutcome } : {}),
@@ -642,6 +758,8 @@ export class AppStore {
           ...(frame.error !== undefined ? { error: frame.error } : {}),
           ...(frame.warning !== undefined ? { warning: frame.warning } : {}),
         };
+        // Z-97（T4②）：真终态落定墙钟（turnEndedAt 独立于纯协议事实的 turnEnds）
+        stream.turnEndedAt[turnId] = Date.now();
       }
       stream.running = false;
       stream.live = emptyLive(); // turn 收尾：在途增量清空（落盘事件已覆盖）
@@ -763,6 +881,10 @@ export class AppStore {
     // PD2：快照即权威 —— 有在途 attempt = 仍在跑（不因客户端断线假报停止）；
     // 无在途 attempt（turn 已在断线窗口内跑完）= 如实落定，不留本地乐观 running（否则永久「运行中」）。
     stream.running = snap.activeAttempt !== undefined;
+    // 审查 U1 P1-1：running 在本帧内翻转（false→true 是计划规格「reconnect 后无终态的
+    // running 回合」的正触发场景），applyFrame 开头对表看到的还是旧值 false → 未挂表。
+    // 翻转处补一次对表，否则断线重连补到的悬挂回合永不收敛（痛点⑤原样复发）。
+    this.armHungTurnWatch(stream);
   }
 
   /** 本地登记一次提交（乐观可见队列）；ack 到达前不计入确认态 */
@@ -813,6 +935,9 @@ export class AppStore {
       stream.live = emptyLive();
       stream.liveAttemptId = undefined;
       stream.running = true; // 用户消息落盘 = turn 开始
+      // Z-97（T4a）：running 在本帧内翻转，applyFrame 开头的对表看到的还是旧值（已撤表）
+      // → 新回合在此重新挂表（静默起点 = 本帧到达，水位已由开头 noteActivity 刷好）
+      this.armHungTurnWatch(stream);
     } else if (event.type === 'assistant/message') {
       stream.live.text = '';
       stream.live.reasoning = '';
@@ -825,7 +950,10 @@ export class AppStore {
 
   /** 发送用户消息（乐观置 running；真实 turn 开始以 user/message 事件落盘为准） */
   markSending(id: string): void {
-    this.ensureStream(id).running = true;
+    const stream = this.ensureStream(id);
+    stream.running = true;
+    // Z-97（T4a）：悬挂看门狗起点 = 提交时刻（此后 30s 无活帧即收敛）
+    this.noteActivity(stream);
     this.notify();
   }
 
@@ -834,6 +962,8 @@ export class AppStore {
     const stream = this.streams.get(id);
     if (stream === undefined || !stream.running) return;
     stream.running = false;
+    // Z-97（T4a）：已如实落定 → 撤表（否则空跑的定时器无意义）
+    this.armHungTurnWatch(stream);
     this.notify();
   }
 
@@ -843,6 +973,10 @@ export class AppStore {
     for (const stream of this.streams.values()) {
       if (stream.approvals.some((a) => a.requestId === requestId)) {
         stream.approvals = stream.approvals.filter((a) => a.requestId !== requestId);
+        // 审查 U1 P1-1：审批等待期内定时器到点会「让路」（converge 对审批返回 false、
+        // 不撤表也不重挂）——审批此刻清除，若不重新对表，该会话的悬挂回合永无收敛时机
+        // （除非恰好再有活帧到达）。重挂=从审批清除时刻起算静默。
+        this.armHungTurnWatch(stream);
       }
     }
     this.notify();

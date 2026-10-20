@@ -40,22 +40,26 @@ describe('D-24 静默只改颜色，不改布局', () => {
   });
 });
 
-describe('D-22 / D-16 收起动画样式', () => {
-  it('淡出与淘入动画都在（150ms 量级）', () => {
-    expect(block('.h2-sidebar-fading > *')).toContain('transition: opacity 150ms');
-    expect(declarations).toContain('.h2-sidebar-rail-in .h2-sidebar-toggle');
-    expect(declarations).toContain('@keyframes h2-sidebar-rail-in');
-    expect(declarations).toMatch(/@keyframes h2-sidebar-rail-in\s*\{[^}]*translateX\(49px\)/);
+describe('D-22 / D-16 折叠样式（U2 批D / D9 后：Z-06 无轨道，轨道时代死 CSS 已删）', () => {
+  it('轨道几何 / 品牌行 / 淘入动画 CSS 不存在（折叠 = 4px 容器 + opacity-0，无 DOM 可套）', () => {
+    expect(declarations).not.toContain('.h2-sidebar-fading');
+    expect(declarations).not.toContain('.h2-sidebar-rail-in');
+    expect(declarations).not.toContain('.h2-sidebar-rail .h2-sidebar-toggle');
+    expect(declarations).not.toContain('.h2-sidebar-brand-row');
+    expect(declarations).not.toContain('@keyframes h2-sidebar-rail-in');
+    // 唯一保留的轨道系规则 = SessionBrowser 轨道态回落钮（wide=false）
+    expect(block('.h2-sidebar-rail-icon')).toContain('width: 36px');
+    expect(block('.h2-sidebar-rail-icon')).toContain('height: 36px');
   });
 
-  it('降动效媒体查询把过渡与动画都关掉', () => {
+  it('降动效媒体查询把 caret 过渡与 spinner 动画关掉', () => {
     const reduce = /@media \(prefers-reduced-motion: reduce\)\s*\{([\s\S]*?)\n\}/.exec(declarations);
     expect(reduce).not.toBeNull();
     const body = reduce?.[1] ?? '';
     expect(body).toContain('transition: none');
     expect(body).toContain('animation: none');
-    expect(body).toContain('.h2-sidebar-fading > *');
-    expect(body).toContain('.h2-sidebar-rail-in');
+    expect(body).toContain('.h2-sidebar-caret');
+    expect(body).toContain('.h2-sidebar-spinner');
   });
 
   it('降动效状态类同样禁用（hook 侧分支与媒体查询互为兜底）', () => {
@@ -65,8 +69,17 @@ describe('D-22 / D-16 收起动画样式', () => {
     expect(cls?.[1]).toContain('animation: none');
   });
 
-  it('轨道几何：36px 控件盒 + 56px 轨道内边距', () => {
-    expect(block('.h2-sidebar-rail')).toContain('padding: 18px 10px 6px');
-    expect(block('.h2-sidebar-rail .h2-sidebar-toggle')).toContain('width: 36px');
+  it('U2 批D（D2）：侧栏底色走 --color-sidebar；行 hover 全链走 --color-surface-hover', () => {
+    expect(block('.h2-sidebar')).toContain('background: var(--color-sidebar)');
+    expect(declarations).not.toMatch(/\.h2-sidebar-session:hover\s*\{[^}]*--color-muted/);
+    // 选中态（Z-09）：selected 填充、无左缘 inset 强调条
+    const selected = block(".h2-sidebar-session[data-selected='true']");
+    expect(selected).toContain('background: var(--color-selected)');
+    expect(selected).not.toContain('box-shadow');
+  });
+
+  it('U2 批D（D1 / Z-61）：字号刻度执法——sidebar.css 零裸 px font-size', () => {
+    const bare = [...declarations.matchAll(/font-size:\s*\d+(\.\d+)?px/g)];
+    expect(bare.map((m) => m[0])).toEqual([]);
   });
 });

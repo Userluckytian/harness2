@@ -101,7 +101,7 @@ describe('会话浏览器（D-23/D-13）', () => {
     expect(expanded).toBe(1);
   });
 
-  it('空列表如实显示空态（不摆假会话行）', () => {
+  it('空列表如实显示空态（U2 批D / D6：项目模式空侧栏保骨架——两区头 + 区内「暂无」，不摆假行）', () => {
     render(
       createElement(SessionBrowser, {
         ...owner,
@@ -111,6 +111,10 @@ describe('会话浏览器（D-23/D-13）', () => {
       }),
     );
     expect(screen.queryByText('会话 A')).toBeNull();
-    expect(screen.getByTestId('sidebar-empty').textContent).toBe(DEFAULT_SIDEBAR_LABELS.noSessions);
+    expect(document.querySelectorAll('[data-session-id]')).toHaveLength(0);
+    // 骨架两区头在场；空项目区「暂无项目」+ 空任务区「暂无任务」
+    expect(screen.getAllByTestId('sidebar-section-head')).toHaveLength(2);
+    expect(screen.getByTestId('sidebar-projects-empty').textContent).toBe(DEFAULT_SIDEBAR_LABELS.noProjects);
+    expect(screen.getByTestId('sidebar-section-empty').textContent).toBe(DEFAULT_SIDEBAR_LABELS.noTasks);
   });
 });

@@ -2,7 +2,7 @@
 // 本文件只把 `window.harness2` 的 settings:* IPC 包成 `SettingsPorts` 注入共享设置页，并接桌面
 // 主题 store（D-15 立即呈现）+ 界面字号运行时（例外 #2）。不在此写任何设置 UI。
 import { useMemo, useState } from 'react';
-import type { SettingsTheme } from '../../shared/protocol.js';
+import type { Harness2Api, SettingsTheme } from '../../shared/protocol.js';
 import {
   SettingsPage as SharedSettingsPage,
   type SettingsCopy,
@@ -42,6 +42,20 @@ export interface SettingsPageProps {
   readonly defaultSectionId?: string;
 }
 
+/**
+ * Z-47：把 preload 的托盘通道（TrayApi，Partial 面）适配成共享设置页的可选端口。
+ * 缺通道（web 宿主 / 旧 jsdom 夹具）→ 返回空对象 = 通用分区不渲染「关窗驻留」开关（红线⑩）。
+ */
+function trayPortsFrom(api: Pick<Harness2Api, 'trayStatus' | 'traySetCloseToTray'>): Partial<SettingsPorts> {
+  const { trayStatus, traySetCloseToTray } = api;
+  const read = typeof trayStatus === 'function' ? trayStatus : undefined;
+  const write = typeof traySetCloseToTray === 'function' ? traySetCloseToTray : undefined;
+  return {
+    ...(read !== undefined ? { getTrayStatus: () => read() } : {}),
+    ...(write !== undefined ? { setCloseToTray: (enabled: boolean) => write(enabled) } : {}),
+  };
+}
+
 export function SettingsPage({ open, onClose, onThemeChange, defaultSectionId }: SettingsPageProps): React.ReactNode {
   // 当前主题来自壳主题 store（P4/D-15 的真源），不另存一份易漂移的副本
   const theme = useShellTheme();
@@ -67,6 +81,8 @@ export function SettingsPage({ open, onClose, onThemeChange, defaultSectionId }:
       getSkills: () => window.harness2.settingsGetSkills(),
       // 模型配置通道面（Partial<ModelsSettingsApi>）：Harness2Api 结构上满足；缺失时分区如实降级。
       modelsApi: window.harness2,
+      // Z-47 托盘端口（T2 主进程已就绪）：preload 缺通道（旧夹具）时如实不提供 → 共享页不渲染开关。
+      ...trayPortsFrom(window.harness2),
       theme,
       onSelectTheme: onThemeChange,
       uiFontSize,

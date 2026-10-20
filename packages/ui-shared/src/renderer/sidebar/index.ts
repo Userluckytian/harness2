@@ -8,6 +8,9 @@ export { SidebarRoot } from './SidebarRoot.js';
 export type { SettingsOwnerProps, SidebarRootProps, SidebarSeats } from './SidebarRoot.js';
 export { SessionBrowser } from './SessionBrowser.js';
 export type { SessionBrowserProps, SessionRowDrag, WorkspacesOwnerProps } from './SessionBrowser.js';
+// U2 批D（D8）：桌面壳 footer 设置钮（⚙ 文本 → lucide SettingsIcon）。lucide-react 是
+// ui-shared 的依赖，pnpm 严格布局下壳包不能直接 import → 经本出口再导出一枚。
+export { SettingsIcon } from 'lucide-react';
 
 // 任务工具栏与视图逻辑（Z8-1 / Z-07 #5～#8 / Z-08 / Z-09）
 export { TaskToolbar } from './TaskToolbar.js';

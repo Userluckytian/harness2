@@ -18,7 +18,8 @@ import type {
 } from '../shared/protocol.js';
 import { readLayout, writeLayout } from './layout-file.js';
 import type { ServeManager } from './serve-manager.js';
-import { readPreferences, writePreferences } from './preferences-file.js';
+import { readPreferences, setCloseToTray, writePreferences } from './preferences-file.js';
+import { resolveCloseToTray } from './window-lifecycle.js';
 import { readMetadata, writeMetadataPatch } from './metadata-file.js';
 import { addProjectEntry, readProjects, removeProjectEntry } from './projects-file.js';
 import { readDrafts, writeDrafts } from './drafts-file.js';
@@ -166,6 +167,11 @@ export interface BridgeDeps {
   sendSettingsEvent?: (frame: SettingsEventFrame) => void;
   /** D4：运行态上报（main 据此在关窗口前提示；关 UI ≠ 已停任务） */
   setBusy?: (info: { busy: boolean; runningTurns: number; backgroundTasks: number }) => void;
+  /**
+   * Z-47：托盘创建成功查询（main 接线；缺省 = false，smoke 不建托盘）。
+   * 仅 `tray:status` / `tray:setCloseToTray` 响应读取，不参与任何 HTTP。
+   */
+  isTrayCreated?: () => boolean;
 }
 
 export interface Bridge {
@@ -252,7 +258,7 @@ export function createBridge(deps: BridgeDeps): Bridge {
     const serveReady = deps.serve.status === 'connected';
     const unsupported = new Set<CapabilityIdShape>();
     if (serveReady && typeof sessionId === 'string' && sessionId.length > 0) {
-      const base = deps.serve.baseUrl;
+      const base = serveBase();
       const id = encodeURIComponent(sessionId);
       const endpoints: Array<{ cap: CapabilityIdShape; path: string }> = [
         { cap: 'run-config', path: `/api/sessions/${id}/run-config` },
@@ -413,15 +419,25 @@ export function createBridge(deps: BridgeDeps): Bridge {
     ws.send(JSON.stringify(op));
   };
 
+  /**
+   * R0-3①：serve HTTP base 的**惰性**求值。
+   * `deps.serve.baseUrl` 是「serve 未就绪即同步抛错」的 getter（serve-manager.ts:194-196）。
+   * 此前它在 handleInvoke 的 switch 之前被无条件读取，导致未就绪期间**所有** IPC 命令连坐抛错——
+   * 包括 window:*、projects:*、notify:*、settings/metadata/drafts:*、loadLayout/saveLayout、
+   * getStatus、gitBranch、listDir、terminal:* 等 48 条根本不碰 HTTP 的命令。
+   * 现只在真正要发 HTTP 的 case 内调用本函数；错误文案由 getter 原样给出，行为语义不变。
+   */
+  const serveBase = (): string => deps.serve.baseUrl;
+
   const handleInvoke = async (_event: IpcMainInvokeEvent, req: unknown): Promise<unknown> => {
     if (typeof req !== 'object' || req === null || typeof (req as { cmd?: unknown }).cmd !== 'string') {
       throw new InvokeError('invoke 请求必须是 {cmd, ...}');
     }
     const cmd = (req as { cmd: string }).cmd;
     const args = req as Record<string, unknown>;
-    const base = deps.serve.baseUrl;
     switch (cmd) {
       case 'listSessions': {
+        const base = serveBase();
         const cwd = args['cwd'];
         // serve 返回 { sessions: [...] }，但 Harness2Api.listSessions 契约是数组 → 这里取 .sessions
         // （2026-09-07 修：此前返回整个对象，渲染端 [...sessions] 展开对象抛错，会话列表永不更新）
@@ -430,7 +446,8 @@ export function createBridge(deps: BridgeDeps): Bridge {
         );
         return body.sessions;
       }
-      case 'createSession':
+      case 'createSession': {
+        const base = serveBase();
         return httpJson(`${base}/api/sessions`, {
           method: 'POST',
           headers: { 'content-type': 'application/json' },
@@ -438,9 +455,13 @@ export function createBridge(deps: BridgeDeps): Bridge {
             cwd: typeof args['cwd'] === 'string' && args['cwd'].length > 0 ? args['cwd'] : deps.root,
           }),
         });
-      case 'events':
+      }
+      case 'events': {
+        const base = serveBase();
         return httpJson(`${base}/api/sessions/${encodeURIComponent(String(args['sessionId']))}/events`);
-      case 'undo':
+      }
+      case 'undo': {
+        const base = serveBase();
         return httpJson(`${base}/api/sessions/${encodeURIComponent(String(args['sessionId']))}/undo`, {
           method: 'POST',
           headers: { 'content-type': 'application/json' },
@@ -449,12 +470,15 @@ export function createBridge(deps: BridgeDeps): Bridge {
             ...(typeof args['dryRun'] === 'boolean' ? { dryRun: args['dryRun'] } : {}),
           }),
         });
-      case 'redo':
+      }
+      case 'redo': {
+        const base = serveBase();
         return httpJson(`${base}/api/sessions/${encodeURIComponent(String(args['sessionId']))}/redo`, {
           method: 'POST',
           headers: { 'content-type': 'application/json' },
           body: '{}',
         });
+      }
       case 'subscribe':
         wsSendOrThrow({ op: 'subscribe', sessionId: requireSessionId(args) });
         return null;
@@ -491,15 +515,18 @@ export function createBridge(deps: BridgeDeps): Bridge {
       }
       // —— D0：S7 只读查询端点（GET，纯投影） ——
       case 'runConfig': {
+        const base = serveBase();
         const sid = requireSessionId(args);
         return httpJson(`${base}/api/sessions/${encodeURIComponent(sid)}/run-config`);
       }
       case 'planState': {
+        const base = serveBase();
         const sid = requireSessionId(args);
         // 404 = 「会话暂无计划数据」（core 明确语义，非错误）→ null，UI 显示空态而非假计划
         return httpJsonOptional(`${base}/api/sessions/${encodeURIComponent(sid)}/plan-state`);
       }
       case 'executionViews': {
+        const base = serveBase();
         const sid = requireSessionId(args);
         const body = await httpJson<{ views: unknown[] }>(
           `${base}/api/sessions/${encodeURIComponent(sid)}/execution-view`,
@@ -507,6 +534,7 @@ export function createBridge(deps: BridgeDeps): Bridge {
         return body.views;
       }
       case 'changeReview': {
+        const base = serveBase();
         const sid = requireSessionId(args);
         return httpJson(`${base}/api/sessions/${encodeURIComponent(sid)}/change-review`);
       }
@@ -648,6 +676,25 @@ export function createBridge(deps: BridgeDeps): Bridge {
       case 'terminal:close': {
         getTerminalTransport().close(typeof args['id'] === 'string' ? args['id'] : '');
         return null;
+      }
+      // —— Z-47：托盘状态 / 关窗驻留偏好（调试 + smoke 断言；偏好持久化进 desktop-preferences.json） ——
+      case 'tray:status': {
+        const stored = readPreferences(deps.home).closeToTray;
+        return {
+          created: deps.isTrayCreated?.() ?? false,
+          platform: process.platform,
+          closeToTray: resolveCloseToTray(stored, process.platform),
+        };
+      }
+      case 'tray:setCloseToTray': {
+        const enabled = args['enabled'];
+        if (typeof enabled !== 'boolean') throw new InvokeError('tray:setCloseToTray 需要布尔 enabled');
+        setCloseToTray(deps.home, enabled);
+        return {
+          created: deps.isTrayCreated?.() ?? false,
+          platform: process.platform,
+          closeToTray: enabled,
+        };
       }
       case 'settings:getConfig':
         return readSettingsConfig(deps.home, deps.root);

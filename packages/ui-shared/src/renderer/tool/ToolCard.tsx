@@ -27,7 +27,6 @@ import {
   CopyIcon,
   FilePenIcon,
   FileTextIcon,
-  LoaderIcon,
   SearchIcon,
   SquareTerminalIcon,
   WrenchIcon,
@@ -184,14 +183,14 @@ function ToolErrorStatus({
           className="absolute right-0 top-full z-10 hidden pt-1 group-focus-within/err:block group-hover/err:block"
         >
           <span className="flex w-max max-w-80 items-start gap-2 rounded-md border border-popover-border bg-popover p-2 shadow-md">
-            <span className="whitespace-pre-wrap break-all text-left text-ui-2xs text-foreground">
+            <span className="whitespace-pre-wrap break-all text-left text-ui-xs text-foreground">
               {error.length > 0 ? error : '结果未标记 ok（未给出错误原因）'}
             </span>
             <button
               type="button"
               data-tool-inline-control="copy-error"
               data-testid="tool-copy-error"
-              className="flex shrink-0 items-center gap-1 rounded border border-border px-1.5 py-0.5 text-ui-2xs text-foreground-subtle hover:bg-hover hover:text-foreground"
+              className="flex shrink-0 items-center gap-1 rounded border border-border px-1.5 py-0.5 text-ui-xs text-foreground-subtle hover:bg-hover hover:text-foreground"
               onClick={(e) => {
                 e.stopPropagation();
                 onCopy(error);
@@ -325,18 +324,24 @@ export function ToolCard({ card, sessionId, commandRow, actions }: ToolCardProps
         {isSubagentTool(card.tool) && (
           <span
             data-testid="tool-subagent-badge"
-            className="shrink-0 rounded border border-border bg-surface px-1.5 py-0.5 text-ui-2xs text-foreground-subtle"
+            className="shrink-0 rounded border border-border bg-surface px-1.5 py-0.5 text-ui-xs text-foreground-subtle"
           >
             子代理
           </span>
         )}
-        <span className="tool-line min-w-0 flex-1 truncate">
+        {/* Z-97（T4c）：工具行运行态**刻意不用旋转 spinner** —— 流式期间工具行数量多且持续
+            更新，旋转 loading 图标会让动画长期占用渲染资源（ZCode ToolLayout.tsx:138-147 原注
+            即规格）。运行态改由「标题文案扫光（.tool-running-shimmer，只动 background-position）
+            + 状态文字」表达；图标（ToolGlyph）与展开箭头一律保持静态。 */}
+        <span
+          data-testid="tool-title-line"
+          className={`tool-line min-w-0 flex-1 truncate${status === 'running' ? ' tool-running-shimmer' : ''}`}
+        >
           &gt; {displayToolName(card.tool)} ({summarizeToolArgs(card.args)})
         </span>
         {status !== 'failed' ? (
           <span className="tool-status">
-            <span className={`flex items-center gap-1 ${STATUS_TEXT_COLOR[status]}`}>
-              {status === 'running' && <LoaderIcon size={11} aria-hidden className="animate-spin" />}
+            <span data-testid="tool-status-label" className={`flex items-center gap-1 ${STATUS_TEXT_COLOR[status]}`}>
               {toolStatusLabel(card.result)}
             </span>
           </span>

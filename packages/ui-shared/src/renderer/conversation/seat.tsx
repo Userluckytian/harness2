@@ -21,7 +21,7 @@
 //      如实标注（不假报成功、不诱导重发）。
 //   5. D-46 壳的义务（chat 侧）：composer 以浮层置于全高转录之上，实测高度写 CSS 变量
 //      `--composer-inset`（`.messages` 滚动叶容器消费）；未测量（0）时不写变量 = 不虚构预留。
-import { useEffect, useMemo, useRef, useSyncExternalStore } from 'react';
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import type { CSSProperties, ReactNode } from 'react';
 import { newClientMessageId } from '../../shared/ids.js';
 import { resolveFileRefs, type FileRefReader } from '../../shared/file-ref.js';
@@ -31,6 +31,13 @@ import { ChatTranscript } from '../components/ChatView.js';
 import { ConversationSuggestionChips } from './EmptyState.js';
 import { ApprovalDock, toApprovalCardModel } from '../approval/index.js';
 import { composeQueueView } from '../features/composer/composer-model.js';
+import { ChatErrorBanner } from './ChatErrorBanner.js';
+import {
+  latestSubmitAckError,
+  mergeErrorDetail,
+  withDismissedFingerprint,
+  type SubmitFailureInfo,
+} from './chat-error-model.js';
 import { QueuePanel } from './QueuePanel.js';
 import { ResumeBar } from './ResumeBar.js';
 import { ambientHostBridge } from '../host-bridge.js';
@@ -357,6 +364,40 @@ export function ConversationSeat(props: ConversationSeatProps): ReactNode {
     [port.io, sessionId, selectedId, controller],
   );
 
+  // —— Z-96 发送失败可见化：composer 上方常驻错误横幅（主形态非 toast）——
+  // 数据源 = 本席位会话的 submitAcks（controller 失败/超时/serve 拒绝都经 applyFrame 落这里）。
+  // `lastFailure`：composer onSubmitError 回传的底层 error（含 stack），并入横幅 detail；
+  // `dismissed`：X 关掉的指纹集合（同错误不立刻顶回，Z-96 去重语义）。切换会话双双归零。
+  const [lastFailure, setLastFailure] = useState<SubmitFailureInfo | null>(null);
+  const [dismissed, setDismissed] = useState<ReadonlySet<string>>(new Set());
+  useEffect(() => {
+    setLastFailure(null);
+    setDismissed(new Set());
+  }, [sessionId]);
+  // 给 io 接上 onSubmitError（此前全仓零调用点）：记录底层 error 供详情/复制。
+  // 同时包装 submit：每次**新**提交尝试重新布防（清 dismissed/lastFailure）——关掉横幅后
+  // 同一次错误不再顶回（Z-96 去重），但用户主动重试后若再失败，错误应重新可见。
+  const ioWithErrors = useMemo<ComposerIO>(() => {
+    const base: ComposerIO = {
+      ...io,
+      onSubmitError: (submission, error) => {
+        const message = error instanceof Error ? error.message : String(error);
+        const stack = error instanceof Error ? error.stack : undefined;
+        setLastFailure({ message, ...(stack !== undefined ? { stack } : {}) });
+        io.onSubmitError?.(submission, error);
+      },
+    };
+    const inner = io.submit;
+    return {
+      ...base,
+      submit: (submission) => {
+        setDismissed(new Set());
+        setLastFailure(null);
+        return inner(submission);
+      },
+    };
+  }, [io]);
+
   // D-33 草稿隔离：每会话一个草稿 store（切换会话换 store，不串味）；首次进入用持久草稿播种
   const draftsRef = useRef(new Map<string, ComposerStore>());
   const composerStore = useMemo(() => {
@@ -410,6 +451,13 @@ export function ConversationSeat(props: ConversationSeatProps): ReactNode {
   const cwd = sessionId === null ? undefined : state.sessions.find((s) => s.id === sessionId)?.cwd;
   const stream = sessionId === null ? undefined : store.peekStream(sessionId);
   const running = stream?.running === true;
+  // Z-96：横幅候选。**刻意不用 useMemo**：store 对 SessionStream 就地变更（submitAcks 是
+  // 原地重建的内层对象，stream 引用恒定），memo 依赖 [stream] 永不变化 → 会拿着旧 ack 不放
+  // （重发成功后旧横幅不消失）。纯计算成本可忽略，逐帧现算即是正确语义（组件因 useSyncExternalStore
+  // 已随任何 store 变更重渲）。
+  const ackError = latestSubmitAckError(stream?.submitAcks ?? {});
+  const bannerCandidate = ackError === null ? null : mergeErrorDetail(ackError, lastFailure);
+  const banner = bannerCandidate !== null && !dismissed.has(bannerCandidate.fingerprint) ? bannerCandidate : null;
   // P1-2：steer 的 expectedTurnId 用**控制层同一推导**（`lastTurnIdOf`，与取消目标定位同一函数）。
   // `stream.activeAttempt?.turnId` 只在 resume-snapshot 到达时才有值（事件/重放路径只置 running），
   // 只读它会让 steer 恒缺 expectedTurnId → core 直接 rejected（sessions-tasks.ts:95-104）。
@@ -469,7 +517,13 @@ export function ConversationSeat(props: ConversationSeatProps): ReactNode {
           {/* Z-17：状态面板挂在会话列内（头部之下、转录之上），右对齐；
               包裹行带 `@container` 供面板的容器查询断点（<1280 mini 胶囊 / ≥1280 面板）。
               有内容（statusPanel 返回非 null）才渲染包裹行 —— 空面板不留任何占位高度；
-              `empty:hidden` 兜底回调返回「渲染为空」的元素时也不占位（双保险）。 */}
+              `empty:hidden` 兜底回调返回「渲染为空」的元素时也不占位（双保险）。
+              U2-E-c 登记（浮层化放弃，2026-10-14）：absolute 化三坑未低风险收敛 ——
+              ① top 锚点 = shell 注入 header 之下，header 无高度测量通道（composer 的
+              --composer-inset 先例不存在于此），浮层 top 只能拍脑袋（违反「禁凭想象」）；
+              ② @container 断点挂在槽位自身，absolute 内容宽收缩 → 1280 判据失真（需
+              inset-x-0 全宽包裹重排）；③ 展开态 max-h 64dvh 浮层盖转录正文属设计变更，
+              需像素校准。配方已写入 docs/ai-framework/plans/u2-e-report.md，留待专批。 */}
           {(() => {
             const statusPanel = props.statusPanel?.({ sessionId });
             return statusPanel === null || statusPanel === undefined ? null : (
@@ -485,8 +539,38 @@ export function ConversationSeat(props: ConversationSeatProps): ReactNode {
           <ChatTranscript streamId={sessionId} store={session.store} controller={session.controller} />
         </>
       ) : (
+        /* U2-A6 空态兜底升级（无会话 = 冷启动无历史 / 列表清空后回落）：原先只有一行 `<p>`，
+           现在给「居中容器 + 品牌水印 + 主次文案层级 + 新建会话动作」。动作复用壳注入的
+           `controller.newSession()`（= App 三处新建入口同一唯一入口，见 desktop app-shared 注释）；
+           席位拿不到帧 dispatch（右栏收起属壳侧），且新会话 tab 桶本就为空，语义等价。
+           容器样式全部 Tailwind 工具类（空态非对话域，无 shell.css 依赖）。 */
         <div className="chat empty-pane">
-          <p>选择左侧会话开始对话（Ctrl+K 打开命令面板）</p>
+          <div className="flex flex-col items-center gap-6 px-4 text-center" data-testid="conversation-no-session">
+            {/* 水印鱼形 mark（与 EmptyState/顶栏品牌行同轮廓，纯装饰） */}
+            <span className="text-foreground-subtlest" aria-hidden="true">
+              <svg width={72} height={72} viewBox="0 0 24 24" fill="none" focusable="false">
+                <path
+                  d="M3 12c3.2-4.2 7.2-6.3 12-6.3 2.6 0 4.9.7 6 1.9-1.5.9-2.4 2.2-2.7 4.4-.3 2.2.4 3.9 2.7 4.6-1.1 1.2-3.4 1.9-6 1.9-4.8 0-8.8-2.1-12-6.5Z"
+                  fill="currentColor"
+                />
+              </svg>
+            </span>
+            <div className="flex flex-col gap-1.5">
+              <p className="text-ui-base text-foreground">选择左侧会话开始对话（Ctrl+K 打开命令面板）</p>
+              <p className="text-ui-xs text-foreground-subtlest">没有现成会话？直接新建一个开始新任务。</p>
+            </div>
+            <button
+              type="button"
+              data-testid="conversation-no-session-new"
+              className="inline-flex h-7 items-center justify-center gap-1.5 rounded-md bg-primary px-3 text-ui-base text-primary-foreground transition-opacity hover:opacity-90"
+              onClick={() => void controller.newSession()}
+            >
+              <svg width={12} height={12} viewBox="0 0 12 12" fill="none" aria-hidden="true" focusable="false">
+                <path d="M6 2.5v7M2.5 6h7" stroke="currentColor" strokeWidth={1.2} strokeLinecap="round" />
+              </svg>
+              新建会话
+            </button>
+          </div>
         </div>
       )}
       <div
@@ -510,6 +594,16 @@ export function ConversationSeat(props: ConversationSeatProps): ReactNode {
             onDecision={(requestId, decision) => void controller.respondApproval(requestId, decision)}
           />
         )}
+        {/* Z-96：发送失败错误横幅 = composer 上方独立 surface（图标+单行截断+详情+复制+X）。
+            数据源 submitAcks（unknown/rejected），X 按指纹去重；重发成功（最新 ack=accepted）自动消失。 */}
+        {banner !== null && (
+          <ChatErrorBanner
+            message={banner.message}
+            {...(banner.detail !== undefined ? { detail: banner.detail } : {})}
+            fingerprint={banner.fingerprint}
+            onDismiss={() => setDismissed((current) => withDismissedFingerprint(current, banner.fingerprint))}
+          />
+        )}
         <Composer
           sessionId={sessionId ?? undefined}
           session={composerSession}
@@ -520,7 +614,7 @@ export function ConversationSeat(props: ConversationSeatProps): ReactNode {
           stopAvailable={running}
           store={composerStore}
           chain={chain}
-          io={io}
+          io={ioWithErrors}
           editorRef={composerEditorRef}
           // Z3-04（Z-94）：左右簇控件（壳注入；缺省不渲染，web 壳无数据通道时如实缺省）
           {...(props.modeSwitch !== undefined ? { modeSwitch: props.modeSwitch } : {})}

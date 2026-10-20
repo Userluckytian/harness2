@@ -226,8 +226,18 @@ describe('重命名对话框（SessionBrowser 内置；壳只给 onSubmitRename�
 });
 
 describe('行 ⋯ 按钮（P0-2/Z-10 第二入口；与右键同源 rowMenuEntries）', () => {
+  /** U2 批D（D4 / Z-48）：⋯ 改为按交互态 mount —— 悬浮行（li）触发 hover */
+  const hoverRow = (id: string): HTMLElement => {
+    const row = document.querySelector(`[data-session-id="${id}"]`)?.closest('li') as HTMLElement;
+    fireEvent.mouseOver(row);
+    return row;
+  };
+
   it('有动作时 hover 区出现 ⋯（aria-label=更多操作）；点击弹下拉含同一动作集', async () => {
     renderBrowser({ sessions: [item('m1')], rowMenu: fullMenuFor('m1') });
+    // 未交互不 mount（Z-48：JS mount 取代 CSS opacity）
+    expect(screen.queryByTestId('session-row-more-m1')).toBeNull();
+    hoverRow('m1');
     const more = screen.getByTestId('session-row-more-m1');
     expect(more.getAttribute('aria-label')).toBe(DEFAULT_SIDEBAR_LABELS.rowMore);
     // jsdom 无 PointerEvent：Radix DropdownMenu 用 Enter 键打开（side-pane 启动器同款模式）
@@ -240,6 +250,7 @@ describe('行 ⋯ 按钮（P0-2/Z-10 第二入口；与右键同源 rowMenuEntri
 
   it('无任何动作回调 = 不画 ⋯（与右键同口径，不摆空按钮）', () => {
     renderBrowser({ sessions: [item('m2')], rowMenu: {} });
+    hoverRow('m2');
     expect(screen.queryByTestId('session-row-more-m2')).toBeNull();
   });
 
@@ -248,10 +259,22 @@ describe('行 ⋯ 按钮（P0-2/Z-10 第二入口；与右键同源 rowMenuEntri
       sessions: [item('m3')],
       rowMenu: { onPin: vi.fn(), onOpenInSplit: vi.fn(), splitLimitReached: true },
     });
+    hoverRow('m3');
     fireEvent.keyDown(screen.getByTestId('session-row-more-m3'), { key: 'Enter' });
     const menu = await screen.findByTestId('session-row-more-menu');
     const split = menu.querySelector('[data-menu-action="split"]')!;
     expect(split.getAttribute('data-disabled')).not.toBeNull();
     expect(split.getAttribute('title')).toBe(DEFAULT_SIDEBAR_LABELS.menuSplitLimit);
+  });
+
+  it('菜单打开时指针移开不卸载（Z-48 menuOpen 旗标：portal 下拉不被 mouseleave 拔掉）', async () => {
+    renderBrowser({ sessions: [item('m4')], rowMenu: fullMenuFor('m4') });
+    hoverRow('m4');
+    fireEvent.keyDown(screen.getByTestId('session-row-more-m4'), { key: 'Enter' });
+    await screen.findByTestId('session-row-more-menu');
+    // 指针移出行（模拟移进 portal 菜单）：菜单仍在（mouseleave 只收 hovered，不收 menuOpen）
+    const row = document.querySelector('[data-session-id="m4"]')?.closest('li') as HTMLElement;
+    fireEvent.mouseLeave(row);
+    expect(screen.getByTestId('session-row-more-menu')).toBeTruthy();
   });
 });

@@ -22,6 +22,16 @@ export function writePreferences(home: string, preferences: unknown): DesktopPre
   return writeJsonNormalized(preferencesFilePath(home), preferences, normalizePreferences);
 }
 
+/**
+ * Z-47：单字段合并写 closeToTray（读-改-写，不整体覆盖其余偏好）。
+ * 渲染端设置页整表写回（settings:setPreferences）与主进程侧写共用同一 normalize 校验口，
+ * 二者互不踩踏；缺省 = 平台默认（win 开 / linux 关），显式写入后固化。
+ */
+export function setCloseToTray(home: string, enabled: boolean): DesktopPreferences {
+  const current = readPreferences(home);
+  return writePreferences(home, { ...current, closeToTray: enabled });
+}
+
 /** 默认 home（进程级；测试不依赖） */
 export function defaultHome(): string {
   return homedir();

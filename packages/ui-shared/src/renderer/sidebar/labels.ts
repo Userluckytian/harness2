@@ -68,6 +68,8 @@ export interface SidebarLabels {
   tasks: string;
   /** Z-16 #7：空项目组占位文案 */
   noTasks: string;
+  /** U2 批D（D6）：项目区 0 组（空侧栏保骨架）占位文案 */
+  noProjects: string;
   /** Z-16 #6/#9：分区头「移动分区」把手（纯占位，无通道） */
   moveSection: string;
   /** 移动把手占位悬停说明（红线⑩：disabled + 说明 + data-placeholder） */
@@ -76,14 +78,37 @@ export interface SidebarLabels {
   addProject: string;
   /** 添加项目无通道时的悬停说明（web：disabled 占位） */
   addProjectTodo: string;
-  /** 组头「移出项目」钮（显式项目模式 = 真动作：删 projects.json 条目，会话不动） */
+  /** 组头「移出项目」入口文案（U2 批D / D5：从组头独立钮收进「更多」⋯ 下拉末项「移除」） */
   removeProject: string;
-  /** 移出项目无通道时的悬停说明 */
+  /** ⋯ 下拉末项「移除」（Z-49：入口=项目行「更多」下拉最后一项「移除」，XIcon） */
+  menuRemoveProject: string;
+  /** 移出项目无通道时的悬停说明（web：disabled 占位） */
   removeProjectTodo: string;
   /** Z-16 #9：任务区头「新建任务」钮 */
   newTaskInSection: string;
   /** 新建任务钮无通道时的悬停说明（缺省不接线时的占位） */
   newTaskInSectionTodo: string;
+  /** Z-48 #2：项目组头 hover 出现的「在此项目新建会话」（显式项目独有；聚合组无此钮） */
+  newSessionInProject: string;
+  /** —— Z-49 确认对话框文案（口径 = ZCode confirmDialog 族） —— */
+  /** 删除会话确认标题 */
+  deleteSessionTitle: string;
+  /** 删除会话确认描述（软删语义如实：只从列表移除，数据保留） */
+  deleteSessionDescription: string;
+  /** 删除会话确认按钮（destructive） */
+  deleteSessionConfirm: string;
+  /** 行菜单「删除」项 */
+  menuDelete: string;
+  /** 行菜单「删除」在会话运行中时的禁用说明（Z-49/Denia 语义：running 禁用） */
+  menuDeleteRunning: string;
+  /** 移除运行中的项目确认标题（Z-49：组内有 running 会话才弹） */
+  removeProjectRunningTitle: string;
+  /** 移除运行中的项目确认描述 */
+  removeProjectRunningDescription: string;
+  /** 移除运行中的项目确认按钮（destructive） */
+  removeProjectRunningConfirm: string;
+  /** 对话框通用取消 */
+  dialogCancel: string;
   /** 无 cwd 的会话所在分组的标题 */
   noProject: string;
   /** Pinned 区标题 */
@@ -121,6 +146,12 @@ export interface SidebarLabels {
   automationTodo: string;
   /** Z-10：行右侧「更多」按钮的可访问名（与右键同一动作集） */
   rowMore: string;
+  /** U2 批D（D7）：项目表读取失败行内轻提示的文案前缀（后接具体错误） */
+  projectsLoadFailed: string;
+  /** 失败提示「重试」按钮文案 */
+  retry: string;
+  /** 失败提示「忽略/关闭」按钮可访问名 */
+  dismiss: string;
   /** 诚实占位（只占位不开发）：悬停说明 */
   pluginMarketTodo: string;
   /** Z-16 #10：footer 固定账号显示名（用户拍板：无账号体系，写死固定账号，视觉如实） */
@@ -161,14 +192,27 @@ export const DEFAULT_SIDEBAR_LABELS: SidebarLabels = {
   projects: '项目',
   tasks: '任务',
   noTasks: '暂无任务',
+  noProjects: '暂无项目',
   moveSection: '移动分区',
   moveSectionTodo: '暂不支持：分区拖拽移动未实现（占位把手）',
   addProject: '添加项目',
   addProjectTodo: 'web 无目录选择通道',
   removeProject: '移出项目',
+  menuRemoveProject: '移除',
   removeProjectTodo: '未接线：无项目移除通道',
   newTaskInSection: '新建任务',
   newTaskInSectionTodo: '未接线：宿主未提供新建任务通道',
+  // Z-48/Z-49 文案（口径 = refs-zcode-layout.md Z-48/Z-49 的 zh-CN 文案族）
+  newSessionInProject: '在此项目新建会话',
+  deleteSessionTitle: '删除这个会话？',
+  deleteSessionDescription: '会话将从列表移除。',
+  deleteSessionConfirm: '删除',
+  menuDelete: '删除',
+  menuDeleteRunning: '会话正在运行，先停止再删除',
+  removeProjectRunningTitle: '移除运行中的项目？',
+  removeProjectRunningDescription: '历史任务不会被删除。',
+  removeProjectRunningConfirm: '移除并停止运行',
+  dialogCancel: '取消',
   noProject: '无项目',
   pinned: '置顶',
   pinnedShowAll: (hidden) => `显示全部（另 ${hidden}）`,
@@ -192,6 +236,9 @@ export const DEFAULT_SIDEBAR_LABELS: SidebarLabels = {
   automationEntry: '自动化',
   automationTodo: 'web 无本地 cron 通道',
   rowMore: '更多操作',
+  projectsLoadFailed: '项目列表读取失败',
+  retry: '重试',
+  dismiss: '忽略',
   pluginMarketTodo: '未开发：插件市场不采纳（Z 程序登记）',
   accountName: '本地用户',
   accountTodo: '本地构建 · 无账号体系',

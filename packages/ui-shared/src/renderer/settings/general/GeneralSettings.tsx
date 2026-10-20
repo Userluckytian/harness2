@@ -8,7 +8,8 @@
 //
 // 措辞按壳注入（Z-措辞纠偏）：偏好文件名与「打开本设置」键位**两壳不同**（web 无 desktop-preferences.json、
 // 未绑定 Ctrl+,），故经 props 注入；缺省为中性且正确的文案（不含 desktop 专属事实）。
-import type { SettingsNotifyDetails } from '../../../shared/settings.js';
+import type { SettingsNotifyDetails, TrayStatusView } from '../../../shared/settings.js';
+import { Switch } from '../../../components/ui/switch.js';
 import { SettingsSectionBlock } from '../shell/section-block.js';
 
 /** 通知详情可选项（与 shared/preferences 的 NOTIFY_DETAILS 同值域） */
@@ -39,6 +40,14 @@ export interface GeneralSettingsProps {
    * 桌面注入 `Ctrl+,`（真实绑定）；web 未绑定该键（经侧栏齿轮进入）则不传。
    */
   readonly openSettingsKeys?: string;
+  /**
+   * Z-47 托盘状态（桌面端口 `getTrayStatus` 有值时由 SettingsPage 传入；缺省 = 该壳无托盘通道
+   * —— web / 旧夹具，此时**整块不渲染**，不摆假开关）。
+   * `closeToTray` 初值取该响应（已含平台默认归一）。
+   */
+  readonly trayStatus?: TrayStatusView | undefined;
+  /** 切换「关闭窗口时隐藏到托盘」（桌面 = tray:setCloseToTray；写后 SettingsPage 回读刷新初值） */
+  readonly onToggleCloseToTray?: (enabled: boolean) => void;
 }
 
 export function GeneralSettings({
@@ -48,6 +57,8 @@ export function GeneralSettings({
   note,
   preferencesFileLabel,
   openSettingsKeys,
+  trayStatus,
+  onToggleCloseToTray,
 }: GeneralSettingsProps): React.ReactNode {
   const prefLabel = preferencesFileLabel ?? '本机偏好文件';
   return (
@@ -76,6 +87,31 @@ export function GeneralSettings({
         )}
         {note !== undefined && note !== null && <p className="settings-feedback">{note}</p>}
       </SettingsSectionBlock>
+      {/* Z-47：关窗驻留托盘（桌面独有；trayStatus 缺省 = 无托盘通道 → 整块不渲染，
+          web 壳 / 旧夹具即此情形，不摆假开关）。托盘创建失败（created=false，如 Linux
+          桌面环境无 StatusNotifier）→ 开关禁用 + 可行动说明（ZCode 同法：不可用如实告知）。 */}
+      {trayStatus !== undefined && (
+        <SettingsSectionBlock
+          title="窗口驻留"
+          desc={`关闭窗口时隐藏到托盘；改动即时生效。缺省按平台：Windows 开、Linux 关（可在 ${prefLabel} 覆盖）`}
+        >
+          <div className="settings-row" data-settings-group="close-to-tray">
+            <span className="settings-desc">关闭窗口时隐藏到托盘</span>
+            <Switch
+              checked={trayStatus.closeToTray}
+              disabled={!trayStatus.created || onToggleCloseToTray === undefined}
+              onCheckedChange={(v) => onToggleCloseToTray?.(v)}
+              aria-label="关闭窗口时隐藏到托盘"
+              data-settings-close-to-tray
+            />
+          </div>
+          {!trayStatus.created && (
+            <p className="settings-desc" data-testid="tray-unavailable-note">
+              系统托盘不可用（该平台/桌面环境未成功创建托盘）：此开关暂不生效，关窗仍按直接退出处理。
+            </p>
+          )}
+        </SettingsSectionBlock>
+      )}
       <SettingsSectionBlock title="发送快捷键" desc="只读：键位由 composer / 壳的全局键位表决定">
         <p className="settings-desc">
           Enter 发送 · Shift+Enter 换行 · Ctrl+K 命令面板

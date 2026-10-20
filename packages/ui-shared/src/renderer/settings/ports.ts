@@ -20,6 +20,7 @@ import type {
   SettingsPreferencesShape,
   SettingsSkillsShape,
   SettingsTheme,
+  TrayStatusView,
 } from '../../shared/settings.js';
 
 /** 设置页数据 / 能力端口面（宿主注入；缺失成员 = 如实降级） */
@@ -53,6 +54,13 @@ export interface SettingsPorts {
   // —— 模型配置通道面（存在 = models 分区可用；缺失 = 分区显示「此壳未提供模型配置通道」） ——
 
   modelsApi?: Partial<ModelsSettingsApi>;
+
+  // —— Z-47 托盘（桌面独有；缺失 = 通用分区不渲染「关窗驻留」开关，web 壳即此情形） ——
+
+  /** 托盘状态（created/platform/closeToTray 有效值；开关初值 = 该响应的 closeToTray） */
+  getTrayStatus?: () => Promise<TrayStatusView>;
+  /** 设置「关闭窗口时隐藏到托盘」（写 desktop-preferences.json；返回写后有效状态整像） */
+  setCloseToTray?: (enabled: boolean) => Promise<TrayStatusView>;
 
   // —— 外观（宿主注入；缺失 = 外观分区不进导航） ——
 

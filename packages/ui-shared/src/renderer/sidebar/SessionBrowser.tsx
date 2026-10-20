@@ -20,16 +20,23 @@ import {
   EllipsisIcon,
   FolderIcon,
   GripVerticalIcon,
-  MinusIcon,
+  MessageCirclePlusIcon,
   PanelLeftIcon,
   PinIcon,
   PlusIcon,
   XIcon,
 } from 'lucide-react';
 import { ContextMenu, ContextMenuTrigger } from '../../components/ui/context-menu.js';
-import { DropdownMenu, DropdownMenuTrigger } from '../../components/ui/dropdown-menu.js';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '../../components/ui/dropdown-menu.js';
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '../../components/ui/dialog.js';
 import { Button } from '../../components/ui/button.js';
+import { ConfirmDialog } from '../components/ConfirmDialog.js';
+import { Spinner } from '../../components/ui/spinner.js';
 import type { SidebarSessionItem } from './session-items.js';
 import type { SidebarLabels } from './labels.js';
 import {
@@ -111,8 +118,45 @@ export interface SessionBrowserProps extends WorkspacesOwnerProps {
    * **不删任何会话数据**——红线①②）。缺省不传 = disabled 占位。
    */
   onRemoveProject?: ((cwd: string) => void) | undefined;
+  /**
+   * Z-48 #2：显式项目组头 hover 动作「在此项目新建会话」真动作（带项目 cwd）。
+   * 缺省不传 = 该钮不渲染（不摆无效入口）。
+   */
+  onNewSessionInProject?: ((cwd: string) => void) | undefined;
+  /**
+   * Z-49：删除会话**真执行**（软删：controller.deleteSession → metadata deleted + 列表移除）。
+   * 缺省不传 = 行菜单不出现「删除」项（红线⑩）。确认对话框由本组件承载（文案 labels 的
+   * deleteSession* 族），确认后调用本回调。
+   */
+  onDeleteSession?: ((id: string) => Promise<void> | void) | undefined;
+  /**
+   * U1 复审 P2：删除确认框的 live running 复查判据（壳注入 = store.peekStream(id)?.running）。
+   * 确认时若在运行 → 只关框不删（不弹提示，最小改动）；缺省不传 = 不复查（行为不变）。
+   */
+  isSessionRunning?: ((id: string) => boolean) | undefined;
   /** 任务区（第二个 section）头「新建任务」真动作（与 SidebarRoot 的新会话入口同源）；缺省 = 不渲染该钮 */
   onNewTask?: (() => void) | undefined;
+  /**
+   * U2 批D（D7）：项目表读取失败的行内轻提示（Alert 规格 Z-79）。
+   * 由桌面壳在 projectsList/add/remove 的 catch 里置位；null/缺省 = 不渲染。
+   */
+  projectsError?: string | null | undefined;
+  /** 失败条「重试」动作（壳重发 projectsList）；缺省 = 不渲染重试钮 */
+  onRetryProjects?: (() => void) | undefined;
+  /** 失败条「忽略」（dismiss）；缺省 = 不渲染关闭钮 */
+  onDismissProjectsError?: (() => void) | undefined;
+}
+
+/** Z-48：行/组头悬浮动作的 mount 判据（hover / focus-within / 菜单打开才挂，不用 CSS 隐藏） */
+export interface HoverActionState {
+  hovered: boolean;
+  focusWithin: boolean;
+  menuOpen: boolean;
+}
+
+/** 悬浮动作挂载判据（纯函数，可单测；对齐 ZCode `WorkspaceSidebarItem.tsx:275-281` shouldMountWorkspaceRowActions） */
+export function shouldMountRowActions(state: HoverActionState): boolean {
+  return state.hovered || state.focusWithin || state.menuOpen;
 }
 
 /** 会话行拖拽钩子（Z-19）：载荷由调用方决定（生产写 dataTransfer + 模块级回退） */
@@ -130,22 +174,32 @@ function rowMeta(item: SidebarSessionItem, nowMs: number): string {
   return relativeTime(item.mtimeMs, nowMs);
 }
 
-/** leading 槽（Z-09）：unread 徽标 > running spinner > pinned 图钉；都无 → 空占位 */
+/**
+ * leading 槽（Z-09）：unread 蓝点 > running spinner > pinned 图钉；都无 → 空占位。
+ * U2 批D（D3）：unread 从黑底计数胶囊改为 8px 蓝点（计数移入行 title / aria-label，见 SessionRow）；
+ * running 从绿环改为 Z-79 Spinner（LoaderIcon size-4 animate-spin，role=status）。
+ * error 红点无数据源维持不臆造（task-view.leadingSlot 注释）。
+ */
 function LeadingSlot({ item, labels }: { item: SidebarSessionItem; labels: SidebarLabels }): React.ReactNode {
   const kind = leadingSlot(item);
   if (kind === 'unread') {
     return (
       <span className="h2-sidebar-session-leading" data-testid="session-leading" data-kind="unread">
-        <span className="h2-sidebar-unread" aria-label={labels.unreadLabel}>
-          {item.unread}
-        </span>
+        <span
+          className="h2-sidebar-unread-dot"
+          data-testid="session-unread"
+          role="img"
+          aria-label={`${labels.unreadLabel}${item.unread > 0 ? ` ${item.unread}` : ''}`}
+        />
       </span>
     );
   }
   if (kind === 'running') {
     return (
       <span className="h2-sidebar-session-leading" data-testid="session-leading" data-kind="running">
-        <span className="h2-sidebar-running" data-testid="session-running" aria-label={labels.runningLabel} />
+        <span className="h2-sidebar-spinner" data-testid="session-running" title={labels.runningLabel}>
+          <Spinner loadingLabel={labels.runningLabel} />
+        </span>
       </span>
     );
   }
@@ -172,11 +226,27 @@ interface RowContext {
   rowMenu: RowMenuCallbacks | undefined;
   /** P0-3b：组头「添加项目」（缺 = 占位钮） */
   onAddProject: (() => void) | undefined;
-  /** P0-3b：组头「移出项目」（缺 = 占位钮） */
+  /** P0-3b：组头「移出项目」（缺 = 占位钮；SessionBrowser 已包运行守卫，见调用处） */
   onRemoveProject: ((cwd: string) => void) | undefined;
+  /** Z-48 #2：组头 hover「在此项目新建会话」（缺 = 不渲染该钮） */
+  onNewSessionInProject: ((cwd: string) => void) | undefined;
 }
 
-/** 单行渲染（列表区与 Pinned 区共用）；showUnpin 只在 Pinned 区为 true（取消置顶入口只此一处） */
+/** 按 cwd 找回分区里的项目组（Z-49 运行守卫判定用；找不到 =  undefined，走直接移除） */
+function findGroupByCwd(sections: readonly SidebarSection[], cwd: string): SidebarProjectGroup | undefined {
+  for (const section of sections) {
+    if (section.kind === 'projects' || section.kind === 'grouped') {
+      const hit = section.groups.find((g) => g.cwd === cwd);
+      if (hit !== undefined) return hit;
+    }
+  }
+  return undefined;
+}
+
+/** 单行渲染（列表区与 Pinned 区共用）；showUnpin 只在 Pinned 区为 true（取消置顶入口只此一处）。
+ * U2 批D（D4 / Z-48）：行右侧钮（取消置顶 ✕ / 更多 ⋯）从 CSS opacity 显隐改为
+ * **按交互态 mount**（复用组头同一判据 shouldMountRowActions：hover / focus-within / 菜单打开）；
+ * 菜单打开时不卸载（onOpenChange 驱动），否则下拉会被连根拔掉。 */
 function SessionRow({
   item,
   ctx,
@@ -187,11 +257,17 @@ function SessionRow({
   showUnpin?: boolean;
 }): React.ReactNode {
   const { selectedId, labels, nowMs, onOpenSession, onTogglePin, rowDrag, rowMenu } = ctx;
+  const [interacted, setInteracted] = useState<HoverActionState>({
+    hovered: false,
+    focusWithin: false,
+    menuOpen: false,
+  });
   const onDragStart = rowDrag?.onDragStart;
   const onDragEnd = rowDrag?.onDragEnd;
   const dragDisabled = rowDrag?.disabledIds?.has(item.id) === true;
   const draggable = onDragStart !== undefined && !dragDisabled;
   const unpin = showUnpin && onTogglePin !== undefined && item.pinned;
+  const mountActions = shouldMountRowActions(interacted);
   // P0-2：菜单动作可用才包装（一个回调都没有 → 不挂 ContextMenu，右键无空菜单）
   const menuActions =
     rowMenu === undefined
@@ -204,7 +280,9 @@ function SessionRow({
           canArchive: rowMenu.onArchive !== undefined,
           canSplit: rowMenu.onOpenInSplit !== undefined,
           canTrajectory: rowMenu.onInspectTrajectory !== undefined,
+          canDelete: rowMenu.onDeleteSession !== undefined,
         });
+  const showMore = menuActions.length > 0 && rowMenu !== undefined;
   const rowButton = (
     <button
       type="button"
@@ -214,7 +292,8 @@ function SessionRow({
       data-archived={item.archived ? 'true' : 'false'}
       data-drag-disabled={dragDisabled ? 'true' : undefined}
       aria-current={selectedId === item.id ? 'true' : undefined}
-      title={item.title}
+      // U2 批D（D3 / Z-09）：unread 计数不进胶囊（蓝点无字），移到行 title（title 属性 + aria-label 同源）
+      title={item.unread > 0 ? `${item.title}（${labels.unreadLabel} ${item.unread}）` : item.title}
       {...(draggable ? { draggable: true } : {})}
       {...(draggable && onDragStart !== undefined
         ? { onDragStart: (event: React.DragEvent<HTMLButtonElement>) => onDragStart(item.id, event) }
@@ -240,7 +319,20 @@ function SessionRow({
     </button>
   );
   return (
-    <li className={`h2-sidebar-row${unpin ? ' h2-sidebar-row-pinned' : ''}`}>
+    <li
+      className={`h2-sidebar-row${mountActions && unpin ? ' h2-sidebar-row-pinned' : ''}`}
+      onMouseEnter={() => setInteracted((s) => ({ ...s, hovered: true }))}
+      // 指针离开行只收 hovered：菜单打开态由 Radix onOpenChange 归零（下拉渲染在 portal，
+      // 指针移进菜单必然触发行 mouseleave —— 若在此清 menuOpen 会把打开中的菜单连根拔掉）
+      onMouseLeave={() => setInteracted((s) => ({ ...s, hovered: false }))}
+      onFocusCapture={() => setInteracted((s) => ({ ...s, focusWithin: true }))}
+      onBlurCapture={(event) => {
+        // 焦点离开整行才算 focusWithin=false（钮 ↔ 行 之间切换不误收）
+        if (!event.currentTarget.contains(event.relatedTarget)) {
+          setInteracted((s) => ({ ...s, focusWithin: false }));
+        }
+      }}
+    >
       {menuActions.length > 0 && rowMenu !== undefined ? (
         <ContextMenu>
           <ContextMenuTrigger asChild>{rowButton}</ContextMenuTrigger>
@@ -249,7 +341,7 @@ function SessionRow({
       ) : (
         rowButton
       )}
-      {unpin && (
+      {mountActions && unpin && (
         <button
           type="button"
           className="h2-sidebar-unpin"
@@ -261,10 +353,10 @@ function SessionRow({
           <XIcon size={14} aria-hidden="true" />
         </button>
       )}
-      {/* P0-2/Z-10 第二入口：行右侧 ⋯（hover/聚焦显现；动作集与右键同源 rowMenuEntries）。
-          Pinned 区行与 unpin ✕ 并排时右移避让（见 sidebar.css .h2-sidebar-row-pinned 规则）。 */}
-      {menuActions.length > 0 && rowMenu !== undefined && (
-        <DropdownMenu>
+      {/* P0-2/Z-10 第二入口：行右侧 ⋯（Z-48：交互态才 mount；动作集与右键同源 rowMenuEntries）。
+          Pinned 行与 unpin ✕ 并排时右移避让（见 sidebar.css .h2-sidebar-row-pinned 规则）。 */}
+      {mountActions && showMore && (
+        <DropdownMenu onOpenChange={(open) => setInteracted((s) => ({ ...s, menuOpen: open }))}>
           <DropdownMenuTrigger asChild>
             <button
               type="button"
@@ -323,6 +415,116 @@ function HeadIconButton({
   );
 }
 
+/**
+ * 显式项目组头（Z-48）：动作按交互态 mount（hover / focus-within / 菜单打开
+ * —— 对齐 ZCode `WorkspaceSidebarItem.tsx:275-281` shouldMountWorkspaceRowActions）。
+ * U2 批D（D5 / Z-49）：「移除」从组头独立 MinusIcon 钮收进「更多」⋯ 下拉末项
+ * （XIcon；ZCode `WorkspaceSidebarItem.tsx:938-956` 同型）；运行守卫（Z-49 确认框）不变。
+ * 非显式组（聚合组，web 口径）恒无动作钮，现状不变。
+ */
+function ProjectGroupHead({
+  group,
+  collapsed,
+  ctx,
+  slug,
+  onToggleGroup,
+}: {
+  group: SidebarProjectGroup;
+  collapsed: boolean;
+  ctx: RowContext;
+  slug: string;
+  onToggleGroup: (key: string) => void;
+}): React.ReactNode {
+  const { labels } = ctx;
+  const [interacted, setInteracted] = useState<HoverActionState>({
+    hovered: false,
+    focusWithin: false,
+    menuOpen: false,
+  });
+  const name = group.name.length > 0 ? group.name : ctx.labels.noProject;
+  const explicit = group.source === 'project' && group.cwd !== undefined;
+  const showActions = explicit && shouldMountRowActions(interacted);
+  return (
+    <div
+      className="h2-sidebar-group-head-row"
+      onMouseEnter={() => setInteracted((s) => ({ ...s, hovered: true }))}
+      // U2 批D（D5）：同 SessionRow —— mouseleave 只收 hovered，menuOpen 由 onOpenChange 归零
+      //（指针从组头移进 portal 里的 ⋯ 下拉不能把打开中的菜单拔掉）
+      onMouseLeave={() => setInteracted((s) => ({ ...s, hovered: false }))}
+      onFocusCapture={() => setInteracted((s) => ({ ...s, focusWithin: true }))}
+      onBlurCapture={(event) => {
+        // 焦点离开整个组头行才算 focusWithin=false（钮 ↔ 钮 之间切换不误收）
+        if (!event.currentTarget.contains(event.relatedTarget)) {
+          setInteracted((s) => ({ ...s, focusWithin: false }));
+        }
+      }}
+    >
+      <button
+        type="button"
+        className="h2-sidebar-group-head"
+        data-testid="sidebar-group-head"
+        aria-expanded={!collapsed}
+        title={group.cwd ?? name}
+        onClick={() => onToggleGroup(group.key)}
+      >
+        <span className={`h2-sidebar-caret${collapsed ? '' : ' h2-sidebar-caret-open'}`} aria-hidden="true">
+          <ChevronRightIcon size={14} />
+        </span>
+        <FolderIcon size={14} className="h2-sidebar-group-folder" aria-hidden="true" />
+        <span className="h2-sidebar-group-name">{name}</span>
+        <span className="h2-sidebar-group-count">{group.items.length}</span>
+      </button>
+      {showActions && group.cwd !== undefined && (
+        <>
+          {/* Z-48 #2：hover/focus 才 mount「在此项目新建会话」（真动作带项目 cwd；无通道 = 不渲染） */}
+          {ctx.onNewSessionInProject !== undefined && (
+            <button
+              type="button"
+              className="h2-sidebar-head-button"
+              data-testid={`sidebar-group-new-session-${slug}`}
+              aria-label={labels.newSessionInProject}
+              title={labels.newSessionInProject}
+              onClick={() => ctx.onNewSessionInProject?.(group.cwd as string)}
+            >
+              <span aria-hidden="true">
+                <MessageCirclePlusIcon size={14} />
+              </span>
+            </button>
+          )}
+          {/* U2 批D（D5 / Z-49）：「移除」收进「更多」⋯ 下拉末项（与行菜单同型）；
+              无通道 = 项 disabled + todoTitle 说明（红线⑩），不再摆独立占位钮。 */}
+          <DropdownMenu onOpenChange={(open) => setInteracted((s) => ({ ...s, menuOpen: open }))}>
+            <DropdownMenuTrigger asChild>
+              <button
+                type="button"
+                className="h2-sidebar-head-button"
+                data-testid={`sidebar-group-more-${slug}`}
+                aria-label={labels.removeProject}
+                title={labels.removeProject}
+              >
+                <span aria-hidden="true">
+                  <EllipsisIcon size={14} />
+                </span>
+              </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" data-testid={`sidebar-group-more-menu-${slug}`}>
+              <DropdownMenuItem
+                data-menu-action="remove-project"
+                disabled={ctx.onRemoveProject === undefined}
+                {...(ctx.onRemoveProject === undefined ? { title: labels.removeProjectTodo } : {})}
+                onSelect={() => ctx.onRemoveProject?.(group.cwd as string)}
+              >
+                <XIcon size={14} aria-hidden="true" />
+                {labels.menuRemoveProject}
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </>
+      )}
+    </div>
+  );
+}
+
 /** 分组列表（项目区 / 分组模式共用）：组头可折叠，默认展开；Z-16 #8 组内超 20 条折叠「显示更多」 */
 function GroupList({
   groups,
@@ -348,9 +550,7 @@ function GroupList({
       {groups.map((group) => {
         const collapsed = collapsedGroups.has(group.key);
         const name = group.name.length > 0 ? group.name : noProjectLabel;
-        // P0-3b：显式项目组（source='project'）→ 组头右侧一枚 24×24「移出项目」钮
-        // （真动作 = projects:remove；无通道 = disabled 占位）。分区级的 移动/添加 两钮在
-        // 项目区头（Z-16 #6），见 renderSection。
+        // P0-3b：显式项目组（source='project'）→ 组头 hover 动作（新建会话/移出项目，Z-48）；
         // 会话聚合出的组（既有模式，web / 无项目表）不放钮——现状不变。
         const explicit = group.source === 'project';
         const slug = group.key.replace(/[^A-Za-z0-9]/g, '-');
@@ -360,35 +560,33 @@ function GroupList({
         const rows = showAll ? group.items : visible;
         return (
           <div className="h2-sidebar-group" key={group.key} data-group-key={group.key}>
-            <div className="h2-sidebar-group-head-row">
-              <button
-                type="button"
-                className="h2-sidebar-group-head"
-                data-testid="sidebar-group-head"
-                aria-expanded={!collapsed}
-                title={group.cwd ?? name}
-                onClick={() => onToggleGroup(group.key)}
-              >
-                <span className={`h2-sidebar-caret${collapsed ? '' : ' h2-sidebar-caret-open'}`} aria-hidden="true">
-                  <ChevronRightIcon size={14} />
-                </span>
-                <FolderIcon size={14} className="h2-sidebar-group-folder" aria-hidden="true" />
-                <span className="h2-sidebar-group-name">{name}</span>
-                <span className="h2-sidebar-group-count">{group.items.length}</span>
-              </button>
-              {explicit && group.cwd !== undefined && (
-                <HeadIconButton
-                  testId={`sidebar-group-remove-${slug}`}
-                  icon={<MinusIcon size={14} />}
-                  action={
-                    ctx.onRemoveProject === undefined ? undefined : () => ctx.onRemoveProject?.(group.cwd as string)
-                  }
-                  label={labels.removeProject}
-                  title={group.cwd}
-                  todoTitle={labels.removeProjectTodo}
-                />
-              )}
-            </div>
+            {explicit ? (
+              <ProjectGroupHead
+                group={group}
+                collapsed={collapsed}
+                ctx={ctx}
+                slug={slug}
+                onToggleGroup={onToggleGroup}
+              />
+            ) : (
+              <div className="h2-sidebar-group-head-row">
+                <button
+                  type="button"
+                  className="h2-sidebar-group-head"
+                  data-testid="sidebar-group-head"
+                  aria-expanded={!collapsed}
+                  title={group.cwd ?? name}
+                  onClick={() => onToggleGroup(group.key)}
+                >
+                  <span className={`h2-sidebar-caret${collapsed ? '' : ' h2-sidebar-caret-open'}`} aria-hidden="true">
+                    <ChevronRightIcon size={14} />
+                  </span>
+                  <FolderIcon size={14} className="h2-sidebar-group-folder" aria-hidden="true" />
+                  <span className="h2-sidebar-group-name">{name}</span>
+                  <span className="h2-sidebar-group-count">{group.items.length}</span>
+                </button>
+              </div>
+            )}
             {!collapsed && (
               <ul className="h2-sidebar-group-list">
                 {group.items.length === 0 && explicit && (
@@ -447,7 +645,13 @@ export function SessionBrowser({
   projects,
   onAddProject,
   onRemoveProject,
+  onNewSessionInProject,
+  onDeleteSession,
+  isSessionRunning,
   onNewTask,
+  projectsError,
+  onRetryProjects,
+  onDismissProjectsError,
 }: SessionBrowserProps): React.ReactNode {
   const [prefs, setPrefs] = useState<SidebarTaskPreferences>({
     ...DEFAULT_SIDEBAR_TASK_PREFERENCES,
@@ -462,16 +666,26 @@ export function SessionBrowser({
   const [expandedGroups, setExpandedGroups] = useState<ReadonlySet<string>>(new Set());
   // P0-2：重命名对话框目标行（null=关）；右键菜单「重命名」设置，Dialog 提交后清。
   const [renameTarget, setRenameTarget] = useState<SidebarSessionItem | null>(null);
+  // Z-49：删除会话确认框目标行（null=关）；running 行菜单项已禁用，确认框是最后防线。
+  const [deleteTarget, setDeleteTarget] = useState<SidebarSessionItem | null>(null);
+  const [deleting, setDeleting] = useState(false);
+  // Z-49：「移除运行中的项目」确认框目标组（null=关）。仅组内有 running 会话才弹；
+  // 无 running 直接移除（ZCode `WorkspaceSidebarItem.tsx:356-392` 同语义）。
+  const [removeProjectTarget, setRemoveProjectTarget] = useState<{ cwd: string; name: string } | null>(null);
 
   // 菜单回调：壳给了 onSubmitRename 而没给 onRename → 本组件接管（打开内置对话框）；
   // 壳自带 onRename（如自绘内联编辑）则以壳为准，本组件不截胡。其余透传壳。
+  // Z-49：onDeleteSession 同理 —— 本组件截胡为「打开确认框」，真删除在确认框里执行。
   const rowMenu: RowMenuCallbacks | undefined =
-    rowMenuProp === undefined && onSubmitRename === undefined
+    rowMenuProp === undefined && onSubmitRename === undefined && onDeleteSession === undefined
       ? undefined
       : {
           ...rowMenuProp,
           ...(rowMenuProp?.onRename === undefined && onSubmitRename !== undefined
             ? { onRename: (item: SidebarSessionItem) => setRenameTarget(item) }
+            : {}),
+          ...(rowMenuProp?.onDeleteSession === undefined && onDeleteSession !== undefined
+            ? { onDeleteSession: (item: SidebarSessionItem) => setDeleteTarget(item) }
             : {}),
         };
 
@@ -516,7 +730,21 @@ export function SessionBrowser({
     rowMenu,
     // P0-3b：组头钮回调（缺 = 渲染 disabled 占位，红线⑩）
     onAddProject,
-    onRemoveProject,
+    // Z-49：移除项目带运行守卫 —— 组内有 running 会话时先弹确认（removeProjectTarget），
+    // 无 running 直接移除（ZCode `WorkspaceSidebarItem.tsx:356-392` 同语义）。
+    onRemoveProject:
+      onRemoveProject === undefined
+        ? undefined
+        : (cwd: string) => {
+            const group = findGroupByCwd(sections, cwd);
+            if (group !== undefined && group.items.some((it) => it.running)) {
+              setRemoveProjectTarget({ cwd, name: group.name });
+              return;
+            }
+            onRemoveProject(cwd);
+          },
+    // Z-48 #2：组头 hover「在此项目新建会话」（缺 = 不渲染该钮）
+    onNewSessionInProject,
   };
 
   const updatePrefs = (patch: Partial<SidebarTaskPreferences>): void => {
@@ -620,7 +848,46 @@ export function SessionBrowser({
               />
             )}
           </div>
-          {!collapsed && (
+          {/* U2 批D（D7）：项目表读取失败 → 区头下行内轻条（Alert 规格 Z-79：rounded-lg border
+              px-2 py-1.5、destructive 前景），带「重试」与忽略（dismiss）。 */}
+          {section.kind === 'projects' && projectsError !== undefined && projectsError !== null && (
+            <div className="h2-sidebar-alert" data-testid="sidebar-projects-error" role="alert">
+              <span className="h2-sidebar-alert-text">
+                {`${labels.projectsLoadFailed}${projectsError.length > 0 ? `：${projectsError}` : ''}`}
+              </span>
+              {onRetryProjects !== undefined && (
+                <button
+                  type="button"
+                  className="h2-sidebar-alert-action"
+                  data-testid="sidebar-projects-retry"
+                  onClick={onRetryProjects}
+                >
+                  {labels.retry}
+                </button>
+              )}
+              {onDismissProjectsError !== undefined && (
+                <button
+                  type="button"
+                  className="h2-sidebar-alert-dismiss"
+                  data-testid="sidebar-projects-error-dismiss"
+                  aria-label={labels.dismiss}
+                  title={labels.dismiss}
+                  onClick={onDismissProjectsError}
+                >
+                  <XIcon size={14} aria-hidden="true" />
+                </button>
+              )}
+            </div>
+          )}
+          {!collapsed && section.groups.length === 0 && (
+            // U2 批D（D6）：空侧栏保骨架——项目区 0 组时区内如实「暂无项目」行（非假数据）
+            <ul className="h2-sidebar-list-inner">
+              <li className="h2-sidebar-group-empty" data-testid="sidebar-projects-empty">
+                {labels.noProjects}
+              </li>
+            </ul>
+          )}
+          {!collapsed && section.groups.length > 0 && (
             <GroupList
               groups={section.groups}
               collapsedGroups={collapsedGroups}
@@ -716,6 +983,14 @@ export function SessionBrowser({
       : sessions.length === 0 && archived.length > 0
         ? labels.allArchived
         : labels.noSessions;
+  // U2 批D（D6）：空侧栏保骨架——项目模式、非搜索、非归档视图、无归档滞留且无行时，
+  // 「项目」「任务」两区头照画、区内如实「暂无项目 / 暂无任务」（Z-16 #9 两区头恒在口径推及
+  // 真空态；红线⑩：真实空态）。allArchived 指向性文案仍走单条全局提示。
+  const skeleton: SidebarSection[] = [
+    { kind: 'projects', groups: [] },
+    { kind: 'conversations', items: [] },
+  ];
+  const showSkeleton = !hasRows && !searching && !archivedView && archived.length === 0 && prefs.viewMode === 'project';
 
   return (
     <section className="h2-sidebar-region" aria-label={labels.sessions}>
@@ -746,6 +1021,9 @@ export function SessionBrowser({
       >
         {hasRows ? (
           sections.map(renderSection)
+        ) : showSkeleton ? (
+          // U2 批D（D6）：空侧栏仍渲染「项目 / 任务」两区头 + 区内「暂无」行（骨架不塌）
+          skeleton.map(renderSection)
         ) : (
           <div className="h2-sidebar-empty" data-testid="sidebar-empty">
             {emptyLabel}
@@ -758,6 +1036,53 @@ export function SessionBrowser({
           labels={labels}
           onSubmit={onSubmitRename}
           onClose={() => setRenameTarget(null)}
+        />
+      ) : null}
+      {/* Z-49：删除会话确认（文案族 = deleteSession*；确认后走真删除 onDeleteSession）。
+          running 行菜单已禁用；确认时按 isSessionRunning 复查 live 状态兜一层（防对话框开着时
+          该会话转为运行）：命中只关框不删，不弹提示（最小改动）。 */}
+      {deleteTarget !== null && onDeleteSession !== undefined ? (
+        <ConfirmDialog
+          open
+          title={labels.deleteSessionTitle}
+          description={labels.deleteSessionDescription}
+          confirmLabel={labels.deleteSessionConfirm}
+          cancelLabel={labels.dialogCancel}
+          busy={deleting}
+          onCancel={() => setDeleteTarget(null)}
+          onConfirm={() => {
+            const target = deleteTarget;
+            if (isSessionRunning?.(target.id) === true) {
+              setDeleteTarget(null);
+              return;
+            }
+            setDeleting(true);
+            void Promise.resolve(onDeleteSession(target.id))
+              .then(
+                () => {
+                  setDeleteTarget(null);
+                },
+                () => {
+                  // 失败保持对话框可重试；具体错误提示由 controller 层 toast 承担（Z10-8b 通道）
+                },
+              )
+              .finally(() => setDeleting(false));
+          }}
+        />
+      ) : null}
+      {/* Z-49：组内有 running 会话才弹「移除运行中的项目」（无 running 直接移除，见 ctx.onRemoveProject） */}
+      {removeProjectTarget !== null ? (
+        <ConfirmDialog
+          open
+          title={labels.removeProjectRunningTitle}
+          description={labels.removeProjectRunningDescription}
+          confirmLabel={labels.removeProjectRunningConfirm}
+          cancelLabel={labels.dialogCancel}
+          onCancel={() => setRemoveProjectTarget(null)}
+          onConfirm={() => {
+            onRemoveProject?.(removeProjectTarget.cwd);
+            setRemoveProjectTarget(null);
+          }}
         />
       ) : null}
     </section>

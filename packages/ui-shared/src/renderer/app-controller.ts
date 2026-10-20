@@ -22,7 +22,11 @@ export interface Controller {
   /** 额外帧观察：App 侧副作用（如 B7 系统通知）不侵入 store；返回退订 */
   startObservingFrames(listener: (frame: WsFrame) => void): () => void;
   refreshSessions(): Promise<void>;
-  newSession(): Promise<void>;
+  /**
+   * 新建会话。`cwd` 可选（Z-48「在此项目新建会话」）：给了就透传给 `api.createSession(cwd)`，
+   * 缺省 = 主进程 serve 的默认根（既有行为逐字节不变）。
+   */
+  newSession(cwd?: string): Promise<void>;
   selectSession(id: string): Promise<void>;
   replaySession(id: string): Promise<void>;
   sendMessage(id: string, text: string): Promise<void>;
@@ -405,9 +409,11 @@ export function createController(store: AppStore, api: HarnessClient): Controlle
       };
     },
     refreshSessions,
-    async newSession(): Promise<void> {
+    async newSession(cwd?: string): Promise<void> {
       try {
-        const created = await api.createSession(); // cwd 由主进程补齐（渲染进程零 Node/零文件系统）
+        // Z-48：显式 cwd（「在此项目新建会话」）透传给 createSession；缺省行为不变
+        // （api.createSession(cwd?) 契约既有，桥 createSession 分支已消费 cwd）。
+        const created = cwd !== undefined && cwd.length > 0 ? await api.createSession(cwd) : await api.createSession();
         // P4-C：本方法无作用域入参（本仓也无 Workspace 概念），调用方只能给空白作用域；
         // 选择/订阅/重放已完成，会话页占 main 的 conversation key（无需再「打入分栏」）。
         await subscribeSession(created.id);

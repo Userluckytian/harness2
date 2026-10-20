@@ -72,14 +72,18 @@ export interface ComposerModelMenu {
 
 /**
  * 构造模型菜单：
- *   - `roles.main` 缺失 → undefined（没有「当前模型」可如实展示，控件整体不渲染）；
+ *   - `current` = roles.main，缺失时由调用方传 fallback（3b：回落 providers 列表首项）；
+ *     两者都拿不到 → undefined（无从选择，控件不渲染）；
  *   - 当前渠道组：目录声明了 models 就列全量（键名字典序）；当前值不在目录中时把它**如实**
  *     补进组首并标选中（数据来自 config，不是伪造条目）；
  *   - 其他渠道组：仅列**声明了 models** 的渠道（没目录的渠道无从选择，不列空组），
  *     选中态恒 false——「选中」只属于当前生效配置。
  */
-export function buildModelMenu(config: ComposerConfigSnapshot): ComposerModelMenu | undefined {
-  const current = config.roles?.[COMPOSER_MAIN_ROLE];
+export function buildModelMenu(
+  config: ComposerConfigSnapshot,
+  fallbackCurrent?: ComposerModelRef | undefined,
+): ComposerModelMenu | undefined {
+  const current = config.roles?.[COMPOSER_MAIN_ROLE] ?? fallbackCurrent;
   if (current === undefined) return undefined;
   const providers = config.providers ?? {};
   const groups: ComposerModelMenuGroup[] = [];
@@ -110,6 +114,23 @@ export function buildModelMenu(config: ComposerConfigSnapshot): ComposerModelMen
 /** Z-94 trigger：provider 前缀 + 模型名（如 `zai · glm-5.3`） */
 export function modelTriggerLabel(ref: ComposerModelRef): string {
   return `${ref.channel} · ${ref.model}`;
+}
+
+/**
+ * 3b 回落：`roles.main` 缺失时，模型选择器初值取 **providers 列表首项**（渠道名升序 →
+ * 该渠道模型名升序，与 buildModelMenu 的排序口径一致），而不是隐藏选择器。
+ * 无任何 provider/models 声明 → undefined（无从选择，控件仍不渲染，红线⑩）。
+ * 注：这**不改变实际生效模型**（core 按角色取模型，roles.main 缺失时 serve 直接启动失败）——
+ * 只是让 UI 有可解释的初值与切换入口，用户一旦点选即写 roles.main（真值随之落盘）。
+ */
+export function firstAvailableModel(config: ComposerConfigSnapshot): ComposerModelRef | undefined {
+  const providers = config.providers ?? {};
+  for (const channel of Object.keys(providers).sort()) {
+    const models = Object.keys(providers[channel]?.models ?? {}).sort();
+    const model = models[0];
+    if (model !== undefined) return { channel, model };
+  }
+  return undefined;
 }
 
 /**

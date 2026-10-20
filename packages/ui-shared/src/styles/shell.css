@@ -123,12 +123,39 @@ body,
      按 ZCode 对齐（MessageContent / MessageResponse = text-ui-base = 14px）显式钉住，
      使正文随 --ui-font-size 缩放，不随根字号（rem 几何基准）漂移。 */
   font-size: var(--text-ui-base);
+  /* U2-C7：G14 注释（「ZCode 滚动区全宽 + [scrollbar-gutter:stable]」）宣称但没写的两条
+     —— 滚动条槽常驻（内容不因滚动条出现被挤宽，消除忽宽忽窄抖动）；滚到边界不连锁到
+     外层祖先（转录内滚到头不把窗口/父容器一起带滚）。 */
+  scrollbar-gutter: stable;
+  overscroll-behavior: contain;
 }
 /* G15（ZCode ConversationTurnGroup.tsx:1302-1310）：轮次分隔 = **纯留白 pt-14（56px）**，
    **无分隔线、无文字头**。本仓 turn-header 是零内容标记行：padding-top 36px + 前后各
    gap-5(20px) → 轮间 76px（= ZCode pb-5 20 + pt-14 56）；首轮 36 + 20 = 56（= pt-14）。 */
 .turn-header {
   padding-top: 36px;
+}
+/* Z-97（T4b）轮次耗时行「工作中 / 已工作 / 已停止」：挂在 .turn-header 内（本轮开头，
+   ZCode ConversationTurnGroup 把耗时标签放轮组头部同位）。视觉纪律（Z-60～Z-64）：
+   字号只用 text-ui-caption、颜色只用语义 token（与 .turn-summary 同级的低存在文案）；
+   计时数字 tabular-nums 防抖（denia ⑤ WorkIndicator 工程点）。**刻意无动画**
+   （Z-97 不用旋转 spinner 的纪律延伸）→ 无 keyframes，无需 prefers-reduced-motion 降级块。
+   字段缺省（旧数据）时 WorkIndicator 不渲染，本行回到零内容纯留白，G15 断言不破。 */
+.turn-work {
+  font-size: var(--text-ui-caption);
+  color: var(--color-foreground-subtle);
+  font-variant-numeric: tabular-nums;
+}
+/* U2-C3：running 态耗时行复用工具行扫光（动画声明只此一处来源 —— styles.css
+   .tool-running-shimmer 的 keyframes/色带/reduced-motion 降级，零复制）。本组合选择器
+   只做 specificity 桥：shell.css 在 styles.css 之后加载，同级单类会被上面的常态
+   foreground-subtle 盖掉 color:transparent（背景被不透明文字遮死）→ 提级把透明色钉回。
+   刻意包在 no-preference 媒体里：减压模式下桥不生效，styles.css 的降级块
+   （color:inherit + 撤背景）照常命中，文字回到常态色，不会出现「透明字看不见」。 */
+@media (prefers-reduced-motion: no-preference) {
+  .turn-work.tool-running-shimmer {
+    color: transparent;
+  }
 }
 .bubble-user,
 .bubble-assistant {
@@ -166,7 +193,7 @@ body,
 }
 .reasoning {
   margin-bottom: 6px;
-  font-size: 12px;
+  font-size: var(--text-ui-sm);
   color: var(--color-foreground-subtle);
 }
 .reasoning summary {
@@ -179,13 +206,15 @@ body,
   margin-top: 4px;
 }
 .reasoning-inline {
-  font-size: 12px;
+  font-size: var(--text-ui-sm);
   color: var(--color-foreground-subtle);
   margin-bottom: 4px;
 }
 .tool-row {
   font-family: Consolas, monospace;
-  font-size: 12.5px;
+  /* Z-61 刻度执法（U2-C2）：原 12.5px 裸值 → --text-ui-sm；等宽字体保留（代码域例外：
+     mono 字号走刻度，12.5→12 的 0.5px 差在刻度纪律内接受） */
+  font-size: var(--text-ui-sm);
   padding: 4px 8px;
   border-radius: 6px;
   background: var(--color-muted);
@@ -198,9 +227,8 @@ body,
 .tool-fail .tool-status {
   color: var(--color-destructive);
 }
-.tool-pending .tool-status {
-  color: var(--color-warning);
-}
+/* U2-E-b 死类清理：`.tool-pending .tool-status` 已删 —— U2-C8 起在途工具行改渲染 ToolCard
+   （ChatView streaming 分支，注释 :149 留痕），旧第二套皮零引用（grep 全 src/test/壳核实）。 */
 .tool-status {
   margin-left: 8px;
 }
@@ -215,7 +243,7 @@ body,
 }
 .turn-summary {
   color: var(--color-foreground-subtle);
-  font-size: 12px;
+  font-size: var(--text-ui-sm);
   align-self: flex-start;
 }
 .sum-err {
@@ -223,6 +251,12 @@ body,
 }
 .sum-warn {
   color: var(--color-warning);
+}
+/* U2-C4：恢复条轻底（对齐 .approval-bar 的按需 dock 语言）—— 原 Tailwind `bg-warning`
+   满幅实底把整条打成警示块、抢转录视觉。改成 12% warning 透明底（比审批条 16% 更淡：
+   恢复条是 8s 即散的一次性提示，存在感更低）；文本色走 text-warning（组件内联）。 */
+.resume-bar {
+  background: color-mix(in srgb, var(--color-warning) 12%, transparent);
 }
 .approval-bar {
   border-top: 1px solid var(--color-warning);
@@ -250,15 +284,31 @@ body,
 .btn-deny {
   background: var(--color-destructive);
 }
-/* D1：可见队列（排队/暂停/待确认/未确认）+ @引用 来源报告 */
-.queue-bar,
+/* D1：@引用 来源报告（U2-E-b 死类清理：组选择器成员 .queue-bar 已删 —— 队列迁 QueuePanel
+   （Z2-09b 起 composer 之上 dock，Tailwind 工具类皮），转录内旧 queue-bar 零引用已 grep 核实） */
 .ref-report {
   display: flex;
   flex-direction: column;
   gap: 4px;
   padding: 6px 16px;
-  border-top: 1px solid var(--color-border);
-  font-size: 0.85em;
+  /* U2-C6：ref-report 收进 <details>（ChatView），去 border-top —— 引用报告是次级
+     元信息，不再以分隔线打断转录流。 */
+  font-size: var(--text-ui-xs);
+}
+/* U2-C6：summary 行「引用 N 项」——低存在、可点（对齐标记行/次级元信息语言，颜色只用语义 token） */
+.ref-report-summary {
+  cursor: pointer;
+  color: var(--color-foreground-subtle);
+  list-style-position: inside;
+}
+.ref-report-summary:hover {
+  color: var(--color-foreground);
+}
+.ref-report-body {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding-left: 1em;
 }
 .ref-sources {
   color: var(--color-muted);
@@ -302,7 +352,7 @@ body,
   border-radius: 6px;
   padding: 6px 8px;
   background: var(--color-panel);
-  font-size: 0.85em;
+  font-size: var(--text-ui-sm);
 }
 .cmd-head {
   display: flex;
@@ -354,7 +404,13 @@ body,
   white-space: pre-wrap;
   word-break: break-all;
 }
-.attempt-partial pre {
+/* U2-E-a：半截产出改 Markdown 渲染（MarkdownBlock static）—— 限高滚动改挂 .markdown-body；
+   ErrorBoundary 降级纯文本（.md-raw）保留原 pre-wrap 语义。 */
+.attempt-partial .markdown-body {
+  max-height: 200px;
+  overflow: auto;
+}
+.attempt-partial .md-raw {
   white-space: pre-wrap;
   word-break: break-all;
   max-height: 200px;
@@ -363,6 +419,154 @@ body,
 .sum-partial,
 .sum-empty {
   color: var(--color-warning);
+}
+
+/* =============================================================================
+ * U2 批E（E-b）：助手正文 Markdown 皮肤（.markdown-body，对齐 ZCode MessageResponse）
+ * -----------------------------------------------------------------------------
+ * 执法口径：
+ *   - 字号一律 var(--text-ui-*) 刻度（Z-61 无越刻度）：h1→lg / h2→base / h3~h6→sm；
+ *   - 颜色零硬编码：全部 var(--color-*) / color-mix（三主题自动跟随）；
+ *   - 选择器全部 `.markdown-body` 后代（无 layer 的 shell.css 规则压制 streamdown 自带
+ *     的 Tailwind 工具类 —— 分层级联里「未分层」恒胜「分层」，观感归本仓 token）。
+ *   - `white-space: normal` 显式抵消 .bubble 族继承的 pre-wrap（Markdown 自带段落语义，
+ *     源文换行不得再当硬换行渲染）。
+ * ========================================================================== */
+.markdown-body {
+  white-space: normal;
+  overflow-wrap: break-word;
+}
+/* 块间距（首块不顶边、尾块不坠边；.messages 的行间隙由 turn-header/气泡负责） */
+.markdown-body > * {
+  margin-top: 0;
+  margin-bottom: 0;
+}
+.markdown-body > * + * {
+  margin-top: 10px;
+}
+.markdown-body p {
+  font-size: var(--text-ui-base);
+  line-height: 1.6;
+}
+/* 标题：Z-61 刻度内收（对话域不用 xl；h4~h6 归 sm 档，只加粗区分层级） */
+.markdown-body h1 {
+  font-size: var(--text-ui-lg);
+  font-weight: 600;
+  line-height: 1.5;
+  margin-top: 14px;
+}
+.markdown-body h2 {
+  font-size: var(--text-ui-base);
+  font-weight: 600;
+  line-height: 1.5;
+  margin-top: 14px;
+}
+.markdown-body h3,
+.markdown-body h4,
+.markdown-body h5,
+.markdown-body h6 {
+  font-size: var(--text-ui-sm);
+  font-weight: 600;
+  line-height: 1.5;
+  margin-top: 12px;
+}
+.markdown-body strong {
+  font-weight: 600;
+}
+.markdown-body em {
+  font-style: italic;
+}
+.markdown-body del {
+  text-decoration: line-through;
+  color: var(--color-foreground-subtle);
+}
+.markdown-body a {
+  color: var(--color-interaction-ask-foreground);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  word-break: break-all;
+}
+.markdown-body ul,
+.markdown-body ol {
+  padding-left: 22px;
+  line-height: 1.6;
+}
+.markdown-body ul {
+  list-style: disc;
+}
+.markdown-body ol {
+  list-style: decimal;
+}
+.markdown-body li {
+  margin-top: 2px;
+}
+.markdown-body li > ul,
+.markdown-body li > ol {
+  margin-top: 2px;
+}
+.markdown-body li::marker {
+  color: var(--color-foreground-subtlest);
+}
+/* 行内代码（= 规格 rounded bg-muted px-1 font-mono 的 token 化落地；类由 MarkdownBlock 挂） */
+.markdown-body .md-inline-code {
+  background: var(--color-muted);
+  border: 1px solid var(--color-border);
+  border-radius: 4px;
+  padding: 0 4px;
+  font-family: var(--font-mono);
+  font-size: var(--text-ui-sm);
+  white-space: normal;
+}
+/* 块级代码围栏（harness2 CodeViewer，非 streamdown 内置 shiki）：容器只管壳，
+   底色/字号由 CodeViewer 内联样式负责 */
+.markdown-body .md-code-block {
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  overflow: hidden;
+}
+/* ErrorBoundary 降级纯文本（ZCode 同款兜底；保真原文不吞消息） */
+.markdown-body .md-raw {
+  margin: 0;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-family: var(--font-mono);
+  font-size: var(--text-ui-sm);
+  color: var(--color-foreground);
+}
+.markdown-body blockquote {
+  border-left: 3px solid color-mix(in srgb, var(--color-border-hover) 80%, transparent);
+  padding-left: 12px;
+  color: var(--color-foreground-subtle);
+  font-style: normal;
+}
+.markdown-body hr {
+  border: none;
+  border-top: 1px solid var(--color-border);
+  margin-top: 14px;
+  margin-bottom: 4px;
+}
+/* 表格：token 化边框 + 表头底（streamdown 的 table-* 工具类不依赖，全部本仓声明） */
+.markdown-body table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--text-ui-sm);
+  display: block;
+  overflow-x: auto;
+}
+.markdown-body th,
+.markdown-body td {
+  border: 1px solid var(--color-border);
+  padding: 5px 10px;
+  text-align: left;
+}
+.markdown-body th {
+  background: var(--color-muted);
+  font-weight: 600;
+  white-space: nowrap;
+}
+.markdown-body img {
+  max-width: 100%;
+  border-radius: 8px;
 }
 /* D3 右侧工作面板的旧 .side-panel/.side-tabs/.side-tab/.side-badge/.side-body/.side-foot/.side-hint
    已随 Z2-04 标签体系拆除（tab 宿主改用语义 token 的 Tailwind 工具类，见
@@ -796,14 +1000,14 @@ button.composer-context-chip-readonly:hover {
   border-radius: 4px;
   padding: 0 4px;
   margin: 0 2px;
-  font-size: 12px;
+  font-size: var(--text-ui-sm);
   white-space: nowrap;
 }
 .composer-attachments {
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
-  font-size: 12px;
+  font-size: var(--text-ui-sm);
   color: var(--color-foreground-subtle);
 }
 .composer-attachment.att-failed {
@@ -859,18 +1063,89 @@ button.composer-context-chip-readonly:hover {
 /* 提交结果提示（P1-2 拒绝可见 / P2-1 placement 落点） */
 .composer-status {
   padding: 4px 2px;
-  font-size: 12px;
+  font-size: var(--text-ui-sm);
   color: var(--color-foreground-subtle);
 }
 .composer-status[data-kind='error'] {
   color: var(--color-destructive);
+}
+/* Z-96：composer 上方常驻错误横幅（独立 surface，先于 composer，非 toast）。
+   结构依据 refs-zcode.md Z-96 `ChatErrorBanner.tsx`：图标 + 单行截断消息 + 详情/复制 + 右上 X。
+   配色走 Zai 语义 token（destructive 文本 + card 底 + border 描边），不引一次性色值。 */
+.chat-error-banner {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  flex: none;
+  margin-bottom: 8px;
+  padding: 8px 10px;
+  border: 1px solid var(--color-border);
+  border-left: 3px solid var(--color-destructive);
+  border-radius: 8px;
+  background: var(--color-card);
+  color: var(--color-foreground);
+  font-size: var(--text-ui-sm);
+}
+.chat-error-banner-icon {
+  color: var(--color-destructive);
+}
+.chat-error-banner-message {
+  min-width: 0;
+  flex: 1 1 auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* U2-C5：指向下一步的小字（「内容已保留，可直接重发」）——次级、不抢主消息，颜色走
+   foreground-subtle 语义 token，字号 --text-ui-xs（Z-61 刻度） */
+.chat-error-banner-hint {
+  flex: none;
+  color: var(--color-foreground-subtle);
+  font-size: var(--text-ui-xs);
+  white-space: nowrap;
+}
+.chat-error-banner-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  flex: none;
+}
+.chat-error-banner-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 6px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--color-foreground-subtle);
+  font-size: var(--text-ui-sm);
+  cursor: pointer;
+}
+.chat-error-banner-btn:hover {
+  background: var(--color-surface-hover);
+  color: var(--color-foreground);
+}
+.chat-error-banner-close:hover {
+  color: var(--color-destructive);
+}
+.chat-error-detail-pre {
+  max-height: 40vh;
+  overflow: auto;
+  margin: 0;
+  padding: 10px;
+  border-radius: 8px;
+  background: var(--color-muted);
+  color: var(--color-foreground);
+  font-size: var(--text-ui-sm);
 }
 /* Z3-04：发送/停止主按钮改用 ui-shared Button（Z-75 icon-md + bg-brand），此处旧 .btn-send/.btn-stop 移除 */
 .unread-badge {
   background: var(--color-primary);
   color: var(--color-primary-foreground);
   border-radius: 999px;
-  font-size: 11px;
+  font-size: var(--text-ui-xs);
   padding: 0 6px;
   margin-left: 6px;
 }
@@ -889,10 +1164,8 @@ button.composer-context-chip-readonly:hover {
   align-items: center;
   gap: 10px;
 }
-.hint {
-  font-size: 11px;
-  color: var(--color-foreground-subtle);
-}
+/* U2-E-b 死类清理：`.hint` 已删 —— 全 src/壳 grep 零引用（command-palette-hint /
+   runtime-hint 等为复合类名，与本类无关），顺带消一处裸 11px。 */
 /* —— B4 对话头（cwd / 分支 / 模型 / 上下文水条） —— */
 .pane-header {
   display: flex;
@@ -901,7 +1174,7 @@ button.composer-context-chip-readonly:hover {
   padding: 3px 10px;
   background: var(--color-muted);
   border-bottom: 1px solid var(--color-border);
-  font-size: 11px;
+  font-size: var(--text-ui-xs);
   color: var(--color-foreground-subtle);
   min-height: 22px;
 }
@@ -916,7 +1189,7 @@ button.composer-context-chip-readonly:hover {
   color: var(--color-foreground-subtlest);
 }
 .pane-header-branch-icon {
-  font-size: 12px;
+  font-size: var(--text-ui-sm);
 }
 .pane-header-model {
   white-space: nowrap;
@@ -948,7 +1221,7 @@ button.composer-context-chip-readonly:hover {
   background: linear-gradient(90deg, var(--color-warning), var(--color-destructive));
 }
 .ctx-label {
-  font-size: 10px;
+  font-size: var(--text-ui-xs);
   color: var(--color-foreground-subtlest);
   min-width: 28px;
   text-align: right;
@@ -1149,19 +1422,13 @@ button.composer-context-chip-readonly:hover {
   min-height: 16px;
 }
 
-.bg-tag {
-  font-size: 10px;
-  color: var(--color-warning);
-  border: 1px solid var(--color-warning);
-  border-radius: 4px;
-  padding: 0 3px;
-  margin-left: 6px;
-}
+/* U2-E-b 死类清理：`.bg-tag`（旧「后台」徽标，裸 10px）已删 —— 后台态徽标改 Kbd/工具类皮，
+   全 src/壳 grep 零引用。 */
 
 /* 子会话跳转（阶段 8）：subagent 工具行的深链按钮 */
 .subagent-jump {
   margin-left: 8px;
-  font-size: 11px;
+  font-size: var(--text-ui-xs);
   color: var(--color-primary);
   background: none;
   border: 1px solid var(--color-primary);
@@ -1193,7 +1460,9 @@ button.composer-context-chip-readonly:hover {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: rgba(0, 0, 0, 0.45);
+  /* U2-E-b：裸 rgba(0,0,0,.45) → 语义遮罩 token（--color-scrim 在 styles.css 三主题各有一值，
+     遮罩浓度随主题走；本仓禁止硬编码色） */
+  background: var(--color-scrim);
 }
 .settings-dialog {
   display: flex;
@@ -1604,7 +1873,8 @@ button.composer-context-chip-readonly:hover {
   position: fixed;
   inset: 0;
   z-index: 110;
-  background: rgba(0, 0, 0, 0.45);
+  /* U2-E-b：与 settings-overlay 同一语义遮罩 token（原裸 rgba(0,0,0,.45)；禁硬编码色） */
+  background: var(--color-scrim);
   display: flex;
   justify-content: center;
   align-items: flex-start;
@@ -1767,7 +2037,7 @@ button.composer-context-chip-readonly:hover {
   border-radius: 9px;
   background: transparent;
   color: var(--color-foreground-subtle);
-  font-size: 11px;
+  font-size: var(--text-ui-xs);
   line-height: 18px;
   cursor: pointer;
 }

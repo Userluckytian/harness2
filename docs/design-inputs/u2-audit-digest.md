@@ -1,0 +1,37 @@
+# U2 设计优化 · 审计台账（定稿）
+
+> 三路并行视觉审计已完成（对话区 15 条 / 侧栏 14 条 / 壳层与 token 11 条）。基准纪律=ZCode 规格优先（复刻权威），规格留白处才引竞品/frontend-design 原则；两处「待用户拍板」不入批次。原始逐条全文见本文件各批任务书引用；此处为定稿台账与切批。
+
+## 待用户拍板（不在本波做）
+
+- 侧栏「搜索会话…」输入框去留（ZCode 无此框，OPEN.md 2026-10-13 ⑦已登记）
+- 项目组头计数徽标去留（ZCode 无计数；Denia 有「+n」，⑧已登记）
+- 侧栏宽度持久化（Z7②「需经主进程」未决）
+- 助手正文 Markdown 渲染引入（对话区审 ②；ZCode 基线推断项，正在由 jam 源码定案；引入=新依赖，默认做，用户可一票否）
+
+## 切批（区域互斥防写冲突；每批一个执行者）
+
+| 批 | 域 | 条目 | 触及文件（独占） |
+| --|----|------|------------------|
+| A 壳层 | D3①②③④⑥ + D1①桌面接线 | focus-visible 组规则；窗控图标 16px/圆角 6；闲置色满前景；win 最大化归零圆角；启动壳 index.html drag 条+防闪底；会话头 48px 整带基线；桌面启动自动草稿会话（App.tsx） | desktop-window.css / app-frame.css / WindowControls.tsx / platform.ts / index.html / App.tsx |
+| B token | D3⑦⑧⑩ | styles.css：@theme/light 双块收拢、补 --color-scrim/--color-background-alt/animated-gradient 族、.tool/.reasoning shimmer 降级合并 | styles.css |
+| C 对话区 | D1①(seat 兜底)③④⑤⑥⑦⑧⑨⑩⑪⑫⑭⑮ | 空态兜底复用 EmptyState+Spinner；2xs×24→xs；shell.css 对话域字号归刻度；状态面板浮层化 z-20；耗时双行收口+中断归因拆分；turn-work 运行态扫光；ResumeBar 轻底+XIcon；错误横幅文案指向下一步；ref-report 折叠；scrollbar-gutter；工具 pending 行同皮+中文状态；死码清理（ChatEmptyState/旧类）；queue dock shadow-xs | shell.css / seat.tsx / ChatView.tsx / turn-work / chat-model / ResumeBar / ChatErrorBanner / QueuePanel / tool-model / ToolCard / TimelineMarkerRow / status-panel / Composer(左簇图标化) |
+| D 侧栏 | D2①②③④⑤⑦⑧⑨⑪⑫⑬⑭ | sidebar.css 字号刻度；底色 --color-sidebar/hover surface-hover/选中去左条加粗；unread 蓝点+running LoaderIcon+attention 绿底；行钮 JS-mount 24px；移出项目收进 ⋯ 菜单；空侧栏保骨架分区头；projects 失败行内 Alert；⚙→SettingsIcon；折叠 Collapsible 300ms；滚动条 Z-69；圆角统一；轨道死 CSS 删 | sidebar.css / SessionBrowser / SidebarRoot / task-view / labels / shell-seat-contents |
+| E Markdown（后置） | D1② | ChatView 正文 markdown 渲染（依赖引入+增量块冻结）——待 jam 基线定案后第二波 | package.json / ChatView / markdown/ |
+
+## 执行登记口径
+
+jam 窗口 10:39:30 开启（watcher 命中）。本波：D3/D1/D2 审计与基线定案=jam（读类）；实施 A/C=jam 试派、B/D=gp（窗口间歇关闭会中途死，混合派降低整批团灭风险；执行者如实登记）。每批纪律：只落盘不 commit（编排者验收后统一提交）；跑 tsc+自身文件 eslint/prettier；样式类「不引新视觉、只对齐规格」。
+
+## 进度（2026-10-14 13:3x 更新）
+
+- [x] 审计三件套（对话区/侧栏/壳层）— jam 执行 3/3
+- [x] U1 登记项×3 复核 + 已修 P2×5 复认 → **认=5/5，登记维持=3/3**（gp 代执行，复核节在 `u1-rereview-part3.md`，随 `56ded3c` 入库）
+- [x] ZCode 正文 Markdown 基线定案 → **正文=Markdown**（streamdown@2.5.0 同款路线；三条实战约束：历史/完成态强制 static、animated=false、ErrorBoundary 降级 `<pre>`；代码块绕开内置 renderer 复用本仓 CodeViewer）。gp 代执行（jam 红）
+- [x] 实施批 B（`7bad054`）/ C（`f2ea8dc`）/ D（`1912992`）/ A（`4c56dd0`）→ 编排者亲跑全绿（ui-shared 70/767、desktop 129/1288+1s、web 150、双 tsc 0、prettier 2 文件机械修、eslint 0 error）
+- [x] 扫尾 2xs 补登（`43892b4`）；streamdown 依赖入库（`c14bd77`，pnpm 绕行=store v11 直调 11.13.0）
+- [x] 批E 实施完成（`6d6368f`：MarkdownBlock 懒加载+三约束接线+7 用例；E-c 三坑论证放弃入注释；flaky 超时 jam 修）；审查波四份报告+F1-F3 修复入库（`39d8254`/`6f054b4`，P1×3 全修，D 批审查全零）
+- [x] **jam 终认证（严格口径闭环）**：ui-shared 71/776·desktop 129/1288+1s·web 13/150 全绿由 jam 亲跑；冻结区核验=core/gateway 仅版本 bump；B1 重放 0.22ms（预算 250ms）、主包 1163kB 持平、streamdown 懒加载不入首帧
+- [x] 重打包：双 exe（17:47）+ NSIS 解包端到端 smoke `{ok:true}` + asar 六项指纹全命中
+- [x] 截图前后对比（`.tmp-cmp/nsis-u2/screen-{win,old}.png`：新=骨架侧栏/居中空态/48px 窗控带/composer 卡；旧=裸文本贴顶/死白区）——**U2 交付线达成，发版就绪**
+- [ ] 待用户拍板（原四项收敛为三项：搜索框去留 / 计数徽标去留 / 侧栏宽度持久化——**Markdown 一项本波已自主定案实施**，用户可一票否）

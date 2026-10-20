@@ -58,6 +58,13 @@ function testButton(testId: string): HTMLButtonElement {
   return screen.getByTestId(testId) as HTMLButtonElement;
 }
 
+/** Z-48：组头动作钮只在 hover/focus 态 mount —— 悬浮该组头行（jsdom 无 :hover，mouseOver → React onMouseEnter） */
+function hoverGroupHead(cwd: string = ALPHA): void {
+  const headRow = document.querySelector(`[data-group-key="project:${cwd}"] > .h2-sidebar-group-head-row`);
+  if (!headRow) throw new Error(`组头行未找到：project:${cwd}`);
+  fireEvent.mouseOver(headRow);
+}
+
 describe('项目区头按钮（Z-16 #6）', () => {
   it('「移动项目分区」恒为 disabled 占位（disabled + data-placeholder + title 说明，红线⑩）', () => {
     renderBrowser({ projects: [{ cwd: ALPHA, addedAt: 1 }] });
@@ -109,7 +116,7 @@ describe('显式项目组（Z-16 #7）', () => {
     expect(screen.getByText('alpha')).toBeTruthy();
   });
 
-  it('组头「移出项目」：有回调点击带组 cwd；无回调 = disabled 占位', () => {
+  it('组头「移出项目」：hover 出现 ⋯，下拉末项「移除」点击带组 cwd（U2 批D / D5：Z-49 入口收进菜单）', async () => {
     const onRemoveProject = vi.fn();
     renderBrowser({
       projects: [
@@ -119,16 +126,33 @@ describe('显式项目组（Z-16 #7）', () => {
       sessions: [item('a1', { cwd: ALPHA })],
       onRemoveProject,
     });
-    const remove = testButton('sidebar-group-remove-project-D--p-alpha');
-    expect(remove.disabled).toBe(false);
+    // Z-48：非 hover/focus 态时组头动作不 mount（含 ⋯）
+    expect(screen.queryByTestId('sidebar-group-more-project-D--p-alpha')).toBeNull();
+    // 悬浮组头触发 hover（jsdom 无 :hover，用 mouseOver → React onMouseEnter）
+    hoverGroupHead(ALPHA);
+    const trigger = screen.getByTestId('sidebar-group-more-project-D--p-alpha');
+    // jsdom 无 PointerEvent：Radix DropdownMenu 用 Enter 键打开
+    fireEvent.keyDown(trigger, { key: 'Enter' });
+    const menu = await screen.findByTestId('sidebar-group-more-menu-project-D--p-alpha');
+    const remove = menu.querySelector('[data-menu-action="remove-project"]')!;
+    expect(remove.getAttribute('data-disabled')).toBeNull();
     fireEvent.click(remove);
+    // 无 running 会话 → 直接移除，不弹确认（Z-49）
     expect(onRemoveProject).toHaveBeenCalledWith(ALPHA);
-    cleanup();
+    expect(screen.queryByTestId('confirm-dialog')).toBeNull();
+  });
+
+  it('无回调时 hover 后 ⋯ 菜单里「移除」项 disabled + 说明占位（红线⑩；独立占位钮已删）', async () => {
     renderBrowser({ projects: [{ cwd: ALPHA, addedAt: 1 }] });
-    const placeholder = testButton('sidebar-group-remove-project-D--p-alpha');
-    expect(placeholder.disabled).toBe(true);
-    expect(placeholder.getAttribute('data-placeholder')).toBe('true');
-    expect(placeholder.getAttribute('title')).toBe(DEFAULT_SIDEBAR_LABELS.removeProjectTodo);
+    hoverGroupHead(ALPHA);
+    // 旧的组头独立「移出项目」钮不再存在（D5）
+    expect(screen.queryByTestId('sidebar-group-remove-project-D--p-alpha')).toBeNull();
+    fireEvent.keyDown(screen.getByTestId('sidebar-group-more-project-D--p-alpha'), { key: 'Enter' });
+    const menu = await screen.findByTestId('sidebar-group-more-menu-project-D--p-alpha');
+    const remove = menu.querySelector('[data-menu-action="remove-project"]')!;
+    expect(remove.getAttribute('data-disabled')).not.toBeNull();
+    expect(remove.getAttribute('title')).toBe(DEFAULT_SIDEBAR_LABELS.removeProjectTodo);
+    expect(remove.textContent).toContain(DEFAULT_SIDEBAR_LABELS.menuRemoveProject);
   });
 
   it('会话按 cwd 归入项目组行；不匹配会话进「任务」区（第二区文案 Z-16 #9）', () => {
@@ -155,9 +179,21 @@ describe('向后兼容反向钉（不传新 props = 现状不变）', () => {
     expect(groups.querySelector('.h2-sidebar-group-empty')).toBeNull();
   });
 
-  it('无 sessions 无 projects：全局空态照旧（不因新分区结构误判有内容）', () => {
+  it('无 sessions 无 projects：U2 批D（D6）空侧栏保骨架——两区头照画 + 区内「暂无」（不再单条全局空态）', () => {
     renderBrowser({});
-    expect(screen.getByTestId('sidebar-empty').textContent).toBe(DEFAULT_SIDEBAR_LABELS.noSessions);
+    // 骨架：项目 / 任务两区头在场（恒 2 枚）
+    expect(screen.getAllByTestId('sidebar-section-head')).toHaveLength(2);
+    expect(screen.getByTestId('sidebar-projects-empty').textContent).toBe(DEFAULT_SIDEBAR_LABELS.noProjects);
+    expect(screen.getByTestId('sidebar-section-empty').textContent).toBe(DEFAULT_SIDEBAR_LABELS.noTasks);
+    // 不摆假会话行
+    expect(document.querySelectorAll('[data-session-id]')).toHaveLength(0);
+    // 指向性空态（归档滞留 / 搜索无匹配）仍走单条全局提示
+    cleanup();
+    renderBrowser({ archived: [item('z', { archived: true })] });
+    expect(screen.getByTestId('sidebar-empty').textContent).toBe(DEFAULT_SIDEBAR_LABELS.allArchived);
+    cleanup();
+    renderBrowser({ query: 'zzz', onQueryChange: () => undefined });
+    expect(screen.getByTestId('sidebar-empty').textContent).toBe(DEFAULT_SIDEBAR_LABELS.noMatch);
   });
 
   it('仅有空显式项目：不算空态（「暂无任务」组在场，Z-16 #7）', () => {

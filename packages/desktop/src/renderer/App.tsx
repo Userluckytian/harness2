@@ -21,7 +21,8 @@ import {
 import { isImeComposing } from '@harness2/ui-shared/renderer/features/composer/composer-model.js';
 import { canGoBack, canGoForward, sessionNavHistory } from '@harness2/ui-shared/renderer/layout/session-nav-history.js';
 import { shellSlots } from './layout/shell-registry.js';
-import { desktopPlatform, windowFrameClass } from './platform.js';
+import { desktopPlatform, usesCustomWindowControls, windowFrameClass } from './platform.js';
+import { WindowControlsOverlay } from './components/WindowControls.js';
 import { useWindowMaximized } from './window-state.js';
 import { toggleTerminalDock } from './terminal/toggle-dock.js';
 import { type PaletteCommand, type PaletteSession } from '@harness2/ui-shared/renderer/components/CommandPalette.js';
@@ -446,7 +447,17 @@ export function App(): React.ReactNode {
   // 平台特化（Z-02 / Z-04）：无独立顶栏；窗口根按平台加圆角类，浮层条绝对定位不占布局高度。
   const platform = desktopPlatform();
   const windowMaximized = useWindowMaximized();
-  const frameClass = ['app', 'desktop-window-frame', windowFrameClass(platform, windowMaximized)]
+  // Z-46：壳层常驻窗控 overlay 只在 win/linux 且主进程真有通道时挂载（缺通道不摆假按钮，
+  // 与 overlay 组件内部同一判据）。挂载时根容器加 `window-controls-active` → 内容顶部条
+  // （pane-header / 右栏 tab 条）让出 136px 右安全区。
+  const windowControlsActive =
+    usesCustomWindowControls(platform) && typeof window.harness2?.windowMinimize === 'function';
+  const frameClass = [
+    'app',
+    'desktop-window-frame',
+    windowFrameClass(platform, windowMaximized),
+    ...(windowControlsActive ? ['window-controls-active'] : []),
+  ]
     .filter((c) => c.length > 0)
     .join(' ');
 
@@ -469,6 +480,9 @@ export function App(): React.ReactNode {
           onBack={() => navigateHistory('back')}
           onForward={() => navigateHistory('forward')}
         />
+        {/* Z-46：自绘窗控三键常驻 overlay（win/linux；mac/web 返回 null）。
+            空态（selectedId=null）、会话态、覆层态全场景同一处，屏上恒只有一套窗控。 */}
+        <WindowControlsOverlay />
         {/* Z10-8b：全局 Toast 宿主（覆层区；订阅壳无关 toastStore，两壳同一实现） */}
         <ToastHost />
       </div>

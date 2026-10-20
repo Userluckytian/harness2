@@ -28,10 +28,13 @@ export const useAppState = shell.useAppState;
  * 故在动作层收口：三处调用点（浮层 New Task、左栏 New Task、命令面板「新建会话」）
  * 统一走这里，**先**派发 `rightbar/collapse`（幂等，帧侧纯 reducer）再建会话；
  * 新会话的 tab 桶本就是空的，重开右栏即见「打开标签页」启动器（与 ZCode 一致）。
+ *
+ * Z-48：`cwd` 透传给 controller.newSession（「在此项目新建会话」带项目目录）；
+ * 缺省 = 主进程默认根（顶部「+」/Ctrl+N/命令面板维持空白新会话，行为不变）。
  */
-export function newSessionCollapsingRightbar(dispatch: (action: FrameAction) => void): void {
+export function newSessionCollapsingRightbar(dispatch: (action: FrameAction) => void, cwd?: string): void {
   dispatch({ type: 'rightbar/collapse' });
-  void controller.newSession();
+  void controller.newSession(cwd);
 }
 
 /** 点击会话时目标分栏：优先空栏，其次第一栏

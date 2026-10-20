@@ -36,7 +36,7 @@ export function QueuePanel({ entries }: { entries: readonly ComposerQueueItem[] 
       data-testid="queue-dock"
       data-queue-count={entries.length}
       aria-label="待发送队列"
-      className="mx-3 mb-2 flex max-h-[min(40dvh,20rem)] flex-col gap-1.5 overflow-y-auto rounded-2xl border border-border bg-popover p-3 shadow-md"
+      className="mx-3 mb-2 flex max-h-[min(40dvh,20rem)] flex-col gap-1.5 overflow-y-auto rounded-2xl border border-border bg-popover p-3 shadow-xs"
     >
       <div className="flex items-baseline justify-between gap-2">
         <span className="text-ui-xs font-medium text-foreground-subtle">待发送队列</span>

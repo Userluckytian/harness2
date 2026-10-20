@@ -11,11 +11,11 @@
 | 项              | 值                                                                                                                               |
 | --------------- | -------------------------------------------------------------------------------------------------------------------------------- |
 | 上游仓库        | `D:/AI_Projects/refs/ZCode`（`origin` = `https://github.com/zai-org/ZCode.git`）                                                 |
-| 快照 commit     | `29628c9`                                                                                                                        |
-| 版本 / 提交时间 | v3.14.3 / `2026-09-24T14:49:06+08:00`                                                                                            |
-| 上游拉取        | ❌ **本轮未拉取成功**（`fetch-pack: unexpected disconnect while reading sideband packet`）。如实登记：沿用本地 `29628c9`，非最新 |
-| 分析日期        | 2026-10-10                                                                                                                       |
-| 是否过期        | 未超 §2 的 30 天线（距分析日 16 天）；**但上游 HEAD 未知**，进入实施前必须重试拉取并复核                                         |
+| 快照 commit     | `aac47556`                                                                                                                       |
+| 版本 / 提交时间 | v3.15.1 / 2026-10-13（上游 squash 发布，`29628c9..aac47556` 单提交）                                                             |
+| 上游拉取        | ✅ 2026-10-14 拉取成功（旧基线 `29628c9` v3.14.3 之上前进一个 squash 版本）                                                      |
+| 分析日期        | 2026-10-14                                                                                                                       |
+| 是否过期        | 否（拉取后即最新）                                                                                                               |
 | 权威范围        | GUI 的 **布局 / 区域 / 默认展开折叠 / 页面摆放 / 几何常量 / z-index / 场景形态**                                                 |
 | 非权威范围      | 视觉与组件规格（见 `refs-zcode.md`）；ZCode 的业务页面（见 §10 不采纳清单）                                                      |
 
@@ -24,6 +24,7 @@
 | 日期       | 执行者           | 上游 commit         | 改了什么                                                         |
 | ---------- | ---------------- | ------------------- | ---------------------------------------------------------------- |
 | 2026-10-10 | 编排者（主会话） | `29628c9`（未拉取） | 首建：完成布局与 IA 全量调研，产出 Z-01～Z-45 与默认展开折叠矩阵 |
+| 2026-10-14 | 编排者（主会话，证据子代理核行号） | `aac47556`（v3.15.1，已拉取） | 桌面实机五场景补条目：Z-46 空态窗控、Z-47 系统托盘与关窗驻留、Z-48 侧栏项目/会话操作面、Z-49 会话删除与归档语义；旧条目复核（Z-04/Z-10 勘正） |
 
 ---
 
@@ -96,9 +97,36 @@ DesktopWindowFrame (h-dvh)
 
 ### Z-04 自定义窗口控件
 
-仅 Windows/Linux 桌面自绘三键（minimize / toggleMaximize / close），`packages/ui/src/DesktopWindowControls.tsx:33-76`；macOS 用系统红绿灯 + 左侧 96px 安全区。
+仅 Windows/Linux 桌面自绘三键（minimize / toggleMaximize / close），`packages/ui/src/DesktopWindowControls.tsx:33-52`（三键定义）、`:54-57`（容器 `data-testid="desktop-window-controls"` + `[app-region:no-drag]`）；macOS 用系统红绿灯 + 左侧 96px 安全区（`desktop/src/main/desktopWindowChrome.ts:140-148`：`titleBarStyle:"hidden"` + `trafficLightPosition`）。
 
-**挂载点会移动**：Side Pane 关闭时在 `WorkspaceHeader` 最右；Side Pane 打开时移到 **Side Pane 标签栏右侧**（`AnimatedSidePanePanel.tsx:811`）。判定 `usesInlineWindowControls`（`WorkspaceHeader.tsx:120`）。
+**挂载点会移动**：Side Pane 关闭时在 `WorkspaceHeader` 最右；Side Pane 打开时移到 **Side Pane 标签栏右侧**（`AnimatedSidePanePanel.tsx:839`）。判定 `usesInlineWindowControls`（`WorkspaceHeader.tsx:128`）。
+
+> @aac47556 修订（2026-10-14）：旧行号 `:33-76`→`:33-52`；`AnimatedSidePanePanel.tsx:811`→`:839`；`WorkspaceHeader.tsx:120`→`:128`。空态（无会话）可见性规格见 **Z-46**。
+
+### Z-46 空态窗控：桌面端强制渲染 header（@aac47556 新增）
+
+**ZCode 在没有选中任何会话（draft 空态）时，窗控三键依然可见**——机制不是把窗控挂到独立壳层，而是**桌面端无条件渲染 WorkspaceHeader**：
+
+- 渲染判据 `shouldRenderWorkspaceHeader = shouldRenderMainViewHeader && (activeTaskId !== null || isDesktop)`（`packages/ui/src/app-shell/WorkspaceShellLayout.tsx:2043-2044`）——`isDesktop` 兜底保证空态有 header。
+- 空态时 header 用 `variant="draft"`（`WorkspaceShellLayout.tsx:2575`）：**draft 只隐藏标题区，不隐藏右侧动作区**（`WorkspaceHeader.tsx:169-176,208-232`），窗控在动作区内照旧渲染（`WorkspaceHeaderSections/WorkspaceHeaderActionSection.tsx:83`：`{showWindowControls && !isSidePaneOpen ? <DesktopWindowControls /> : null}`）。
+- 更彻底的兜底：**桌面启动时 Root 保证必有一个 conversation workspace 存在**（`packages/ui/src/Root.tsx:1012-1035`，`services.fileService.ensureConversationWorkspace()`；主进程侧 `desktop/src/main/startupWorkspace.ts:163-173`），所以「主界面空了」在 ZCode 里是设计掉的状态。
+- 每个全屏覆盖层（欢迎页/引导/设置页）**自挂一次** `DesktopOverlayWindowControls`（绝对定位 `right-1 top-1 h-12`，仅 win/linux 平台 class 显示）：`WelcomeScreen.tsx:42` → `DesktopOverlayWindowControls.tsx:4-9`；同法 `onboarding/OccupationOnboarding.tsx:276-282`、`SettingsPage.tsx:1431-1438`、`components/EmbeddedWebsiteHeader.tsx:29`。
+- 已知缺口（ZCode 自己也裸）：启动 HTML 壳（`desktop/src/renderer/index.html:110` loading 只有 drag 区）、`RootStartupLoading.tsx`、`ErrorBoundary.tsx:123-180` 三处无自绘窗控。**harness2 复刻时把这三处也补上**（overlay 版窗控成本极低）。
+
+**harness2 落点**：`seat.tsx` 的 header 条件渲染改为「桌面壳空态也渲染（draft 变体）」，或把三键提升到 AppFrame 顶层 overlay 常驻（更接近 Z-46 的 overlay 模式，一次挂载全场景覆盖）。
+
+### Z-47 系统托盘与关窗驻留（@aac47556 新增）
+
+ZCode **有托盘**（win32 + linux；macOS 明确不用托盘、走 Dock）：
+
+- 平台门：`desktop/src/main/desktopTray.ts:38-41`（`platform !== "win32" && platform !== "linux"` → return null）。
+- 图标：win 用**独立高分辨率 .ico**——`app.isPackaged ? process.resourcesPath/tray_icon.ico : build/icon.ico`（`desktopTray.ts:15-26`），electron-builder 映射 `from build/icon.ico → to tray_icon.ico`（`packages/desktop/electron-builder.config.js:757-764`，注释：避免通知区域高 DPI 模糊）。
+- 左键/双击 = **show 当前窗（不是 toggle 隐藏）**（`desktopTray.ts:114-115` → `showCurrentWindow` `desktop/src/main/index.ts:2272-2274` → `ensurePrimaryWindow("tray-show-current-window")`）。
+- 右键菜单（顺序）：**打开 ZCode ┃ 新建任务 / 打开工作区 ┃（仅 production）检查更新 / 关于 / 导出日志 ┃ 退出**（`desktopTray.ts:68-110`；文案 `packages/shared/src/desktopMenu.ts:51-53,110-112`：tooltip「ZCode」、`tray.menu.openZCode:"打开 ZCode"`、`tray.menu.quit:"退出"`；注释「托盘只提供日志诊断入口，避免暴露清除全部数据」`:99-103`）。
+- 退出写法：**先 `markExplicitQuit("tray-quit")` 再 `app.quit()`**（`index.ts:2276-2279`；`markExplicitQuit` 定义 `:1072-1075`；`before-quit` 兜底确认、取消则回滚标志 `:2608-2617`）——防止被「关窗即隐藏」策略吞掉。
+- 关窗裁决（hide vs quit）：`desktopWindowLifecycle.ts:391-403` —— `(win32|linux) ∧ closeToTraySupported ∧ closeToTray设置开 ∧ !forceQuit ∧ !explicitQuit → hideWindow()+preventDefault`，否则最后一个窗口走确认框→quit；接线 `:98-117`、`index.ts:1824-1846`。**mac 关窗一律 hide**（`desktopDarwinCloseBehavior.ts:17-30`，全屏先退全屏防黑屏 Space）。
+- **能力双条件门**（值得照抄）：`resolveCloseToTraySupported` = 托盘实例创建成功 ∧（linux）DBus `org.kde.StatusNotifierWatcher` 探测通过（探测回退链 gdbus→busctl→qdbus），探测不过按「不可用」走确认退出（`desktopTraySupport.ts:182-203,38-76`；创建结果置位 `index.ts:2285-2298`）。
+- 设置项：win 默认开（`index.ts:321` `closeToTrayOnWindows = true`）、linux 首次强制归位为关（`desktopTraySupport.ts:210-222`）；设置页「关闭窗口时隐藏到托盘」+ 不可用说明文案（GNOME 装 AppIndicator 扩展提示）（`SettingsPage.tsx:1120-1126`；`ui/src/i18n/locales/zh-CN.ts:2417-2421`）。
 
 ---
 
@@ -165,6 +193,24 @@ DesktopWindowFrame (h-dvh)
 ### Z-11 Footer 账号菜单
 
 左：头像按钮 = 统一设置菜单入口（`WorkspaceSidebarFooter.tsx:220-236`），**分组顺序固定**：语言 → 主题 → 界面模式 → 缩放（桌面）→ 用量/升级 → 登录/登出（注释 `:308-311`）。右：Web 远控入口（桌面且有 workspace 时）+ 设置齿轮。
+
+### Z-48 侧栏项目/会话操作面（@aac47556 新增）
+
+「在此项目新建会话」在 ZCode 有**三层级**入口：
+
+1. 侧栏顶部全局 NewTaskButtonGroup（带禁用 tooltip）：`packages/ui/src/WorkspaceSidebar.tsx:1481-1499` + `NewTaskButtonGroup.tsx:32-44`（禁用态 `cursor-not-allowed text-foreground-subtlest`）。
+2. **项目行 hover 出现 `MessageCirclePlus`「在此项目新建会话」**：`WorkspaceSidebarItem.tsx:1096-1116`（`taskList.newThread` 文案、`disabled=readOnlyReason`）；悬浮动作**按交互态 mount 而非 CSS 隐藏**（防 tooltip 错位）：`:275-281` `shouldMountWorkspaceRowActions = hovered || focusWithin || menuOpen || isHoverNone`。
+3. 分组视图组头右侧常驻「新建任务」：`workspace-grouped-tasks/group-item.tsx:500-522`（渲染位置 `:666`）。
+
+会话行 hover 动作（两套视图）：分组视图 = 文件树/移到顶部/关闭（**「关闭」实际执行归档** `WorkspaceGroupedTasksSection.tsx:1203-1226` → `archiveTask`，`task-row.tsx:487-517`）；平铺视图 = 置顶+文件树+归档，**归档为行内二次确认按钮态**（点一下变 destructive「确认」按钮，非对话框）：`TaskListItem.tsx:449-500`（`isArchiveConfirming` 切换；入口 `pendingArchiveTaskId` `TaskList.tsx:374`）。
+
+项目行 hover 动作：更多(Ellipsis 下拉)/文件树/未连接告警(Info+错误 tooltip)/重连(RefreshCw)：`WorkspaceSidebarItem.tsx:908-1095`。组头右键：新建任务/重命名/更改颜色/取消分组并删除（`group-item.tsx:668-712`；`deleteTaskGroup` 无确认框 `hooks/useGroupedTaskView.ts:1067-1075`）。
+
+### Z-49 会话删除与移除项目的确认语义（@aac47556 新增）
+
+- **主列表/右键菜单均无「删除会话」**（搜索 `taskList.delete`/`deleteTask`/`Trash` 于列表组件零命中）——删除只存在于**归档列表**：ConfirmDialog「删除这个归档任务？」/「任务将从任务列表和归档列表中移除。」+ destructive「删除任务」（`WorkspaceArchivedTasksFlatSection.tsx:275-290`；文案 `zh-CN.ts:589-590,2063`；删除中按钮 disabled `:256-266`）。批量：「删除 {count} 个归档任务？」+结果计数「已删除 x，跳过 y，失败 z」（`DeleteAllArchivedTasksButton.tsx:60-96`）。同一逻辑 web 远控 `WebRemoteControlTaskIndex.tsx:405-412`。
+- ZCode 存在**死文案**（有 i18n 无组件引用）：`confirmDialog.taskDeleteTitle/Description`「删除这个任务？/记录无法恢复」（`zh-CN.ts:587-588`）、`confirmDialog.projectRemoveTitle/Description`（`:603-605`）——即「直接删除会话」是 ZCode 未上线能力，harness2 的删除入口设计属**自主决策**（建议对齐归档列表语义：先归档、归档内删除，避免误删）。
+- **移除项目**：入口=项目行「更多」下拉最后一项「移除」（XIcon）`WorkspaceSidebarItem.tsx:938-956`；**仅当该项目有运行中会话才弹确认**（「移除运行中的项目？」/「会停止并释放相关运行状态，历史任务不会被删除。」/「移除并停止运行」destructive），否则直接 `closeTab`：`:356-392` + 文案 `zh-CN.ts:1727-1731`。移除语义=只失效缓存、**保留任务索引**（`:392-401`）；Windows 保留名风险 toast（`:403-415`）。无「删除项目磁盘目录」入口。
 
 ---
 

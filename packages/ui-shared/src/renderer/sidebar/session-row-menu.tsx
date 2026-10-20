@@ -13,8 +13,9 @@ import { DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator } from '..
 import type { SidebarSessionItem } from './session-items.js';
 import type { SidebarLabels } from './labels.js';
 
-/** 菜单动作 id（纯函数返回顺序即渲染顺序） */
-export type RowMenuAction = 'pin' | 'unpin' | 'rename' | 'archive' | 'unarchive' | 'split' | 'trajectory';
+/** 菜单动作 id（纯函数返回顺序即渲染顺序）。Z-49：delete 是 harness2 自主决策项（软删，
+ *  destructive，恒在最后且前置分隔；running 禁用）。 */
+export type RowMenuAction = 'pin' | 'unpin' | 'rename' | 'archive' | 'unarchive' | 'split' | 'trajectory' | 'delete';
 
 export interface RowMenuFlags {
   pinned: boolean;
@@ -24,6 +25,8 @@ export interface RowMenuFlags {
   canArchive: boolean;
   canSplit: boolean;
   canTrajectory: boolean;
+  /** Z-49：壳提供删除通道才出现「删除」（缺省 false = 该项不渲染，红线⑩） */
+  canDelete?: boolean | undefined;
 }
 
 /** 可兑现动作集合（纯逻辑，测试钉顺序与「无通道不出现」） */
@@ -34,6 +37,8 @@ export function rowMenuActions(flags: RowMenuFlags): RowMenuAction[] {
   if (flags.canArchive) actions.push(flags.archived ? 'unarchive' : 'archive');
   if (flags.canSplit) actions.push('split');
   if (flags.canTrajectory) actions.push('trajectory');
+  // Z-49：删除恒最后（destructive 不混在常规动作里），前加分隔
+  if (flags.canDelete) actions.push('delete');
   return actions;
 }
 
@@ -46,6 +51,13 @@ export interface RowMenuCallbacks {
   /** 分屏已满（4 格）：项禁用 + title 说明（不摆点了不动的假项） */
   splitLimitReached?: boolean | undefined;
   onInspectTrajectory?: ((id: string) => void) | undefined;
+  /**
+   * Z-49 删除（软删：metadata deleted 标记 + 从列表移除，数据保留）。
+   * 回调收到的 item.running === true 时该项**禁用**（运行中不可删，Denia 语义）；
+   * 确认对话框由 SessionBrowser 承载（本菜单只触发 onRequestDelete 的等价入口：壳给的
+   * onDeleteSession 实际被 SessionBrowser 包成「打开确认框」，真删除在确认框里执行）。
+   */
+  onDeleteSession?: ((item: SidebarSessionItem) => void) | undefined;
 }
 
 /** 单个可渲染动作项（label/禁用态/触发已算好；两种容器只负责摆壳） */
@@ -74,8 +86,11 @@ export function rowMenuEntries(
     canArchive: callbacks.onArchive !== undefined,
     canSplit: callbacks.onOpenInSplit !== undefined,
     canTrajectory: callbacks.onInspectTrajectory !== undefined,
+    canDelete: callbacks.onDeleteSession !== undefined,
   });
   const splitDisabled = callbacks.splitLimitReached === true;
+  // Z-49：运行中的会话不可删除（先停止）——项禁用 + title 说明，不摆点了没反应的破坏性假项
+  const deleteDisabled = item.running === true;
   return actions.map((action) => {
     const label =
       action === 'pin'
@@ -90,14 +105,22 @@ export function rowMenuEntries(
                 ? labels.menuUnarchive
                 : action === 'split'
                   ? labels.menuOpenInSplit
-                  : labels.menuTrajectory;
+                  : action === 'trajectory'
+                    ? labels.menuTrajectory
+                    : labels.menuDelete;
     return {
       action,
       label,
-      disabled: action === 'split' && splitDisabled,
-      ...(action === 'split' && splitDisabled ? { title: labels.menuSplitLimit } : {}),
-      // 「查看轨迹」前分隔（Z-10：其前必有其它项，条件恒真，防御性检查保留）
-      separatorBefore: action === 'trajectory' && actions.some((a) => a !== 'trajectory'),
+      disabled: (action === 'split' && splitDisabled) || (action === 'delete' && deleteDisabled),
+      ...(action === 'split' && splitDisabled
+        ? { title: labels.menuSplitLimit }
+        : action === 'delete' && deleteDisabled
+          ? { title: labels.menuDeleteRunning }
+          : {}),
+      // 「查看轨迹」前分隔（Z-10：其前必有其它项，条件恒真，防御性检查保留）；
+      // Z-49：删除前必有其它项（顺序恒最后），同样加分隔
+      separatorBefore:
+        (action === 'trajectory' || action === 'delete') && actions.some((a) => a !== action && a !== 'delete'),
       run: () => {
         switch (action) {
           case 'pin':
@@ -120,6 +143,9 @@ export function rowMenuEntries(
             break;
           case 'trajectory':
             callbacks.onInspectTrajectory?.(item.id);
+            break;
+          case 'delete':
+            if (!deleteDisabled) callbacks.onDeleteSession?.(item);
             break;
         }
       },

@@ -280,7 +280,7 @@ function StatusSection(props: {
       >
         <SectionIcon kind={section.key} className="size-3.5 flex-none" />
         <span>{section.title}</span>
-        {badge !== null && <span className="ml-auto flex-none text-ui-2xs text-foreground-subtlest">{badge}</span>}
+        {badge !== null && <span className="ml-auto flex-none text-ui-xs text-foreground-subtlest">{badge}</span>}
         {/* 展开箭头：悬停/聚焦才显现；展开时转 90°（Z-93 同款交互语言） */}
         <ChevronRightIcon
           aria-hidden
@@ -328,16 +328,16 @@ function GitBody({ data }: { readonly data: StatusData }): ReactNode {
           <span className="min-w-0 flex-1 truncate text-foreground-subtle" title={f.file}>
             {f.file}
           </span>
-          {f.dirty && <span className="flex-none text-ui-2xs text-warning">外部改动</span>}
-          <span className="flex-none font-mono text-ui-2xs text-diff-added">+{f.added}</span>
-          <span className="flex-none font-mono text-ui-2xs text-diff-removed">−{f.deleted}</span>
+          {f.dirty && <span className="flex-none text-ui-xs text-warning">外部改动</span>}
+          <span className="flex-none font-mono text-ui-xs text-diff-added">+{f.added}</span>
+          <span className="flex-none font-mono text-ui-xs text-diff-removed">−{f.deleted}</span>
         </div>
       ))}
       {git.files.length > shown.length && (
-        <div className="text-ui-2xs text-foreground-subtlest">其余 {git.files.length - shown.length} 个文件…</div>
+        <div className="text-ui-xs text-foreground-subtlest">其余 {git.files.length - shown.length} 个文件…</div>
       )}
       {git.files.length === 0 && (
-        <div className="text-ui-2xs text-foreground-subtlest">仅登记外部改动，无本会话拟议变更</div>
+        <div className="text-ui-xs text-foreground-subtlest">仅登记外部改动，无本会话拟议变更</div>
       )}
     </div>
   );
@@ -367,7 +367,7 @@ function PlanBody({ data }: { readonly data: StatusData }): ReactNode {
             {s.stepId}
           </span>
           <span
-            className={`flex-none text-ui-2xs ${
+            className={`flex-none text-ui-xs ${
               s.state === 'completed'
                 ? 'text-success'
                 : s.state === 'failed'
@@ -380,10 +380,10 @@ function PlanBody({ data }: { readonly data: StatusData }): ReactNode {
         </div>
       ))}
       {plan.steps.length > shown.length && (
-        <div className="text-ui-2xs text-foreground-subtlest">其余 {plan.steps.length - shown.length} 个步骤…</div>
+        <div className="text-ui-xs text-foreground-subtlest">其余 {plan.steps.length - shown.length} 个步骤…</div>
       )}
       {plan.steps.length === 0 && plan.goal.length > 0 && (
-        <div className="text-ui-2xs text-foreground-subtlest">尚无步骤（仅登记了目标）</div>
+        <div className="text-ui-xs text-foreground-subtlest">尚无步骤（仅登记了目标）</div>
       )}
     </div>
   );
@@ -410,15 +410,15 @@ function AgentsBody({
           <span className="min-w-0 flex-1 truncate font-mono text-foreground-subtle" title={t.taskId}>
             {t.taskId}
           </span>
-          {t.background && <span className="flex-none text-ui-2xs text-foreground-subtlest">后台</span>}
-          <span className="flex-none text-ui-2xs text-foreground-subtlest">{t.label}</span>
+          {t.background && <span className="flex-none text-ui-xs text-foreground-subtlest">后台</span>}
+          <span className="flex-none text-ui-xs text-foreground-subtlest">{t.label}</span>
         </div>
       ))}
       {agents.active.length > shown.length && (
-        <div className="text-ui-2xs text-foreground-subtlest">其余 {agents.active.length - shown.length} 个任务…</div>
+        <div className="text-ui-xs text-foreground-subtlest">其余 {agents.active.length - shown.length} 个任务…</div>
       )}
       {agents.active.length === 0 && (
-        <div className="text-ui-2xs text-foreground-subtlest">无进行中的后台任务（终态任务 {agents.total} 个）</div>
+        <div className="text-ui-xs text-foreground-subtlest">无进行中的后台任务（终态任务 {agents.total} 个）</div>
       )}
       {onOpenTasksPane !== undefined && (
         <button
@@ -426,7 +426,7 @@ function AgentsBody({
           data-testid="status-agents-open-pane"
           title="在右栏「后台任务」标签页查看全部任务详情"
           onClick={onOpenTasksPane}
-          className="mt-0.5 flex-none cursor-pointer self-start rounded px-1 text-ui-2xs text-foreground-subtlest hover:bg-surface-hover hover:text-foreground"
+          className="mt-0.5 flex-none cursor-pointer self-start rounded px-1 text-ui-xs text-foreground-subtlest hover:bg-surface-hover hover:text-foreground"
         >
           在右栏打开 ↗
         </button>

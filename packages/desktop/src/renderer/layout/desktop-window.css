@@ -27,6 +27,10 @@
   border-radius: 0;
   clip-path: none;
 }
+/* U2-A4（Z-02 补全）：win 最大化同样归零圆角（贴边露角与 linux 同理）。 */
+.desktop-window-frame-win.desktop-window-frame-maximized {
+  border-radius: 0;
+}
 
 /* —— 会话列头右侧动作区（Z-01 / Z-04）：Side Pane 开关 + 自绘窗控 —— */
 .pane-header-actions {
@@ -51,29 +55,80 @@
   background: var(--color-surface-hover);
   color: var(--color-foreground);
 }
-/* 自绘窗控三键（win/linux）：Z-04 的 136px 量级安全宽度（3 × 45px） */
+/* U2-A1（焦点可见性）：键盘焦点必须有 2px 主色描边（与 app-frame.css 的 resizer 同一规格）。 */
+.pane-header-icon-btn:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: -2px;
+}
+/* 自绘窗控三键（win/linux）：**壳层常驻 overlay（Z-46）**——48px 标题带、右安全区 136px
+   （§8「win 右 136px」、useAppChromeState 口径）、28px 键（ZCode Button size=icon-md=size-7）。
+   overlay 本体 pointer-events-none（不挡内容点击），透明 drag 条只占标题带，键体 no-drag。 */
+.window-controls-overlay {
+  position: absolute;
+  top: 0;
+  right: 0;
+  /* 高于设置页/命令面板覆层（z-[100]/z-[110]）：窗控全场景常驻可达（ZCode 各覆盖层自挂 overlay 的等价物） */
+  z-index: 130;
+  width: 136px;
+  height: 48px;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  padding-right: 4px;
+  background: transparent;
+  pointer-events: none;
+}
+.window-controls-overlay-drag {
+  position: absolute;
+  inset: 0;
+  -webkit-app-region: drag;
+  pointer-events: auto;
+}
+.window-controls-overlay .window-controls {
+  position: relative;
+  pointer-events: auto;
+  -webkit-app-region: no-drag;
+}
 .window-controls {
   display: inline-flex;
-  align-items: stretch;
-  height: 22px;
-  margin-left: 4px;
+  align-items: center;
+  gap: 2px;
+  height: 28px;
 }
 .window-controls-btn {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 45px;
-  height: 100%;
+  width: 28px;
+  height: 28px;
   border: none;
+  border-radius: 6px;
   background: transparent;
-  color: var(--color-foreground-subtle);
+  color: var(--color-foreground);
   cursor: pointer;
 }
+/* U2-A3：闲置色已是 foreground（与 ZCode 窗控常驻对比度口径一致），hover 只加底不再提色。 */
 .window-controls-btn:hover {
   background: var(--color-surface-hover);
-  color: var(--color-foreground);
 }
 .window-controls-close:hover {
   background: var(--color-destructive);
   color: var(--color-destructive-foreground);
+}
+/* U2-A1（焦点可见性）：与 .pane-header-icon-btn 同一 2px 主色内描边规格。 */
+.window-controls-btn:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: -2px;
+}
+/* overlay 在场时（win/linux + 有通道，App 根挂 window-controls-active）：
+   内容顶部条让出 136px 右安全区，避免被标题带盖住（pane-header / 右栏 tab 条 / 终端 dock 头）。
+   右栏 tab 条的让位 = 在 ScrollArea 与其后控件之间插入 flex-auto 占位（SidePaneHost 在
+   windowControlsReserved 为真时渲染），把关闭钮等尾部控件推离窗口右上角。 */
+.desktop-window-frame.window-controls-active .pane-header {
+  padding-right: 140px;
+}
+/* 右栏打开时（Z-04 简化：窗控不迁移到 tab 条右侧，而是 tab 条整体让位）：
+   尾部控件（关闭钮等）经 padding 推离窗口右上角 136px 安全区。 */
+.desktop-window-frame.window-controls-active [data-testid='side-pane-tabstrip'] {
+  padding-right: 140px;
 }

@@ -108,7 +108,7 @@ export function ReasoningRow({ text, streaming }: { text: string; streaming?: bo
       </button>
       {tail.length > 0 && (
         <div
-          className="reasoning-tail-mask overflow-hidden text-ui-2xs text-foreground-subtlest"
+          className="reasoning-tail-mask overflow-hidden text-ui-xs text-foreground-subtlest"
           data-testid="reasoning-tail"
           aria-hidden
         >

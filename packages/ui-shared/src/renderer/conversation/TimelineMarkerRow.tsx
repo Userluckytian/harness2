@@ -5,7 +5,7 @@
 // 视觉依据：refs-zcode.md Z-92 表只给语义（「TimelineMarkerRowView；compact = 压缩边界」），
 // 无像素级细节 —— 按标记行的通用风格自定（交付报告已登记）：
 //   - 居中细分隔的标记行：左右细线（--color-border）+ 中部低饱徽章，不抢对话主体视觉；
-//   - 字号只用 text-ui-caption / text-ui-2xs，颜色只用语义 token（Z-60～Z-64 纪律）；
+//   - 字号只用 text-ui-caption / text-ui-xs（Z-61 执法：对话域禁 2xs；颜色只用语义 token（Z-60～Z-64 纪律）；
 //   - retry-notice 沿用既有 attempt 行的文案口径（「尝试失败：<error>」），半截产出
 //     （P3-b，assistant/attempt 是日志权威）在标记行内可展开，仍标注「未完成 / 已中断」。
 import type { ReactNode } from 'react';
@@ -85,7 +85,7 @@ export function TimelineMarkerRow({
             <span className={cn('shrink-0', className)}>上下文已压缩</span>
             {(summary ?? '').length > 0 && (
               <span
-                className="min-w-0 truncate text-ui-2xs text-foreground-subtlest"
+                className="min-w-0 truncate text-ui-xs text-foreground-subtlest"
                 title={summary}
                 data-testid="marker-summary"
               >
@@ -106,10 +106,10 @@ export function TimelineMarkerRow({
             </span>
             {partialText !== undefined && partialText.length > 0 && (
               <details className="min-w-0" data-testid="marker-partial">
-                <summary className="cursor-pointer text-ui-2xs text-foreground-subtle hover:text-foreground">
+                <summary className="cursor-pointer text-ui-xs text-foreground-subtle hover:text-foreground">
                   未完成 / 已中断的产出（{partialText.length} 字）
                 </summary>
-                <div className="max-h-60 overflow-y-auto border-l border-border pl-2 text-ui-2xs whitespace-pre-wrap text-foreground-subtle">
+                <div className="max-h-60 overflow-y-auto border-l border-border pl-2 text-ui-xs whitespace-pre-wrap text-foreground-subtle">
                   {partialText}
                 </div>
               </details>

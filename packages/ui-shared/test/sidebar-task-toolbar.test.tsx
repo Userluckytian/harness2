@@ -79,10 +79,14 @@ describe('Z-07 #6 Pinned 区', () => {
     expect(screen.queryByTestId('sidebar-pinned')).toBeNull();
   });
 
-  it('有置顶 → 显示，且「取消置顶」回调带 (id, false)', () => {
+  it('有置顶 → 显示，且「取消置顶」回调带 (id, false)（U2 批D / D4：✕ 交互态才 mount）', () => {
     const calls: Array<[string, boolean]> = [];
     renderBrowser({ sessions: [item('a', { pinned: true })], onTogglePin: (id, pinned) => calls.push([id, pinned]) });
     expect(screen.getByTestId('sidebar-pinned')).toBeTruthy();
+    // 未 hover：✕ 不 mount（JS 挂载取代 CSS opacity）
+    expect(screen.queryByTestId('session-unpin-a')).toBeNull();
+    const row = document.querySelector('[data-session-id="a"]')?.closest('li') as HTMLElement;
+    fireEvent.mouseOver(row);
     fireEvent.click(screen.getByTestId('session-unpin-a'));
     expect(calls).toEqual([['a', false]]);
   });

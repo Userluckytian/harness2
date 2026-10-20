@@ -1,25 +1,29 @@
 /* 侧栏外壳样式（D-13 / D-16 / D-20～D-25）。
    颜色全部走 renderer 既有 CSS 变量（styles.css 的暖纸 token），不新增调色板。
-   收起是「滑动 + 交叉淡出」而非形变：内容冻结在展开宽度就地淡出（.h2-sidebar-fading），
-   落定后才套轨道布局（.h2-sidebar-rail），滑动途中不重排。 */
+   Z-06 折叠形态：折叠后只剩 4px，内容 opacity-0 + pointer-events-none（只隐藏不卸载），
+   **没有图标轨道**——轨道时代的品牌行 / 淘入动画 CSS 已作为死码删除（U2 批D）。 */
 
 .h2-sidebar {
   --h2-sidebar-inline-padding: 12px;
-  /* 展开态侧栏浮在中栏之上，滑块用次级描边色；.h2-sidebar-quiet 只改颜色不改布局。 */
-  --h2-sidebar-thumb: var(--color-border-hover);
+  /* 展开态侧栏浮在中栏之上，滑块用分隔描边色（Z-69 thumb = --color-border）；
+     .h2-sidebar-quiet 只改颜色不改布局。 */
+  --h2-sidebar-thumb: var(--color-border);
   --h2-sidebar-thumb-hover: var(--color-foreground-subtlest);
   display: flex;
   flex-direction: column;
   height: 100%;
   padding: 6px var(--h2-sidebar-inline-padding);
   box-sizing: border-box;
-  background: var(--color-panel);
+  /* U2 批D（Z-67）：侧栏底色走 --color-sidebar token（亮 #f0f0f0 / 暗 #161616），不再借 panel */
+  background: var(--color-sidebar);
   color: var(--color-foreground);
   border-right: 1px solid var(--color-border);
-  font-size: 14px;
+  /* U2 批D（Z-61/Z-71）：字号一律走 text-ui 刻度，禁裸 px —— 基准 = --text-ui-base（14px） */
+  font-size: var(--text-ui-base);
   overflow: hidden;
   scrollbar-color: var(--h2-sidebar-thumb) transparent;
-  scrollbar-width: thin;
+  /* Z-69：scrollbar-width auto（配 webkit 14px 拇指）；quiet 态仍靠透明色静默 */
+  scrollbar-width: auto;
 }
 
 /* D-24：指针不在列内（或容器未溢出）时滑块透明。
@@ -28,127 +32,6 @@
 .h2-sidebar-quiet {
   --h2-sidebar-thumb: transparent;
   --h2-sidebar-thumb-hover: transparent;
-}
-
-/* —— 品牌行（D-20）—— */
-.h2-sidebar-brand-row {
-  flex: none;
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  gap: 8px;
-  height: 60px;
-  padding: 8px 0 8px 4px;
-  margin-bottom: 8px;
-  box-sizing: border-box;
-  overflow: hidden;
-}
-
-/* 品牌行只作行为入口（新会话快捷方式）：不加悬停底色，指针形状就是唯一可供性 */
-.h2-sidebar-brand {
-  flex: 1;
-  min-width: 0;
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  height: 24px;
-  padding: 0;
-  border: none;
-  background: transparent;
-  color: inherit;
-  cursor: pointer;
-  overflow: hidden;
-}
-
-.h2-sidebar-brand-mark {
-  flex: none;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  color: var(--color-primary);
-}
-
-.h2-sidebar-mark-svg {
-  display: block;
-}
-
-.h2-sidebar-brand-name {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  min-width: 0;
-  height: 24px;
-  font-size: 18px;
-  font-weight: 600;
-  line-height: 24px;
-  letter-spacing: 0.04em;
-}
-
-.h2-sidebar-brand-local {
-  /* D7（2026-10-11）：原硬编码 17px 不在 text-ui-* 刻度内；改为刻度基准
-     --text-ui-base（=--ui-font-size=14px），与 ZCode 侧栏同位置文本一致。 */
-  font-size: var(--text-ui-base);
-  white-space: nowrap;
-}
-
-/* D-25：完整构建（有版本元数据）时品牌名下方徐标；无元数据时只有回落文字 */
-.h2-sidebar-brand-build {
-  flex: none;
-  display: inline-flex;
-  flex-direction: column;
-  align-items: flex-start;
-  justify-content: center;
-  gap: 1px;
-  height: 24px;
-  white-space: nowrap;
-}
-
-.h2-sidebar-version {
-  flex: none;
-  display: inline-flex;
-  align-items: center;
-  height: 12px;
-  padding: 0 4px;
-  border-radius: 2px;
-  background: var(--color-foreground);
-  color: var(--color-card);
-  font-family: ui-monospace, SFMono-Regular, Consolas, 'Liberation Mono', monospace;
-  font-size: 9px;
-  font-weight: 500;
-  line-height: 12px;
-  white-space: nowrap;
-}
-
-/* 轨道静止态是品牌标记，悬停换成面板图标（展开入口） */
-.h2-sidebar-toggle {
-  flex: none;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 28px;
-  height: 28px;
-  padding: 0;
-  border: none;
-  border-radius: 50%;
-  background: transparent;
-  color: var(--color-foreground-subtle);
-  cursor: pointer;
-}
-
-.h2-sidebar-toggle:hover {
-  background: var(--color-muted);
-}
-
-.h2-sidebar-toggle-glyph {
-  font-size: 13px;
-  line-height: 1;
-}
-
-.h2-sidebar-rail-mark {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  color: var(--color-primary);
 }
 
 /* —— 新会话（D-21）——
@@ -167,7 +50,8 @@
   margin: 0 -4px 8px;
   box-sizing: border-box;
   border: 1px solid var(--color-border-hover);
-  border-radius: 12px;
+  /* U2 批D（D9 / Z-73）：基础控件默认 rounded-lg（8px），不再用 12px 特例 */
+  border-radius: 8px;
   background: var(--color-card);
   color: var(--color-foreground);
   font: inherit;
@@ -177,7 +61,8 @@
 }
 
 .h2-sidebar-new:hover {
-  background: var(--color-muted);
+  /* U2 批D：hover 链统一 --color-surface-hover（muted 与新侧栏底色同色会不可见） */
+  background: var(--color-surface-hover);
 }
 
 .h2-sidebar-new:disabled {
@@ -202,16 +87,24 @@
   justify-content: center;
 }
 
-/* Z-07 #1：New Task 快捷键标注（壳绑定 Ctrl+N 后才渲染） */
+/* Z-07 #1：New Task 快捷键标注（壳绑定 Ctrl+N 后才渲染）。
+   U2 批D（D9）：改 Kbd 规格档（Z-77：h-5 rounded-sm bg-muted text-ui-xs，font-sans）。 */
 .h2-sidebar-new-hint {
   flex: none;
-  padding: 1px 5px;
-  border: 1px solid var(--color-border-hover);
-  border-radius: 5px;
-  color: var(--color-foreground-subtlest);
-  font-family: ui-monospace, SFMono-Regular, Consolas, 'Liberation Mono', monospace;
-  font-size: var(--text-ui-2xs);
-  line-height: 14px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 4px;
+  border: none;
+  border-radius: 4px;
+  background: var(--color-muted);
+  color: var(--color-foreground-subtle);
+  font-family: var(--font-sans, ui-sans-serif, system-ui, sans-serif);
+  font-size: var(--text-ui-xs);
+  font-weight: 500;
+  line-height: 1;
   white-space: nowrap;
 }
 
@@ -228,18 +121,20 @@
   margin: 0 -4px 8px;
   box-sizing: border-box;
   border: 1px solid transparent;
-  border-radius: 10px;
+  /* U2 批D（D9 / Z-73）：圆角统一 8px 系 */
+  border-radius: 8px;
   background: transparent;
   color: var(--color-foreground-subtle);
   font: inherit;
-  font-size: 13px;
+  /* U2 批D（D1 / Z-71）：13px → caption 档（就近 --text-ui-caption = 13px 正档） */
+  font-size: var(--text-ui-caption);
   text-align: left;
   cursor: pointer;
   overflow: hidden;
 }
 
 .h2-sidebar-command:hover {
-  background: var(--color-muted);
+  background: var(--color-surface-hover);
   color: var(--color-foreground);
 }
 
@@ -257,15 +152,23 @@
   white-space: nowrap;
 }
 
+/* U2 批D（D9）：命令入口快捷键提示同改 Kbd 规格档（Z-77）。 */
 .h2-sidebar-command-hint {
   flex: none;
-  padding: 1px 5px;
-  border: 1px solid var(--color-border-hover);
-  border-radius: 5px;
-  color: var(--color-foreground-subtlest);
-  font-family: ui-monospace, SFMono-Regular, Consolas, 'Liberation Mono', monospace;
-  font-size: 10px;
-  line-height: 14px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 4px;
+  border: none;
+  border-radius: 4px;
+  background: var(--color-muted);
+  color: var(--color-foreground-subtle);
+  font-family: var(--font-sans, ui-sans-serif, system-ui, sans-serif);
+  font-size: var(--text-ui-xs);
+  font-weight: 500;
+  line-height: 1;
   white-space: nowrap;
 }
 
@@ -349,7 +252,7 @@
 }
 
 .h2-sidebar-tool:hover {
-  background: var(--color-muted);
+  background: var(--color-surface-hover);
   color: var(--color-foreground);
 }
 
@@ -417,7 +320,8 @@
   background: var(--color-card);
   color: var(--color-foreground);
   font: inherit;
-  font-size: 13px;
+  /* U2 批D（D1 / Z-61/Z-71）：裸 13px → caption 档（=--text-ui-caption，13px 正档） */
+  font-size: var(--text-ui-caption);
 }
 
 .h2-sidebar-list {
@@ -430,7 +334,8 @@
   /* 预留滚动条宽度：滑块显隐都不重排（D-24） */
   scrollbar-gutter: stable;
   scrollbar-color: var(--h2-sidebar-thumb) transparent;
-  scrollbar-width: thin;
+  /* U2 批D（Z-69）：不再局部 thin —— 宽度走全局 auto（14px 系）；
+     颜色通道仍局部（D-24 quiet = transparent 静默） */
 }
 
 /* —— 分区与分组（Z8-1 / Z-07 #6～#8）：Pinned / 项目 / 会话 / 已归档 —— */
@@ -463,7 +368,7 @@
 }
 
 .h2-sidebar-section-head-toggle:hover {
-  background: var(--color-muted);
+  background: var(--color-surface-hover);
   color: var(--color-foreground);
 }
 
@@ -508,7 +413,7 @@
 }
 
 .h2-sidebar-group-head:hover {
-  background: var(--color-muted);
+  background: var(--color-surface-hover);
 }
 
 .h2-sidebar-group-name {
@@ -565,7 +470,7 @@
 }
 
 .h2-sidebar-head-button:hover:not(:disabled) {
-  background: var(--color-muted);
+  background: var(--color-surface-hover);
   color: var(--color-foreground);
 }
 
@@ -592,20 +497,20 @@
 }
 
 .h2-sidebar-show-all:hover {
-  background: var(--color-muted);
+  background: var(--color-surface-hover);
 }
 
-.h2-sidebar-list::-webkit-scrollbar {
-  width: 8px;
-}
-
+/* Z-69 滚动条：尺寸/圆角/透明边框由 styles.css 全局规则（*::-webkit-scrollbar 14px 系）
+   统一承担；这里只覆写滑块颜色通道——D-24 quiet 静默（--h2-sidebar-thumb: transparent）
+   与悬停色仍需局部可变。 */
 .h2-sidebar-list::-webkit-scrollbar-thumb {
   background: var(--h2-sidebar-thumb);
-  border-radius: 4px;
+  background-clip: padding-box;
 }
 
 .h2-sidebar-list::-webkit-scrollbar-thumb:hover {
   background: var(--h2-sidebar-thumb-hover);
+  background-clip: padding-box;
 }
 
 .h2-sidebar-row {
@@ -633,21 +538,21 @@
 }
 
 .h2-sidebar-session:hover {
-  background: var(--color-muted);
+  background: var(--color-surface-hover);
 }
 
-/* 当前会话高亮：填充 + 左缘强调条（不只靠颜色深浅一个通道） */
+/* 当前会话高亮（U2 批D / Z-09）：只换 selected 填充。
+   ZCode 规格无左缘强调条与加粗——两者已删（D2）。 */
 .h2-sidebar-session[data-selected='true'] {
-  background: var(--color-accent);
-  box-shadow: inset 2px 0 0 var(--color-primary);
-  font-weight: 600;
+  background: var(--color-selected);
 }
 
 .h2-sidebar-session[data-archived='true'] {
   color: var(--color-foreground-subtle);
 }
 
-/* Z-09：左侧 16px leading 槽（unread 徽标 / running spinner / pinned 图钉 三选一） */
+/* Z-09：左侧 16px leading 槽（unread 蓝点 > running spinner > pinned 图钉；error 红点无数据源不做）。
+   Spinner 走 Z-79（lucide LoaderIcon size-4 animate-spin），降动效由全局 Z-64 与下方类名规则兜底。 */
 .h2-sidebar-session-leading {
   flex: none;
   display: inline-flex;
@@ -655,6 +560,14 @@
   justify-content: center;
   min-width: 16px;
   height: 18px;
+}
+
+.h2-sidebar-spinner {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--color-foreground-subtle);
 }
 
 /* ZCode 1:1：单行横向 —— 标题占满可伸区（截断），相对时间固定在右端 */
@@ -687,21 +600,8 @@
   white-space: nowrap;
 }
 
-.h2-sidebar-running {
-  flex: none;
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  border: 1.5px solid var(--color-success);
-  border-top-color: transparent;
-  animation: h2-sidebar-spin 900ms linear infinite;
-}
-
-@keyframes h2-sidebar-spin {
-  to {
-    transform: rotate(360deg);
-  }
-}
+/* U2 批D（D3 / Z-09）：running = Z-79 Spinner（LoaderIcon size-4 animate-spin），
+   旧的绿环自转 CSS 删除。 */
 
 .h2-sidebar-pinned-mark {
   flex: none;
@@ -711,64 +611,60 @@
 }
 
 /* Pinned 行：右侧「取消置顶」按钮（行是 button，取消按钮须为兄弟节点，不能嵌套） */
+/* Pinned 行：右侧「取消置顶」按钮（行是 button，取消按钮须为兄弟节点，不能嵌套）。
+   U2 批D（D4 / Z-48）：钮只在交互态由 JS mount（不再有 CSS opacity 显隐链）；
+   20→24px、底 transparent（Z-74 方形图标钮档）。 */
 .h2-sidebar-unpin {
   position: absolute;
-  top: 6px;
-  right: 6px;
+  top: 4px;
+  right: 4px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 20px;
-  height: 20px;
+  width: 24px;
+  height: 24px;
   padding: 0;
   border: none;
   border-radius: 6px;
-  background: var(--color-card);
+  background: transparent;
   color: var(--color-foreground-subtle);
   font-size: var(--text-ui-2xs);
   cursor: pointer;
-  opacity: 0;
-}
-
-.h2-sidebar-row-pinned:hover .h2-sidebar-unpin,
-.h2-sidebar-unpin:focus-visible {
-  opacity: 1;
 }
 
 .h2-sidebar-unpin:hover {
-  background: var(--color-muted);
+  background: var(--color-surface-hover);
   color: var(--color-foreground);
 }
 
-.h2-sidebar-unread {
-  flex: none;
-  min-width: 16px;
-  padding: 0 4px;
-  border-radius: 8px;
-  background: var(--color-primary);
-  color: var(--color-primary-foreground);
-  font-size: 11px;
-  line-height: 16px;
-  text-align: center;
-}
-
-/* Z2-09b（场景④）：待审批 attention 徽标 —— 与未读徽标同族（行内小胶囊），警示色。 */
+/* Z2-09b（场景④）：待审批 attention 徽标 —— 标题尾的小胶囊，计数徽标。 */
 .h2-sidebar-attention {
   flex: none;
   min-width: 16px;
   padding: 0 4px;
   border-radius: 8px;
-  background: var(--color-warning);
-  color: #fff;
-  font-size: 11px;
+  /* U2 批D（D3 / Z-09 原文）：attention = 绿底浅染（bg-success/14 同族），前景走 token 不再 #fff */
+  background: color-mix(in srgb, var(--color-success) 14%, transparent);
+  color: var(--color-foreground);
+  font-size: var(--text-ui-xs);
   line-height: 16px;
   text-align: center;
+}
+
+/* U2 批D（D3 / Z-09）：unread = 8px 蓝点（黑底计数胶囊废除；计数移入行 title + aria-label）。
+   蓝色走 ask 族前景 token（--color-interaction-ask-foreground：亮 #0066dd / 暗 #80beff）。 */
+.h2-sidebar-unread-dot {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-radius: 9999px;
+  background: var(--color-interaction-ask-foreground);
 }
 
 .h2-sidebar-empty {
   padding: 12px 8px;
   color: var(--color-foreground-subtle);
-  font-size: 13px;
+  font-size: var(--text-ui-caption);
 }
 
 .h2-sidebar-caret {
@@ -803,73 +699,10 @@
   width: 100%;
 }
 
-/* —— 收起动画（D-22）：冻结宽度就地淡出 → 落定切轨道 → 控件向左位移淘入 —— */
-.h2-sidebar-fading > * {
-  opacity: 0;
-  transition: opacity 150ms ease-in-out;
-}
-
-/* 轨道几何：36×36 控件盒在 56px 轨道内居中（左右各 10px），顶部留 18px */
-.h2-sidebar-rail {
-  padding: 18px 10px 6px;
-}
-
-.h2-sidebar-rail .h2-sidebar-brand-row {
-  height: 36px;
-  padding: 0;
-  margin-bottom: 12px;
-  justify-content: flex-start;
-}
-
-.h2-sidebar-rail .h2-sidebar-toggle {
-  width: 36px;
-  height: 36px;
-  color: var(--color-foreground);
-}
-
-/* 静止态显示品牌标记，悬停才露出面板图标 */
-.h2-sidebar-rail .h2-sidebar-toggle-glyph {
-  display: none;
-}
-
-.h2-sidebar-rail .h2-sidebar-toggle:hover .h2-sidebar-rail-mark {
-  display: none;
-}
-
-.h2-sidebar-rail .h2-sidebar-toggle:hover .h2-sidebar-toggle-glyph {
-  display: inline;
-}
-
-.h2-sidebar-rail .h2-sidebar-new {
-  align-self: flex-start;
-  width: 36px;
-  height: 36px;
-  padding: 0;
-  margin: 0 0 12px;
-  gap: 0;
-  border-color: transparent;
-  background: transparent;
-}
-
-.h2-sidebar-rail .h2-sidebar-new:hover {
-  background: var(--color-muted);
-}
-
-.h2-sidebar-rail .h2-sidebar-new-label {
-  max-width: 0;
-}
-
-.h2-sidebar-rail .h2-sidebar-new-hint {
-  display: none;
-}
-
-.h2-sidebar-rail .h2-sidebar-region-area {
-  margin-left: 0;
-  margin-right: 0;
-  padding-left: 0;
-  align-items: center;
-}
-
+/* U2 批D（D9）：轨道时代死 CSS 已删 —— 品牌行（.h2-sidebar-brand*，Z-16 #0 起无 DOM）、
+   折叠轨道几何与淘入动画（.h2-sidebar-fading / .h2-sidebar-rail* / .h2-sidebar-toggle* /
+   @keyframes rail-in / rail-fade-in，Z-06 起折叠 = 4px 容器 + opacity-0，无轨道 DOM）。
+   保留 .h2-sidebar-rail-icon：SessionBrowser 轨道态（wide=false）回落钮仍在用。 */
 .h2-sidebar-rail-icon {
   flex: none;
   display: inline-flex;
@@ -882,70 +715,45 @@
   border-radius: 8px;
   background: transparent;
   color: var(--color-foreground);
-  font-size: 16px;
+  /* U2 批D（D1 / Z-61）：裸 16px → 刻度 lg 档（等值，去裸 px） */
+  font-size: var(--text-ui-lg);
   cursor: pointer;
 }
 
 .h2-sidebar-rail-icon:hover {
-  background: var(--color-muted);
+  background: var(--color-surface-hover);
 }
 
-.h2-sidebar-rail .h2-sidebar-foot {
+/* D-25：版本徐标（footer 末行，左对齐、不占高；无元数据不画）。
+   U2 批D（D1）：9px → xs 档（Z-71：xs=10px；2xs=9px 仅限工作流图轴面）。 */
+.h2-sidebar-version {
+  flex: none;
+  display: inline-flex;
   align-items: center;
+  height: 12px;
+  padding: 0 4px;
+  border-radius: 2px;
+  background: var(--color-foreground);
+  color: var(--color-card);
+  font-family: ui-monospace, SFMono-Regular, Consolas, 'Liberation Mono', monospace;
+  font-size: var(--text-ui-xs);
+  font-weight: 500;
+  line-height: 12px;
+  white-space: nowrap;
 }
 
-.h2-sidebar-rail .h2-sidebar-settings-area {
-  display: flex;
-  justify-content: center;
-  width: auto;
-}
-
-/* 实时收起落定后，上方控件从原轨道右缘进画（同一段淘入），底部设置席位只淡入 */
-.h2-sidebar-rail-in .h2-sidebar-toggle,
-.h2-sidebar-rail-in .h2-sidebar-new,
-.h2-sidebar-rail-in .h2-sidebar-region-area {
-  animation: h2-sidebar-rail-in 150ms ease-in-out backwards;
-}
-
-.h2-sidebar-rail-in .h2-sidebar-foot {
-  animation: h2-sidebar-rail-fade-in 150ms ease-in-out backwards;
-}
-
-@keyframes h2-sidebar-rail-in {
-  from {
-    opacity: 0;
-    transform: translateX(49px);
-  }
-}
-
-@keyframes h2-sidebar-rail-fade-in {
-  from {
-    opacity: 0;
-  }
-}
-
-/* —— 降动效（D-16 / D-22）——
-   类名分支：hook 在同一次渲染里让收起即时落定；媒体查询兜底：
-   系统偏好或装配层加类名的任一路径都禁用过渡与动画。 */
-.h2-sidebar-reduced-motion .h2-sidebar-fading > *,
-.h2-sidebar-reduced-motion .h2-sidebar-rail-in .h2-sidebar-toggle,
-.h2-sidebar-reduced-motion .h2-sidebar-rail-in .h2-sidebar-new,
-.h2-sidebar-reduced-motion .h2-sidebar-rail-in .h2-sidebar-region-area,
-.h2-sidebar-reduced-motion .h2-sidebar-rail-in .h2-sidebar-foot,
+/* —— 降动效（D-16）——
+   类名分支：hook 在同一次渲染里加类名；媒体查询由 styles.css 全局 Z-64 规则兜底。
+   轨道淘入动画已随死 CSS 删除，这里只剩分区头 caret 折叠过渡与 leading spinner。 */
 .h2-sidebar-reduced-motion .h2-sidebar-caret,
-.h2-sidebar-reduced-motion .h2-sidebar-running {
+.h2-sidebar-reduced-motion .h2-sidebar-spinner > svg {
   transition: none;
   animation: none;
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .h2-sidebar-fading > *,
-  .h2-sidebar-rail-in .h2-sidebar-toggle,
-  .h2-sidebar-rail-in .h2-sidebar-new,
-  .h2-sidebar-rail-in .h2-sidebar-region-area,
-  .h2-sidebar-rail-in .h2-sidebar-foot,
   .h2-sidebar-caret,
-  .h2-sidebar-running {
+  .h2-sidebar-spinner > svg {
     transition: none;
     animation: none;
   }
@@ -971,11 +779,48 @@
   font-size: var(--text-ui-sm);
 }
 
-/* —— P0-2/P0-3a：行 ⋯ 更多按钮（hover/聚焦显现；Pinned 行与 unpin ✕ 并排时右移避让）—— */
-.h2-sidebar-row-more {
-  position: absolute;
-  top: 6px;
-  right: 6px;
+/* —— U2 批D（D7）：项目表读取失败行内轻提示（Z-79 Alert 规格：rounded-lg border px-2 py-1.5；
+   destructive 变体前景 token，不新增调色板）。—— */
+.h2-sidebar-alert {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 2px 8px 4px;
+  padding: 6px 8px;
+  border: 1px solid color-mix(in srgb, var(--color-destructive) 40%, transparent);
+  border-radius: 8px;
+  color: var(--color-destructive);
+  font-size: var(--text-ui-sm);
+}
+
+.h2-sidebar-alert-text {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.h2-sidebar-alert-action {
+  flex: none;
+  padding: 0 4px;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-weight: 600;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
+
+.h2-sidebar-alert-action:hover {
+  background: var(--color-surface-hover);
+}
+
+.h2-sidebar-alert-dismiss {
+  flex: none;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -983,19 +828,36 @@
   height: 20px;
   padding: 0;
   border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+}
+
+.h2-sidebar-alert-dismiss:hover {
+  background: var(--color-surface-hover);
+}
+
+/* —— P0-2/P0-3a：行 ⋯ 更多按钮。
+   U2 批D（D4 / Z-48）：显隐从 CSS opacity 链改为 JS 按交互态 mount（SessionRow 与组头
+   同用 shouldMountRowActions 判据）；钮 20→24px、底 transparent（Z-74 图标钮档）。
+   Pinned 行 unpin ✕ 由 JS 控制在场，右移避让仍按行类名。 —— */
+.h2-sidebar-row-more {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: none;
   border-radius: 6px;
-  background: var(--color-card);
+  background: transparent;
   color: var(--color-foreground-subtle);
   font-size: var(--text-ui-sm);
   cursor: pointer;
-  opacity: 0;
-}
-
-.h2-sidebar-row:hover .h2-sidebar-row-more,
-.h2-sidebar-row:focus-within .h2-sidebar-row-more,
-.h2-sidebar-row-more[data-state='open'],
-.h2-sidebar-row-more:focus-visible {
-  opacity: 1;
 }
 
 .h2-sidebar-row-pinned .h2-sidebar-row-more {
@@ -1003,7 +865,7 @@
 }
 
 .h2-sidebar-row-more:hover {
-  background: var(--color-muted);
+  background: var(--color-surface-hover);
   color: var(--color-foreground);
 }
 

@@ -10,6 +10,7 @@ import {
   decidePlanToggle,
   decideRadioSelect,
   displayApprovalMode,
+  firstAvailableModel,
   isPlanMode,
   isRadioApprovalMode,
   modelSelectionPatch,
@@ -61,9 +62,26 @@ describe('模型菜单构造（Z-94 ModelConfigSelect）', () => {
     expect(other?.items).toEqual([{ channel: 'anthropic', model: 'claude-sonnet', selected: false }]);
   });
 
-  it('roles.main 缺失 → undefined（没有「当前模型」可如实展示，控件不渲染）', () => {
+  it('roles.main 缺失（未给回落）→ undefined（没有「当前模型」可如实展示，控件不渲染）', () => {
     expect(buildModelMenu(config({ roles: {} }))).toBeUndefined();
     expect(buildModelMenu({})).toBeUndefined();
+  });
+
+  it('roles.main 缺失 + 给回落 → 菜单 current = 回落值（3b 初值回落口径）', () => {
+    const menu = buildModelMenu(config({ roles: {} }), { channel: 'zai', model: 'glm-5-air' });
+    expect(menu?.current).toEqual({ channel: 'zai', model: 'glm-5-air' });
+    expect(menu?.groups[0]?.items.find((i) => i.selected)?.model).toBe('glm-5-air');
+  });
+
+  it('roles.main 存在 → 回落参数不参与（磁盘真值优先）', () => {
+    const menu = buildModelMenu(config({}), { channel: 'other', model: 'ignored' });
+    expect(menu?.current).toEqual({ channel: 'zai', model: 'glm-5.3' });
+  });
+
+  it('3b：当前值展示为「渠道/模型」全名（trigger = provider 前缀 + 模型名）', () => {
+    expect(modelTriggerLabel({ channel: 'buddyhub', model: 'global:deepseek-v4.1-flash' })).toBe(
+      'buddyhub · global:deepseek-v4.1-flash',
+    );
   });
 
   it('当前渠道未声明 models → 仍如实展示当前值（组内只有补行），不臆造目录', () => {
@@ -73,6 +91,31 @@ describe('模型菜单构造（Z-94 ModelConfigSelect）', () => {
 
   it('trigger 文案 = provider 前缀 + 模型名（Z-94）', () => {
     expect(modelTriggerLabel({ channel: 'zai', model: 'glm-5.3' })).toBe('zai · glm-5.3');
+  });
+});
+
+describe('firstAvailableModel（3b 回落：providers 列表首项）', () => {
+  it('渠道名升序取首个有 models 的渠道，模型名升序取首项', () => {
+    const got = firstAvailableModel({
+      providers: {
+        zai: { models: { 'glm-5-air': {}, 'glm-5.3': {} } },
+        anthropic: { models: { 'claude-sonnet': {} } },
+        空渠道: {}, // 无 models → 跳过
+      },
+    });
+    expect(got).toEqual({ channel: 'anthropic', model: 'claude-sonnet' });
+  });
+
+  it('同渠道多模型 → 字典序首项（与菜单排序口径一致）', () => {
+    expect(firstAvailableModel({ providers: { zai: { models: { 'glm-5-air': {}, 'glm-5.3': {} } } } })).toEqual({
+      channel: 'zai',
+      model: 'glm-5-air',
+    });
+  });
+
+  it('无任何 provider/models → undefined（无从选择，控件仍不渲染）', () => {
+    expect(firstAvailableModel({})).toBeUndefined();
+    expect(firstAvailableModel({ providers: { a: {} } })).toBeUndefined();
   });
 });
 

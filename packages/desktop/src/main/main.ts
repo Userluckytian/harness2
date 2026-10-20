@@ -1,22 +1,30 @@
 // Electron 主进程入口：spawn serve → 桥接 IPC → 创建窗口（contextIsolation + preload）。
 // --smoke 冒烟模式：无头窗口 + mock 服务就绪 + 渲染端加载完成后向 stdout 打一行 JSON 并退出
 // （自动化冒烟；窗口交互/拖拽等 GUI 项仍需真机人工验收，见 docs/issue-log/OPEN.md）。
-import { app, BrowserWindow, Menu, dialog, nativeTheme } from 'electron';
+import { app, BrowserWindow, Menu, dialog, nativeImage, nativeTheme, Tray } from 'electron';
+import { execFile } from 'node:child_process';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { homedir, tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { promisify } from 'node:util';
 import { createBridge, registerBridgeIpc, type Bridge } from './bridge.js';
 import { ServeManager } from './serve-manager.js';
 import { createCloseWindowHandler } from './close-window-handler.js';
 import { startTerminal, stopTerminal } from './terminal.js';
+import { resolveDefaultWorkspaceRoot } from './workspace-root.js';
+import { createTray, type TrayHandle } from './tray.js';
+import { probeTraySupport } from './tray-support.js';
+import { createQuitIntent, decideWindowClose, resolveCloseToTray, type QuitIntent } from './window-lifecycle.js';
+import { readPreferences } from './preferences-file.js';
 import type {
   ConnectionStatus,
   SettingsEventFrame,
   StatusDetail,
   TerminalEventFrame,
+  TrayUiEvent,
   WsFrame,
 } from '../shared/protocol.js';
-import { IPC_WINDOW_STATE } from '../shared/protocol.js';
+import { IPC_TRAY_EVENT, IPC_WINDOW_STATE } from '../shared/protocol.js';
 
 const SMOKE = process.argv.includes('--smoke');
 
@@ -27,23 +35,44 @@ function resolveCliEntry(): string {
   return join(__dirname, '..', '..', '..', 'cli', 'dist', 'index.js');
 }
 
-/** 仓库根（dev 模式的 serve --root：工具执行 cwd + 会话分组） */
-function resolveRepoRoot(): string {
-  return join(__dirname, '..', '..', '..');
+/** 默认工作区根（serve --root：工具执行 cwd + 无 cwd 新建会话的分组根 + 终端根）。
+ *  R0-3②：旧 resolveRepoRoot 打包态解析到安装目录（缺陷），现委托纯函数：
+ *  dev = 仓库根（harness2/），打包态 = 用户主目录。见 workspace-root.ts。 */
+function defaultWorkspaceRoot(): string {
+  return resolveDefaultWorkspaceRoot({ isPackaged: app.isPackaged, dirname: __dirname, homeDir: homedir() });
 }
 
 interface DesktopHandles {
   serve: ServeManager;
   bridge: Bridge;
   win: BrowserWindow;
+  /** Z-47：托盘句柄（null = 平台门不通过 / 创建失败 / smoke 不建）；tray:status 与关窗裁决据此 */
+  tray: TrayHandle | null;
+  /** 显式退出意图（托盘「退出」mark → quit；对话框取消回滚） */
+  quitIntent: QuitIntent;
   /** serve 首次 connected（或启动失败 reject） */
   ready: Promise<{ port: number }>;
 }
 
-function startDesktop(opts: { show: boolean; provider: 'mock' | 'config'; home?: string }): DesktopHandles {
+function startDesktop(opts: {
+  show: boolean;
+  provider: 'mock' | 'config';
+  home?: string;
+  /** Z-47：创建系统托盘（smoke 传 false：无头环境不建托盘，保证退出干净） */
+  tray: boolean;
+}): DesktopHandles {
   const home = opts.home ?? homedir();
+  /** R0-3②：默认工作区根（serve --root / bridge deps.root / terminal root 共用一处求值） */
+  const workspaceRoot = defaultWorkspaceRoot();
   /** D4：渲染端上报的运行态（关窗口提示依据） */
   const runtime = { busy: false, runningTurns: 0, backgroundTasks: 0 };
+  /** Z-47：显式退出意图（托盘「退出」mark → app.quit；D4 对话框放弃退出经 onQuitAborted 回滚） */
+  const quitIntent = createQuitIntent();
+  /** Z-47：托盘句柄（下方窗口创建后按平台门/smoke 决定；null = 驻留能力不可用） */
+  let trayHandle: TrayHandle | null = null;
+  /** 复审 P1-2（Z-47 能力双条件门）之二：linux DBus StatusNotifierWatcher 探测结果。
+   *  非 linux 无 DBus 概念直接为 true；linux 初值 false（探测未回前绝不 hide，安全默认）。 */
+  let trayProbeOk = process.platform !== 'linux';
   let resolveReady!: (v: { port: number }) => void;
   let rejectReady!: (e: Error) => void;
   const ready = new Promise<{ port: number }>((resolve, reject) => {
@@ -74,10 +103,16 @@ function startDesktop(opts: { show: boolean; provider: 'mock' | 'config'; home?:
       win.webContents.send('harness2:terminal-event', frame);
     }
   };
+  // Z-47：托盘 → 渲染端事件通道（新建会话/添加项目意图；T3 接监听，无监听者静默不报错）
+  const sendTrayEvent = (event: TrayUiEvent): void => {
+    for (const win of BrowserWindow.getAllWindows()) {
+      win.webContents.send(IPC_TRAY_EVENT, event);
+    }
+  };
 
   const serve = new ServeManager({
     cliEntry: resolveCliEntry(),
-    root: resolveRepoRoot(),
+    root: workspaceRoot,
     home, // home = opts.home ?? homedir()（上方已计算）：dev 启动也有 home，serve.lock token 可读、健康检查可过
     provider: opts.provider,
     onStatus: (status, detail) => {
@@ -91,7 +126,7 @@ function startDesktop(opts: { show: boolean; provider: 'mock' | 'config'; home?:
 
   const bridge = createBridge({
     serve,
-    root: resolveRepoRoot(),
+    root: workspaceRoot,
     home,
     sendEvent,
     sendStatus,
@@ -102,10 +137,13 @@ function startDesktop(opts: { show: boolean; provider: 'mock' | 'config'; home?:
       runtime.runningTurns = info.runningTurns;
       runtime.backgroundTasks = info.backgroundTasks;
     },
+    // Z-47：tray:status 读托盘创建结果（trayHandle 在窗口创建后赋值，闭包晚绑定安全；
+    // 复审 P1-2：叠加 linux DBus 能力探测——构造不抛≠图标可见，探测不过则驻留能力为假）
+    isTrayCreated: () => trayHandle !== null && trayProbeOk,
   });
   registerBridgeIpc(bridge);
   // Z9-3：启动进程级终端传输（core TerminalManager 单例；不 spawn 任何 PTY 直到 open）
-  startTerminal({ root: resolveRepoRoot(), sendEvent: sendTerminalEvent });
+  startTerminal({ root: workspaceRoot, sendEvent: sendTerminalEvent });
 
   const win = new BrowserWindow({
     width: 1280,
@@ -152,18 +190,111 @@ function startDesktop(opts: { show: boolean; provider: 'mock' | 'config'; home?:
   });
   void win.loadFile(join(__dirname, '..', '..', 'dist', 'renderer', 'index.html'));
 
+  // —— Z-47：系统托盘（win32/linux；mac 不建，关窗语义维持现状）+ 关窗裁决三重门 ——
+  // smoke 不建（opts.tray=false）：无头环境避免托盘残留，保证 {ok:true} 后 exit 0 干净。
+  if (opts.tray) {
+    trayHandle = createTray({
+      platform: process.platform,
+      isPackaged: app.isPackaged,
+      resourcesPath: process.resourcesPath,
+      dirname: __dirname,
+      loadIcon: (p) => nativeImage.createFromPath(p),
+      createTrayInstance: (image) => new Tray(image as unknown as Electron.NativeImage),
+      buildMenu: (items) => Menu.buildFromTemplate(items),
+      actions: {
+        // 左键/双击/「打开 harness2」= show + focus 主窗（从最小化恢复；不是 toggle 隐藏）
+        showMainWindow: () => {
+          if (win.isMinimized()) win.restore();
+          win.show();
+          win.focus();
+        },
+        newSession: () => sendTrayEvent({ type: 'tray:new-session' }),
+        addProject: () => sendTrayEvent({ type: 'tray:add-project' }),
+        // 「关于」（复审 P1-1）：系统关于面板，版本号取 app.getVersion()（不硬编码）
+        showAbout: () => {
+          app.setAboutPanelOptions({
+            applicationName: 'harness2',
+            applicationVersion: app.getVersion(),
+            copyright: 'harness2',
+          });
+          app.showAboutPanel();
+        },
+        // 退出写法（Z-47）：先 markExplicitQuit 再 app.quit——防止被「关窗即隐藏」吞掉
+        quit: () => {
+          quitIntent.mark('tray-quit');
+          app.quit();
+        },
+      },
+    });
+    // 复审 P1-2（Z-47 能力双条件门）：托盘构造不抛 ≠ linux 图标真可见（GNOME 无 AppIndicator
+    // 扩展时 new Tray 静默失败）。构造成功后再跑一次 DBus watcher 探测，结果折入 isTrayCreated，
+    // 避免「无 host 也 hide」导致关窗后窗口消失且无托盘可唤回。探测是异步的，晚绑定安全：
+    // 首次 hide 裁决早于探测回时 trayProbeOk 仍为 false（linux 初值），按不驻留处理。
+    if (trayHandle !== null) {
+      const execFileAsync = promisify(execFile);
+      void probeTraySupport({
+        platform: process.platform,
+        execFile: async (cmd, args) => {
+          const { stdout } = await execFileAsync(cmd, args, { timeout: 1500, windowsHide: true });
+          return stdout;
+        },
+      }).then((ok) => {
+        trayProbeOk = ok;
+        if (!ok) {
+          // 单行 JSON，可 grep（照本文件 preload-error 的 console 风格）
+          console.warn(
+            JSON.stringify({
+              level: 'warn',
+              scope: 'tray-support',
+              message: 'linux 托盘能力探测失败：session DBus 无 org.kde.StatusNotifierWatcher，禁用关窗驻留',
+            }),
+          );
+        }
+      });
+    }
+  }
+  /** 关窗裁决（纯函数核见 window-lifecycle.ts）：hide 驻留托盘 or 放行既有 D4 链路 */
+  const closeToTrayEnabled = (): boolean => resolveCloseToTray(readPreferences(home).closeToTray, process.platform);
+  /** D4「请求停止并退出」进入最终 close 时置真：二次 close 事件不得再被 hide 门吞回（否则永远退不出） */
+  let forceClosing = false;
+
   // D4/PD8：关窗口 ≠ 已停止任务。决策接线提取到 close-window-handler（依赖注入，可自动化测试）。
-  win.on(
-    'close',
-    createCloseWindowHandler({
-      runtime: () => runtime,
-      showDialog: (opts) => dialog.showMessageBox(win, opts),
-      minimize: () => win.minimize(),
-      requestStopAll: () => win.webContents.send('harness2:stop-all'),
-      close: () => win.close(),
-      scheduleClose: (fn) => setTimeout(fn, 400),
-    }),
-  );
+  // Z-47 前置裁决：托盘驻留三重门全过 → hide + preventDefault（不进 D4 对话框，窗口仍在）；
+  // 否则维持现状：放行 close 事件 → close-window-handler（busy 对话框 → 最后窗口销毁 → quit）。
+  const closeWindowHandler = createCloseWindowHandler({
+    runtime: () => runtime,
+    showDialog: (opts) => dialog.showMessageBox(win, opts),
+    minimize: () => win.minimize(),
+    requestStopAll: () => win.webContents.send('harness2:stop-all'),
+    close: () => {
+      forceClosing = true;
+      win.close();
+    },
+    scheduleClose: (fn) => setTimeout(fn, 400),
+    onQuitAborted: () => {
+      // 用户取消 / 保持后台 / 弹窗失败：本次不会退出 → 回滚显式标志
+      // （否则陈旧的 tray-quit 标志会让后续关窗绕过 hide 裁决）
+      quitIntent.rollback();
+    },
+  });
+  win.on('close', (event) => {
+    if (!forceClosing) {
+      const action = decideWindowClose({
+        platform: process.platform,
+        closeToTrayEnabled: closeToTrayEnabled(),
+        // 复审 P1-2：与 bridge isTrayCreated 同口径（构造成功 ∧ linux DBus 探测通过），
+        // 否则 GNOME 无扩展时 hide 门全过 → 关窗后窗口消失且无托盘可唤回
+        trayCreated: trayHandle !== null && trayProbeOk,
+        explicitQuit: quitIntent.isExplicit(),
+      });
+      if (action === 'hide-to-tray') {
+        event.preventDefault();
+        win.hide();
+        return;
+      }
+    }
+    closeWindowHandler(event);
+  });
 
   serve
     .start()
@@ -180,9 +311,18 @@ function startDesktop(opts: { show: boolean; provider: 'mock' | 'config'; home?:
     bridge.disconnectWs();
     stopTerminal();
     void serve.stop();
+    // 复审 P2：退出时销毁托盘，避免图标残留（smoke tray:false 时为 null，判空）
+    if (trayHandle !== null) {
+      trayHandle.destroy();
+      trayHandle = null;
+    }
   });
 
-  return { serve, bridge, win, ready };
+  // 复审 P2：normal 模式无 await 者，防 serve 首起失败 unhandledRejection 噪声；
+  // smoke 的 await handles.ready 走原 promise，不受影响。
+  void ready.catch(() => {});
+
+  return { serve, bridge, win, tray: trayHandle, quitIntent, ready };
 }
 
 // —— smoke 冒烟模式：stdout 一行 JSON {ok, port, rendererLoaded, error?}，exit 0/1 ——
@@ -230,7 +370,8 @@ async function runSmoke(): Promise<void> {
   smokeHome = home;
   try {
     await app.whenReady();
-    handles = startDesktop({ show: false, provider: 'mock', home });
+    // Z-47：smoke 不建托盘（无头环境驻留无意义，且保证退出干净）
+    handles = startDesktop({ show: false, provider: 'mock', home, tray: false });
     handles.win.webContents.on('did-finish-load', () => {
       result.rendererLoaded = true;
     });
@@ -277,8 +418,10 @@ if (SMOKE) {
     } else {
       Menu.setApplicationMenu(null);
     }
-    startDesktop({ show: true, provider: process.env['H2_PROVIDER'] === 'mock' ? 'mock' : 'config' });
+    startDesktop({ show: true, provider: process.env['H2_PROVIDER'] === 'mock' ? 'mock' : 'config', tray: true });
   });
+  // window-all-closed：关窗裁决（Z-47）在 win.on('close') 已先行拦截 hide 驻留路径；
+  // 能走到这里说明是真关闭（托盘退出/设置关/平台门不过）→ 维持既有 quit 语义。
   app.on('window-all-closed', () => {
     app.quit();
   });

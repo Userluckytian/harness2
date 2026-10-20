@@ -134,6 +134,22 @@ export interface SettingsPreferencesShape {
   codeFontSize?: number;
 }
 
+/**
+ * Z-47 托盘状态视图（桌面 `tray:status`/`tray:setCloseToTray` 响应形状；此处定最小面，
+ * 共享设置页不 import 桌面 protocol）。web 壳无此通道 = 端口缺失 = 不渲染开关。
+ * 注：closeToTray 偏好字段本身的持久化在桌面主进程侧（DesktopPreferences，T2 已就位）；
+ * 渲染层读写一律走 tray:* 专用通道（初值 = 本视图 closeToTray，已含平台默认归一），
+ * 不经 settings:setPreferences 整体写回，避免覆盖缺省语义。
+ */
+export interface TrayStatusView {
+  /** 托盘实例创建成功（false = mac 平台门 / 创建失败 / smoke 未建 → 开关禁用并说明） */
+  created: boolean;
+  /** process.platform 快照（说明文案用） */
+  platform: string;
+  /** 当前生效的关窗驻留偏好（含平台默认归一） */
+  closeToTray: boolean;
+}
+
 /** doctor 六项检查（core runDoctor 响应经 IPC 直传的最小形态） */
 export interface SettingsDoctorCheck {
   id: string;

@@ -72,3 +72,33 @@ describe('通用设置：真实可用项', () => {
     expect(screen.getByText(/Ctrl\+, 打开本设置/)).toBeTruthy();
   });
 });
+
+describe('通用设置：关窗驻留托盘（Z-47，端口注入才渲染）', () => {
+  const trayStatus = { created: true, platform: 'win32', closeToTray: true };
+
+  it('无 trayStatus（web/旧夹具）→ 整块不渲染（不摆假开关）', () => {
+    renderGeneral();
+    expect(screen.queryByRole('switch', { name: '关闭窗口时隐藏到托盘' })).toBeNull();
+    expect(document.body.textContent ?? '').not.toContain('窗口驻留');
+  });
+
+  it('trayStatus 在场 → 开关受控回显 + 切换回传', () => {
+    const onToggleCloseToTray = vi.fn();
+    renderGeneral({ trayStatus, onToggleCloseToTray });
+    const sw = screen.getByRole('switch', { name: '关闭窗口时隐藏到托盘' });
+    expect(sw.getAttribute('aria-checked')).toBe('true');
+    expect(sw.hasAttribute('disabled')).toBe(false);
+    fireEvent.click(sw);
+    expect(onToggleCloseToTray).toHaveBeenCalledWith(false);
+  });
+
+  it('托盘创建失败（created=false）→ 开关禁用 + 说明文案在场，点击不回传', () => {
+    const onToggleCloseToTray = vi.fn();
+    renderGeneral({ trayStatus: { ...trayStatus, created: false, closeToTray: false }, onToggleCloseToTray });
+    const sw = screen.getByRole('switch', { name: '关闭窗口时隐藏到托盘' }) as HTMLButtonElement;
+    expect(sw.hasAttribute('disabled')).toBe(true);
+    expect(screen.getByTestId('tray-unavailable-note')).toBeTruthy();
+    fireEvent.click(sw);
+    expect(onToggleCloseToTray).not.toHaveBeenCalled();
+  });
+});

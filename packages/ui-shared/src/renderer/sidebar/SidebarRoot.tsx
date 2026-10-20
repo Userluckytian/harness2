@@ -111,8 +111,22 @@ export interface SidebarRootProps extends SidebarSeats {
   onAddProject?: (() => void) | undefined;
   /** 组头「移出项目」真动作；缺省 = disabled 占位 */
   onRemoveProject?: ((cwd: string) => void) | undefined;
+  /** Z-48 #2：显式项目组头 hover「在此项目新建会话」真动作（带 cwd）；缺省 = 不渲染该钮 */
+  onNewSessionInProject?: ((cwd: string) => void) | undefined;
+  /** Z-49：删除会话真执行（软删）；缺省 = 行菜单不出现「删除」。确认对话框由 SessionBrowser 承载 */
+  onDeleteSession?: ((id: string) => Promise<void> | void) | undefined;
+  /** U1 复审 P2：确认框 live running 复查判据，透传 SessionBrowser（ac0df60 补链）。 */
+  isSessionRunning?: ((id: string) => boolean) | undefined;
   /** 任务区头「新建任务」真动作；缺省 = 不渲染该钮 */
   onNewTask?: (() => void) | undefined;
+  /**
+   * U2 批D（D7）：项目表读取失败提示（透传 SessionBrowser 行内 Alert）；null/缺省 = 不渲染。
+   */
+  projectsError?: string | null | undefined;
+  /** 失败条「重试」动作；缺省 = 不渲染重试钮 */
+  onRetryProjects?: (() => void) | undefined;
+  /** 失败条「忽略」；缺省 = 不渲染关闭钮 */
+  onDismissProjectsError?: (() => void) | undefined;
   /** 文案覆盖（缺省中文） */
   labels?: Partial<SidebarLabels> | undefined;
   className?: string | undefined;
@@ -178,7 +192,15 @@ export function SidebarRoot(props: SidebarRootProps): React.ReactNode {
         {...(props.projects !== undefined ? { projects: props.projects } : {})}
         {...(props.onAddProject !== undefined ? { onAddProject: props.onAddProject } : {})}
         {...(props.onRemoveProject !== undefined ? { onRemoveProject: props.onRemoveProject } : {})}
+        {...(props.onNewSessionInProject !== undefined ? { onNewSessionInProject: props.onNewSessionInProject } : {})}
+        {...(props.onDeleteSession !== undefined ? { onDeleteSession: props.onDeleteSession } : {})}
+        {...(props.isSessionRunning !== undefined ? { isSessionRunning: props.isSessionRunning } : {})}
         {...(props.onNewTask !== undefined ? { onNewTask: props.onNewTask } : {})}
+        {...(props.projectsError !== undefined ? { projectsError: props.projectsError } : {})}
+        {...(props.onRetryProjects !== undefined ? { onRetryProjects: props.onRetryProjects } : {})}
+        {...(props.onDismissProjectsError !== undefined
+          ? { onDismissProjectsError: props.onDismissProjectsError }
+          : {})}
       />
     ));
 

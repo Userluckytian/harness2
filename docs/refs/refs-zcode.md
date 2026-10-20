@@ -11,9 +11,9 @@
 | 项          | 值                                                                                                        |
 | ----------- | --------------------------------------------------------------------------------------------------------- |
 | 上游仓库    | `D:/AI_Projects/refs/ZCode`（`origin` = `https://github.com/zai-org/ZCode.git`）                          |
-| 快照 commit | `29628c9`（v3.14.3 / `2026-09-24T14:49:06+08:00`）                                                        |
-| 上游拉取    | ❌ 本轮**未拉取成功**（`fetch-pack: unexpected disconnect`），如实登记沿用本地快照                        |
-| 分析日期    | 2026-10-10                                                                                                |
+| 快照 commit | `aac47556`（v3.15.1 / 2026-10-13；上一基线 `29628c9` v3.14.3）                       |
+| 上游拉取    | ✅ 2026-10-14 拉取成功（单 squash 版本提交）                                                |
+| 分析日期    | 2026-10-14                                                                            |
 | 权威范围    | GUI 的 **设计原则 / token / 字体与尺寸规范 / 组件规格 / 图标 / 主题链路 / 设置页与对话页规格 / 对话框族** |
 | 非权威范围  | 布局与折叠（见 `refs-zcode-layout.md`）；ZCode 业务页面（见 §12 不采纳清单）                              |
 
@@ -22,6 +22,7 @@
 | 日期       | 执行者           | 上游 commit         | 改了什么                                                        |
 | ---------- | ---------------- | ------------------- | --------------------------------------------------------------- |
 | 2026-10-10 | 编排者（主会话） | `29628c9`（未拉取） | 首建：完成视觉/组件/主题/设置页/对话页规格调研，产出 Z-60～Z-95 |
+| 2026-10-14 | 编排者（主会话，Explore 子代理源码取证） | `aac47556`（v3.15.1，已拉取） | 桌面五场景补组件规格：Z-96 composer 错误反馈、Z-97 长任务运行态与终态保护（行号全部实核） |
 
 ---
 
@@ -413,6 +414,29 @@
 `variant="auto"` 时按容器查询 `@min-[1280px]` 切换：<1280px 显示 mini 胶囊（`max-h-8.5`，宽 = 测量值 ≤320），≥1280px 显示面板（`rounded-2xl border bg-popover shadow-md`，展开 `max-h-[min(64dvh,32rem)] w-80`）。
 
 胶囊内容**优先级链**：当前 Todo 项 → 活跃 Goal → Git 更改(+/−) → 已完成 Goal → 已完成 Todo 项 → Todo 计数 → 最近 SessionPlan → 运行计数 → 已结束工作流。图标按「恰好一类」取 Workflow/SquareTerminal/Bot，混合取 Activity。点击胶囊切回展开态。
+
+### Z-96 composer 错误反馈形态（@aac47556 新增）
+
+**主形态 = 输入框上方常驻错误横幅，不用 toast**：
+
+- 渲染点 `packages/ui/src/v4/ConversationComposer.tsx:2354-2366`（`visibleError` → `ChatErrorBanner`，`mb-6 w-full shrink-0`，独立于输入 surface、先于 contextHeader）。
+- 错误来源优先级链（`v4/SessionPane.tsx:4758-4761`）：`draftModelReadinessError ?? sendSubmissionError ?? (quotaBanner.takesOverError ? null : projectedComposerError)`。
+- **发送失败**：造 `SEND_FAILED`（或 `ZCODE_RUNTIME_MODEL_UNAVAILABLE`）错误对象，文案「发送失败，请稍后重试。」（`SessionPane.tsx:3716-3730`；`zh-CN.ts:5968`），**草稿保留不清空**；关横幅按错误指纹去重（关掉不立刻顶回，`SessionPane.tsx:4771-4782`）。
+- 横幅内容：`Info/Anchor` 图标 + 单行截断消息 +（模型缺失时）升级/设置模型入口 +（有 detail 时）「查看详情」Dialog(`<pre>`) +「复制完整报错」+「反馈」+ 右上 X（label「关闭错误提示」`zh-CN.ts:5952`）：`ChatErrorBanner.tsx:280-363`（详情 `:307-325`、复制 `:180-221`、X `:352-363`）。横幅按钮刻意不用 Radix Tooltip 包裹（防 update-depth 循环，`:331-333`）。历史残留的模型不可用错误被抑制（`:132-141 shouldSuppressChatErrorBanner`）。
+- **无一键重试**：banner 有 `onRetry/retryLabel/retryDisabled` props（`ChatErrorBanner.tsx:145-155,346-350`，label「重试」`zh-CN.ts:5953`）但 v4 调用点未传（`ConversationComposer.tsx:2359-2364`）；轮次级 retry 有链路但**产品 UI 刻意不渲染普通重试入口**（`ConversationRowView.tsx:263` 注释「协议兼容：上层仍可提供 retryTurn capability，但产品 UI 不渲染」；动作链本身在 `SessionPane.tsx:3858-3873`）。
+- **服务离线 = pane 级错误面板**（非横幅）：错误码 mono 红字 + 「反馈」+ 主按钮「重新连接」（`v4/SessionSubscriptionErrorPanel.tsx:49-61`，调用 `SessionPane.tsx:5584-5590`；兜底文案「与代理的连接已断开」`zh-CN.ts:5950`）。
+- provider 自动重试防打扰：**前 2 次不显示**，第 3 次起行内「重新连接中... n/max」扫光文本（`chat-input-toolbar/display.tsx:133-181`；阈值 `ConversationTurnGroup.tsx:150 MIN_VISIBLE_API_RETRY_ATTEMPT=3`、`:226-236`）。
+- 队列错误暂停横幅 +「继续」：「由于当前响应出错，队列已暂停（内容未丢失）」（`v4/ConversationQueuePanel.tsx:366-397`；`zh-CN.ts:4729`）；CLI 重启丢输入的恢复条「重新发送/稍后」、不自动重放（`v4/PendingCommandRecoveryBanner.tsx:21-46`；`zh-CN.ts:2032-2034`）。
+- **禁用发送键**：`opacity-50 + pointer-events-none`（`components/ui/button.tsx:10` 基类），**不解释禁用原因**——tooltip 在 `canSend=false` 时强制关闭（`ConversationComposer.tsx:1224-1226`），且 pointer-events-none 使 hover 也拿不到。canSend 判据：`!disabled && !pending && hasDraftToSubmit && routingAllowsSend && attachmentsReady && submissionReady`（`:1214-1222`）；整块禁用原因：connecting / draftRuntimeRebuilding / queueEditActive / quota blocksSubmit（`SessionPane.tsx:5200-5205`）。Enter 路径同门禁（`ConversationComposer.tsx:2404-2408`）。
+- **toast 只用于次要提示**（入队/冲突/复制结果），**不用于发送失败**（`SessionPane.tsx:3053-3059,3923-3974`）。
+
+### Z-97 长任务运行态与终态保护（@aac47556 新增）
+
+- **Stop 键与发送键互斥**（同一位置）：`showStopControl = canStop && !hasDraftToSubmit`（`ConversationComposer.tsx:1215-1222`）——有草稿时 Stop 变回发送（=入队）。Stop = `variant="secondary" size="icon-md"` + `SquareIcon fill-current`、tooltip「停止生成」+快捷键 Esc（`:2195-2208`；`zh-CN.ts:4706`）；归属守卫 `dispatchCommand("stop", {expectedForegroundExecutionId})`（`SessionPane.tsx:4345-4371`）；Esc 仅 focused pane ∧ canStop（`:4394-4410`）。
+- **轮次级耗时**：running「工作中 {duration}」/ 完成「已工作 {duration}」/ 中断「已停止 / 已被新消息中断」（`v4/ConversationTurnGroup.tsx:661-683`；文案 `zh-CN.ts:4693-4694,4700-4701`；格式化天/时/分/秒最多 2 单位 `v4/conversationWorkDuration.ts:16-39`）。**时钟只在运行中 1s tick**（`v4/ConversationTimeline.tsx:112 RUNNING_WORK_DURATION_TICK_MS=1000`、`:619-632` hasRunningUnit 才起表），**完成态耗时取协议事实防漂移**（`v4/conversationTurnWorkSegments.ts:52-61,113-115`）。窗口唤醒后补时追平（`ConversationTimeline.tsx:638-640`、`SessionPane.tsx:1695-1726`，Chromium 冻结后台定时器的对策）。
+- **工具行刻意不用旋转 spinner**（流式期数量多、动画长期占渲染资源）：运行态= kindLabel 文案扫光（`animated-gradient-text`）+ 状态文字，图标保持静态——`ToolCallBlocks/ToolLayout.tsx:138-147`（注释即规格原文）；`running→completed` 边沿自动收起展开（`:169-180`）。有 fraction 才画进度条，否则 indeterminate 扫光（`ToolCallBlocks/ToolCallProgressIndicator.tsx:16-44`，`role="progressbar"`）。**单个工具行不显示耗时秒数**（全仓 `elapsed/durationMs/useNowTicker` 检索，唯一例外 eval-workflow-snippet `:31-42`）。
+- 后台任务/子代理行才有耗时+取消：「已运行 n 秒」（baseline 单调时钟 `BackgroundTaskElapsedLabel.tsx:9-28,39-48`；`zh-CN.ts:4938-4939`）+ `cancellable!==false` 才渲染「停止」钮（`v4/ConversationStatusPanel.tsx:1008-1019`，钮实现 `:920-954`，SquareIcon + `chat.statusPanel.runningStop` `zh-CN.ts:4877`；子代理版 `:1544-1558`；1s tick `:1046-1060`）。
+- **终态保护四机制**（「转圈不停」的根治组合）：① ACK 后投影静默 watchdog：2s 内权威投影无该 row → `requestRecovery()` same-sub 重拉、不伪造消息（`v4/conversationProjectionStore.ts:47 ACCEPTED_INPUT_PROJECTION_GRACE_MS=2_000`、`:1309-1336`）；② 逻辑帧装配超时 30s / 查询超时 10s（`packages/shared/src/zcode-protocol-v4/core.ts:70,83`；装配器 `wire-assembler.ts:178-183`）；③ 终态枚举收口 `terminalStates = {completedSuccess, completedInterrupted, failed}`（`SessionPane.tsx:1359`；渲染单元判定 `v4/conversationTurnRenderUnits.ts:171,187-189,241-243`；compact 取消标 interrupted `ConversationRowView.tsx:1955-1958`）；④ 订阅 ACK 陈旧保护（`v4/agentConversationTransport.ts:217-220`）。
 
 ---
 

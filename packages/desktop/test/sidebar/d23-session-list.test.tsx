@@ -29,19 +29,26 @@ describe('D-23 会话列表席位', () => {
     expect(document.querySelector('[data-session-id="a"]')?.getAttribute('aria-current')).toBeNull();
   });
 
-  it('运行中与未读标记只在该行出现（不凭空给每行都画）', () => {
+  it('运行中与未读标记只在该行出现（不凭空给每行都画；U2 批D / D3：unread=8px 蓝点、running=Z-79 Spinner）', () => {
     renderSidebar({
       sessions: [sessionItem('a', { running: true }), sessionItem('b', { unread: 3 })],
     });
     expect(screen.getAllByTestId('session-running').length).toBe(1);
-    expect(document.querySelector('.h2-sidebar-unread')?.textContent).toBe('3');
+    // D3：黑底计数胶囊已删，unread = 蓝点（计数移入行 title）
+    expect(document.querySelector('.h2-sidebar-unread')).toBeNull();
+    expect(document.querySelector('[data-session-id="b"] [data-testid="session-unread"]')).not.toBeNull();
+    expect(document.querySelector('[data-session-id="b"]')?.getAttribute('title')).toContain('未读');
+    // running：Spinner = lucide svg（role=status）
+    const running = screen.getByTestId('session-running');
+    expect(running.querySelector('svg')).not.toBeNull();
+    expect(running.querySelector('[role="status"]')).not.toBeNull();
   });
 
-  it('Z-09 leading 槽优先级：unread > running（同一行只画未读徽标，不叠 spinner）', () => {
+  it('Z-09 leading 槽优先级：unread > running（同一行只画蓝点，不叠 spinner）', () => {
     renderSidebar({ sessions: [sessionItem('c', { running: true, unread: 5 })] });
     expect(screen.queryAllByTestId('session-running').length).toBe(0);
-    expect(document.querySelector('.h2-sidebar-unread')?.textContent).toBe('5');
     expect(document.querySelector('[data-testid="session-leading"]')?.getAttribute('data-kind')).toBe('unread');
+    expect(document.querySelector('.h2-sidebar-unread-dot')).not.toBeNull();
   });
 
   it('点击行回调会话 id', () => {
@@ -51,12 +58,14 @@ describe('D-23 会话列表席位', () => {
     expect(opened).toEqual(['b']);
   });
 
-  it('空态：一条会话都没有 → 「暂无会话」', () => {
+  it('空态（U2 批D / D6）：一条会话都没有 → 保骨架：两区头 + 区内「暂无项目/暂无任务」', () => {
     renderSidebar({ sessions: [] });
-    expect(screen.getByTestId('sidebar-empty').textContent).toBe('暂无会话');
+    expect(screen.getAllByTestId('sidebar-section-head')).toHaveLength(2);
+    expect(screen.getByTestId('sidebar-projects-empty').textContent).toBe('暂无项目');
+    expect(screen.getByTestId('sidebar-section-empty').textContent).toBe('暂无任务');
   });
 
-  it('空态：有查询无匹配 → 「无匹配会话」', () => {
+  it('空态：有查询无匹配 → 「无匹配会话」（指向性文案，不铺骨架）', () => {
     renderSidebar({ sessions: [], query: 'zzz', onQueryChange: () => {} });
     expect(screen.getByTestId('sidebar-empty').textContent).toBe('无匹配会话');
   });

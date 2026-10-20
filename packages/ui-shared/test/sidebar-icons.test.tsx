@@ -5,7 +5,7 @@
 //   - 可访问名逐项保留（aria-label / title 不变）；
 //   - 页脚账号块 = 两行：上行「用户名」、下行「连接状态」（renderAccountStatus 席位，用户名之后）。
 import { afterEach, describe, expect, it } from 'vitest';
-import { cleanup, render, screen } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { DEFAULT_SIDEBAR_LABELS } from '../src/renderer/sidebar/labels.js';
 import { SidebarRoot, type SidebarRootProps } from '../src/renderer/sidebar/SidebarRoot.js';
 import type { SidebarSessionItem } from '../src/renderer/sidebar/session-items.js';
@@ -105,8 +105,13 @@ describe('分区头 / 组头 / 行内图标化（14×14）', () => {
     expect(groupHead.querySelector('svg.lucide-folder')).not.toBeNull();
     expectIcon(groupHead, 14);
 
-    // 组头右侧「移出项目」14×14
-    expectIcon(screen.getByTestId('sidebar-group-remove-project-D--p-alpha'), 14);
+    // 组头右侧「更多」⋯（U2 批D / D5：「移除」收进此下拉）14×14 —— Z-48：只在 hover/focus 态 mount
+    const headRow = document.querySelector('[data-group-key="project:D:/p/alpha"] > .h2-sidebar-group-head-row');
+    expect(headRow).not.toBeNull();
+    fireEvent.mouseOver(headRow as Element);
+    expectIcon(screen.getByTestId('sidebar-group-more-project-D--p-alpha'), 14);
+    // 旧的组头独立「移出项目」钮不再存在（D5）
+    expect(screen.queryByTestId('sidebar-group-remove-project-D--p-alpha')).toBeNull();
 
     // 分区头右侧「移动」占位 + 「添加项目」14×14
     expectIcon(screen.getByTestId('sidebar-projects-move'), 14);
@@ -119,11 +124,15 @@ describe('分区头 / 组头 / 行内图标化（14×14）', () => {
     expectIcon(screen.getByTestId('sidebar-tasks-new'), 14);
   });
 
-  it('行内「更多操作」= 14×14 lucide 图标（aria-label 保留）', () => {
+  it('行内「更多操作」= 14×14 lucide 图标（aria-label 保留；U2 批D / D4：交互态才 mount）', () => {
     renderRoot({
       sessions: [item('a', { cwd: 'D:/p/alpha' })],
       rowMenu: { onArchive: () => undefined },
     });
+    // 未交互：⋯ 不 mount（JS 挂载，无 CSS opacity 残留）
+    expect(screen.queryByTestId('session-row-more-a')).toBeNull();
+    const row = document.querySelector('[data-session-id="a"]')?.closest('li') as HTMLElement;
+    fireEvent.mouseOver(row);
     const more = screen.getByTestId('session-row-more-a');
     expectIcon(more, 14);
     expect(more.getAttribute('aria-label')).toBe(DEFAULT_SIDEBAR_LABELS.rowMore);
