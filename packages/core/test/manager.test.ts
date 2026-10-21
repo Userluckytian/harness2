@@ -4,6 +4,7 @@ import { existsSync, mkdtempSync, readFileSync, rmSync, utimesSync, writeFileSyn
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { defaultSessionsRoot, encodeCwd, SessionManager } from '../src/session/manager.js';
+import { SessionLockedError } from '../src/session/writer.js';
 import { SESSION_LOG_FILE } from '../src/session/types.js';
 
 const dirs: string[] = [];
@@ -201,5 +202,40 @@ describe('resume 恢复续写', () => {
     expect(resumed.recoveredBytes).toBeGreaterThan(0);
     resumed.writer.close();
     expect(mgr.list(cwd)[0]!.lastSeq).toBe(2); // 撕裂行被丢弃（header+user 共 2 个事件）
+  });
+});
+
+describe('deleteSession 物理删除（ZS4-T1 加性窗口）', () => {
+  it('删除存在会话：整目录消失、list 不再出现；重复删除报 not found', () => {
+    const root = tmpDir('h2-mgr-root-');
+    const cwd = tmpDir('h2-mgr-cwd-');
+    const mgr = new SessionManager(root);
+    const id = makeSession(mgr, cwd, ['将被删除'], ['回复']);
+    const dir = join(root, encodeCwd(cwd), id);
+    writeFileSync(join(dir, 'title.json'), '{"title":"t","source":"manual"}', 'utf8'); // 侧产物随目录一并消失
+    expect(mgr.deleteSession(id, { cwd })).toBe(true);
+
+    expect(existsSync(dir)).toBe(false);
+    expect(mgr.list(cwd)).toHaveLength(0);
+    expect(() => mgr.deleteSession(id)).toThrow(/session not found/);
+    // 空 id 与路径穿越在格式闸门处拒绝（locate 之前，不触文件系统）
+    expect(() => mgr.deleteSession('../evil')).toThrow(/invalid session id/);
+    expect(() => mgr.deleteSession('')).toThrow(/invalid session id/);
+  });
+
+  it('被活锁占用：抛 SessionLockedError 且目录保留（fail-closed 绝不删）', () => {
+    const root = tmpDir('h2-mgr-root-');
+    const cwd = tmpDir('h2-mgr-cwd-');
+    const mgr = new SessionManager(root);
+    const id = makeSession(mgr, cwd, ['在写'], []);
+    const dir = join(root, encodeCwd(cwd), id);
+
+    const held = mgr.resume(id, { fsync: false }); // writer 未 close = 本进程持活锁
+    expect(() => mgr.deleteSession(id)).toThrow(SessionLockedError);
+    expect(existsSync(dir)).toBe(true);
+    held.writer.close();
+
+    expect(mgr.deleteSession(id)).toBe(true);
+    expect(existsSync(dir)).toBe(false);
   });
 });

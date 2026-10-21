@@ -10,7 +10,7 @@
 // 列表/搜索为只读（loadSession 不截断日志）；resume 打开 writer，沿用其崩溃残行恢复语义。
 import { randomBytes } from 'node:crypto';
 import { createHash } from 'node:crypto';
-import { existsSync, readdirSync, statSync, type Dirent } from 'node:fs';
+import { existsSync, readdirSync, rmSync, statSync, type Dirent } from 'node:fs';
 import { homedir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { computeProjection, loadSession, type ProjectionMessage } from './reader.js';
@@ -26,7 +26,7 @@ import {
   type TitleSource,
 } from './titles.js';
 import { SESSION_LOG_FILE, type SessionHeaderPayload } from './types.js';
-import { SessionWriter } from './writer.js';
+import { SessionWriter, SessionLockedError } from './writer.js';
 
 /** ~/.harness2 下的会话存储目录名 */
 export const SESSIONS_DIR_NAME = 'sessions';
@@ -415,5 +415,31 @@ export class SessionManager {
     const header = loadSession(dir).header;
     const writer = SessionWriter.open(dir, { fsync: opts.fsync ?? true });
     return { id, dir, writer, header, recoveredBytes: writer.recoveredBytes };
+  }
+
+  /**
+   * 物理删除会话（ZS4-T1 加性窗口）：locate 定位 → 以 SessionWriter.open 探测锁
+   * （持锁进程存活 → SessionLockedError 透传，fail-closed **绝不删**；陈旧锁被 open
+   * 接管后随即释放）→ 整目录 rmSync（日志/title.json/索引产物随目录一并消失）。
+   * **不可恢复**：调用方必须先经用户确认路径（桌面 UI 有原生确认弹窗）。
+   * id 非法（路径穿越面复用 SESSION_ID_PATTERN 出口拒绝）/会话不存在 → 抛错。
+   * 返回是否实际删除（locate 已成功，正常路径恒 true；保留 boolean 形状供调用方日志）。
+   */
+  deleteSession(id: string, opts: { cwd?: string } = {}): boolean {
+    if (!SESSION_ID_PATTERN.test(id)) {
+      throw new Error(`invalid session id: ${id}`);
+    }
+    const dir = this.locate(id, { ...(opts.cwd !== undefined ? { cwd: opts.cwd } : {}) });
+    let writer: SessionWriter | undefined;
+    try {
+      writer = SessionWriter.open(dir, { fsync: false });
+    } catch (e) {
+      if (e instanceof SessionLockedError) throw e;
+      // 非锁原因（残行恢复/seq 漂移等）不阻断清理——删除正是坏日志的出路；
+      // open 失败路径已自行 releaseOnFailure，不会留下本进程的锁。
+    }
+    writer?.close();
+    rmSync(dir, { recursive: true, force: true });
+    return true;
   }
 }
