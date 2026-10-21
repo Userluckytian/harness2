@@ -4,9 +4,9 @@ const http = require('http');
 const WebSocket = require('D:/AI_Projects/harness2/node_modules/.pnpm/ws@8.21.3/node_modules/ws');
 const fs = require('fs');
 
-const TEXT = (process.argv.includes('--text')
+const TEXT = process.argv.includes('--text')
   ? process.argv[process.argv.indexOf('--text') + 1]
-  : '请用三句话介绍你自己');
+  : '请用三句话介绍你自己';
 
 const SHOT = process.argv.includes('--screenshot')
   ? process.argv[process.argv.indexOf('--screenshot') + 1]
@@ -14,13 +14,19 @@ const SHOT = process.argv.includes('--screenshot')
 
 function getJson(p) {
   return new Promise((resolve, reject) => {
-    http.get({ host: '127.0.0.1', port: 9229, path: p }, (res) => {
-      let d = '';
-      res.on('data', (c) => (d += c));
-      res.on('end', () => {
-        try { resolve(JSON.parse(d)); } catch (e) { reject(e); }
-      });
-    }).on('error', reject);
+    http
+      .get({ host: '127.0.0.1', port: 9229, path: p }, (res) => {
+        let d = '';
+        res.on('data', (c) => (d += c));
+        res.on('end', () => {
+          try {
+            resolve(JSON.parse(d));
+          } catch (e) {
+            reject(e);
+          }
+        });
+      })
+      .on('error', reject);
   });
 }
 
@@ -28,88 +34,159 @@ const ROW_SEL = '[data-testid^="v4-row-"]';
 
 (async () => {
   for (let i = 0; i < 60; i++) {
-    try { await getJson('/json/list'); break; } catch (e) { await new Promise(r => setTimeout(r, 1000)); }
+    try {
+      await getJson('/json/list');
+      break;
+    } catch (e) {
+      await new Promise((r) => setTimeout(r, 1000));
+    }
   }
-const targets = await getJson('/json/list');
-const page = targets.find((t) => t.type === 'page' && /localhost:5174|127\.0\.0\.1:5174|harness2-zs1-build/.test(t.url) && !/packages\/desktop\/dist\/renderer/.test(t.url));
-if (!page) { console.error('WRONG INSTANCE/NOT UP'); process.exit(3); }
+  const targets = await getJson('/json/list');
+  const page = targets.find(
+    (t) =>
+      t.type === 'page' &&
+      /localhost:5174|127\.0\.0\.1:5174|harness2-zs1-build/.test(t.url) &&
+      !/packages\/desktop\/dist\/renderer/.test(t.url),
+  );
+  if (!page) {
+    console.error('WRONG INSTANCE/NOT UP');
+    process.exit(3);
+  }
   const ws = new WebSocket(page.webSocketDebuggerUrl, { maxPayload: 256 * 1024 * 1024 });
   let id = 0;
   const pending = new Map();
-  const send = (method, params) => new Promise((resolve) => {
-    const mid = ++id;
-    pending.set(mid, resolve);
-    ws.send(JSON.stringify({ id: mid, method, params }));
+  const send = (method, params) =>
+    new Promise((resolve) => {
+      const mid = ++id;
+      pending.set(mid, resolve);
+      ws.send(JSON.stringify({ id: mid, method, params }));
+    });
+  ws.on('error', (e) => {
+    console.error('WS ERR', e && e.message);
   });
-  ws.on('error', (e) => { console.error('WS ERR', e && e.message); });
   ws.on('message', (raw) => {
     const msg = JSON.parse(raw.toString());
-    if (msg.id && pending.has(msg.id)) { pending.get(msg.id)(msg); pending.delete(msg.id); }
+    if (msg.id && pending.has(msg.id)) {
+      pending.get(msg.id)(msg);
+      pending.delete(msg.id);
+    }
   });
   ws.on('open', async () => {
     try {
       // dump message container DOM structure (evidence for stable selector)
-      const dump = await send('Runtime.evaluate', { expression: `(() => { const rows = document.querySelectorAll('${ROW_SEL}'); return JSON.stringify({selector:'${ROW_SEL}', count: rows.length, sample: rows.length? rows[0].outerHTML.slice(0,400): ''}); })()` });
+      const dump = await send('Runtime.evaluate', {
+        expression: `(() => { const rows = document.querySelectorAll('${ROW_SEL}'); return JSON.stringify({selector:'${ROW_SEL}', count: rows.length, sample: rows.length? rows[0].outerHTML.slice(0,400): ''}); })()`,
+      });
       console.log('DOM_DUMP=' + (dump.result?.result?.value || ''));
 
       // create a new session first
-      await send('Runtime.evaluate', { expression: `(() => { const b = Array.from(document.querySelectorAll('button')).find(x => (x.getAttribute('aria-label')||'').includes('新建会话')); if (b) b.click(); return !!b; })()` });
-      await new Promise(r => setTimeout(r, 1000));
+      await send('Runtime.evaluate', {
+        expression: `(() => { const b = Array.from(document.querySelectorAll('button')).find(x => (x.getAttribute('aria-label')||'').includes('新建会话')); if (b) b.click(); return !!b; })()`,
+      });
+      await new Promise((r) => setTimeout(r, 1000));
 
-      // bypass first-run onboarding if present (poll up to 10s)
+      // bypass first-run onboarding if present — 竞态实证（2026-10-21）：dialog 可晚于启动 10s 出现，
+      // 故本检查是多点函数（onboarding 窗口 + focus 前 + 输入失败重试），单次错过不再是失败。
+      async function dismissWelcome() {
+        const r = await send('Runtime.evaluate', {
+          expression:
+            "(() => { const dlg = document.querySelector('[role=\"dialog\"]'); if (!dlg) return 'no-dialog'; const hit = (t) => /Start ZCode|开始使用/i.test(t||''); const b = Array.from(dlg.querySelectorAll('button')).find(x => hit(x.innerText) || hit(x.getAttribute('aria-label'))); if (b) { b.click(); return 'clicked'; } return 'dialog-present-no-start-button'; })()",
+        });
+        return String(r.result?.result?.value || 'none');
+      }
       let onbRes = 'none';
       for (let i = 0; i < 20; i++) {
-        const r = await send('Runtime.evaluate', { expression: "(() => { const b = Array.from(document.querySelectorAll('button')).find(x => (x.innerText||'').includes('Start ZCode')); if (b) { b.click(); return 'clicked'; } return 'none'; })()" });
-        onbRes = r.result?.result?.value || 'none';
+        onbRes = await dismissWelcome();
         if (onbRes === 'clicked') break;
-        await new Promise(r => setTimeout(r, 500));
+        await new Promise((r) => setTimeout(r, 500));
       }
       console.log('ONBOARDING=' + onbRes);
-      await new Promise(r => setTimeout(r, 2000));
+      await new Promise((r) => setTimeout(r, 2000));
 
       // wait for composer
       let cap = 'no-composer';
       for (let i = 0; i < 20; i++) {
-        const c = await send('Runtime.evaluate', { expression: "document.querySelector('[contenteditable=true]') ? 'input-capable' : 'no-composer'" });
+        const c = await send('Runtime.evaluate', {
+          expression: "document.querySelector('[contenteditable=true]') ? 'input-capable' : 'no-composer'",
+        });
         cap = c.result?.result?.value || 'no-composer';
         if (cap === 'input-capable') break;
-        await new Promise(r => setTimeout(r, 500));
+        await new Promise((r) => setTimeout(r, 500));
       }
       console.log('INPUT_CAPABILITY=' + cap);
 
       // new session/task
       let nsRes = 'not-found';
       for (let i = 0; i < 10; i++) {
-        const r = await send('Runtime.evaluate', { expression: "(() => { const b = Array.from(document.querySelectorAll('button')).find(x => (x.getAttribute('aria-label')||x.innerText||'').includes('新建会话') || (x.getAttribute('aria-label')||x.innerText||'').includes('New task') || (x.getAttribute('aria-label')||x.innerText||'').includes('New ta')); if (b) { b.click(); return 'found'; } return 'not-found'; })()" });
+        const r = await send('Runtime.evaluate', {
+          expression:
+            "(() => { const b = Array.from(document.querySelectorAll('button')).find(x => (x.getAttribute('aria-label')||x.innerText||'').includes('新建会话') || (x.getAttribute('aria-label')||x.innerText||'').includes('New task') || (x.getAttribute('aria-label')||x.innerText||'').includes('New ta')); if (b) { b.click(); return 'found'; } return 'not-found'; })()",
+        });
         nsRes = r.result?.result?.value || 'not-found';
         if (nsRes === 'found') break;
-        await new Promise(r => setTimeout(r, 500));
+        await new Promise((r) => setTimeout(r, 500));
       }
       console.log('NEW_SESSION_BTN=' + nsRes);
-      await new Promise(r => setTimeout(r, 1500));
+      await new Promise((r) => setTimeout(r, 1500));
 
       if (cap !== 'input-capable') {
-        const dt = await send('Runtime.evaluate', { expression: "document.body.innerText.replace(/\s+/g,' ').slice(0,500)" });
+        const dt = await send('Runtime.evaluate', {
+          expression: "document.body.innerText.replace(/\s+/g,' ').slice(0,500)",
+        });
         console.log('PAGE_TEXT=' + (dt.result?.result?.value || ''));
         console.error('NO COMPOSER');
         process.exit(6);
       }
 
+      // focus 前再关一次欢迎层（dialog 可能晚于 onboarding 窗口出现）
+      onbRes = await dismissWelcome();
       await send('Runtime.evaluate', { expression: "document.querySelector('[contenteditable=true]').focus()" });
       // 清残留草稿（2026-10-21 R1 实证：composer 会恢复历史草稿，insert 变成拼接）：
       // select-all + delete 键级清空（走前端事件链），再 insert，最后要求「恰好等于输入文本」。
-      await send('Input.dispatchKeyEvent', { type: 'keyDown', key: 'a', code: 'KeyA', windowsVirtualKeyCode: 65, modifiers: 2 });
-      await send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'a', code: 'KeyA', windowsVirtualKeyCode: 65, modifiers: 2 });
-      await send('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Delete', code: 'Delete', windowsVirtualKeyCode: 46 });
+      await send('Input.dispatchKeyEvent', {
+        type: 'keyDown',
+        key: 'a',
+        code: 'KeyA',
+        windowsVirtualKeyCode: 65,
+        modifiers: 2,
+      });
+      await send('Input.dispatchKeyEvent', {
+        type: 'keyUp',
+        key: 'a',
+        code: 'KeyA',
+        windowsVirtualKeyCode: 65,
+        modifiers: 2,
+      });
+      await send('Input.dispatchKeyEvent', {
+        type: 'keyDown',
+        key: 'Delete',
+        code: 'Delete',
+        windowsVirtualKeyCode: 46,
+      });
       await send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Delete', code: 'Delete', windowsVirtualKeyCode: 46 });
-      await new Promise(r => setTimeout(r, 300));
+      await new Promise((r) => setTimeout(r, 300));
       await send('Input.insertText', { text: TEXT });
-      await new Promise(r => setTimeout(r, 500));
-      const verify = await send('Runtime.evaluate', { expression: "(() => { const ce = document.querySelector('[contenteditable=true]'); return ce ? (ce.innerText||'').trim() : ''; })()" });
-      const composed = verify.result?.result?.value || '';
+      await new Promise((r) => setTimeout(r, 500));
+      let composed = '';
+      for (let attempt = 0; attempt < 2; attempt++) {
+        const verify = await send('Runtime.evaluate', {
+          expression:
+            "(() => { const ce = document.querySelector('[contenteditable=true]'); return ce ? (ce.innerText||'').trim() : ''; })()",
+        });
+        composed = verify.result?.result?.value || '';
+        if (composed === TEXT.trim()) break;
+        // 失败多半是 dialog 竞态遮焦点：关它、重新 focus+清空+insert，再来一轮
+        await dismissWelcome();
+        await send('Runtime.evaluate', { expression: "document.querySelector('[contenteditable=true]').focus()" });
+        await send('Input.insertText', { text: TEXT });
+        await new Promise((r) => setTimeout(r, 500));
+      }
       console.log('COMPOSED_TEXT=' + JSON.stringify(composed));
       if (composed !== TEXT.trim()) {
-        const dt = await send('Runtime.evaluate', { expression: "(() => { const ce = document.querySelector('[contenteditable=true]'); const dialog = document.querySelector('[role=\"dialog\"]'); const mask = document.querySelector('[class*=\"bg-black/60\"]'); const focus = document.activeElement ? (document.activeElement.getAttribute('data-testid') || document.activeElement.tagName) : 'none'; return JSON.stringify({ hasDialog: !!dialog, hasMask: !!mask, focus, contenteditableText: ce ? (ce.innerText||'').trim() : null, v4RowCount: document.querySelectorAll('[data-testid^=\"v4-row-\"]').length }); })()" });
+        const dt = await send('Runtime.evaluate', {
+          expression:
+            "(() => { const ce = document.querySelector('[contenteditable=true]'); const dialog = document.querySelector('[role=\"dialog\"]'); const mask = document.querySelector('[class*=\"bg-black/60\"]'); const focus = document.activeElement ? (document.activeElement.getAttribute('data-testid') || document.activeElement.tagName) : 'none'; return JSON.stringify({ hasDialog: !!dialog, hasMask: !!mask, focus, contenteditableText: ce ? (ce.innerText||'').trim() : null, v4RowCount: document.querySelectorAll('[data-testid^=\"v4-row-\"]').length }); })()",
+        });
         console.log('STATE_DUMP=' + (dt.result?.result?.value || ''));
         console.error('INPUT NOT COMPOSED');
         process.exit(4);
@@ -122,12 +199,22 @@ if (!page) { console.error('WRONG INSTANCE/NOT UP'); process.exit(3); }
       // wait for userInput row
       let userRowSeen = false;
       for (let i = 0; i < 20; i++) {
-        await new Promise(r => setTimeout(r, 500));
-        const r = await send('Runtime.evaluate', { expression: "(() => { const rows = Array.from(document.querySelectorAll('[data-testid^=\"v4-row-\"]')); return rows.some(r => r.querySelector('[data-v4-user-input-bubble]') || (r.innerText||'').includes('" + TEXT.replace(/"/g,'\\"') + "')); })()" });
-        if (r.result?.result?.value === true) { userRowSeen = true; break; }
+        await new Promise((r) => setTimeout(r, 500));
+        const r = await send('Runtime.evaluate', {
+          expression:
+            "(() => { const rows = Array.from(document.querySelectorAll('[data-testid^=\"v4-row-\"]')); return rows.some(r => r.querySelector('[data-v4-user-input-bubble]') || (r.innerText||'').includes('" +
+            TEXT.replace(/"/g, '\\"') +
+            "')); })()",
+        });
+        if (r.result?.result?.value === true) {
+          userRowSeen = true;
+          break;
+        }
       }
       if (!userRowSeen) {
-        const dt = await send('Runtime.evaluate', { expression: "document.body.innerText.replace(/\s+/g,' ').slice(0,500)" });
+        const dt = await send('Runtime.evaluate', {
+          expression: "document.body.innerText.replace(/\s+/g,' ').slice(0,500)",
+        });
         console.log('PAGE_TEXT=' + (dt.result?.result?.value || ''));
         console.error('USER ROW NOT SEEN');
         process.exit(5);
@@ -139,14 +226,22 @@ if (!page) { console.error('WRONG INSTANCE/NOT UP'); process.exit(3); }
       let growthCount = 0;
       let lastReply = '';
       for (let i = 0; i < 80; i++) {
-        await new Promise(r => setTimeout(r, 500));
-        const r = await send('Runtime.evaluate', { expression: `(() => { const rows = Array.from(document.querySelectorAll('${ROW_SEL}')); const arows = rows.filter(r => !r.querySelector('[data-v4-user-input-bubble]')); const texts = arows.map(x => (x.innerText||'').trim()); const replyText = texts.join(' ').trim().replace(/\\s*Copy\\s*/g,'').trim(); return JSON.stringify({ rowCount: rows.length, rowTextLen: texts.join('\\n').length, replyText }); })()` });
+        await new Promise((r) => setTimeout(r, 500));
+        const r = await send('Runtime.evaluate', {
+          expression: `(() => { const rows = Array.from(document.querySelectorAll('${ROW_SEL}')); const arows = rows.filter(r => !r.querySelector('[data-v4-user-input-bubble]')); const texts = arows.map(x => (x.innerText||'').trim()); const replyText = texts.join(' ').trim().replace(/\\s*Copy\\s*/g,'').trim(); return JSON.stringify({ rowCount: rows.length, rowTextLen: texts.join('\\n').length, replyText }); })()`,
+        });
         const v = JSON.parse(r.result?.result?.value || '{}');
-        if (v.rowCount > lastRowCount || v.rowTextLen > lastRowTextLen) { growthCount++; lastRowCount = v.rowCount; lastRowTextLen = v.rowTextLen; }
+        if (v.rowCount > lastRowCount || v.rowTextLen > lastRowTextLen) {
+          growthCount++;
+          lastRowCount = v.rowCount;
+          lastRowTextLen = v.rowTextLen;
+        }
         if (v.replyText) lastReply = v.replyText;
       }
       const replyOk = lastReply.length > 0 && lastReply !== TEXT;
-      console.log('POLL_DONE growthEvents=' + growthCount + ' finalReplyLen=' + lastReply.length + ' replyOk=' + replyOk);
+      console.log(
+        'POLL_DONE growthEvents=' + growthCount + ' finalReplyLen=' + lastReply.length + ' replyOk=' + replyOk,
+      );
       console.log('FINAL_REPLY=' + lastReply.slice(0, 80));
 
       const shot = await send('Page.captureScreenshot', { format: 'png' });
@@ -155,7 +250,8 @@ if (!page) { console.error('WRONG INSTANCE/NOT UP'); process.exit(3); }
       console.log('SCREENSHOT=' + SHOT + ' bytes=' + buf.length);
 
       ws.close();
-      if (growthCount >= 1 && replyOk) process.exit(0); else process.exit(1);
+      if (growthCount >= 1 && replyOk) process.exit(0);
+      else process.exit(1);
     } catch (e) {
       console.error('ERR', e);
       process.exit(1);
