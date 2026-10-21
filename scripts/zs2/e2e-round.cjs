@@ -96,12 +96,19 @@ if (!page) { console.error('WRONG INSTANCE/NOT UP'); process.exit(3); }
       }
 
       await send('Runtime.evaluate', { expression: "document.querySelector('[contenteditable=true]').focus()" });
+      // 清残留草稿（2026-10-21 R1 实证：composer 会恢复历史草稿，insert 变成拼接）：
+      // select-all + delete 键级清空（走前端事件链），再 insert，最后要求「恰好等于输入文本」。
+      await send('Input.dispatchKeyEvent', { type: 'keyDown', key: 'a', code: 'KeyA', windowsVirtualKeyCode: 65, modifiers: 2 });
+      await send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'a', code: 'KeyA', windowsVirtualKeyCode: 65, modifiers: 2 });
+      await send('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Delete', code: 'Delete', windowsVirtualKeyCode: 46 });
+      await send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Delete', code: 'Delete', windowsVirtualKeyCode: 46 });
+      await new Promise(r => setTimeout(r, 300));
       await send('Input.insertText', { text: TEXT });
       await new Promise(r => setTimeout(r, 500));
       const verify = await send('Runtime.evaluate', { expression: "(() => { const ce = document.querySelector('[contenteditable=true]'); return ce ? (ce.innerText||'').trim() : ''; })()" });
       const composed = verify.result?.result?.value || '';
       console.log('COMPOSED_TEXT=' + JSON.stringify(composed));
-      if (!composed.includes(TEXT)) {
+      if (composed !== TEXT.trim()) {
         const dt = await send('Runtime.evaluate', { expression: "(() => { const ce = document.querySelector('[contenteditable=true]'); const dialog = document.querySelector('[role=\"dialog\"]'); const mask = document.querySelector('[class*=\"bg-black/60\"]'); const focus = document.activeElement ? (document.activeElement.getAttribute('data-testid') || document.activeElement.tagName) : 'none'; return JSON.stringify({ hasDialog: !!dialog, hasMask: !!mask, focus, contenteditableText: ce ? (ce.innerText||'').trim() : null, v4RowCount: document.querySelectorAll('[data-testid^=\"v4-row-\"]').length }); })()" });
         console.log('STATE_DUMP=' + (dt.result?.result?.value || ''));
         console.error('INPUT NOT COMPOSED');
