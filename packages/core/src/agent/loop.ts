@@ -557,11 +557,16 @@ async function runTurnWithWriter(writer: SessionWriter | SessionAppender, option
     writer.append('step/start', { stepId, turnId });
 
     // —— 模型请求上下文：唯一来源 = 日志投影（无内存旁路）——
-    // system：memory 快照（阶段 6，冻结事件）在前，Skills 列表（阶段 10，仅追加内容段）在后
+    // system：环境上下文（ZS3.5）在前，memory 快照（阶段 6）其次，Skills 列表（阶段 10）最后
+    const environmentText = options.environment
+      ? `[环境] 当前工作目录: ${options.environment.cwd}${
+          options.environment.workspacePath ? `；工作区: ${options.environment.workspacePath}` : ''
+        }${options.environment.platform ? `；平台: ${options.environment.platform}` : ''}。`
+      : undefined;
     const systemText =
-      memorySystem !== undefined && skillsSystem !== undefined
-        ? `${memorySystem}\n\n${skillsSystem}`
-        : (memorySystem ?? skillsSystem);
+      [environmentText, memorySystem, skillsSystem]
+        .filter((part): part is string => typeof part === 'string' && part.length > 0)
+        .join('\n\n') || undefined;
     const messages = buildChatMessages(loadSession(writer.dir), {
       ...(options.resolveAttachment !== undefined
         ? { resolveAttachment: options.resolveAttachment }

@@ -100,6 +100,15 @@ export interface TurnOptions {
    */
   resolveAttachment?: ResolveChatAttachment;
   /**
+   * 可选：环境上下文（ZS3.5）。注入 system 前缀，让模型知道当前目录/工作区；
+   * 缺省 = 旧行为（system 只含 memory/skills）。
+   */
+  environment?: {
+    cwd: string;
+    workspacePath?: string;
+    platform?: string;
+  };
+  /**
    * 可选：本 turn 的用户消息文本。提供时 loop 先把它作为 user/message 事件追加进日志
    * 再开始循环——用户输入同样必须 logged（Model-visible ⟺ logged）。
    */
