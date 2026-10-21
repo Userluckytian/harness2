@@ -40,6 +40,8 @@ const SUPPORTED_COMMAND_TYPES = new Set(['createSession', 'sendText', 'stop']);
 export interface AgentServiceOptions {
   dataRoot?: string;
   home?: string;
+  /** 测试缝：脚本化 MockProvider，跳过 config 加载（service 层帧序列断言用）。 */
+  mockScript?: MockScript;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any -- RPC/协议边界动态类型，仅用于 lint 收敛，不改变运行时行为
   emitter?: Emitter<any>;
 }
@@ -66,21 +68,26 @@ export function createAgentService(opts: AgentServiceOptions = {}): IZCodeAgentS
   };
   __diag('cwd=' + process.cwd() + ' home=' + home + ' HARNESS2_HOME=' + process.env.HARNESS2_HOME);
   let provider: unknown;
-  try {
-    const loaded = loadConfig({ root: process.cwd(), home });
-    __diag('loadConfig ok=' + !!loaded.config);
-    if (loaded.config) {
-      provider = createProvider(loaded.config, 'main', {
-        authPath: HARNESS2_AUTH_PATH(home),
-      });
-      __diag('provider created: ' + (provider && provider.constructor && provider.constructor.name));
-    } else {
+  if (opts.mockScript) {
+    provider = new MockProvider(opts.mockScript);
+    __diag('provider mocked (test seam)');
+  } else {
+    try {
+      const loaded = loadConfig({ root: process.cwd(), home });
+      __diag('loadConfig ok=' + !!loaded.config);
+      if (loaded.config) {
+        provider = createProvider(loaded.config, 'main', {
+          authPath: HARNESS2_AUTH_PATH(home),
+        });
+        __diag('provider created: ' + (provider && provider.constructor && provider.constructor.name));
+      } else {
+        provider = new MockProvider(defaultMock);
+      }
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- RPC/协议边界动态类型，仅用于 lint 收敛，不改变运行时行为
+    } catch (e: any) {
+      __diag('provider load FAILED: ' + (e && e.message));
       provider = new MockProvider(defaultMock);
     }
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- RPC/协议边界动态类型，仅用于 lint 收敛，不改变运行时行为
-  } catch (e: any) {
-    __diag('provider load FAILED: ' + (e && e.message));
-    provider = new MockProvider(defaultMock);
   }
 
   const subs = new Map<string, { sessionId: string; seq: number; ordinal: number }>();
