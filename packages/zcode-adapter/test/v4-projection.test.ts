@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { buildSnapshot, projectEvents, stopReasonToControlPhase } from '../src/real/v4-projection.js';
+import {
+  buildSnapshot,
+  makeAssistantTextRow,
+  projectEvents,
+  stopReasonToControlPhase,
+} from '../src/real/v4-projection.js';
 import type { AnySessionEvent } from '@harness2/core';
 import { conversationRowSchema, conversationSnapshotSchema } from '@zcode/shared/zcode-protocol-v4';
 
@@ -126,5 +131,16 @@ describe('v4-projection', () => {
     const user = r.rows.find((x) => x.kind === 'userInput');
     expect(user?.attachments).toEqual(attachments);
     expect(r.lastSeq).toBe(3);
+  });
+
+  it('T4: snapshot carries a 60-row tail window while firstRowId stays the full-order head', () => {
+    const rows = Array.from({ length: 70 }, (_, i) =>
+      makeAssistantTextRow({ rowId: i + 1, turnId: 't1', createdAt: 0, createdAtSeq: i + 1 }, `r${i}`, 'complete'),
+    );
+    const snapshot = buildSnapshot({ sessionId: 's1', seq: 70, rows, phase: 'completedSuccess' });
+    expect(snapshot.rows.window).toHaveLength(60);
+    expect(snapshot.rows.window[0].rowId).toBe(11);
+    expect(snapshot.rows.totalCount).toBe(70);
+    expect(snapshot.rows.firstRowId).toBe(1);
   });
 });

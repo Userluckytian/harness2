@@ -143,10 +143,14 @@ export interface SnapshotInput {
   phase: ControlPhase;
   pendingInteractions?: PendingInteraction[];
   logEpoch?: string;
+  /** 冷快照尾窗大小（协议 snapshotTailWindowRows=60）；更早历史走 rowsRange。 */
+  windowLimit?: number;
 }
 
 export function buildSnapshot(input: SnapshotInput) {
   const { sessionId, seq, rows, phase } = input;
+  const windowLimit = input.windowLimit ?? 60;
+  const window = rows.length > windowLimit ? rows.slice(-windowLimit) : rows;
   return {
     protocolVersion: 1 as const,
     sessionId,
@@ -178,8 +182,9 @@ export function buildSnapshot(input: SnapshotInput) {
     plan: null,
     workspaceHookAdmission: null,
     rows: {
-      window: rows,
+      window,
       totalCount: rows.length,
+      // firstRowId 是全序首行（不是窗口首行）：窗口首行 > 它 ⇔ 还有更早历史。
       firstRowId: rows.length ? rows[0].rowId : null,
     },
   };

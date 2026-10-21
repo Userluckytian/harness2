@@ -41,7 +41,15 @@ interface CapturedDelta {
 }
 
 interface CapturedFrame {
-  payload: { kind: string; deltas?: CapturedDelta[] };
+  subscriptionId?: string;
+  fromSeq?: number;
+  toSeq?: number;
+  deliveryKind?: string;
+  payload: {
+    kind: string;
+    deltas?: CapturedDelta[];
+    snapshot?: { seq?: number; logEpoch?: string };
+  };
 }
 
 async function waitFor(predicate: () => boolean, timeoutMs = 8000): Promise<void> {
@@ -390,4 +398,141 @@ describe('ZS3-T3 local attachments', () => {
       rmSync(home, { recursive: true, force: true });
     }
   }, 20000);
+});
+
+describe('ZS3-T4 resume + rowsRange + logEpoch', () => {
+  it('replays (base.seq, current] as deltas without snapshot and pages older rows', async () => {
+    const home = mkdtempSync(join(tmpdir(), 'h2-t4-'));
+    const frames: CapturedFrame[] = [];
+    const emitter = new Emitter<unknown>();
+    emitter.event((wire) => {
+      const w = wire as { kind?: string; deliveryKind?: string; frame?: CapturedFrame };
+      if (w.kind === 'complete' && w.frame) {
+        frames.push({ ...w.frame, deliveryKind: w.deliveryKind });
+      }
+    });
+
+    try {
+      const agent = createAgentService({
+        home,
+        mockScript: [{ text: 'first' }, { text: 'second' }],
+        emitter,
+      });
+      const created = (await agent.sendConversationCommandV4({
+        workspacePath: home,
+        envelope: { commandId: 'cmd-create', type: 'createSession' } as never,
+      })) as { result?: { sessionId?: string } };
+      const sessionId = created.result?.sessionId;
+      if (!sessionId) throw new Error('createSession did not return a sessionId');
+
+      const sub1 = (await agent.subscribeConversationV4({
+        workspacePath: home,
+        sessionId,
+      })) as { ack: { subscriptionId: string; mode: string; logEpoch: string } };
+      expect(sub1.ack.mode).toBe('snapshot');
+      const epoch = sub1.ack.logEpoch;
+
+      const deltasOf = (subId: string) =>
+        frames.filter((f) => f.subscriptionId === subId && f.payload.kind === 'deltas');
+      const completedOf = (subId: string) =>
+        deltasOf(subId).some((f) =>
+          (f.payload.deltas ?? []).some(
+            (d) => d.op === 'state.updated' && d.patch?.control?.phase === 'completedSuccess',
+          ),
+        );
+
+      await agent.sendConversationCommandV4({
+        workspacePath: home,
+        envelope: { commandId: 'cmd-one', type: 'sendText', sessionId, payload: { text: 'one' } } as never,
+      });
+      await waitFor(() => completedOf(sub1.ack.subscriptionId));
+      const seq1 = deltasOf(sub1.ack.subscriptionId).at(-1)?.toSeq ?? 0;
+      expect(seq1).toBeGreaterThan(0);
+      await agent.unsubscribeConversationV4({
+        workspacePath: home,
+        subscriptionId: sub1.ack.subscriptionId,
+      });
+
+      // 第二轮期间重新订阅：base 恰为第一轮结束水位，必须走 resume 而非 snapshot。
+      await agent.sendConversationCommandV4({
+        workspacePath: home,
+        envelope: { commandId: 'cmd-two', type: 'sendText', sessionId, payload: { text: 'two' } } as never,
+      });
+      const sub2 = (await agent.subscribeConversationV4({
+        workspacePath: home,
+        sessionId,
+        base: { logEpoch: epoch, seq: seq1 },
+      })) as { ack: { subscriptionId: string; mode: string; logEpoch: string } };
+      expect(sub2.ack.mode).toBe('resume');
+      expect(sub2.ack.logEpoch).toBe(epoch);
+      await waitFor(() => completedOf(sub2.ack.subscriptionId));
+      expect(frames.some((f) => f.subscriptionId === sub2.ack.subscriptionId && f.payload.kind === 'snapshot')).toBe(
+        false,
+      );
+      const sub2UserTexts = deltasOf(sub2.ack.subscriptionId)
+        .flatMap((f) => f.payload.deltas ?? [])
+        .filter((d) => d.op === 'row.appended' && d.row?.kind === 'userInput')
+        .map((d) => d.row?.text);
+      expect(sub2UserTexts).toContain('two');
+      expect(sub2UserTexts).not.toContain('one');
+
+      // 第二轮结束后再续传：initial 帧必须回放 (seq1, current] 的 delta。
+      await agent.unsubscribeConversationV4({
+        workspacePath: home,
+        subscriptionId: sub2.ack.subscriptionId,
+      });
+      const sub3 = (await agent.subscribeConversationV4({
+        workspacePath: home,
+        sessionId,
+        base: { logEpoch: epoch, seq: seq1 },
+      })) as { ack: { subscriptionId: string; mode: string; logEpoch: string } };
+      expect(sub3.ack.mode).toBe('resume');
+      await waitFor(() => frames.some((f) => f.subscriptionId === sub3.ack.subscriptionId));
+      const initial = frames.find((f) => f.subscriptionId === sub3.ack.subscriptionId);
+      expect(initial?.deliveryKind).toBe('initial');
+      expect(initial?.payload.kind).toBe('deltas');
+      expect(initial?.fromSeq).toBe(seq1);
+      expect(initial?.toSeq).toBeGreaterThan(seq1);
+      const replayedUserTexts = (initial?.payload.deltas ?? [])
+        .filter((d) => d.op === 'row.appended' && d.row?.kind === 'userInput')
+        .map((d) => d.row?.text);
+      expect(replayedUserTexts).toContain('two');
+      expect(replayedUserTexts).not.toContain('one');
+      expect(frames.some((f) => f.subscriptionId === sub3.ack.subscriptionId && f.payload.kind === 'snapshot')).toBe(
+        false,
+      );
+
+      // epoch 不符 → 合法降级为 snapshot。
+      const sub4 = (await agent.subscribeConversationV4({
+        workspacePath: home,
+        sessionId,
+        base: { logEpoch: 'other-epoch', seq: 0 },
+      })) as { ack: { subscriptionId: string; mode: string; logEpoch: string } };
+      expect(sub4.ack.mode).toBe('snapshot');
+      await waitFor(() =>
+        frames.some((f) => f.subscriptionId === sub4.ack.subscriptionId && f.payload.kind === 'snapshot'),
+      );
+
+      // rowsRange：游标之前的分页（升序 + hasMore）。
+      const page1 = (await agent.conversationRowsRangeV4({
+        workspacePath: home,
+        sessionId,
+        limit: 2,
+      })) as { rows: Array<{ rowId: number }>; hasMore: boolean; atLogEpoch: string };
+      expect(page1.rows).toHaveLength(2);
+      expect(page1.hasMore).toBe(true);
+      expect(page1.atLogEpoch).toBe(epoch);
+      const page2 = (await agent.conversationRowsRangeV4({
+        workspacePath: home,
+        sessionId,
+        beforeRowId: page1.rows[0].rowId,
+        limit: 2,
+      })) as { rows: Array<{ rowId: number }>; hasMore: boolean; atLogEpoch: string };
+      expect(page2.rows).toHaveLength(2);
+      expect(page2.rows[0].rowId).toBeLessThan(page1.rows[0].rowId);
+      expect(page2.atLogEpoch).toBe(epoch);
+    } finally {
+      rmSync(home, { recursive: true, force: true });
+    }
+  }, 30000);
 });

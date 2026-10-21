@@ -105,6 +105,12 @@ interface PendingApprovalEntry {
   timer: NodeJS.Timeout;
 }
 
+/** ZS3-T4 delta 日志条目：支持 (base.seq, current] 真续传，不靠重放快照。 */
+interface DeltaLogEntry {
+  seq: number;
+  deltas: unknown[];
+}
+
 export function createAgentService(opts: AgentServiceOptions = {}): IZCodeAgentService {
   const home = opts.home ?? resolveHarness2Home();
   const sessionsRoot = defaultSessionsRoot(home);
@@ -185,6 +191,14 @@ export function createAgentService(opts: AgentServiceOptions = {}): IZCodeAgentS
   /** 审批审计事件需要写回会话日志；runSession 期间登记，结束后清理。 */
   const sessionWriters = new Map<string, SessionWriter>();
 
+  /** 本进程日志代际：进程重启即换代，客户端据此从 snapshot 重建而不是拼旧状态。 */
+  const logEpoch = `zs3-${process.pid}-${Date.now()}`;
+  const sessionDeltaLog = new Map<string, DeltaLogEntry[]>();
+  const MAX_DELTA_LOG_ENTRIES = 2000;
+  const MAX_CACHED_SESSIONS = 32;
+  const sessionLastAccess = new Map<string, number>();
+  const runningSessions = new Set<string>();
+
   // ZS3 e2e 审批轮专用工具：只写会话工作目录下的测试文件，不触碰用户数据。
   let e2eToolRegistry: ToolRegistryTypeExport | undefined;
   if (e2eApproval && !opts.tools) {
@@ -211,12 +225,14 @@ export function createAgentService(opts: AgentServiceOptions = {}): IZCodeAgentS
     return c;
   }
 
+  type DeliveryKind = 'initial' | 'online' | 'recovery';
+
   // eslint-disable-next-line @typescript-eslint/no-explicit-any -- RPC/协议边界动态类型，仅用于 lint 收敛，不改变运行时行为
-  function emitWire(subId: string, frame: any) {
+  function emitWire(subId: string, frame: any, deliveryKind: DeliveryKind = 'online') {
     const sub = subs.get(subId);
     if (!sub) return;
     const wires = encodeTopicWireFrames(frame, {
-      deliveryKind: 'online',
+      deliveryKind,
       topic: `conversation/${sub.sessionId}`,
       subscriptionId: subId,
       logicalFrameId: `lf-${sub.ordinal}`,
@@ -227,7 +243,12 @@ export function createAgentService(opts: AgentServiceOptions = {}): IZCodeAgentS
     for (const w of wires) emitter.fire(w);
   }
 
-  function emitSnapshot(subId: string, rows: ProjectedRow[], phase: ControlPhase) {
+  function emitSnapshot(
+    subId: string,
+    rows: ProjectedRow[],
+    phase: ControlPhase,
+    deliveryKind: DeliveryKind = 'initial',
+  ) {
     const sub = subs.get(subId);
     if (!sub) return;
     const seq = sessionSeq.get(sub.sessionId) ?? sub.seq;
@@ -245,33 +266,116 @@ export function createAgentService(opts: AgentServiceOptions = {}): IZCodeAgentS
           rows,
           phase,
           pendingInteractions: sessionPendingInteractions.get(sub.sessionId) ?? [],
+          logEpoch,
         }),
       },
     };
     sub.seq = seq;
-    emitWire(subId, frame);
+    emitWire(subId, frame, deliveryKind);
   }
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- RPC/协议边界动态类型，仅用于 lint 收敛，不改变运行时行为
-  function emitDeltas(subId: string, deltas: any[]) {
+  /** 真续传帧：只回放 (fromSeq,toSeq] 的 delta，不推进 session 水位。 */
+  function emitReplayDeltas(
+    subId: string,
+    fromSeq: number,
+    toSeq: number,
+    deltas: unknown[],
+    deliveryKind: DeliveryKind,
+  ) {
     const sub = subs.get(subId);
     if (!sub) return;
-    sub.seq += 1;
     const frame = {
       topic: `conversation/${sub.sessionId}`,
       subscriptionId: subId,
-      fromSeq: sub.seq - 1,
-      toSeq: sub.seq,
+      fromSeq,
+      toSeq,
       sentAt: Date.now(),
       payload: { kind: 'deltas', deltas },
     };
-    sessionSeq.set(sub.sessionId, sub.seq);
-    emitWire(subId, frame);
+    sub.seq = toSeq;
+    emitWire(subId, frame, deliveryKind);
   }
 
-  function emitToSession(sessionId: string, deltas: unknown[]) {
+  /** 广播一批 delta：session 水位 +1，写入有界 delta 日志，所有订阅者同批对齐。 */
+  function emitToSession(sessionId: string, deltas: unknown[], deliveryKind: DeliveryKind = 'online') {
+    const nextSeq = (sessionSeq.get(sessionId) ?? 0) + 1;
+    const entry: DeltaLogEntry = { seq: nextSeq, deltas };
+    const log = sessionDeltaLog.get(sessionId) ?? [];
+    log.push(entry);
+    if (log.length > MAX_DELTA_LOG_ENTRIES) log.splice(0, log.length - MAX_DELTA_LOG_ENTRIES);
+    sessionDeltaLog.set(sessionId, log);
+    sessionSeq.set(sessionId, nextSeq);
+
     for (const [sid, sub] of subs) {
-      if (sub.sessionId === sessionId) emitDeltas(sid, deltas);
+      if (sub.sessionId !== sessionId) continue;
+      const frame = {
+        topic: `conversation/${sessionId}`,
+        subscriptionId: sid,
+        fromSeq: sub.seq,
+        toSeq: nextSeq,
+        sentAt: Date.now(),
+        payload: { kind: 'deltas', deltas },
+      };
+      sub.seq = nextSeq;
+      emitWire(sid, frame, deliveryKind);
+    }
+  }
+
+  /** 计算 base 是否可续传；epoch 换代/断档/超前一律回 snapshot（合法降级）。 */
+  function resolveResume(
+    sessionId: string,
+    base: { logEpoch?: string; seq?: number } | null | undefined,
+  ): { mode: 'resume' | 'snapshot'; fromSeq: number; toSeq: number; deltas: unknown[] } {
+    const currentSeq = sessionSeq.get(sessionId) ?? 0;
+    const baseSeq = base?.seq;
+    if (!base || base.logEpoch !== logEpoch || typeof baseSeq !== 'number' || baseSeq < 0 || baseSeq > currentSeq) {
+      return { mode: 'snapshot', fromSeq: 0, toSeq: currentSeq, deltas: [] };
+    }
+    const entries = (sessionDeltaLog.get(sessionId) ?? []).filter((e) => e.seq > baseSeq);
+    let expected = baseSeq + 1;
+    for (const entry of entries) {
+      if (entry.seq !== expected) {
+        return { mode: 'snapshot', fromSeq: 0, toSeq: currentSeq, deltas: [] };
+      }
+      expected += 1;
+    }
+    if (expected - 1 !== currentSeq) {
+      return { mode: 'snapshot', fromSeq: 0, toSeq: currentSeq, deltas: [] };
+    }
+    return {
+      mode: 'resume',
+      fromSeq: baseSeq,
+      toSeq: currentSeq,
+      deltas: entries.flatMap((e) => e.deltas),
+    };
+  }
+
+  function touchSession(sessionId: string) {
+    sessionLastAccess.set(sessionId, Date.now());
+  }
+
+  function activeSessionIds(): Set<string> {
+    const active = new Set(runningSessions);
+    for (const sub of subs.values()) active.add(sub.sessionId);
+    return active;
+  }
+
+  /** 投影缓存有界化（P2-1）：活跃订阅/运行中的会话豁免，其余按最近访问淘汰。 */
+  function evictSessionsIfNeeded(): void {
+    if (sessionRows.size <= MAX_CACHED_SESSIONS) return;
+    const active = activeSessionIds();
+    const candidates = [...sessionRows.keys()]
+      .filter((id) => !active.has(id))
+      .sort((a, b) => (sessionLastAccess.get(a) ?? 0) - (sessionLastAccess.get(b) ?? 0));
+    while (sessionRows.size > MAX_CACHED_SESSIONS && candidates.length > 0) {
+      const id = candidates.shift()!;
+      sessionRows.delete(id);
+      sessionSeq.delete(id);
+      sessionPhase.delete(id);
+      sessionPendingInteractions.delete(id);
+      sessionDeltaLog.delete(id);
+      rowCounters.delete(id);
+      sessionLastAccess.delete(id);
     }
   }
 
@@ -321,7 +425,8 @@ export function createAgentService(opts: AgentServiceOptions = {}): IZCodeAgentS
         ' fetch=' +
         typeof globalThis.fetch,
     );
-    const targetSubs = [...subs.entries()].filter(([, s]) => s.sessionId === sessionId).map(([id]) => id);
+    touchSession(sessionId);
+    runningSessions.add(sessionId);
     // eslint-disable-next-line @typescript-eslint/no-explicit-any -- RPC/协议边界动态类型，仅用于 lint 收敛，不改变运行时行为
     let resumed: any;
     if (dirHint) {
@@ -359,7 +464,8 @@ export function createAgentService(opts: AgentServiceOptions = {}): IZCodeAgentS
       '',
       'streaming',
     );
-    const rows: ProjectedRow[] = [userRow, turnHeaderRow, assistantTextRow];
+    const previousRows = sessionRows.get(sessionId) ?? [];
+    const rows: ProjectedRow[] = [...previousRows, userRow, turnHeaderRow, assistantTextRow];
     sessionRows.set(sessionId, rows);
     sessionPhase.set(sessionId, 'running');
 
@@ -368,7 +474,7 @@ export function createAgentService(opts: AgentServiceOptions = {}): IZCodeAgentS
       { op: 'row.appended', row: turnHeaderRow },
       { op: 'row.appended', row: assistantTextRow },
     ];
-    for (const sid of targetSubs) emitDeltas(sid, initialDeltas);
+    emitToSession(sessionId, initialDeltas);
 
     let accumulated = '';
     const tools = opts.tools ?? e2eToolRegistry ?? ({ list: () => [] } as unknown as ToolRegistryTypeExport);
@@ -462,8 +568,7 @@ export function createAgentService(opts: AgentServiceOptions = {}): IZCodeAgentS
         onStream: (chunk: any) => {
           if (chunk.type === 'text-delta') {
             accumulated += chunk.text;
-            for (const sid of targetSubs)
-              emitDeltas(sid, [{ op: 'row.delta', rowId: assistantRowId, path: 'text', append: chunk.text }]);
+            emitToSession(sessionId, [{ op: 'row.delta', rowId: assistantRowId, path: 'text', append: chunk.text }]);
           } else if (chunk.type === 'reasoning-delta') {
             if (reasoningRowId === null) {
               reasoningRowId = nextRowId(sessionId);
@@ -473,11 +578,10 @@ export function createAgentService(opts: AgentServiceOptions = {}): IZCodeAgentS
                 'streaming',
               );
               rows.push(rrow);
-              for (const sid of targetSubs) emitDeltas(sid, [{ op: 'row.appended', row: rrow }]);
+              emitToSession(sessionId, [{ op: 'row.appended', row: rrow }]);
             }
             reasoningAccumulated += chunk.text;
-            for (const sid of targetSubs)
-              emitDeltas(sid, [{ op: 'row.delta', rowId: reasoningRowId, path: 'text', append: chunk.text }]);
+            emitToSession(sessionId, [{ op: 'row.delta', rowId: reasoningRowId, path: 'text', append: chunk.text }]);
           } else if (chunk.type === 'tool-call') {
             const tr = nextRowId(sessionId);
             toolRowByCall.set(chunk.call.id, tr);
@@ -501,11 +605,12 @@ export function createAgentService(opts: AgentServiceOptions = {}): IZCodeAgentS
               inputText: argsText,
             });
             rows.push(toolRowRunning);
-            for (const sid of targetSubs) {
-              emitDeltas(sid, [{ op: 'row.appended', row: toolRowBase }]);
-              if (argsText) emitDeltas(sid, [{ op: 'row.delta', rowId: tr, path: 'inputText', append: argsText }]);
-              emitDeltas(sid, [{ op: 'row.upserted', row: toolRowRunning }]);
+            const toolDeltas: unknown[] = [{ op: 'row.appended', row: toolRowBase }];
+            if (argsText) {
+              toolDeltas.push({ op: 'row.delta', rowId: tr, path: 'inputText', append: argsText });
             }
+            toolDeltas.push({ op: 'row.upserted', row: toolRowRunning });
+            emitToSession(sessionId, toolDeltas);
           } else if (chunk.type === 'tool-result') {
             const tr = toolRowByCall.get(chunk.callId);
             if (tr) {
@@ -528,7 +633,7 @@ export function createAgentService(opts: AgentServiceOptions = {}): IZCodeAgentS
               );
               const idx = rows.findIndex((r) => r.rowId === tr);
               if (idx >= 0) rows[idx] = newRow;
-              for (const sid of targetSubs) emitDeltas(sid, [{ op: 'row.upserted', row: newRow }]);
+              emitToSession(sessionId, [{ op: 'row.upserted', row: newRow }]);
             }
           }
         },
@@ -564,32 +669,32 @@ export function createAgentService(opts: AgentServiceOptions = {}): IZCodeAgentS
     const finishedTurnHeader = rows.find((r) => r.rowId === turnHeaderRowId);
     if (finishedTurnHeader) finishedTurnHeader.state = 'completedSuccess';
 
-    for (const sid of targetSubs) {
-      const finalDeltas: Array<{ op: string; row?: ProjectedRow; patch?: unknown }> = [];
-      if (reasoningRowId !== null) {
-        finalDeltas.push({
-          op: 'row.upserted',
-          row: makeReasoningRow(
-            { rowId: reasoningRowId, turnId, createdAt: now, createdAtSeq: 0 },
-            reasoningAccumulated,
-            'complete',
-          ),
-        });
-      }
-      if (finishedTurnHeader) {
-        finalDeltas.push({ op: 'row.upserted', row: finishedTurnHeader });
-      }
+    const finalDeltas: Array<{ op: string; row?: ProjectedRow; patch?: unknown }> = [];
+    if (reasoningRowId !== null) {
       finalDeltas.push({
         op: 'row.upserted',
-        row: makeAssistantTextRow(
-          { rowId: assistantRowId, turnId, createdAt: now, createdAtSeq: 0 },
-          accumulated || 'done',
+        row: makeReasoningRow(
+          { rowId: reasoningRowId, turnId, createdAt: now, createdAtSeq: 0 },
+          reasoningAccumulated,
           'complete',
         ),
       });
-      finalDeltas.push({ op: 'state.updated', patch: { control: makeControl('completedSuccess') } });
-      emitDeltas(sid, finalDeltas);
     }
+    if (finishedTurnHeader) {
+      finalDeltas.push({ op: 'row.upserted', row: finishedTurnHeader });
+    }
+    finalDeltas.push({
+      op: 'row.upserted',
+      row: makeAssistantTextRow(
+        { rowId: assistantRowId, turnId, createdAt: now, createdAtSeq: 0 },
+        accumulated || 'done',
+        'complete',
+      ),
+    });
+    finalDeltas.push({ op: 'state.updated', patch: { control: makeControl('completedSuccess') } });
+    emitToSession(sessionId, finalDeltas);
+    runningSessions.delete(sessionId);
+    evictSessionsIfNeeded();
   }
 
   const impl: Record<string, unknown> = {
@@ -614,39 +719,66 @@ export function createAgentService(opts: AgentServiceOptions = {}): IZCodeAgentS
     async initializeConversationV4(): Promise<unknown> {
       return { ok: true };
     },
-    async subscribeConversationV4(params: { sessionId?: string; base?: { seq: number } }): Promise<unknown> {
+    async subscribeConversationV4(params: {
+      sessionId?: string;
+      base?: { logEpoch?: string; seq?: number };
+    }): Promise<unknown> {
       const sessionId = params?.sessionId ?? 'default';
-      const subscriptionId = `zs2-${sessionId}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-      const baseSeq = params?.base?.seq;
-      const initialSeq = baseSeq !== undefined ? baseSeq : (sessionSeq.get(sessionId) ?? 0);
-      subs.set(subscriptionId, { sessionId, seq: initialSeq, ordinal: 1 });
+      touchSession(sessionId);
+      const subscriptionId = `zs3-${sessionId}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+      const resume = resolveResume(sessionId, params?.base);
+      subs.set(subscriptionId, {
+        sessionId,
+        seq: resume.mode === 'resume' ? resume.toSeq : 0,
+        ordinal: 1,
+      });
       const rows = sessionRows.get(sessionId) ?? [];
       const phase = sessionPhase.get(sessionId) ?? 'running';
       setTimeout(() => {
-        emitSnapshot(subscriptionId, rows, phase);
+        if (resume.mode === 'resume') {
+          // 真续传：initial 帧只带 (base.seq, current] 的 delta，不重发快照。
+          emitReplayDeltas(subscriptionId, resume.fromSeq, resume.toSeq, resume.deltas, 'initial');
+        } else {
+          emitSnapshot(subscriptionId, rows, phase, 'initial');
+        }
       }, 0);
-      return {
-        ack: { subscriptionId, mode: params?.base ? 'resume' : 'snapshot', logEpoch: 'zs2-epoch' },
-      };
+      return { ack: { subscriptionId, mode: resume.mode, logEpoch } };
     },
-    async resyncConversationV4(params: { subscriptionId?: string; base?: { seq: number } | null }): Promise<unknown> {
+    async resyncConversationV4(params: {
+      subscriptionId?: string;
+      base?: { logEpoch?: string; seq?: number } | null;
+      forceSnapshot?: boolean;
+    }): Promise<unknown> {
       const sid = params?.subscriptionId ?? '';
       const sub = subs.get(sid);
-      if (sub) {
-        if (params?.base?.seq !== undefined) {
-          sub.seq = params.base.seq;
-          sessionSeq.set(sub.sessionId, params.base.seq);
-        }
-        const rows = sessionRows.get(sub.sessionId) ?? [];
-        const phase = sessionPhase.get(sub.sessionId) ?? 'running';
-        setTimeout(() => {
-          emitSnapshot(sid, rows, phase);
-        }, 0);
+      if (!sub) {
+        return { ack: { subscriptionId: sid, mode: 'snapshot', logEpoch } };
       }
-      return { ack: { subscriptionId: sid, mode: 'snapshot', logEpoch: 'zs2-epoch' } };
+      touchSession(sub.sessionId);
+      const resume = params?.forceSnapshot
+        ? {
+            mode: 'snapshot' as const,
+            fromSeq: 0,
+            toSeq: sessionSeq.get(sub.sessionId) ?? 0,
+            deltas: [] as unknown[],
+          }
+        : resolveResume(sub.sessionId, params?.base);
+      const rows = sessionRows.get(sub.sessionId) ?? [];
+      const phase = sessionPhase.get(sub.sessionId) ?? 'running';
+      setTimeout(() => {
+        if (resume.mode === 'resume') {
+          emitReplayDeltas(sid, resume.fromSeq, resume.toSeq, resume.deltas, 'recovery');
+        } else {
+          emitSnapshot(sid, rows, phase, 'recovery');
+        }
+      }, 0);
+      return { ack: { subscriptionId: sid, mode: resume.mode, logEpoch } };
     },
     async unsubscribeConversationV4(params: { subscriptionId?: string }): Promise<void> {
-      if (params?.subscriptionId) subs.delete(params.subscriptionId);
+      if (params?.subscriptionId) {
+        subs.delete(params.subscriptionId);
+        evictSessionsIfNeeded();
+      }
     },
     // eslint-disable-next-line @typescript-eslint/no-explicit-any -- RPC/协议边界动态类型，仅用于 lint 收敛，不改变运行时行为
     async sendConversationCommandV4(params: { workspacePath?: string; envelope?: any }): Promise<unknown> {
@@ -723,6 +855,8 @@ export function createAgentService(opts: AgentServiceOptions = {}): IZCodeAgentS
         sessionPhase.set(sid, 'running');
         sessionSeq.set(sid, 0);
         rowCounters.set(sid, 0);
+        touchSession(sid);
+        evictSessionsIfNeeded();
         const firstInput = env?.payload?.firstInput;
         if (firstInput?.text) {
           setTimeout(() => {
@@ -754,6 +888,8 @@ export function createAgentService(opts: AgentServiceOptions = {}): IZCodeAgentS
           sessionPhase.set(sid, 'running');
           sessionSeq.set(sid, 0);
           rowCounters.set(sid, 0);
+          touchSession(sid);
+          evictSessionsIfNeeded();
         }
         const text = env?.payload?.text ?? '';
         setTimeout(() => {
@@ -775,11 +911,28 @@ export function createAgentService(opts: AgentServiceOptions = {}): IZCodeAgentS
         revisionAtDecision: 1,
       };
     },
-    async conversationRowsRangeV4(): Promise<unknown> {
-      return { rows: [], hasMore: false, atSeq: 0, atRevision: 1, atLogEpoch: 'zs2-epoch' };
+    async conversationRowsRangeV4(params: {
+      sessionId?: string;
+      beforeRowId?: number;
+      limit?: number;
+    }): Promise<unknown> {
+      const sessionId = params?.sessionId ?? '';
+      touchSession(sessionId);
+      const rows = sessionRows.get(sessionId) ?? [];
+      const limit = Math.max(1, Math.min(params?.limit ?? 60, 200));
+      const before = params?.beforeRowId;
+      const eligible = before === undefined ? rows : rows.filter((r) => r.rowId < before);
+      const window = eligible.slice(-limit);
+      return {
+        rows: window,
+        hasMore: eligible.length > window.length,
+        atSeq: sessionSeq.get(sessionId) ?? 0,
+        atRevision: 1,
+        atLogEpoch: logEpoch,
+      };
     },
     async conversationPlansV4(): Promise<unknown> {
-      return { plans: [], atSeq: 0, atLogEpoch: 'zs2-epoch' };
+      return { plans: [], atSeq: 0, atLogEpoch: logEpoch };
     },
     async queryConversationCommandsV4(): Promise<unknown> {
       return { results: [] };
@@ -808,6 +961,8 @@ export function createAgentService(opts: AgentServiceOptions = {}): IZCodeAgentS
       sessionPhase.set(created.id, 'running');
       sessionSeq.set(created.id, 0);
       rowCounters.set(created.id, 0);
+      touchSession(created.id);
+      evictSessionsIfNeeded();
       return { sessionId: created.id };
     },
     async resumeSession(params: { sessionId: string }): Promise<unknown> {
