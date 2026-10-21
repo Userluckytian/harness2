@@ -59,6 +59,7 @@ export const loadSession = core.loadSession;
 export const SessionWriter = core.SessionWriter;
 export const ToolRegistry = core.ToolRegistry;
 export const MockProvider = core.MockProvider;
+export const extensionEventTypes = core.extensionEventTypes;
 
 export type { HarnessConfig, ChatProvider, SessionAppender };
 export type SessionWriter = SessionWriterType;

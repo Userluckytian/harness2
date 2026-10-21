@@ -1,32 +1,57 @@
 /**
- * v4-projection —— core 事件 → v4 conversation rows/frames（ZS2-T2）
+ * v4-projection —— core 事件 → v4 conversation rows/frames（ZS2-T2 / ZS3-T0）
  *
- * 输入：core 落盘事件流（AnySessionEvent[]）+ 可选 hub 回调增量。
- * 输出：投影行（kind/text/state）与控制相位/usage/meta 状态键。
+ * 唯一投影源：事件流投影（projectEvents）与实时流式行构造（make*Row）共用同一组
+ * 行构造器，字段名直接使用协议名（status/inputText/output/error/attachments）。
+ * 协议 schema 出处：refs/ZCode/packages/shared/src/zcode-protocol-v4/rows.ts。
  *
  * 未覆盖事件按映射详表 §3.5「可丢弃」清单如实处理（memory/snapshot、nudge、step/*）。
  */
-import type { AnySessionEvent } from '@harness2/core';
+import type { AnySessionEvent, ExtensionSessionEvent } from '@harness2/core';
+import type { PendingInteraction } from '@zcode/shared/zcode-protocol-v4';
+
+/** 附件引用的审计事件（extension event）：core user/message 无附件槽位，adapter 加性登记。 */
+export const USER_ATTACHMENTS_EVENT = 'adapter/user-attachments';
 
 export type ProjectedRowKind = 'turnHeader' | 'userInput' | 'assistantText' | 'reasoning' | 'toolCall';
 
-export interface ProjectedRow {
-  rowId: number; // = seq 空间
-  kind: ProjectedRowKind;
-  turnId?: string;
-  text?: string;
-  state?: string;
-  toolName?: string;
-  toolCallId?: string;
-  toolStatus?: 'running' | 'success' | 'error';
-  toolOutput?: string;
+export type ToolCallStatus = 'inputStreaming' | 'pendingApproval' | 'running' | 'success' | 'error' | 'cancelled';
+export type AssistantTextState = 'streaming' | 'complete' | 'interrupted' | 'failed';
+export type ReasoningState = 'streaming' | 'complete' | 'interrupted';
+export type TurnHeaderState = 'running' | 'completedSuccess' | 'completedInterrupted' | 'failed';
+export type ControlPhase = 'running' | 'completedSuccess' | 'completedInterrupted' | 'error';
+
+/** 行身份：rowId 在会话内单调唯一；turnId/createdAt 是协议必填字段。 */
+export interface RowIdentity {
+  rowId: number;
+  turnId: string;
+  createdAt: number;
   createdAtSeq: number;
 }
 
+export interface ProjectedRow extends RowIdentity {
+  kind: ProjectedRowKind;
+  text?: string;
+  state?: string;
+  origin?: string;
+  startedAt?: number;
+  toolName?: string;
+  toolCallId?: string;
+  status?: ToolCallStatus;
+  inputText?: string;
+  /** status=pendingApproval 时指向 pendingInteractions 项。 */
+  approvalInteractionId?: string;
+  output?: { text: string };
+  error?: { code: string; message: string };
+  attachments?: unknown[];
+}
+
 export interface ProjectionState {
-  controlPhase: 'running' | 'completedSuccess' | 'completedInterrupted' | 'error';
+  controlPhase: ControlPhase;
   usage: { inputTokens: number; outputTokens: number };
   title: string;
+  /** 本阶段恒为空；T2 起由审批投影填充。集中在此，避免散落硬编码。 */
+  pendingInteractions: PendingInteraction[];
 }
 
 export interface ProjectionResult {
@@ -35,7 +60,154 @@ export interface ProjectionResult {
   lastSeq: number;
 }
 
-function stopReasonToPhase(sr: string | undefined): ProjectionState['controlPhase'] {
+// ── 行构造器（实时流与事件回放共用） ──
+
+export function makeUserInputRow(id: RowIdentity, text: string, attachments?: unknown[]): ProjectedRow {
+  return {
+    ...id,
+    kind: 'userInput',
+    text,
+    origin: 'realUser',
+    ...(attachments && attachments.length ? { attachments } : {}),
+  };
+}
+
+export function makeTurnHeaderRow(id: RowIdentity, state: TurnHeaderState = 'running'): ProjectedRow {
+  return { ...id, kind: 'turnHeader', origin: 'userInput', state, startedAt: id.createdAt };
+}
+
+export function makeAssistantTextRow(id: RowIdentity, text: string, state: AssistantTextState): ProjectedRow {
+  return { ...id, kind: 'assistantText', text, state };
+}
+
+export function makeReasoningRow(id: RowIdentity, text: string, state: ReasoningState): ProjectedRow {
+  return { ...id, kind: 'reasoning', text, state };
+}
+
+export interface ToolCallRowInput {
+  toolCallId: string;
+  toolName: string;
+  status: ToolCallStatus;
+  inputText: string;
+  output?: { text: string };
+  error?: { code: string; message: string };
+}
+
+export function makeToolCallRow(id: RowIdentity, input: ToolCallRowInput): ProjectedRow {
+  return {
+    ...id,
+    kind: 'toolCall',
+    toolCallId: input.toolCallId,
+    toolName: input.toolName,
+    status: input.status,
+    inputText: input.inputText,
+    ...(input.output ? { output: input.output } : {}),
+    ...(input.error ? { error: input.error } : {}),
+  };
+}
+
+// ── 快照状态（协议 A 区） ──
+
+export function makeControl(phase: ControlPhase) {
+  const running = phase === 'running';
+  return {
+    phase,
+    sessionEnded: !running,
+    canStop: running,
+    stopState: running ? ('stoppable' as const) : ('idle' as const),
+    stopTargetKind: running ? ('assistant' as const) : ('unknown' as const),
+    activeWorks: running ? [{ kind: 'primaryTurn' as const, startedAt: Date.now() }] : [],
+    lastError: null,
+    apiRetry: null,
+  };
+}
+
+export function makeAvailability() {
+  const a = { allowed: true as const };
+  return {
+    fork: a,
+    compact: a,
+    switchModelConfig: a,
+    setFollowupMode: a,
+    queueEdit: a,
+    sendQueuedNow: a,
+    pauseGoal: a,
+    resumeGoal: a,
+  };
+}
+
+export interface SnapshotInput {
+  sessionId: string;
+  seq: number;
+  rows: ProjectedRow[];
+  phase: ControlPhase;
+  pendingInteractions?: PendingInteraction[];
+  logEpoch?: string;
+  /** 冷快照尾窗大小（协议 snapshotTailWindowRows=60）；更早历史走 rowsRange。 */
+  windowLimit?: number;
+}
+
+export function buildSnapshot(input: SnapshotInput) {
+  const { sessionId, seq, rows, phase } = input;
+  const windowLimit = input.windowLimit ?? 60;
+  const window = rows.length > windowLimit ? rows.slice(-windowLimit) : rows;
+  return {
+    protocolVersion: 1 as const,
+    sessionId,
+    logEpoch: input.logEpoch ?? 'zs2-epoch',
+    seq,
+    revision: 1,
+    control: makeControl(phase),
+    availability: makeAvailability(),
+    inputRouting: { mode: 'startNow' as const },
+    meta: { title: '', titleSource: 'default' as const },
+    config: {
+      provider: '',
+      model: '',
+      thought: '',
+      thoughtLevels: [] as string[],
+      followupMode: 'queue' as const,
+      mode: 'build',
+    },
+    modelTransition: null,
+    usage: {
+      contextWindow: null,
+      cumulative: { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0 },
+    },
+    queue: { items: [] as never[], autoDrain: true },
+    pendingInteractions: input.pendingInteractions ?? [],
+    pendingCommands: [] as never[],
+    backgroundWorks: [] as never[],
+    goal: null,
+    plan: null,
+    workspaceHookAdmission: null,
+    rows: {
+      window,
+      totalCount: rows.length,
+      // firstRowId 是全序首行（不是窗口首行）：窗口首行 > 它 ⇔ 还有更早历史。
+      firstRowId: rows.length ? rows[0].rowId : null,
+    },
+  };
+}
+
+// ── 事件流投影 ──
+
+function parseTs(ts: string): number {
+  const n = Date.parse(ts);
+  return Number.isFinite(n) ? n : 0;
+}
+
+function stringifyArgs(args: unknown): string {
+  if (typeof args === 'string') return args;
+  if (args === undefined) return '';
+  try {
+    return JSON.stringify(args);
+  } catch {
+    return '';
+  }
+}
+
+function stopReasonToPhase(sr: string | undefined): ControlPhase {
   if (!sr) return 'running';
   if (sr === 'end_turn') return 'completedSuccess';
   if (sr === 'cancelled') return 'completedInterrupted';
@@ -46,14 +218,15 @@ function stopReasonToPhase(sr: string | undefined): ProjectionState['controlPhas
 /**
  * 将 core 事件流投影为行 + 状态。rowId = 事件 seq（单调）。
  */
-export function projectEvents(events: AnySessionEvent[]): ProjectionResult {
+export function projectEvents(
+  events: AnySessionEvent[],
+  extensionEvents: ExtensionSessionEvent[] = [],
+): ProjectionResult {
   const rows: ProjectedRow[] = [];
   let inputTokens = 0;
   let outputTokens = 0;
-  let title = '';
-  let lastPhase: ProjectionState['controlPhase'] = 'running';
+  const title = '';
 
-  // 先按 seq 排序
   const sorted = [...events].sort((a, b) => a.seq - b.seq);
 
   // rowId 分配：每行唯一整数，事件 seq 为基，同事件多行用稳定偏移；全局单调。
@@ -65,26 +238,21 @@ export function projectEvents(events: AnySessionEvent[]): ProjectionResult {
     return rowCounter;
   };
 
+  // 旧日志可能缺 turnId；用最近一条 user/message 的 turn 兜底，保证同一轮行可分组。
+  let fallbackTurnId = '';
+
   for (const e of sorted) {
+    const createdAt = parseTs(e.ts);
     switch (e.type) {
       case 'user/message': {
-        const p = e.payload as { text: string; turnId?: string };
-        rows.push({
-          rowId: allocRowId(e.seq),
-          kind: 'userInput',
-          turnId: p.turnId,
-          text: p.text,
-          state: 'complete',
-          createdAtSeq: e.seq,
-        });
-        // turnHeader 合成：由 user/message 触发
-        rows.push({
-          rowId: allocRowId(e.seq),
-          kind: 'turnHeader',
-          turnId: p.turnId,
-          state: 'running',
-          createdAtSeq: e.seq,
-        });
+        const p = e.payload as { text: string; turnId?: string; attachments?: unknown[] };
+        const turnId = p.turnId ?? `turn-${e.seq}`;
+        fallbackTurnId = turnId;
+        rows.push(
+          makeUserInputRow({ rowId: allocRowId(e.seq), turnId, createdAt, createdAtSeq: e.seq }, p.text, p.attachments),
+        );
+        // turnHeader 合成：由 user/message 触发。
+        rows.push(makeTurnHeaderRow({ rowId: allocRowId(e.seq), turnId, createdAt, createdAtSeq: e.seq }));
         break;
       }
       case 'assistant/message': {
@@ -95,24 +263,23 @@ export function projectEvents(events: AnySessionEvent[]): ProjectionResult {
           reasoning?: string;
           turnId?: string;
         };
+        const turnId = p.turnId ?? (fallbackTurnId || `turn-${e.seq}`);
         if (p.reasoning) {
-          rows.push({
-            rowId: allocRowId(e.seq),
-            kind: 'reasoning',
-            turnId: p.turnId,
-            text: p.reasoning,
-            state: 'complete',
-            createdAtSeq: e.seq,
-          });
+          rows.push(
+            makeReasoningRow(
+              { rowId: allocRowId(e.seq), turnId, createdAt, createdAtSeq: e.seq },
+              p.reasoning,
+              'complete',
+            ),
+          );
         }
-        rows.push({
-          rowId: allocRowId(e.seq),
-          kind: 'assistantText',
-          turnId: p.turnId,
-          text: p.text,
-          state: 'complete',
-          createdAtSeq: e.seq,
-        });
+        rows.push(
+          makeAssistantTextRow(
+            { rowId: allocRowId(e.seq), turnId, createdAt, createdAtSeq: e.seq },
+            p.text,
+            'complete',
+          ),
+        );
         if (p.usage) {
           inputTokens += p.usage.inputTokens ?? 0;
           outputTokens += p.usage.outputTokens ?? 0;
@@ -121,37 +288,40 @@ export function projectEvents(events: AnySessionEvent[]): ProjectionResult {
       }
       case 'assistant/attempt': {
         const p = e.payload as { error: string; text?: string; model?: string; turnId?: string };
-        rows.push({
-          rowId: allocRowId(e.seq),
-          kind: 'assistantText',
-          turnId: p.turnId,
-          text: p.text ?? '',
-          state: 'failed',
-          createdAtSeq: e.seq,
-        });
+        const turnId = p.turnId ?? (fallbackTurnId || `turn-${e.seq}`);
+        rows.push(
+          makeAssistantTextRow(
+            { rowId: allocRowId(e.seq), turnId, createdAt, createdAtSeq: e.seq },
+            p.text ?? '',
+            'failed',
+          ),
+        );
         break;
       }
       case 'tool/call': {
         const p = e.payload as { callId: string; tool: string; args?: unknown; turnId?: string };
-        rows.push({
-          rowId: allocRowId(e.seq),
-          kind: 'toolCall',
-          turnId: p.turnId,
-          toolName: p.tool,
-          toolCallId: p.callId,
-          toolStatus: 'running',
-          createdAtSeq: e.seq,
-        });
+        const turnId = p.turnId ?? (fallbackTurnId || `turn-${e.seq}`);
+        rows.push(
+          makeToolCallRow(
+            { rowId: allocRowId(e.seq), turnId, createdAt, createdAtSeq: e.seq },
+            {
+              toolCallId: p.callId,
+              toolName: p.tool,
+              status: 'running',
+              inputText: stringifyArgs(p.args),
+            },
+          ),
+        );
         break;
       }
       case 'tool/result': {
         const p = e.payload as { callId: string; ok: boolean; output?: string; error?: string; turnId?: string };
-        // upsert the matching toolCall row → mark success/error
+        // 整行替换语义：保留入参（inputText），只更新终态字段。
         const target = rows.find((r) => r.kind === 'toolCall' && r.toolCallId === p.callId);
         if (target) {
-          target.toolStatus = p.ok ? 'success' : 'error';
-          target.toolOutput = p.ok ? p.output : p.error;
-          target.state = p.ok ? 'success' : 'error';
+          target.status = p.ok ? 'success' : 'error';
+          if (p.ok) target.output = { text: p.output ?? '' };
+          else target.error = { code: 'toolError', message: p.error ?? '' };
         }
         break;
       }
@@ -168,14 +338,22 @@ export function projectEvents(events: AnySessionEvent[]): ProjectionResult {
   }
 
   // control phase: need turn end stopReason. If no explicit, infer from last assistant.
-  // We don't have stopReason in events; default completedSuccess if any assistant message.
-  lastPhase = rows.some((r) => r.kind === 'assistantText' && r.state === 'failed')
+  const lastPhase: ControlPhase = rows.some((r) => r.kind === 'assistantText' && r.state === 'failed')
     ? 'error'
     : rows.length > 0
       ? 'completedSuccess'
       : 'running';
 
-  const lastSeq = sorted.length ? sorted[sorted.length - 1].seq : 0;
+  // 附件审计事件（extension）回填到对应 turn 的 userInput 行；core 事件本身无附件槽位。
+  for (const ext of extensionEvents) {
+    if (ext.type !== USER_ATTACHMENTS_EVENT) continue;
+    const p = ext.payload as { turnId?: string; attachments?: unknown[] };
+    if (typeof p.turnId !== 'string' || !Array.isArray(p.attachments)) continue;
+    const target = rows.find((r) => r.kind === 'userInput' && r.turnId === p.turnId);
+    if (target) target.attachments = p.attachments;
+  }
+
+  const lastSeq = Math.max(sorted.length ? sorted[sorted.length - 1].seq : 0, ...extensionEvents.map((e) => e.seq));
 
   return {
     rows,
@@ -183,6 +361,7 @@ export function projectEvents(events: AnySessionEvent[]): ProjectionResult {
       controlPhase: lastPhase,
       usage: { inputTokens, outputTokens },
       title,
+      pendingInteractions: [],
     },
     lastSeq,
   };
@@ -191,6 +370,6 @@ export function projectEvents(events: AnySessionEvent[]): ProjectionResult {
 /**
  * 投影控制相位（由 onTurnEnd.stopReason 映射）。
  */
-export function stopReasonToControlPhase(sr: string): ProjectionState['controlPhase'] {
+export function stopReasonToControlPhase(sr: string): ControlPhase {
   return stopReasonToPhase(sr);
 }

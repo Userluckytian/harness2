@@ -78,6 +78,7 @@ import { createSessionService } from './real/session-service.js';
 import { createTaskService } from './real/task-service.js';
 import { createAgentService } from './real/agent-service.js';
 import { createModelSelectionService, createProviderSettingsService } from './real/provider-views.js';
+import { createLocalPromptAttachmentTransferService } from './real/attachment-transfer.js';
 import { createSettingsStore } from './real/settings-store.js';
 import { createStubService } from './stub-factory.js';
 import {
@@ -274,6 +275,7 @@ export function createHarness2Services(opts: Harness2ServicesOptions = {}): Harn
     [IOnboardingRecordService.channelName, onboardingRecordServiceStub],
     [IOAuthService.channelName, oauthServiceStub],
     [IProjectService.channelName, createProjectService()],
+    [IPromptAttachmentTransferService.channelName, createLocalPromptAttachmentTransferService()],
     [IProviderSettingsService.channelName, realProviderSettingsService],
     [IRemoteProjectService.channelName, remoteProjectServiceStub],
     [ISettingService.channelName, realSettingService],

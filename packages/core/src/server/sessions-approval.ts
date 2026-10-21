@@ -9,6 +9,14 @@ import {
   isApprovalDecision,
 } from '../interaction/types.js';
 import type { ApprovalDecision, ApprovalHandler, ApprovalInput } from '../tools/types.js';
+import { isUserInputAnswer } from '../interaction/user-input.js';
+import type {
+  UserInputAnswer,
+  UserInputRequestContract,
+  UserInputResponseAck,
+  UserInputSettleReason,
+} from '../interaction/user-input.js';
+import type { UserInputQueueCard } from '../interaction/user-input-queue.js';
 import { SessionHubTasks } from './sessions-tasks.js';
 import type { ApprovalSettleReason } from './sessions-types.js';
 import { randomUUID } from 'node:crypto';
@@ -130,6 +138,105 @@ export abstract class SessionHubApproval extends SessionHubTasks {
     for (const l of this.listeners) {
       try {
         l.onApprovalSettled?.(requestId, allowed, reason);
+      } catch {
+        // 观察者异常不回写内核
+      }
+    }
+  }
+
+  // —— 用户问询（ZS3-T6）——
+
+  /** 全部待处理问询（诊断/重连下发用） */
+  listPendingUserInputs(): UserInputRequestContract[] {
+    return this.userInputs.listPending();
+  }
+
+  /** 指定会话可见的待处理问询：自身 + 后代（子代理血缘 BFS 展开） */
+  pendingUserInputsFor(sessionId: string): UserInputRequestContract[] {
+    this.assertValidSessionId(sessionId);
+    const childrenOf = new Map<string, string[]>();
+    for (const [child, parent] of this.subagentChildren) {
+      const list = childrenOf.get(parent) ?? [];
+      list.push(child);
+      childrenOf.set(parent, list);
+    }
+    const scope = new Set<string>([sessionId]);
+    const queue = [sessionId];
+    while (queue.length > 0) {
+      const current = queue.shift()!;
+      for (const child of childrenOf.get(current) ?? []) {
+        if (!scope.has(child)) {
+          scope.add(child);
+          queue.push(child);
+        }
+      }
+    }
+    return this.userInputs.listPending().filter((r) => scope.has(r.sessionId));
+  }
+
+  /** 问询应答：明确 ack（applied/duplicate/expired/unknown）；非法答案不抛错 */
+  respondUserInput(requestId: string, answer: UserInputAnswer): UserInputResponseAck {
+    if (!isUserInputAnswer(answer)) {
+      return { requestId, state: 'unknown' };
+    }
+    return this.userInputs.respond(requestId, answer);
+  }
+
+  /**
+   * 发起用户问询：登记 → 多点送达 onUserInputRequest → await 答案。
+   * 超时/取消 fail-closed 落定为 {action:'cancel'}，producer 不会悬挂。
+   */
+  requestUserInput(
+    sessionId: string,
+    payload: Omit<UserInputRequestContract, 'requestId' | 'sessionId' | 'expiresAt' | 'createdAt'> & {
+      expiresAt?: string;
+    },
+  ): Promise<UserInputAnswer> {
+    this.assertValidSessionId(sessionId);
+    const requestId = randomUUID();
+    const now = Date.now();
+    const request: UserInputRequestContract = {
+      requestId,
+      sessionId,
+      ...payload,
+      createdAt: new Date(now).toISOString(),
+      expiresAt: payload.expiresAt ?? new Date(now + this.userInputTimeoutMs).toISOString(),
+    };
+    return new Promise<UserInputAnswer>((resolve) => {
+      let settled = false;
+      let timer: NodeJS.Timeout | undefined;
+      const notify = (answer: UserInputAnswer, reason: UserInputSettleReason): void => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        this.emitUserInputSettled(requestId, answer, reason);
+        resolve(answer);
+      };
+      const node: UserInputQueueCard = { request, settle: notify };
+      timer = setTimeout(
+        () => this.userInputs.settle(requestId, { action: 'cancel' }, 'timeout'),
+        this.userInputTimeoutMs,
+      );
+      if (!this.userInputs.register(node)) {
+        clearTimeout(timer);
+        notify({ action: 'cancel' }, 'cancelled');
+        return;
+      }
+      const deliverTo = this.deliveryChain(sessionId);
+      for (const l of this.listeners) {
+        try {
+          l.onUserInputRequest?.(request, deliverTo);
+        } catch {
+          // 观察者异常不回写内核
+        }
+      }
+    });
+  }
+
+  protected emitUserInputSettled(requestId: string, answer: UserInputAnswer, reason: UserInputSettleReason): void {
+    for (const l of this.listeners) {
+      try {
+        l.onUserInputSettled?.(requestId, answer, reason);
       } catch {
         // 观察者异常不回写内核
       }

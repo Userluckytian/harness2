@@ -27,6 +27,8 @@ export * from './provider/factory.js';
 export * from './provider/discover.js';
 export * from './provider/reasoning.js';
 export * from './interaction/types.js';
+export * from './interaction/user-input.js';
+export * from './interaction/user-input-queue.js';
 export * from './interaction/run-config.js';
 export * from './interaction/plan-state.js';
 export * from './interaction/execution-view.js';
