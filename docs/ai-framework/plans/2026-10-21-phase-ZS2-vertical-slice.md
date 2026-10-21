@@ -306,6 +306,6 @@
 - `eslint .` 全仓 exit 0（94 warnings，0 errors）
 - `prettier --check .`：run-e2e.ps1 无解析器 → `.prettierignore` 加 `*.ps1`（`a77419e`）
 
-**V5 冻结复核**：`git diff --stat fd8e6a4..HEAD -- 六受保护包` = 0；UI patch 仍仅 ZS1 一处。**V7**：cat-jam 四路审查 P1×0 阻塞（P2×8 登记入 OPEN）。
+**V5 冻结复核**：`git diff --stat fd8e6a4..HEAD -- 六受保护包` = 0；UI patch 仍仅 ZS1 一处。**V7**：cat-jam 独立审查（报告为本机文档不入仓）P0×0 / **P1×6 全部修复闭环**（`51f98d0`+`ac86f56`，要害三条编排者源码抽查属实后才派修）/ P2×8 登记归 ZS3+ 顺手处理（投影 Map 无界增长、帧 schema 校验、e2e 选择器精确度、host-bundle 产物入 git、authPath 硬编码等，明细见 `docs/issue-log/2026-10-21.md`）。
 
 **验收表自评**：V1 ✅（双跑流式+终态+截图）V2 ✅（JSONL 落盘+重放）V3 ✅（42 测+变异留痕）V4 ✅（横幅消、真 provider）V5 ✅ V6 ✅（本地预演全绿，CI 待推）V7 ✅ V8 ⬜ 用户真机。
