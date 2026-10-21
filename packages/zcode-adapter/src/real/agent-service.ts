@@ -183,6 +183,30 @@ export function createAgentService(opts: AgentServiceOptions = {}): IZCodeAgentS
     ]);
   }
 
+  /** 快照里的有效模型配置：UI Composer 的发送门禁依赖 config.modelSelection。 */
+  let snapshotConfig: Parameters<typeof buildSnapshot>[0]['config'];
+  try {
+    const loadedForConfig = loadConfig({ root: process.cwd(), home });
+    const main = loadedForConfig.config?.roles?.main;
+    if (main !== undefined) {
+      snapshotConfig = {
+        provider: main.channel,
+        model: main.model,
+        thought: 'medium',
+        thoughtLevels: ['medium'],
+        followupMode: 'queue',
+        mode: 'build',
+        modelSelection: {
+          providerId: main.channel,
+          modelId: main.model,
+          options: { reasoningLevel: 'medium' },
+        },
+      };
+    }
+  } catch {
+    // 配置不可读时保持空配置（mock/测试路径）
+  }
+
   const subs = new Map<string, { sessionId: string; seq: number; ordinal: number }>();
   const rowCounters = new Map<string, number>();
   const toolRowByCall = new Map<string, number>();
@@ -476,6 +500,7 @@ export function createAgentService(opts: AgentServiceOptions = {}): IZCodeAgentS
           phase,
           pendingInteractions: sessionPendingInteractions.get(sub.sessionId) ?? [],
           logEpoch,
+          ...(snapshotConfig ? { config: snapshotConfig } : {}),
         }),
       },
     };

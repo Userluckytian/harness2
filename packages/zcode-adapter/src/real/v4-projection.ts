@@ -145,6 +145,20 @@ export interface SnapshotInput {
   logEpoch?: string;
   /** 冷快照尾窗大小（协议 snapshotTailWindowRows=60）；更早历史走 rowsRange。 */
   windowLimit?: number;
+  /** 会话有效模型配置（来自 roles.main）；缺省空串（测试/未配置）。 */
+  config?: {
+    provider: string;
+    model: string;
+    thought: string;
+    thoughtLevels: string[];
+    followupMode?: 'queue' | 'guide';
+    mode?: string;
+    modelSelection?: {
+      providerId: string;
+      modelId: string;
+      options?: { reasoningLevel?: string };
+    };
+  };
 }
 
 export function buildSnapshot(input: SnapshotInput) {
@@ -162,12 +176,13 @@ export function buildSnapshot(input: SnapshotInput) {
     inputRouting: { mode: 'startNow' as const },
     meta: { title: '', titleSource: 'default' as const },
     config: {
-      provider: '',
-      model: '',
-      thought: '',
-      thoughtLevels: [] as string[],
-      followupMode: 'queue' as const,
-      mode: 'build',
+      provider: input.config?.provider ?? '',
+      model: input.config?.model ?? '',
+      thought: input.config?.thought ?? '',
+      thoughtLevels: input.config?.thoughtLevels ?? [],
+      followupMode: input.config?.followupMode ?? ('queue' as const),
+      mode: input.config?.mode ?? 'build',
+      ...(input.config?.modelSelection ? { modelSelection: input.config.modelSelection } : {}),
     },
     modelTransition: null,
     usage: {
