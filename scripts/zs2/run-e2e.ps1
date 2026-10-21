@@ -63,9 +63,11 @@ $env:ZS1_HOST_MODULE_PATH = $AdapterDist
 $env:ZCODE_DATA_BASE_DIR = Join-Path $Zs1Build 'zs1-data'
 $env:ZS2_PROBE = '1'
 $env:CI = 'true'
+$env:PNPM_CONFIG_FROZEN_LOCKFILE = 'false'
+$env:npm_config_frozen_lockfile = 'false'
 $env:COREPACK_ENABLE = '0'
 $env:ZS2_DIAG = '1'
-$env:PATH = 'D:/Programs/nodejs;' + $env:PATH
+$env:PATH = 'D:/AI_Projects/harness2/tools;D:/Programs/nodejs;' + $env:PATH
 
 $log = Join-Path $Zs1Build 'zs2-runbook.log'
 $err = Join-Path $Zs1Build 'zs2-runbook.err'
