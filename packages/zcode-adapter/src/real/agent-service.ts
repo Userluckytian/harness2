@@ -15,6 +15,7 @@ import {
   ToolRegistry,
   UserInputQueue,
   extensionEventTypes,
+  loadSession,
 } from './core-bridge.js';
 import type { IZCodeAgentService } from '@zcode/services';
 import type { ApprovalHandler, MockScript, UserInputAnswer, UserInputRequestContract } from '@harness2/core';
@@ -29,6 +30,7 @@ import {
   makeToolCallRow,
   makeTurnHeaderRow,
   makeUserInputRow,
+  projectEvents,
   USER_ATTACHMENTS_EVENT,
 } from './v4-projection.js';
 import type { ControlPhase, ProjectedRow } from './v4-projection.js';
@@ -207,6 +209,8 @@ export function createAgentService(opts: AgentServiceOptions = {}): IZCodeAgentS
   const MAX_CACHED_SESSIONS = 32;
   const sessionLastAccess = new Map<string, number>();
   const runningSessions = new Set<string>();
+  /** 运行中 turn 的取消源（stop 命令真正 abort）。 */
+  const runningAborts = new Map<string, AbortController>();
   const attachmentStore = new AttachmentStore({ home });
   /** ZS3.5：ask_user 工具的问询队列（core 原语；adapter 直接桥接 v4 pendingInteractions）。 */
   const userInputs = new UserInputQueue();
@@ -386,6 +390,42 @@ export function createAgentService(opts: AgentServiceOptions = {}): IZCodeAgentS
       },
     });
     return registry;
+  }
+
+  /**
+   * 重启后的会话恢复：从磁盘事件日志重建投影，避免把“内存里没有”误判成 running。
+   * 日志不可读/会话不存在 → 空 idle 会话，至少不会卡住发送。
+   */
+  function ensureSessionLoaded(sessionId: string): void {
+    if (sessionRows.has(sessionId)) return;
+    try {
+      const resumed = manager.resume(sessionId);
+      const loaded = loadSession(resumed.dir);
+      try {
+        resumed.writer.close();
+      } catch {
+        // 只读恢复，writer 关闭失败不影响投影
+      }
+      const projection = projectEvents(
+        loaded.events.map((e) => e.event),
+        loaded.extensionEvents.map((e) => e.event),
+      );
+      sessionRows.set(sessionId, projection.rows);
+      sessionSeq.set(sessionId, projection.lastSeq);
+      // 空日志（草稿/新会话）按 idle；有历史的会话按投影终态。
+      sessionPhase.set(sessionId, projection.rows.length > 0 ? projection.state.controlPhase : 'completedSuccess');
+      rowCounters.set(
+        sessionId,
+        projection.rows.reduce((max, row) => Math.max(max, row.rowId), 0),
+      );
+      touchSession(sessionId);
+    } catch {
+      sessionRows.set(sessionId, []);
+      sessionSeq.set(sessionId, 0);
+      sessionPhase.set(sessionId, 'completedSuccess');
+      rowCounters.set(sessionId, 0);
+      touchSession(sessionId);
+    }
   }
 
   function nextRowId(sessionId: string): number {
@@ -648,6 +688,7 @@ export function createAgentService(opts: AgentServiceOptions = {}): IZCodeAgentS
     let accumulated = '';
     const tools = opts.tools ?? e2eToolRegistry ?? createDefaultTools(sessionId);
     const ac = new AbortController();
+    runningAborts.set(sessionId, ac);
     const approval: ApprovalHandler = {
       // ask_user 本身是问询入口，不再叠加一层审批；其余工具统一走审批（可被拒绝）。
       decide: (input) => (input.tool === 'ask_user' ? 'allow' : 'ask'),
@@ -826,17 +867,20 @@ export function createAgentService(opts: AgentServiceOptions = {}): IZCodeAgentS
       console.error('[zs2] close failed', (e as Error)?.message);
     }
 
+    const finalPhase: ControlPhase = ac.signal.aborted ? 'completedInterrupted' : 'completedSuccess';
     const assistantRow = rows.find((r) => r.rowId === assistantRowId);
     if (assistantRow) {
       assistantRow.text = accumulated || 'done';
-      assistantRow.state = 'complete';
+      assistantRow.state = ac.signal.aborted ? 'interrupted' : 'complete';
     }
-    sessionPhase.set(sessionId, 'completedSuccess');
+    sessionPhase.set(sessionId, finalPhase);
     sessionRows.set(sessionId, rows);
     sessionSeq.set(sessionId, sessionSeq.get(sessionId) ?? 0);
 
     const finishedTurnHeader = rows.find((r) => r.rowId === turnHeaderRowId);
-    if (finishedTurnHeader) finishedTurnHeader.state = 'completedSuccess';
+    if (finishedTurnHeader) {
+      finishedTurnHeader.state = ac.signal.aborted ? 'completedInterrupted' : 'completedSuccess';
+    }
 
     const finalDeltas: Array<{ op: string; row?: ProjectedRow; patch?: unknown }> = [];
     if (reasoningRowId !== null) {
@@ -860,9 +904,10 @@ export function createAgentService(opts: AgentServiceOptions = {}): IZCodeAgentS
         'complete',
       ),
     });
-    finalDeltas.push({ op: 'state.updated', patch: { control: makeControl('completedSuccess') } });
+    finalDeltas.push({ op: 'state.updated', patch: { control: makeControl(finalPhase) } });
     emitToSession(sessionId, finalDeltas);
     runningSessions.delete(sessionId);
+    runningAborts.delete(sessionId);
     evictSessionsIfNeeded();
   }
 
@@ -894,6 +939,7 @@ export function createAgentService(opts: AgentServiceOptions = {}): IZCodeAgentS
     }): Promise<unknown> {
       const sessionId = params?.sessionId ?? 'default';
       touchSession(sessionId);
+      ensureSessionLoaded(sessionId);
       const subscriptionId = `zs3-${sessionId}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
       const resume = resolveResume(sessionId, params?.base);
       subs.set(subscriptionId, {
@@ -902,7 +948,7 @@ export function createAgentService(opts: AgentServiceOptions = {}): IZCodeAgentS
         ordinal: 1,
       });
       const rows = sessionRows.get(sessionId) ?? [];
-      const phase = sessionPhase.get(sessionId) ?? 'running';
+      const phase = sessionPhase.get(sessionId) ?? 'completedSuccess';
       setTimeout(() => {
         if (resume.mode === 'resume') {
           // 真续传：initial 帧只带 (base.seq, current] 的 delta，不重发快照。
@@ -924,6 +970,7 @@ export function createAgentService(opts: AgentServiceOptions = {}): IZCodeAgentS
         return { ack: { subscriptionId: sid, mode: 'snapshot', logEpoch } };
       }
       touchSession(sub.sessionId);
+      ensureSessionLoaded(sub.sessionId);
       const resume = params?.forceSnapshot
         ? {
             mode: 'snapshot' as const,
@@ -933,7 +980,7 @@ export function createAgentService(opts: AgentServiceOptions = {}): IZCodeAgentS
           }
         : resolveResume(sub.sessionId, params?.base);
       const rows = sessionRows.get(sub.sessionId) ?? [];
-      const phase = sessionPhase.get(sub.sessionId) ?? 'running';
+      const phase = sessionPhase.get(sub.sessionId) ?? 'completedSuccess';
       setTimeout(() => {
         if (resume.mode === 'resume') {
           emitReplayDeltas(sid, resume.fromSeq, resume.toSeq, resume.deltas, 'recovery');
@@ -979,6 +1026,18 @@ export function createAgentService(opts: AgentServiceOptions = {}): IZCodeAgentS
         };
       }
       if (env.type === 'stop') {
+        const sid = typeof env.sessionId === 'string' ? env.sessionId : '';
+        const ac = sid ? runningAborts.get(sid) : undefined;
+        if (ac) ac.abort();
+        // 取消时一并收口挂起的交互，避免弹窗悬挂。
+        for (const [id, entry] of [...pendingApprovals]) {
+          if (entry.sessionId === sid) settleApproval(id, false);
+        }
+        for (const interaction of [...(sessionPendingInteractions.get(sid) ?? [])]) {
+          if (interaction.kind === 'userInput') {
+            userInputs.settle(interaction.interactionId, { action: 'cancel' }, 'cancelled');
+          }
+        }
         return { commandId: env.commandId, status: 'accepted', revisionAtDecision: 1 };
       }
       if (env.type === 'resolveInteraction') {
@@ -1064,7 +1123,7 @@ export function createAgentService(opts: AgentServiceOptions = {}): IZCodeAgentS
         const __wp = params?.workspacePath ?? process.cwd();
         trackCreatedTask(sid, __wp);
         sessionRows.set(sid, []);
-        sessionPhase.set(sid, 'running');
+        sessionPhase.set(sid, 'completedSuccess');
         sessionSeq.set(sid, 0);
         rowCounters.set(sid, 0);
         touchSession(sid);
@@ -1097,7 +1156,7 @@ export function createAgentService(opts: AgentServiceOptions = {}): IZCodeAgentS
           const __wp2 = params?.workspacePath ?? process.cwd();
           trackCreatedTask(sid, __wp2);
           sessionRows.set(sid, []);
-          sessionPhase.set(sid, 'running');
+          sessionPhase.set(sid, 'completedSuccess');
           sessionSeq.set(sid, 0);
           rowCounters.set(sid, 0);
           touchSession(sid);
@@ -1170,7 +1229,7 @@ export function createAgentService(opts: AgentServiceOptions = {}): IZCodeAgentS
       } catch {}
       trackCreatedTask(created.id, params?.workspacePath ?? process.cwd());
       sessionRows.set(created.id, []);
-      sessionPhase.set(created.id, 'running');
+      sessionPhase.set(created.id, 'completedSuccess');
       sessionSeq.set(created.id, 0);
       rowCounters.set(created.id, 0);
       touchSession(created.id);

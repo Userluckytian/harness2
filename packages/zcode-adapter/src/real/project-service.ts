@@ -1,3 +1,6 @@
+import { mkdirSync } from 'node:fs';
+import { homedir } from 'node:os';
+import { join } from 'node:path';
 import { createStubService } from '../stub-factory.js';
 import type { IProjectService } from '@zcode/services';
 
@@ -40,6 +43,22 @@ export function createProjectService(): IProjectService {
     },
     async readProjects(): Promise<unknown[]> {
       return [];
+    },
+    /**
+     * 左侧「新建任务/新建对话」入口：返回 app 管理的对话工作区并确保目录存在。
+     * 项目选择暂未实现（projectId 原样回传，不读项目表）。
+     */
+    async prepareSession(params?: { projectId?: string; hostId?: string }): Promise<unknown> {
+      const base = process.env.ZCODE_DATA_BASE_DIR ?? homedir();
+      const workspacePath = base.endsWith('.zcode')
+        ? join(base, 'workspace', 'default')
+        : join(base, '.zcode', 'workspace', 'default');
+      mkdirSync(workspacePath, { recursive: true });
+      return {
+        workspacePath,
+        projectId: params?.projectId ?? null,
+        additionalDirectories: [],
+      };
     },
     async resolveSessionDirectories(task: {
       workspacePath: string;

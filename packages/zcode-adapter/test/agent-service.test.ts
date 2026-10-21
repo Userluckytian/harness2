@@ -7,6 +7,7 @@ import { Emitter } from '@zcode/rpc';
 import { ToolRegistry } from '@harness2/core';
 import type { MockScript } from '@harness2/core';
 import { createAgentService } from '../src/real/agent-service.js';
+import { createProjectService } from '../src/real/project-service.js';
 
 interface CapturedInteraction {
   interactionId?: string;
@@ -51,7 +52,16 @@ interface CapturedFrame {
   payload: {
     kind: string;
     deltas?: CapturedDelta[];
-    snapshot?: { seq?: number; logEpoch?: string };
+    snapshot?: {
+      seq?: number;
+      logEpoch?: string;
+      control?: { phase?: string; canStop?: boolean };
+      rows?: {
+        window?: Array<{ kind?: string; text?: string }>;
+        totalCount?: number;
+        firstRowId?: number | null;
+      };
+    };
   };
 }
 
@@ -724,4 +734,80 @@ describe('ZS3.5 ask_user producer', () => {
       rmSync(home, { recursive: true, force: true });
     }
   }, 20000);
+});
+
+describe('ZS3.5 restart restore + project prepareSession', () => {
+  it('restores history and idle phase on a new service instance', async () => {
+    const home = mkdtempSync(join(tmpdir(), 'h2-restore-'));
+    const emitter1 = new Emitter<unknown>();
+    const frames1: CapturedFrame[] = [];
+    emitter1.event((wire) => {
+      const w = wire as { kind?: string; frame?: CapturedFrame };
+      if (w.kind === 'complete' && w.frame) frames1.push(w.frame);
+    });
+    try {
+      const agent1 = createAgentService({ home, mockScript: [{ text: 'hello' }], emitter: emitter1 });
+      const created = (await agent1.sendConversationCommandV4({
+        workspacePath: home,
+        envelope: { commandId: 'cmd-create', type: 'createSession' } as never,
+      })) as { result?: { sessionId?: string } };
+      const sessionId = created.result?.sessionId;
+      if (!sessionId) throw new Error('createSession did not return a sessionId');
+      await agent1.subscribeConversationV4({ workspacePath: home, sessionId });
+      await agent1.sendConversationCommandV4({
+        workspacePath: home,
+        envelope: { commandId: 'cmd-send', type: 'sendText', sessionId, payload: { text: 'hi' } } as never,
+      });
+      await waitFor(() =>
+        frames1.some(
+          (f) =>
+            f.payload.kind === 'deltas' &&
+            (f.payload.deltas ?? []).some(
+              (d) => d.op === 'state.updated' && d.patch?.control?.phase === 'completedSuccess',
+            ),
+        ),
+      );
+
+      // 模拟 host 重启：新实例没有任何内存投影。
+      const emitter2 = new Emitter<unknown>();
+      const frames2: CapturedFrame[] = [];
+      emitter2.event((wire) => {
+        const w = wire as { kind?: string; frame?: CapturedFrame };
+        if (w.kind === 'complete' && w.frame) frames2.push(w.frame);
+      });
+      const agent2 = createAgentService({ home, mockScript: [{ text: 'next' }], emitter: emitter2 });
+      const sub = (await agent2.subscribeConversationV4({
+        workspacePath: home,
+        sessionId,
+      })) as { ack: { subscriptionId: string; mode: string } };
+      expect(sub.ack.mode).toBe('snapshot');
+      await waitFor(() =>
+        frames2.some((f) => f.subscriptionId === sub.ack.subscriptionId && f.payload.kind === 'snapshot'),
+      );
+      const snapshot = frames2.find((f) => f.subscriptionId === sub.ack.subscriptionId && f.payload.kind === 'snapshot')
+        ?.payload.snapshot;
+      expect(snapshot?.control?.phase).toBe('completedSuccess');
+      expect(snapshot?.control?.canStop).toBe(false);
+      expect(snapshot?.rows?.window?.length).toBeGreaterThan(0);
+      expect(snapshot?.rows?.window?.filter((r) => r.kind === 'userInput').map((r) => r.text)).toContain('hi');
+    } finally {
+      rmSync(home, { recursive: true, force: true });
+    }
+  }, 20000);
+
+  it('prepareSession creates the conversation workspace directory', async () => {
+    const data = mkdtempSync(join(tmpdir(), 'h2-proj-'));
+    const previous = process.env.ZCODE_DATA_BASE_DIR;
+    process.env.ZCODE_DATA_BASE_DIR = data;
+    try {
+      const service = createProjectService();
+      const result = (await service.prepareSession({})) as { workspacePath: string };
+      expect(result.workspacePath).toBe(join(data, '.zcode', 'workspace', 'default'));
+      expect(existsSync(result.workspacePath)).toBe(true);
+    } finally {
+      if (previous === undefined) delete process.env.ZCODE_DATA_BASE_DIR;
+      else process.env.ZCODE_DATA_BASE_DIR = previous;
+      rmSync(data, { recursive: true, force: true });
+    }
+  });
 });
