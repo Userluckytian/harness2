@@ -1,6 +1,6 @@
 # 阶段 ZS4：侧栏全功能 + 设置页可用（task 索引/归档/批量删除 / provider 写路径 / 周边读面）
 
-> **状态：** 计划起草（2026-10-21，基于总纲 §2 ZS4 行 + 当日摸底；**待用户审阅后开工**）
+> **状态：** 实施中（2026-10-21 用户批准「开始吧」开工；T0–T4 已入库，T5 实施中）
 > **前置：** ZS3（`bd18a75`）与 ZS3.5（附件/cwd/缩略图，`6be7e4d`/`e9f7362`）已合 main；`AskUserQuestion` producer 已在 adapter 落地（ZS3 登记的「elicitation 接线」在此对账为已完成）
 > **元规范：** `docs/ai-framework/phased-plan-driven.md` · **总纲：** `docs/ai-framework/plans/2026-10-20-zs-shell-migration-program.md`
 
@@ -161,3 +161,26 @@
 3. 设置页添加真实供应商（含密钥）→ 连通测试 → 新会话选用；
 4. 轨迹页打开一轮（如已接线）；
 5. 提醒：测新壳时旧壳 `pnpm dev` 保持关闭（9229 共享）。
+
+---
+
+## 执行记录（2026-10-21 回填）
+
+**分支偏差（如实登记）**：实际在 `main` 上直接顺序提交（与 ZS3.5 收口后的并行代理共处模式一致），未拉 `feat/phase-zs4-sidebar-and-settings`。
+
+| Task | 提交 | 实施者 | 证据 |
+| ---- | ---- | ------ | ---- |
+| T0 盘点 | `1506ba6` | cat-jam | `docs/research/2026-10-21-zs4-call-surface-inventory.md`（file:line 全量） |
+| T1 deleteSession | `616113a` | 编排者直做 | core 1638+2s 绿；锁目录 fail-closed 测试；`SESSION_ID_PATTERN` 防穿越 |
+| T2 task 索引侧车 | `29c83a4` | cat-jam | `task-index.ts` 原子读写；readTree pinned→mtime；title.json 优先（「New task」消失）；11 新测试 |
+| T3 任务写面 | `2f2daf5` | cat-jam | 十法全真实现 + `scripts/zs4/cleanup-sessions.cjs`（默认 dry-run）；78 测绿；task-groups 保持桩不造假（红线⑩） |
+| T4 provider 写路径 | `81efdb3` | 编排者直做 | 十投+connectivity+onDidChange；`absorbSecrets` 就地剥密钥（P0 自纠：原实现不回写 cleaned，密钥会进 config）；auth 0600；revision 冲突拒绝；86 测绿 |
+| T5 轨迹+周边 | 进行中 | cat-jam | 轨迹 `available:false` 降级（core 无 model-io，不造假）；skills 接 core SkillStore；OffPeak 显式 fail-closed；memory/hooks/commands 逐条对账 |
+
+**决策登记**：
+1. **批量入口落点（盘点决策点 2）= 选项 1「原生路径 + 脚本」**：ZCode UI 零改动约束下，批量删除走原生归档区（`ArchiveGroupCard` unarchiveAll/deleteAll + `DeleteAllArchivedTasksButton`，服务端 `deleteArchivedTasks` T3 已实现）；「删除其他/归档其他」右键菜单项**不做**（不造 UI patch）；兜底 `scripts/zs4/cleanup-sessions.cjs`（默认 dry-run）。命令面板/快捷键入口列为后续升级。
+2. **renamePersonalModel 已实现**（盘点决策点 4：原 throws 列表未含、契约含——补齐，键序保持）。
+3. **deletePersonalProvider 不隐式删 auth 密钥**（上游是否清凭据无证据，保守保留，注释登记）。
+4. **task-groups 保持空态桩**（cat-jam 决策：落盘语义无证据对齐，宁 throw 不造假；ZS3 偏差⑥ toast 复验归 T6）。
+5. **轨迹降级口径**（盘点决策点 5）：`available:false` + 空 records + 真实 `sourceFiles`（locate 目录），会话不存在也不抛。
+6. **V8 独立审查**：cat-jam 通道 ZS3/V8 已累计 5 次 provider 5xx；本阶段完成后再试，失败继续如实挂账。
