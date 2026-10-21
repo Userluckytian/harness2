@@ -1,7 +1,7 @@
 // ZS2 e2e round: CDP-driven single conversation round.
 // Usage: node scripts/zs2/e2e-round.cjs [--text "..."] [--screenshot path]
 const http = require('http');
-const WebSocket = require('D:/AI_Projects/harness2-zs1-build/ZCode/node_modules/ws');
+const WebSocket = require('D:/AI_Projects/harness2/node_modules/.pnpm/ws@8.21.3/node_modules/ws');
 const fs = require('fs');
 
 const TEXT = (process.argv.includes('--text')
@@ -41,6 +41,7 @@ if (!page) { console.error('WRONG INSTANCE/NOT UP'); process.exit(3); }
     pending.set(mid, resolve);
     ws.send(JSON.stringify({ id: mid, method, params }));
   });
+  ws.on('error', (e) => { console.error('WS ERR', e && e.message); });
   ws.on('message', (raw) => {
     const msg = JSON.parse(raw.toString());
     if (msg.id && pending.has(msg.id)) { pending.get(msg.id)(msg); pending.delete(msg.id); }
@@ -130,7 +131,7 @@ if (!page) { console.error('WRONG INSTANCE/NOT UP'); process.exit(3); }
       let lastRowTextLen = 0;
       let growthCount = 0;
       let lastReply = '';
-      for (let i = 0; i < 40; i++) {
+      for (let i = 0; i < 80; i++) {
         await new Promise(r => setTimeout(r, 500));
         const r = await send('Runtime.evaluate', { expression: `(() => { const rows = Array.from(document.querySelectorAll('${ROW_SEL}')); const arows = rows.filter(r => !r.querySelector('[data-v4-user-input-bubble]')); const texts = arows.map(x => (x.innerText||'').trim()); const replyText = texts.join(' ').trim().replace(/\\s*Copy\\s*/g,'').trim(); return JSON.stringify({ rowCount: rows.length, rowTextLen: texts.join('\\n').length, replyText }); })()` });
         const v = JSON.parse(r.result?.result?.value || '{}');

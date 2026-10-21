@@ -62,14 +62,16 @@ $env:HARNESS2_HOME = 'C:/Users/ASUS'
 $env:ZS1_HOST_MODULE_PATH = $AdapterDist
 $env:ZCODE_DATA_BASE_DIR = Join-Path $Zs1Build 'zs1-data'
 $env:ZS2_PROBE = '1'
-$env:PNPM_HOME = 'D:/Programs/nodejs'
+$env:CI = 'true'
+$env:COREPACK_ENABLE = '0'
+$env:ZS2_DIAG = '1'
 $env:PATH = 'D:/Programs/nodejs;' + $env:PATH
 
 $log = Join-Path $Zs1Build 'zs2-runbook.log'
 $err = Join-Path $Zs1Build 'zs2-runbook.err'
 $proc = Start-Process -FilePath 'node' -ArgumentList 'scripts/dev-desktop-env.mjs','test' -WorkingDirectory $ZCodeRoot -RedirectStandardOutput $log -RedirectStandardError $err -PassThru
 
-Start-Sleep -Seconds 90
+Start-Sleep -Seconds 180
 
 Push-Location $HarnessRoot
 node scripts/zs2/e2e-round.cjs
