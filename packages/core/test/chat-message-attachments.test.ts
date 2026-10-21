@@ -13,8 +13,7 @@ function writeSessionWithAttachment(dir: string): void {
   if (!extensionEventTypes.has(ATTACHMENTS_EVENT)) {
     extensionEventTypes.register({
       type: ATTACHMENTS_EVENT,
-      validator: (payload) =>
-        typeof payload.turnId === 'string' && Array.isArray(payload.attachments),
+      validator: (payload) => typeof payload.turnId === 'string' && Array.isArray(payload.attachments),
       projection: 'opaque',
     });
   }
@@ -34,9 +33,7 @@ describe('buildChatMessages attachment parts (ZS3.5)', () => {
       writeSessionWithAttachment(dir);
       const messages = buildChatMessages(loadSession(dir), {
         resolveAttachment: (ref, mime) =>
-          ref.endsWith('a.png') && mime === 'image/png'
-            ? { type: 'image', mimeType: mime, dataBase64: 'AAAA' }
-            : null,
+          ref.endsWith('a.png') && mime === 'image/png' ? { type: 'image', mimeType: mime, dataBase64: 'AAAA' } : null,
       });
       expect(messages[0]?.content).toBe('看图');
       expect(messages[0]?.parts).toEqual([

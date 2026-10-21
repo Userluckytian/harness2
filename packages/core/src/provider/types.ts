@@ -26,9 +26,7 @@ export interface ToolCallRequest {
  * - OpenAI 兼容 → `image_url` data URL；
  * - Anthropic → `image` source(base64)。
  */
-export type ChatContentPart =
-  | { type: 'text'; text: string }
-  | { type: 'image'; mimeType: string; dataBase64: string };
+export type ChatContentPart = { type: 'text'; text: string } | { type: 'image'; mimeType: string; dataBase64: string };
 
 export interface ChatMessage {
   role: 'user' | 'assistant' | 'tool';

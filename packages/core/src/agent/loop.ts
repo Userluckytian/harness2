@@ -78,10 +78,7 @@ export interface BuildChatMessagesOptions {
   resolveAttachment?: ResolveChatAttachment;
 }
 
-export function buildChatMessages(
-  session: LoadedSession,
-  options: BuildChatMessagesOptions = {},
-): ChatMessage[] {
+export function buildChatMessages(session: LoadedSession, options: BuildChatMessagesOptions = {}): ChatMessage[] {
   computeProjection(session); // 标记每个事件的活动性（rewind 感知）
   // 最新一条活动压缩事件生效（旧 compaction/applied 被新的覆盖）
   let compaction: CompactionAppliedPayload | undefined;
@@ -166,10 +163,7 @@ export function buildChatMessages(
   }
   // ZS3.5：把日志里的附件 ref 并回对应 user 消息（parts 供 provider 多模态映射）。
   if (options.resolveAttachment !== undefined) {
-    const attachmentsByTurn = new Map<
-      string,
-      Array<{ ref: string; mime: string; fileName: string }>
-    >();
+    const attachmentsByTurn = new Map<string, Array<{ ref: string; mime: string; fileName: string }>>();
     for (const { event, active } of session.extensionEvents) {
       if (!active || event.type !== 'adapter/user-attachments') continue;
       const payload = event.payload as { turnId?: unknown; attachments?: unknown };
@@ -188,10 +182,7 @@ export function buildChatMessages(
           : [];
       });
       if (refs.length > 0) {
-        attachmentsByTurn.set(payload.turnId, [
-          ...(attachmentsByTurn.get(payload.turnId) ?? []),
-          ...refs,
-        ]);
+        attachmentsByTurn.set(payload.turnId, [...(attachmentsByTurn.get(payload.turnId) ?? []), ...refs]);
       }
     }
     for (const { message, turnId } of userMessages) {
@@ -225,9 +216,7 @@ export function buildChatMessages(
       messages[0] = {
         role: 'user',
         content: `${summaryText}\n\n${first.content}`,
-        ...(first.parts
-          ? { parts: [{ type: 'text' as const, text: summaryText }, ...first.parts] }
-          : {}),
+        ...(first.parts ? { parts: [{ type: 'text' as const, text: summaryText }, ...first.parts] } : {}),
       };
     } else {
       messages.unshift({ role: 'user', content: summaryText });
@@ -592,9 +581,7 @@ async function runTurnWithWriter(writer: SessionWriter | SessionAppender, option
         .filter((part): part is string => typeof part === 'string' && part.length > 0)
         .join('\n\n') || undefined;
     const messages = buildChatMessages(loadSession(writer.dir), {
-      ...(options.resolveAttachment !== undefined
-        ? { resolveAttachment: options.resolveAttachment }
-        : {}),
+      ...(options.resolveAttachment !== undefined ? { resolveAttachment: options.resolveAttachment } : {}),
     });
     // S6：上一步边界消费的 steer 作为**控制输入**叠加（追加一条 user 控制消息），
     // 不写入 session.log（不进投影、不伪造 user/message 正文）；单步有效，next 重置。
