@@ -1,3 +1,6 @@
+import { appendFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { createStubService } from '../stub-factory.js';
 import { Emitter, Event } from '@zcode/rpc';
 import {
@@ -11,70 +14,34 @@ import {
 } from './core-bridge.js';
 import type { IZCodeAgentService } from '@zcode/services';
 import type { MockScript } from '@harness2/core';
+import type { PendingInteraction } from '@zcode/shared/zcode-protocol-v4';
 import { encodeTopicWireFrames, measureTopicNotificationEnvelopeBytes } from '@zcode/shared/zcode-protocol-v4';
 import { trackCreatedTask } from './project-service.js';
+import {
+  buildSnapshot,
+  makeAssistantTextRow,
+  makeControl,
+  makeReasoningRow,
+  makeToolCallRow,
+  makeTurnHeaderRow,
+  makeUserInputRow,
+} from './v4-projection.js';
+import type { ControlPhase, ProjectedRow } from './v4-projection.js';
+
+/** harness2 本地 auth.json 路径（P2-8：提为常量，避免散落硬编码） */
+const HARNESS2_AUTH_PATH = (home: string): string => join(home, '.harness2', 'auth.json');
+
+/**
+ * ZS3-T0 ACK 白名单：只有已实现的命令可以回 accepted，其余一律 rejected。
+ * 红线⑩：任何情况不得回假 accepted；新增命令实现时同步加入本表。
+ */
+const SUPPORTED_COMMAND_TYPES = new Set(['createSession', 'sendText', 'stop']);
 
 export interface AgentServiceOptions {
   dataRoot?: string;
   home?: string;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any -- RPC/协议边界动态类型，仅用于 lint 收敛，不改变运行时行为
   emitter?: Emitter<any>;
-}
-
-function makeControl(phase: string) {
-  const running = phase === 'running';
-  const sessionEnded = phase === 'completedSuccess' || phase === 'completedInterrupted' || phase === 'error';
-  return {
-    phase,
-    sessionEnded,
-    canStop: running,
-    stopState: running ? 'stoppable' : 'idle',
-    stopTargetKind: running ? 'assistant' : 'unknown',
-    activeWorks: running ? [{ kind: 'primaryTurn', startedAt: Date.now() }] : [],
-    lastError: null,
-    apiRetry: null,
-  };
-}
-
-function makeAvailability() {
-  const a = { allowed: true };
-  return {
-    fork: a,
-    compact: a,
-    switchModelConfig: a,
-    setFollowupMode: a,
-    queueEdit: a,
-    sendQueuedNow: a,
-    pauseGoal: a,
-    resumeGoal: a,
-  };
-}
-
-// eslint-disable-next-line @typescript-eslint/no-explicit-any -- RPC/协议边界动态类型，仅用于 lint 收敛，不改变运行时行为
-function buildSnapshot(sessionId: string, seq: number, rows: any[], phase: string) {
-  return {
-    protocolVersion: 1,
-    sessionId,
-    logEpoch: 'zs2-epoch',
-    seq,
-    revision: 1,
-    control: makeControl(phase),
-    availability: makeAvailability(),
-    inputRouting: { mode: 'startNow' },
-    meta: { title: '', titleSource: 'default' },
-    config: { provider: '', model: '', thought: '', followupMode: 'queue', thoughtLevels: [] },
-    usage: {
-      contextWindow: null,
-      cumulative: { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0 },
-    },
-    queue: { items: [], autoDrain: true },
-    pendingInteractions: [],
-    pendingCommands: [],
-    backgroundWorks: [],
-    goal: null,
-    plan: null,
-    rows: { window: rows, totalCount: rows.length, firstRowId: rows.length ? rows[0].rowId : null },
-  };
 }
 
 export function createAgentService(opts: AgentServiceOptions = {}): IZCodeAgentService {
@@ -86,15 +53,16 @@ export function createAgentService(opts: AgentServiceOptions = {}): IZCodeAgentS
 
   // provider
   const defaultMock: MockScript = [{ text: 'Hello from harness2 mock provider.' }];
-  const __diagPath =
-    process.env.ZS2_DIAG_PATH || require('node:path').join(require('node:os').tmpdir(), 'zs2-diag.log');
+  const __diagPath = process.env.ZS2_DIAG_PATH || join(tmpdir(), 'zs2-diag.log');
   const __diagEnabled = process.env.ZS2_DIAG === '1';
   // eslint-disable-next-line @typescript-eslint/no-explicit-any -- RPC/协议边界动态类型，仅用于 lint 收敛，不改变运行时行为
   const __diag = (m: any) => {
     if (!__diagEnabled) return;
     try {
-      require('node:fs').appendFileSync(__diagPath, '[agent] ' + m);
-    } catch (e) {}
+      appendFileSync(__diagPath, '[agent] ' + m);
+    } catch {
+      // 诊断写盘失败不影响主链路
+    }
   };
   __diag('cwd=' + process.cwd() + ' home=' + home + ' HARNESS2_HOME=' + process.env.HARNESS2_HOME);
   let provider: unknown;
@@ -103,7 +71,7 @@ export function createAgentService(opts: AgentServiceOptions = {}): IZCodeAgentS
     __diag('loadConfig ok=' + !!loaded.config);
     if (loaded.config) {
       provider = createProvider(loaded.config, 'main', {
-        authPath: require('node:path').join(home, '.harness2', 'auth.json'),
+        authPath: HARNESS2_AUTH_PATH(home),
       });
       __diag('provider created: ' + (provider && provider.constructor && provider.constructor.name));
     } else {
@@ -123,10 +91,11 @@ export function createAgentService(opts: AgentServiceOptions = {}): IZCodeAgentS
   // (the UI re-subscribes after promoting a draft session) can rebuild the
   // projection instead of starting from an empty snapshot. See task: UI not
   // rendering reply in draft prewarm flow.
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- RPC/协议边界动态类型，仅用于 lint 收敛，不改变运行时行为
-  const sessionRows = new Map<string, any[]>();
-  const sessionPhase = new Map<string, string>();
+  const sessionRows = new Map<string, ProjectedRow[]>();
+  const sessionPhase = new Map<string, ControlPhase>();
   const sessionSeq = new Map<string, number>();
+  /** 待审批/待问询交互（T2 起填充）；T0 保持空数组但集中存放，不在快照里散落硬编码。 */
+  const sessionPendingInteractions = new Map<string, PendingInteraction[]>();
 
   function nextRowId(sessionId: string): number {
     const c = (rowCounters.get(sessionId) ?? 0) + 1;
@@ -150,8 +119,7 @@ export function createAgentService(opts: AgentServiceOptions = {}): IZCodeAgentS
     for (const w of wires) emitter.fire(w);
   }
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- RPC/协议边界动态类型，仅用于 lint 收敛，不改变运行时行为
-  function emitSnapshot(subId: string, rows: any[], phase: string) {
+  function emitSnapshot(subId: string, rows: ProjectedRow[], phase: ControlPhase) {
     const sub = subs.get(subId);
     if (!sub) return;
     const seq = sessionSeq.get(sub.sessionId) ?? sub.seq;
@@ -161,7 +129,16 @@ export function createAgentService(opts: AgentServiceOptions = {}): IZCodeAgentS
       fromSeq: 0,
       toSeq: seq,
       sentAt: Date.now(),
-      payload: { kind: 'snapshot', snapshot: buildSnapshot(sub.sessionId, seq, rows, phase) },
+      payload: {
+        kind: 'snapshot',
+        snapshot: buildSnapshot({
+          sessionId: sub.sessionId,
+          seq,
+          rows,
+          phase,
+          pendingInteractions: sessionPendingInteractions.get(sub.sessionId) ?? [],
+        }),
+      },
     };
     sub.seq = seq;
     emitWire(subId, frame);
@@ -203,39 +180,29 @@ export function createAgentService(opts: AgentServiceOptions = {}): IZCodeAgentS
     const userRowId = nextRowId(sessionId);
     const turnHeaderRowId = nextRowId(sessionId);
     const assistantRowId = nextRowId(sessionId);
+    let reasoningRowId: number | null = null;
+    let reasoningAccumulated = '';
     const turnId = `turn-${Date.now()}`;
     const now = Date.now();
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- RPC/协议边界动态类型，仅用于 lint 收敛，不改变运行时行为
-    const rows: any[] = [
-      { rowId: userRowId, turnId, kind: 'userInput', text, origin: 'realUser', createdAt: now, createdAtSeq: 0 },
-      {
-        rowId: turnHeaderRowId,
-        turnId,
-        kind: 'turnHeader',
-        origin: 'userInput',
-        state: 'running',
-        startedAt: now,
-        createdAt: now,
-        createdAtSeq: 0,
-      },
-      {
-        rowId: assistantRowId,
-        turnId,
-        kind: 'assistantText',
-        text: '',
-        state: 'streaming',
-        createdAt: now,
-        createdAtSeq: 0,
-      },
-    ];
+    const userRow = makeUserInputRow({ rowId: userRowId, turnId, createdAt: now, createdAtSeq: 0 }, text);
+    const turnHeaderRow = makeTurnHeaderRow(
+      { rowId: turnHeaderRowId, turnId, createdAt: now, createdAtSeq: 0 },
+      'running',
+    );
+    const assistantTextRow = makeAssistantTextRow(
+      { rowId: assistantRowId, turnId, createdAt: now, createdAtSeq: 0 },
+      '',
+      'streaming',
+    );
+    const rows: ProjectedRow[] = [userRow, turnHeaderRow, assistantTextRow];
     sessionRows.set(sessionId, rows);
     sessionPhase.set(sessionId, 'running');
 
     const initialDeltas = [
-      { op: 'row.appended', row: rows[0] },
-      { op: 'row.appended', row: rows[1] },
-      { op: 'row.appended', row: rows[2] },
+      { op: 'row.appended', row: userRow },
+      { op: 'row.appended', row: turnHeaderRow },
+      { op: 'row.appended', row: assistantTextRow },
     ];
     for (const sid of targetSubs) emitDeltas(sid, initialDeltas);
 
@@ -257,45 +224,68 @@ export function createAgentService(opts: AgentServiceOptions = {}): IZCodeAgentS
             for (const sid of targetSubs)
               emitDeltas(sid, [{ op: 'row.delta', rowId: assistantRowId, path: 'text', append: chunk.text }]);
           } else if (chunk.type === 'reasoning-delta') {
-            // ignore for now
+            if (reasoningRowId === null) {
+              reasoningRowId = nextRowId(sessionId);
+              const rrow = makeReasoningRow(
+                { rowId: reasoningRowId, turnId, createdAt: now, createdAtSeq: 0 },
+                '',
+                'streaming',
+              );
+              rows.push(rrow);
+              for (const sid of targetSubs) emitDeltas(sid, [{ op: 'row.appended', row: rrow }]);
+            }
+            reasoningAccumulated += chunk.text;
+            for (const sid of targetSubs)
+              emitDeltas(sid, [{ op: 'row.delta', rowId: reasoningRowId, path: 'text', append: chunk.text }]);
           } else if (chunk.type === 'tool-call') {
             const tr = nextRowId(sessionId);
             toolRowByCall.set(chunk.call.id, tr);
-            const toolRow = {
-              rowId: tr,
-              turnId,
-              kind: 'toolCall',
+            const argsText =
+              typeof chunk.call.arguments === 'string'
+                ? chunk.call.arguments
+                : chunk.call.arguments !== undefined
+                  ? JSON.stringify(chunk.call.arguments)
+                  : '';
+            const identity = { rowId: tr, turnId, createdAt: now, createdAtSeq: 0 };
+            const toolRowBase = makeToolCallRow(identity, {
+              toolCallId: chunk.call.id,
+              toolName: chunk.call.name,
+              status: 'inputStreaming',
+              inputText: '',
+            });
+            const toolRowRunning = makeToolCallRow(identity, {
               toolCallId: chunk.call.id,
               toolName: chunk.call.name,
               status: 'running',
-              inputText: chunk.call.arguments ?? '',
-              createdAt: now,
-              createdAtSeq: 0,
-            };
-            rows.push(toolRow);
-            for (const sid of targetSubs) emitDeltas(sid, [{ op: 'row.appended', row: toolRow }]);
+              inputText: argsText,
+            });
+            rows.push(toolRowRunning);
+            for (const sid of targetSubs) {
+              emitDeltas(sid, [{ op: 'row.appended', row: toolRowBase }]);
+              if (argsText) emitDeltas(sid, [{ op: 'row.delta', rowId: tr, path: 'inputText', append: argsText }]);
+              emitDeltas(sid, [{ op: 'row.upserted', row: toolRowRunning }]);
+            }
           } else if (chunk.type === 'tool-result') {
             const tr = toolRowByCall.get(chunk.callId);
             if (tr) {
+              const existing = rows.find((r) => r.rowId === tr);
+              const toolName = existing?.toolName ?? '';
+              const inputText = existing?.inputText ?? '';
+              const newRow = makeToolCallRow(
+                { rowId: tr, turnId, createdAt: now, createdAtSeq: 0 },
+                {
+                  toolCallId: chunk.callId,
+                  toolName,
+                  status: chunk.ok ? 'success' : 'error',
+                  inputText,
+                  ...(chunk.ok
+                    ? { output: { text: chunk.output ?? '' } }
+                    : { error: { code: 'toolError', message: chunk.error ?? '' } }),
+                },
+              );
               const idx = rows.findIndex((r) => r.rowId === tr);
-              if (idx >= 0) rows[idx] = { ...rows[idx], status: chunk.ok ? 'success' : 'error' };
-              for (const sid of targetSubs)
-                emitDeltas(sid, [
-                  {
-                    op: 'row.upserted',
-                    row: {
-                      rowId: tr,
-                      turnId,
-                      kind: 'toolCall',
-                      toolCallId: chunk.callId,
-                      toolName: '',
-                      status: chunk.ok ? 'success' : 'error',
-                      inputText: '',
-                      createdAt: now,
-                      createdAtSeq: 0,
-                    },
-                  },
-                ]);
+              if (idx >= 0) rows[idx] = newRow;
+              for (const sid of targetSubs) emitDeltas(sid, [{ op: 'row.upserted', row: newRow }]);
             }
           }
         },
@@ -323,22 +313,34 @@ export function createAgentService(opts: AgentServiceOptions = {}): IZCodeAgentS
     sessionRows.set(sessionId, rows);
     sessionSeq.set(sessionId, sessionSeq.get(sessionId) ?? 0);
 
+    const finishedTurnHeader = rows.find((r) => r.rowId === turnHeaderRowId);
+    if (finishedTurnHeader) finishedTurnHeader.state = 'completedSuccess';
+
     for (const sid of targetSubs) {
-      emitDeltas(sid, [
-        {
+      const finalDeltas: Array<{ op: string; row?: ProjectedRow; patch?: unknown }> = [];
+      if (reasoningRowId !== null) {
+        finalDeltas.push({
           op: 'row.upserted',
-          row: {
-            rowId: assistantRowId,
-            turnId,
-            kind: 'assistantText',
-            text: accumulated || 'done',
-            state: 'complete',
-            createdAt: now,
-            createdAtSeq: 0,
-          },
-        },
-        { op: 'state.updated', patch: { control: makeControl('completedSuccess') } },
-      ]);
+          row: makeReasoningRow(
+            { rowId: reasoningRowId, turnId, createdAt: now, createdAtSeq: 0 },
+            reasoningAccumulated,
+            'complete',
+          ),
+        });
+      }
+      if (finishedTurnHeader) {
+        finalDeltas.push({ op: 'row.upserted', row: finishedTurnHeader });
+      }
+      finalDeltas.push({
+        op: 'row.upserted',
+        row: makeAssistantTextRow(
+          { rowId: assistantRowId, turnId, createdAt: now, createdAtSeq: 0 },
+          accumulated || 'done',
+          'complete',
+        ),
+      });
+      finalDeltas.push({ op: 'state.updated', patch: { control: makeControl('completedSuccess') } });
+      emitDeltas(sid, finalDeltas);
     }
   }
 
@@ -401,6 +403,17 @@ export function createAgentService(opts: AgentServiceOptions = {}): IZCodeAgentS
     // eslint-disable-next-line @typescript-eslint/no-explicit-any -- RPC/协议边界动态类型，仅用于 lint 收敛，不改变运行时行为
     async sendConversationCommandV4(params: { workspacePath?: string; envelope?: any }): Promise<unknown> {
       const env = params?.envelope ?? {};
+      if (!SUPPORTED_COMMAND_TYPES.has(env.type)) {
+        return {
+          commandId: env.commandId,
+          status: 'rejected',
+          reasonCode: 'proto.commandUnsupported',
+          revisionAtDecision: 1,
+        };
+      }
+      if (env.type === 'stop') {
+        return { commandId: env.commandId, status: 'accepted', revisionAtDecision: 1 };
+      }
       if (env.type === 'createSession') {
         const created = manager.create(process.cwd());
         try {
@@ -460,7 +473,8 @@ export function createAgentService(opts: AgentServiceOptions = {}): IZCodeAgentS
       }
       return {
         commandId: env.commandId,
-        status: 'accepted',
+        status: 'rejected',
+        reasonCode: 'proto.commandUnsupported',
         revisionAtDecision: 1,
       };
     },
