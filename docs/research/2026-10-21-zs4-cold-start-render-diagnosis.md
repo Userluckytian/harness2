@@ -1,7 +1,6 @@
 # ZS4 冷启动首轮发送不渲染——根因诊断报告（2026-10-21 深夜）
 
-**任务**：定位 runbook `-Fresh` 冷启动回归轮 exit=5（USER ROW NOT SEEN）根因。
-**方式**：独立只读诊断代理（cat-jam `agent_86ab6e0d`），不改 src；证据 = CDP DOM dump + 截图 + host/renderer 日志 + 磁盘 JSONL + 对照 bundle。
+> **⚠️ 本报告初版（诊断代理）的「命令面板 landing 盖视图」主因判断被后续修复实证推翻。最终根因与证据链见文末 §修订。修复=`e22c24c`，双跑 exit=0。**
 
 ## 现象复述（编排者实测 4 组）
 
@@ -38,3 +37,20 @@
 - `run-e2e.ps1 -Fresh` 双跑 exit=0（不靠点行兜底，若走方案 3 需同时有 adapter 侧证据说明真机可接受）。
 - adapter 回归测试全绿 + 新行为有测试钉住。
 - 六包冻结 diff=0 复验。
+
+---
+
+## §修订（编排者，修复实证后）
+
+**最终根因 = 会话组目录分裂（工作区不匹配），非命令面板 landing。**
+
+修复代理（cat-jam `agent_ea1d29de`，会话在 -Fresh 验证前中断）实际落下的改动 = `agent-service.ts` 两处 `manager.create(process.cwd())` → `manager.create(params?.workspacePath ?? process.cwd())`（`e22c24c`）。编排者独立复核其因果：
+
+1. **机制**：`67ce1e4`（ZS3.5，16:05）给 `prepareSession` 返回 `ZCODE_DATA_BASE_DIR/.zcode/workspace/default`。冷启动 UI 先 `prepareSession` 得工作区 W，再 `sendText` → adapter `createSession` 却建在 **process.cwd()**（=desktop 包目录），会话落进错误组目录。UI 按 workspaceKey=W 订阅/投影，看不见这个会话（磁盘 JSONL 完整、host 一切 OK——正是「后端全成功 UI 空」的原因）；点侧栏行后 UI 按 taskId 直接订阅该会话才渲染出来。**命令面板只是当时可见的噪音，不是原因**（诊断代理把它当成了主因）。
+2. **时间线闭环**：14:2x 双跑绿 = `67ce1e4` 之前（两侧都 process.cwd()，天然一致）；16:05 起潜伏；21:0x 冷启动实测必现。「pre-ZS4 bundle 同坏」因代理 checkout 的是 `e9f7362`（**已含** 67ce1e4 分裂）——当时解释不了的反常，如今自洽。热态正常 = 会话已在正确组里 resume。
+3. **为何单测拦不住**：adapter 帧测试同进程直调、workspacePath 参参一致，不模拟 UI prepareSession→sendText 的双路径来源差异。**登记为测试缺口**（V8 复审项）：补一条「createSession 必须落在 sendText 携带的 workspacePath」的 service 层断言（已随修复可行：agent-service.test 已有 createSession→sendText 链，只差断言组目录）。
+4. 诊断代理的候选 B（ProxyChannel 突发帧丢帧）与 D（subscribeSessionsIndexV4 未实现）仍为**未闭环观察项**：修复后 -Fresh 双跑 + 审批轮全绿说明即使存在也非 P0 阻塞；D 是诚实的未实现（factory throw），登记 ZS5+。
+
+**门禁实测（修复后）**：`-Fresh` 双跑 exit=0（USER_ROW_SEEN + FINAL_REPLY 真实文本）；`-Fresh -Approval` exit=0（PERMISSION_OPTIONS 三选 → 拒绝 → DIALOG_CLEARED → DENIED_MARKER，顺带修了 approval-round 缺 composer 清空导致的草稿污染 `b93f73f`）；adapter 92 测绿 + buildAll 冒烟 OK。
+
+**教训登记**：①诊断代理口头结论与实改不一致时必须以实改+独立复核为准；②探针留下的会话/草稿是 e2e 污染源，approval-round 补了清空，runbook 草稿清理口径（-Fresh）不含 AppData leveldb——已登记观察，必要时收紧；③修复代理中断留下的未提交改动，编排者接手前必须 `git diff` 全量审查，不得默认其为「正确方向」。

@@ -985,3 +985,37 @@ describe('ZS3.5 provider failure surface', () => {
     }
   }, 20000);
 });
+
+describe('createSession 组目录归属（ZS4-T6 P0 回归钉）', () => {
+  it('会话必须落在 UI 传入的 workspacePath 组目录下，而非 process.cwd() 组', async () => {
+    const home = mkdtempSync(join(tmpdir(), 'h2-cwdgrp-home-'));
+    const uiWs = mkdtempSync(join(tmpdir(), 'h2-cwdgrp-ws-'));
+    const emitter = new Emitter<unknown>();
+    try {
+      const agent = createAgentService({ home, mockScript: [{ text: 'ok' }], emitter, tools: new ToolRegistry() });
+      const created = (await agent.sendConversationCommandV4({
+        workspacePath: uiWs,
+        envelope: { commandId: 'cmd-grp', type: 'createSession' } as never,
+      })) as { result?: { sessionId?: string } };
+      const sessionId = created.result?.sessionId;
+      expect(sessionId).toBeTruthy();
+      if (!sessionId) throw new Error('createSession 未返回 sessionId');
+
+      const { defaultSessionsRoot } = await import('../src/real/core-bridge.js');
+      const root = defaultSessionsRoot(home);
+      const hit = readdirSync(root).filter((g) => existsSync(join(root, g, sessionId)));
+      expect(hit.length).toBe(1);
+      // 唯一临时段命中 ⇒ 落在 uiWs 组；不含 cwd 末段 ⇒ 排除 P0 失败模式（process.cwd() 组）
+      const base = (p: string) =>
+        p
+          .split(/[\\/]+/)
+          .filter(Boolean)
+          .pop() ?? '';
+      expect(hit[0]).toContain(base(uiWs));
+      expect(hit[0]).not.toContain(base(process.cwd()));
+    } finally {
+      rmSync(home, { recursive: true, force: true });
+      rmSync(uiWs, { recursive: true, force: true });
+    }
+  }, 20000);
+});
