@@ -70,16 +70,16 @@ export interface UserInputQuestion {
 }
 
 export interface UserInputRequestContract {
-  requestId: RequestId;          // 幂等键
+  requestId: RequestId; // 幂等键
   sessionId: SessionId;
   prompt: string;
   freeText: boolean;
-  options?: UserInputOption[];  // 简单选项（V4UserInputDialog 路径）
+  options?: UserInputOption[]; // 简单选项（V4UserInputDialog 路径）
   sensitive?: boolean;
   toolName?: string;
   toolCallId?: string;
   traceId?: string;
-  input?: unknown;              // JSON Schema 驱动的表单（ElicitationDialog 路径）
+  input?: unknown; // JSON Schema 驱动的表单（ElicitationDialog 路径）
   schema?: unknown;
   questions?: UserInputQuestion[];
   currentQuestionIndex?: number;
@@ -132,8 +132,8 @@ export function isUserInputAnswer(v: unknown): v is UserInputAnswer {
     "freeText": true,
     "options": [{ "optionId": "a", "label": "A" }],
     "expiresAt": "2026-10-21T...Z",
-    "createdAt": "2026-10-21T...Z"
-  }
+    "createdAt": "2026-10-21T...Z",
+  },
 }
 ```
 
@@ -141,13 +141,15 @@ export function isUserInputAnswer(v: unknown): v is UserInputAnswer {
 
 ```jsonc
 {
-  "v": 1, "seq": 43, "ts": "...",
+  "v": 1,
+  "seq": 43,
+  "ts": "...",
   "type": "interaction/user-input-resolved",
   "payload": {
     "requestId": "uuid",
     "answer": { "optionId": "a" },
-    "reason": "response"
-  }
+    "reason": "response",
+  },
 }
 ```
 
@@ -197,7 +199,14 @@ pendingUserInputsFor(sessionId: string): UserInputRequestContract[];
 ```ts
 // packages/core/src/interaction/user-input-queue.ts
 export class UserInputQueue {
-  private readonly pendings = new Map<string, { request: UserInputRequestContract; settle: (answer: UserInputAnswer, reason: UserInputSettleReason) => void; timer?: NodeJS.Timeout }>();
+  private readonly pendings = new Map<
+    string,
+    {
+      request: UserInputRequestContract;
+      settle: (answer: UserInputAnswer, reason: UserInputSettleReason) => void;
+      timer?: NodeJS.Timeout;
+    }
+  >();
   private readonly settledRegistry = new Map<string, 'applied' | 'expired'>();
   // register / respond / settle / settleAll / listPending / listForSession / remember
   // 语义与 ApprovalQueue (approval-queue.ts) 对齐：

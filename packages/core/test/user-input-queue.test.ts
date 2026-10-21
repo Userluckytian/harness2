@@ -1,7 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import { UserInputQueue } from '../src/interaction/user-input-queue.js';
 import { isUserInputAnswer } from '../src/interaction/user-input.js';
-import type { UserInputAnswer, UserInputRequestContract, UserInputSettleReason } from '../src/interaction/user-input.js';
+import type {
+  UserInputAnswer,
+  UserInputRequestContract,
+  UserInputSettleReason,
+} from '../src/interaction/user-input.js';
 
 function request(overrides: Partial<UserInputRequestContract> = {}): UserInputRequestContract {
   return {

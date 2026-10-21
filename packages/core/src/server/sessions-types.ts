@@ -10,11 +10,7 @@ import type {
   DeliveryDeltaFrame,
   SteerResult,
 } from '../interaction/types.js';
-import type {
-  UserInputAnswer,
-  UserInputRequestContract,
-  UserInputSettleReason,
-} from '../interaction/user-input.js';
+import type { UserInputAnswer, UserInputRequestContract, UserInputSettleReason } from '../interaction/user-input.js';
 import type { NudgeResult } from '../memory/nudge.js';
 import type { PendingMemoryStore } from '../memory/pending.js';
 import type { MemoryStore } from '../memory/store.js';

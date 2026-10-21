@@ -233,11 +233,7 @@ export abstract class SessionHubApproval extends SessionHubTasks {
     });
   }
 
-  protected emitUserInputSettled(
-    requestId: string,
-    answer: UserInputAnswer,
-    reason: UserInputSettleReason,
-  ): void {
+  protected emitUserInputSettled(requestId: string, answer: UserInputAnswer, reason: UserInputSettleReason): void {
     for (const l of this.listeners) {
       try {
         l.onUserInputSettled?.(requestId, answer, reason);
