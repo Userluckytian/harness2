@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { appendFileSync, mkdirSync, writeFileSync } from 'node:fs';
+import { appendFileSync, mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve, sep } from 'node:path';
 import { createStubService } from '../stub-factory.js';
@@ -18,7 +18,13 @@ import {
   loadSession,
 } from './core-bridge.js';
 import type { IZCodeAgentService } from '@zcode/services';
-import type { ApprovalHandler, MockScript, UserInputAnswer, UserInputRequestContract } from '@harness2/core';
+import type {
+  ApprovalHandler,
+  ChatContentPart,
+  MockScript,
+  UserInputAnswer,
+  UserInputRequestContract,
+} from '@harness2/core';
 import type { PendingInteraction } from '@zcode/shared/zcode-protocol-v4';
 import { encodeTopicWireFrames, measureTopicNotificationEnvelopeBytes } from '@zcode/shared/zcode-protocol-v4';
 import {
@@ -101,6 +107,8 @@ export interface AgentServiceOptions {
   tools?: ToolRegistryTypeExport;
   /** 审批截止时间；测试可缩短，缺省 120s。 */
   approvalTimeoutMs?: number;
+  /** 测试缝：创建后回传 provider 实例（断言 ChatRequest 形状用）。 */
+  providerSink?: (provider: unknown) => void;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any -- RPC/协议边界动态类型，仅用于 lint 收敛，不改变运行时行为
   emitter?: Emitter<any>;
 }
@@ -181,6 +189,7 @@ export function createAgentService(opts: AgentServiceOptions = {}): IZCodeAgentS
       { text: '审批测试完成' },
     ]);
   }
+  opts.providerSink?.(provider);
 
   /** 快照里的有效模型配置：UI Composer 的发送门禁依赖 config.modelSelection。 */
   let snapshotConfig: Parameters<typeof buildSnapshot>[0]['config'];
@@ -277,6 +286,55 @@ export function createAgentService(opts: AgentServiceOptions = {}): IZCodeAgentS
       refs.add(resolve(upload.ref));
     }
     return refs;
+  }
+
+  /** 本地零拷贝附件持久化：复制进 zs/attachments，保证重放/模型请求可读。 */
+  function materializeAttachments(attachments: unknown[] | undefined): unknown[] | undefined {
+    if (!Array.isArray(attachments)) return attachments;
+    return attachments.map((attachment) => {
+      if (attachment === null || typeof attachment !== 'object') return attachment;
+      const ref = (attachment as { ref?: unknown }).ref;
+      if (typeof ref !== 'string') return attachment;
+      try {
+        return { ...attachment, ref: attachmentStore.materialize(ref) };
+      } catch {
+        return attachment;
+      }
+    });
+  }
+
+  /** 模型附件解析：图片 → image part；文本 → 内联文本；超限/不支持 → null（由 core 占位）。 */
+  function resolveAttachmentForModel(
+    ref: string,
+    mime: string,
+    fileName: string,
+  ): ChatContentPart | null {
+    try {
+      const path = resolve(ref);
+      const stat = statSync(path);
+      const baseMime = mime.split(';', 1)[0]?.trim().toLowerCase() ?? mime;
+      if (baseMime.startsWith('image/')) {
+        if (!/^image\/(png|jpeg|webp|gif)$/.test(baseMime)) return null;
+        if (stat.size > 5 * 1024 * 1024) return null;
+        return {
+          type: 'image',
+          mimeType: baseMime,
+          dataBase64: readFileSync(path).toString('base64'),
+        };
+      }
+      if (baseMime === 'text/plain' || baseMime === 'text/markdown') {
+        const max = 256 * 1024;
+        const buffer = readFileSync(path);
+        const text = buffer.subarray(0, max).toString('utf8');
+        return {
+          type: 'text',
+          text: `[附件 ${fileName}]\n${text}${buffer.byteLength > max ? '\n[附件内容已截断]' : ''}`,
+        };
+      }
+      return null;
+    } catch {
+      return null;
+    }
   }
 
   /**
@@ -739,16 +797,32 @@ export function createAgentService(opts: AgentServiceOptions = {}): IZCodeAgentS
     const turnId = `turn-${Date.now()}`;
     const now = Date.now();
 
-    // 附件只做加性审计登记：core user/message 无附件槽位，禁止把附件内容伪装成文本喂模型。
-    if (attachments && attachments.length > 0) {
+    // 附件审计登记（ZS3.5：同时供 buildChatMessages 还原模型 parts）。
+    const modelAttachments = materializeAttachments(attachments);
+    const userAttachments = Array.isArray(modelAttachments)
+      ? modelAttachments.filter(
+          (
+            attachment,
+          ): attachment is { ref: string; fileName?: string; mime: string; bytes?: number } =>
+            attachment !== null &&
+            typeof attachment === 'object' &&
+            typeof (attachment as { ref?: unknown }).ref === 'string' &&
+            typeof (attachment as { mime?: unknown }).mime === 'string',
+        )
+      : undefined;
+    if (modelAttachments && modelAttachments.length > 0) {
       try {
-        resumed.writer.appendExtension?.(USER_ATTACHMENTS_EVENT, { turnId, attachments });
+        resumed.writer.appendExtension?.(USER_ATTACHMENTS_EVENT, { turnId, attachments: modelAttachments });
       } catch {
         // 审计事件尽力而为，不影响对话主链
       }
     }
 
-    const userRow = makeUserInputRow({ rowId: userRowId, turnId, createdAt: now, createdAtSeq: 0 }, text, attachments);
+    const userRow = makeUserInputRow(
+      { rowId: userRowId, turnId, createdAt: now, createdAtSeq: 0 },
+      text,
+      modelAttachments,
+    );
     const turnHeaderRow = makeTurnHeaderRow(
       { rowId: turnHeaderRowId, turnId, createdAt: now, createdAtSeq: 0 },
       'running',
@@ -856,7 +930,12 @@ export function createAgentService(opts: AgentServiceOptions = {}): IZCodeAgentS
         provider: provider as never,
         tools: tools as never,
         cwd: resumed.dir,
+        environment: { cwd: resumed.dir, platform: process.platform },
+        resolveAttachment: resolveAttachmentForModel,
         userText: text,
+        ...(userAttachments !== undefined && userAttachments.length > 0
+          ? { userAttachments }
+          : {}),
         signal: ac.signal,
         approval,
         // eslint-disable-next-line @typescript-eslint/no-explicit-any -- RPC/协议边界动态类型，仅用于 lint 收敛，不改变运行时行为

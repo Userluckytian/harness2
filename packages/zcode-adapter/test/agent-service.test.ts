@@ -409,10 +409,14 @@ describe('ZS3-T3 local attachments', () => {
       const log = readFileSync(jsonlPath!, 'utf8');
       expect(log).toContain('adapter/user-attachments');
       const userLine = log.split('\n').find((line) => line.includes('"type":"user/message"')) ?? '';
-      expect(userLine).toContain('看这个');
-      // 附件内容不得伪装成文本喂给模型（禁止 base64/文件名进 user/message）
-      expect(userLine).not.toContain('a.png');
-      expect(userLine).not.toContain('base64');
+      const userEvent = JSON.parse(userLine) as {
+        payload: { text: string; attachments?: unknown[] };
+      };
+      expect(userEvent.payload.text).toBe('看这个');
+      // 附件以 ref 落盘（ZS3.5）；正文仍只有用户文字，不把内容/文件名塞进 text。
+      expect(userEvent.payload.attachments).toEqual(attachments);
+      expect(userEvent.payload.text).not.toContain('a.png');
+      expect(userEvent.payload.text).not.toContain('base64');
     } finally {
       rmSync(home, { recursive: true, force: true });
     }
@@ -828,4 +832,89 @@ describe('ZS3.5 restart restore + project prepareSession', () => {
       rmSync(data, { recursive: true, force: true });
     }
   });
+});
+
+describe('ZS3.5 attachment model consumption + environment', () => {
+  it('sends image/text parts and cwd to the provider', async () => {
+    const home = mkdtempSync(join(tmpdir(), 'h2-mm-'));
+    const imagePath = join(home, 'a.png');
+    writeFileSync(imagePath, Buffer.from([0x89, 0x50, 0x4e, 0x47]));
+    const notePath = join(home, 'note.md');
+    writeFileSync(notePath, '# hello\ncontent-123');
+    const frames: CapturedFrame[] = [];
+    const emitter = new Emitter<unknown>();
+    emitter.event((wire) => {
+      const w = wire as { kind?: string; frame?: CapturedFrame };
+      if (w.kind === 'complete' && w.frame) frames.push(w.frame);
+    });
+    interface CapturedRequest {
+      messages: Array<{
+        role: string;
+        content: string;
+        parts?: Array<{
+          type: string;
+          mimeType?: string;
+          dataBase64?: string;
+          text?: string;
+        }>;
+      }>;
+      system?: string;
+    }
+    let requests: CapturedRequest[] | undefined;
+    try {
+      const agent = createAgentService({
+        home,
+        mockScript: [{ text: 'ok' }],
+        emitter,
+        providerSink: (provider) => {
+          requests = (provider as { requests: CapturedRequest[] }).requests;
+        },
+      });
+      const created = (await agent.sendConversationCommandV4({
+        workspacePath: home,
+        envelope: { commandId: 'cmd-create', type: 'createSession' } as never,
+      })) as { result?: { sessionId?: string } };
+      const sessionId = created.result?.sessionId;
+      if (!sessionId) throw new Error('createSession did not return a sessionId');
+
+      await agent.subscribeConversationV4({ workspacePath: home, sessionId });
+      await agent.sendConversationCommandV4({
+        workspacePath: home,
+        envelope: {
+          commandId: 'cmd-mm',
+          type: 'sendText',
+          sessionId,
+          payload: {
+            text: '看附件',
+            attachments: [
+              { ref: imagePath, fileName: 'a.png', mime: 'image/png', bytes: 4 },
+              { ref: notePath, fileName: 'note.md', mime: 'text/markdown', bytes: 19 },
+            ],
+          },
+        } as never,
+      });
+
+      await waitFor(() =>
+        frames.some(
+          (f) =>
+            f.payload.kind === 'deltas' &&
+            (f.payload.deltas ?? []).some(
+              (d) => d.op === 'state.updated' && d.patch?.control?.phase === 'completedSuccess',
+            ),
+        ),
+      );
+
+      const request = requests?.[0];
+      expect(request).toBeTruthy();
+      const user = request?.messages.find((m) => m.role === 'user');
+      expect(user?.parts?.some((p) => p.type === 'image' && p.mimeType === 'image/png')).toBe(true);
+      expect(
+        user?.parts?.some((p) => p.type === 'text' && (p.text ?? '').includes('content-123')),
+      ).toBe(true);
+      expect(request?.system).toContain('[环境]');
+      expect(request?.system).toContain('当前工作目录');
+    } finally {
+      rmSync(home, { recursive: true, force: true });
+    }
+  }, 20000);
 });

@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
-import { existsSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
-import { extname, join, resolve } from 'node:path';
+import { copyFileSync, existsSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { extname, join, resolve, sep } from 'node:path';
 
 /** 协议单块上限（attachmentChunkMaxBytes = 512 KiB）；UI 实际按 384 KiB 切片。 */
 export const ATTACHMENT_CHUNK_MAX_BYTES = 512 * 1024;
@@ -289,5 +289,23 @@ export class AttachmentStore {
     return [...this.uploads.values()]
       .filter((u) => u.sessionId === sessionId && u.committedRef !== undefined)
       .map((u) => ({ ref: u.committedRef! }));
+  }
+
+  /**
+   * 本地零拷贝 ref 持久化：复制进暂存根，保证会话重放/模型请求时仍可读。
+   * 已在暂存根内的 ref 原样返回。
+   */
+  materialize(ref: string): string {
+    const path = resolve(ref);
+    const root = resolve(this.root());
+    if (path === root || path.startsWith(root + sep)) return path;
+    const stat = statSync(path);
+    if (!stat.isFile()) throw fault('fault.attachment.notFound', 'attachment ref is not a file');
+    const id = `local-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    const dir = this.uploadDir(id);
+    mkdirSync(dir, { recursive: true });
+    const target = join(dir, 'content.bin');
+    copyFileSync(path, target);
+    return target;
   }
 }

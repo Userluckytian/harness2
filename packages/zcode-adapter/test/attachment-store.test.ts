@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
@@ -174,6 +174,17 @@ describe('ZS3-T5 attachment upload transaction', () => {
       expect(() => store.read({ sessionId: 's1', ref: file, offset: 0, limit: 10 }, new Set())).toThrowError(
         /fault\.attachment\.notAuthorized/,
       );
+    });
+  });
+
+  it('materializes a local ref into the attachment store', () => {
+    withStore((store, home) => {
+      const source = join(home, 'local.png');
+      writeFileSync(source, Buffer.from('png-bytes'));
+      const ref = store.materialize(source);
+      expect(ref.startsWith(join(home, '.harness2', 'zs', 'attachments'))).toBe(true);
+      expect(readFileSync(ref)).toEqual(Buffer.from('png-bytes'));
+      expect(store.materialize(ref)).toBe(ref);
     });
   });
 });
