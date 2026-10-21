@@ -24,6 +24,7 @@ import { SessionWriter, type SessionAppender } from '../session/writer.js';
 import { SESSION_LOG_FILE } from '../session/types.js';
 import type { CompactionAppliedPayload } from '../session/types.js';
 import type {
+  ChatContentPart,
   ChatMessage,
   ChatRequest,
   ProviderStopReason,
@@ -32,7 +33,7 @@ import type {
   ToolSpec,
 } from '../provider/types.js';
 import { ToolExecutor, type ExecutedToolResult, type ToolExecutionRequest } from '../tools/executor.js';
-import type { TurnOptions, TurnResult, TurnStopReason } from './types.js';
+import type { ResolveChatAttachment, TurnOptions, TurnResult, TurnStopReason } from './types.js';
 import type { SteerRequest } from '../interaction/types.js';
 import { appendHookInvocations } from '../hooks/extension.js';
 import { formatHookAdditionalContexts } from '../hooks/runner.js';
@@ -72,7 +73,15 @@ function truncateCircuitError(text: string): string {
  * 之间的 tool/call 与 tool/result）一并跳过——它们属于被摘要的边界消息，保留会成为
  * 孤儿 tool 消息。依赖 computeProjection 的 rewind 语义：被回退遮蔽的事件不进入上下文。
  */
-export function buildChatMessages(session: LoadedSession): ChatMessage[] {
+export interface BuildChatMessagesOptions {
+  /** 附件解析缝（ZS3.5）：ref 来自日志 extension event，读取/限流由装配层负责。 */
+  resolveAttachment?: ResolveChatAttachment;
+}
+
+export function buildChatMessages(
+  session: LoadedSession,
+  options: BuildChatMessagesOptions = {},
+): ChatMessage[] {
   computeProjection(session); // 标记每个事件的活动性（rewind 感知）
   // 最新一条活动压缩事件生效（旧 compaction/applied 被新的覆盖）
   let compaction: CompactionAppliedPayload | undefined;
@@ -94,6 +103,7 @@ export function buildChatMessages(session: LoadedSession): ChatMessage[] {
     }
   }
   const messages: ChatMessage[] = [];
+  const userMessages: Array<{ message: ChatMessage; turnId?: string }> = [];
   for (const { event: e, active } of session.events) {
     if (!active) continue;
     if (compaction !== undefined) {
@@ -104,9 +114,12 @@ export function buildChatMessages(session: LoadedSession): ChatMessage[] {
       }
     }
     switch (e.type) {
-      case 'user/message':
-        messages.push({ role: 'user', content: e.payload.text });
+      case 'user/message': {
+        const message: ChatMessage = { role: 'user', content: e.payload.text };
+        messages.push(message);
+        userMessages.push({ message, turnId: e.payload.turnId });
         break;
+      }
       case 'assistant/message':
         messages.push({ role: 'assistant', content: e.payload.text });
         break;
@@ -134,6 +147,54 @@ export function buildChatMessages(session: LoadedSession): ChatMessage[] {
         break; // 结构性事件（header/step/attempt/rewind/compaction/memory）不直接进消息投影
     }
   }
+  // ZS3.5：把日志里的附件 ref 并回对应 user 消息（parts 供 provider 多模态映射）。
+  if (options.resolveAttachment !== undefined) {
+    const attachmentsByTurn = new Map<
+      string,
+      Array<{ ref: string; mime: string; fileName: string }>
+    >();
+    for (const { event, active } of session.extensionEvents) {
+      if (!active || event.type !== 'adapter/user-attachments') continue;
+      const payload = event.payload as { turnId?: unknown; attachments?: unknown };
+      if (typeof payload.turnId !== 'string' || !Array.isArray(payload.attachments)) continue;
+      const refs = payload.attachments.flatMap((attachment) => {
+        if (attachment === null || typeof attachment !== 'object') return [];
+        const r = attachment as { ref?: unknown; mime?: unknown; fileName?: unknown };
+        return typeof r.ref === 'string' && typeof r.mime === 'string'
+          ? [
+              {
+                ref: r.ref,
+                mime: r.mime,
+                fileName: typeof r.fileName === 'string' ? r.fileName : r.ref,
+              },
+            ]
+          : [];
+      });
+      if (refs.length > 0) {
+        attachmentsByTurn.set(payload.turnId, [
+          ...(attachmentsByTurn.get(payload.turnId) ?? []),
+          ...refs,
+        ]);
+      }
+    }
+    for (const { message, turnId } of userMessages) {
+      if (turnId === undefined) continue;
+      const refs = attachmentsByTurn.get(turnId);
+      if (refs === undefined || refs.length === 0) continue;
+      const parts: ChatContentPart[] = [{ type: 'text', text: message.content }];
+      for (const attachment of refs) {
+        const part = options.resolveAttachment(attachment.ref, attachment.mime, attachment.fileName);
+        parts.push(
+          part ?? {
+            type: 'text',
+            text: `[附件未加载: ${attachment.fileName} (${attachment.mime})]`,
+          },
+        );
+      }
+      message.parts = parts;
+    }
+  }
+
   if (compaction !== undefined) {
     const summaryText = `${COMPACTION_SUMMARY_PREFIX}\n${compaction.summary}`;
     const first = messages[0];
@@ -142,7 +203,13 @@ export function buildChatMessages(session: LoadedSession): ChatMessage[] {
       messages.push({ role: 'user', content: summaryText });
     } else if (first.role === 'user') {
       // 保留区首条是 user：摘要与其合并为一条（role 交替不变量，禁止连续两条 user）
-      messages[0] = { role: 'user', content: `${summaryText}\n\n${first.content}` };
+      messages[0] = {
+        role: 'user',
+        content: `${summaryText}\n\n${first.content}`,
+        ...(first.parts
+          ? { parts: [{ type: 'text' as const, text: summaryText }, ...first.parts] }
+          : {}),
+      };
     } else {
       messages.unshift({ role: 'user', content: summaryText });
     }
@@ -495,7 +562,11 @@ async function runTurnWithWriter(writer: SessionWriter | SessionAppender, option
       memorySystem !== undefined && skillsSystem !== undefined
         ? `${memorySystem}\n\n${skillsSystem}`
         : (memorySystem ?? skillsSystem);
-    const messages = buildChatMessages(loadSession(writer.dir));
+    const messages = buildChatMessages(loadSession(writer.dir), {
+      ...(options.resolveAttachment !== undefined
+        ? { resolveAttachment: options.resolveAttachment }
+        : {}),
+    });
     // S6：上一步边界消费的 steer 作为**控制输入**叠加（追加一条 user 控制消息），
     // 不写入 session.log（不进投影、不伪造 user/message 正文）；单步有效，next 重置。
     for (const ctrl of pendingControls) messages.push({ role: 'user', content: ctrl });

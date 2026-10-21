@@ -1,5 +1,5 @@
 // Agent loop 类型：一次用户 turn 的执行选项与结果。
-import type { ChatProvider, ToolCallRequest } from '../provider/types.js';
+import type { ChatContentPart, ChatProvider, ToolCallRequest } from '../provider/types.js';
 import type { CompactionBreaker } from './compactionBreaker.js';
 import type { MemoryStore } from '../memory/store.js';
 import type { SkillStore } from '../skills/store.js';
@@ -10,6 +10,9 @@ import type { ExecutionLifecycleObserver } from '../tools/executor.js';
 import type { SteerRequest, SteerResult, TurnTextOutcome } from '../interaction/types.js';
 import type { RetryBudgetState } from '../interaction/retry-policy.js';
 import type { HookRunner } from '../hooks/types.js';
+
+/** 附件解析签名：ref 来自日志，装配层负责读取与安全边界 */
+export type ResolveChatAttachment = (ref: string, mime: string, fileName: string) => ChatContentPart | null;
 
 /**
  * S6 控制输入（steer）通道。外部实现把绑定到某 turn 的 steer 塞进队列；loop 在每个
@@ -91,6 +94,11 @@ export interface TurnOptions {
   signal?: AbortSignal;
   /** 工具执行的工作目录 */
   cwd: string;
+  /**
+   * 可选：附件内容解析缝（ZS3.5）。buildChatMessages 从日志读到附件 ref 后调用它，
+   * 由装配层负责文件读取/大小上限/类型白名单；返回 null = 该附件不可用（占位提示）。
+   */
+  resolveAttachment?: ResolveChatAttachment;
   /**
    * 可选：本 turn 的用户消息文本。提供时 loop 先把它作为 user/message 事件追加进日志
    * 再开始循环——用户输入同样必须 logged（Model-visible ⟺ logged）。
