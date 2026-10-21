@@ -1,7 +1,7 @@
 ﻿# ZS2 e2e 一键 runbook（编排者安全重写，2026-10-21；旧版三处不可放行：`*ZCode*` 过宽误杀面 / 未验证的 dev-desktop-env 启动 / 180s 死等）
 # 用法: powershell -NoProfile -ExecutionPolicy Bypass -File scripts/zs2\run-e2e.ps1 [-Fresh]
 # 退出码: 透传 e2e-round.cjs（0 通过 / 3 实例锁定失败 / 4 输入未落 / 5 用户行未现 / 6 无 composer / 1 其他）
-param([switch]$Fresh)
+param([switch]$Fresh, [switch]$Approval)
 $ErrorActionPreference = 'Stop'
 
 $HarnessRoot  = 'D:\AI_Projects\harness2'
@@ -64,6 +64,7 @@ $env:HARNESS2_HOME = 'C:\Users\ASUS'
 $env:ZS1_HOST_MODULE_PATH = $AdapterHost
 $env:ZCODE_DATA_BASE_DIR = $DataDir
 $env:ZS2_PROBE = '1'
+if ($Approval) { $env:ZS3_E2E_APPROVAL = '1' }
 
 Start-Process -FilePath $Electron -ArgumentList '.' -WorkingDirectory (Join-Path $ZCodeRoot 'packages\desktop') | Out-Null
 
@@ -80,7 +81,11 @@ if (-not $ready) { Write-Host 'ABORT: new-shell page not up within 60s'; Kill-Sc
 Start-Sleep -Seconds 4
 
 Push-Location $HarnessRoot
-node scripts/zs2/e2e-round.cjs
+if ($Approval) {
+  node scripts/zs3/approval-round.cjs
+} else {
+  node scripts/zs2/e2e-round.cjs
+}
 $code = $LASTEXITCODE
 Pop-Location
 

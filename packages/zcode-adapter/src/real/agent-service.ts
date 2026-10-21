@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { appendFileSync } from 'node:fs';
+import { appendFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createStubService } from '../stub-factory.js';
@@ -12,6 +12,7 @@ import {
   runTurn,
   resolveHarness2Home,
   MockProvider,
+  ToolRegistry,
   extensionEventTypes,
 } from './core-bridge.js';
 import type { IZCodeAgentService } from '@zcode/services';
@@ -136,6 +137,23 @@ export function createAgentService(opts: AgentServiceOptions = {}): IZCodeAgentS
       provider = new MockProvider(defaultMock);
     }
   }
+  // ZS3 e2e 审批轮专用：确定性脚本化工具调用，避免依赖真实模型是否决定调工具。
+  const e2eApproval = process.env.ZS3_E2E_APPROVAL === '1';
+  if (e2eApproval) {
+    provider = new MockProvider([
+      {
+        text: '审批测试：准备调用 write 工具',
+        toolCalls: [
+          {
+            id: 'call-e2e-approval',
+            name: 'write',
+            arguments: '{"path":"zs3-approval.txt","content":"x"}',
+          },
+        ],
+      },
+      { text: '审批测试完成' },
+    ]);
+  }
 
   const subs = new Map<string, { sessionId: string; seq: number; ordinal: number }>();
   const rowCounters = new Map<string, number>();
@@ -155,6 +173,26 @@ export function createAgentService(opts: AgentServiceOptions = {}): IZCodeAgentS
   const deniedReasons = new Map<string, string>();
   /** 审批审计事件需要写回会话日志；runSession 期间登记，结束后清理。 */
   const sessionWriters = new Map<string, SessionWriter>();
+
+  // ZS3 e2e 审批轮专用工具：只写会话工作目录下的测试文件，不触碰用户数据。
+  let e2eToolRegistry: ToolRegistryTypeExport | undefined;
+  if (e2eApproval && !opts.tools) {
+    const registry = new ToolRegistry();
+    registry.register({
+      name: 'write',
+      description: 'ZS3 e2e approval test tool',
+      parameters: {
+        type: 'object',
+        properties: { path: { type: 'string' }, content: { type: 'string' } },
+      },
+      execute: (args, ctx) => {
+        const a = args as { path?: string; content?: string };
+        writeFileSync(join(ctx.cwd, a.path ?? 'zs3-approval.txt'), a.content ?? '');
+        return { output: 'written' };
+      },
+    });
+    e2eToolRegistry = registry;
+  }
 
   function nextRowId(sessionId: string): number {
     const c = (rowCounters.get(sessionId) ?? 0) + 1;
@@ -313,7 +351,7 @@ export function createAgentService(opts: AgentServiceOptions = {}): IZCodeAgentS
     for (const sid of targetSubs) emitDeltas(sid, initialDeltas);
 
     let accumulated = '';
-    const tools = opts.tools ?? ({ list: () => [] } as unknown as ToolRegistryTypeExport);
+    const tools = opts.tools ?? e2eToolRegistry ?? ({ list: () => [] } as unknown as ToolRegistryTypeExport);
     const ac = new AbortController();
     const approval: ApprovalHandler = {
       // ZS3：工具调用统一走审批（生产当前无工具；测试缝与后续工具面共用同一条桥）。
