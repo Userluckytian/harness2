@@ -1,6 +1,6 @@
 # 阶段 ZS3：对话区完整——审批流 / 工具卡保真 / 附件管线 / resume 与分页
 
-> **状态：** 计划起草（2026-10-21，基于 ZS3 调用面盘点报告·Explore 代理 file:line 级证据；待用户审阅）
+> **状态：** ✅ 执行完成（2026-10-21，T0–T6 落地；V1–V6 通过、V7 本地全绿/CI 待推、V8 独立审查待补、V9 用户真机待做；详见文末执行记录）
 > **For agentic workers:** 按 Task 顺序执行；每 Task 测完再进下一 Task。
 > **交接提示词**见文末「给接手 AI 的完整提示词」。
 > **元规范:** `docs/ai-framework/phased-plan-driven.md`
@@ -202,6 +202,38 @@ task 索引状态/侧栏批量删除、provider 写路径、会话中 setModel�
 分支/提交列表、验收表自评（V1–V9）、e2e 真实输出+截图路径（`docs/screenshots/zs3/`）、core diff 审计结论（应为 T6 批准窗口或 0）、测试真实输出、P2×8 对账、残留风险。
 
 现在开始：读完五份文档，从 Task 0 执行到最后（T6 到提案为止停下等验收）。
+
+---
+
+## ZS3 执行记录（2026-10-21，编排者亲办；子代理通道故障后直连实施）
+
+**分支/提交：** `feat/phase-zs3-conversation-parity`
+- T0 `c31808f` 投影单一源 + 命令 ACK 白名单（含 T1 行为代码，见偏差①）
+- T1 `fc1b58a` 工具卡保真/reasoning 的 service 层帧序列测试 + mockScript 测试缝
+- T2 `0370e21` 审批闭环（pendingInteractions/resolveInteraction/extension 审计）+ `0540bbc` e2e deny 轮
+- T3 `cac5288` 本地附件回显 + 显式暂存桩
+- T4 `b7f722f` resume/rowsRange/logEpoch + 多轮历史修复
+- T5 `e06ebff` 附件上传事务与分块回读
+- T6 `bf5b737` core 问询原语窗口（+ `453ec55` 提案/拍板、`7e4106e` prettier）
+
+**证据（编排者亲跑）：**
+- 逐包测试：core 1628 passed / 2 skipped；ui-shared 776；desktop 1288 / 1 skipped；gateway 40；web 150；zcode-adapter 58；cli exit 0。
+- `pnpm -r typecheck` 全绿；`eslint .` 0 error（91 warnings）；`prettier --check .` 全绿。
+- e2e：`run-e2e.ps1 -Fresh` 连跑两次 exit=0（真实 DeepSeek 回复；JSONL `20261021-062627-c69708` / `20261021-062734-e80317`）；审批轮 `-Approval` exit=0（弹窗→拒绝→消失→行「执行失败」；JSONL `20261021-062840-d95f7e` 含 `adapter/permission-request`、`adapter/permission-resolved`、`tool/result ok=false`）；截图 `docs/screenshots/zs3/approval-deny.png`。
+- 冻结：六受保护包 diff=0；core diff 仅 T6 八文件（393 行）；UI patch 仍仅 `desktopRuntimeEnv.ts` 一处。
+- T6 拍板：落盘审计 / 120s 超时 fail-closed / 仅原语（producer 归 ZS4）。
+
+**验收表自评：** V1 ✅ V2 ✅ V3 ✅（自动化；拖放真机归 V9）V4 ✅（四序列集成测）V5 ✅（白名单外全 rejected；未伪造 core 事件）V6 ✅ V7 本地全绿 / CI 待推 V8 ⬜（独立审查待补）V9 ⬜。
+
+**偏差与如实登记：**
+1. **T0/T1 行为代码同落 `c31808f`**：首任代理中断留下 WIP（含 reasoning/工具保真），修红时一并保留；T1 独立提交补测试缝与帧序列断言，未拆分历史。
+2. **T4 发现并修复多轮历史丢失**：`runSession` 原先把 `sessionRows` 整体替换为当前轮，第二轮起历史消失；改为追加后 rowsRange/刷新才有意义。
+3. **T6 adapter 端到端未接线**：本窗口按提案只做 core 原语；adapter 无 producer，未伪造事件，投影/resolve 回填随 ZS4 producer 落地。
+4. **审批 e2e 用确定性 MockProvider**（`ZS3_E2E_APPROVAL=1`）触发工具调用，不依赖真实模型是否决定调工具；普通轮仍为真实模型。
+5. **长会话 >60 行视觉刷新/上滚 e2e 未自动化**：rowsRange/resume 由 service 层四序列测试覆盖；真机上滚归 V9。
+6. **审批轮页面出现「分组操作失败，请重试」toast**（task-group 桩相关，未阻断审批）；登记 ZS4 观察项。
+
+**P2×8 对账：** 帧 schema 校验（T0 ✅）/ authPath 常量（T0 ✅）/ 投影 Map 有界化（T4 ✅）/ host-bundle 入 git（评估：`dist/` 已 ignore，保持不入仓 ✅）/ e2e composer 选择器精确度（未动，续挂 ZS4）；其余 ZS2 审查 P2 明细未逐条入库，随 ZS4 台账补齐。
 
 ---
 
