@@ -269,3 +269,15 @@
 - 真模型轮 JSONL：`C:/Users/ASUS/.harness2/sessions/D--AI_Projects--harness2-zs1-build--ZCode--packages--desktop/20261020-224705-45aac2/session.v1.jsonl`，事件 `session/header:1, user/message:1, step/start:1, assistant/message:1, step/end:1`；`loadSession` 重放 2 条消息（user+assistant）。
 - 回复非 mock 固定文案（真实模型生成），截图 `docs/screenshots/zs2/final-ui-pass.png`。
 - mock 对照：此前 fallback Mock 轮已跑通（`Hello from harness2 mock provider.`），adapter 38 tests 覆盖。
+
+### ZS2 cat-jam runbook 收口（2026-10-21）
+
+- 根因：`packages/zcode-adapter/src/real/file-stubs.ts` 的 `ensureConversationWorkspace` 仅返回路径 `{ZCODE_DATA_BASE_DIR}/.zcode/workspace/default`，不创建目录（ZS1 时代靠启动脚本预建）。带 `-Fresh` 的 runbook 会清 `zs1-data/.zcode`，路径不存在 → UI Root.tsx:1176-1208 兜底失败 → `USER ROW NOT SEEN`（exit 5）。
+- 修复：
+  - `ensureConversationWorkspace` 调用时 `fs.mkdirSync(path, { recursive: true })` 真建目录，`created` 如实反映是否新建；`resolveZs1ConversationWorkspaceDir` 规则不变。
+  - `stub-behavior.test.ts` 新增断言：指向临时空目录，调用后目录存在且返回路径一致。
+  - adapter 全量测试 42 passed；typecheck 0；受保护包 diff = 0。
+- runbook 双跑（cwd=D:\AI_Projects\harness2）：
+  - 轮 1：`RUNBOOK e2e exit=0`；`FINAL_REPLY=我是 DeepSeek Chat，一个由深度求索公司开发的 AI 助手...`；新 JSONL `C:/Users/ASUS/.harness2/sessions/D--AI_Projects--harness2-zs1-build--ZCode--packages--desktop/20261021-.../session.v1.jsonl`；growthEvents=3。
+  - 轮 2：`RUNBOOK e2e exit=0`；`FINAL_REPLY=我是一个人工智能助手，可以用中文等多种语言与你交流...`；新 JSONL 同目录新会话；growthEvents=2。
+- 提交：见 git log（file-stubs + test）。
