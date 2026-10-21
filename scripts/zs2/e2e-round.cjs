@@ -55,20 +55,76 @@ if (!page) { console.error('WRONG INSTANCE/NOT UP'); process.exit(3); }
       await send('Runtime.evaluate', { expression: `(() => { const b = Array.from(document.querySelectorAll('button')).find(x => (x.getAttribute('aria-label')||'').includes('新建会话')); if (b) b.click(); return !!b; })()` });
       await new Promise(r => setTimeout(r, 1000));
 
-      // bypass first-run onboarding if present
-      await send('Runtime.evaluate', { expression: `(() => { const b = Array.from(document.querySelectorAll('button')).find(x => (x.innerText||'').includes('Start ZCode')); if (b) { b.click(); return 'clicked'; } return 'none'; })()` });
+      // bypass first-run onboarding if present (poll up to 10s)
+      let onbRes = 'none';
+      for (let i = 0; i < 20; i++) {
+        const r = await send('Runtime.evaluate', { expression: "(() => { const b = Array.from(document.querySelectorAll('button')).find(x => (x.innerText||'').includes('Start ZCode')); if (b) { b.click(); return 'clicked'; } return 'none'; })()" });
+        onbRes = r.result?.result?.value || 'none';
+        if (onbRes === 'clicked') break;
+        await new Promise(r => setTimeout(r, 500));
+      }
+      console.log('ONBOARDING=' + onbRes);
       await new Promise(r => setTimeout(r, 2000));
 
-      // create a new session/task if button present
-      const nb = await send('Runtime.evaluate', { expression: `(() => { const b = Array.from(document.querySelectorAll('button')).find(x => (x.getAttribute('aria-label')||x.innerText||'').includes('新建会话') || (x.getAttribute('aria-label')||x.innerText||'').includes('New task')); if (b) { b.click(); return 'clicked'; } return 'none'; })()` });
+      // wait for composer
+      let cap = 'no-composer';
+      for (let i = 0; i < 20; i++) {
+        const c = await send('Runtime.evaluate', { expression: "document.querySelector('[contenteditable=true]') ? 'input-capable' : 'no-composer'" });
+        cap = c.result?.result?.value || 'no-composer';
+        if (cap === 'input-capable') break;
+        await new Promise(r => setTimeout(r, 500));
+      }
+      console.log('INPUT_CAPABILITY=' + cap);
+
+      // new session/task
+      let nsRes = 'not-found';
+      for (let i = 0; i < 10; i++) {
+        const r = await send('Runtime.evaluate', { expression: "(() => { const b = Array.from(document.querySelectorAll('button')).find(x => (x.getAttribute('aria-label')||x.innerText||'').includes('新建会话') || (x.getAttribute('aria-label')||x.innerText||'').includes('New task') || (x.getAttribute('aria-label')||x.innerText||'').includes('New ta')); if (b) { b.click(); return 'found'; } return 'not-found'; })()" });
+        nsRes = r.result?.result?.value || 'not-found';
+        if (nsRes === 'found') break;
+        await new Promise(r => setTimeout(r, 500));
+      }
+      console.log('NEW_SESSION_BTN=' + nsRes);
       await new Promise(r => setTimeout(r, 1500));
 
-      await send('Runtime.evaluate', { expression: `document.querySelector('[contenteditable=true]') && document.querySelector('[contenteditable=true]').focus()` });
+      if (cap !== 'input-capable') {
+        const dt = await send('Runtime.evaluate', { expression: "document.body.innerText.replace(/\s+/g,' ').slice(0,500)" });
+        console.log('PAGE_TEXT=' + (dt.result?.result?.value || ''));
+        console.error('NO COMPOSER');
+        process.exit(6);
+      }
+
+      await send('Runtime.evaluate', { expression: "document.querySelector('[contenteditable=true]').focus()" });
       await send('Input.insertText', { text: TEXT });
-      await new Promise(r => setTimeout(r, 300));
+      await new Promise(r => setTimeout(r, 500));
+      const verify = await send('Runtime.evaluate', { expression: "(() => { const ce = document.querySelector('[contenteditable=true]'); return ce ? (ce.innerText||'').trim() : ''; })()" });
+      const composed = verify.result?.result?.value || '';
+      console.log('COMPOSED_TEXT=' + JSON.stringify(composed));
+      if (!composed.includes(TEXT)) {
+        const dt = await send('Runtime.evaluate', { expression: "(() => { const ce = document.querySelector('[contenteditable=true]'); const dialog = document.querySelector('[role=\"dialog\"]'); const mask = document.querySelector('[class*=\"bg-black/60\"]'); const focus = document.activeElement ? (document.activeElement.getAttribute('data-testid') || document.activeElement.tagName) : 'none'; return JSON.stringify({ hasDialog: !!dialog, hasMask: !!mask, focus, contenteditableText: ce ? (ce.innerText||'').trim() : null, v4RowCount: document.querySelectorAll('[data-testid^=\"v4-row-\"]').length }); })()" });
+        console.log('STATE_DUMP=' + (dt.result?.result?.value || ''));
+        console.error('INPUT NOT COMPOSED');
+        process.exit(4);
+      }
+
       await send('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Enter', code: 'Enter', windowsVirtualKeyCode: 13 });
       await send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Enter', code: 'Enter', windowsVirtualKeyCode: 13 });
       console.log('INPUT_SENT');
+
+      // wait for userInput row
+      let userRowSeen = false;
+      for (let i = 0; i < 20; i++) {
+        await new Promise(r => setTimeout(r, 500));
+        const r = await send('Runtime.evaluate', { expression: "(() => { const rows = Array.from(document.querySelectorAll('[data-testid^=\"v4-row-\"]')); return rows.some(r => r.querySelector('[data-v4-user-input-bubble]') || (r.innerText||'').includes('" + TEXT.replace(/"/g,'\\"') + "')); })()" });
+        if (r.result?.result?.value === true) { userRowSeen = true; break; }
+      }
+      if (!userRowSeen) {
+        const dt = await send('Runtime.evaluate', { expression: "document.body.innerText.replace(/\s+/g,' ').slice(0,500)" });
+        console.log('PAGE_TEXT=' + (dt.result?.result?.value || ''));
+        console.error('USER ROW NOT SEEN');
+        process.exit(5);
+      }
+      console.log('USER_ROW_SEEN');
 
       let lastRowCount = 0;
       let lastRowTextLen = 0;
