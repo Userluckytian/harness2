@@ -32,6 +32,13 @@ import {
 } from './v4-projection.js';
 import type { ControlPhase, ProjectedRow } from './v4-projection.js';
 import type { SessionWriter, ToolRegistryTypeExport } from './core-bridge.js';
+import { AttachmentStore } from './attachment-store.js';
+import type {
+  AttachmentBeginParams,
+  AttachmentChunkParams,
+  AttachmentReadParams,
+  AttachmentTerminalParams,
+} from './attachment-store.js';
 
 /** harness2 本地 auth.json 路径（P2-8：提为常量，避免散落硬编码） */
 const HARNESS2_AUTH_PATH = (home: string): string => join(home, '.harness2', 'auth.json');
@@ -198,6 +205,7 @@ export function createAgentService(opts: AgentServiceOptions = {}): IZCodeAgentS
   const MAX_CACHED_SESSIONS = 32;
   const sessionLastAccess = new Map<string, number>();
   const runningSessions = new Set<string>();
+  const attachmentStore = new AttachmentStore({ home });
 
   // ZS3 e2e 审批轮专用工具：只写会话工作目录下的测试文件，不触碰用户数据。
   let e2eToolRegistry: ToolRegistryTypeExport | undefined;
@@ -779,6 +787,24 @@ export function createAgentService(opts: AgentServiceOptions = {}): IZCodeAgentS
         subs.delete(params.subscriptionId);
         evictSessionsIfNeeded();
       }
+    },
+    async attachmentBeginV4(params: AttachmentBeginParams): Promise<unknown> {
+      return attachmentStore.begin(params);
+    },
+    async attachmentChunkV4(params: AttachmentChunkParams): Promise<unknown> {
+      return attachmentStore.chunk(params);
+    },
+    async attachmentCommitV4(params: AttachmentTerminalParams): Promise<unknown> {
+      return attachmentStore.commit(params);
+    },
+    async attachmentAbortV4(params: AttachmentTerminalParams): Promise<void> {
+      attachmentStore.abort(params);
+    },
+    async attachmentReadV4(params: AttachmentReadParams): Promise<unknown> {
+      return attachmentStore.read(params);
+    },
+    async attachmentPreviewSourceV4(params: { ref: string; clientMode: string }): Promise<unknown> {
+      return attachmentStore.previewSource(params);
     },
     // eslint-disable-next-line @typescript-eslint/no-explicit-any -- RPC/协议边界动态类型，仅用于 lint 收敛，不改变运行时行为
     async sendConversationCommandV4(params: { workspacePath?: string; envelope?: any }): Promise<unknown> {

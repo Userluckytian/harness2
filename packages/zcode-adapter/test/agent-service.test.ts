@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { createHash } from 'node:crypto';
 import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -535,4 +536,57 @@ describe('ZS3-T4 resume + rowsRange + logEpoch', () => {
       rmSync(home, { recursive: true, force: true });
     }
   }, 30000);
+});
+
+describe('ZS3-T5 attachment RPC wiring', () => {
+  it('delegates begin/chunk/commit/read to the attachment store', async () => {
+    const home = mkdtempSync(join(tmpdir(), 'h2-att-rpc-'));
+    try {
+      const agent = createAgentService({ home, mockScript: [{ text: 'ok' }] });
+      const bytes = Buffer.from('hi');
+      const checksum = `sha256:${createHash('sha256').update(bytes).digest('hex')}`;
+      const begin = (await agent.attachmentBeginV4({
+        workspacePath: home,
+        sessionId: 's1',
+        uploadId: 'rpc-1',
+        fileName: 'a.txt',
+        mime: 'text/plain',
+        totalBytes: bytes.byteLength,
+        totalChunks: 1,
+        checksum,
+      })) as { state: string };
+      expect(begin.state).toBe('staging');
+
+      const chunk = (await agent.attachmentChunkV4({
+        workspacePath: home,
+        sessionId: 's1',
+        uploadId: 'rpc-1',
+        chunkIndex: 0,
+        dataBase64: bytes.toString('base64'),
+      })) as { nextChunkIndex: number };
+      expect(chunk.nextChunkIndex).toBe(1);
+
+      const commit = (await agent.attachmentCommitV4({
+        workspacePath: home,
+        sessionId: 's1',
+        uploadId: 'rpc-1',
+      })) as { ref: string };
+      expect(commit.ref).toContain('rpc-1');
+
+      const read = (await agent.attachmentReadV4({
+        workspacePath: home,
+        sessionId: 's1',
+        ref: commit.ref,
+        offset: 0,
+        limit: 10,
+      })) as { dataBase64: string; mediaType: string; nextOffset: number | null };
+      expect(Buffer.from(read.dataBase64, 'base64').toString()).toBe('hi');
+      expect(read.mediaType).toBe('text/plain');
+      expect(read.nextOffset).toBeNull();
+
+      await agent.attachmentAbortV4({ workspacePath: home, sessionId: 's1', uploadId: 'rpc-1' });
+    } finally {
+      rmSync(home, { recursive: true, force: true });
+    }
+  });
 });
