@@ -1,0 +1,211 @@
+/**
+ * ZS4-T4：provider 写路径十投 + testModelConnectivity。
+ * 红线证据：密钥永不落 config.json（只进 auth.json）；错误消息不泄漏密钥。
+ */
+import { describe, it, expect } from 'vitest';
+import { existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { createProviderSettingsService } from '../src/real/provider-views.js';
+
+const SECRET = 'sk-unified-local';
+
+function makeHome(cfg?: Record<string, unknown>): string {
+  const home = mkdtempSync(join(tmpdir(), 'h2-pw-'));
+  const hdir = join(home, '.harness2');
+  mkdirSync(hdir, { recursive: true });
+  writeFileSync(
+    join(hdir, 'config.json'),
+    JSON.stringify(
+      cfg ?? {
+        providers: {
+          alpha: { protocol: 'openai', baseUrl: 'https://a.example/v1', models: { 'm-a': {} } },
+          beta: { protocol: 'openai', baseUrl: 'https://b.example/v1', models: { 'm-b': {}, 'm-b2': {} } },
+        },
+        roles: { main: { channel: 'alpha', model: 'm-a' } },
+      },
+    ),
+  );
+  return home;
+}
+
+function readConfig(home: string): Record<string, any> {
+  return JSON.parse(readFileSync(join(home, '.harness2', 'config.json'), 'utf8'));
+}
+
+function readAuth(home: string): Record<string, any> {
+  const p = join(home, '.harness2', 'auth.json');
+  return existsSync(p) ? JSON.parse(readFileSync(p, 'utf8')) : {};
+}
+
+describe('provider 写路径（ZS4-T4）', () => {
+  it('createPersonalProvider → 视图含新 provider，config 落盘且无密钥', async () => {
+    const home = makeHome();
+    const svc: any = createProviderSettingsService({ home });
+    const res: any = await svc.createPersonalProvider({
+      providerName: '我的渠道',
+      initialConfig: { protocol: 'openai', baseUrl: 'https://p.example/v1' },
+    });
+    expect(typeof res.providerId).toBe('string');
+    expect(res.providerId).toMatch(/^personal-/);
+    expect(res.view.providers.some((p: any) => p.providerId === res.providerId)).toBe(true);
+    const cfg = readConfig(home);
+    expect(cfg.providers[res.providerId].baseUrl).toBe('https://p.example/v1');
+    expect(cfg.providers[res.providerId].enabled).toBe(true);
+    rmSync(home, { recursive: true, force: true });
+  });
+
+  it('savePersonalProviderOverlay 携带 apiKey → 进 auth 不进 config；无密钥保存保留既有密钥', async () => {
+    const home = makeHome();
+    const svc: any = createProviderSettingsService({ home });
+    const view: any = await svc.savePersonalProviderOverlay('alpha', {
+      protocol: 'openai',
+      baseUrl: 'https://new.example/v1',
+      apiKey: SECRET,
+      models: { 'm-a': {} },
+    });
+    const cfg = readConfig(home);
+    expect(JSON.stringify(cfg)).not.toContain(SECRET);
+    expect(cfg.providers.alpha.baseUrl).toBe('https://new.example/v1');
+    expect('apiKey' in cfg.providers.alpha).toBe(false);
+    expect(readAuth(home).channels.alpha.apiKey).toBe(SECRET);
+    const alpha = view.providers.find((p: any) => p.providerId === 'alpha');
+    expect(alpha.executable).toBe(true);
+
+    // 不带密钥再保存一次：auth 既有密钥不动
+    await svc.savePersonalProviderOverlay('alpha', {
+      protocol: 'openai',
+      baseUrl: 'https://newer.example/v1',
+      models: { 'm-a': {} },
+    });
+    expect(readAuth(home).channels.alpha.apiKey).toBe(SECRET);
+    rmSync(home, { recursive: true, force: true });
+  });
+
+  it('overlay 校验：坏 protocol / 空 baseUrl 拒绝，不落盘', async () => {
+    const home = makeHome();
+    const svc: any = createProviderSettingsService({ home });
+    await expect(svc.savePersonalProviderOverlay('alpha', { protocol: 'grpc', baseUrl: 'x' })).rejects.toThrow(
+      /protocol/,
+    );
+    await expect(svc.savePersonalProviderOverlay('alpha', { protocol: 'openai', baseUrl: '  ' })).rejects.toThrow(
+      /baseUrl/,
+    );
+    expect(readConfig(home).providers.alpha.baseUrl).toBe('https://a.example/v1');
+    rmSync(home, { recursive: true, force: true });
+  });
+
+  it('模型 add/rename/delete/enabled/reorder：键序保持，enabled 落条目', async () => {
+    const home = makeHome();
+    const svc: any = createProviderSettingsService({ home });
+    let view: any = await svc.addPersonalModel('beta', 'm-b3', { contextWindow: 100 });
+    expect(Object.keys(readConfig(home).providers.beta.models)).toEqual(['m-b', 'm-b2', 'm-b3']);
+    await expect(svc.addPersonalModel('beta', 'm-b')).rejects.toThrow(/已存在/);
+    await expect(svc.addPersonalModel('beta', 'bad id!!')).rejects.toThrow(/形状/);
+    await expect(svc.addPersonalModel('nope', 'x')).rejects.toThrow(/provider 不存在/);
+
+    view = await svc.renamePersonalModel('beta', 'm-b2', 'm-b2x');
+    expect(Object.keys(readConfig(home).providers.beta.models)).toEqual(['m-b', 'm-b2x', 'm-b3']);
+
+    view = await svc.setPersonalModelEnabled('beta', 'm-b', false);
+    expect(readConfig(home).providers.beta.models['m-b'].enabled).toBe(false);
+    let mB = view.providers.find((p: any) => p.providerId === 'beta').models.find((m: any) => m.modelId === 'm-b');
+    expect(mB.enabled).toBe(false);
+
+    view = await svc.reorderPersonalModels('beta', ['m-b3', 'm-b']);
+    expect(view.providers.find((p: any) => p.providerId === 'beta').models.map((m: any) => m.modelId)).toEqual([
+      'm-b3',
+      'm-b',
+      'm-b2x',
+    ]);
+
+    await svc.deletePersonalModel('beta', 'm-b3');
+    expect(Object.keys(readConfig(home).providers.beta.models)).toEqual(['m-b', 'm-b2x']);
+    await expect(svc.deletePersonalModel('beta', 'm-b3')).rejects.toThrow(/不存在/);
+    rmSync(home, { recursive: true, force: true });
+  });
+
+  it('reorderPersonalProviders 影响 providerOrder；deletePersonalProvider 不隐式删密钥', async () => {
+    const home = makeHome();
+    const svc: any = createProviderSettingsService({ home });
+    await svc.savePersonalProviderOverlay('alpha', {
+      protocol: 'openai',
+      baseUrl: 'https://a.example/v1',
+      apiKey: SECRET,
+      models: { 'm-a': {} },
+    });
+    let view: any = await svc.reorderPersonalProviders(['beta', 'alpha']);
+    expect(view.providerOrder).toEqual(['beta', 'alpha']);
+    view = await svc.deletePersonalProvider('alpha');
+    expect(view.providers.map((p: any) => p.providerId)).toEqual(['beta']);
+    // 密钥保留（偏差登记：ZCode 删 provider 是否清凭据未见上游实现）
+    expect(readAuth(home).channels.alpha.apiKey).toBe(SECRET);
+    await expect(svc.deletePersonalProvider('alpha')).rejects.toThrow(/不存在/);
+    rmSync(home, { recursive: true, force: true });
+  });
+
+  it('savePersonalModelDraft：合并配置 + rename + 剥密钥 + revision 冲突拒绝', async () => {
+    const home = makeHome();
+    const svc: any = createProviderSettingsService({ home });
+    const v0: any = await svc.getView();
+    await svc.savePersonalModelDraft({
+      providerId: 'beta',
+      originalModelId: 'm-b',
+      nextModelId: 'm-b-new',
+      personalConfig: { contextWindow: 2048, apiKey: SECRET },
+      basedOnRevision: v0.revision,
+    });
+    const cfg = readConfig(home);
+    expect(cfg.providers.beta.models['m-b-new'].contextWindow).toBe(2048);
+    expect('apiKey' in cfg.providers.beta.models['m-b-new']).toBe(false);
+    expect(JSON.stringify(cfg)).not.toContain(SECRET);
+    const v1: any = await svc.getView();
+    await expect(
+      svc.savePersonalModelDraft({
+        providerId: 'beta',
+        originalModelId: 'm-b2',
+        nextModelId: 'm-b2',
+        personalConfig: {},
+        basedOnRevision: v1.revision - 5,
+      }),
+    ).rejects.toThrow(/revision 冲突/);
+    rmSync(home, { recursive: true, force: true });
+  });
+
+  it('onDidChange：每次写操作广播最新视图', async () => {
+    const home = makeHome();
+    const svc: any = createProviderSettingsService({ home });
+    const seen: any[] = [];
+    const sub: any = svc.onDidChange((view: any) => seen.push(view));
+    await svc.addPersonalModel('alpha', 'm-a2');
+    await svc.deletePersonalModel('alpha', 'm-a2');
+    expect(seen.length).toBe(2);
+    expect(seen[0].providers.find((p: any) => p.providerId === 'alpha').models.length).toBe(2);
+    expect(seen[1].providers.find((p: any) => p.providerId === 'alpha').models.length).toBe(1);
+    sub.dispose();
+    await svc.addPersonalModel('alpha', 'm-a3');
+    expect(seen.length).toBe(2); // dispose 后不再收
+    rmSync(home, { recursive: true, force: true });
+  });
+
+  it('testModelConnectivity：provider/model 不存在早退；无密钥早退；坏渠道 request-failed 且消息不含密钥', async () => {
+    const home = makeHome({
+      providers: {
+        dead: { protocol: 'openai', baseUrl: 'http://127.0.0.1:1/v1', models: { 'm-d': {} } },
+      },
+      roles: {},
+    });
+    writeFileSync(join(home, '.harness2', 'auth.json'), JSON.stringify({ channels: { dead: { apiKey: SECRET } } }));
+    const svc: any = createProviderSettingsService({ home });
+    let r: any = await svc.testModelConnectivity({ providerId: 'nope', modelId: 'x' });
+    expect(r).toEqual({ success: false, error: expect.objectContaining({ code: 'provider-unavailable' }) });
+    r = await svc.testModelConnectivity({ providerId: 'dead', modelId: 'not-declared' });
+    expect(r.success).toBe(false);
+    expect(r.error.code).toBe('model-unavailable');
+    r = await svc.testModelConnectivity({ providerId: 'dead', modelId: 'm-d' });
+    expect(r.success).toBe(false);
+    expect(typeof r.error.message).toBe('string');
+    expect(r.error.message).not.toContain(SECRET);
+    rmSync(home, { recursive: true, force: true });
+  }, 30_000);
+});

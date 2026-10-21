@@ -54,6 +54,7 @@ export const defaultConfigPaths = core.defaultConfigPaths;
 export const createProvider = core.createProvider;
 export const redactSecrets = core.redactSecrets;
 export const readAuthFile = core.readAuthFile;
+export const writeAuthFile = core.writeAuthFile;
 export const runTurn = core.runTurn;
 export const loadSession = core.loadSession;
 export const SessionWriter = core.SessionWriter;
