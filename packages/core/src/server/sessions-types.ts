@@ -10,6 +10,11 @@ import type {
   DeliveryDeltaFrame,
   SteerResult,
 } from '../interaction/types.js';
+import type {
+  UserInputAnswer,
+  UserInputRequestContract,
+  UserInputSettleReason,
+} from '../interaction/user-input.js';
 import type { NudgeResult } from '../memory/nudge.js';
 import type { PendingMemoryStore } from '../memory/pending.js';
 import type { MemoryStore } from '../memory/store.js';
@@ -111,6 +116,12 @@ export interface SessionHubHooks {
   onApprovalRequest?(approval: ApprovalRequestContract, deliverTo: string[]): void;
   /** 审批落定（响应/超时/取消；false = 按拒绝处理） */
   onApprovalSettled?(requestId: string, allowed: boolean, reason: ApprovalSettleReason): void;
+  /**
+   * 用户问询上抛（ZS3-T6）：进入待处理队列后回调。deliverTo 与审批同口径（自身+祖先）。
+   */
+  onUserInputRequest?(request: UserInputRequestContract, deliverTo: string[]): void;
+  /** 用户问询落定（响应/超时/取消） */
+  onUserInputSettled?(requestId: string, answer: UserInputAnswer, reason: UserInputSettleReason): void;
   /** 后台复盘开始（turn-end 之后异步触发；提示帧，UI 自行决定展示） */
   onNudgeStarted?(sessionId: string): void;
   /** 后台复盘结束（产出 = 记忆写入或 pending 暂存；error 存在 = 复盘失败，主对话不受影响） */
@@ -132,6 +143,8 @@ export interface SessionHubOptions {
   decide?: (input: ApprovalInput) => ApprovalDecision;
   /** 审批等待超时 ms（默认 120_000；超时按拒绝处理） */
   approvalTimeoutMs?: number;
+  /** 用户问询等待超时 ms（默认 120_000；超时按 cancel 落定，producer 不悬挂） */
+  userInputTimeoutMs?: number;
   /** 记忆装配（mode ≠ off 时注入；缺省 = 无记忆行为） */
   memory?: SessionHubMemory;
   /** 上下文压缩装配（阶段 7；缺省 = 不压缩）。由启动器按 roles.main 容量 + roles.small 摘要派生 */

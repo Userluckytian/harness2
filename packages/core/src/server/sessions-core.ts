@@ -4,6 +4,7 @@ import { TaskCoordinator, type TaskTransitionRecorder } from '../agent/task-coor
 import { CompactionBreaker } from '../agent/compactionBreaker.js';
 import type { TurnResult } from '../agent/types.js';
 import { ApprovalQueue } from '../interaction/approval-queue.js';
+import { UserInputQueue } from '../interaction/user-input-queue.js';
 import type { DeliverySession } from '../interaction/delivery.js';
 import { WatermarkCursor } from '../interaction/resume-state.js';
 import type { RetryBudgetState } from '../interaction/retry-policy.js';
@@ -127,6 +128,8 @@ export abstract class SessionHubCore {
   protected readonly running = new Map<string, AbortController>();
   /** 多并发结构化审批队列（requestId 级独立卡片；含授权缓存与已落定记忆） */
   protected readonly approvals: ApprovalQueue;
+  /** 用户问询队列（ZS3-T6：与审批并列，不共享决策语义） */
+  protected readonly userInputs: UserInputQueue;
   /** subagent 血缘：childId → parentId（hub 层记录；交付链 / 后代待审批展开用） */
   protected readonly subagentChildren = new Map<string, string>();
   /** 运行中 turn 的 promise 集（close 时等待收尾） */
@@ -174,11 +177,14 @@ export abstract class SessionHubCore {
   protected readonly compactionBreakers = new Map<SessionId, CompactionBreaker>();
 
   readonly approvalTimeoutMs: number;
+  readonly userInputTimeoutMs: number;
   /** 观察者集合（WS 事件面 / 测试；addHooks 注册，返回退订函数） */
   protected readonly listeners = new Set<SessionHubHooks>();
 
   constructor(protected readonly options: SessionHubOptions) {
     this.approvalTimeoutMs = options.approvalTimeoutMs ?? 120_000;
+    this.userInputTimeoutMs = options.userInputTimeoutMs ?? 120_000;
+    this.userInputs = new UserInputQueue();
     // Z10-5：审批队列的「始终允许/始终拒绝」持久化缝（缺省 = 仅进程内生效）
     this.approvals = new ApprovalQueue(
       options.persistApprovalRule !== undefined
