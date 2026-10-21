@@ -21,9 +21,23 @@ export interface ToolCallRequest {
  *                               toolCallId: callId, name: tool }
  * 重建唯一来源 = 会话日志投影（Model-visible ⟺ logged）；禁止内存旁路。
  */
+/**
+ * 多模态内容 part（provider 无关）。provider 层映射到各自 wire：
+ * - OpenAI 兼容 → `image_url` data URL；
+ * - Anthropic → `image` source(base64)。
+ */
+export type ChatContentPart =
+  | { type: 'text'; text: string }
+  | { type: 'image'; mimeType: string; dataBase64: string };
+
 export interface ChatMessage {
   role: 'user' | 'assistant' | 'tool';
   content: string;
+  /**
+   * 多模态内容（ZS3.5 加性）：存在时 provider 优先使用它；content 保留文本摘要/回退，
+   * 供 token 估算、压缩与旧消费者继续使用。
+   */
+  parts?: ChatContentPart[];
   /** assistant 消息携带的工具调用请求（重建自日志 tool/call 事件） */
   toolCalls?: ToolCallRequest[];
   /** tool 消息：对应的调用 id（重建自日志 tool/result.callId） */

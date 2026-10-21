@@ -46,7 +46,20 @@ export function toOpenAIWireMessages(messages: readonly ChatMessage[]): unknown[
     if (m.role === 'tool') {
       return { role: 'tool', tool_call_id: m.toolCallId ?? '', content: m.content };
     }
-    return { role: 'user', content: m.content };
+    return {
+      role: 'user',
+      content:
+        m.parts && m.parts.length > 0
+          ? m.parts.map((p) =>
+              p.type === 'text'
+                ? { type: 'text', text: p.text }
+                : {
+                    type: 'image_url',
+                    image_url: { url: `data:${p.mimeType};base64,${p.dataBase64}` },
+                  },
+            )
+          : m.content,
+    };
   });
 }
 

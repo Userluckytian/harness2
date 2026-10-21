@@ -89,6 +89,7 @@
     "ChangeFileReview": "interface",
     "ChangeSet": "interface",
     "ChannelAuth": "interface",
+    "ChatContentPart": "type",
     "ChatMessage": "interface",
     "ChatProvider": "interface",
     "ChatRequest": "interface",

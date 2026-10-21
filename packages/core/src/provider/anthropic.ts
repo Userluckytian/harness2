@@ -51,7 +51,20 @@ export function toAnthropicWireMessages(messages: readonly ChatMessage[]): unkno
       continue;
     }
     if (m.role === 'user') {
-      appendToLastUser({ type: 'text', text: m.content });
+      if (m.parts && m.parts.length > 0) {
+        for (const p of m.parts) {
+          if (p.type === 'text') {
+            appendToLastUser({ type: 'text', text: p.text });
+          } else {
+            appendToLastUser({
+              type: 'image',
+              source: { type: 'base64', media_type: p.mimeType, data: p.dataBase64 },
+            });
+          }
+        }
+      } else {
+        appendToLastUser({ type: 'text', text: m.content });
+      }
       continue;
     }
     // assistant：text 块（空文本不发）+ tool_use 块；assistant 必然新开消息（恢复交替）
