@@ -12,6 +12,7 @@ import { MockProvider } from './core-bridge.js';
 import type { IZCodeTaskService } from '@zcode/services';
 import type { MockScript } from '@harness2/core';
 import { readSessionMeta, writeSessionMeta } from './task-index.js';
+import { buildModelTrajectory } from './trajectory-service.js';
 import type { ZCodeTaskMeta } from '@zcode/shared';
 
 export interface TaskServiceOptions {
@@ -249,6 +250,9 @@ export function createTaskService(opts: TaskServiceOptions = {}): IZCodeTaskServ
     },
     async listArchivedTasks(params: { workspacePath?: string; workspaceIdentity?: string }): Promise<ZCodeTaskMeta[]> {
       return listArchived(params?.workspacePath);
+    },
+    async getModelTrajectory(params: { taskId: string; limit?: number }): Promise<unknown> {
+      return buildModelTrajectory(manager, params.taskId, params.limit);
     },
     async deleteArchivedTask(params: {
       taskId: string;

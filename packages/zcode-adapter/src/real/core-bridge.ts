@@ -62,6 +62,11 @@ export const ToolRegistry = core.ToolRegistry;
 export const MockProvider = core.MockProvider;
 export const extensionEventTypes = core.extensionEventTypes;
 export const UserInputQueue = core.UserInputQueue;
+export const SkillStore = core.SkillStore;
+export const projectSkillsRoot = core.projectSkillsRoot;
+export const defaultSkillsRoot = core.defaultSkillsRoot;
+export const MemoryStore = core.MemoryStore;
+export const defaultMemoriesRoot = core.defaultMemoriesRoot;
 
 export type { HarnessConfig, ChatProvider, SessionAppender };
 export type SessionWriter = SessionWriterType;

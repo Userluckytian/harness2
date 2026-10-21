@@ -37,28 +37,66 @@ import type {
   Memory,
   SkillsListResult,
   SkillsPromptContext,
+  SkillDiagnostic,
+  SkillDiagnosticCode,
 } from '@zcode/shared';
+import { SkillStore, projectSkillsRoot, defaultSkillsRoot, MemoryStore, defaultMemoriesRoot } from '@harness2/core';
 import { createStubService } from './stub-factory.js';
 
-const skillsServiceImpl: Pick<ISkillsService, 'list' | 'buildPromptContext'> = {
-  async list(): Promise<SkillsListResult> {
-    return {
-      skills: [],
-      capability: { userScopeAvailable: false },
-      diagnostics: [],
-    };
-  },
-  async buildPromptContext(params: { prompt: string }): Promise<SkillsPromptContext> {
-    return { prompt: params.prompt, activatedSkillNames: [] }; // 无 skills → 无激活
-  },
-};
-/** A: 映射 core skills/ ZS2+；list 空态、buildPromptContext 无激活；启停/复制/移除/删除写路径 throw */
-export const skillsServiceStub: ISkillsService = createStubService<ISkillsService>({
-  channelName: 'skills',
-  classification: 'A',
-  impl: skillsServiceImpl,
-  throws: ['setEnabled', 'copyToCommon', 'removeFromCommon', 'deleteSkill'],
-});
+export interface SkillsServiceOptions {
+  home?: string;
+}
+
+function skillDiagnosticCodeFor(warning: string): SkillDiagnosticCode {
+  if (warning.includes('重名') || warning.includes('duplicate')) return 'skill_duplicate_name';
+  if (warning.includes('不可读') || warning.includes('read')) return 'skill_read_failed';
+  return 'skill_scan_failed';
+}
+
+export function createSkillsService(opts: SkillsServiceOptions = {}): ISkillsService {
+  const fixedHome = opts.home;
+  const impl: Pick<ISkillsService, 'list' | 'buildPromptContext'> = {
+    async list(params: { workspacePath: string }): Promise<SkillsListResult> {
+      const home = fixedHome ?? process.env.HARNESS2_HOME ?? (await import('node:os')).homedir();
+      const store = new SkillStore(projectSkillsRoot(params.workspacePath), defaultSkillsRoot(home), {
+        agentsProjectDir: '/__harness2_no_agents_project__',
+        agentsGlobalDir: '/__harness2_no_agents_global__',
+      });
+      const { skills, warnings } = store.scan();
+      const mapped = skills.map((s) => ({
+        id: s.name,
+        name: s.name,
+        description: s.description,
+        body: s.content,
+        path: s.file,
+        scope: (s.source === 'project' ? 'workspace' : 'user') as 'workspace' | 'user',
+        enabled: true,
+      }));
+      const diagnostics: SkillDiagnostic[] = warnings.map((w) => ({
+        code: skillDiagnosticCodeFor(w),
+        severity: 'warning' as const,
+        message: w,
+      }));
+      return {
+        skills: mapped,
+        capability: { userScopeAvailable: false },
+        diagnostics,
+      };
+    },
+    async buildPromptContext(params: { prompt: string }): Promise<SkillsPromptContext> {
+      return { prompt: params.prompt, activatedSkillNames: [] }; // harness2 agent loop 自行注入技能
+    },
+  };
+  /** A: 映射 core skills/；list 扫描 core SkillStore，buildPromptContext 无激活；启停/复制/移除/删除写路径 throw */
+  return createStubService<ISkillsService>({
+    channelName: 'skills',
+    classification: 'A',
+    impl,
+    throws: ['setEnabled', 'copyToCommon', 'removeFromCommon', 'deleteSkill'],
+  });
+}
+
+export const skillsServiceStub: ISkillsService = createSkillsService();
 
 const subagentsServiceImpl: Pick<ISubagentsService, 'list'> = {
   async list(): Promise<AgentsListResult> {
@@ -117,18 +155,35 @@ export const hooksServiceStub: IHooksService = createStubService<IHooksService>(
   throws: ['saveHooks', 'grantWorkspaceHookTrust'],
 });
 
-const memoryServiceImpl: Pick<IMemoryService, 'loadMemory' | 'listProjectMemories'> = {
-  async loadMemory(): Promise<{ memory: Memory | null }> {
-    return { memory: null }; // 无 memory 文件
-  },
-  async listProjectMemories(): Promise<ProjectMemoryWorkspaceSummary[]> {
-    return []; // 无 Project Memory
-  },
-};
-/** A: 映射 core memory/ ZS2+；loadMemory null、listProjectMemories 空；saveMemory/clearMemory throw */
-export const memoryServiceStub: IMemoryService = createStubService<IMemoryService>({
-  channelName: 'memory',
-  classification: 'A',
-  impl: memoryServiceImpl,
-  throws: ['saveMemory', 'clearMemory'],
-});
+export interface MemoryServiceOptions {
+  home?: string;
+}
+
+export function createMemoryService(opts: MemoryServiceOptions = {}): IMemoryService {
+  const fixedHome = opts.home;
+  const impl: Pick<IMemoryService, 'loadMemory' | 'listProjectMemories'> = {
+    async loadMemory(_params: { workspacePath: string; agentId: string }): Promise<{ memory: Memory | null }> {
+      // harness2 单代理：agentId 维度不映射到 core target（core 仅 memory/user 两目标）；
+      // 统一读 core 'memory' 目标文件；无内容 → null（ZCode 空态）。
+      const home = fixedHome ?? process.env.HARNESS2_HOME;
+      const store = new MemoryStore(defaultMemoriesRoot(home));
+      const result = await store.read('memory');
+      if (!result.content || result.content.trim().length === 0) {
+        return { memory: null };
+      }
+      return { memory: { content: result.content, enabled: true } };
+    },
+    async listProjectMemories(): Promise<ProjectMemoryWorkspaceSummary[]> {
+      return []; // core 无 project-memory 聚合
+    },
+  };
+  /** A: 映射 core memory/；loadMemory 读 core 'memory' 目标，listProjectMemories 空；saveMemory/clearMemory throw */
+  return createStubService<IMemoryService>({
+    channelName: 'memory',
+    classification: 'A',
+    impl,
+    throws: ['saveMemory', 'clearMemory'],
+  });
+}
+
+export const memoryServiceStub: IMemoryService = createMemoryService();

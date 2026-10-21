@@ -33,6 +33,7 @@ import type {
   IBotsService,
   ICodingPlanSubscriptionService,
   ICredentialService,
+  IOffPeakTaskService,
   IModelSelectionService,
   IOnboardingRecordService,
   IMarketingTouchService,
@@ -503,6 +504,27 @@ export const onboardingRecordServiceStub: IOnboardingRecordService = createStubS
 });
 
 // ── 其余频道：按分类走工厂默认（A/C 读 null；B throw；事件 Event.None） ──
+
+/** C: 闲时任务（off-peak）；fail-closed 空态：list→[]、get→null、写路径 throw（ZS4-T5） */
+export const offPeakTaskServiceStub: IOffPeakTaskService = createStubService<IOffPeakTaskService>({
+  channelName: 'off-peak-task',
+  classification: 'C',
+  impl: {
+    async list(): Promise<unknown[]> {
+      return [];
+    },
+    async get(): Promise<null> {
+      return null;
+    },
+    async getCodingPlanSupport(): Promise<{ supported: false; reason: 'connection_unavailable' }> {
+      return { supported: false, reason: 'connection_unavailable' };
+    },
+    async getTakeNumberAvailability(): Promise<{ canTakeNumber: false }> {
+      return { canTakeNumber: false };
+    },
+  },
+  throws: ['createTask', 'cancelTask', 'pauseTask', 'continueTask', 'deleteTask', 'deleteHistory', 'updateTask'],
+});
 
 /** C: 用量快照；空态不触达（boot log 实证），默认 null，T3 实测兜底 */
 export const usageStatsServiceStub: IUsageStatsService = createStubService<IUsageStatsService>({
