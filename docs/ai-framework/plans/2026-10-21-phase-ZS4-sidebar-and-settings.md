@@ -1,0 +1,163 @@
+# 阶段 ZS4：侧栏全功能 + 设置页可用（task 索引/归档/批量删除 / provider 写路径 / 周边读面）
+
+> **状态：** 计划起草（2026-10-21，基于总纲 §2 ZS4 行 + 当日摸底；**待用户审阅后开工**）
+> **前置：** ZS3（`bd18a75`）与 ZS3.5（附件/cwd/缩略图，`6be7e4d`/`e9f7362`）已合 main；`AskUserQuestion` producer 已在 adapter 落地（ZS3 登记的「elicitation 接线」在此对账为已完成）
+> **元规范：** `docs/ai-framework/phased-plan-driven.md` · **总纲：** `docs/ai-framework/plans/2026-10-20-zs-shell-migration-program.md`
+
+**Goal:** 一句话——侧栏从「只读列表」变成「全功能管理」，设置页从「必炸」变成「可用」：
+
+1. 任务索引真实化：**置顶 / 归档 / 物理删除 / 重命名 / 批量「删除其他」「归档其他」**（Z-50/Z-51 语义；用户 2026-10 明确需求「快速删除对话」在本阶段终结）；
+2. **provider 写路径**：设置页添加/编辑/删除模型供应商与模型（`createPersonalProvider` 等十投），密钥写 `~/.harness2/auth.json`（0600，密钥不进 git/日志）；
+3. 周边读面按证据接线：轨迹 `getModelTrajectory` → core trajectory；commands/skills/memory/hooks/subagents/automations/MCP 状态——有能力则真映射，无能力如实空态（红线⑩，不造假入口）。
+
+**Architecture:** 延续 ZS1–ZS3.5 链路（桌面 main → utilityProcess host → MessagePort → renderer；进程内 core；ZCode UI 零改动）。三根支柱：
+① **task 索引单一源** = 磁盘会话日志（`SessionManager.list()`）+ `title.json` + 新增 `session-meta.json` 侧车（pinned/archived 状态）；
+② **core 加性窗口 = 计划内唯一**：`deleteSession`（物理删除，锁目录安全 + 不可恢复需注释明示）；
+③ **写路径全部过校验再落盘**（provider config / auth.json），错误出口 `redactSecrets`。
+
+**Tech Stack:** TypeScript / Electron / vitest（service 层直调）/ CDP e2e（`scripts/zs2/run-e2e.ps1` 模式扩展）。
+**实施档位：** 全能 · **子代理：** 尝试 cat-jam（通道近期多次 provider 5xx，失败即编排者直连，如 ZS3/ZS3.5 先例）。
+
+---
+
+## 前置阅读（必须）
+
+| 优先级 | 文件                                                                                                                                                                                                                                               |
+| ------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| P0     | 本文件、`docs/ai-framework/phased-plan-driven.md`、ZS3 与 ZS3.5 计划执行记录                                                                                                                                                                       |
+| P0     | ZCode 源只读调用面：`refs/ZCode/packages/ui/src/project-sidebar/task-mutation.ts`、`useArchiveManagement.ts`、`ArchiveGroupCard.tsx`；`packages/services/src`（`ITaskGroupService`/`IProviderSettingsService` 契约与消费方）；`settings/models` 页 |
+| P0     | `docs/refs/README.md` §2 六步（AGENTS 强制第 7 条）：先核对 `refs-zcode.md` 是否过期，补 Z-50/Z-51 交互条目再写代码                                                                                                                                |
+| P1     | 映射详表 `docs/research/2026-10-20-zs-a-class-mapping.md`；`packages/core/src/session/titles.ts`、`config/auth.ts`、`config/schema.ts`                                                                                                             |
+
+**仓库路径：** `D:/AI_Projects/harness2`（main ≥ `e9f7362`）· ZCode 源只读 `D:/AI_Projects/refs/ZCode`（`3c5b2276`）· scratch `D:/AI_Projects/harness2-zs1-build/ZCode`
+**基线分支：** 从 `main` 拉 `feat/phase-zs4-sidebar-and-settings`
+
+---
+
+## Global Constraints（冲突时以本节为准）
+
+1. **ZCode UI 零改动**：UI patch 仍仅 ZS1 的 `desktopRuntimeEnv.ts` 一处；不得为批量菜单改 UI。
+2. **core 解冻纪律**：默认零改动。**计划内唯一窗口 = deleteSession**（提案先行：函数签名 + 锁/竞态处理 + 测试清单，编排者批准后实施；被否 → 批量删除降级为「归档隐藏」并如实登记，物理删除归 ZS5+）。`packages/gateway` 零改动。
+3. **红线⑩**：写路径十投逐个真实现或保持显式 throw（不许假成功）；pinned/archived 状态读面与写面对称；commands/skills 等若无 core 能力 → C 类静默空态而非假列表。
+4. **密钥与数据安全**：auth.json 写 0600 + `redactSecrets` 出口；**deleteSession 物理删除不可恢复**——UI 已有确认弹窗（ZCode 原生），我方不得跳过确认路径；测试只删临时目录内会话。
+5. **无登录门**：账号区（login-trigger/升级/奖励）保持 ZS6 隐藏清单口径，本阶段不接。
+6. **验证缝分层**：service 层直调 + 状态断言为主；e2e 只做出口（删除后列表/投影一致、设置页保存闭环），判据可区分失败段。
+7. **明确不做（本阶段）**：❌ 观测性/崩溃报告/监控卡片（ZS5）❌ 打包发版/品牌切换/C 类隐藏清单执行（ZS6）❌ 旧壳任何改动 ❌ MCP 服务器增删（只读状态展示，写路径如实 throw 并登记）。
+
+---
+
+## 阶段开头：上阶段遗留
+
+| 项                                    | 来源         | 状态                                                  |
+| ------------------------------------- | ------------ | ----------------------------------------------------- |
+| ZS2 P2：e2e composer 选择器精确度     | ZS2 审查     | ⬜ 本阶段 e2e 扩展时顺手                              |
+| ZS3 P2：长会话>60 行视觉刷新/上滚 e2e | ZS3 登记     | ⬜ T5 一并补                                          |
+| ZS3 偏差⑥「分组操作失败」toast        | ZS3 执行记录 | ⬜ task 索引真实化后应自然消失，T7 复验               |
+| ZS3 T6：elicitation 端到端            | ZS3 计划     | ✅ 已由 ZS3.5 `askuserquestion` 覆盖，对账即闭        |
+| 会话标题「New task」常驻              | 用户观感     | ⬜ T2 接线 auto title（rename/titles 已存在）顺带解决 |
+
+---
+
+## File Structure（预期变更）
+
+| 文件/目录                                                                                           | 动作      | 职责                                                                                                            |
+| --------------------------------------------------------------------------------------------------- | --------- | --------------------------------------------------------------------------------------------------------------- |
+| `packages/core/src/session/manager.ts`                                                              | 加性窗口  | `deleteSession(id)`（唯一 core 改动，提案先行）                                                                 |
+| `packages/zcode-adapter/src/real/task-index.ts`                                                     | 新建      | pinned/archived 侧车（`<sessionDir>/session-meta.json`）读写 + 校验 + 迁移默认                                  |
+| `packages/zcode-adapter/src/real/project-service.ts`                                                | 大改      | readTree 接 task-index（pin 排序/归档过滤/删除）；`ITaskGroupService` 桩 → 真实现（移动/重命名/归档/删除/批量） |
+| `packages/zcode-adapter/src/real/session-service.ts`                                                | 修改      | deleteSession/rename/archive 命令面（若 UI 走 session 频道则按实测落点）                                        |
+| `packages/zcode-adapter/src/real/provider-settings-service.ts`（并入 `provider-views.ts` 或新文件） | 大改      | 十投写路径：config.json 原子写（temp+rename）+ auth 0600 + 校验；`testModelConnectivity` 真探一次               |
+| `packages/zcode-adapter/src/real/trajectory-service.ts`                                             | 新建/接线 | `getModelTrajectory` → core trajectory 视图（映射详表核对）                                                     |
+| `packages/zcode-adapter/test/*`                                                                     | 扩        | 逐能力 service 层断言（批量删除、归档恢复、provider 保存回读、密钥脱敏）                                        |
+| `scripts/zs4/*.cjs` + runbook                                                                       | 新建      | 侧栏删除轮 / 设置页保存轮（exit 语义延续）                                                                      |
+| 本计划文件                                                                                          | 修改      | 执行记录回填                                                                                                    |
+
+---
+
+## Task 0：调用面盘点（file:line 证据，不改代码）
+
+摸清并入库（映射详表附录或执行记录）：
+① `ITaskGroupService` 全方法 + UI 消费点（`task-mutation.ts`/`useArchiveManagement` 各调哪些、期望返回形状）；
+② 批量「删除其他/归档其他」在 ZCode 的真实入口（右键菜单项 → 服务方法链）；
+③ pinned/archived 的权威归属（task 索引字段 vs 独立 meta；我们选侧车文件的兼容性论证）；
+④ `IProviderSettingsService` 十投的入参形状（`PersonalProviderInput`/model draft 形状）+ UI 表单字段对照；
+⑤ `getModelTrajectory` 的 UI 消费形状 → core `trajectory/view.ts` 的映射差；
+⑥ commands/skills/memory/hooks/subagents/cron/MCP 各频道：**core 有对应能力？**（有=接线；无=C 类空态，逐条登记）。
+产出：`docs/research/2026-10-XX-zs4-call-surface-inventory.md`。**先补 refs 条目再进 T1**（AGENTS §7）。
+
+## Task 1：core `deleteSession` 加性窗口（提案 → 批准 → 实施）
+
+- 提案：`SessionManager.deleteSession(id: string, opts?: {dir?: string}): boolean`——resume 定位目录（合法 id 校验复用 `SESSION_ID_PATTERN`，防穿越）；持 writer 锁则 fail-closed 抛错；否则 `rmSync(dir,{recursive})`；顺带删 title/searchIndex 产物。测试：删存在/不存在/被锁三态；重放/列表不再出现。
+- 独立 commit + `api-surface-baseline.json` 同步 + 编排者（= 主会话）验收。**提案被否 → 本阶段批量删除降级为归档隐藏，登记归后续。**
+
+## Task 2：task 索引真实化（pin/archive/重命名/删除 + 自动标题）
+
+- 侧车 `session-meta.json`：`{pinned, archived, renamed?}`；readTree 排序 = pinned 优先 → mtime；archived 默认过滤、归档视图读取时包含；删除走 T1。
+- 自动标题：会话落 `title.json` 前显示首条用户消息截断（`firstUserText` 已有），消灭「New task」。
+- service 层断言：批量删除只留目标、归档后主列表消失/归档视图可见、pinned 恒前。
+
+## Task 3：ITaskGroupService 全量真实现（含 Z-50/Z-51 批量语义）
+
+- 逐个方法按 T0 清单实现；「删除其他/归档其他」经 UI 原生确认弹窗；错误用 `fault.*`/`guard.*` 字面量词表。
+- 变异验证：摘掉一个批量方法 → e2e 侧栏轮必红。
+
+## Task 4：provider 写路径（设置页可用）
+
+- 十投按契约实现：入参校验（模型 id 正则/必填）→ config.json 原子写 → auth 通道写（0600）；`testModelConnectivity` 真发一次最小请求（密钥脱敏错误）。
+- 安全测试：密钥值不出现在任何返回值/日志/错误 message；删除 provider 不隐式删 auth（登记语义）。
+- e2e 出口轮：设置页添加一个本地假 provider → 保存 → 重开可见 → 测试连通失败提示正确 → 删除。
+
+## Task 5：轨迹 + 周边读面
+
+- `getModelTrajectory` → core trajectory 映射（形状差则如实降级投影，不造假）；
+- T0 ⑥ 表逐条执行：有则接线（含 cron 最小状态），无则显式 C 类空态并注释登记；
+- ZS2/ZS3 遗留 e2e（composer 选择器精确度、>60 行上滚视觉轮）在本任务补。
+
+## Task 6：收口（编排者亲验）
+
+1. 六受保护包 diff=0；core diff 仅 T1 批准窗口；UI patch 仍 1 处；
+2. 七包逐包测试 + `pnpm -r typecheck` + `eslint .` 0 error + `prettier --check .` 绿；
+3. e2e 双轮（普通对话回归 + 侧栏删除 + 设置页保存）+「分组操作失败」toast 复验消失；
+4. 分支 push → CI 绿 → `--no-ff` 合 main → 台账（OPEN/日志/计划执行记录）→ 交用户 V9 真机清单。
+
+---
+
+## 代码审查（全能档含）
+
+独立只读 cat-jam（通道可用时）：批量删除的确认路径与不可逆性、侧车状态与列表一致性、config/auth 写入原子性与密钥出口、deleteSession 锁竞态、红线⑩、core 越界。
+
+## 验收标准总表
+
+| #   | 标准          | 通过条件                                                                              | 验证                                       |
+| --- | ------------- | ------------------------------------------------------------------------------------- | ------------------------------------------ |
+| V1  | 批量删除/归档 | 右键「删除其他/归档其他」真生效；删除后 JSONL 目录消失、列表/投影一致；有原生确认弹窗 | e2e+测试                                   |
+| V2  | 置顶/重命名   | 跨重启保持；标题不再恒「New task」                                                    | e2e                                        |
+| V3  | 设置页写路径  | 添加/编辑/删除 provider+模型闭环；错误脱敏；重开持久                                  | e2e+审查                                   |
+| V4  | 轨迹/周边     | 映射表逐条对账：接线项有数据、空态项如实空、无假入口                                  | 审查+测试                                  |
+| V5  | core 边界     | 仅 deleteSession 批准窗口；api-surface 同步                                           | 编排者                                     |
+| V6  | 冻结纪律      | 六包 0 diff；UI patch 1 处                                                            | 编排者                                     |
+| V7  | 闸门          | 逐包绿 + typecheck/lint/prettier + 双 CI                                              | 自动化                                     |
+| V8  | 独立审查      | P0=0；P1 闭环；P2 登记                                                                | 子代理（通道不可用则如实登记欠账，如 ZS3） |
+| V9  | 用户真机      | 批量删除一轮 / 设置页加一个真供应商一轮 / 归档恢复一轮                                | 用户                                       |
+
+## 风险与降级
+
+| 风险                                      | 缓解                                                            |
+| ----------------------------------------- | --------------------------------------------------------------- |
+| deleteSession 提案被否                    | 降级归档隐藏；物理删除登记 ZS5+                                 |
+| 侧车 meta 与 ZCode 云端 task 索引语义漂移 | 侧车仅本机可见字段；盘点文档记录偏差                            |
+| provider 表单形状猜错                     | T0 先盘 UI 字段；实现后 e2e 走真表单不猜                        |
+| 批量删除误删用户真实会话                  | 测试全在 `HARNESS2_HOME` 临时根；真机数据根仅经用户确认路径操作 |
+| 子代理通道不稳                            | 编排者直连（ZS3/ZS3.5 先例），V8 欠账如实登记                   |
+
+## 给接手 AI 的完整提示词（零上下文）
+
+你是 harness2 实现代理，执行 **ZS4**（侧栏全功能 + 设置页可用）。基线 `main` ≥ `e9f7362`，分支 `feat/phase-zs4-sidebar-and-settings`。唯一计划=本文件；先读 ZS 总纲、映射详表、ZS3/ZS3.5 执行记录、`docs/refs/README.md` §2。顺序 T0→T6；T1 core 窗口**必须提案先行等编排者批准**；UI 零改动、六包冻结、密钥不进 git/日志；pnpm 直调 `node "D:/.pnpm-store/v11/links/@/pnpm/11.13.0/d117958…/pnpm.mjs"`；e2e 走 `scripts/zs2/run-e2e.ps1` 模式（9229 实例锁定、只杀 scratch 进程）；每 Task 完成即 commit（gitmoji+中文，只 add 明确路径）。交卷：提交列表、V1–V9 自评、真实命令输出、P2 对账、残留风险。
+
+## 残留手工验收清单（V9，交用户）
+
+1. 右键「删除其他会话」→ 确认 → 列表与磁盘目录一致；
+2. 归档一批 → 归档视图恢复一条 → 主列表回来；
+3. 设置页添加真实供应商（含密钥）→ 连通测试 → 新会话选用；
+4. 轨迹页打开一轮（如已接线）；
+5. 提醒：测新壳时旧壳 `pnpm dev` 保持关闭（9229 共享）。
