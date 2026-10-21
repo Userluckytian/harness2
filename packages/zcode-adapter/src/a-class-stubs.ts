@@ -40,7 +40,7 @@ import type {
   SkillDiagnostic,
   SkillDiagnosticCode,
 } from '@zcode/shared';
-import { SkillStore, projectSkillsRoot, defaultSkillsRoot, MemoryStore, defaultMemoriesRoot } from '@harness2/core';
+import { SkillStore, projectSkillsRoot, defaultSkillsRoot, MemoryStore, defaultMemoriesRoot } from './real/core-bridge.js';
 import { createStubService } from './stub-factory.js';
 
 export interface SkillsServiceOptions {
