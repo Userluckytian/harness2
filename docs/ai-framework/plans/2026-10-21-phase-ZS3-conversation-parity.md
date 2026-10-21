@@ -1,6 +1,6 @@
 # 阶段 ZS3：对话区完整——审批流 / 工具卡保真 / 附件管线 / resume 与分页
 
-> **状态：** ✅ 执行完成（2026-10-21，T0–T6 落地；V1–V6 通过、V7 本地全绿/CI 待推、V8 独立审查待补、V9 用户真机待做；详见文末执行记录）
+> **状态：** ✅ 已合入 main（`bd18a75`，`--no-ff`；分支 CI `39557035556` + main CI `39558167548` 全绿）。V1–V6 通过、V7 通过、V8 独立复审待补（子代理通道 4 次 provider 错误；编排者自审 P1×2 已修 `9b53fb1`）、V9 用户真机待做。详见文末执行记录。
 > **For agentic workers:** 按 Task 顺序执行；每 Task 测完再进下一 Task。
 > **交接提示词**见文末「给接手 AI 的完整提示词」。
 > **元规范:** `docs/ai-framework/phased-plan-driven.md`
@@ -216,6 +216,7 @@ task 索引状态/侧栏批量删除、provider 写路径、会话中 setModel�
 - T4 `b7f722f` resume/rowsRange/logEpoch + 多轮历史修复
 - T5 `e06ebff` 附件上传事务与分块回读（+ `9b53fb1` P1 补丁：回读按会话投影授权 + uploadId 路径校验）
 - T6 `bf5b737` core 问询原语窗口（+ `453ec55` 提案/拍板、`7e4106e` prettier）
+- 合入：`bd18a75`（`--no-ff`）；分支 CI `39557035556`、main CI `39558167548` 全绿
 
 **证据（编排者亲跑）：**
 
