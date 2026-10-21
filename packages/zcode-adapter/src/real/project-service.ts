@@ -5,19 +5,7 @@ import { createStubService } from '../stub-factory.js';
 import { createSessionManager, defaultSessionsRoot } from './core-bridge.js';
 import type { IProjectService } from '@zcode/services';
 
-interface TrackedTask {
-  taskId: string;
-  workspacePath: string;
-  workspaceIdentity?: string;
-  createdAt: number;
-}
-
-const tracked: TrackedTask[] = [];
-
-export function trackCreatedTask(taskId: string, workspacePath: string, workspaceIdentity?: string): void {
-  if (tracked.some((t) => t.taskId === taskId)) return;
-  tracked.push({ taskId, workspacePath, workspaceIdentity, createdAt: Date.now() });
-}
+// 任务列表的唯一事实源是磁盘会话日志；不再维护进程内 tracked 数组（无界增长且重启必空）。
 
 export function createProjectService(options: { home?: string } = {}): IProjectService {
   const home = options.home ?? process.env.HARNESS2_HOME ?? homedir();

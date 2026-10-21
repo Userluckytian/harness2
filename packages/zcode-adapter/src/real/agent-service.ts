@@ -21,7 +21,6 @@ import type { IZCodeAgentService } from '@zcode/services';
 import type { ApprovalHandler, MockScript, UserInputAnswer, UserInputRequestContract } from '@harness2/core';
 import type { PendingInteraction } from '@zcode/shared/zcode-protocol-v4';
 import { encodeTopicWireFrames, measureTopicNotificationEnvelopeBytes } from '@zcode/shared/zcode-protocol-v4';
-import { trackCreatedTask } from './project-service.js';
 import {
   buildSnapshot,
   makeAssistantTextRow,
@@ -675,6 +674,7 @@ export function createAgentService(opts: AgentServiceOptions = {}): IZCodeAgentS
     const turnHeaderRowId = nextRowId(sessionId);
     const assistantRowId = nextRowId(sessionId);
     let reasoningRowId: number | null = null;
+    const toolCallIds: string[] = [];
     let reasoningAccumulated = '';
     const turnId = `turn-${Date.now()}`;
     const now = Date.now();
@@ -820,6 +820,7 @@ export function createAgentService(opts: AgentServiceOptions = {}): IZCodeAgentS
           } else if (chunk.type === 'tool-call') {
             const tr = nextRowId(sessionId);
             toolRowByCall.set(chunk.call.id, tr);
+            toolCallIds.push(chunk.call.id);
             const argsText =
               typeof chunk.call.arguments === 'string'
                 ? chunk.call.arguments
@@ -848,6 +849,7 @@ export function createAgentService(opts: AgentServiceOptions = {}): IZCodeAgentS
             emitToSession(sessionId, toolDeltas);
           } else if (chunk.type === 'tool-result') {
             const tr = toolRowByCall.get(chunk.callId);
+            toolRowByCall.delete(chunk.callId);
             if (tr) {
               const existing = rows.find((r) => r.rowId === tr);
               const toolName = existing?.toolName ?? '';
@@ -905,6 +907,12 @@ export function createAgentService(opts: AgentServiceOptions = {}): IZCodeAgentS
     const finishedTurnHeader = rows.find((r) => r.rowId === turnHeaderRowId);
     if (finishedTurnHeader) {
       finishedTurnHeader.state = ac.signal.aborted ? 'completedInterrupted' : 'completedSuccess';
+    }
+
+    // 清理本轮工具调用索引（正常结果已删；取消/无结果调用在这里兜底），避免无界增长。
+    for (const callId of toolCallIds) {
+      toolRowByCall.delete(callId);
+      deniedReasons.delete(callId);
     }
 
     const finalDeltas: Array<{ op: string; row?: ProjectedRow; patch?: unknown }> = [];
@@ -1145,8 +1153,6 @@ export function createAgentService(opts: AgentServiceOptions = {}): IZCodeAgentS
           created.writer.close();
         } catch {}
         const sid = created.id;
-        const __wp = params?.workspacePath ?? process.cwd();
-        trackCreatedTask(sid, __wp);
         sessionRows.set(sid, []);
         sessionPhase.set(sid, 'completedSuccess');
         sessionSeq.set(sid, 0);
@@ -1178,8 +1184,6 @@ export function createAgentService(opts: AgentServiceOptions = {}): IZCodeAgentS
           } catch {}
           sid = created.id;
           dirHint = created.dir;
-          const __wp2 = params?.workspacePath ?? process.cwd();
-          trackCreatedTask(sid, __wp2);
           sessionRows.set(sid, []);
           sessionPhase.set(sid, 'completedSuccess');
           sessionSeq.set(sid, 0);
@@ -1252,7 +1256,6 @@ export function createAgentService(opts: AgentServiceOptions = {}): IZCodeAgentS
       try {
         created.writer.close();
       } catch {}
-      trackCreatedTask(created.id, params?.workspacePath ?? process.cwd());
       sessionRows.set(created.id, []);
       sessionPhase.set(created.id, 'completedSuccess');
       sessionSeq.set(created.id, 0);
