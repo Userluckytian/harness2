@@ -337,13 +337,6 @@ export function projectEvents(
     }
   }
 
-  // control phase: need turn end stopReason. If no explicit, infer from last assistant.
-  const lastPhase: ControlPhase = rows.some((r) => r.kind === 'assistantText' && r.state === 'failed')
-    ? 'error'
-    : rows.length > 0
-      ? 'completedSuccess'
-      : 'running';
-
   // 附件审计事件（extension）回填到对应 turn 的 userInput 行；core 事件本身无附件槽位。
   for (const ext of extensionEvents) {
     if (ext.type !== USER_ATTACHMENTS_EVENT) continue;
@@ -352,6 +345,22 @@ export function projectEvents(
     const target = rows.find((r) => r.kind === 'userInput' && r.turnId === p.turnId);
     if (target) target.attachments = p.attachments;
   }
+
+  // turnHeader 终态收敛：回放路径不能永远停在 running（否则重启后 UI 显示“工作中”并禁用发送）。
+  for (const header of rows) {
+    if (header.kind !== 'turnHeader') continue;
+    const turnRows = rows.filter((r) => r.turnId === header.turnId);
+    if (turnRows.some((r) => r.kind === 'assistantText' && r.state === 'complete')) {
+      header.state = 'completedSuccess';
+    } else if (turnRows.some((r) => r.kind === 'assistantText' && r.state === 'failed')) {
+      header.state = 'failed';
+    }
+  }
+
+  // control phase：以最后一个 turnHeader 的终态为准，避免历史失败轮把整体相位误判为 error。
+  const lastTurnHeader = [...rows].reverse().find((r) => r.kind === 'turnHeader');
+  const lastPhase: ControlPhase =
+    lastTurnHeader?.state === 'failed' ? 'error' : rows.length > 0 ? 'completedSuccess' : 'running';
 
   const lastSeq = Math.max(sorted.length ? sorted[sorted.length - 1].seq : 0, ...extensionEvents.map((e) => e.seq));
 

@@ -143,4 +143,13 @@ describe('v4-projection', () => {
     expect(snapshot.rows.totalCount).toBe(70);
     expect(snapshot.rows.firstRowId).toBe(1);
   });
+
+  it('restore: turnHeader converges to completedSuccess when the turn has an assistant message', () => {
+    const r = projectEvents([
+      ev(1, 'user/message', { text: 'hi', turnId: 't1' }),
+      ev(2, 'assistant/message', { text: 'ok', turnId: 't1' }),
+    ]);
+    expect(r.rows.find((x) => x.kind === 'turnHeader')?.state).toBe('completedSuccess');
+    expect(r.state.controlPhase).toBe('completedSuccess');
+  });
 });
