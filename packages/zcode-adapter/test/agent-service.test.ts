@@ -20,6 +20,11 @@ interface CapturedInteraction {
     toolName?: string;
     toolCallId?: string;
     options?: Array<{ optionId?: string; kind?: string }>;
+    questions?: Array<{
+      question?: string;
+      header?: string;
+      options?: Array<{ value?: string; label?: string }>;
+    }>;
   };
 }
 
@@ -630,12 +635,17 @@ describe('ZS3.5 ask_user producer', () => {
         toolCalls: [
           {
             id: 'ask-1',
-            name: 'ask_user',
+            name: 'askuserquestion',
             arguments: JSON.stringify({
-              prompt: '今晚吃什么？',
-              options: [
-                { value: 'noodle', label: '面' },
-                { value: 'rice', label: '饭' },
+              questions: [
+                {
+                  question: '今晚吃什么？',
+                  header: '晚饭',
+                  options: [
+                    { value: 'noodle', label: '面' },
+                    { value: 'rice', label: '饭' },
+                  ],
+                },
               ],
             }),
           },
@@ -673,6 +683,11 @@ describe('ZS3.5 ask_user producer', () => {
       const interaction = deltas.flatMap((d) => d.patch?.pendingInteractions ?? []).find((i) => i.kind === 'userInput');
       expect(interaction?.payload?.prompt).toBe('今晚吃什么？');
       expect(interaction?.payload?.options?.map((o) => o.optionId)).toEqual(['noodle', 'rice']);
+      expect(interaction?.payload?.questions?.[0]).toMatchObject({
+        question: '今晚吃什么？',
+        header: '晚饭',
+      });
+      expect(interaction?.payload?.questions?.[0]?.options?.map((o) => o.value)).toEqual(['noodle', 'rice']);
       const interactionId = interaction?.interactionId;
       if (!interactionId) throw new Error('missing interactionId');
 
@@ -682,13 +697,16 @@ describe('ZS3.5 ask_user producer', () => {
           commandId: 'cmd-answer',
           clientId: 'test-client',
           type: 'resolveInteraction',
-          payload: { interactionId, answer: { optionId: 'rice' } },
+          payload: {
+            interactionId,
+            answer: { action: 'accept', content: { 晚饭: ['rice'] } },
+          },
         } as never,
       })) as { status?: string; result?: { type?: string; resolvedBy?: { clientId?: string; optionId?: string } } };
       expect(ack.status).toBe('accepted');
       expect(ack.result).toMatchObject({
         type: 'resolveInteraction',
-        resolvedBy: { clientId: 'test-client', optionId: 'rice' },
+        resolvedBy: { clientId: 'test-client' },
       });
 
       await waitFor(() =>

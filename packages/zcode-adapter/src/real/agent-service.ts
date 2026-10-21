@@ -284,9 +284,43 @@ export function createAgentService(opts: AgentServiceOptions = {}): IZCodeAgentS
    * 生产不使用 core SessionHub，这里直接用 core UserInputQueue 原语桥接。
    */
   function requestUserInputForTool(sessionId: string, raw: unknown): Promise<UserInputAnswer> {
-    const args = (raw ?? {}) as { prompt?: unknown; options?: unknown; freeText?: unknown };
-    const prompt = typeof args.prompt === 'string' && args.prompt.trim().length > 0 ? args.prompt : '请选择';
-    const options = Array.isArray(args.options)
+    const args = (raw ?? {}) as {
+      prompt?: unknown;
+      options?: unknown;
+      freeText?: unknown;
+      questions?: unknown;
+    };
+    // 原生 AskUserQuestion 形状：questions[] 才会触发 UI 的 ElicitationDialog（完整样式）。
+    const questions = Array.isArray(args.questions)
+      ? args.questions
+          .filter(
+            (q): q is { question: string; header?: unknown; options?: unknown; multiSelect?: unknown } =>
+              q !== null && typeof q === 'object' && typeof (q as { question?: unknown }).question === 'string',
+          )
+          .map((q) => {
+            const rawOptions = Array.isArray(q.options) ? q.options : [];
+            const options = rawOptions
+              .filter(
+                (o): o is { value: string; label: string; description?: string } =>
+                  o !== null &&
+                  typeof o === 'object' &&
+                  typeof (o as { value?: unknown }).value === 'string' &&
+                  typeof (o as { label?: unknown }).label === 'string',
+              )
+              .map((o) => ({
+                value: o.value,
+                label: o.label,
+                ...(typeof o.description === 'string' ? { description: o.description } : {}),
+              }));
+            return {
+              question: q.question,
+              header: typeof q.header === 'string' && q.header.trim().length > 0 ? q.header : q.question.slice(0, 16),
+              options,
+              ...(q.multiSelect === true ? { multiSelect: true } : {}),
+            };
+          })
+      : [];
+    const legacyOptions = Array.isArray(args.options)
       ? args.options
           .filter(
             (o): o is { value: string; label: string } =>
@@ -297,7 +331,14 @@ export function createAgentService(opts: AgentServiceOptions = {}): IZCodeAgentS
           )
           .map((o) => ({ optionId: o.value, label: o.label }))
       : [];
-    const freeText = args.freeText === true || options.length === 0;
+    const firstQuestion = questions[0];
+    const prompt =
+      firstQuestion?.question ??
+      (typeof args.prompt === 'string' && args.prompt.trim().length > 0 ? args.prompt : '请选择');
+    const options = firstQuestion
+      ? firstQuestion.options.map((o) => ({ optionId: o.value, label: o.label }))
+      : legacyOptions;
+    const freeText = questions.length > 0 ? false : args.freeText === true || options.length === 0;
     const requestId = randomUUID();
     const now = Date.now();
     const expiresAt = now + DEFAULT_APPROVAL_TIMEOUT_MS;
@@ -307,6 +348,7 @@ export function createAgentService(opts: AgentServiceOptions = {}): IZCodeAgentS
       prompt,
       freeText,
       ...(options.length > 0 ? { options } : {}),
+      ...(questions.length > 0 ? { questions, currentQuestionIndex: 0, toolName: 'AskUserQuestion' } : {}),
       createdAt: new Date(now).toISOString(),
       expiresAt: new Date(expiresAt).toISOString(),
     };
@@ -326,6 +368,7 @@ export function createAgentService(opts: AgentServiceOptions = {}): IZCodeAgentS
         prompt,
         freeText,
         ...(options.length > 0 ? { options } : {}),
+        ...(questions.length > 0 ? { questions, currentQuestionIndex: 0, toolName: 'AskUserQuestion' } : {}),
       },
     };
     return new Promise<UserInputAnswer>((resolveAnswer) => {
@@ -356,7 +399,7 @@ export function createAgentService(opts: AgentServiceOptions = {}): IZCodeAgentS
     });
   }
 
-  /** 生产缺省工具面：write（审批演示/真实写文件）+ ask_user（选项弹窗）。 */
+  /** 生产缺省工具面：Write（审批演示/真实写文件）+ AskUserQuestion（原生样式问询弹窗）。 */
   function createDefaultTools(sessionId: string): ToolRegistryTypeExport {
     const registry = new ToolRegistry();
     registry.register({
@@ -387,25 +430,42 @@ export function createAgentService(opts: AgentServiceOptions = {}): IZCodeAgentS
       },
     });
     registry.register({
-      name: 'ask_user',
+      // core ToolRegistry 只允许小写名；UI 的 tool identity 是大小写不敏感映射，
+      // askuserquestion 会命中原生 AskUserQuestion 家族并走 ElicitationDialog。
+      name: 'askuserquestion',
       description:
-        '向用户提出一个结构化问题并等待回答。用户要求你提供选项、让你做选择、或需要用户确认/补充信息时，必须调用本工具；不要把选项写成普通文字。',
+        '向用户提出一个或多个结构化问题并等待回答。用户要求你提供选项、让你做选择、或需要用户确认/补充信息时，必须调用本工具；不要把选项写成普通文字。',
       parameters: {
         type: 'object',
         properties: {
-          prompt: { type: 'string', description: '要问用户的问题' },
-          options: {
+          questions: {
             type: 'array',
-            description: '可选项；每个选项包含 value 与 label',
+            minItems: 1,
+            description: '要问用户的问题列表；每个问题包含 header、question 与 options',
             items: {
               type: 'object',
-              properties: { value: { type: 'string' }, label: { type: 'string' } },
-              required: ['value', 'label'],
+              properties: {
+                question: { type: 'string', description: '完整问题文本' },
+                header: { type: 'string', description: '简短标题（用于 tab/标题）' },
+                options: {
+                  type: 'array',
+                  items: {
+                    type: 'object',
+                    properties: {
+                      value: { type: 'string' },
+                      label: { type: 'string' },
+                      description: { type: 'string' },
+                    },
+                    required: ['value', 'label'],
+                  },
+                },
+                multiSelect: { type: 'boolean', description: '是否允许多选' },
+              },
+              required: ['question', 'header', 'options'],
             },
           },
-          freeText: { type: 'boolean', description: '是否允许自由文本回答' },
         },
-        required: ['prompt'],
+        required: ['questions'],
       },
       execute: async (toolArgs) => {
         const answer = await requestUserInputForTool(sessionId, toolArgs);
@@ -716,7 +776,7 @@ export function createAgentService(opts: AgentServiceOptions = {}): IZCodeAgentS
     runningAborts.set(sessionId, ac);
     const approval: ApprovalHandler = {
       // ask_user 本身是问询入口，不再叠加一层审批；其余工具统一走审批（可被拒绝）。
-      decide: (input) => (input.tool === 'ask_user' ? 'allow' : 'ask'),
+      decide: (input) => (input.tool.toLowerCase() === 'askuserquestion' ? 'allow' : 'ask'),
       onAsk: (input) =>
         new Promise<boolean>((resolve) => {
           const interactionId = randomUUID();
