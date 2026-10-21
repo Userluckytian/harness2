@@ -908,11 +908,49 @@ describe('ZS3.5 attachment model consumption + environment', () => {
       expect(request).toBeTruthy();
       const user = request?.messages.find((m) => m.role === 'user');
       expect(user?.parts?.some((p) => p.type === 'image' && p.mimeType === 'image/png')).toBe(true);
-      expect(
-        user?.parts?.some((p) => p.type === 'text' && (p.text ?? '').includes('content-123')),
-      ).toBe(true);
+      expect(user?.parts?.some((p) => p.type === 'text' && (p.text ?? '').includes('content-123'))).toBe(true);
       expect(request?.system).toContain('[环境]');
       expect(request?.system).toContain('当前工作目录');
+    } finally {
+      rmSync(home, { recursive: true, force: true });
+    }
+  }, 20000);
+});
+
+describe('ZS3.5 provider failure surface', () => {
+  it('shows the provider error instead of the placeholder done', async () => {
+    const home = mkdtempSync(join(tmpdir(), 'h2-fail-'));
+    const frames: CapturedFrame[] = [];
+    const emitter = new Emitter<unknown>();
+    emitter.event((wire) => {
+      const w = wire as { kind?: string; frame?: CapturedFrame };
+      if (w.kind === 'complete' && w.frame) frames.push(w.frame);
+    });
+    try {
+      const agent = createAgentService({ home, mockScript: [{ error: 400 }], emitter });
+      const created = (await agent.sendConversationCommandV4({
+        workspacePath: home,
+        envelope: { commandId: 'cmd-create', type: 'createSession' } as never,
+      })) as { result?: { sessionId?: string } };
+      const sessionId = created.result?.sessionId;
+      if (!sessionId) throw new Error('createSession did not return a sessionId');
+      await agent.subscribeConversationV4({ workspacePath: home, sessionId });
+      await agent.sendConversationCommandV4({
+        workspacePath: home,
+        envelope: { commandId: 'cmd-fail', type: 'sendText', sessionId, payload: { text: 'hi' } } as never,
+      });
+
+      await waitFor(() =>
+        frames.some(
+          (f) =>
+            f.payload.kind === 'deltas' &&
+            (f.payload.deltas ?? []).some((d) => d.op === 'state.updated' && d.patch?.control?.phase === 'error'),
+        ),
+      );
+      const deltas = frames.flatMap((f) => (f.payload.kind === 'deltas' ? (f.payload.deltas ?? []) : []));
+      const assistant = deltas.find((d) => d.op === 'row.upserted' && d.row?.kind === 'assistantText');
+      expect(assistant?.row?.state).toBe('failed');
+      expect(assistant?.row?.text).toContain('模型请求失败');
     } finally {
       rmSync(home, { recursive: true, force: true });
     }

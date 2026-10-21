@@ -16,6 +16,7 @@ import {
   UserInputQueue,
   extensionEventTypes,
   loadSession,
+  redactSecrets,
 } from './core-bridge.js';
 import type { IZCodeAgentService } from '@zcode/services';
 import type {
@@ -304,11 +305,7 @@ export function createAgentService(opts: AgentServiceOptions = {}): IZCodeAgentS
   }
 
   /** 模型附件解析：图片 → image part；文本 → 内联文本；超限/不支持 → null（由 core 占位）。 */
-  function resolveAttachmentForModel(
-    ref: string,
-    mime: string,
-    fileName: string,
-  ): ChatContentPart | null {
+  function resolveAttachmentForModel(ref: string, mime: string, fileName: string): ChatContentPart | null {
     try {
       const path = resolve(ref);
       const stat = statSync(path);
@@ -801,9 +798,7 @@ export function createAgentService(opts: AgentServiceOptions = {}): IZCodeAgentS
     const modelAttachments = materializeAttachments(attachments);
     const userAttachments = Array.isArray(modelAttachments)
       ? modelAttachments.filter(
-          (
-            attachment,
-          ): attachment is { ref: string; fileName?: string; mime: string; bytes?: number } =>
+          (attachment): attachment is { ref: string; fileName?: string; mime: string; bytes?: number } =>
             attachment !== null &&
             typeof attachment === 'object' &&
             typeof (attachment as { ref?: unknown }).ref === 'string' &&
@@ -925,17 +920,17 @@ export function createAgentService(opts: AgentServiceOptions = {}): IZCodeAgentS
           if (ac.signal.aborted) settleApproval(interactionId, false);
         }),
     };
+    let turnError: string | undefined;
+    let turnStopReason: string | undefined;
     try {
-      await runTurn(resumed.writer, {
+      const result = await runTurn(resumed.writer, {
         provider: provider as never,
         tools: tools as never,
         cwd: resumed.dir,
         environment: { cwd: resumed.dir, platform: process.platform },
         resolveAttachment: resolveAttachmentForModel,
         userText: text,
-        ...(userAttachments !== undefined && userAttachments.length > 0
-          ? { userAttachments }
-          : {}),
+        ...(userAttachments !== undefined && userAttachments.length > 0 ? { userAttachments } : {}),
         signal: ac.signal,
         approval,
         // eslint-disable-next-line @typescript-eslint/no-explicit-any -- RPC/协议边界动态类型，仅用于 lint 收敛，不改变运行时行为
@@ -1014,8 +1009,11 @@ export function createAgentService(opts: AgentServiceOptions = {}): IZCodeAgentS
           }
         },
       });
+      turnError = result.error;
+      turnStopReason = result.stopReason;
       // eslint-disable-next-line @typescript-eslint/no-explicit-any -- RPC/协议边界动态类型，仅用于 lint 收敛，不改变运行时行为
     } catch (e: any) {
+      turnError = (e as Error)?.message ?? String(e);
       __diag('runTurn FAILED: ' + (e && e.message));
       console.error('[zs2] runTurn failed:', (e as Error)?.message ?? e);
     }
@@ -1033,11 +1031,17 @@ export function createAgentService(opts: AgentServiceOptions = {}): IZCodeAgentS
       console.error('[zs2] close failed', (e as Error)?.message);
     }
 
-    const finalPhase: ControlPhase = ac.signal.aborted ? 'completedInterrupted' : 'completedSuccess';
+    const safeTurnError = turnError !== undefined ? redactSecrets(turnError).slice(0, 800) : undefined;
+    const interrupted = ac.signal.aborted;
+    const failed = !interrupted && (safeTurnError !== undefined || turnStopReason === 'error');
+    const finalPhase: ControlPhase = interrupted ? 'completedInterrupted' : failed ? 'error' : 'completedSuccess';
+    const failureText = safeTurnError !== undefined ? `模型请求失败：${safeTurnError}` : '模型请求失败';
+    const assistantText = accumulated || (interrupted ? '已停止' : failed ? failureText : 'done');
+    const assistantState = failed ? 'failed' : interrupted ? 'interrupted' : 'complete';
     const assistantRow = rows.find((r) => r.rowId === assistantRowId);
     if (assistantRow) {
-      assistantRow.text = accumulated || 'done';
-      assistantRow.state = ac.signal.aborted ? 'interrupted' : 'complete';
+      assistantRow.text = assistantText;
+      assistantRow.state = assistantState;
     }
     sessionPhase.set(sessionId, finalPhase);
     sessionRows.set(sessionId, rows);
@@ -1045,7 +1049,7 @@ export function createAgentService(opts: AgentServiceOptions = {}): IZCodeAgentS
 
     const finishedTurnHeader = rows.find((r) => r.rowId === turnHeaderRowId);
     if (finishedTurnHeader) {
-      finishedTurnHeader.state = ac.signal.aborted ? 'completedInterrupted' : 'completedSuccess';
+      finishedTurnHeader.state = failed ? 'failed' : interrupted ? 'completedInterrupted' : 'completedSuccess';
     }
 
     // 清理本轮工具调用索引（正常结果已删；取消/无结果调用在这里兜底），避免无界增长。
@@ -1072,8 +1076,8 @@ export function createAgentService(opts: AgentServiceOptions = {}): IZCodeAgentS
       op: 'row.upserted',
       row: makeAssistantTextRow(
         { rowId: assistantRowId, turnId, createdAt: now, createdAtSeq: 0 },
-        accumulated || 'done',
-        'complete',
+        assistantText,
+        assistantState,
       ),
     });
     finalDeltas.push({ op: 'state.updated', patch: { control: makeControl(finalPhase) } });
