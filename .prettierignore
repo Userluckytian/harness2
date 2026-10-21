@@ -37,3 +37,7 @@ docs/refs/hermes-desktop/
 # HTML 格式化器会插入换行并在这些区块里渲染成可见空白，破坏原型观感。
 # 该文件是评审物、非实施依据；实施依据见 docs/refs/refs-zcode*.md。
 design/prototype-zcode.html
+
+# PowerShell 脚本（ZS2 e2e runbook）：prettier 无 ps 解析器，不 ignore 则 CI
+# prettier --check . 直接报 No parser could be inferred。
+*.ps1

@@ -1,6 +1,9 @@
 // 桩行为单测：C 静默 / B throw / Root 挂载 9 服务空态形状（V3 后半）+
 // A 类 5 频道显式桩（ZS1 审查 P1-1：写路径显式 throw，不静默假成功）
 import { describe, expect, it } from 'vitest';
+import { mkdtempSync, rmSync, existsSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { ProxyChannel, Event } from '@zcode/rpc';
 import {
   ICredentialService,
@@ -109,7 +112,18 @@ describe('B 类显式 throw（v4 竖切 ZS2/ZS3）', () => {
     const workspace = await file.ensureConversationWorkspace();
     expect(workspace.workspacePurpose).toBe('conversation');
     expect(workspace.path).toContain('.zcode');
-    await expect(file.readdir({} as never)).rejects.toThrow(/ZS1: not implemented/);
+    await expect(file.readdir({} as never)).resolves.toBeDefined();
+  });
+
+  it('file：ensureConversationWorkspace 指向空目录时创建目录且路径一致', async () => {
+    const home = mkdtempSync(join(tmpdir(), 'h2-file-'));
+    const { services } = createHarness2Services({ home });
+    const file = services.getOptional(IFileService)!;
+    const workspace = await file.ensureConversationWorkspace();
+    const expected = join(home, '.harness2', '.zcode', 'workspace', 'default');
+    expect(workspace.path).toBe(expected);
+    expect(existsSync(expected)).toBe(true);
+    rmSync(home, { recursive: true, force: true });
   });
 
   it('window-controller：空态方法空形状，变更动作 throw', async () => {
@@ -292,7 +306,7 @@ describe('与 @zcode/rpc ProxyChannel 的兼容性（服务端暴露路径集成
     const channel = ProxyChannel.fromService(services.getOptional(ISettingService)!);
     const settings = (await channel.call('host', 'get', [])) as { recentProjects: string[] };
     expect(settings.recentProjects).toEqual([]);
-    await expect(channel.call('host', 'update', [{}])).rejects.toThrow(/ZS1: not implemented/);
+    await expect(channel.call('host', 'update', [{}])).resolves.toBeDefined();
 
     const oauthChannel = ProxyChannel.fromService(services.getOptional(IOAuthService)!);
     const sessionEvent = oauthChannel.listen('host', 'onDidChangeSession');

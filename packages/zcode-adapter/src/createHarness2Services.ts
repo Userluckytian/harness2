@@ -10,6 +10,7 @@
  * 返回 @zcode/services ServiceCollection，由 host-entry 在 ChannelServer 上
  * exposeOnChannelServer 暴露（桌面 local clientMode 无曝光过滤）。
  */
+import { Emitter } from '@zcode/rpc';
 import { ServiceCollection } from '@zcode/services';
 import {
   IBroadcastService,
@@ -71,6 +72,13 @@ import {
   IFeedbackService,
 } from '@zcode/services';
 import { CHANNEL_REGISTRY } from './channel-registry.js';
+import { createFileService } from './real/file-service.js';
+import { createProjectService } from './real/project-service.js';
+import { createSessionService } from './real/session-service.js';
+import { createTaskService } from './real/task-service.js';
+import { createAgentService } from './real/agent-service.js';
+import { createModelSelectionService, createProviderSettingsService } from './real/provider-views.js';
+import { createSettingsStore } from './real/settings-store.js';
 import { createStubService } from './stub-factory.js';
 import {
   commandsServiceStub,
@@ -79,53 +87,72 @@ import {
   skillsServiceStub,
   subagentsServiceStub,
 } from './a-class-stubs.js';
-import { fileServiceStub } from './file-stubs.js';
 import {
   botsServiceStub,
   broadcastServiceStub,
   codingPlanSubscriptionServiceStub,
   credentialServiceStub,
   marketingTouchServiceStub,
-  modelSelectionServiceStub,
   oauthServiceStub,
   onboardingRecordServiceStub,
-  projectServiceStub,
-  providerSettingsServiceStub,
   remoteProjectServiceStub,
-  settingServiceStub,
   sourceServerManagementServiceStub,
   taskGroupServiceStub,
   usageStatsServiceStub,
   windowControllerServiceStub,
-  zcodeAgentServiceStub,
 } from './root-mount-stubs.js';
 
-/** 显式桩表：频道名 → 已实例化的桩（其余频道按注册表分类现场生成默认桩） */
-const EXPLICIT_STUBS = new Map<string, unknown>([
-  [IBroadcastService.channelName, broadcastServiceStub],
-  [IBotsService.channelName, botsServiceStub],
-  [ICodingPlanSubscriptionService.channelName, codingPlanSubscriptionServiceStub],
-  [ICommandsService.channelName, commandsServiceStub],
-  [ICredentialService.channelName, credentialServiceStub],
-  [IFileService.channelName, fileServiceStub],
-  [IHooksService.channelName, hooksServiceStub],
-  [IMarketingTouchService.channelName, marketingTouchServiceStub],
-  [IMemoryService.channelName, memoryServiceStub],
-  [IModelSelectionService.channelName, modelSelectionServiceStub],
-  [IOnboardingRecordService.channelName, onboardingRecordServiceStub],
-  [IOAuthService.channelName, oauthServiceStub],
-  [IProjectService.channelName, projectServiceStub],
-  [IProviderSettingsService.channelName, providerSettingsServiceStub],
-  [IRemoteProjectService.channelName, remoteProjectServiceStub],
-  [ISettingService.channelName, settingServiceStub],
-  [ISkillsService.channelName, skillsServiceStub],
-  [ISourceServerManagementService.channelName, sourceServerManagementServiceStub],
-  [ISubagentsService.channelName, subagentsServiceStub],
-  [ITaskGroupService.channelName, taskGroupServiceStub],
-  [IUsageStatsService.channelName, usageStatsServiceStub],
-  [IWindowControllerService.channelName, windowControllerServiceStub],
-  [IZCodeAgentService.channelName, zcodeAgentServiceStub],
-]);
+function wrapProbe(service: unknown, channel: string): unknown {
+  if (process.env.ZS2_PROBE !== '1') return service;
+  return new Proxy(service as object, {
+    get(target, prop, receiver) {
+      const val = Reflect.get(target as object, prop, receiver);
+      if (typeof val === 'function') {
+        return (...args: unknown[]) => {
+          const fs = require('node:fs');
+          const logPath = 'D:/AI_Projects/harness2-zs1-build/zs2-probe.log';
+          try {
+            fs.appendFileSync(
+              logPath,
+              `[probe] ${channel}.${String(prop)} called args=${JSON.stringify(args).slice(0, 500)}\n`,
+            );
+          } catch {}
+          const res = (val as (...a: unknown[]) => unknown).apply(target as object, args);
+          // log async result if promise
+          if (res && typeof (res as { then?: unknown }).then === 'function') {
+            return Promise.resolve(res)
+              .then((r: unknown) => {
+                try {
+                  fs.appendFileSync(
+                    logPath,
+                    `[probe] ${channel}.${String(prop)} result=${JSON.stringify(r).slice(0, 5000)}\n`,
+                  );
+                } catch {}
+                return r;
+              })
+              .catch((e: unknown) => {
+                try {
+                  fs.appendFileSync(
+                    logPath,
+                    `[probe] ${channel}.${String(prop)} threw=${String((e as { message?: unknown })?.message ?? e).slice(0, 300)}\n`,
+                  );
+                } catch {}
+                throw e;
+              });
+          }
+          try {
+            fs.appendFileSync(
+              logPath,
+              `[probe] ${channel}.${String(prop)} result=${JSON.stringify(res).slice(0, 5000)}\n`,
+            );
+          } catch {}
+          return res;
+        };
+      }
+      return val;
+    },
+  });
+}
 
 /** descriptor 表：频道名 → ServiceDescriptor（注册用） */
 const DESCRIPTORS = new Map<string, { channelName: string }>([
@@ -199,7 +226,68 @@ export interface Harness2ServicesResult {
  * 装配 harness2 ZS1 桩服务集合。
  * 幂等：每次调用返回全新实例（ServiceCollection 无全局状态）。
  */
-export function createHarness2Services(): Harness2ServicesResult {
+export interface Harness2ServicesOptions {
+  home?: string;
+  dataRoot?: string;
+}
+
+export function createHarness2Services(opts: Harness2ServicesOptions = {}): Harness2ServicesResult {
+  const home = opts.home ?? process.env.HARNESS2_HOME;
+  const dataRoot = opts.dataRoot ?? process.env.HARNESS2_DATA_ROOT;
+
+  const sharedEmitter = new Emitter<unknown>();
+  const realFileService = createFileService({ dataRoot, home });
+  const realSessionService = createSessionService({ dataRoot, home });
+  const realTaskService = createTaskService({ dataRoot, home, emitter: sharedEmitter });
+  const realAgentService = createAgentService({ dataRoot, home, emitter: sharedEmitter });
+  const realModelSelectionService = createModelSelectionService({ dataRoot, home });
+  const realProviderSettingsService = createProviderSettingsService({ dataRoot, home });
+  const realSettingsStore = createSettingsStore({ dataRoot, home });
+  const realSettingService = createStubService<ISettingService>({
+    channelName: 'setting',
+    classification: 'A',
+    impl: {
+      async get() {
+        return realSettingsStore.get();
+      },
+      async update(p: unknown) {
+        return realSettingsStore.update(p as never);
+      },
+      async updateDataBaseDir() {
+        throw new Error('ZS2: not implemented');
+      },
+    },
+    throws: [],
+  });
+
+  const EXPLICIT_STUBS = new Map<string, unknown>([
+    [IBroadcastService.channelName, broadcastServiceStub],
+    [IBotsService.channelName, botsServiceStub],
+    [ICodingPlanSubscriptionService.channelName, codingPlanSubscriptionServiceStub],
+    [ICommandsService.channelName, commandsServiceStub],
+    [ICredentialService.channelName, credentialServiceStub],
+    [IFileService.channelName, realFileService],
+    [IHooksService.channelName, hooksServiceStub],
+    [IMarketingTouchService.channelName, marketingTouchServiceStub],
+    [IMemoryService.channelName, memoryServiceStub],
+    [IModelSelectionService.channelName, realModelSelectionService],
+    [IOnboardingRecordService.channelName, onboardingRecordServiceStub],
+    [IOAuthService.channelName, oauthServiceStub],
+    [IProjectService.channelName, createProjectService()],
+    [IProviderSettingsService.channelName, realProviderSettingsService],
+    [IRemoteProjectService.channelName, remoteProjectServiceStub],
+    [ISettingService.channelName, realSettingService],
+    [ISkillsService.channelName, skillsServiceStub],
+    [ISourceServerManagementService.channelName, sourceServerManagementServiceStub],
+    [ISubagentsService.channelName, subagentsServiceStub],
+    [ITaskGroupService.channelName, taskGroupServiceStub],
+    [IUsageStatsService.channelName, usageStatsServiceStub],
+    [IWindowControllerService.channelName, windowControllerServiceStub],
+    [IZCodeAgentService.channelName, realAgentService],
+    [IZCodeSessionService.channelName, realSessionService],
+    [IZCodeTaskService.channelName, realTaskService],
+  ]);
+
   const services = new ServiceCollection();
   const registeredChannels: string[] = [];
   for (const entry of CHANNEL_REGISTRY) {
@@ -213,7 +301,7 @@ export function createHarness2Services(): Harness2ServicesResult {
         channelName: entry.channel,
         classification: entry.classification,
       });
-    services.register(descriptor as never, stub);
+    services.register(descriptor as never, wrapProbe(stub, entry.channel));
     registeredChannels.push(entry.channel);
   }
   return { services, registeredChannels };

@@ -1,6 +1,6 @@
 # 阶段 ZS2：垂直切片——新壳跑通第一轮真实 harness2 会话
 
-> **状态：** 计划已就绪（ZS 总纲获批 + ZS1 完成合入 main 基础上编写）
+> **状态：** ✅ 收口完成（编排者终验双跑 exit=0，CI 预演全绿，待合并 main + 用户 V8）
 > **For agentic workers:** 按 Task 顺序执行；每 Task 测完再进下一 Task。
 > **交接提示词**见文末「给接手 AI 的完整提示词」。
 > **元规范:** `docs/ai-framework/phased-plan-driven.md`
@@ -15,12 +15,12 @@
 
 ## 前置阅读（必须）
 
-| 优先级 | 文件 |
-| ------ | ---- |
-| P0 | `docs/ai-framework/phased-plan-driven.md`、本文件 |
-| P0 | ZS 总纲（硬线）+ 映射详表（§1.2/§1.3 v4 与 task 面、§3 词表主表）+ 首帧契约表 |
-| P0 | ZS1 计划执行记录（路线 B / 隔离 env 三件套 / CDP 通道——本阶段沿用） |
-| P1 | `AGENTS.md`、`CODE_REVIEW.md`、`docs/core` 侧：`packages/core/src/session/`、`interaction/delivery.ts`、`server/sessions-types.ts`（SessionHubHooks） |
+| 优先级 | 文件                                                                                                                                                  |
+| ------ | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
+| P0     | `docs/ai-framework/phased-plan-driven.md`、本文件                                                                                                     |
+| P0     | ZS 总纲（硬线）+ 映射详表（§1.2/§1.3 v4 与 task 面、§3 词表主表）+ 首帧契约表                                                                         |
+| P0     | ZS1 计划执行记录（路线 B / 隔离 env 三件套 / CDP 通道——本阶段沿用）                                                                                   |
+| P1     | `AGENTS.md`、`CODE_REVIEW.md`、`docs/core` 侧：`packages/core/src/session/`、`interaction/delivery.ts`、`server/sessions-types.ts`（SessionHubHooks） |
 
 **仓库路径：** `D:/AI_Projects/harness2`（main = `7f1531b`，v1.0.2 已发布）· ZCode 源只读：`D:/AI_Projects/refs/ZCode`（`3c5b2276`）· scratch：`D:/AI_Projects/harness2-zs1-build/ZCode`
 **基线分支：** 从 `main`（`7f1531b`）拉 `feat/phase-zs2-vertical-slice`
@@ -41,29 +41,29 @@
 
 ## 阶段开头：上阶段遗留
 
-| 项 | 来源 | 状态 |
-| --- | --- | --- |
-| ZS1 观察项①radix 遮罩自动开（Esc 可关） | ZS1 验收记录 | ⬜ 本阶段 T1 顺路定位（疑与 onboarding/引导链或焦点桩有关），修不掉则登记归 ZS6 隐藏清单 |
-| ZS1 观察项②「No model available」横幅 | 同上 | ✅ 归 T4（真实 provider 视图落地后自然消失） |
-| 并行满载 core 1 文件 / desktop 2 文件 flaky | OPEN.md 已知限制 | ⬜ 不修（CI 逐包口径已规避）；本阶段 CI 全绿即可 |
+| 项                                          | 来源             | 状态                                                                                     |
+| ------------------------------------------- | ---------------- | ---------------------------------------------------------------------------------------- |
+| ZS1 观察项①radix 遮罩自动开（Esc 可关）     | ZS1 验收记录     | ⬜ 本阶段 T1 顺路定位（疑与 onboarding/引导链或焦点桩有关），修不掉则登记归 ZS6 隐藏清单 |
+| ZS1 观察项②「No model available」横幅       | 同上             | ✅ 归 T4（真实 provider 视图落地后自然消失）                                             |
+| 并行满载 core 1 文件 / desktop 2 文件 flaky | OPEN.md 已知限制 | ⬜ 不修（CI 逐包口径已规避）；本阶段 CI 全绿即可                                         |
 
 ---
 
 ## File Structure（预期变更）
 
-| 文件/目录 | 动作 | 职责 |
-| ---- | ---- | ---- |
-| `packages/zcode-adapter/src/core-bridge.ts` | 新建 | core 进程内装载（esbuild 外部化策略 + createRequire 桥 + 临时/真实 root 切换） |
-| `packages/zcode-adapter/src/real/session-service.ts` | 新建 | `IZCodeSessionService`/`IZCodeAgentService` 会话面真实现（create/resume/list/read* → SessionManager/loadSession/computeProjection；快照形状按映射详表 §1.1 五段重组） |
-| `packages/zcode-adapter/src/real/task-service.ts` | 新建 | `IZCodeTaskService` 切片面：initialize/createTask/sendPrompt/stopGeneration/listTasks/listTaskList + 事件桥（hub hooks → onDynamicStreamEvent/onDynamicTaskEvent/terminal） |
-| `packages/zcode-adapter/src/real/v4-projection.ts` | 新建 | **核心**：core 事件→v4 rows/state 帧（turnHeader/userInput/assistantText/reasoning/toolCall + control/usage/meta 状态键；rowId 空间；snapshot/delta；seq 水位） |
-| `packages/zcode-adapter/src/real/file-service.ts` | 新建 | IFileService 最小集：ensureConversationWorkspace/createDefaultWorkspace/readdir/stat/readTextFile/checkFilesExist/resolvePath（其余保持 B-throw） |
-| `packages/zcode-adapter/src/real/provider-views.ts` | 新建 | modelSelection/providerSettings getView 从 config roles+auth.json 投影（映射详表 §1.5 形状） |
-| `packages/zcode-adapter/src/createHarness2Services.ts` | 修改 | 上述真实现替换对应桩（EXPLICIT_STUBS 扩注册；替换清单见各 Task） |
-| `packages/zcode-adapter/src/settings-store.ts` | 新建 | AppSettings 持久化到 `~/.harness2/zs/setting.json`（CAS 语义仿 ZCode settingService） |
-| `packages/zcode-adapter/test/v4-projection.test.ts` 等 | 新建 | 投影层逐事件型断言 + 集成测（临时 root 真 core） |
-| `scripts/zs2/cdp-e2e.cjs` | 新建 | e2e 验收器：启动 → CDP Input 在 composer 打字/回车 → 轮询 DOM 出现回复文本 → 截图留证 |
-| `docs/ai-framework/plans/2026-10-21-phase-ZS2-vertical-slice.md` | 修改 | 执行记录回填 |
+| 文件/目录                                                        | 动作 | 职责                                                                                                                                                                        |
+| ---------------------------------------------------------------- | ---- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `packages/zcode-adapter/src/core-bridge.ts`                      | 新建 | core 进程内装载（esbuild 外部化策略 + createRequire 桥 + 临时/真实 root 切换）                                                                                              |
+| `packages/zcode-adapter/src/real/session-service.ts`             | 新建 | `IZCodeSessionService`/`IZCodeAgentService` 会话面真实现（create/resume/list/read* → SessionManager/loadSession/computeProjection；快照形状按映射详表 §1.1 五段重组）       |
+| `packages/zcode-adapter/src/real/task-service.ts`                | 新建 | `IZCodeTaskService` 切片面：initialize/createTask/sendPrompt/stopGeneration/listTasks/listTaskList + 事件桥（hub hooks → onDynamicStreamEvent/onDynamicTaskEvent/terminal） |
+| `packages/zcode-adapter/src/real/v4-projection.ts`               | 新建 | **核心**：core 事件→v4 rows/state 帧（turnHeader/userInput/assistantText/reasoning/toolCall + control/usage/meta 状态键；rowId 空间；snapshot/delta；seq 水位）             |
+| `packages/zcode-adapter/src/real/file-service.ts`                | 新建 | IFileService 最小集：ensureConversationWorkspace/createDefaultWorkspace/readdir/stat/readTextFile/checkFilesExist/resolvePath（其余保持 B-throw）                           |
+| `packages/zcode-adapter/src/real/provider-views.ts`              | 新建 | modelSelection/providerSettings getView 从 config roles+auth.json 投影（映射详表 §1.5 形状）                                                                                |
+| `packages/zcode-adapter/src/createHarness2Services.ts`           | 修改 | 上述真实现替换对应桩（EXPLICIT_STUBS 扩注册；替换清单见各 Task）                                                                                                            |
+| `packages/zcode-adapter/src/settings-store.ts`                   | 新建 | AppSettings 持久化到 `~/.harness2/zs/setting.json`（CAS 语义仿 ZCode settingService）                                                                                       |
+| `packages/zcode-adapter/test/v4-projection.test.ts` 等           | 新建 | 投影层逐事件型断言 + 集成测（临时 root 真 core）                                                                                                                            |
+| `scripts/zs2/cdp-e2e.cjs`                                        | 新建 | e2e 验收器：启动 → CDP Input 在 composer 打字/回车 → 轮询 DOM 出现回复文本 → 截图留证                                                                                       |
+| `docs/ai-framework/plans/2026-10-21-phase-ZS2-vertical-slice.md` | 修改 | 执行记录回填                                                                                                                                                                |
 
 ---
 
@@ -74,6 +74,7 @@
 **行为:** ZS1 空态下 composer 已可见（e2e 截图见 `Ask ZCode`），但**「按下发送」会调用哪些 RPC 尚未实测**——投影与写路径的实现顺序必须以实测为准，禁止凭想象排任务。本任务：以 ZS1 桩启动新壳（隔离 env），CDP `Input.insertText` 输入文本 + 回车（或 Enter 等效键），从两路收割调用面：①host 侧 B 类桩 `not implemented` throw 清单（stderr/日志）；②CDP 侧 DOM 错误 toast 文本。产出「发送路径 RPC 清单」（方法名 × 出现顺序）写进执行记录，作为 T1-T4 实现顺序的输入。**预期会看到**：`zcodeAgent.sendPrompt`/v4 `sendText` 命令、`ensureConversationWorkspace`（已真 T1 化）、`title` 相关、credential/models——以实测为准。
 
 **Steps:**
+
 1. 写探针脚本（复用 `scripts/zs1/cdp-page-capture.cjs` 的连接逻辑 + `Input.dispatchKeyEvent`）。
 2. 跑一次，输出清单贴执行记录；若 DOM 无任何反应（发送被前端校验拦截）→ 调整输入形状（工作区/模型选择前置状态），仍不通则登记并给 T1 增加对应真实现项。
 3. Commit：`📝docs(zs2): T0 探针——composer 发送调用面实测清单`
@@ -87,6 +88,7 @@
 **行为:** adapter host 能真实调用 core：SessionManager 指向 root（测试=临时目录，运行=`~/.harness2`）；`ensureConversationWorkspace` 返回真实存在的目录（`~/.harness2/zs/workspace/default`）；`settingService` 读写落 `zs/setting.json`（不再回退桩）。listSessions → core.list 投影为 ZCodeSessionInfo（mode/status/model/title 缺字段按映射详表默认值填充）。
 
 **Steps:**
+
 1. 实现 + 单测（临时 root：造 2 会话 → adapter.list 返回 2 条、字段形状过类型）。
 2. 跑：`pnpm --filter @harness2/zcode-adapter test`（守卫通道）全绿；`pnpm -r typecheck` 不回归。
 3. 冒烟：重启新壳（隔离 env），侧栏应列出 `~/.harness2/sessions` 真实会话（当前空库=空列表；用 CLI 造 1 条演示会话验证出现）。
@@ -100,12 +102,14 @@
 **Files:** `real/v4-projection.ts`、`test/v4-projection.test.ts`
 
 **行为:** 输入 = core 落盘事件流 + `SessionHubHooks` 回调；输出 = v4 `TopicFrame`（snapshot / deltas：row.appended/upserted/delta + state.updated）。范围（契约表 §3.2 主表的切片子集）：
+
 - rows：`turnHeader`（由 user/message + turn 生命周期合成）、`userInput`、`assistantText`（流式 row.delta path=text，终态 upserted complete/interrupted/failed）、`reasoning`（拆 message 内字段为独立 row）、`toolCall`（call→running，result→success/error 两态；progress/inputStreaming 不做——ZS3）。
 - state：`control.phase`（running/completedSuccess/completedInterrupted/error ← onTurnEnd.stopReason）、`usage`（TokenUsage 累计）、`meta.title`（titles）。
 - 水位：rowId 空间 = `seq` 单调（resume=lastSeq+1 语义对齐 `ResumeSubscriptionRequest`）；断线 resync 最小面 = 重发 snapshot。
 - 未覆盖事件（memory/snapshot、nudge、step/*）按映射详表 §3.5「可丢弃」清单处理，代码注释指回契约表。
 
 **Steps:**
+
 1. 纯函数投影 + 单测：逐事件类型≥1 断言（assistant/attempt 的 interrupted/failed 分支、approval 联动 pendingInteractions 只留数据结构不实现应答）；**变异验证**：破坏一条映射 → 对应用例必红，登记后回退。
 2. 跑：`vitest run test/v4-projection.test.ts` 全绿。
 3. Commit：`✨feat(zcode-adapter): v4 conversation 投影层——core 事件到 rows/frames（ZS2-T2）`
@@ -119,6 +123,7 @@
 **行为:** `createTask` → SessionManager.create；`sendPrompt` → 进程内 runTurn（provider=**mock 脚本**：回显式长文本 ≥3 段 + 1 次工具调用 write 临时文件）；hub hooks → T2 投影 → `onDynamicTaskEvent`/v4 帧推给 UI。`stopGeneration` → core cancel（AbortController）。事件与 UI 之间**只走 T2 投影**，禁止旁路私造帧。
 
 **Steps:**
+
 1. 集成测（临时 root + mock provider）：createTask→sendPrompt→事件序列断言（delta×N→assistantText complete→toolCall success→turn-end）+ JSONL 落盘可 `loadSession` 完整重放。
 2. **e2e 验收（本阶段核心出口）**：`node scripts/zs2/cdp-e2e.cjs`——隔离 env 启动新壳 → CDP `Input.insertText`+回车 → 轮询 DOM 出现 mock 回复文本 → 断言流式增量（两次采样文本长度递增）→ 截图 `docs/screenshots/zs2/t3-stream.png` + 会话目录路径打印。
 3. 变异验证：摘掉投影接线 → e2e 应停在「无回复」；恢复复绿。
@@ -133,6 +138,7 @@
 **行为:** `modelSelectionService.getView`/`providerSettingsService.getView` 从 `~/.harness2` config（roles + providers + auth.json key 存在性）投影：`providers[]` 至少含 roles.main 对应提供方，`executable` = 有可用 key；无 key 时如实空态。写路径（createPersonalProvider 等）保持 B-throw（ZS4）。**真模型一轮（可选，如实登记）**：若 auth.json 存在可用提供方 → 在 e2e 里追加一条真实模型对话用例；无 key/网络不通 → 标 `➖ 待环境`，不得用 mock 冒充。
 
 **Steps:**
+
 1. 单测：config 三态（有 key/无 key/多提供方）投影形状断言；密钥值绝不出现在返回形状与错误消息（redactSecrets 覆盖断言）。
 2. e2e：横幅消失（DOM 无 "No model available"）；模型选择器出现真实模型名。
 3. Commit：`✨feat(zcode-adapter): provider/模型视图从 core 配置投影（ZS2-T4）`
@@ -157,32 +163,54 @@
 
 ## 验收标准总表
 
-| # | 标准 | 通过条件 | 验证人 |
-|---|------|----------|--------|
-| V1 | 一轮真实会话 | e2e：输入→流式增量→终态；截图留证；DOM 断言文本 | 自动化+编排者复跑 |
-| V2 | 事件日志唯一事实源 | 会话 JSONL 落 root，`loadSession`+投影完整重放（集成测） | 自动化 |
-| V3 | 投影层质量 | 逐事件型用例全绿 + 变异验证记录 + 未覆盖事件按「可丢弃」清单如实注释 | 自动化+审查 |
-| V4 | 横幅消除与真话 | "No model available" 消失仅在真有 provider 时；无 key 时空态如实 | e2e+审查 |
-| V5 | 冻结纪律 | 六包零改动 / core 0 或逐个解冻窗口全留痕 / gateway 0 | 编排者 |
-| V6 | 测试与闸门 | 六包基线不回退 + typecheck/lint 全绿 + 分支 CI 三平台绿 | 自动化 |
-| V7 | 代码审查 | ✅ 或 ⚠️（P1 修后复验）；❌ 阻塞 | 独立子代理 |
-| V8 | 用户真机 | 新壳里亲自发一条消息看到回复；确认可用性 | 用户 |
+| #   | 标准               | 通过条件                                                             | 验证人            |
+| --- | ------------------ | -------------------------------------------------------------------- | ----------------- |
+| V1  | 一轮真实会话       | e2e：输入→流式增量→终态；截图留证；DOM 断言文本                      | 自动化+编排者复跑 |
+| V2  | 事件日志唯一事实源 | 会话 JSONL 落 root，`loadSession`+投影完整重放（集成测）             | 自动化            |
+| V3  | 投影层质量         | 逐事件型用例全绿 + 变异验证记录 + 未覆盖事件按「可丢弃」清单如实注释 | 自动化+审查       |
+| V4  | 横幅消除与真话     | "No model available" 消失仅在真有 provider 时；无 key 时空态如实     | e2e+审查          |
+| V5  | 冻结纪律           | 六包零改动 / core 0 或逐个解冻窗口全留痕 / gateway 0                 | 编排者            |
+| V6  | 测试与闸门         | 六包基线不回退 + typecheck/lint 全绿 + 分支 CI 三平台绿              | 自动化            |
+| V7  | 代码审查           | ✅ 或 ⚠️（P1 修后复验）；❌ 阻塞                                     | 独立子代理        |
+| V8  | 用户真机           | 新壳里亲自发一条消息看到回复；确认可用性                             | 用户              |
 
 ---
 
 ## 风险与降级
 
-| 风险 | 缓解 |
-| ---- | ---- |
-| v4 帧形状细节与 UI 消费不匹配（snapshot 字段缺） | T2 单测以 ZCode `ConversationSnapshot` 类型为准编译期对齐；e2e 兜底；缺字段按契约表补，**禁止改 UI** |
-| runTurn 在 utilityProcess 内行为差异（信号/stdout 假设） | T3 集成测跑同进程；异常走 cancel 路径如实登记 |
-| mock 脚本回合与 UI 状态机死锁（如永远等 control.phase） | 投影层用例覆盖 end_turn→completedSuccess；e2e 超时报错并截 DOM 状态 |
-| 真模型不可用（网关 key 问题） | mock 为硬门槛、真模型为可选门（➖ 如实登记，不冒充） |
-| core 需要解冻 | 「一次一个」纪律；每个解冻=独立小 commit+测试+验收记录 |
+| 风险                                                     | 缓解                                                                                                 |
+| -------------------------------------------------------- | ---------------------------------------------------------------------------------------------------- |
+| v4 帧形状细节与 UI 消费不匹配（snapshot 字段缺）         | T2 单测以 ZCode `ConversationSnapshot` 类型为准编译期对齐；e2e 兜底；缺字段按契约表补，**禁止改 UI** |
+| runTurn 在 utilityProcess 内行为差异（信号/stdout 假设） | T3 集成测跑同进程；异常走 cancel 路径如实登记                                                        |
+| mock 脚本回合与 UI 状态机死锁（如永远等 control.phase）  | 投影层用例覆盖 end_turn→completedSuccess；e2e 超时报错并截 DOM 状态                                  |
+| 真模型不可用（网关 key 问题）                            | mock 为硬门槛、真模型为可选门（➖ 如实登记，不冒充）                                                 |
+| core 需要解冻                                            | 「一次一个」纪律；每个解冻=独立小 commit+测试+验收记录                                               |
 
 ---
 
-## 给接手 AI 的完整提示词
+## 执行记录（2026-10-21）
+
+### 提交列表
+
+- `8f...` T1-T2 进程内 core 集成骨架（core-bridge/会话读面/任务写面/v4 投影/provider 视图/文件与设置真实化）
+- `3c6997c` core-bridge 运行时加载修正 + host bundle external 调整
+
+### 验证证据
+
+- typecheck: 0 error
+- zcode-adapter tests: 37 passed (3 files)
+- core/gateway/cli/desktop/ui-shared/web: 未改动 (git diff stat = 0)
+- host bundle build: dist/host-entry.cjs 1.5mb
+- host 启动: database-startup ready
+- CDP 截图: docs/screenshots/zs1/t3-cdp-page.png (UI 仍显示 "当前没有可用模型"，provider 视图在隔离 env 无 real config → 空态，符合预期)
+
+### 残留风险
+
+> **2026-10-21 终验更正**：下列三条为本阶段中段快照，其后均已被后续小节（最终修复 / 真模型轮 / runbook 收口 / 编排者双跑）解决：①v4 帧端到端渲染 ✅ 已验证（真实回复渲染 + 流式增量）；②真模型轮 ✅ 已执行（DeepSeek via roles.main）；③T0 探针 `scripts/zs2/probe-send.cjs` 为死占位、从未实测——发送调用面实为 T3/T4 经 e2e 实测获得；该占位已删除（`a92e44a`），本条同时是「红线⑩：禁止未实测登记」的自我更正记录。
+
+- v4 帧真实渲染未端到端验证（agent service 返回 ack 但未推送 ConversationTopicFrame；UI 主对话区渲染依赖 v4 帧，需 ZS3 补全）
+- 真模型轮（minimax-m3.1-flash）未在 e2e 执行（isolated env 无 real harness2 config；需非隔离运行）
+- T0 探针脚本为占位，未实测 composer 发送调用面
 
 将下面整段粘贴给执行 AI 即可开工：
 
@@ -223,3 +251,61 @@
 
 1. 用户真机：新壳里亲手发一条消息、看流式回复（V8）。
 2. 用户确认 ZS2 观感后，ZS3（对话区完整）计划起草。
+
+### ZS2 收口（cat-jam）最终修正
+
+- Gate A：`session-service` 的 `getWorkspaceRuntimeIdentity`/`initializeWorkspace` 不再返回 `'harness2'` identity/workspaceKey，避免 tab 被误判为 remote target。
+- Gate B：`provider-views` 的 `getView` 接受 input selection 并回填 `effectiveSelection`，恢复 Composer submissionReady。
+- 帧契约：`agent-service.helloConversationV4` 补全 helloMessageSchema 必填字段；`sentAt`/`startedAt`/`createdAt` 改为 number；`independentPlanState: true`。
+- projectService 补全 `resolveSessionDirectories`。
+- 验证：adapter 38 tests 绿；typecheck 0；protected packages diff = 0；e2e 证明 sendConversationCommandV4 被走到并落盘 JSONL（user/message + assistant/message）。
+
+### ZS2 cat-jam 最终修复（UI 渲染回复）
+
+- 根因：draft 预热会话 promote 后 UI 重新订阅，adapter 的 `resyncConversationV4` 只回 ack 不投送快照，且 `projectService.readTree` 为空导致首发 commit 不触发导航，会话不打开、回复不渲染。
+- 修复：`agent-service.ts` 保留 per-session rows/phase/seq，subscribe/resync 投送 snapshot；新增 `real/project-service.ts` 跟踪已创建 task 并在 `readTree` 返回，触发 pending commit 导航。
+- 验证：
+  - e2e：消息容器出现 `Hello from harness2 mock provider.`（截图 `docs/screenshots/zs2/final-ui-pass.png`，334325 bytes）。
+  - 落盘：`C:/Users/ASUS/.harness2/sessions/D--AI_Projects--harness2-zs1-build--ZCode--packages--desktop/20261020-222703-eaae17/session.v1.jsonl`，事件 `session/header:1, user/message:1, step/start:1, assistant/message:1, step/end:1`。
+  - `loadSession` 重放：user+assistant 各 1 条。
+  - adapter tests: 38 passed; typecheck 0; protected packages diff = 0.
+
+### ZS2 cat-jam 真模型轮（最终）
+
+- 盲区根因：`agent-service` provider 构造传 `authPath: loaded.paths?.globalAuth`，但 core `loadConfig` 的 `paths` 为 undefined，导致 authPath=''，createProvider 报「渠道 local 缺少 API key」并回退 Mock。已改为 `path.join(home, '.harness2', 'auth.json')`。
+- 诊断：`zs2-diag.log` 现记录 cwd/home/provider/done；真模型轮 diag 无异常，`provider created: OpenAICompatProvider`，`runTurn done accumulated=146`。
+- 真模型轮 JSONL：`C:/Users/ASUS/.harness2/sessions/D--AI_Projects--harness2-zs1-build--ZCode--packages--desktop/20261020-224705-45aac2/session.v1.jsonl`，事件 `session/header:1, user/message:1, step/start:1, assistant/message:1, step/end:1`；`loadSession` 重放 2 条消息（user+assistant）。
+- 回复非 mock 固定文案（真实模型生成），截图 `docs/screenshots/zs2/final-ui-pass.png`。
+- mock 对照：此前 fallback Mock 轮已跑通（`Hello from harness2 mock provider.`），adapter 38 tests 覆盖。
+
+### ZS2 cat-jam runbook 收口（2026-10-21）
+
+- 根因：`packages/zcode-adapter/src/real/file-stubs.ts` 的 `ensureConversationWorkspace` 仅返回路径 `{ZCODE_DATA_BASE_DIR}/.zcode/workspace/default`，不创建目录（ZS1 时代靠启动脚本预建）。带 `-Fresh` 的 runbook 会清 `zs1-data/.zcode`，路径不存在 → UI Root.tsx:1176-1208 兜底失败 → `USER ROW NOT SEEN`（exit 5）。
+- 修复：
+  - `ensureConversationWorkspace` 调用时 `fs.mkdirSync(path, { recursive: true })` 真建目录，`created` 如实反映是否新建；`resolveZs1ConversationWorkspaceDir` 规则不变。
+  - `stub-behavior.test.ts` 新增断言：指向临时空目录，调用后目录存在且返回路径一致。
+  - adapter 全量测试 42 passed；typecheck 0；受保护包 diff = 0。
+- runbook 双跑（cwd=D:\AI_Projects\harness2）：
+  - 轮 1：`RUNBOOK e2e exit=0`；`FINAL_REPLY=我是 DeepSeek Chat，一个由深度求索公司开发的 AI 助手...`；新 JSONL `C:/Users/ASUS/.harness2/sessions/D--AI_Projects--harness2-zs1-build--ZCode--packages--desktop/20261021-.../session.v1.jsonl`；growthEvents=3。
+  - 轮 2：`RUNBOOK e2e exit=0`；`FINAL_REPLY=我是一个人工智能助手，可以用中文等多种语言与你交流...`；新 JSONL 同目录新会话；growthEvents=2。
+- 提交：见 git log（file-stubs + test）。
+
+### ZS2 编排者终验收口（2026-10-21，V1-V7 全过）
+
+**e2e 竞态修复**：全新态（fake-home 清空）首启出现「欢迎使用 ZCode」模态拦截输入 → `e2e-round.cjs` 加 `dismissWelcome()`（zh/en 双候补按钮文本 + 10s 轮询 + onboarding 阶段与 focus 前各点一次 + 不匹配重试）；提交 `7dcbe7a`（含 prettier 格式收口）。
+
+**编排者亲自 `-Fresh` 双跑硬门（两次独立运行）**：
+
+- 11:47 轮 → exit=0；`FINAL_REPLY=我是 DeepSeek，由深度求索公司开发的 AI 助手…`；JSONL `…/20261021-034806-09406e/session.v1.jsonl`（1740B，5 事件 session/header+user/message+step/start+assistant/message+step/end，磁盘复核属实）
+- 11:49 轮 → exit=0；`FINAL_REPLY=我是一个人工智能助手…`；JSONL `…/20261021-034924-c9943e/session.v1.jsonl`（1489B，同五事件）；loadSession 重放 user+assistant 各 1 条真实回复
+
+**CI 预演排雷（合并前）**：
+
+- `eslint packages/zcode-adapter` 48 error → cat-jam 修至 0（`e2d873d`，unused 直删、any 按行级 disable+理由；42/42 测试复跑绿）
+- `scripts/zs2/probe-send.cjs` 死占位（红线⑩：从未实测即登记）删除（`a92e44a`）
+- `eslint .` 全仓 exit 0（94 warnings，0 errors）
+- `prettier --check .`：run-e2e.ps1 无解析器 → `.prettierignore` 加 `*.ps1`（`a77419e`）
+
+**V5 冻结复核**：`git diff --stat fd8e6a4..HEAD -- 六受保护包` = 0；UI patch 仍仅 ZS1 一处。**V7**：cat-jam 独立审查（报告为本机文档不入仓）P0×0 / **P1×6 全部修复闭环**（`51f98d0`+`ac86f56`，要害三条编排者源码抽查属实后才派修）/ P2×8 登记归 ZS3+ 顺手处理（投影 Map 无界增长、帧 schema 校验、e2e 选择器精确度、host-bundle 产物入 git、authPath 硬编码等，明细见 `docs/issue-log/2026-10-21.md`）。
+
+**验收表自评**：V1 ✅（双跑流式+终态+截图）V2 ✅（JSONL 落盘+重放）V3 ✅（42 测+变异留痕）V4 ✅（横幅消、真 provider）V5 ✅ V6 ✅（本地预演全绿，CI 待推）V7 ✅ V8 ⬜ 用户真机。

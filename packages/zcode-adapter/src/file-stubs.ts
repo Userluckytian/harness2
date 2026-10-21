@@ -8,6 +8,7 @@
  * 返回 ZCODE_DATA_BASE_DIR 隔离数据根下的会话工作区路径（不写真实数据；
  * 目录由启动步骤预建，见计划执行记录）。
  */
+import { existsSync, mkdirSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import type { IFileService } from '@zcode/services';
@@ -28,7 +29,12 @@ const fileServiceImpl: Pick<
     created: boolean;
     workspacePurpose: 'conversation';
   }> {
-    return { path: resolveZs1ConversationWorkspaceDir(), created: false, workspacePurpose: 'conversation' };
+    const path = resolveZs1ConversationWorkspaceDir();
+    const created = !existsSync(path);
+    if (created) {
+      mkdirSync(path, { recursive: true });
+    }
+    return { path, created, workspacePurpose: 'conversation' };
   },
   async createDefaultWorkspace(): Promise<{ path: string }> {
     return { path: resolveZs1ConversationWorkspaceDir() };

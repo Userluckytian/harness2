@@ -36,3 +36,4 @@ scripts/tui-parity/**/__pycache__/
 # 此条防御性拦截仓内同名目录误创建）
 harness2-zs1-build/
 scratch-zs1/
+.zcodeignore
