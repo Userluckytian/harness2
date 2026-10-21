@@ -1,7 +1,7 @@
 ﻿# ZS2 e2e 一键 runbook（编排者安全重写，2026-10-21；旧版三处不可放行：`*ZCode*` 过宽误杀面 / 未验证的 dev-desktop-env 启动 / 180s 死等）
 # 用法: powershell -NoProfile -ExecutionPolicy Bypass -File scripts/zs2\run-e2e.ps1 [-Fresh]
 # 退出码: 透传 e2e-round.cjs（0 通过 / 3 实例锁定失败 / 4 输入未落 / 5 用户行未现 / 6 无 composer / 1 其他）
-param([switch]$Fresh, [switch]$Approval)
+param([switch]$Fresh, [switch]$Approval, [switch]$SidebarDelete, [switch]$SettingsProvider)
 $ErrorActionPreference = 'Stop'
 
 $HarnessRoot  = 'D:\AI_Projects\harness2'
@@ -46,7 +46,7 @@ if (-not (Test-Path $AdapterHost)) {
 
 # -Fresh：清壳配置 + 会话工作区/草稿数据（草稿持久化在 zs1-data 与 HARNESS2_HOME 的 zs 目录，
 # 2026-10-21 实证跨重启残留会污染 composer 初值）
-if ($Fresh) {
+if ($Fresh -or $SidebarDelete -or $SettingsProvider) {
   foreach ($p in @((Join-Path $FakeHome '.zcode'), (Join-Path $FakeHome '.harness2'), (Join-Path $DataDir '.zcode'))) {
     if (Test-Path $p) { Remove-Item -Recurse -Force $p -ErrorAction SilentlyContinue }
   }
@@ -61,10 +61,13 @@ $env:USERPROFILE = $FakeHome
 $env:APPDATA = Join-Path $FakeHome 'AppData\Roaming'
 $env:LOCALAPPDATA = Join-Path $FakeHome 'AppData\Local'
 $env:HARNESS2_HOME = 'C:\Users\ASUS'
+if ($SidebarDelete -or $SettingsProvider) { $env:HARNESS2_HOME = $FakeHome }
 $env:ZS1_HOST_MODULE_PATH = $AdapterHost
 $env:ZCODE_DATA_BASE_DIR = $DataDir
 $env:ZS2_PROBE = '1'
 if ($Approval) { $env:ZS3_E2E_APPROVAL = '1' }
+if ($SidebarDelete) { $env:ZS4_SIDEBAR_DELETE = '1' }
+if ($SettingsProvider) { $env:ZS4_SETTINGS_PROVIDER = '1' }
 
 Start-Process -FilePath $Electron -ArgumentList '.' -WorkingDirectory (Join-Path $ZCodeRoot 'packages\desktop') | Out-Null
 
@@ -83,6 +86,10 @@ Start-Sleep -Seconds 4
 Push-Location $HarnessRoot
 if ($Approval) {
   node scripts/zs3/approval-round.cjs
+} elseif ($SidebarDelete) {
+  node scripts/zs4/sidebar-delete-round.cjs
+} elseif ($SettingsProvider) {
+  node scripts/zs4/settings-provider-round.cjs
 } else {
   node scripts/zs2/e2e-round.cjs
 }
