@@ -29,7 +29,8 @@ const TEXT = '渲染诊断请回复OK';
       pend.delete(m.id);
     } else if (m.method === 'Runtime.consoleAPICalled') {
       const args = (m.params.args || []).map((a) => String(a.value ?? a.description ?? a.type)).join(' ');
-      if (m.params.type === 'error' || m.params.type === 'warning') errors.push(`CONSOLE[${m.params.type}]: ${args.slice(0, 300)}`);
+      if (m.params.type === 'error' || m.params.type === 'warning')
+        errors.push(`CONSOLE[${m.params.type}]: ${args.slice(0, 300)}`);
     } else if (m.method === 'Log.entryAdded') {
       const e = m.params.entry;
       if (e.level === 'error' || e.level === 'warning') errors.push(`LOG[${e.level}]: ${(e.text || '').slice(0, 300)}`);
@@ -51,7 +52,9 @@ const TEXT = '渲染诊断请回复OK';
 
   // 先关弹窗
   for (let i = 0; i < 3; i++) {
-    await ev(`(() => { const d=document.querySelector('[role="dialog"]'); if(d){const b=Array.from(d.querySelectorAll('button')).find(x=>/开始使用|Start ZCode/i.test(x.innerText||'')); if(b)b.click();} return 1; })()`);
+    await ev(
+      `(() => { const d=document.querySelector('[role="dialog"]'); if(d){const b=Array.from(d.querySelectorAll('button')).find(x=>/开始使用|Start ZCode/i.test(x.innerText||'')); if(b)b.click();} return 1; })()`,
+    );
     await call('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27 });
     await call('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27 });
     await new Promise((r) => setTimeout(r, 300));
@@ -65,12 +68,18 @@ const TEXT = '渲染诊断请回复OK';
   await new Promise((r) => setTimeout(r, 8000));
   console.log('ROWS=' + (await ev(`document.querySelectorAll('[data-testid^="v4-row-"]').length`)));
   console.log('HAS_TEXT=' + (await ev(`(document.body.innerText||'').includes(${JSON.stringify(TEXT)})`)));
-  console.log('WHERE=' + (await ev(`(() => {
+  console.log(
+    'WHERE=' +
+      (await ev(`(() => {
     const walk=(el,acc)=>{for(const c of el.children){const hit=(c.innerText||'').includes(${JSON.stringify(TEXT)});if(hit&&c.children.length===0)acc.push(c.tagName+'/'+(c.getAttribute('data-testid')||c.className.toString().slice(0,40)));walk(c,acc)}return acc};
     return JSON.stringify(walk(document.body,[]).slice(0,6));
-  })()`)));
+  })()`)),
+  );
   const shot = await call('Page.captureScreenshot', { format: 'png' });
-  require('node:fs').writeFileSync('D:/AI_Projects/harness2-zs1-build/after-send.png', Buffer.from(shot.result.data, 'base64'));
+  require('node:fs').writeFileSync(
+    'D:/AI_Projects/harness2-zs1-build/after-send.png',
+    Buffer.from(shot.result.data, 'base64'),
+  );
   console.log('SHOT=d:/AI_Projects/harness2-zs1-build/after-send.png');
   console.log('ERRORS=' + JSON.stringify(errors.slice(0, 15), null, 1));
   ws.close();

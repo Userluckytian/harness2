@@ -27,7 +27,10 @@ function getTargets() {
 async function main() {
   const targets = await getTargets();
   const page = targets.find(
-    (t) => t.type === 'page' && (t.url || '').includes('harness2-zs1-build') && !(t.url || '').includes('packages/desktop/dist'),
+    (t) =>
+      t.type === 'page' &&
+      (t.url || '').includes('harness2-zs1-build') &&
+      !(t.url || '').includes('packages/desktop/dist'),
   );
   if (!page) {
     console.error('NO_PAGE');
@@ -85,7 +88,9 @@ async function main() {
   await dump('after-dismiss');
 
   // focus composer, type, send
-  await send('Runtime.evaluate', { expression: `document.querySelector('[contenteditable=true]') && document.querySelector('[contenteditable=true]').focus()` });
+  await send('Runtime.evaluate', {
+    expression: `document.querySelector('[contenteditable=true]') && document.querySelector('[contenteditable=true]').focus()`,
+  });
   await new Promise((r) => setTimeout(r, 300));
   await send('Input.insertText', { text: TEXT });
   await new Promise((r) => setTimeout(r, 400));
@@ -95,8 +100,7 @@ async function main() {
   for (let i = 0; i < 12; i++) {
     await new Promise((r) => setTimeout(r, 500));
     const r = await send('Runtime.evaluate', {
-      expression:
-        `(() => { const rows = Array.from(document.querySelectorAll('[data-testid^="v4-row-"]')); return rows.some(x => x.querySelector('[data-v4-user-input-bubble]') || (x.innerText||'').includes(${JSON.stringify(TEXT)})); })()`,
+      expression: `(() => { const rows = Array.from(document.querySelectorAll('[data-testid^="v4-row-"]')); return rows.some(x => x.querySelector('[data-v4-user-input-bubble]') || (x.innerText||'').includes(${JSON.stringify(TEXT)})); })()`,
       returnByValue: true,
     });
     if (r.result && r.result.result && r.result.result.value === true) {

@@ -1,0 +1,40 @@
+# ZS4 冷启动首轮发送不渲染——根因诊断报告（2026-10-21 深夜）
+
+**任务**：定位 runbook `-Fresh` 冷启动回归轮 exit=5（USER ROW NOT SEEN）根因。
+**方式**：独立只读诊断代理（cat-jam `agent_86ab6e0d`），不改 src；证据 = CDP DOM dump + 截图 + host/renderer 日志 + 磁盘 JSONL + 对照 bundle。
+
+## 现象复述（编排者实测 4 组）
+
+1. 冷启动 composer 发送 → 磁盘 JSONL 五事件完整（真实 MiniMax 回复）、host `sendConversationCommandV4 OK`、renderer `subscribe started/acknowledged/activated + store connect completed mode=snapshot`——但 `[data-testid^="v4-row-"]`=0、`chat-empty` 常驻、页面顶部「命令面板」视图。
+2. 点侧栏任务行（`task-item-*`）→ 快照路径 rows=2 正常渲染。
+3. 热态（会话已打开过）第二轮发送 → ROWS=4 正常增量渲染。
+4. wipe fake-home 真·首启复跑同坏；pre-ZS4（`e9f7362` src 重建 bundle）亦同坏——但 ZS4 全部提交未触碰 agent-service/v4-projection/session-service，「同坏」只排除帧代码改动本身，不排除 ZS4 数据面变更引入的状态差异。
+
+## 根因结论（诊断代理）
+
+**主因 = 候选 A**：冷启动后 UI 激活视图是「命令面板 landing」而非会话视图；发送成功创建的会话没有让壳自动切回会话视图，DOM 上会话行自然为 0。Esc 关不掉（与 ZS1 观察「Esc 可关」不符——当时是 radix 遮罩 dialog，本次形态是视图级 landing，二者可能不同源，修复时需一并钉清）。
+
+**次因 = 候选 B（加速器）**：突发帧下 ProxyChannel 有丢帧观测（adapter `emitToSession` N 次 vs renderer `handleFrame` 仅 3–4 帧），即使视图正确也会拖慢首帧；但非主因（点行快照路径全好）。
+
+**候选 D**：`subscribeSessionsIndexV4` 全天 14 FAIL/0 OK = adapter 未实现该方法（factory 兜底 throw）。代理判与主故障无关——**存疑**，UI 的会话切换/侧栏实时性可能依赖此频道，修复阶段必须先查消费链再定（若 UI 靠 sessionsIndex 帧把新会话顶到前台，则 D 就是 A 的触发链）。
+
+**候选 C**：adapter 单测同进程直调不经 ProxyChannel/Emitter = 覆盖缺口，登记为后续加固项，非根因。
+
+## 修复边界（红线约束下的选项空间）
+
+诊断代理原始建议含「改壳 landing/发送链路」——**违反 ZS4 Global Constraints #1（ZCode UI 零改动）**，不采纳原样。合规路径按优先级：
+
+1. **adapter 实现 `subscribeSessionsIndexV4`**（若证实 UI 消费链依赖它触发视图切换/新会话上屏）——合法接线，本就欠实现。
+2. **adapter 返回数据塑形**：readTree/tasks-index 影响 UI landing 状态（如 recent session、空树降级 landing）——查 ZCode renderer 决定 landing 的数据条件后对症。
+3. **探针/runbook 适配**：冷启动发送后显式打开会话（模拟用户点行）——治标，仅当判定「命令面板 landing 是 ZCode 原生行为且真机用户会自然点进会话」时可接受。
+4. 以上皆不通 → 上报编排者+用户决策是否破例 UI patch（ZS2 以来 patch 计数纪律：1 处）。
+
+## 严重级
+
+**P0**：冷启动首轮发送后用户看不到自己的消息与回复，核心对话流不可用；V9 真机必现，阻塞 ZS4 收口。
+
+## 修复验证门（任一方案）
+
+- `run-e2e.ps1 -Fresh` 双跑 exit=0（不靠点行兜底，若走方案 3 需同时有 adapter 侧证据说明真机可接受）。
+- adapter 回归测试全绿 + 新行为有测试钉住。
+- 六包冻结 diff=0 复验。

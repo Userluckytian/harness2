@@ -119,7 +119,9 @@ function findSessionDir(id) {
       let ids = [];
       for (let i = 0; i < 40; i++) {
         await new Promise((r) => setTimeout(r, 500));
-        const v = await ev("JSON.stringify(Array.from(document.querySelectorAll('[data-session-id]')).map(x=>x.getAttribute('data-session-id')))");
+        const v = await ev(
+          "JSON.stringify(Array.from(document.querySelectorAll('[data-session-id]')).map(x=>x.getAttribute('data-session-id')))",
+        );
         try {
           ids = JSON.parse(v || '[]');
         } catch {
@@ -137,11 +139,13 @@ function findSessionDir(id) {
       console.log('TARGET_DIR=' + String(targetDir));
 
       // archive target via context menu
-      await ev(`(() => { const b = document.querySelector('button[data-session-id="${targetId}"]'); if (!b) return 'missing-row'; b.dispatchEvent(new MouseEvent('contextmenu', {bubbles:true,cancelable:true,button:2})); return 'dispatched'; })()`);
+      await ev(
+        `(() => { const b = document.querySelector('button[data-session-id="${targetId}"]'); if (!b) return 'missing-row'; b.dispatchEvent(new MouseEvent('contextmenu', {bubbles:true,cancelable:true,button:2})); return 'dispatched'; })()`,
+      );
       let archiveItem = null;
       for (let i = 0; i < 40; i++) {
         await new Promise((r) => setTimeout(r, 250));
-        const v = await ev("!!document.querySelector('[data-menu-action=\"archive\"]')");
+        const v = await ev('!!document.querySelector(\'[data-menu-action="archive"]\')');
         if (v === true) {
           archiveItem = true;
           break;
@@ -151,7 +155,9 @@ function findSessionDir(id) {
         console.error('ARCHIVE MENU MISSING');
         process.exit(5);
       }
-      await ev("(() => { const b = document.querySelector('[data-menu-action=\"archive\"]'); if (b) { b.click(); return true; } return false; })()");
+      await ev(
+        '(() => { const b = document.querySelector(\'[data-menu-action="archive"]\'); if (b) { b.click(); return true; } return false; })()',
+      );
       // wait row disappears from active list
       let archivedFromActive = false;
       for (let i = 0; i < 40; i++) {
@@ -169,7 +175,9 @@ function findSessionDir(id) {
       }
 
       // open archived view
-      await ev("(() => { const b = document.querySelector('button[data-testid=\"sidebar-archived-toggle\"]'); if (b) { b.click(); return true; } return false; })()");
+      await ev(
+        '(() => { const b = document.querySelector(\'button[data-testid="sidebar-archived-toggle"]\'); if (b) { b.click(); return true; } return false; })()',
+      );
       let inArchivedView = false;
       for (let i = 0; i < 40; i++) {
         await new Promise((r) => setTimeout(r, 300));
@@ -186,11 +194,13 @@ function findSessionDir(id) {
       }
 
       // restore one (target) back to main list to test restore
-      await ev(`(() => { const b = document.querySelector('button[data-session-id="${targetId}"]'); if (!b) return 'missing-row'; b.dispatchEvent(new MouseEvent('contextmenu', {bubbles:true,cancelable:true,button:2})); return 'dispatched'; })()`);
+      await ev(
+        `(() => { const b = document.querySelector('button[data-session-id="${targetId}"]'); if (!b) return 'missing-row'; b.dispatchEvent(new MouseEvent('contextmenu', {bubbles:true,cancelable:true,button:2})); return 'dispatched'; })()`,
+      );
       let unarchiveItem = null;
       for (let i = 0; i < 40; i++) {
         await new Promise((r) => setTimeout(r, 250));
-        const v = await ev("!!document.querySelector('[data-menu-action=\"unarchive\"]')");
+        const v = await ev('!!document.querySelector(\'[data-menu-action="unarchive"]\')');
         if (v === true) {
           unarchiveItem = true;
           break;
@@ -200,7 +210,9 @@ function findSessionDir(id) {
         console.error('UNARCHIVE MENU MISSING');
         process.exit(6);
       }
-      await ev("(() => { const b = document.querySelector('[data-menu-action=\"unarchive\"]'); if (b) { b.click(); return true; } return false; })()");
+      await ev(
+        '(() => { const b = document.querySelector(\'[data-menu-action="unarchive"]\'); if (b) { b.click(); return true; } return false; })()',
+      );
       // after unarchive, archived toggle still on; row should disappear from archived view
       let restored = false;
       for (let i = 0; i < 40; i++) {
@@ -219,7 +231,9 @@ function findSessionDir(id) {
 
       // re-archive target so we can test delete in archived view
       // toggle back to active view first
-      await ev("(() => { const b = document.querySelector('button[data-testid=\"sidebar-archived-toggle\"]'); if (b) { b.click(); return true; } return false; })()");
+      await ev(
+        '(() => { const b = document.querySelector(\'button[data-testid="sidebar-archived-toggle"]\'); if (b) { b.click(); return true; } return false; })()',
+      );
       await new Promise((r) => setTimeout(r, 800));
       // find row in active list again
       let activeAgain = false;
@@ -236,20 +250,26 @@ function findSessionDir(id) {
         process.exit(6);
       }
       // archive again
-      await ev(`(() => { const b = document.querySelector('button[data-session-id="${targetId}"]'); if (!b) return 'missing-row'; b.dispatchEvent(new MouseEvent('contextmenu', {bubbles:true,cancelable:true,button:2})); return 'dispatched'; })()`);
+      await ev(
+        `(() => { const b = document.querySelector('button[data-session-id="${targetId}"]'); if (!b) return 'missing-row'; b.dispatchEvent(new MouseEvent('contextmenu', {bubbles:true,cancelable:true,button:2})); return 'dispatched'; })()`,
+      );
       for (let i = 0; i < 40; i++) {
         await new Promise((r) => setTimeout(r, 250));
-        const v = await ev("!!document.querySelector('[data-menu-action=\"archive\"]')");
+        const v = await ev('!!document.querySelector(\'[data-menu-action="archive"]\')');
         if (v === true) break;
       }
-      await ev("(() => { const b = document.querySelector('[data-menu-action=\"archive\"]'); if (b) { b.click(); return true; } return false; })()");
+      await ev(
+        '(() => { const b = document.querySelector(\'[data-menu-action="archive"]\'); if (b) { b.click(); return true; } return false; })()',
+      );
       for (let i = 0; i < 40; i++) {
         await new Promise((r) => setTimeout(r, 300));
         const v = await ev(`!document.querySelector('button[data-session-id="${targetId}"]')`);
         if (v === true) break;
       }
       // open archived view
-      await ev("(() => { const b = document.querySelector('button[data-testid=\"sidebar-archived-toggle\"]'); if (b) { b.click(); return true; } return false; })()");
+      await ev(
+        '(() => { const b = document.querySelector(\'button[data-testid="sidebar-archived-toggle"]\'); if (b) { b.click(); return true; } return false; })()',
+      );
       for (let i = 0; i < 40; i++) {
         await new Promise((r) => setTimeout(r, 300));
         const v = await ev(`!!document.querySelector('button[data-session-id="${targetId}"]')`);
@@ -257,11 +277,13 @@ function findSessionDir(id) {
       }
 
       // delete archived target
-      await ev(`(() => { const b = document.querySelector('button[data-session-id="${targetId}"]'); if (!b) return 'missing-row'; b.dispatchEvent(new MouseEvent('contextmenu', {bubbles:true,cancelable:true,button:2})); return 'dispatched'; })()`);
+      await ev(
+        `(() => { const b = document.querySelector('button[data-session-id="${targetId}"]'); if (!b) return 'missing-row'; b.dispatchEvent(new MouseEvent('contextmenu', {bubbles:true,cancelable:true,button:2})); return 'dispatched'; })()`,
+      );
       let deleteItem = null;
       for (let i = 0; i < 40; i++) {
         await new Promise((r) => setTimeout(r, 250));
-        const v = await ev("!!document.querySelector('[data-menu-action=\"delete\"]')");
+        const v = await ev('!!document.querySelector(\'[data-menu-action="delete"]\')');
         if (v === true) {
           deleteItem = true;
           break;
@@ -271,12 +293,14 @@ function findSessionDir(id) {
         console.error('DELETE MENU MISSING');
         process.exit(8);
       }
-      await ev("(() => { const b = document.querySelector('[data-menu-action=\"delete\"]'); if (b) { b.click(); return true; } return false; })()");
+      await ev(
+        '(() => { const b = document.querySelector(\'[data-menu-action="delete"]\'); if (b) { b.click(); return true; } return false; })()',
+      );
       // confirm dialog
       let confirmShown = false;
       for (let i = 0; i < 40; i++) {
         await new Promise((r) => setTimeout(r, 250));
-        const v = await ev("!!document.querySelector('[data-testid=\"confirm-dialog-confirm\"]')");
+        const v = await ev('!!document.querySelector(\'[data-testid="confirm-dialog-confirm"]\')');
         if (v === true) {
           confirmShown = true;
           break;
@@ -289,7 +313,9 @@ function findSessionDir(id) {
       // verify confirm label contains delete
       const label = await ev("document.querySelector('[data-testid=\"confirm-dialog-confirm\"]')?.textContent || ''");
       console.log('CONFIRM_LABEL=' + JSON.stringify(label));
-      await ev("(() => { const b = document.querySelector('[data-testid=\"confirm-dialog-confirm\"]'); if (b) { b.click(); return true; } return false; })()");
+      await ev(
+        '(() => { const b = document.querySelector(\'[data-testid="confirm-dialog-confirm"]\'); if (b) { b.click(); return true; } return false; })()',
+      );
       // wait row disappears
       let deletedFromView = false;
       for (let i = 0; i < 40; i++) {
@@ -306,15 +332,10 @@ function findSessionDir(id) {
         process.exit(7);
       }
 
-      // disk check
-      let diskGone = true;
+      // disk check：轮询等异步落盘删除，超时仍存则 exit 7
       for (let i = 0; i < 20; i++) {
+        if (!findSessionDir(targetId)) break;
         await new Promise((r) => setTimeout(r, 250));
-        if (!findSessionDir(targetId)) {
-          diskGone = true;
-          break;
-        }
-        diskGone = false;
       }
       const stillExists = !!findSessionDir(targetId);
       console.log('DISK_STILL_EXISTS=' + stillExists);
@@ -333,7 +354,7 @@ function findSessionDir(id) {
       const result = {
         status: 'pass',
         deletedId: targetId,
-        diskGone: true,
+        diskGone: !stillExists,
         viewRemoved: deletedFromView,
       };
       console.log('RESULT=' + JSON.stringify(result));

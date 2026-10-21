@@ -97,8 +97,18 @@ const ROW_SEL = '[data-testid^="v4-row-"]';
       // 非 onboarding 的自动弹窗（ZS1 已知：radix 命令面板/遮罩自动开，Esc 可关）——
       // 用真实 CDP Escape（Radix 监听原生 keydown，合成事件不可靠）逐个关到无 dialog。
       async function pressEscape() {
-        await send('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27 });
-        await send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27 });
+        await send('Input.dispatchKeyEvent', {
+          type: 'keyDown',
+          key: 'Escape',
+          code: 'Escape',
+          windowsVirtualKeyCode: 27,
+        });
+        await send('Input.dispatchKeyEvent', {
+          type: 'keyUp',
+          key: 'Escape',
+          code: 'Escape',
+          windowsVirtualKeyCode: 27,
+        });
       }
       let onbRes = 'none';
       for (let i = 0; i < 20; i++) {

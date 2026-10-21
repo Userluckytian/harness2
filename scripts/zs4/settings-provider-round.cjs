@@ -113,7 +113,9 @@ function findProviderIdByBaseUrl(cfg) {
       // open settings
       let settingsOpened = false;
       for (let i = 0; i < 20; i++) {
-        const v = await ev("(() => { const b = document.querySelector('button[data-testid=\"task-settings-button\"]'); if (b) { b.click(); return 'clicked'; } return 'missing'; })()");
+        const v = await ev(
+          "(() => { const b = document.querySelector('button[data-testid=\"task-settings-button\"]'); if (b) { b.click(); return 'clicked'; } return 'missing'; })()",
+        );
         if (v === 'clicked') {
           settingsOpened = true;
           break;
@@ -126,16 +128,18 @@ function findProviderIdByBaseUrl(cfg) {
       }
       for (let i = 0; i < 40; i++) {
         await new Promise((r) => setTimeout(r, 300));
-        const v = await ev("!!document.querySelector('[data-testid=\"settings-page\"]')");
+        const v = await ev('!!document.querySelector(\'[data-testid="settings-page"]\')');
         if (v === true) break;
       }
 
       // navigate to model provider section
-      await ev("(() => { const b = document.querySelector('button[data-testid=\"settings-section-nav-modelProvider\"]'); if (b) { b.click(); return 'clicked'; } return 'missing'; })()");
+      await ev(
+        "(() => { const b = document.querySelector('button[data-testid=\"settings-section-nav-modelProvider\"]'); if (b) { b.click(); return 'clicked'; } return 'missing'; })()",
+      );
       let sectionOpened = false;
       for (let i = 0; i < 40; i++) {
         await new Promise((r) => setTimeout(r, 300));
-        const v = await ev("!!document.querySelector('[data-testid=\"model-provider-add-provider-button\"]')");
+        const v = await ev('!!document.querySelector(\'[data-testid="model-provider-add-provider-button"]\')');
         if (v === true) {
           sectionOpened = true;
           break;
@@ -147,18 +151,22 @@ function findProviderIdByBaseUrl(cfg) {
       }
 
       // add provider
-      await ev("(() => { const b = document.querySelector('[data-testid=\"model-provider-add-provider-button\"]'); if (b) { b.click(); return 'clicked'; } return 'missing'; })()");
+      await ev(
+        "(() => { const b = document.querySelector('[data-testid=\"model-provider-add-provider-button\"]'); if (b) { b.click(); return 'clicked'; } return 'missing'; })()",
+      );
       for (let i = 0; i < 40; i++) {
         await new Promise((r) => setTimeout(r, 300));
-        const v = await ev("!!document.querySelector('[data-testid=\"model-provider-template-picker\"]')");
+        const v = await ev('!!document.querySelector(\'[data-testid="model-provider-template-picker"]\')');
         if (v === true) break;
       }
-      await ev("(() => { const b = document.querySelector('[data-testid=\"model-provider-template-item-custom\"]'); if (b) { b.click(); return 'clicked'; } return 'missing'; })()");
+      await ev(
+        "(() => { const b = document.querySelector('[data-testid=\"model-provider-template-item-custom\"]'); if (b) { b.click(); return 'clicked'; } return 'missing'; })()",
+      );
 
       let formOpened = false;
       for (let i = 0; i < 40; i++) {
         await new Promise((r) => setTimeout(r, 300));
-        const v = await ev("!!document.querySelector('[data-testid=\"model-provider-base-url-input\"]')");
+        const v = await ev('!!document.querySelector(\'[data-testid="model-provider-base-url-input"]\')');
         if (v === true) {
           formOpened = true;
           break;
@@ -219,11 +227,13 @@ function findProviderIdByBaseUrl(cfg) {
       }
 
       // add a model
-      await ev("(() => { const b = document.querySelector('[data-testid=\"model-provider-add-model-button\"]'); if (b) { b.click(); return 'clicked'; } return 'missing'; })()");
+      await ev(
+        "(() => { const b = document.querySelector('[data-testid=\"model-provider-add-model-button\"]'); if (b) { b.click(); return 'clicked'; } return 'missing'; })()",
+      );
       // fill model id in dialog: first text input in dialog
       for (let i = 0; i < 40; i++) {
         await new Promise((r) => setTimeout(r, 300));
-        const v = await ev("!!document.querySelector('div[role=\"dialog\"] input')");
+        const v = await ev('!!document.querySelector(\'div[role="dialog"] input\')');
         if (v === true) break;
       }
       await ev(`(() => {
@@ -236,12 +246,14 @@ function findProviderIdByBaseUrl(cfg) {
         return 'done';
       })()`);
       // click save button in dialog
-      await ev("(() => { const dlg = document.querySelector('div[role=\"dialog\"]'); const btns = dlg ? Array.from(dlg.querySelectorAll('button')) : []; const b = btns.find(x => /保存|Save/i.test(x.textContent||'')); if (b) { b.click(); return 'clicked'; } return 'missing'; })()");
+      await ev(
+        "(() => { const dlg = document.querySelector('div[role=\"dialog\"]'); const btns = dlg ? Array.from(dlg.querySelectorAll('button')) : []; const b = btns.find(x => /保存|Save/i.test(x.textContent||'')); if (b) { b.click(); return 'clicked'; } return 'missing'; })()",
+      );
       // wait model row appears
       let modelRow = false;
       for (let i = 0; i < 40; i++) {
         await new Promise((r) => setTimeout(r, 300));
-        const v = await ev("!!document.querySelector('[data-testid^=\"model-provider-model-input-\"]')");
+        const v = await ev('!!document.querySelector(\'[data-testid^="model-provider-model-input-"]\')');
         if (v === true) {
           modelRow = true;
           break;
@@ -252,7 +264,9 @@ function findProviderIdByBaseUrl(cfg) {
       // test connectivity
       let testClicked = false;
       for (let i = 0; i < 20; i++) {
-        const v = await ev("(() => { const btns = Array.from(document.querySelectorAll('button')); const b = btns.find(x => /测试|Test/i.test(x.getAttribute('title')||'') || /测试|Test/i.test(x.textContent||'')); if (b) { b.click(); return 'clicked'; } return 'missing'; })()");
+        const v = await ev(
+          "(() => { const btns = Array.from(document.querySelectorAll('button')); const b = btns.find(x => /测试|Test/i.test(x.getAttribute('title')||'') || /测试|Test/i.test(x.textContent||'')); if (b) { b.click(); return 'clicked'; } return 'missing'; })()",
+        );
         if (v === 'clicked') {
           testClicked = true;
           break;
@@ -268,7 +282,11 @@ function findProviderIdByBaseUrl(cfg) {
         await new Promise((r) => setTimeout(r, 300));
         const v = await ev("document.body.innerText.replace(/\\s+/g,' ').slice(0,4000)");
         pageText = v || '';
-        if (/失败|failed|Connection failed|request-failed|provider-unavailable| refused|ECONNREFUSED|9\/v1/i.test(pageText)) {
+        if (
+          /失败|failed|Connection failed|request-failed|provider-unavailable| refused|ECONNREFUSED|9\/v1/i.test(
+            pageText,
+          )
+        ) {
           failureShown = true;
           break;
         }
@@ -285,18 +303,24 @@ function findProviderIdByBaseUrl(cfg) {
       }
 
       // delete provider via actions menu
-      await ev("(() => { const b = document.querySelector('[data-testid=\"model-provider-actions-button\"]'); if (b) { b.click(); return 'clicked'; } return 'missing'; })()");
+      await ev(
+        "(() => { const b = document.querySelector('[data-testid=\"model-provider-actions-button\"]'); if (b) { b.click(); return 'clicked'; } return 'missing'; })()",
+      );
       for (let i = 0; i < 20; i++) {
         await new Promise((r) => setTimeout(r, 250));
-        const v = await ev("(() => { const items = Array.from(document.querySelectorAll('[role=\"menuitem\"]')); const b = items.find(x => /删除|Delete/i.test(x.textContent||'')); if (b) { b.click(); return 'clicked'; } return 'missing'; })()");
+        const v = await ev(
+          "(() => { const items = Array.from(document.querySelectorAll('[role=\"menuitem\"]')); const b = items.find(x => /删除|Delete/i.test(x.textContent||'')); if (b) { b.click(); return 'clicked'; } return 'missing'; })()",
+        );
         if (v === 'clicked') break;
       }
       // confirm dialog if present
       for (let i = 0; i < 20; i++) {
         await new Promise((r) => setTimeout(r, 250));
-        const v = await ev("!!document.querySelector('[data-testid=\"confirm-dialog-confirm\"]')");
+        const v = await ev('!!document.querySelector(\'[data-testid="confirm-dialog-confirm"]\')');
         if (v === true) {
-          await ev("(() => { const b = document.querySelector('[data-testid=\"confirm-dialog-confirm\"]'); if (b) { b.click(); return 'clicked'; } return 'missing'; })()");
+          await ev(
+            "(() => { const b = document.querySelector('[data-testid=\"confirm-dialog-confirm\"]'); if (b) { b.click(); return 'clicked'; } return 'missing'; })()",
+          );
           break;
         }
       }
