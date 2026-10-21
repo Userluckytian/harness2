@@ -112,6 +112,30 @@ function getJson(p) {
       await dismissWelcome();
 
       await send('Runtime.evaluate', { expression: "document.querySelector('[contenteditable=true]').focus()" });
+      // 清空 composer 既有内容（草稿持久化在 renderer Local Storage，跨重启存活——
+      // 不清会拼进本轮文本导致 COMPOSED 不匹配，2026-10-21 草稿污染实证）
+      await send('Input.dispatchKeyEvent', {
+        type: 'keyDown',
+        key: 'a',
+        code: 'KeyA',
+        windowsVirtualKeyCode: 65,
+        modifiers: 2,
+      });
+      await send('Input.dispatchKeyEvent', {
+        type: 'keyUp',
+        key: 'a',
+        code: 'KeyA',
+        windowsVirtualKeyCode: 65,
+        modifiers: 2,
+      });
+      await send('Input.dispatchKeyEvent', {
+        type: 'keyDown',
+        key: 'Delete',
+        code: 'Delete',
+        windowsVirtualKeyCode: 46,
+      });
+      await send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Delete', code: 'Delete', windowsVirtualKeyCode: 46 });
+      await new Promise((r) => setTimeout(r, 300));
       await send('Input.insertText', { text: TEXT });
       await new Promise((r) => setTimeout(r, 400));
       const composed = await send('Runtime.evaluate', {
