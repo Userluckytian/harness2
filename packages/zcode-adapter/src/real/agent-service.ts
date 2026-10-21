@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { appendFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
 import { createStubService } from '../stub-factory.js';
 import { Emitter, Event } from '@zcode/rpc';
 import {
@@ -36,6 +36,7 @@ import { AttachmentStore } from './attachment-store.js';
 import type {
   AttachmentBeginParams,
   AttachmentChunkParams,
+  AttachmentPreviewParams,
   AttachmentReadParams,
   AttachmentTerminalParams,
 } from './attachment-store.js';
@@ -225,6 +226,26 @@ export function createAgentService(opts: AgentServiceOptions = {}): IZCodeAgentS
       },
     });
     e2eToolRegistry = registry;
+  }
+
+  /** 附件回读授权白名单：当前会话投影里的 ref + 该会话已提交的上传。 */
+  function authorizedAttachmentRefs(sessionId: string): Set<string> {
+    const refs = new Set<string>();
+    for (const row of sessionRows.get(sessionId) ?? []) {
+      for (const attachment of row.attachments ?? []) {
+        if (
+          attachment !== null &&
+          typeof attachment === 'object' &&
+          typeof (attachment as { ref?: unknown }).ref === 'string'
+        ) {
+          refs.add(resolve((attachment as { ref: string }).ref));
+        }
+      }
+    }
+    for (const upload of attachmentStore.listCommitted(sessionId)) {
+      refs.add(resolve(upload.ref));
+    }
+    return refs;
   }
 
   function nextRowId(sessionId: string): number {
@@ -801,10 +822,10 @@ export function createAgentService(opts: AgentServiceOptions = {}): IZCodeAgentS
       attachmentStore.abort(params);
     },
     async attachmentReadV4(params: AttachmentReadParams): Promise<unknown> {
-      return attachmentStore.read(params);
+      return attachmentStore.read(params, authorizedAttachmentRefs(params.sessionId));
     },
-    async attachmentPreviewSourceV4(params: { ref: string; clientMode: string }): Promise<unknown> {
-      return attachmentStore.previewSource(params);
+    async attachmentPreviewSourceV4(params: AttachmentPreviewParams): Promise<unknown> {
+      return attachmentStore.previewSource(params, authorizedAttachmentRefs(params.sessionId ?? ''));
     },
     // eslint-disable-next-line @typescript-eslint/no-explicit-any -- RPC/协议边界动态类型，仅用于 lint 收敛，不改变运行时行为
     async sendConversationCommandV4(params: { workspacePath?: string; envelope?: any }): Promise<unknown> {

@@ -584,6 +584,17 @@ describe('ZS3-T5 attachment RPC wiring', () => {
       expect(read.mediaType).toBe('text/plain');
       expect(read.nextOffset).toBeNull();
 
+      // 未出现在会话投影里的 ref 不允许读（协议要求 CLI 再授权）
+      await expect(
+        agent.attachmentReadV4({
+          workspacePath: home,
+          sessionId: 's1',
+          ref: 'D:/not-authorized.txt',
+          offset: 0,
+          limit: 10,
+        }),
+      ).rejects.toThrow(/fault\.attachment\.notAuthorized/);
+
       await agent.attachmentAbortV4({ workspacePath: home, sessionId: 's1', uploadId: 'rpc-1' });
     } finally {
       rmSync(home, { recursive: true, force: true });

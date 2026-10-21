@@ -42,6 +42,12 @@ export interface AttachmentReadParams {
   limit: number;
 }
 
+export interface AttachmentPreviewParams {
+  sessionId?: string;
+  ref: string;
+  clientMode: string;
+}
+
 export interface AttachmentReadResult {
   dataBase64: string;
   mediaType: string;
@@ -126,6 +132,10 @@ export class AttachmentStore {
   }
 
   begin(params: AttachmentBeginParams): AttachmentBeginResult {
+    // 与协议同口径的 uploadId 约束：它直接拼进暂存目录，必须挡住路径穿越。
+    if (!/^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/.test(params.uploadId)) {
+      throw fault('fault.attachment.invalidUploadId', 'invalid uploadId');
+    }
     if ((params.totalBytes === 0) !== (params.totalChunks === 0)) {
       throw fault('fault.attachment.invalidBegin', 'zero-byte upload must declare zero chunks');
     }
@@ -227,8 +237,12 @@ export class AttachmentStore {
     rmSync(upload.dir, { recursive: true, force: true });
   }
 
-  read(params: AttachmentReadParams): AttachmentReadResult {
+  read(params: AttachmentReadParams, authorizedRefs?: ReadonlySet<string>): AttachmentReadResult {
     const path = resolve(params.ref);
+    // 协议要求：ref 必须由 CLI 对当前 session projection 再授权，不能拿任意路径直接读。
+    if (authorizedRefs !== undefined && !authorizedRefs.has(path)) {
+      throw fault('fault.attachment.notAuthorized', 'ref is not present in the session projection');
+    }
     let stat: ReturnType<typeof statSync>;
     try {
       stat = statSync(path);
@@ -254,16 +268,26 @@ export class AttachmentStore {
     };
   }
 
-  previewSource(params: {
-    ref: string;
-    clientMode: string;
-  }): { kind: 'local_path'; path: string; mediaType: string } | { kind: 'chunked' } {
+  previewSource(
+    params: AttachmentPreviewParams,
+    authorizedRefs?: ReadonlySet<string>,
+  ): { kind: 'local_path'; path: string; mediaType: string } | { kind: 'chunked' } {
     const path = resolve(params.ref);
+    if (authorizedRefs !== undefined && !authorizedRefs.has(path)) {
+      throw fault('fault.attachment.notAuthorized', 'ref is not present in the session projection');
+    }
     if (!existsSync(path)) return { kind: 'chunked' };
     const mediaType = [...this.uploads.values()].find((u) => u.committedRef === path)?.mime ?? mediaTypeForPath(path);
     if (params.clientMode === 'desktop-continuous' && mediaType.startsWith('video/')) {
       return { kind: 'local_path', path, mediaType };
     }
     return { kind: 'chunked' };
+  }
+
+  /** 当前会话已提交的附件 ref（read/previewSource 授权白名单来源之一）。 */
+  listCommitted(sessionId: string): Array<{ ref: string }> {
+    return [...this.uploads.values()]
+      .filter((u) => u.sessionId === sessionId && u.committedRef !== undefined)
+      .map((u) => ({ ref: u.committedRef! }));
   }
 }
