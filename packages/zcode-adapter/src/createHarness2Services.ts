@@ -274,7 +274,7 @@ export function createHarness2Services(opts: Harness2ServicesOptions = {}): Harn
     [IModelSelectionService.channelName, realModelSelectionService],
     [IOnboardingRecordService.channelName, onboardingRecordServiceStub],
     [IOAuthService.channelName, oauthServiceStub],
-    [IProjectService.channelName, createProjectService()],
+    [IProjectService.channelName, createProjectService({ home })],
     [IPromptAttachmentTransferService.channelName, createLocalPromptAttachmentTransferService()],
     [IProviderSettingsService.channelName, realProviderSettingsService],
     [IRemoteProjectService.channelName, remoteProjectServiceStub],

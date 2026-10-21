@@ -2,6 +2,7 @@ import { mkdirSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { createStubService } from '../stub-factory.js';
+import { createSessionManager, defaultSessionsRoot } from './core-bridge.js';
 import type { IProjectService } from '@zcode/services';
 
 interface TrackedTask {
@@ -18,21 +19,23 @@ export function trackCreatedTask(taskId: string, workspacePath: string, workspac
   tracked.push({ taskId, workspacePath, workspaceIdentity, createdAt: Date.now() });
 }
 
-export function createProjectService(): IProjectService {
+export function createProjectService(options: { home?: string } = {}): IProjectService {
+  const home = options.home ?? process.env.HARNESS2_HOME ?? homedir();
+  const manager = createSessionManager(defaultSessionsRoot(home));
   const impl = {
     async readTree(_params?: {
       includeDeleted?: boolean;
       includeDeletedTasks?: boolean;
       hostId?: string;
     }): Promise<unknown> {
-      const tasks = tracked.map((t) => ({
-        taskId: t.taskId,
-        traceId: 'zs2',
-        title: 'New task',
-        workspacePath: t.workspacePath,
-        ...(t.workspaceIdentity ? { workspaceIdentity: t.workspaceIdentity } : {}),
-        createdAt: t.createdAt,
-        updatedAt: t.createdAt,
+      // 重启后 tracked 内存数组必空；任务列表的唯一事实源是磁盘会话日志。
+      const tasks = manager.list().map((s) => ({
+        taskId: s.id,
+        traceId: 'zs3',
+        title: s.title ?? (s.firstUserText || 'New task'),
+        workspacePath: s.cwd ?? process.cwd(),
+        createdAt: s.mtimeMs,
+        updatedAt: s.mtimeMs,
         mode: 'build',
         hostId: 'local',
         projectId: null,
