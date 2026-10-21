@@ -289,6 +289,25 @@ export function createAgentService(opts: AgentServiceOptions = {}): IZCodeAgentS
     return refs;
   }
 
+  /** 从当前会话投影取 ref 对应的 MIME（UI 的 read/预览请求不带 MIME）。 */
+  function attachmentMimeForRef(sessionId: string, ref: string): string | undefined {
+    const target = resolve(ref);
+    for (const row of sessionRows.get(sessionId) ?? []) {
+      for (const attachment of row.attachments ?? []) {
+        if (
+          attachment !== null &&
+          typeof attachment === 'object' &&
+          typeof (attachment as { ref?: unknown }).ref === 'string' &&
+          typeof (attachment as { mime?: unknown }).mime === 'string' &&
+          resolve((attachment as { ref: string }).ref) === target
+        ) {
+          return (attachment as { mime: string }).mime;
+        }
+      }
+    }
+    return undefined;
+  }
+
   /** 本地零拷贝附件持久化：复制进 zs/attachments，保证重放/模型请求可读。 */
   function materializeAttachments(attachments: unknown[] | undefined): unknown[] | undefined {
     if (!Array.isArray(attachments)) return attachments;
@@ -1185,10 +1204,19 @@ export function createAgentService(opts: AgentServiceOptions = {}): IZCodeAgentS
       attachmentStore.abort(params);
     },
     async attachmentReadV4(params: AttachmentReadParams): Promise<unknown> {
-      return attachmentStore.read(params, authorizedAttachmentRefs(params.sessionId));
+      return attachmentStore.read(
+        params,
+        authorizedAttachmentRefs(params.sessionId),
+        attachmentMimeForRef(params.sessionId, params.ref),
+      );
     },
     async attachmentPreviewSourceV4(params: AttachmentPreviewParams): Promise<unknown> {
-      return attachmentStore.previewSource(params, authorizedAttachmentRefs(params.sessionId ?? ''));
+      const sessionId = params.sessionId ?? '';
+      return attachmentStore.previewSource(
+        params,
+        authorizedAttachmentRefs(sessionId),
+        attachmentMimeForRef(sessionId, params.ref),
+      );
     },
     // eslint-disable-next-line @typescript-eslint/no-explicit-any -- RPC/协议边界动态类型，仅用于 lint 收敛，不改变运行时行为
     async sendConversationCommandV4(params: { workspacePath?: string; envelope?: any }): Promise<unknown> {

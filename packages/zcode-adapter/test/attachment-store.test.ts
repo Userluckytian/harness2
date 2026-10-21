@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { AttachmentStore, ATTACHMENT_CHUNK_MAX_BYTES } from '../src/real/attachment-store.js';
 
@@ -185,6 +185,21 @@ describe('ZS3-T5 attachment upload transaction', () => {
       expect(ref.startsWith(join(home, '.harness2', 'zs', 'attachments'))).toBe(true);
       expect(readFileSync(ref)).toEqual(Buffer.from('png-bytes'));
       expect(store.materialize(ref)).toBe(ref);
+    });
+  });
+
+  it('uses the projection MIME override for extensionless materialized refs', () => {
+    withStore((store, home) => {
+      const file = join(home, 'content.bin');
+      writeFileSync(file, Buffer.from('png'));
+      const authorized = new Set([resolve(file)]);
+      expect(() => store.read({ sessionId: 's1', ref: file, offset: 0, limit: 10 }, authorized)).toThrowError(
+        /fault\.attachment\.unsupportedMediaType/,
+      );
+
+      const read = store.read({ sessionId: 's1', ref: file, offset: 0, limit: 10 }, authorized, 'image/png');
+      expect(read.mediaType).toBe('image/png');
+      expect(read.totalBytes).toBe(3);
     });
   });
 });

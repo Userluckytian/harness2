@@ -237,7 +237,11 @@ export class AttachmentStore {
     rmSync(upload.dir, { recursive: true, force: true });
   }
 
-  read(params: AttachmentReadParams, authorizedRefs?: ReadonlySet<string>): AttachmentReadResult {
+  read(
+    params: AttachmentReadParams,
+    authorizedRefs?: ReadonlySet<string>,
+    mimeOverride?: string,
+  ): AttachmentReadResult {
     const path = resolve(params.ref);
     // 协议要求：ref 必须由 CLI 对当前 session projection 再授权，不能拿任意路径直接读。
     if (authorizedRefs !== undefined && !authorizedRefs.has(path)) {
@@ -256,13 +260,16 @@ export class AttachmentStore {
     const limit = Math.max(1, Math.min(params.limit, ATTACHMENT_CHUNK_MAX_BYTES));
     const end = Math.min(params.offset + limit, stat.size);
     const bytes = readFileSync(path).subarray(params.offset, end);
-    const mediaType = [...this.uploads.values()].find((u) => u.committedRef === path)?.mime ?? mediaTypeForPath(path);
-    if (mediaType === 'application/octet-stream') {
+    const mediaType =
+      mimeOverride ?? [...this.uploads.values()].find((u) => u.committedRef === path)?.mime ?? mediaTypeForPath(path);
+    // 协议 read 结果只允许 text/plain；markdown 附件按纯文本回读。
+    const resultMediaType = mediaType === 'text/markdown' ? 'text/plain' : mediaType;
+    if (resultMediaType === 'application/octet-stream') {
       throw fault('fault.attachment.unsupportedMediaType', 'preview only supports image/video/pdf/text');
     }
     return {
       dataBase64: bytes.toString('base64'),
-      mediaType,
+      mediaType: resultMediaType,
       totalBytes: stat.size,
       nextOffset: end < stat.size ? end : null,
     };
@@ -271,13 +278,15 @@ export class AttachmentStore {
   previewSource(
     params: AttachmentPreviewParams,
     authorizedRefs?: ReadonlySet<string>,
+    mimeOverride?: string,
   ): { kind: 'local_path'; path: string; mediaType: string } | { kind: 'chunked' } {
     const path = resolve(params.ref);
     if (authorizedRefs !== undefined && !authorizedRefs.has(path)) {
       throw fault('fault.attachment.notAuthorized', 'ref is not present in the session projection');
     }
     if (!existsSync(path)) return { kind: 'chunked' };
-    const mediaType = [...this.uploads.values()].find((u) => u.committedRef === path)?.mime ?? mediaTypeForPath(path);
+    const mediaType =
+      mimeOverride ?? [...this.uploads.values()].find((u) => u.committedRef === path)?.mime ?? mediaTypeForPath(path);
     if (params.clientMode === 'desktop-continuous' && mediaType.startsWith('video/')) {
       return { kind: 'local_path', path, mediaType };
     }

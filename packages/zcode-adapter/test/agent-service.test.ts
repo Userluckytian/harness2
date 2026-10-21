@@ -911,6 +911,35 @@ describe('ZS3.5 attachment model consumption + environment', () => {
       expect(user?.parts?.some((p) => p.type === 'text' && (p.text ?? '').includes('content-123'))).toBe(true);
       expect(request?.system).toContain('[环境]');
       expect(request?.system).toContain('当前工作目录');
+
+      // 缩略图/预览读取：UI 请求不带 MIME，按会话投影回填（content.bin 也能识别）。
+      const deltas = frames.flatMap((f) => (f.payload.kind === 'deltas' ? (f.payload.deltas ?? []) : []));
+      const userRow = deltas.find((d) => d.op === 'row.appended' && d.row?.kind === 'userInput');
+      const rowAttachments = (userRow?.row?.attachments ?? []) as Array<{
+        ref?: string;
+        mime?: string;
+      }>;
+      const imageAttachment = rowAttachments.find((a) => a.mime === 'image/png');
+      const mdAttachment = rowAttachments.find((a) => a.mime === 'text/markdown');
+      expect(imageAttachment?.ref).toBeTruthy();
+      expect(mdAttachment?.ref).toBeTruthy();
+      const imagePreview = (await agent.attachmentReadV4({
+        workspacePath: home,
+        sessionId,
+        ref: imageAttachment!.ref!,
+        offset: 0,
+        limit: 10,
+      })) as { mediaType: string };
+      expect(imagePreview.mediaType).toBe('image/png');
+      const mdPreview = (await agent.attachmentReadV4({
+        workspacePath: home,
+        sessionId,
+        ref: mdAttachment!.ref!,
+        offset: 0,
+        limit: 100,
+      })) as { mediaType: string; dataBase64: string };
+      expect(mdPreview.mediaType).toBe('text/plain');
+      expect(Buffer.from(mdPreview.dataBase64, 'base64').toString()).toContain('content-123');
     } finally {
       rmSync(home, { recursive: true, force: true });
     }
