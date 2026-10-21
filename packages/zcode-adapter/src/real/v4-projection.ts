@@ -7,8 +7,11 @@
  *
  * 未覆盖事件按映射详表 §3.5「可丢弃」清单如实处理（memory/snapshot、nudge、step/*）。
  */
-import type { AnySessionEvent } from '@harness2/core';
+import type { AnySessionEvent, ExtensionSessionEvent } from '@harness2/core';
 import type { PendingInteraction } from '@zcode/shared/zcode-protocol-v4';
+
+/** 附件引用的审计事件（extension event）：core user/message 无附件槽位，adapter 加性登记。 */
+export const USER_ATTACHMENTS_EVENT = 'adapter/user-attachments';
 
 export type ProjectedRowKind = 'turnHeader' | 'userInput' | 'assistantText' | 'reasoning' | 'toolCall';
 
@@ -210,7 +213,10 @@ function stopReasonToPhase(sr: string | undefined): ControlPhase {
 /**
  * 将 core 事件流投影为行 + 状态。rowId = 事件 seq（单调）。
  */
-export function projectEvents(events: AnySessionEvent[]): ProjectionResult {
+export function projectEvents(
+  events: AnySessionEvent[],
+  extensionEvents: ExtensionSessionEvent[] = [],
+): ProjectionResult {
   const rows: ProjectedRow[] = [];
   let inputTokens = 0;
   let outputTokens = 0;
@@ -333,7 +339,16 @@ export function projectEvents(events: AnySessionEvent[]): ProjectionResult {
       ? 'completedSuccess'
       : 'running';
 
-  const lastSeq = sorted.length ? sorted[sorted.length - 1].seq : 0;
+  // 附件审计事件（extension）回填到对应 turn 的 userInput 行；core 事件本身无附件槽位。
+  for (const ext of extensionEvents) {
+    if (ext.type !== USER_ATTACHMENTS_EVENT) continue;
+    const p = ext.payload as { turnId?: string; attachments?: unknown[] };
+    if (typeof p.turnId !== 'string' || !Array.isArray(p.attachments)) continue;
+    const target = rows.find((r) => r.kind === 'userInput' && r.turnId === p.turnId);
+    if (target) target.attachments = p.attachments;
+  }
+
+  const lastSeq = Math.max(sorted.length ? sorted[sorted.length - 1].seq : 0, ...extensionEvents.map((e) => e.seq));
 
   return {
     rows,

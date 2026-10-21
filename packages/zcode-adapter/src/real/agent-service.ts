@@ -28,6 +28,7 @@ import {
   makeToolCallRow,
   makeTurnHeaderRow,
   makeUserInputRow,
+  USER_ATTACHMENTS_EVENT,
 } from './v4-projection.js';
 import type { ControlPhase, ProjectedRow } from './v4-projection.js';
 import type { SessionWriter, ToolRegistryTypeExport } from './core-bridge.js';
@@ -69,7 +70,17 @@ function ensureApprovalEventTypes(): void {
       projection: 'opaque',
     });
   }
+  if (!extensionEventTypes.has(USER_ATTACHMENTS_EVENT)) {
+    extensionEventTypes.register({
+      type: USER_ATTACHMENTS_EVENT,
+      validator: (p) => typeof p.turnId === 'string' && Array.isArray(p.attachments),
+      projection: 'opaque',
+    });
+  }
 }
+
+// 进程级注册：loadSession 可能早于首个 runSession，扩展类型必须先于读日志注册。
+ensureApprovalEventTypes();
 
 export interface AgentServiceOptions {
   dataRoot?: string;
@@ -303,7 +314,7 @@ export function createAgentService(opts: AgentServiceOptions = {}): IZCodeAgentS
     return true;
   }
 
-  async function runSession(sessionId: string, text: string, dirHint?: string) {
+  async function runSession(sessionId: string, text: string, dirHint?: string, attachments?: unknown[]) {
     __diag(
       'runSession start provider=' +
         (provider && provider.constructor && provider.constructor.name) +
@@ -329,7 +340,16 @@ export function createAgentService(opts: AgentServiceOptions = {}): IZCodeAgentS
     const turnId = `turn-${Date.now()}`;
     const now = Date.now();
 
-    const userRow = makeUserInputRow({ rowId: userRowId, turnId, createdAt: now, createdAtSeq: 0 }, text);
+    // 附件只做加性审计登记：core user/message 无附件槽位，禁止把附件内容伪装成文本喂模型。
+    if (attachments && attachments.length > 0) {
+      try {
+        resumed.writer.appendExtension?.(USER_ATTACHMENTS_EVENT, { turnId, attachments });
+      } catch {
+        // 审计事件尽力而为，不影响对话主链
+      }
+    }
+
+    const userRow = makeUserInputRow({ rowId: userRowId, turnId, createdAt: now, createdAtSeq: 0 }, text, attachments);
     const turnHeaderRow = makeTurnHeaderRow(
       { rowId: turnHeaderRowId, turnId, createdAt: now, createdAtSeq: 0 },
       'running',
@@ -706,7 +726,7 @@ export function createAgentService(opts: AgentServiceOptions = {}): IZCodeAgentS
         const firstInput = env?.payload?.firstInput;
         if (firstInput?.text) {
           setTimeout(() => {
-            runSession(sid, firstInput.text, created.dir).catch((e) =>
+            runSession(sid, firstInput.text, created.dir, firstInput.attachments).catch((e) =>
               console.error('[zs2] runSession failed:', (e as Error)?.message ?? e),
             );
           }, 0);
@@ -737,7 +757,7 @@ export function createAgentService(opts: AgentServiceOptions = {}): IZCodeAgentS
         }
         const text = env?.payload?.text ?? '';
         setTimeout(() => {
-          runSession(sid, text, dirHint).catch((e) =>
+          runSession(sid, text, dirHint, env?.payload?.attachments).catch((e) =>
             console.error('[zs2] runSession failed:', (e as Error)?.message ?? e),
           );
         }, 0);

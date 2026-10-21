@@ -108,4 +108,23 @@ describe('v4-projection', () => {
     const parsed = conversationSnapshotSchema.safeParse(snapshot);
     expect(parsed.success, JSON.stringify(parsed.success ? null : parsed.error.issues)).toBe(true);
   });
+
+  it('T3: extension attachment event reattaches attachments to the userInput row', () => {
+    const events = [
+      ev(1, 'user/message', { text: 'hi', turnId: 't1' }),
+      ev(2, 'assistant/message', { text: 'ok', turnId: 't1' }),
+    ];
+    const attachments = [{ ref: 'D:/a.png', fileName: 'a.png', mime: 'image/png', bytes: 1 }];
+    const ext = {
+      v: 1 as const,
+      seq: 3,
+      ts: new Date().toISOString(),
+      type: 'adapter/user-attachments',
+      payload: { turnId: 't1', attachments },
+    };
+    const r = projectEvents(events, [ext]);
+    const user = r.rows.find((x) => x.kind === 'userInput');
+    expect(user?.attachments).toEqual(attachments);
+    expect(r.lastSeq).toBe(3);
+  });
 });
