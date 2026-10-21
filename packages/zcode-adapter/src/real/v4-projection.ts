@@ -36,6 +36,8 @@ export interface ProjectedRow extends RowIdentity {
   toolCallId?: string;
   status?: ToolCallStatus;
   inputText?: string;
+  /** status=pendingApproval 时指向 pendingInteractions 项。 */
+  approvalInteractionId?: string;
   output?: { text: string };
   error?: { code: string; message: string };
   attachments?: unknown[];

@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { appendFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -11,9 +12,10 @@ import {
   runTurn,
   resolveHarness2Home,
   MockProvider,
+  extensionEventTypes,
 } from './core-bridge.js';
 import type { IZCodeAgentService } from '@zcode/services';
-import type { MockScript } from '@harness2/core';
+import type { ApprovalHandler, MockScript } from '@harness2/core';
 import type { PendingInteraction } from '@zcode/shared/zcode-protocol-v4';
 import { encodeTopicWireFrames, measureTopicNotificationEnvelopeBytes } from '@zcode/shared/zcode-protocol-v4';
 import { trackCreatedTask } from './project-service.js';
@@ -27,6 +29,7 @@ import {
   makeUserInputRow,
 } from './v4-projection.js';
 import type { ControlPhase, ProjectedRow } from './v4-projection.js';
+import type { SessionWriter, ToolRegistryTypeExport } from './core-bridge.js';
 
 /** harness2 本地 auth.json 路径（P2-8：提为常量，避免散落硬编码） */
 const HARNESS2_AUTH_PATH = (home: string): string => join(home, '.harness2', 'auth.json');
@@ -35,15 +38,59 @@ const HARNESS2_AUTH_PATH = (home: string): string => join(home, '.harness2', 'au
  * ZS3-T0 ACK 白名单：只有已实现的命令可以回 accepted，其余一律 rejected。
  * 红线⑩：任何情况不得回假 accepted；新增命令实现时同步加入本表。
  */
-const SUPPORTED_COMMAND_TYPES = new Set(['createSession', 'sendText', 'stop']);
+const SUPPORTED_COMMAND_TYPES = new Set([
+  'createSession',
+  'sendText',
+  'stop',
+  'resolveInteraction',
+  'snoozeInteractionAutoResolution',
+]);
+
+/** ZS3-T2 审批截止时间（与 core approvalTimeoutMs 同口径）。 */
+const DEFAULT_APPROVAL_TIMEOUT_MS = 120_000;
+
+/** 审批审计事件：走 core extension event 落 JSONL，不扩内建事件白名单。 */
+const APPROVAL_REQUEST_EVENT = 'adapter/permission-request';
+const APPROVAL_RESOLVED_EVENT = 'adapter/permission-resolved';
+
+function ensureApprovalEventTypes(): void {
+  if (!extensionEventTypes.has(APPROVAL_REQUEST_EVENT)) {
+    extensionEventTypes.register({
+      type: APPROVAL_REQUEST_EVENT,
+      validator: (p) => typeof p.interactionId === 'string' && typeof p.toolName === 'string',
+      projection: 'opaque',
+    });
+  }
+  if (!extensionEventTypes.has(APPROVAL_RESOLVED_EVENT)) {
+    extensionEventTypes.register({
+      type: APPROVAL_RESOLVED_EVENT,
+      validator: (p) => typeof p.interactionId === 'string' && typeof p.allowed === 'boolean',
+      projection: 'opaque',
+    });
+  }
+}
 
 export interface AgentServiceOptions {
   dataRoot?: string;
   home?: string;
   /** 测试缝：脚本化 MockProvider，跳过 config 加载（service 层帧序列断言用）。 */
   mockScript?: MockScript;
+  /** 测试缝：工具注册表（审批用例需要真实工具）；生产缺省空表。 */
+  tools?: ToolRegistryTypeExport;
+  /** 审批截止时间；测试可缩短，缺省 120s。 */
+  approvalTimeoutMs?: number;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any -- RPC/协议边界动态类型，仅用于 lint 收敛，不改变运行时行为
   emitter?: Emitter<any>;
+}
+
+/** ZS3-T2 待审批条目：onAsk 的 promise 与 UI 交互 id 一一对应。 */
+interface PendingApprovalEntry {
+  interactionId: string;
+  sessionId: string;
+  toolRowId: number | null;
+  toolCallId: string;
+  resolve: (allowed: boolean) => void;
+  timer: NodeJS.Timeout;
 }
 
 export function createAgentService(opts: AgentServiceOptions = {}): IZCodeAgentService {
@@ -103,6 +150,11 @@ export function createAgentService(opts: AgentServiceOptions = {}): IZCodeAgentS
   const sessionSeq = new Map<string, number>();
   /** 待审批/待问询交互（T2 起填充）；T0 保持空数组但集中存放，不在快照里散落硬编码。 */
   const sessionPendingInteractions = new Map<string, PendingInteraction[]>();
+  const pendingApprovals = new Map<string, PendingApprovalEntry>();
+  /** 用户 deny 时填写的理由，按 toolCallId 暂存，供 tool-result 错误文案使用。 */
+  const deniedReasons = new Map<string, string>();
+  /** 审批审计事件需要写回会话日志；runSession 期间登记，结束后清理。 */
+  const sessionWriters = new Map<string, SessionWriter>();
 
   function nextRowId(sessionId: string): number {
     const c = (rowCounters.get(sessionId) ?? 0) + 1;
@@ -168,6 +220,51 @@ export function createAgentService(opts: AgentServiceOptions = {}): IZCodeAgentS
     emitWire(subId, frame);
   }
 
+  function emitToSession(sessionId: string, deltas: unknown[]) {
+    for (const [sid, sub] of subs) {
+      if (sub.sessionId === sessionId) emitDeltas(sid, deltas);
+    }
+  }
+
+  /** 审批落定：清 pending、更新工具行、落审计事件、resolve producer promise。 */
+  function settleApproval(interactionId: string, allowed: boolean): boolean {
+    const entry = pendingApprovals.get(interactionId);
+    if (!entry) return false;
+    clearTimeout(entry.timer);
+    pendingApprovals.delete(interactionId);
+
+    const remaining = (sessionPendingInteractions.get(entry.sessionId) ?? []).filter(
+      (x) => x.interactionId !== interactionId,
+    );
+    sessionPendingInteractions.set(entry.sessionId, remaining);
+
+    const rows = sessionRows.get(entry.sessionId) ?? [];
+    const row = rows.find((r) => r.rowId === entry.toolRowId);
+    const deltas: Array<{ op: string; row?: ProjectedRow; patch?: unknown }> = [];
+    if (row) {
+      row.status = allowed ? 'running' : 'cancelled';
+      delete row.approvalInteractionId;
+      deltas.push({ op: 'row.upserted', row });
+    }
+    deltas.push({ op: 'state.updated', patch: { pendingInteractions: remaining } });
+    emitToSession(entry.sessionId, deltas);
+
+    const writer = sessionWriters.get(entry.sessionId);
+    try {
+      writer?.appendExtension?.(APPROVAL_RESOLVED_EVENT, {
+        interactionId,
+        allowed,
+        toolCallId: entry.toolCallId,
+        resolvedAt: new Date().toISOString(),
+      });
+    } catch {
+      // 会话已关闭：审计事件尽力而为，不影响审批落定
+    }
+
+    entry.resolve(allowed);
+    return true;
+  }
+
   async function runSession(sessionId: string, text: string, dirHint?: string) {
     __diag(
       'runSession start provider=' +
@@ -184,6 +281,8 @@ export function createAgentService(opts: AgentServiceOptions = {}): IZCodeAgentS
     } else {
       resumed = manager.resume(sessionId);
     }
+    ensureApprovalEventTypes();
+    sessionWriters.set(sessionId, resumed.writer);
     const userRowId = nextRowId(sessionId);
     const turnHeaderRowId = nextRowId(sessionId);
     const assistantRowId = nextRowId(sessionId);
@@ -214,9 +313,85 @@ export function createAgentService(opts: AgentServiceOptions = {}): IZCodeAgentS
     for (const sid of targetSubs) emitDeltas(sid, initialDeltas);
 
     let accumulated = '';
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- RPC/协议边界动态类型，仅用于 lint 收敛，不改变运行时行为
-    const tools = { list: () => [] } as any;
+    const tools = opts.tools ?? ({ list: () => [] } as unknown as ToolRegistryTypeExport);
     const ac = new AbortController();
+    const approval: ApprovalHandler = {
+      // ZS3：工具调用统一走审批（生产当前无工具；测试缝与后续工具面共用同一条桥）。
+      decide: () => 'ask',
+      onAsk: (input) =>
+        new Promise<boolean>((resolve) => {
+          const interactionId = randomUUID();
+          const createdAt = Date.now();
+          const deadlineAt = createdAt + (opts.approvalTimeoutMs ?? DEFAULT_APPROVAL_TIMEOUT_MS);
+          const argsText =
+            typeof input.args === 'string' ? input.args : input.args !== undefined ? JSON.stringify(input.args) : '';
+          const toolRow = rows.find(
+            (r) =>
+              r.kind === 'toolCall' &&
+              r.toolName === input.tool &&
+              (r.status === 'running' || r.status === 'inputStreaming') &&
+              (r.inputText === argsText || !r.inputText),
+          );
+          const interaction: PendingInteraction = {
+            interactionId,
+            kind: 'permission',
+            anchorRowId: toolRow?.rowId ?? null,
+            createdAt,
+            autoResolution: {
+              state: 'visibleCountdown',
+              startedAt: createdAt,
+              visibleAt: createdAt,
+              deadlineAt,
+            },
+            payload: {
+              kind: 'permission',
+              toolCallId: toolRow?.toolCallId ?? '',
+              toolName: input.tool,
+              summary: `允许执行 ${input.tool} 吗？`,
+              detail: input.args,
+              options: [
+                { optionId: 'allowOnce', label: '允许本次', kind: 'allowOnce' },
+                { optionId: 'allowAlways', label: '总是允许', kind: 'allowAlways' },
+                { optionId: 'deny', label: '拒绝', kind: 'deny' },
+              ],
+            },
+          };
+
+          if (toolRow) {
+            toolRow.status = 'pendingApproval';
+            toolRow.approvalInteractionId = interactionId;
+            emitToSession(sessionId, [{ op: 'row.upserted', row: toolRow }]);
+          }
+          const list = [...(sessionPendingInteractions.get(sessionId) ?? []), interaction];
+          sessionPendingInteractions.set(sessionId, list);
+          emitToSession(sessionId, [{ op: 'state.updated', patch: { pendingInteractions: list } }]);
+
+          try {
+            resumed.writer.appendExtension?.(APPROVAL_REQUEST_EVENT, {
+              interactionId,
+              toolCallId: toolRow?.toolCallId ?? '',
+              toolName: input.tool,
+              args: input.args,
+              createdAt,
+              expiresAt: deadlineAt,
+            });
+          } catch {
+            // 审计事件尽力而为，不影响审批主链
+          }
+
+          const timeoutMs = opts.approvalTimeoutMs ?? DEFAULT_APPROVAL_TIMEOUT_MS;
+          const timer = setTimeout(() => settleApproval(interactionId, false), timeoutMs);
+          pendingApprovals.set(interactionId, {
+            interactionId,
+            sessionId,
+            toolRowId: toolRow?.rowId ?? null,
+            toolCallId: toolRow?.toolCallId ?? '',
+            resolve,
+            timer,
+          });
+          if (ac.signal.aborted) settleApproval(interactionId, false);
+        }),
+    };
     try {
       await runTurn(resumed.writer, {
         provider: provider as never,
@@ -224,6 +399,7 @@ export function createAgentService(opts: AgentServiceOptions = {}): IZCodeAgentS
         cwd: resumed.dir,
         userText: text,
         signal: ac.signal,
+        approval,
         // eslint-disable-next-line @typescript-eslint/no-explicit-any -- RPC/协议边界动态类型，仅用于 lint 收敛，不改变运行时行为
         onStream: (chunk: any) => {
           if (chunk.type === 'text-delta') {
@@ -278,6 +454,8 @@ export function createAgentService(opts: AgentServiceOptions = {}): IZCodeAgentS
               const existing = rows.find((r) => r.rowId === tr);
               const toolName = existing?.toolName ?? '';
               const inputText = existing?.inputText ?? '';
+              const deniedReason = deniedReasons.get(chunk.callId);
+              deniedReasons.delete(chunk.callId);
               const newRow = makeToolCallRow(
                 { rowId: tr, turnId, createdAt: now, createdAtSeq: 0 },
                 {
@@ -287,7 +465,7 @@ export function createAgentService(opts: AgentServiceOptions = {}): IZCodeAgentS
                   inputText,
                   ...(chunk.ok
                     ? { output: { text: chunk.output ?? '' } }
-                    : { error: { code: 'toolError', message: chunk.error ?? '' } }),
+                    : { error: { code: 'toolError', message: deniedReason ?? chunk.error ?? '' } }),
                 },
               );
               const idx = rows.findIndex((r) => r.rowId === tr);
@@ -303,6 +481,11 @@ export function createAgentService(opts: AgentServiceOptions = {}): IZCodeAgentS
       console.error('[zs2] runTurn failed:', (e as Error)?.message ?? e);
     }
     __diag('runTurn done accumulated=' + accumulated.length);
+    // 轮次结束时仍挂着的审批一律 fail-closed，避免 producer promise 悬挂。
+    for (const [id, entry] of [...pendingApprovals]) {
+      if (entry.sessionId === sessionId) settleApproval(id, false);
+    }
+    sessionWriters.delete(sessionId);
     try {
       resumed.writer.close();
       // eslint-disable-next-line @typescript-eslint/no-explicit-any -- RPC/协议边界动态类型，仅用于 lint 收敛，不改变运行时行为
@@ -420,6 +603,55 @@ export function createAgentService(opts: AgentServiceOptions = {}): IZCodeAgentS
       }
       if (env.type === 'stop') {
         return { commandId: env.commandId, status: 'accepted', revisionAtDecision: 1 };
+      }
+      if (env.type === 'resolveInteraction') {
+        const interactionId = env?.payload?.interactionId;
+        if (typeof interactionId !== 'string' || interactionId.length === 0) {
+          return {
+            commandId: env.commandId,
+            status: 'rejected',
+            reasonCode: 'proto.invalidCommand',
+            revisionAtDecision: 1,
+          };
+        }
+        const entry = pendingApprovals.get(interactionId);
+        if (!entry) {
+          // 先到先得：重复/迟到 resolve 幂等 noop。
+          return {
+            commandId: env.commandId,
+            status: 'noop',
+            reasonCode: 'proto.alreadyResolved',
+            revisionAtDecision: 1,
+          };
+        }
+        const answer = env?.payload?.answer ?? {};
+        const optionId = typeof answer.optionId === 'string' ? answer.optionId : undefined;
+        const allowed = optionId === 'allowOnce' || optionId === 'allowAlways' || answer.action === 'accept';
+        if (!allowed && typeof answer.freeText === 'string' && answer.freeText.length > 0) {
+          deniedReasons.set(entry.toolCallId, answer.freeText);
+        }
+        settleApproval(interactionId, allowed);
+        return {
+          commandId: env.commandId,
+          status: 'accepted',
+          revisionAtDecision: 1,
+          result: {
+            type: 'resolveInteraction',
+            resolvedBy: {
+              clientId: env.clientId ?? 'unknown',
+              ...(optionId ? { optionId } : {}),
+            },
+          },
+        };
+      }
+      if (env.type === 'snoozeInteractionAutoResolution') {
+        // ZS3 不实现倒计时暂停语义（登记 ZS4）；幂等 noop，不改变 pending 状态。
+        return {
+          commandId: env.commandId,
+          status: 'noop',
+          reasonCode: 'proto.snoozeUnsupported',
+          revisionAtDecision: 1,
+        };
       }
       if (env.type === 'createSession') {
         const created = manager.create(process.cwd());
