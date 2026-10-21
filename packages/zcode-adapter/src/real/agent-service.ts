@@ -1319,7 +1319,7 @@ export function createAgentService(opts: AgentServiceOptions = {}): IZCodeAgentS
         };
       }
       if (env.type === 'createSession') {
-        const created = manager.create(process.cwd());
+        const created = manager.create(params?.workspacePath ?? process.cwd());
         try {
           created.writer.close();
         } catch {}
@@ -1349,7 +1349,7 @@ export function createAgentService(opts: AgentServiceOptions = {}): IZCodeAgentS
         let sid = env.sessionId;
         let dirHint: string | undefined;
         if (!sid) {
-          const created = manager.create(process.cwd());
+          const created = manager.create(params?.workspacePath ?? process.cwd());
           try {
             created.writer.close();
           } catch {}
