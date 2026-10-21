@@ -168,16 +168,17 @@
 
 **分支偏差（如实登记）**：实际在 `main` 上直接顺序提交（与 ZS3.5 收口后的并行代理共处模式一致），未拉 `feat/phase-zs4-sidebar-and-settings`。
 
-| Task | 提交 | 实施者 | 证据 |
-| ---- | ---- | ------ | ---- |
-| T0 盘点 | `1506ba6` | cat-jam | `docs/research/2026-10-21-zs4-call-surface-inventory.md`（file:line 全量） |
-| T1 deleteSession | `616113a` | 编排者直做 | core 1638+2s 绿；锁目录 fail-closed 测试；`SESSION_ID_PATTERN` 防穿越 |
-| T2 task 索引侧车 | `29c83a4` | cat-jam | `task-index.ts` 原子读写；readTree pinned→mtime；title.json 优先（「New task」消失）；11 新测试 |
-| T3 任务写面 | `2f2daf5` | cat-jam | 十法全真实现 + `scripts/zs4/cleanup-sessions.cjs`（默认 dry-run）；78 测绿；task-groups 保持桩不造假（红线⑩） |
+| Task               | 提交      | 实施者     | 证据                                                                                                                                               |
+| ------------------ | --------- | ---------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
+| T0 盘点            | `1506ba6` | cat-jam    | `docs/research/2026-10-21-zs4-call-surface-inventory.md`（file:line 全量）                                                                         |
+| T1 deleteSession   | `616113a` | 编排者直做 | core 1638+2s 绿；锁目录 fail-closed 测试；`SESSION_ID_PATTERN` 防穿越                                                                              |
+| T2 task 索引侧车   | `29c83a4` | cat-jam    | `task-index.ts` 原子读写；readTree pinned→mtime；title.json 优先（「New task」消失）；11 新测试                                                    |
+| T3 任务写面        | `2f2daf5` | cat-jam    | 十法全真实现 + `scripts/zs4/cleanup-sessions.cjs`（默认 dry-run）；78 测绿；task-groups 保持桩不造假（红线⑩）                                      |
 | T4 provider 写路径 | `81efdb3` | 编排者直做 | 十投+connectivity+onDidChange；`absorbSecrets` 就地剥密钥（P0 自纠：原实现不回写 cleaned，密钥会进 config）；auth 0600；revision 冲突拒绝；86 测绿 |
-| T5 轨迹+周边 | 进行中 | cat-jam | 轨迹 `available:false` 降级（core 无 model-io，不造假）；skills 接 core SkillStore；OffPeak 显式 fail-closed；memory/hooks/commands 逐条对账 |
+| T5 轨迹+周边       | 进行中    | cat-jam    | 轨迹 `available:false` 降级（core 无 model-io，不造假）；skills 接 core SkillStore；OffPeak 显式 fail-closed；memory/hooks/commands 逐条对账       |
 
 **决策登记**：
+
 1. **批量入口落点（盘点决策点 2）= 选项 1「原生路径 + 脚本」**：ZCode UI 零改动约束下，批量删除走原生归档区（`ArchiveGroupCard` unarchiveAll/deleteAll + `DeleteAllArchivedTasksButton`，服务端 `deleteArchivedTasks` T3 已实现）；「删除其他/归档其他」右键菜单项**不做**（不造 UI patch）；兜底 `scripts/zs4/cleanup-sessions.cjs`（默认 dry-run）。命令面板/快捷键入口列为后续升级。
 2. **renamePersonalModel 已实现**（盘点决策点 4：原 throws 列表未含、契约含——补齐，键序保持）。
 3. **deletePersonalProvider 不隐式删 auth 密钥**（上游是否清凭据无证据，保守保留，注释登记）。
