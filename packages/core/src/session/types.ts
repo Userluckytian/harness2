@@ -54,9 +54,19 @@ export interface SessionHeaderPayload {
   subagent?: boolean;
 }
 
+/** 用户附件引用（ZS3.5 加性）：内容本体不进日志，模型上下文按 ref 读取。 */
+export interface UserMessageAttachment {
+  ref: string;
+  fileName?: string;
+  mime: string;
+  bytes?: number;
+}
+
 export interface UserMessagePayload {
   text: string;
   turnId?: string;
+  /** ZS3.5 加性：随用户消息落盘的附件引用（旧日志可缺省）。 */
+  attachments?: UserMessageAttachment[];
 }
 
 export interface AssistantMessagePayload {

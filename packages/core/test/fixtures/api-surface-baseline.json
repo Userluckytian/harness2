@@ -768,6 +768,7 @@
     "UserInputResponseAck": "interface",
     "UserInputResponseAckState": "type",
     "UserInputSettleReason": "type",
+    "UserMessageAttachment": "interface",
     "UserMessagePayload": "interface",
     "ValidationResult": "interface",
     "WORKFLOW_COMMAND_ID": "const",

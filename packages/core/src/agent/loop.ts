@@ -116,6 +116,23 @@ export function buildChatMessages(
     switch (e.type) {
       case 'user/message': {
         const message: ChatMessage = { role: 'user', content: e.payload.text };
+        if (options.resolveAttachment !== undefined && Array.isArray(e.payload.attachments)) {
+          const parts: ChatContentPart[] = [{ type: 'text', text: e.payload.text }];
+          for (const attachment of e.payload.attachments) {
+            const part = options.resolveAttachment(
+              attachment.ref,
+              attachment.mime,
+              attachment.fileName ?? attachment.ref,
+            );
+            parts.push(
+              part ?? {
+                type: 'text',
+                text: `[附件未加载: ${attachment.fileName ?? attachment.ref} (${attachment.mime})]`,
+              },
+            );
+          }
+          message.parts = parts;
+        }
         messages.push(message);
         userMessages.push({ message, turnId: e.payload.turnId });
         break;
@@ -178,6 +195,8 @@ export function buildChatMessages(
       }
     }
     for (const { message, turnId } of userMessages) {
+      // user/message 已携带附件时优先使用它；扩展事件只作为旧日志的回退来源。
+      if (message.parts !== undefined) continue;
       if (turnId === undefined) continue;
       const refs = attachmentsByTurn.get(turnId);
       if (refs === undefined || refs.length === 0) continue;
@@ -486,7 +505,12 @@ async function runTurnWithWriter(writer: SessionWriter | SessionAppender, option
   }
 
   if (options.userText !== undefined) {
-    writer.append('user/message', { text: options.userText, turnId });
+    const attachments = options.userAttachments;
+    writer.append('user/message', {
+      text: options.userText,
+      turnId,
+      ...(attachments !== undefined && attachments.length > 0 ? { attachments } : {}),
+    });
   }
 
   // —— 上下文压缩（阶段 7）：turn 开始检查触发（估算含本条用户消息）——

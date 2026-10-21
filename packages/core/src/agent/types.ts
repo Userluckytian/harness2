@@ -4,6 +4,7 @@ import type { CompactionBreaker } from './compactionBreaker.js';
 import type { MemoryStore } from '../memory/store.js';
 import type { SkillStore } from '../skills/store.js';
 import type { SnapshotStore } from '../session/snapshots.js';
+import type { UserMessageAttachment } from '../session/types.js';
 import type { ToolRegistry } from '../tools/registry.js';
 import type { ApprovalHandler } from '../tools/types.js';
 import type { ExecutionLifecycleObserver } from '../tools/executor.js';
@@ -113,6 +114,8 @@ export interface TurnOptions {
    * 再开始循环——用户输入同样必须 logged（Model-visible ⟺ logged）。
    */
   userText?: string;
+  /** 可选：随本 turn user/message 落盘的附件引用（ZS3.5；模型上下文按 ref 读取）。 */
+  userAttachments?: UserMessageAttachment[];
   /**
    * 可选：文件快照存储（决策 D6）。提供时 write/edit 工具执行前 capture、成功后
    * commitAfter（键 = tool/call 事件 seq）；失败/取消不记 after。bash/read 等工具
