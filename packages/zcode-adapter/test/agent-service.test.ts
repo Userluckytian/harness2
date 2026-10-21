@@ -14,6 +14,8 @@ interface CapturedInteraction {
   anchorRowId?: number | null;
   payload?: {
     kind?: string;
+    prompt?: string;
+    freeText?: boolean;
     toolName?: string;
     toolCallId?: string;
     options?: Array<{ optionId?: string; kind?: string }>;
@@ -107,7 +109,8 @@ describe('ZS3-T1 tool card lifecycle + reasoning frames', () => {
     ];
 
     try {
-      const agent = createAgentService({ home, mockScript: script, emitter });
+      // 本用例只验证工具卡帧序列：注入空注册表，让 write 成为“未知工具”以保留原断言。
+      const agent = createAgentService({ home, mockScript: script, emitter, tools: new ToolRegistry() });
       const created = (await agent.sendConversationCommandV4({
         workspacePath: home,
         envelope: { commandId: 'cmd-create', type: 'createSession' } as never,
@@ -600,4 +603,125 @@ describe('ZS3-T5 attachment RPC wiring', () => {
       rmSync(home, { recursive: true, force: true });
     }
   });
+});
+
+describe('ZS3.5 ask_user producer', () => {
+  it('projects a userInput dialog and feeds the chosen answer back to the model', async () => {
+    const home = mkdtempSync(join(tmpdir(), 'h2-ask-'));
+    const frames: CapturedFrame[] = [];
+    const emitter = new Emitter<unknown>();
+    emitter.event((wire) => {
+      const w = wire as { kind?: string; frame?: CapturedFrame };
+      if (w.kind === 'complete' && w.frame) frames.push(w.frame);
+    });
+    const script: MockScript = [
+      {
+        text: 'asking',
+        toolCalls: [
+          {
+            id: 'ask-1',
+            name: 'ask_user',
+            arguments: JSON.stringify({
+              prompt: '今晚吃什么？',
+              options: [
+                { value: 'noodle', label: '面' },
+                { value: 'rice', label: '饭' },
+              ],
+            }),
+          },
+        ],
+      },
+      { text: 'final' },
+    ];
+    try {
+      const agent = createAgentService({ home, mockScript: script, emitter });
+      const created = (await agent.sendConversationCommandV4({
+        workspacePath: home,
+        envelope: { commandId: 'cmd-create', type: 'createSession' } as never,
+      })) as { result?: { sessionId?: string } };
+      const sessionId = created.result?.sessionId;
+      if (!sessionId) throw new Error('createSession did not return a sessionId');
+
+      await agent.subscribeConversationV4({ workspacePath: home, sessionId });
+      await agent.sendConversationCommandV4({
+        workspacePath: home,
+        envelope: { commandId: 'cmd-ask', type: 'sendText', sessionId, payload: { text: '给我选项' } } as never,
+      });
+
+      await waitFor(() =>
+        frames.some(
+          (f) =>
+            f.payload.kind === 'deltas' &&
+            (f.payload.deltas ?? []).some(
+              (d) =>
+                d.op === 'state.updated' && (d.patch?.pendingInteractions ?? []).some((i) => i.kind === 'userInput'),
+            ),
+        ),
+      );
+
+      const deltas = frames.flatMap((f) => (f.payload.kind === 'deltas' ? (f.payload.deltas ?? []) : []));
+      const interaction = deltas.flatMap((d) => d.patch?.pendingInteractions ?? []).find((i) => i.kind === 'userInput');
+      expect(interaction?.payload?.prompt).toBe('今晚吃什么？');
+      expect(interaction?.payload?.options?.map((o) => o.optionId)).toEqual(['noodle', 'rice']);
+      const interactionId = interaction?.interactionId;
+      if (!interactionId) throw new Error('missing interactionId');
+
+      const ack = (await agent.sendConversationCommandV4({
+        workspacePath: home,
+        envelope: {
+          commandId: 'cmd-answer',
+          clientId: 'test-client',
+          type: 'resolveInteraction',
+          payload: { interactionId, answer: { optionId: 'rice' } },
+        } as never,
+      })) as { status?: string; result?: { type?: string; resolvedBy?: { clientId?: string; optionId?: string } } };
+      expect(ack.status).toBe('accepted');
+      expect(ack.result).toMatchObject({
+        type: 'resolveInteraction',
+        resolvedBy: { clientId: 'test-client', optionId: 'rice' },
+      });
+
+      await waitFor(() =>
+        frames.some(
+          (f) =>
+            f.payload.kind === 'deltas' &&
+            (f.payload.deltas ?? []).some(
+              (d) => d.op === 'state.updated' && d.patch?.control?.phase === 'completedSuccess',
+            ),
+        ),
+      );
+
+      const after = frames.flatMap((f) => (f.payload.kind === 'deltas' ? (f.payload.deltas ?? []) : []));
+      const terminal = after.find(
+        (d) =>
+          d.op === 'row.upserted' &&
+          d.row?.kind === 'toolCall' &&
+          (d.row?.status === 'success' || d.row?.status === 'error'),
+      );
+      expect(terminal?.row?.status).toBe('success');
+      const assistantFinal = after.find((d) => d.op === 'row.upserted' && d.row?.kind === 'assistantText');
+      expect(assistantFinal?.row?.text).toContain('final');
+
+      // 模型可见的答案由 tool/result 事件承载（onStream 的 tool-result 不带 output）。
+      const root = join(home, '.harness2', 'sessions');
+      let jsonlPath: string | undefined;
+      const walk = (dir: string): void => {
+        if (!existsSync(dir)) return;
+        for (const entry of readdirSync(dir, { withFileTypes: true })) {
+          const p = join(dir, entry.name);
+          if (entry.isDirectory()) walk(p);
+          else if (entry.name === 'session.v1.jsonl') jsonlPath = p;
+        }
+      };
+      walk(root);
+      expect(jsonlPath).toBeTruthy();
+      const toolResultLine =
+        readFileSync(jsonlPath!, 'utf8')
+          .split('\n')
+          .find((line) => line.includes('"type":"tool/result"')) ?? '';
+      expect(toolResultLine).toContain('rice');
+    } finally {
+      rmSync(home, { recursive: true, force: true });
+    }
+  }, 20000);
 });

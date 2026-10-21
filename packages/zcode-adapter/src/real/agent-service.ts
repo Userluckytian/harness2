@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
-import { appendFileSync, writeFileSync } from 'node:fs';
+import { appendFileSync, mkdirSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join, resolve } from 'node:path';
+import { dirname, join, resolve, sep } from 'node:path';
 import { createStubService } from '../stub-factory.js';
 import { Emitter, Event } from '@zcode/rpc';
 import {
@@ -13,10 +13,11 @@ import {
   resolveHarness2Home,
   MockProvider,
   ToolRegistry,
+  UserInputQueue,
   extensionEventTypes,
 } from './core-bridge.js';
 import type { IZCodeAgentService } from '@zcode/services';
-import type { ApprovalHandler, MockScript } from '@harness2/core';
+import type { ApprovalHandler, MockScript, UserInputAnswer, UserInputRequestContract } from '@harness2/core';
 import type { PendingInteraction } from '@zcode/shared/zcode-protocol-v4';
 import { encodeTopicWireFrames, measureTopicNotificationEnvelopeBytes } from '@zcode/shared/zcode-protocol-v4';
 import { trackCreatedTask } from './project-service.js';
@@ -207,6 +208,9 @@ export function createAgentService(opts: AgentServiceOptions = {}): IZCodeAgentS
   const sessionLastAccess = new Map<string, number>();
   const runningSessions = new Set<string>();
   const attachmentStore = new AttachmentStore({ home });
+  /** ZS3.5：ask_user 工具的问询队列（core 原语；adapter 直接桥接 v4 pendingInteractions）。 */
+  const userInputs = new UserInputQueue();
+  const userInputTimers = new Map<string, NodeJS.Timeout>();
 
   // ZS3 e2e 审批轮专用工具：只写会话工作目录下的测试文件，不触碰用户数据。
   let e2eToolRegistry: ToolRegistryTypeExport | undefined;
@@ -246,6 +250,142 @@ export function createAgentService(opts: AgentServiceOptions = {}): IZCodeAgentS
       refs.add(resolve(upload.ref));
     }
     return refs;
+  }
+
+  /**
+   * ZS3.5 最小可测交互面（adapter-only）：把模型发起的 ask_user 变成 v4 userInput 弹窗。
+   * 生产不使用 core SessionHub，这里直接用 core UserInputQueue 原语桥接。
+   */
+  function requestUserInputForTool(sessionId: string, raw: unknown): Promise<UserInputAnswer> {
+    const args = (raw ?? {}) as { prompt?: unknown; options?: unknown; freeText?: unknown };
+    const prompt = typeof args.prompt === 'string' && args.prompt.trim().length > 0 ? args.prompt : '请选择';
+    const options = Array.isArray(args.options)
+      ? args.options
+          .filter(
+            (o): o is { value: string; label: string } =>
+              o !== null &&
+              typeof o === 'object' &&
+              typeof (o as { value?: unknown }).value === 'string' &&
+              typeof (o as { label?: unknown }).label === 'string',
+          )
+          .map((o) => ({ optionId: o.value, label: o.label }))
+      : [];
+    const freeText = args.freeText === true || options.length === 0;
+    const requestId = randomUUID();
+    const now = Date.now();
+    const expiresAt = now + DEFAULT_APPROVAL_TIMEOUT_MS;
+    const request: UserInputRequestContract = {
+      requestId,
+      sessionId,
+      prompt,
+      freeText,
+      ...(options.length > 0 ? { options } : {}),
+      createdAt: new Date(now).toISOString(),
+      expiresAt: new Date(expiresAt).toISOString(),
+    };
+    const interaction: PendingInteraction = {
+      interactionId: requestId,
+      kind: 'userInput',
+      anchorRowId: null,
+      createdAt: now,
+      autoResolution: {
+        state: 'visibleCountdown',
+        startedAt: now,
+        visibleAt: now,
+        deadlineAt: expiresAt,
+      },
+      payload: {
+        kind: 'userInput',
+        prompt,
+        freeText,
+        ...(options.length > 0 ? { options } : {}),
+      },
+    };
+    return new Promise<UserInputAnswer>((resolveAnswer) => {
+      const finish = (answer: UserInputAnswer): void => {
+        const timer = userInputTimers.get(requestId);
+        if (timer) clearTimeout(timer);
+        userInputTimers.delete(requestId);
+        const remaining = (sessionPendingInteractions.get(sessionId) ?? []).filter(
+          (x) => x.interactionId !== requestId,
+        );
+        sessionPendingInteractions.set(sessionId, remaining);
+        emitToSession(sessionId, [{ op: 'state.updated', patch: { pendingInteractions: remaining } }]);
+        resolveAnswer(answer);
+      };
+      const timer = setTimeout(() => {
+        userInputs.settle(requestId, { action: 'cancel' }, 'timeout');
+      }, DEFAULT_APPROVAL_TIMEOUT_MS);
+      userInputTimers.set(requestId, timer);
+      if (!userInputs.register({ request, settle: finish })) {
+        clearTimeout(timer);
+        userInputTimers.delete(requestId);
+        resolveAnswer({ action: 'cancel' });
+        return;
+      }
+      const list = [...(sessionPendingInteractions.get(sessionId) ?? []), interaction];
+      sessionPendingInteractions.set(sessionId, list);
+      emitToSession(sessionId, [{ op: 'state.updated', patch: { pendingInteractions: list } }]);
+    });
+  }
+
+  /** 生产缺省工具面：write（审批演示/真实写文件）+ ask_user（选项弹窗）。 */
+  function createDefaultTools(sessionId: string): ToolRegistryTypeExport {
+    const registry = new ToolRegistry();
+    registry.register({
+      name: 'write',
+      description:
+        '在会话工作目录内创建或覆盖文件。会触发用户审批；path 必须是相对会话目录的路径，content 是文件内容。',
+      parameters: {
+        type: 'object',
+        properties: {
+          path: { type: 'string', description: '相对会话工作目录的文件路径' },
+          content: { type: 'string', description: '文件内容' },
+        },
+        required: ['path'],
+      },
+      execute: (toolArgs, ctx) => {
+        const a = (toolArgs ?? {}) as { path?: unknown; content?: unknown };
+        if (typeof a.path !== 'string' || a.path.length === 0) {
+          return { error: 'path is required' };
+        }
+        const root = resolve(ctx.cwd);
+        const target = resolve(root, a.path);
+        if (target !== root && !target.startsWith(root + sep)) {
+          return { error: 'path escapes the session working directory' };
+        }
+        mkdirSync(dirname(target), { recursive: true });
+        writeFileSync(target, typeof a.content === 'string' ? a.content : '');
+        return { output: `wrote ${a.path}` };
+      },
+    });
+    registry.register({
+      name: 'ask_user',
+      description:
+        '向用户提出一个结构化问题并等待回答。用户要求你提供选项、让你做选择、或需要用户确认/补充信息时，必须调用本工具；不要把选项写成普通文字。',
+      parameters: {
+        type: 'object',
+        properties: {
+          prompt: { type: 'string', description: '要问用户的问题' },
+          options: {
+            type: 'array',
+            description: '可选项；每个选项包含 value 与 label',
+            items: {
+              type: 'object',
+              properties: { value: { type: 'string' }, label: { type: 'string' } },
+              required: ['value', 'label'],
+            },
+          },
+          freeText: { type: 'boolean', description: '是否允许自由文本回答' },
+        },
+        required: ['prompt'],
+      },
+      execute: async (toolArgs) => {
+        const answer = await requestUserInputForTool(sessionId, toolArgs);
+        return { output: JSON.stringify(answer) };
+      },
+    });
+    return registry;
   }
 
   function nextRowId(sessionId: string): number {
@@ -506,11 +646,11 @@ export function createAgentService(opts: AgentServiceOptions = {}): IZCodeAgentS
     emitToSession(sessionId, initialDeltas);
 
     let accumulated = '';
-    const tools = opts.tools ?? e2eToolRegistry ?? ({ list: () => [] } as unknown as ToolRegistryTypeExport);
+    const tools = opts.tools ?? e2eToolRegistry ?? createDefaultTools(sessionId);
     const ac = new AbortController();
     const approval: ApprovalHandler = {
-      // ZS3：工具调用统一走审批（生产当前无工具；测试缝与后续工具面共用同一条桥）。
-      decide: () => 'ask',
+      // ask_user 本身是问询入口，不再叠加一层审批；其余工具统一走审批（可被拒绝）。
+      decide: (input) => (input.tool === 'ask_user' ? 'allow' : 'ask'),
       onAsk: (input) =>
         new Promise<boolean>((resolve) => {
           const interactionId = randomUUID();
@@ -851,6 +991,32 @@ export function createAgentService(opts: AgentServiceOptions = {}): IZCodeAgentS
             revisionAtDecision: 1,
           };
         }
+        const answer = env?.payload?.answer ?? {};
+        // 先查 userInput 队列（ask_user）；未知时才落到审批队列。
+        const userInputAck = userInputs.respond(interactionId, answer);
+        if (userInputAck.state !== 'unknown') {
+          const uiOptionId = typeof answer.optionId === 'string' ? answer.optionId : undefined;
+          if (userInputAck.state === 'applied') {
+            return {
+              commandId: env.commandId,
+              status: 'accepted',
+              revisionAtDecision: 1,
+              result: {
+                type: 'resolveInteraction',
+                resolvedBy: {
+                  clientId: env.clientId ?? 'unknown',
+                  ...(uiOptionId ? { optionId: uiOptionId } : {}),
+                },
+              },
+            };
+          }
+          return {
+            commandId: env.commandId,
+            status: 'noop',
+            reasonCode: 'proto.alreadyResolved',
+            revisionAtDecision: 1,
+          };
+        }
         const entry = pendingApprovals.get(interactionId);
         if (!entry) {
           // 先到先得：重复/迟到 resolve 幂等 noop。
@@ -861,7 +1027,6 @@ export function createAgentService(opts: AgentServiceOptions = {}): IZCodeAgentS
             revisionAtDecision: 1,
           };
         }
-        const answer = env?.payload?.answer ?? {};
         const optionId = typeof answer.optionId === 'string' ? answer.optionId : undefined;
         const allowed = optionId === 'allowOnce' || optionId === 'allowAlways' || answer.action === 'accept';
         if (!allowed && typeof answer.freeText === 'string' && answer.freeText.length > 0) {
