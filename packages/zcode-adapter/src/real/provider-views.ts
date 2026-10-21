@@ -1,20 +1,11 @@
-import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { homedir } from 'node:os';
-import { loadConfig, defaultConfigPaths, readAuthFile, redactSecrets, resolveHarness2Home } from './core-bridge.js';
+import { loadConfig, readAuthFile, redactSecrets, resolveHarness2Home } from './core-bridge.js';
 import type { IModelSelectionService, IProviderSettingsService } from '@zcode/services';
 import { createStubService } from '../stub-factory.js';
 
 export interface ProviderViewsOptions {
   dataRoot?: string;
   home?: string;
-}
-
-function readConfig(dataRoot?: string, home?: string) {
-  const root = process.cwd();
-  const paths = defaultConfigPaths(root, home);
-  const loaded = loadConfig({ root, ...(home !== undefined ? { home } : {}) });
-  return { loaded, paths };
 }
 
 export function createModelSelectionService(opts: ProviderViewsOptions = {}): IModelSelectionService {
@@ -25,16 +16,16 @@ export function createModelSelectionService(opts: ProviderViewsOptions = {}): IM
         const loaded = loadConfig({ root: process.cwd(), home });
         const cfg = loaded.config;
         if (!cfg) return { revision: 0, providers: [] };
-        const authResult = readAuthFile(join(home, '.harness2', 'auth.json'));
-const auth = authResult.auth;
+        // auth not needed in model-selection view (ZS2 stub)
         const providers: unknown[] = [];
         for (const [channel, pcfg] of Object.entries(cfg.providers ?? {})) {
-          const p = pcfg as { protocol?: string; baseUrl?: string; models?: Record<string, { contextWindow?: number }>; envKey?: string };
+          const p = pcfg as {
+            protocol?: string;
+            baseUrl?: string;
+            models?: Record<string, { contextWindow?: number }>;
+            envKey?: string;
+          };
           const models = Object.keys(p.models ?? {});
-          const keyExists = !!auth?.channels?.[channel]?.apiKey;
-          const envKey = p.envKey;
-          const envExists = envKey ? !!process.env[envKey] : false;
-          const executable = keyExists || envExists;
           providers.push({
             providerId: channel,
             config: p,
@@ -66,16 +57,20 @@ const auth = authResult.auth;
         // 为空，Composer submissionReady 永远为 false → Send 按钮永久 disabled。
         // 判据来源：refs ZCode packages/ui/src/v4/composer/useDraftConfigControl.ts:265-275
         // 与 packages/provider/src/effective-model-selection.ts。
-        const inp = input as { selection?: { providerId?: string; modelId?: string; options?: { reasoningLevel?: string } } } | undefined;
+        const inp = input as
+          { selection?: { providerId?: string; modelId?: string; options?: { reasoningLevel?: string } } } | undefined;
         if (inp !== undefined) {
           const sel = inp?.selection ?? null;
           if (!sel) {
             result.effectiveSelection = null;
             result.selectionIssue = 'selection-missing';
           } else {
-            const provider = (providers as { providerId: string; models: { modelId: string; config: { optionSpecs: { reasoningLevel: { values: string[] } } } }[] }[]).find(
-              (p) => p.providerId === sel.providerId,
-            );
+            const provider = (
+              providers as {
+                providerId: string;
+                models: { modelId: string; config: { optionSpecs: { reasoningLevel: { values: string[] } } } }[];
+              }[]
+            ).find((p) => p.providerId === sel.providerId);
             const model = provider?.models.find((m) => m.modelId === sel.modelId);
             if (!provider) {
               result.effectiveSelection = null;
@@ -130,7 +125,7 @@ export function createProviderSettingsService(opts: ProviderViewsOptions = {}): 
         const cfg = loaded.config;
         if (!cfg) return { revision: 0, providerTemplates: [], providerOrder: [], providers: [] };
         const authResult = readAuthFile(join(home, '.harness2', 'auth.json'));
-const auth = authResult.auth;
+        const auth = authResult.auth;
         const providers: unknown[] = [];
         for (const [channel, pcfg] of Object.entries(cfg.providers ?? {})) {
           const p = pcfg as { models?: Record<string, unknown>; envKey?: string };
@@ -144,7 +139,10 @@ const auth = authResult.auth;
             executable,
             issues: executable ? [] : ['no_api_key'],
             effectiveConfig: { access: null },
-            accountState: { availability: executable ? 'available' : 'unavailable', unavailableReason: executable ? undefined : 'no_api_key' },
+            accountState: {
+              availability: executable ? 'available' : 'unavailable',
+              unavailableReason: executable ? undefined : 'no_api_key',
+            },
             models: Object.keys(p.models ?? {}).map((m) => ({ modelId: m })),
           });
         }

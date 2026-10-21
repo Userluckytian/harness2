@@ -17,7 +17,11 @@ export function trackCreatedTask(taskId: string, workspacePath: string, workspac
 
 export function createProjectService(): IProjectService {
   const impl = {
-    async readTree(params?: { includeDeleted?: boolean; includeDeletedTasks?: boolean; hostId?: string }): Promise<any> {
+    async readTree(_params?: {
+      includeDeleted?: boolean;
+      includeDeletedTasks?: boolean;
+      hostId?: string;
+    }): Promise<unknown> {
       const tasks = tracked.map((t) => ({
         taskId: t.taskId,
         traceId: 'zs2',
@@ -34,10 +38,14 @@ export function createProjectService(): IProjectService {
       }));
       return { projects: [], tasks, deletedTasks: [] };
     },
-    async readProjects(): Promise<any[]> {
+    async readProjects(): Promise<unknown[]> {
       return [];
     },
-    async resolveSessionDirectories(task: { workspacePath: string; workspaceIdentity?: string; taskId: string }): Promise<any> {
+    async resolveSessionDirectories(task: {
+      workspacePath: string;
+      workspaceIdentity?: string;
+      taskId: string;
+    }): Promise<unknown> {
       return {
         workspacePath: task.workspacePath,
         ...(task.workspaceIdentity ? { workspaceIdentity: task.workspaceIdentity } : {}),

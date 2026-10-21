@@ -18,10 +18,12 @@ import type {
 const req = createRequire(
   typeof import.meta !== 'undefined' && import.meta.url
     ? import.meta.url
-    : (typeof __filename !== 'undefined' ? __filename : 'file:///'),
+    : typeof __filename !== 'undefined'
+      ? __filename
+      : 'file:///',
 );
 
-function loadCore(): any {
+function loadCore(): unknown {
   // 1) 测试/开发：@harness2/core 已通过 tsconfig/vitest alias 解析
   try {
     return req('@harness2/core');
@@ -43,7 +45,7 @@ function loadCore(): any {
   throw new Error('core-bridge: cannot load @harness2/core');
 }
 
-const core: any = loadCore();
+const core = loadCore() as typeof import('@harness2/core', { with: { 'resolution-mode': 'import' } });
 
 export const defaultSessionsRoot = core.defaultSessionsRoot;
 export const SessionManager = core.SessionManager;

@@ -207,7 +207,15 @@ export const windowControllerServiceStub: IWindowControllerService = createStubS
 const projectServiceImpl: {
   readTree(params?: { includeDeleted?: boolean; includeDeletedTasks?: boolean; hostId?: string }): Promise<ProjectTree>;
   readProjects(params?: { includeDeleted?: boolean; hostId?: string }): Promise<VirtualProject[]>;
-  resolveSessionDirectories(task: { workspacePath: string; workspaceIdentity?: string; taskId: string }, hostId?: string): Promise<{ workspacePath: string; workspaceIdentity?: string; additionalDirectories: string[]; projectId: string | null }>;
+  resolveSessionDirectories(
+    task: { workspacePath: string; workspaceIdentity?: string; taskId: string },
+    hostId?: string,
+  ): Promise<{
+    workspacePath: string;
+    workspaceIdentity?: string;
+    additionalDirectories: string[];
+    projectId: string | null;
+  }>;
 } = {
   async readTree(): Promise<ProjectTree> {
     return { projects: [], tasks: [] }; // 空项目树
@@ -215,7 +223,16 @@ const projectServiceImpl: {
   async readProjects(): Promise<VirtualProject[]> {
     return [];
   },
-  async resolveSessionDirectories(task: { workspacePath: string; workspaceIdentity?: string; taskId: string }): Promise<{ workspacePath: string; workspaceIdentity?: string; additionalDirectories: string[]; projectId: string | null }> {
+  async resolveSessionDirectories(task: {
+    workspacePath: string;
+    workspaceIdentity?: string;
+    taskId: string;
+  }): Promise<{
+    workspacePath: string;
+    workspaceIdentity?: string;
+    additionalDirectories: string[];
+    projectId: string | null;
+  }> {
     return {
       workspacePath: task.workspacePath,
       ...(task.workspaceIdentity ? { workspaceIdentity: task.workspaceIdentity } : {}),

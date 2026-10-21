@@ -10,7 +10,12 @@ describe('v4-projection', () => {
   it('projects user + assistant message to rows', () => {
     const events = [
       ev(1, 'user/message', { text: 'hi', turnId: 't1' }),
-      ev(2, 'assistant/message', { text: 'hello', reasoning: 'think', usage: { inputTokens: 10, outputTokens: 5 }, turnId: 't1' }),
+      ev(2, 'assistant/message', {
+        text: 'hello',
+        reasoning: 'think',
+        usage: { inputTokens: 10, outputTokens: 5 },
+        turnId: 't1',
+      }),
     ];
     const r = projectEvents(events);
     expect(r.rows.some((x) => x.kind === 'userInput')).toBe(true);

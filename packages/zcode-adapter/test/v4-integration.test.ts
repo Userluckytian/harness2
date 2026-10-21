@@ -25,7 +25,6 @@ describe('ZS2 V2 integration: sendConversationCommandV4 same-source chain', () =
       } as any,
     });
     expect(ack.status).toBe('accepted');
-    const sid = (ack.result as any)?.sessionId;
 
     // wait for async runSession
     await new Promise((r) => setTimeout(r, 3000));

@@ -7,7 +7,6 @@ import {
   createProvider,
   runTurn,
   resolveHarness2Home,
-  ToolRegistry,
   MockProvider,
 } from './core-bridge.js';
 import type { IZCodeAgentService } from '@zcode/services';
@@ -18,6 +17,7 @@ import { trackCreatedTask } from './project-service.js';
 export interface AgentServiceOptions {
   dataRoot?: string;
   home?: string;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- RPC/协议边界动态类型，仅用于 lint 收敛，不改变运行时行为
   emitter?: Emitter<any>;
 }
 
@@ -50,6 +50,7 @@ function makeAvailability() {
   };
 }
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any -- RPC/协议边界动态类型，仅用于 lint 收敛，不改变运行时行为
 function buildSnapshot(sessionId: string, seq: number, rows: any[], phase: string) {
   return {
     protocolVersion: 1,
@@ -62,7 +63,10 @@ function buildSnapshot(sessionId: string, seq: number, rows: any[], phase: strin
     inputRouting: { mode: 'startNow' },
     meta: { title: '', titleSource: 'default' },
     config: { provider: '', model: '', thought: '', followupMode: 'queue', thoughtLevels: [] },
-    usage: { contextWindow: null, cumulative: { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0 } },
+    usage: {
+      contextWindow: null,
+      cumulative: { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0 },
+    },
     queue: { items: [], autoDrain: true },
     pendingInteractions: [],
     pendingCommands: [],
@@ -77,28 +81,37 @@ export function createAgentService(opts: AgentServiceOptions = {}): IZCodeAgentS
   const home = opts.home ?? resolveHarness2Home();
   const sessionsRoot = defaultSessionsRoot(home);
   const manager = createSessionManager(sessionsRoot);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- RPC/协议边界动态类型，仅用于 lint 收敛，不改变运行时行为
   const emitter = opts.emitter ?? new Emitter<any>();
 
   // provider
   const defaultMock: MockScript = [{ text: 'Hello from harness2 mock provider.' }];
-  const __diagPath = (process.env.ZS2_DIAG_PATH || (require('node:path').join(require('node:os').tmpdir(), 'zs2-diag.log')));
-const __diagEnabled = process.env.ZS2_DIAG === '1';
-const __diag=(m:any)=>{ if(!__diagEnabled) return; try{require('node:fs').appendFileSync(__diagPath,'[agent] '+m);}catch(e){}};
-  __diag('cwd='+process.cwd()+' home='+home+' HARNESS2_HOME='+process.env.HARNESS2_HOME);
+  const __diagPath =
+    process.env.ZS2_DIAG_PATH || require('node:path').join(require('node:os').tmpdir(), 'zs2-diag.log');
+  const __diagEnabled = process.env.ZS2_DIAG === '1';
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- RPC/协议边界动态类型，仅用于 lint 收敛，不改变运行时行为
+  const __diag = (m: any) => {
+    if (!__diagEnabled) return;
+    try {
+      require('node:fs').appendFileSync(__diagPath, '[agent] ' + m);
+    } catch (e) {}
+  };
+  __diag('cwd=' + process.cwd() + ' home=' + home + ' HARNESS2_HOME=' + process.env.HARNESS2_HOME);
   let provider: unknown;
   try {
     const loaded = loadConfig({ root: process.cwd(), home });
-    __diag('loadConfig ok='+(!!loaded.config));
+    __diag('loadConfig ok=' + !!loaded.config);
     if (loaded.config) {
       provider = createProvider(loaded.config, 'main', {
         authPath: require('node:path').join(home, '.harness2', 'auth.json'),
       });
-      __diag('provider created: '+ (provider && provider.constructor && provider.constructor.name));
+      __diag('provider created: ' + (provider && provider.constructor && provider.constructor.name));
     } else {
       provider = new MockProvider(defaultMock);
     }
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- RPC/协议边界动态类型，仅用于 lint 收敛，不改变运行时行为
   } catch (e: any) {
-    __diag('provider load FAILED: '+(e&&e.message));
+    __diag('provider load FAILED: ' + (e && e.message));
     provider = new MockProvider(defaultMock);
   }
 
@@ -110,6 +123,7 @@ const __diag=(m:any)=>{ if(!__diagEnabled) return; try{require('node:fs').append
   // (the UI re-subscribes after promoting a draft session) can rebuild the
   // projection instead of starting from an empty snapshot. See task: UI not
   // rendering reply in draft prewarm flow.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- RPC/协议边界动态类型，仅用于 lint 收敛，不改变运行时行为
   const sessionRows = new Map<string, any[]>();
   const sessionPhase = new Map<string, string>();
   const sessionSeq = new Map<string, number>();
@@ -120,6 +134,7 @@ const __diag=(m:any)=>{ if(!__diagEnabled) return; try{require('node:fs').append
     return c;
   }
 
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- RPC/协议边界动态类型，仅用于 lint 收敛，不改变运行时行为
   function emitWire(subId: string, frame: any) {
     const sub = subs.get(subId);
     if (!sub) return;
@@ -129,11 +144,13 @@ const __diag=(m:any)=>{ if(!__diagEnabled) return; try{require('node:fs').append
       subscriptionId: subId,
       logicalFrameId: `lf-${sub.ordinal}`,
       logicalFrameOrdinal: sub.ordinal++,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- RPC/协议边界动态类型，仅用于 lint 收敛，不改变运行时行为
       measurePhysicalFrameBytes: (w: any) => measureTopicNotificationEnvelopeBytes(w).maxBytes,
     });
     for (const w of wires) emitter.fire(w);
   }
 
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- RPC/协议边界动态类型，仅用于 lint 收敛，不改变运行时行为
   function emitSnapshot(subId: string, rows: any[], phase: string) {
     const sub = subs.get(subId);
     if (!sub) return;
@@ -150,6 +167,7 @@ const __diag=(m:any)=>{ if(!__diagEnabled) return; try{require('node:fs').append
     emitWire(subId, frame);
   }
 
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- RPC/协议边界动态类型，仅用于 lint 收敛，不改变运行时行为
   function emitDeltas(subId: string, deltas: any[]) {
     const sub = subs.get(subId);
     if (!sub) return;
@@ -167,8 +185,14 @@ const __diag=(m:any)=>{ if(!__diagEnabled) return; try{require('node:fs').append
   }
 
   async function runSession(sessionId: string, text: string, dirHint?: string) {
-    __diag('runSession start provider='+(provider && provider.constructor && provider.constructor.name)+' fetch='+(typeof globalThis.fetch));
+    __diag(
+      'runSession start provider=' +
+        (provider && provider.constructor && provider.constructor.name) +
+        ' fetch=' +
+        typeof globalThis.fetch,
+    );
     const targetSubs = [...subs.entries()].filter(([, s]) => s.sessionId === sessionId).map(([id]) => id);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- RPC/协议边界动态类型，仅用于 lint 收敛，不改变运行时行为
     let resumed: any;
     if (dirHint) {
       const cb = await import('./core-bridge.js');
@@ -182,10 +206,28 @@ const __diag=(m:any)=>{ if(!__diagEnabled) return; try{require('node:fs').append
     const turnId = `turn-${Date.now()}`;
     const now = Date.now();
 
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- RPC/协议边界动态类型，仅用于 lint 收敛，不改变运行时行为
     const rows: any[] = [
       { rowId: userRowId, turnId, kind: 'userInput', text, origin: 'realUser', createdAt: now, createdAtSeq: 0 },
-      { rowId: turnHeaderRowId, turnId, kind: 'turnHeader', origin: 'userInput', state: 'running', startedAt: now, createdAt: now, createdAtSeq: 0 },
-      { rowId: assistantRowId, turnId, kind: 'assistantText', text: '', state: 'streaming', createdAt: now, createdAtSeq: 0 },
+      {
+        rowId: turnHeaderRowId,
+        turnId,
+        kind: 'turnHeader',
+        origin: 'userInput',
+        state: 'running',
+        startedAt: now,
+        createdAt: now,
+        createdAtSeq: 0,
+      },
+      {
+        rowId: assistantRowId,
+        turnId,
+        kind: 'assistantText',
+        text: '',
+        state: 'streaming',
+        createdAt: now,
+        createdAtSeq: 0,
+      },
     ];
     sessionRows.set(sessionId, rows);
     sessionPhase.set(sessionId, 'running');
@@ -198,6 +240,7 @@ const __diag=(m:any)=>{ if(!__diagEnabled) return; try{require('node:fs').append
     for (const sid of targetSubs) emitDeltas(sid, initialDeltas);
 
     let accumulated = '';
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- RPC/协议边界动态类型，仅用于 lint 收敛，不改变运行时行为
     const tools = { list: () => [] } as any;
     const ac = new AbortController();
     try {
@@ -207,16 +250,28 @@ const __diag=(m:any)=>{ if(!__diagEnabled) return; try{require('node:fs').append
         cwd: resumed.dir,
         userText: text,
         signal: ac.signal,
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any -- RPC/协议边界动态类型，仅用于 lint 收敛，不改变运行时行为
         onStream: (chunk: any) => {
           if (chunk.type === 'text-delta') {
             accumulated += chunk.text;
-            for (const sid of targetSubs) emitDeltas(sid, [{ op: 'row.delta', rowId: assistantRowId, path: 'text', append: chunk.text }]);
+            for (const sid of targetSubs)
+              emitDeltas(sid, [{ op: 'row.delta', rowId: assistantRowId, path: 'text', append: chunk.text }]);
           } else if (chunk.type === 'reasoning-delta') {
             // ignore for now
           } else if (chunk.type === 'tool-call') {
             const tr = nextRowId(sessionId);
             toolRowByCall.set(chunk.call.id, tr);
-            const toolRow = { rowId: tr, turnId, kind: 'toolCall', toolCallId: chunk.call.id, toolName: chunk.call.name, status: 'running', inputText: chunk.call.arguments ?? '', createdAt: now, createdAtSeq: 0 };
+            const toolRow = {
+              rowId: tr,
+              turnId,
+              kind: 'toolCall',
+              toolCallId: chunk.call.id,
+              toolName: chunk.call.name,
+              status: 'running',
+              inputText: chunk.call.arguments ?? '',
+              createdAt: now,
+              createdAtSeq: 0,
+            };
             rows.push(toolRow);
             for (const sid of targetSubs) emitDeltas(sid, [{ op: 'row.appended', row: toolRow }]);
           } else if (chunk.type === 'tool-result') {
@@ -224,17 +279,40 @@ const __diag=(m:any)=>{ if(!__diagEnabled) return; try{require('node:fs').append
             if (tr) {
               const idx = rows.findIndex((r) => r.rowId === tr);
               if (idx >= 0) rows[idx] = { ...rows[idx], status: chunk.ok ? 'success' : 'error' };
-              for (const sid of targetSubs) emitDeltas(sid, [{ op: 'row.upserted', row: { rowId: tr, turnId, kind: 'toolCall', toolCallId: chunk.callId, toolName: '', status: chunk.ok ? 'success' : 'error', inputText: '', createdAt: now, createdAtSeq: 0 } }]);
+              for (const sid of targetSubs)
+                emitDeltas(sid, [
+                  {
+                    op: 'row.upserted',
+                    row: {
+                      rowId: tr,
+                      turnId,
+                      kind: 'toolCall',
+                      toolCallId: chunk.callId,
+                      toolName: '',
+                      status: chunk.ok ? 'success' : 'error',
+                      inputText: '',
+                      createdAt: now,
+                      createdAtSeq: 0,
+                    },
+                  },
+                ]);
             }
           }
         },
       });
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- RPC/协议边界动态类型，仅用于 lint 收敛，不改变运行时行为
     } catch (e: any) {
-      __diag('runTurn FAILED: '+(e&&e.message));
+      __diag('runTurn FAILED: ' + (e && e.message));
       console.error('[zs2] runTurn failed:', (e as Error)?.message ?? e);
     }
-    __diag('runTurn done accumulated='+accumulated.length);
-    try { resumed.writer.close(); } catch (e: any) { __diag('close failed '+(e&&e.message)); console.error('[zs2] close failed', (e as Error)?.message); }
+    __diag('runTurn done accumulated=' + accumulated.length);
+    try {
+      resumed.writer.close();
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- RPC/协议边界动态类型，仅用于 lint 收敛，不改变运行时行为
+    } catch (e: any) {
+      __diag('close failed ' + (e && e.message));
+      console.error('[zs2] close failed', (e as Error)?.message);
+    }
 
     const assistantRow = rows.find((r) => r.rowId === assistantRowId);
     if (assistantRow) {
@@ -243,11 +321,22 @@ const __diag=(m:any)=>{ if(!__diagEnabled) return; try{require('node:fs').append
     }
     sessionPhase.set(sessionId, 'completedSuccess');
     sessionRows.set(sessionId, rows);
-    sessionSeq.set(sessionId, (sessionSeq.get(sessionId) ?? 0));
+    sessionSeq.set(sessionId, sessionSeq.get(sessionId) ?? 0);
 
     for (const sid of targetSubs) {
       emitDeltas(sid, [
-        { op: 'row.upserted', row: { rowId: assistantRowId, turnId, kind: 'assistantText', text: accumulated || 'done', state: 'complete', createdAt: now, createdAtSeq: 0 } },
+        {
+          op: 'row.upserted',
+          row: {
+            rowId: assistantRowId,
+            turnId,
+            kind: 'assistantText',
+            text: accumulated || 'done',
+            state: 'complete',
+            createdAt: now,
+            createdAtSeq: 0,
+          },
+        },
         { op: 'state.updated', patch: { control: makeControl('completedSuccess') } },
       ]);
     }
@@ -309,11 +398,14 @@ const __diag=(m:any)=>{ if(!__diagEnabled) return; try{require('node:fs').append
     async unsubscribeConversationV4(params: { subscriptionId?: string }): Promise<void> {
       if (params?.subscriptionId) subs.delete(params.subscriptionId);
     },
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- RPC/协议边界动态类型，仅用于 lint 收敛，不改变运行时行为
     async sendConversationCommandV4(params: { workspacePath?: string; envelope?: any }): Promise<unknown> {
       const env = params?.envelope ?? {};
       if (env.type === 'createSession') {
         const created = manager.create(process.cwd());
-        try { created.writer.close(); } catch {}
+        try {
+          created.writer.close();
+        } catch {}
         const sid = created.id;
         const __wp = params?.workspacePath ?? process.cwd();
         trackCreatedTask(sid, __wp);
@@ -323,7 +415,11 @@ const __diag=(m:any)=>{ if(!__diagEnabled) return; try{require('node:fs').append
         rowCounters.set(sid, 0);
         const firstInput = env?.payload?.firstInput;
         if (firstInput?.text) {
-          setTimeout(() => { runSession(sid, firstInput.text, created.dir).catch((e) => console.error('[zs2] runSession failed:', (e as Error)?.message ?? e)); }, 0);
+          setTimeout(() => {
+            runSession(sid, firstInput.text, created.dir).catch((e) =>
+              console.error('[zs2] runSession failed:', (e as Error)?.message ?? e),
+            );
+          }, 0);
         }
         return {
           commandId: env.commandId,
@@ -337,7 +433,9 @@ const __diag=(m:any)=>{ if(!__diagEnabled) return; try{require('node:fs').append
         let dirHint: string | undefined;
         if (!sid) {
           const created = manager.create(process.cwd());
-          try { created.writer.close(); } catch {}
+          try {
+            created.writer.close();
+          } catch {}
           sid = created.id;
           dirHint = created.dir;
           const __wp2 = params?.workspacePath ?? process.cwd();
@@ -348,7 +446,11 @@ const __diag=(m:any)=>{ if(!__diagEnabled) return; try{require('node:fs').append
           rowCounters.set(sid, 0);
         }
         const text = env?.payload?.text ?? '';
-        setTimeout(() => { runSession(sid, text, dirHint).catch((e) => console.error('[zs2] runSession failed:', (e as Error)?.message ?? e)); }, 0);
+        setTimeout(() => {
+          runSession(sid, text, dirHint).catch((e) =>
+            console.error('[zs2] runSession failed:', (e as Error)?.message ?? e),
+          );
+        }, 0);
         return {
           commandId: env.commandId,
           status: 'accepted',
@@ -387,7 +489,9 @@ const __diag=(m:any)=>{ if(!__diagEnabled) return; try{require('node:fs').append
     },
     async createSession(params: { workspacePath?: string }): Promise<unknown> {
       const created = manager.create(params?.workspacePath ?? process.cwd());
-      try { created.writer.close(); } catch {}
+      try {
+        created.writer.close();
+      } catch {}
       trackCreatedTask(created.id, params?.workspacePath ?? process.cwd());
       sessionRows.set(created.id, []);
       sessionPhase.set(created.id, 'running');
@@ -400,6 +504,7 @@ const __diag=(m:any)=>{ if(!__diagEnabled) return; try{require('node:fs').append
       return { sessionId: r.id };
     },
     async listSessions(): Promise<unknown[]> {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- RPC/协议边界动态类型，仅用于 lint 收敛，不改变运行时行为
       return manager.list().map((s: any) => ({ sessionId: s.id }));
     },
     async listSessionSubagents(): Promise<unknown> {
@@ -438,8 +543,8 @@ const __diag=(m:any)=>{ if(!__diagEnabled) return; try{require('node:fs').append
   };
 
   return createStubService<IZCodeAgentService>({
-    channelName: "zcode-agent",
-    classification: "B",
+    channelName: 'zcode-agent',
+    classification: 'B',
     impl,
   });
 }

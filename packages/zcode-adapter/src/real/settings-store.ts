@@ -31,7 +31,14 @@ export class SettingsStore {
     } catch {
       // fall through
     }
-    return { recentProjects: [], locale: 'en-US', providerFamilyDomain: 'zai', providerFamilyDomainMigrated: true, onboardingOccupation: 'other', providerFamilyConnectionSelections: {} } as AppSettings;
+    return {
+      recentProjects: [],
+      locale: 'en-US',
+      providerFamilyDomain: 'zai',
+      providerFamilyDomainMigrated: true,
+      onboardingOccupation: 'other',
+      providerFamilyConnectionSelections: {},
+    } as AppSettings;
   }
 
   update(patch: Partial<AppSettings>): AppSettings {

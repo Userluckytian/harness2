@@ -28,11 +28,17 @@ export function createSessionService(opts: SessionServiceOptions = {}): IZCodeSe
         updatedAt: s.mtimeMs,
       }));
     },
-    async initializeWorkspace(params?: { workspacePath?: string; workspaceIdentity?: string }): Promise<{ available: boolean; workspaceKey: string }> {
+    async initializeWorkspace(params?: {
+      workspacePath?: string;
+      workspaceIdentity?: string;
+    }): Promise<{ available: boolean; workspaceKey: string }> {
       const ws = (params?.workspaceIdentity && params.workspaceIdentity.trim()) || params?.workspacePath || '';
       return { available: true, workspaceKey: ws };
     },
-    async getWorkspaceRuntimeIdentity(params?: { workspacePath?: string; workspaceIdentity?: string }): Promise<{ generation: number; identity: string; workspaceKey: string }> {
+    async getWorkspaceRuntimeIdentity(params?: {
+      workspacePath?: string;
+      workspaceIdentity?: string;
+    }): Promise<{ generation: number; identity: string; workspaceKey: string }> {
       // Gate A (ZS2): identity 必须为空，避免 tab 被误判为 remote target
       // (refs ZCode packages/ui/src/hooks/useWorkspaceServices.tsx:83-100 hasRemoteWorkspaceMetadata)。
       const ws = (params?.workspaceIdentity && params.workspaceIdentity.trim()) || params?.workspacePath || '';
@@ -41,7 +47,7 @@ export function createSessionService(opts: SessionServiceOptions = {}): IZCodeSe
     async readWorkspacePresentation(): Promise<unknown> {
       return { title: 'harness2' };
     },
-    async createSession(params: { sessionId?: string }): Promise<unknown> {
+    async createSession(_params: { sessionId?: string }): Promise<unknown> {
       const created = manager.create(process.cwd());
       return { sessionId: created.id };
     },
@@ -52,13 +58,13 @@ export function createSessionService(opts: SessionServiceOptions = {}): IZCodeSe
     async readSession(params: { sessionId: string }): Promise<unknown> {
       return { sessionId: params.sessionId };
     },
-    async readSessionMessages(params: { sessionId: string }): Promise<unknown[]> {
+    async readSessionMessages(_params: { sessionId: string }): Promise<unknown[]> {
       return [];
     },
-    async readSessionEvents(params: { sessionId: string }): Promise<unknown[]> {
+    async readSessionEvents(_params: { sessionId: string }): Promise<unknown[]> {
       return [];
     },
-    async closeSession(params: { sessionId: string }): Promise<void> {},
+    async closeSession(_params: { sessionId: string }): Promise<void> {},
     async promoteDeferredDraftSession(): Promise<void> {},
     async closeDeferredDraftSession(): Promise<boolean> {
       return true;

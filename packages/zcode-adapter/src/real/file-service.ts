@@ -52,7 +52,7 @@ export function createFileService(opts: FileServiceOptions = {}): IFileService {
     },
     async checkFilesExist(params: unknown): Promise<unknown> {
       const out: { path: string; exists: boolean }[] = [];
-      for (const p of ((params as { paths: string[] }).paths ?? [])) out.push({ path: p, exists: existsSync(p) });
+      for (const p of (params as { paths: string[] }).paths ?? []) out.push({ path: p, exists: existsSync(p) });
       return out;
     },
     async resolvePath(params: unknown): Promise<unknown> {

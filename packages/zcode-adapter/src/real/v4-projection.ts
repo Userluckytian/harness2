@@ -52,7 +52,6 @@ export function projectEvents(events: AnySessionEvent[]): ProjectionResult {
   let outputTokens = 0;
   let title = '';
   let lastPhase: ProjectionState['controlPhase'] = 'running';
-  let lastStopReason: string | undefined;
 
   // 先按 seq 排序
   const sorted = [...events].sort((a, b) => a.seq - b.seq);
@@ -89,7 +88,13 @@ export function projectEvents(events: AnySessionEvent[]): ProjectionResult {
         break;
       }
       case 'assistant/message': {
-        const p = e.payload as { text: string; model?: string; usage?: { inputTokens?: number; outputTokens?: number }; reasoning?: string; turnId?: string };
+        const p = e.payload as {
+          text: string;
+          model?: string;
+          usage?: { inputTokens?: number; outputTokens?: number };
+          reasoning?: string;
+          turnId?: string;
+        };
         if (p.reasoning) {
           rows.push({
             rowId: allocRowId(e.seq),

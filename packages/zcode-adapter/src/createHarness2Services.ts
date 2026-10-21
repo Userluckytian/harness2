@@ -87,48 +87,65 @@ import {
   skillsServiceStub,
   subagentsServiceStub,
 } from './a-class-stubs.js';
-import { fileServiceStub } from './file-stubs.js';
 import {
   botsServiceStub,
   broadcastServiceStub,
   codingPlanSubscriptionServiceStub,
   credentialServiceStub,
   marketingTouchServiceStub,
-  modelSelectionServiceStub,
   oauthServiceStub,
   onboardingRecordServiceStub,
-  providerSettingsServiceStub,
   remoteProjectServiceStub,
-  settingServiceStub,
   sourceServerManagementServiceStub,
   taskGroupServiceStub,
   usageStatsServiceStub,
   windowControllerServiceStub,
-  zcodeAgentServiceStub,
 } from './root-mount-stubs.js';
 
-function wrapProbe(service: any, channel: string): any {
+function wrapProbe(service: unknown, channel: string): unknown {
   if (process.env.ZS2_PROBE !== '1') return service;
-  return new Proxy(service, {
+  return new Proxy(service as object, {
     get(target, prop, receiver) {
-      const val = Reflect.get(target, prop, receiver);
+      const val = Reflect.get(target as object, prop, receiver);
       if (typeof val === 'function') {
-        return (...args: any[]) => {
+        return (...args: unknown[]) => {
           const fs = require('node:fs');
           const logPath = 'D:/AI_Projects/harness2-zs1-build/zs2-probe.log';
-          try { fs.appendFileSync(logPath, `[probe] ${channel}.${String(prop)} called args=${JSON.stringify(args).slice(0, 500)}\n`); } catch {}
-          const res = val.apply(target, args);
+          try {
+            fs.appendFileSync(
+              logPath,
+              `[probe] ${channel}.${String(prop)} called args=${JSON.stringify(args).slice(0, 500)}\n`,
+            );
+          } catch {}
+          const res = (val as (...a: unknown[]) => unknown).apply(target as object, args);
           // log async result if promise
-          if (res && typeof res.then === 'function') {
-            return res.then((r: any) => {
-              try { fs.appendFileSync(logPath, `[probe] ${channel}.${String(prop)} result=${JSON.stringify(r).slice(0, 5000)}\n`); } catch {}
-              return r;
-            }).catch((e: any) => {
-              try { fs.appendFileSync(logPath, `[probe] ${channel}.${String(prop)} threw=${String(e?.message ?? e).slice(0, 300)}\n`); } catch {}
-              throw e;
-            });
+          if (res && typeof (res as { then?: unknown }).then === 'function') {
+            return Promise.resolve(res)
+              .then((r: unknown) => {
+                try {
+                  fs.appendFileSync(
+                    logPath,
+                    `[probe] ${channel}.${String(prop)} result=${JSON.stringify(r).slice(0, 5000)}\n`,
+                  );
+                } catch {}
+                return r;
+              })
+              .catch((e: unknown) => {
+                try {
+                  fs.appendFileSync(
+                    logPath,
+                    `[probe] ${channel}.${String(prop)} threw=${String((e as { message?: unknown })?.message ?? e).slice(0, 300)}\n`,
+                  );
+                } catch {}
+                throw e;
+              });
           }
-          try { fs.appendFileSync(logPath, `[probe] ${channel}.${String(prop)} result=${JSON.stringify(res).slice(0, 5000)}\n`); } catch {}
+          try {
+            fs.appendFileSync(
+              logPath,
+              `[probe] ${channel}.${String(prop)} result=${JSON.stringify(res).slice(0, 5000)}\n`,
+            );
+          } catch {}
           return res;
         };
       }
@@ -218,7 +235,7 @@ export function createHarness2Services(opts: Harness2ServicesOptions = {}): Harn
   const home = opts.home ?? process.env.HARNESS2_HOME;
   const dataRoot = opts.dataRoot ?? process.env.HARNESS2_DATA_ROOT;
 
-  const sharedEmitter = new Emitter<any>();
+  const sharedEmitter = new Emitter<unknown>();
   const realFileService = createFileService({ dataRoot, home });
   const realSessionService = createSessionService({ dataRoot, home });
   const realTaskService = createTaskService({ dataRoot, home, emitter: sharedEmitter });
@@ -230,9 +247,15 @@ export function createHarness2Services(opts: Harness2ServicesOptions = {}): Harn
     channelName: 'setting',
     classification: 'A',
     impl: {
-      async get() { return realSettingsStore.get(); },
-      async update(p: unknown) { return realSettingsStore.update(p as never); },
-      async updateDataBaseDir() { throw new Error('ZS2: not implemented'); },
+      async get() {
+        return realSettingsStore.get();
+      },
+      async update(p: unknown) {
+        return realSettingsStore.update(p as never);
+      },
+      async updateDataBaseDir() {
+        throw new Error('ZS2: not implemented');
+      },
     },
     throws: [],
   });
