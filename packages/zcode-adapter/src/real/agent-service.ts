@@ -134,6 +134,90 @@ export function createAgentService(opts: AgentServiceOptions = {}): IZCodeAgentS
   const home = opts.home ?? resolveHarness2Home();
   const sessionsRoot = defaultSessionsRoot(home);
   const manager = createSessionManager(sessionsRoot);
+
+  /** core SessionSummary → sessions-index SessionSummary（尽力映射） */
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- core SessionSummary 动态形状
+  function toSessionsIndexSummary(s: any, workspaceKey: string): Record<string, unknown> {
+    const title =
+      typeof s.title === 'string' && s.title.length > 0
+        ? s.title
+        : typeof s.firstUserText === 'string' && s.firstUserText.length > 0
+          ? s.firstUserText
+          : s.id;
+    const mtime = typeof s.mtimeMs === 'number' ? s.mtimeMs : Date.now();
+    return {
+      sessionId: s.id,
+      workspaceId: workspaceKey,
+      title,
+      phase: 'completedSuccess',
+      sessionEnded: false,
+      hasBackgroundWork: false,
+      lastActivityAt: mtime,
+      createdAt: mtime,
+    };
+  }
+
+  function sessionsIndexFingerprint(cwd: string): string {
+    const list = manager.list(cwd);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- core SessionSummary 动态形状
+    return JSON.stringify(list.map((s: any) => [s.id, s.mtimeMs]));
+  }
+
+  function fireSessionsIndexFrame(subId: string, deliveryKind: 'initial' | 'online' | 'recovery'): void {
+    const sub = sessionsIndexSubs.get(subId);
+    if (!sub) return;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- core SessionSummary 动态形状
+    const sessions = manager.list(sub.cwd).map((s: any) => toSessionsIndexSummary(s, sub.workspaceKey));
+    const frame = {
+      topic: `sessions-index/${sub.workspaceKey}`,
+      subscriptionId: subId,
+      fromSeq: 0,
+      toSeq: 0,
+      sentAt: Date.now(),
+      payload: {
+        kind: 'snapshot',
+        snapshot: {
+          protocolVersion: 1,
+          workspaceId: sub.workspaceKey,
+          logEpoch,
+          sessions,
+        },
+      },
+    };
+    sub.ordinal += 1;
+    const wires = encodeTopicWireFrames(frame, {
+      deliveryKind,
+      topic: frame.topic,
+      subscriptionId: subId,
+      logicalFrameId: `si-${subId}-${sub.ordinal}`,
+      logicalFrameOrdinal: sub.ordinal,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- wire 候选动态形状
+      measurePhysicalFrameBytes: (w: any) => measureTopicNotificationEnvelopeBytes(w).maxBytes,
+    });
+    for (const w of wires) emitter.fire(w);
+  }
+
+  function ensureSessionsIndexTimer(): void {
+    if (sessionsIndexTimer) return;
+    sessionsIndexTimer = setInterval(() => {
+      for (const subId of [...sessionsIndexSubs.keys()]) {
+        const sub = sessionsIndexSubs.get(subId);
+        if (!sub) continue;
+        const fp = sessionsIndexFingerprint(sub.cwd);
+        if (fp !== sub.lastFingerprint) {
+          sub.lastFingerprint = fp;
+          fireSessionsIndexFrame(subId, 'online');
+        }
+      }
+      if (sessionsIndexSubs.size === 0) {
+        if (sessionsIndexTimer) {
+          clearInterval(sessionsIndexTimer);
+          sessionsIndexTimer = null;
+        }
+      }
+    }, 3000);
+    sessionsIndexTimer.unref?.();
+  }
   // eslint-disable-next-line @typescript-eslint/no-explicit-any -- RPC/协议边界动态类型，仅用于 lint 收敛，不改变运行时行为
   const emitter = opts.emitter ?? new Emitter<any>();
 
@@ -242,6 +326,16 @@ export function createAgentService(opts: AgentServiceOptions = {}): IZCodeAgentS
   const MAX_CACHED_SESSIONS = 32;
   const sessionLastAccess = new Map<string, number>();
   const runningSessions = new Set<string>();
+
+  // ZS5-T3 降级机制如实登记：core 无会话事件原语 → 轮询 diff（manager.list），实时性≈3s；
+  // core 提案三要点见 zs5-inventory §④：事件原语 / 快照形状 / 生命周期语义（existing-only）。
+  // 本 Task 不碰 core，仅 adapter 侧轮询 diff 推帧。
+  /** ZS5-T3 sessions-index 订阅表：subscriptionId → {workspaceKey,cwd,ordinal,lastFingerprint} */
+  const sessionsIndexSubs = new Map<
+    string,
+    { workspaceKey: string; cwd: string; ordinal: number; lastFingerprint: string }
+  >();
+  let sessionsIndexTimer: NodeJS.Timeout | null = null;
   /** 运行中 turn 的取消源（stop 命令真正 abort）。 */
   const runningAborts = new Map<string, AbortController>();
   const attachmentStore = new AttachmentStore({ home });
@@ -604,6 +698,7 @@ export function createAgentService(opts: AgentServiceOptions = {}): IZCodeAgentS
       logicalFrameId: `lf-${sub.ordinal}`,
       logicalFrameOrdinal: sub.ordinal++,
       // eslint-disable-next-line @typescript-eslint/no-explicit-any -- RPC/协议边界动态类型，仅用于 lint 收敛，不改变运行时行为
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- wire 候选动态形状
       measurePhysicalFrameBytes: (w: any) => measureTopicNotificationEnvelopeBytes(w).maxBytes,
     });
     for (const w of wires) emitter.fire(w);
@@ -1411,8 +1506,56 @@ export function createAgentService(opts: AgentServiceOptions = {}): IZCodeAgentS
     onDynamicConversationFrame(): unknown {
       return emitter.event;
     },
-    onDynamicSessionsIndexFrame(): unknown {
-      return Event.None;
+    onDynamicSessionsIndexFrame(_params?: { workspacePath?: string; workspaceIdentity?: string }): unknown {
+      return emitter.event;
+    },
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- RPC 边界动态类型
+    async subscribeSessionsIndexV4(params: any): Promise<unknown> {
+      const workspacePath = params?.workspacePath;
+      const workspaceKey =
+        (typeof params?.workspaceIdentity === 'string' && params.workspaceIdentity.trim().length > 0
+          ? params.workspaceIdentity.trim()
+          : workspacePath) || '';
+      // 稳定 unavailable：无 workspace 时不抛
+      if (!workspacePath || typeof workspacePath !== 'string' || workspacePath.trim().length === 0) {
+        return { available: false, reason: 'workspace-unavailable' };
+      }
+      // runtimePolicy existing-only 不启动 agent；adapter 直接枚举 core 会话。
+      const cwd = workspacePath;
+      const subscriptionId = `si-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+      sessionsIndexSubs.set(subscriptionId, {
+        workspaceKey: workspaceKey || workspacePath,
+        cwd,
+        ordinal: 0,
+        lastFingerprint: sessionsIndexFingerprint(cwd),
+      });
+      // 初始帧
+      setTimeout(() => {
+        fireSessionsIndexFrame(subscriptionId, 'initial');
+      }, 0);
+      ensureSessionsIndexTimer();
+      return { ack: { subscriptionId, mode: 'snapshot', logEpoch } };
+    },
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- RPC 边界动态类型
+    async resyncSessionsIndexV4(params: any): Promise<unknown> {
+      const subscriptionId = params?.subscriptionId;
+      if (typeof subscriptionId !== 'string' || !sessionsIndexSubs.has(subscriptionId)) {
+        // unknown subscriptionId：no-op ack，不抛
+        return { ack: { subscriptionId: subscriptionId ?? '', mode: 'snapshot', logEpoch } };
+      }
+      fireSessionsIndexFrame(subscriptionId, 'recovery');
+      return { ack: { subscriptionId, mode: 'snapshot', logEpoch } };
+    },
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- RPC 边界动态类型
+    async unsubscribeSessionsIndexV4(params: any): Promise<void> {
+      const subscriptionId = params?.subscriptionId;
+      if (typeof subscriptionId === 'string') {
+        sessionsIndexSubs.delete(subscriptionId);
+      }
+      if (sessionsIndexSubs.size === 0 && sessionsIndexTimer) {
+        clearInterval(sessionsIndexTimer);
+        sessionsIndexTimer = null;
+      }
     },
     async syncAppRuntimePreferences(): Promise<void> {},
     async prepareStorage(): Promise<void> {},
