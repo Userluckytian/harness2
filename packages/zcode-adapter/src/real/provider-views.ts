@@ -604,12 +604,16 @@ export function createProviderSettingsService(opts: ProviderViewsOptions = {}): 
     async addDiscoveredModels(providerId: string, modelIds: readonly string[]): Promise<unknown> {
       const raw = store.readRaw();
       const entry = requireProvider(raw, providerId);
+      // 与 discoverModels 对称：只有合法落盘的 provider 才能按选入库（草稿即使被
+      // 直接调用也如实 throw——草稿内存 models 写了也永不落盘，视图会假增）。
+      if (!ProviderWriteStore.isCoreProviderConfigValid(entry))
+        throw new Error('请先填写有效的 Base URL 并保存，再获取模型');
       const picked = [...new Set(modelIds)];
-      if (picked.length === 0) return afterMutation();
+      if (picked.length === 0) return buildView();
       for (const id of picked) ProviderWriteStore.validateModelId(id);
       const models = { ...(entry.models ?? {}) } as Record<string, unknown>;
       const toAdd = picked.filter((id) => !Object.prototype.hasOwnProperty.call(models, id));
-      if (toAdd.length === 0) return afterMutation();
+      if (toAdd.length === 0) return buildView(); // 幂等：无新增不 bump revision 不广播
       const enriched = await enrichModelsFromCatalog(toAdd, opts.fetchImpl ?? fetch);
       for (const id of toAdd) {
         models[id] = { enabled: true, ...(enriched.get(id) ?? {}) };

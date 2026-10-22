@@ -331,4 +331,20 @@ describe('ZS4.5f 获取模型动作：discoverModels（不落盘）+ addDiscover
     expect(Object.keys(readCfg(home).providers[pid].models)).toEqual(['keep-me']);
     rmSync(home, { recursive: true, force: true });
   });
+
+  it('addDiscoveredModels：草稿/非法 provider 如实 throw（与 discoverModels 对称，审查 P1#3）', async () => {
+    const home = makeHome();
+    resetCatalogCacheForTests();
+    const { f } = phaseFetch(
+      () => ({ data: [] }),
+      () => ({}),
+    );
+    const svc: any = createProviderSettingsService({ home, fetchImpl: f });
+    const created = await svc.createPersonalProvider({}); // 空 baseUrl 草稿，不落盘
+    const seen: any[] = [];
+    svc.onDidChange((v: any) => seen.push(v));
+    await expect(svc.addDiscoveredModels(created.providerId, ['m-1'])).rejects.toThrow(/有效的 Base URL/);
+    expect(seen.length).toBe(0); // throw 不得有半途广播
+    rmSync(home, { recursive: true, force: true });
+  });
 });

@@ -34,6 +34,12 @@ const mockServer = http.createServer((req, res) => {
   res.end('{"error":"not_found"}');
 });
 mockServer.listen(MODEL_SERVER_PORT, '127.0.0.1');
+mockServer.on('error', (e) => {
+  console.error('MOCK SERVER ERROR (port ' + MODEL_SERVER_PORT + '):', e && e.message);
+  process.exit(10);
+});
+// 探针所有路径都以 process.exit 收尾；unref 兜底：server 句柄永不阻止事件循环退出
+mockServer.unref();
 
 function getJson(p) {
   return new Promise((resolve, reject) => {
@@ -398,6 +404,8 @@ function findProviderIdByBaseUrl(cfg) {
           fetched = true;
           break;
         }
+        // 已可证伪（未勾入盘 / 多余回填）→ 立即失败，不空等 30s
+        if (diskKeys.includes('fetch-beta') || diskKeys.length > 3) break;
       }
       console.log('FETCH_DISK=' + fetched + ' KEYS=' + JSON.stringify(diskKeys));
       if (!fetched) {
