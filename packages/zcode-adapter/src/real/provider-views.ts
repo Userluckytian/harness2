@@ -545,8 +545,12 @@ export function createProviderSettingsService(opts: ProviderViewsOptions = {}): 
           auth.channels = restAuth as typeof auth.channels;
           writeAuthFile(store.authPath, auth);
         }
-      } catch {
-        // best-effort：auth 清理失败不阻断 provider 删除
+      } catch (e) {
+        // auth 清理失败不再完全静默：记录告警，便于观测密钥残留；provider 删除仍成功。
+        console.error(
+          '[provider-settings] deletePersonalProvider auth cleanup failed:',
+          redactSecrets((e as Error)?.message ?? String(e)),
+        );
       }
       if (raw.providers?.[providerId] === undefined) return afterMutation(); // 纯草稿删除
       const { [providerId]: _removed, ...rest } = raw.providers ?? {};
@@ -565,7 +569,14 @@ export function createProviderSettingsService(opts: ProviderViewsOptions = {}): 
       return afterMutation();
     },
     async reorderPersonalProviders(providerIds: readonly string[]): Promise<unknown> {
+      if (!Array.isArray(providerIds)) throw new Error('providerIds 必须是数组');
       const raw = store.readRaw();
+      const known = new Set([...Object.keys(raw.providers ?? {}), ...pendingDrafts.keys()]);
+      for (const id of providerIds) {
+        if (typeof id !== 'string' || !known.has(id)) {
+          throw new Error(`未知 providerId: ${redactSecrets(String(id))}`);
+        }
+      }
       raw.providers = reorderRecord(raw.providers ?? {}, [...providerIds]);
       writeRevision(raw);
       store.writeRaw(raw);

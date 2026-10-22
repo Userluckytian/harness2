@@ -3,6 +3,7 @@
 // 原子写（temp + rename）；损坏 JSON 视为空并容错。
 
 import { existsSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
+import { randomUUID } from 'node:crypto';
 import { join } from 'node:path';
 
 export interface SessionMeta {
@@ -74,7 +75,7 @@ export function writeSessionMeta(dir: string, patch: SessionMeta = {}): Normaliz
     ...(unreadAt !== undefined ? { unreadAt } : {}),
   };
 
-  const tmp = join(dir, `${META_FILE}.tmp`);
+  const tmp = join(dir, `${META_FILE}.tmp-${process.pid}-${randomUUID()}`);
   const payloadObj: Record<string, unknown> = {};
   if (next.pinned) payloadObj.pinned = true;
   if (next.archived) payloadObj.archived = true;
