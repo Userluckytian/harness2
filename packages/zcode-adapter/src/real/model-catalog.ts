@@ -35,6 +35,7 @@ export interface CatalogProvider {
 export type CatalogMap = Record<string, CatalogProvider>;
 
 let catalogCache: CatalogMap | null | undefined; // undefined/null=未拉或上次失败（保存是低频动作，允许下次再试）；对象=成功缓存
+let inflight: Promise<CatalogMap | null> | null = null; // 并发去重（保存富化 + 对话框懒预热可能同时到）
 
 /** 拉目录（成功单例缓存）。失败返回 null（不缓存失败——离线首存后回线仍可富化）。 */
 export async function loadOpencodeCatalog(
@@ -42,26 +43,32 @@ export async function loadOpencodeCatalog(
   timeoutMs: number = CATALOG_TIMEOUT_MS,
 ): Promise<CatalogMap | null> {
   if (catalogCache) return catalogCache;
-  try {
-    const ac = new AbortController();
-    const timer = setTimeout(() => ac.abort(), timeoutMs);
+  if (inflight) return inflight;
+  inflight = (async (): Promise<CatalogMap | null> => {
     try {
-      const res = await fetchImpl(CATALOG_URL, {
-        method: 'GET',
-        headers: { accept: 'application/json' },
-        signal: ac.signal,
-      });
-      if (!res.ok) return null;
-      const body = (await res.json()) as unknown;
-      if (!body || typeof body !== 'object' || Array.isArray(body)) return null;
-      catalogCache = body as CatalogMap;
-      return catalogCache;
+      const ac = new AbortController();
+      const timer = setTimeout(() => ac.abort(), timeoutMs);
+      try {
+        const res = await fetchImpl(CATALOG_URL, {
+          method: 'GET',
+          headers: { accept: 'application/json' },
+          signal: ac.signal,
+        });
+        if (!res.ok) return null;
+        const body = (await res.json()) as unknown;
+        if (!body || typeof body !== 'object' || Array.isArray(body)) return null;
+        catalogCache = body as CatalogMap;
+        return catalogCache;
+      } finally {
+        clearTimeout(timer);
+      }
+    } catch {
+      return null;
     } finally {
-      clearTimeout(timer);
+      inflight = null;
     }
-  } catch {
-    return null;
-  }
+  })();
+  return inflight;
 }
 
 /** 测试缝：重置单例缓存。 */
@@ -96,6 +103,38 @@ export function lookupCatalogEntry(catalog: CatalogMap, modelId: string): Catalo
     if (cand && typeof cand === 'object') return cand;
   }
   return null;
+}
+
+/**
+ * 松配（尾段匹配）：**仅限 UI 对话框基线（resolveModelConfig）使用，绝不用于写盘富化**。
+ * 网关私有前缀（loomy/xxx、mmxproxy/xxx、buddyhub/cn:xxx、*:free 后缀）的真实
+ * 底层模型常在目录另一供应商下同名（真机 21 模型实测：精确 7 → 松配 14）。
+ * 这是中等置信猜测（不同网关可能路由到不同变体），所以：①只进返回值不写盘
+ * （写了会污染 core 运行时压缩依据）；②用户在对话框点保存（personalConfig 合并
+ * 路径）才算确认落盘。规则：取尾段、剥 `provider:` 前缀与 `:free`/`:beta` 类后缀、
+ * 小写化后精确比对目录键/模型 id 的小写形；多命中按 provider/键 字典序稳定取一。
+ */
+export function lookupCatalogEntryLoose(catalog: CatalogMap, modelId: string): CatalogModelEntry | null {
+  const norm = (s: string) => {
+    let t = s.split('/').pop() ?? s;
+    t = t.replace(/^[a-z0-9_-]+:/i, ''); // buddyhub/cn:xxx 型前缀
+    t = t.replace(/:(free|beta|exp|preview|latest)$/i, ''); // 计费/渠道后缀
+    return t.toLowerCase();
+  };
+  const needle = norm(modelId);
+  if (needle.length <= 4) return null; // 过短尾段（beam/o3 这类）易跨供应商误配，宁缺勿滥
+  const hits: Array<[string, string, CatalogModelEntry]> = [];
+  for (const [pk, p] of Object.entries(catalog)) {
+    if (!p || typeof p !== 'object' || !p.models || typeof p.models !== 'object') continue;
+    for (const [key, m] of Object.entries(p.models)) {
+      if (!m || typeof m !== 'object') continue;
+      const mid = typeof m.id === 'string' ? m.id : '';
+      if (norm(key) === needle || (mid !== '' && norm(mid) === needle)) hits.push([pk, key, m]);
+    }
+  }
+  if (hits.length === 0) return null;
+  hits.sort((a, b) => (a[0] === b[0] ? (a[1] < b[1] ? -1 : 1) : a[0] < b[0] ? -1 : 1));
+  return hits[0][2];
 }
 
 /** OpenAI 兼容 reasoning_effort 的 UI 映射表达式（CEL，须可被 compileModelOptionMap 编译）。 */

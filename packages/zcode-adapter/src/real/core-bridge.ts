@@ -67,6 +67,8 @@ export const projectSkillsRoot = core.projectSkillsRoot;
 export const defaultSkillsRoot = core.defaultSkillsRoot;
 export const MemoryStore = core.MemoryStore;
 export const defaultMemoriesRoot = core.defaultMemoriesRoot;
+/** 模型未声明 contextWindow 时 core 运行时真实生效的兜底容量（ZS4.5c UI 基线同源用） */
+export const DEFAULT_CONTEXT_WINDOW: number = core.DEFAULT_CONTEXT_WINDOW;
 
 export type { HarnessConfig, ChatProvider, SessionAppender };
 export type SessionWriter = SessionWriterType;

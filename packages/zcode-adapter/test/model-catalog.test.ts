@@ -8,6 +8,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
   lookupCatalogEntry,
+  lookupCatalogEntryLoose,
   catalogEntryToCoreModel,
   flatCoreModelToUiConfig,
   mergeUiModelConfigs,
@@ -139,6 +140,36 @@ describe('enrichModelsFromCatalog + loadOpencodeCatalog（单例/静默失败）
     expect(await enrichModelsFromCatalog(['big-pickle'], catalogFetch({}, false))).toEqual(new Map());
     const m = await enrichModelsFromCatalog(['big-pickle'], catalogFetch(CATALOG));
     expect(m.size).toBe(1); // 回线后可成功
+  });
+});
+
+describe('lookupCatalogEntryLoose（ZS4.5c 尾段松配：仅 UI 基线层）', () => {
+  const cat: CatalogMap = {
+    neuralwatt: { models: { 'deepseek-v4.1-flash': { id: 'deepseek-v4.1-flash', limit: { context: 160000 } } } },
+    'minimax-coding-plan': {
+      models: { 'minimax-m3.1-flash': { id: 'MiniMax-M3.1-Flash', limit: { context: 1000000 } } },
+    },
+    openrouter: {
+      models: { 'recursive/flint-v1.0:free': { id: 'recursive/flint-v1.0:free', limit: { context: 40000 } } },
+    },
+    tiny: { models: { beam: { id: 'beam', limit: { context: 1 } } } },
+  };
+  it('网关前缀/大小写/cn: 前缀/:free 后缀 → 归一命中真底层', () => {
+    expect(lookupCatalogEntryLoose(cat, 'loomy/DeepSeek-V4.1-Flash')?.limit?.context).toBe(160000);
+    expect(lookupCatalogEntryLoose(cat, 'buddyhub/cn:deepseek-v4.1-flash')?.limit?.context).toBe(160000);
+    expect(lookupCatalogEntryLoose(cat, 'mmxproxy/MiniMax-M3.1-Flash')?.limit?.context).toBe(1000000);
+    expect(lookupCatalogEntryLoose(cat, 'or/minimax/minimax-m3.1-flash:free')?.limit?.context).toBe(1000000);
+  });
+  it('尾段 <4 字符放弃（beam 防误配）；全 miss → null', () => {
+    expect(lookupCatalogEntryLoose(cat, 'gateway/beam')).toBeNull();
+    expect(lookupCatalogEntryLoose(cat, 'qw2api/qwork-auto')).toBeNull();
+  });
+  it('写盘富化（enrichModelsFromCatalog）不含松配——只有精确命中落盘', async () => {
+    resetCatalogCacheForTests();
+    const f = (async () => ({ ok: true, status: 200, json: async () => cat })) as unknown as typeof fetch;
+    const m = await enrichModelsFromCatalog(['loomy/DeepSeek-V4.1-Flash', 'deepseek-v4.1-flash'], f);
+    expect(m.has('loomy/DeepSeek-V4.1-Flash')).toBe(false); // 松配不富化落盘
+    expect(m.get('deepseek-v4.1-flash')).toEqual({ contextWindow: 160000 }); // 精确才落
   });
 });
 

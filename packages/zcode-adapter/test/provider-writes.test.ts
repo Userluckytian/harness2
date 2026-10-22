@@ -263,13 +263,21 @@ describe('provider 写路径（ZS4-T4）', () => {
     rmSync(home, { recursive: true, force: true });
   }, 30_000);
 
-  it('resolveModelConfig：inherited 恒空（无内置推荐基线，红线⑩不编造）；effective=存储模型配置；personalConfig 分支取草稿预览', async () => {
+  it('resolveModelConfig：缺容量→inherited 注 core 兜底 DEFAULT_CONTEXT_WINDOW（仅返回值不写盘）；effective=磁盘配置；personalConfig 覆盖优先', async () => {
     const home = makeHome();
     const svc: any = createProviderSettingsService({ home });
+    const { DEFAULT_CONTEXT_WINDOW } = await import('../src/real/core-bridge.js');
+    expect(DEFAULT_CONTEXT_WINDOW).toBe(128 * 1024); // 钉住与 core compaction 兜底同源
     const r: any = await svc.resolveModelConfig({ providerId: 'alpha', modelId: 'm-a' });
-    expect(r.inheritedConfig).toEqual({});
-    expect(r.effectiveConfig).toEqual({}); // m-a 存的是空对象
+    // m-a 磁盘是空对象 → 兜底注入（UI 基线=运行时事实，非编造）
+    expect(r.inheritedConfig).toEqual({ properties: { contextWindow: DEFAULT_CONTEXT_WINDOW } });
+    expect(r.effectiveConfig.properties.contextWindow).toBe(DEFAULT_CONTEXT_WINDOW);
     expect(r.issues).toEqual([]);
+    // 不写盘：config.json 的 m-a 仍空；视图 effectiveConfig 仍空
+    expect(readConfig(home).providers.alpha.models['m-a']).toEqual({});
+    const view: any = await svc.getView();
+    const ma = view.providers.find((p: any) => p.providerId === 'alpha').models.find((m: any) => m.modelId === 'm-a');
+    expect(ma.effectiveConfig).toEqual({});
     const r2: any = await svc.resolveModelConfig({
       providerId: 'beta',
       modelId: 'm-b2',

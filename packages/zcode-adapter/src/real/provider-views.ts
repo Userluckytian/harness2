@@ -1,4 +1,4 @@
-import { loadConfig, readAuthFile, redactSecrets, resolveHarness2Home } from './core-bridge.js';
+import { DEFAULT_CONTEXT_WINDOW, loadConfig, readAuthFile, redactSecrets, resolveHarness2Home } from './core-bridge.js';
 import {
   ProviderWriteStore,
   reorderRecord,
@@ -13,6 +13,7 @@ import {
   enrichModelsFromCatalog,
   flatCoreModelToUiConfig,
   lookupCatalogEntry,
+  lookupCatalogEntryLoose,
   mergeUiModelConfigs,
   peekCatalog,
   toStoredModelConfig,
@@ -344,11 +345,16 @@ export function createProviderSettingsService(opts: ProviderViewsOptions = {}): 
       return buildView();
     },
     /**
-     * 模型配置解析（ZS4-T6 e2e 实证缺口；ZS4.5b 基线真实化）。添加/编辑模型对话框
-     * 打开即调用（ProviderCardSections.tsx:401）。inherited 基线来源（按优先级）：
+     * 模型配置解析（ZS4-T6 e2e 实证缺口；ZS4.5b 基线真实化；ZS4.5c 容量兜底）。
+     * 添加/编辑模型对话框打开即调用（ProviderCardSections.tsx:401）。
+     * inherited 基线来源（按优先级）：
      * ① 该 provider 磁盘条目里此模型的扁平配置（翻译嵌套形）——自动拉取富化过的
      * 真实数据在此；② opencode 公开目录按 ID 精确/前缀命中（对话框正在添加的新模型，
-     * 磁盘还没有）；③ 双落空 → 空对象（诚实空态，红线⑩不编造）。
+     * 磁盘还没有）；③ 双落空 → contextWindow 回退 DEFAULT_CONTEXT_WINDOW——这不是
+     * 编造：core 在模型未声明容量时，压缩/用量计算真实就按它执行
+     * （compaction.ts:22 / loop.ts:369），UI 基线=运行时事实；**仅注入本返回值，
+     * 不写盘**（磁盘保持诚实空声明，红线⑩）。maxOutputTokens/reasoning 无通用正确
+     * 默认（未声明=不发参数是 core 语义，给数字反而误导）→ 保持空。
      * effective=inherited ⊕ personalConfig（用户覆盖优先，UI 草稿预览语义）。
      */
     async resolveModelConfig(input: {
@@ -364,11 +370,27 @@ export function createProviderSettingsService(opts: ProviderViewsOptions = {}): 
       let inherited: Record<string, unknown> =
         own && typeof own === 'object' ? flatCoreModelToUiConfig(own as Record<string, unknown>) : {};
       if (Object.keys(inherited).length === 0) {
-        // 磁盘无配置或空壳（早期仅 ID 拉取）→ 目录命中兜底（新模型对话框基线）
+        // 磁盘无配置或空壳（早期仅 ID 拉取）→ 目录兜底：精确优先，尾段松配次之
+        // （loomy/X、buddyhub/cn:X 这类网关别名大概率是同名公共模型；仅 UI 基线，
+        // 落盘富化只用精确——见 model-catalog.ts lookupCatalogEntryLoose 头注）。
+        // peek 非阻塞（读路径不碰网络——目录在保存富化路径已入缓存；冷缓存走下方
+        // DEFAULT_CONTEXT_WINDOW 兜底，用户首次保存供应商后即热）。命中优先精确、
+        // 次之尾段松配：loomy/X、buddyhub/cn:X 这类网关别名大概率是同名公共模型，
+        // 但松配只进 UI 基线；落盘富化仍只用精确（lookupCatalogEntryLoose 头注）。
         const catalog = peekCatalog();
-        const hit = catalog ? lookupCatalogEntry(catalog, input.modelId) : null;
-        const core = hit ? catalogEntryToCoreModel(hit) : null;
-        if (core) inherited = flatCoreModelToUiConfig(core);
+        if (catalog) {
+          const hit = lookupCatalogEntry(catalog, input.modelId) ?? lookupCatalogEntryLoose(catalog, input.modelId);
+          const core = hit ? catalogEntryToCoreModel(hit) : null;
+          if (core) inherited = flatCoreModelToUiConfig(core);
+        }
+      }
+      const props = inherited.properties as Record<string, unknown> | undefined;
+      if (props?.contextWindow === undefined) {
+        // ZS4.5c：缺容量 → 注入 core 运行时真实兜底 DEFAULT_CONTEXT_WINDOW（非编造：
+        // 未声明时压缩/用量就按它执行；仅本返回值，不写盘）。档位/最大输出不给默认：
+        // reasoning 给值会让 core 真实发送 reasoning_effort（不支持的模型请求被打回），
+        // maxOutputTokens 智能模式下本就可选——两者无安全通用默认。
+        inherited = { ...inherited, properties: { ...(props ?? {}), contextWindow: DEFAULT_CONTEXT_WINDOW } };
       }
       const fromPersonal = input.personalConfig && typeof input.personalConfig === 'object';
       const effective = fromPersonal
