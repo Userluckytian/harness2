@@ -155,8 +155,9 @@ describe('服务集成：合法保存后后台回填 + 二次广播', () => {
     let pulls = 0;
     const svc: any = createProviderSettingsService({
       home,
-      fetchImpl: fakeFetch(async () => {
-        pulls++;
+      fetchImpl: fakeFetch(async (url) => {
+        if (String(url).includes('api.x.com')) pulls++; // 渠道列表请求
+        // opencode 目录请求（ZS4.5b 富化）：回 {} = 无命中 → 模型保持空壳（本测试不验富化）
         return { ok: true, status: 200, json: async () => ({ data: [{ id: 'auto-1' }, { id: 'auto-2' }] }) };
       }),
     });

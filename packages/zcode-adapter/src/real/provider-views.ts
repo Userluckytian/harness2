@@ -8,6 +8,15 @@ import {
 } from './provider-writes.js';
 import type { StoredProviderConfig } from './provider-writes.js';
 import { mergePulledModels } from './model-pull.js';
+import {
+  catalogEntryToCoreModel,
+  enrichModelsFromCatalog,
+  flatCoreModelToUiConfig,
+  lookupCatalogEntry,
+  mergeUiModelConfigs,
+  peekCatalog,
+  toStoredModelConfig,
+} from './model-catalog.js';
 import { Emitter } from '@zcode/rpc';
 import type { IModelSelectionService, IProviderSettingsService } from '@zcode/services';
 import { createStubService } from '../stub-factory.js';
@@ -213,13 +222,17 @@ export function createProviderSettingsService(opts: ProviderViewsOptions = {}): 
           models: Object.entries(models).map(([modelId, mv]) => {
             const entryEnabled = (mv as { enabled?: unknown } | null)?.enabled;
             const mEnabled = typeof entryEnabled === 'boolean' ? entryEnabled : true;
-            // ProviderSettingsModelCandidateView（facades.ts:107-120）契约形状
+            // ProviderSettingsModelCandidateView（facades.ts:107-120）契约形状。
+            // 磁盘条目是 core 扁平形（contextWindow/maxOutputTokens/reasoning）→
+            // 出站翻译成 UI 嵌套 ModelConfigObject（providerSettingsFormProjection.ts
+            // 按 properties/optionSpecs 读；ZS4.5b：此前直传扁平形 → UI 智能匹配读不到
+            // 基线，模型编辑器永远空必填）。
             return {
               kind: 'candidate',
               modelId,
               builtin: false,
               effectiveBuiltinConfig: {},
-              effectiveConfig: mv && typeof mv === 'object' ? mv : {},
+              effectiveConfig: flatCoreModelToUiConfig(mv as Record<string, unknown>),
               enabled: mEnabled,
               executable,
               selectable: executable && mEnabled,
@@ -255,9 +268,13 @@ export function createProviderSettingsService(opts: ProviderViewsOptions = {}): 
   }
 
   /**
-   * ZS4.5：provider 合法保存后的后台模型拉取（fire-and-forget，绝不 throw）。
-   * 重新读盘取最新条目（保存与拉取间可能有别的写）→ mergePulledModels → 有增则
-   * 落盘 + afterMutation 广播（UI 经 onDidChange 吸收，模型行自动出现）。
+   * ZS4.5/4.5b：provider 合法保存后的后台模型拉取+目录富化（fire-and-forget，绝不 throw）。
+   * ① mergePulledModels 拿渠道 /models 新增 ID（内存 entry 已含）；
+   * ② 富化候选=新增 ID ∪ 既有「空壳」条目（无 contextWindow/maxOutputTokens/reasoning——
+   *    早期仅 ID 拉取的产物；重保存时 added=0 也要补，故候选判断独立于 added）；
+   * ③ opencode 公开目录命中则填 core 扁平键（只补缺失键，用户手工值不覆盖）；
+   * ④ 有任何实际变化才落盘 + afterMutation 广播（UI 经 onDidChange 吸收）。
+   * 目录失败/无命中 → 新增 ID 落空条目（退化为 ZS4.5 初版），静默。
    */
   async function pullModelsIntoProvider(providerId: string): Promise<void> {
     try {
@@ -273,15 +290,44 @@ export function createProviderSettingsService(opts: ProviderViewsOptions = {}): 
         },
         opts.fetchImpl ?? fetch,
       );
-      if (added.length === 0) return;
+      const allModels = { ...(entry.models ?? {}) } as Record<string, unknown>;
+      const candidates: string[] = [];
+      for (const id of added) candidates.push(id);
+      for (const [id, mv] of Object.entries(allModels)) {
+        if (candidates.includes(id)) continue;
+        const flat = (mv ?? {}) as Record<string, unknown>;
+        if (flat.contextWindow === undefined && flat.maxOutputTokens === undefined && flat.reasoning === undefined)
+          candidates.push(id); // 空壳 → 补富化机会（仅 enabled/未知键也算空壳）
+      }
+      if (candidates.length === 0) return;
+      const enriched = await enrichModelsFromCatalog(candidates, opts.fetchImpl ?? fetch);
       const raw2 = store.readRaw();
       const target = raw2.providers?.[providerId] as StoredProviderConfig | undefined;
       if (!target) return; // 已被删除——不复活
-      const models = { ...(target.models ?? {}) } as Record<string, unknown>;
+      const models2 = { ...(target.models ?? {}) } as Record<string, unknown>;
+      let dirty = false;
       for (const id of added) {
-        if (!Object.prototype.hasOwnProperty.call(models, id)) models[id] = {};
+        if (!Object.prototype.hasOwnProperty.call(models2, id)) {
+          models2[id] = {};
+          dirty = true;
+        }
       }
-      target.models = models;
+      for (const [id, add] of enriched) {
+        const existing = (models2[id] ?? {}) as Record<string, unknown>;
+        let changed = false;
+        for (const [k, v] of Object.entries(add)) {
+          if (existing[k] === undefined) {
+            existing[k] = v;
+            changed = true;
+          }
+        }
+        if (changed) {
+          models2[id] = existing;
+          dirty = true;
+        }
+      }
+      if (!dirty) return;
+      target.models = models2;
       writeRevision(raw2);
       store.writeRaw(raw2);
       afterMutation();
@@ -298,11 +344,12 @@ export function createProviderSettingsService(opts: ProviderViewsOptions = {}): 
       return buildView();
     },
     /**
-     * 模型配置解析（ZS4-T6 e2e 实证缺口）：添加/编辑模型对话框打开即调用
-     * （resolveAddModelConfig，ProviderCardSections.tsx:401）。缺此方法时 host 代理
-     * 返回 null，UI 读 `resolution.inheritedConfig` 直接炸。harness2 没有 ZCode 的
-     * zcodeBuiltinModelRules（内置推荐基线）→ inherited 恒空（红线⑩：不编造推荐值）；
-     * effective 取该 provider 条目里模型自身的存储配置，personalConfig 分支取其预览形。
+     * 模型配置解析（ZS4-T6 e2e 实证缺口；ZS4.5b 基线真实化）。添加/编辑模型对话框
+     * 打开即调用（ProviderCardSections.tsx:401）。inherited 基线来源（按优先级）：
+     * ① 该 provider 磁盘条目里此模型的扁平配置（翻译嵌套形）——自动拉取富化过的
+     * 真实数据在此；② opencode 公开目录按 ID 精确/前缀命中（对话框正在添加的新模型，
+     * 磁盘还没有）；③ 双落空 → 空对象（诚实空态，红线⑩不编造）。
+     * effective=inherited ⊕ personalConfig（用户覆盖优先，UI 草稿预览语义）。
      */
     async resolveModelConfig(input: {
       providerId: string;
@@ -314,11 +361,22 @@ export function createProviderSettingsService(opts: ProviderViewsOptions = {}): 
       const entry = requireProvider(raw, input.providerId);
       const models = (entry.models ?? {}) as Record<string, unknown>;
       const own = models[input.modelId];
+      let inherited: Record<string, unknown> =
+        own && typeof own === 'object' ? flatCoreModelToUiConfig(own as Record<string, unknown>) : {};
+      if (Object.keys(inherited).length === 0) {
+        // 磁盘无配置或空壳（早期仅 ID 拉取）→ 目录命中兜底（新模型对话框基线）
+        const catalog = peekCatalog();
+        const hit = catalog ? lookupCatalogEntry(catalog, input.modelId) : null;
+        const core = hit ? catalogEntryToCoreModel(hit) : null;
+        if (core) inherited = flatCoreModelToUiConfig(core);
+      }
       const fromPersonal = input.personalConfig && typeof input.personalConfig === 'object';
-      const effective = fromPersonal ? input.personalConfig : own && typeof own === 'object' ? own : {};
+      const effective = fromPersonal
+        ? mergeUiModelConfigs(inherited, input.personalConfig as Record<string, unknown>)
+        : inherited;
       return Object.freeze({
-        inheritedConfig: Object.freeze({}),
-        effectiveConfig: effective,
+        inheritedConfig: Object.freeze({ ...inherited }),
+        effectiveConfig: Object.freeze({ ...effective }),
         issues: Object.freeze([]),
       });
     },
@@ -429,7 +487,9 @@ export function createProviderSettingsService(opts: ProviderViewsOptions = {}): 
       if (Object.prototype.hasOwnProperty.call(models, modelId)) {
         throw new Error(`模型已存在: ${redactSecrets(modelId)}`);
       }
-      models[modelId] = { enabled: true, ...(config ?? {}) };
+      // UI 添加对话框回传嵌套形（{properties,optionSpecs}）→ 磁盘恒 core 扁平形
+      // （ZS4.5b：直存嵌套会污染 schema 未知键 + 破坏扁平读路径）
+      models[modelId] = { enabled: true, ...toStoredModelConfig(config) };
       entry.models = models;
       writeRevision(raw);
       store.writeRaw(raw);
@@ -489,9 +549,11 @@ export function createProviderSettingsService(opts: ProviderViewsOptions = {}): 
       if (input.originalModelId !== input.nextModelId && models[input.nextModelId] !== undefined) {
         throw new Error(`模型已存在: ${redactSecrets(input.nextModelId)}`);
       }
+      // personalConfig 可能是 UI 嵌套形（properties/optionSpecs）→ 归一为 core 扁平形再合
+      // （addPersonalModel 同源纪律；直合嵌套会破坏「磁盘恒扁平」不变量并触发 core 未知键告警）
       const merged = {
         ...(original as object),
-        ...(input.personalConfig ?? {}),
+        ...toStoredModelConfig(input.personalConfig),
       } as Record<string, unknown>;
       // 草稿里可能带回密钥字段——绝不落 config
       for (const key of Object.keys(merged)) {
