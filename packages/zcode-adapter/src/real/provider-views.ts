@@ -7,7 +7,7 @@ import {
   toUiProviderConfig,
 } from './provider-writes.js';
 import type { StoredProviderConfig } from './provider-writes.js';
-import { mergePulledModels } from './model-pull.js';
+import { mergePulledModels, pullModelIds } from './model-pull.js';
 import {
   catalogEntryToCoreModel,
   catalogEntryToUiBits,
@@ -572,6 +572,53 @@ export function createProviderSettingsService(opts: ProviderViewsOptions = {}): 
       const raw = store.readRaw();
       const entry = requireProvider(raw, providerId);
       entry.models = reorderRecord((entry.models ?? {}) as Record<string, unknown>, [...modelIds]);
+      writeRevision(raw);
+      store.writeRaw(raw);
+      return afterMutation();
+    },
+    /**
+     * ZS4.5f（用户拍板的「获取模型」动作，渲染层按钮经 window-controller 转发）：
+     * 显式拉取该渠道模型清单，**不落盘**——返回 {modelIds, existingIds} 给面板勾选。
+     * 与保存路径的静默兜底相反，这里是显式动作：失败要如实 throw 给用户看。
+     */
+    async discoverModels(providerId: string): Promise<{ modelIds: string[]; existingIds: string[] }> {
+      const raw = store.readRaw();
+      const entry = requireProvider(raw, providerId);
+      if (!ProviderWriteStore.isCoreProviderConfigValid(entry))
+        throw new Error('请先填写有效的 Base URL 并保存，再获取模型');
+      const ids = await pullModelIds(
+        {
+          protocol: typeof entry.protocol === 'string' ? entry.protocol : undefined,
+          baseUrl: typeof entry.baseUrl === 'string' ? entry.baseUrl : undefined,
+          apiKey: store.apiKeyFor(providerId),
+        },
+        opts.fetchImpl ?? fetch,
+      );
+      const existing = new Set(Object.keys((entry.models ?? {}) as Record<string, unknown>));
+      return { modelIds: ids, existingIds: [...existing] };
+    },
+    /**
+     * 勾选确认后落盘：只把选中的 ID 写入 models（core 扁平空条目 + 目录精确命中富化
+     * + `_h2Ui` 模态位），再广播。未勾选的一律不入库（用户：100 多个模型只用 1-2 个）。
+     */
+    async addDiscoveredModels(providerId: string, modelIds: readonly string[]): Promise<unknown> {
+      const raw = store.readRaw();
+      const entry = requireProvider(raw, providerId);
+      const picked = [...new Set(modelIds)];
+      if (picked.length === 0) return afterMutation();
+      for (const id of picked) ProviderWriteStore.validateModelId(id);
+      const models = { ...(entry.models ?? {}) } as Record<string, unknown>;
+      const toAdd = picked.filter((id) => !Object.prototype.hasOwnProperty.call(models, id));
+      if (toAdd.length === 0) return afterMutation();
+      const enriched = await enrichModelsFromCatalog(toAdd, opts.fetchImpl ?? fetch);
+      for (const id of toAdd) {
+        models[id] = { enabled: true, ...(enriched.get(id) ?? {}) };
+        const cat = peekCatalog();
+        const hit = cat ? lookupCatalogEntry(cat, id) : null;
+        const bits = hit ? catalogEntryToUiBits(hit) : null;
+        if (bits) setUiModelBits(raw, providerId, id, bits, true);
+      }
+      entry.models = models;
       writeRevision(raw);
       store.writeRaw(raw);
       return afterMutation();

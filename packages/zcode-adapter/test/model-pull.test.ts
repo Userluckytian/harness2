@@ -7,6 +7,7 @@ import { existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { modelsListUrl, extractModelIds, mergePulledModels } from '../src/real/model-pull.js';
+import { resetCatalogCacheForTests } from '../src/real/model-catalog.js';
 import { createProviderSettingsService } from '../src/real/provider-views.js';
 import type { StoredProviderConfig } from '../src/real/provider-writes.js';
 
@@ -206,6 +207,128 @@ describe('服务集成：合法保存后后台回填 + 二次广播', () => {
     expect(cfg.providers[pid].models).toBeDefined();
     expect(Object.keys(cfg.providers[pid].models)).toEqual([]);
     expect(existsSync(join(home, '.harness2', 'auth.json'))).toBe(true);
+    rmSync(home, { recursive: true, force: true });
+  });
+});
+
+describe('ZS4.5f 获取模型动作：discoverModels（不落盘）+ addDiscoveredModels（勾选落盘）', () => {
+  function makeHome(): string {
+    const home = mkdtempSync(join(tmpdir(), 'h2-disc-'));
+    mkdirSync(join(home, '.harness2'), { recursive: true });
+    writeFileSync(join(home, '.harness2', 'config.json'), JSON.stringify({ providers: {}, roles: {} }));
+    return home;
+  }
+  const readCfg = (home: string) => JSON.parse(readFileSync(join(home, '.harness2', 'config.json'), 'utf8'));
+
+  /** fetch 相位开关：overlay 保存的后台自动拉取先回空（不污染测试），显式动作再放全量。 */
+  function phaseFetch(listBody: () => unknown, catalogBody: () => unknown) {
+    const state = { autoPull: true };
+    const f = fakeFetch(async (url: any) => {
+      if (String(url).includes('models.opencode.ai')) return { ok: true, status: 200, json: async () => catalogBody() };
+      return { ok: true, status: 200, json: async () => (state.autoPull ? { data: [] } : listBody()) };
+    });
+    return { f, state };
+  }
+
+  async function savedProvider(home: string, fetchImpl: typeof fetch): Promise<string> {
+    const svc: any = createProviderSettingsService({ home, fetchImpl });
+    const created = await svc.createPersonalProvider({});
+    const pid = created.providerId;
+    await svc.savePersonalProviderOverlay(pid, {
+      api: { type: 'openai-chat-completions', baseUrl: 'https://gw.example/v1' },
+      access: { type: 'api-key', apiKey: SECRET },
+    });
+    await new Promise((r) => setTimeout(r, 250)); // 等后台自动拉取（空响应）收口
+    return pid;
+  }
+
+  it('discoverModels：返回全量+已有标记（脏 ID 过滤）；config 零改动、不广播', async () => {
+    const home = makeHome();
+    resetCatalogCacheForTests();
+    const { f, state } = phaseFetch(
+      () => ({ data: [{ id: 'm-1' }, { id: 'm-2' }, { id: 'bad id!' }] }),
+      () => ({}),
+    );
+    const pid = await savedProvider(home, f); // autoPull=true：保存期后台拉取回空
+    state.autoPull = false; // discover 阶段：显式动作拿全量
+    const svc: any = createProviderSettingsService({ home, fetchImpl: f });
+    const before = JSON.stringify(readCfg(home));
+    const seen: any[] = [];
+    svc.onDidChange((v: any) => seen.push(v));
+    const r = await svc.discoverModels(pid);
+    expect(r.modelIds).toEqual(['m-1', 'm-2']);
+    expect(r.existingIds).toEqual([]);
+    expect(JSON.stringify(readCfg(home))).toBe(before); // 零落盘（含 _h2Ui）
+    expect(seen.length).toBe(0); // 零广播
+    rmSync(home, { recursive: true, force: true });
+  });
+
+  it('discoverModels：端点失败=如实 throw（显式动作不静默）；provider 不存在=throw', async () => {
+    const home = makeHome();
+    resetCatalogCacheForTests();
+    // savedProvider 的后台拉取对 502 静默（保存路径语义）；discover 必须炸出来
+    const fetch502 = fakeFetch(async (url: any) => {
+      if (String(url).includes('gw.example')) return { ok: false, status: 502, json: async () => ({}) };
+      return { ok: true, status: 200, json: async () => ({}) };
+    }) as unknown as typeof fetch;
+    const pid = await savedProvider(home, fetch502);
+    const svc: any = createProviderSettingsService({ home, fetchImpl: fetch502 });
+    await expect(svc.discoverModels(pid)).rejects.toThrow(/502/);
+    await expect(svc.discoverModels('nope')).rejects.toThrow(/不存在/);
+    rmSync(home, { recursive: true, force: true });
+  });
+
+  it('addDiscoveredModels：只落勾选 + 目录富化 + _h2Ui 模态位 + 广播含新行', async () => {
+    const home = makeHome();
+    resetCatalogCacheForTests();
+    const { f } = phaseFetch(
+      () => ({ data: [{ id: 'm-1' }, { id: 'm-2' }] }),
+      () => ({
+        gw: {
+          models: {
+            'm-1': {
+              id: 'm-1',
+              limit: { context: 64000 },
+              modalities: { input: ['text', 'image'], output: ['text'] },
+              tool_call: true,
+            },
+          },
+        },
+      }),
+    );
+    const pid = await savedProvider(home, f);
+    const svc: any = createProviderSettingsService({ home, fetchImpl: f });
+    const seen: any[] = [];
+    svc.onDidChange((v: any) => seen.push(v));
+    const view: any = await svc.addDiscoveredModels(pid, ['m-1', 'm-1']); // 去重
+    const models = readCfg(home).providers[pid].models;
+    expect(Object.keys(models)).toEqual(['m-1']); // m-2 未勾选=不入库
+    expect(models['m-1'].contextWindow).toBe(64000); // 目录富化落 core 扁平键
+    const uiBits = readCfg(home)['_h2Ui'][pid]['m-1'];
+    expect(uiBits.inputFormat.supportsImage).toBe(true); // 目录模态进 _h2Ui
+    const row = view.providers.find((p: any) => p.providerId === pid).models.find((m: any) => m.modelId === 'm-1');
+    expect(row.effectiveConfig.properties.contextWindow).toBe(64000);
+    expect(row.effectiveConfig.properties.inputFormat.supportsImage).toBe(true);
+    expect(row.effectiveConfig.properties.outputFormat.supportsText).toBe(true);
+    expect(seen.length).toBeGreaterThanOrEqual(1);
+    rmSync(home, { recursive: true, force: true });
+  });
+
+  it('addDiscoveredModels：已有键幂等（不 bump revision）；脏 ID throw 不半途写盘', async () => {
+    const home = makeHome();
+    resetCatalogCacheForTests();
+    const { f } = phaseFetch(
+      () => ({ data: [] }),
+      () => ({}),
+    );
+    const pid = await savedProvider(home, f);
+    const svc: any = createProviderSettingsService({ home, fetchImpl: f });
+    await svc.addDiscoveredModels(pid, ['keep-me']);
+    const rev = readCfg(home)._h2Revision;
+    await svc.addDiscoveredModels(pid, ['keep-me']); // 幂等
+    expect(readCfg(home)._h2Revision).toBe(rev);
+    await expect(svc.addDiscoveredModels(pid, ['has space'])).rejects.toThrow(/形状/);
+    expect(Object.keys(readCfg(home).providers[pid].models)).toEqual(['keep-me']);
     rmSync(home, { recursive: true, force: true });
   });
 });

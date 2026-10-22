@@ -80,6 +80,39 @@ export function extractModelIds(body: unknown): string[] {
 }
 
 /**
+ * 纯拉取：GET 渠道模型列表端点，返回合法 ID 数组（有序去重）。
+ * 失败/无 key/形状不对 → throw（调用方决定反馈形态：保存路径静默兜底、
+ * 显式「获取模型」动作把错误展示给用户）。
+ */
+export async function pullModelIds(
+  env: PullModelsEnv,
+  fetchImpl: typeof fetch,
+  timeoutMs = TIMEOUT_MS,
+): Promise<string[]> {
+  const url = modelsListUrl(env);
+  if (!url) throw new Error('baseUrl 无效，无法拉取模型列表');
+  const headers: Record<string, string> = { accept: 'application/json' };
+  if (env.apiKey) {
+    if (env.protocol === 'anthropic') {
+      headers['x-api-key'] = env.apiKey;
+      headers['anthropic-version'] = '2023-06-01';
+    } else {
+      headers.authorization = `Bearer ${env.apiKey}`;
+    }
+  }
+  const ac = new AbortController();
+  const timer = setTimeout(() => ac.abort(), timeoutMs);
+  try {
+    const res = await fetchImpl(url, { method: 'GET', headers, signal: ac.signal });
+    if (!res.ok) throw new Error(`模型列表端点返回 ${res.status}`);
+    const body: unknown = await res.json();
+    return extractModelIds(body);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+/**
  * 拉取并合并模型进 provider 条目（就地改 config.models）。
  * 返回新增的模型 ID 数组；失败/无增返回 []。绝不 throw。
  */
@@ -90,37 +123,17 @@ export async function mergePulledModels(
   timeoutMs: number = TIMEOUT_MS,
 ): Promise<string[]> {
   try {
-    const url = modelsListUrl(env);
-    if (!url) return [];
-    const headers: Record<string, string> = { accept: 'application/json' };
-    if (env.apiKey) {
-      if (env.protocol === 'anthropic') {
-        headers['x-api-key'] = env.apiKey;
-        headers['anthropic-version'] = '2023-06-01';
-      } else {
-        headers.authorization = `Bearer ${env.apiKey}`;
-      }
+    const ids = await pullModelIds(env, fetchImpl, timeoutMs);
+    if (ids.length === 0) return [];
+    const models = { ...(config.models ?? {}) } as Record<string, unknown>;
+    const added: string[] = [];
+    for (const id of ids) {
+      if (Object.prototype.hasOwnProperty.call(models, id)) continue;
+      models[id] = {};
+      added.push(id);
     }
-    const ac = new AbortController();
-    const timer = setTimeout(() => ac.abort(), timeoutMs);
-    try {
-      const res = await fetchImpl(url, { method: 'GET', headers, signal: ac.signal });
-      if (!res.ok) return [];
-      const body: unknown = await res.json();
-      const ids = extractModelIds(body);
-      if (ids.length === 0) return [];
-      const models = { ...(config.models ?? {}) } as Record<string, unknown>;
-      const added: string[] = [];
-      for (const id of ids) {
-        if (Object.prototype.hasOwnProperty.call(models, id)) continue;
-        models[id] = {};
-        added.push(id);
-      }
-      if (added.length > 0) config.models = models;
-      return added;
-    } finally {
-      clearTimeout(timer);
-    }
+    if (added.length > 0) config.models = models;
+    return added;
   } catch {
     return []; // best-effort：网络/解析/超时一律静默
   }
