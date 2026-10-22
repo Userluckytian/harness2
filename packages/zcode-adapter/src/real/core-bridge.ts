@@ -49,6 +49,7 @@ const core = loadCore() as typeof import('@harness2/core', { with: { 'resolution
 
 export const defaultSessionsRoot = core.defaultSessionsRoot;
 export const SessionManager = core.SessionManager;
+export const SESSION_ID_PATTERN = core.SESSION_ID_PATTERN;
 export const loadConfig = core.loadConfig;
 export const defaultConfigPaths = core.defaultConfigPaths;
 export const createProvider = core.createProvider;
