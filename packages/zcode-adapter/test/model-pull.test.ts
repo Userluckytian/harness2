@@ -281,7 +281,30 @@ describe('ZS4.5f 获取模型动作：discoverModels（不落盘）+ addDiscover
       api: { type: 'openai-chat-completions', baseUrl: 'https://gw.example/v1' },
       access: { type: 'api-key', apiKey: SECRET },
     });
-    await new Promise((r) => setTimeout(r, 250)); // 等后台自动拉取（空响应）收口
+    // 轮询磁盘 _h2Revision 沉降（≤2s），替代固定 250ms 定睡（ZS5-T5 B②）
+    const cfgPath = join(home, '.harness2', 'config.json');
+    const readRev = (): number => {
+      try {
+        const raw = JSON.parse(readFileSync(cfgPath, 'utf8')) as { _h2Revision?: unknown };
+        return typeof raw._h2Revision === 'number' ? (raw._h2Revision as number) : 0;
+      } catch {
+        return 0;
+      }
+    };
+    const deadline = Date.now() + 2000;
+    let last = readRev();
+    let stable = 0;
+    while (Date.now() < deadline) {
+      await new Promise((r) => setTimeout(r, 50));
+      const cur = readRev();
+      if (cur === last) {
+        stable += 1;
+        if (stable >= 2) break;
+      } else {
+        last = cur;
+        stable = 0;
+      }
+    }
     return pid;
   }
 

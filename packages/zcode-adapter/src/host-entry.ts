@@ -28,6 +28,22 @@ import {
 } from '@zcode/rpc';
 import { HostMessageTypes, HostResponseTypes } from '@zcode/shared';
 import { createHarness2Services } from './createHarness2Services.js';
+import { attachHostSampling } from './real/host-sampling.js';
+import { installCrashHooks } from './real/host-crash.js';
+import { createBootTiming } from './real/boot-timing.js';
+
+// ZS5-T4：host 进程崩溃归因接线（uncaughtException / unhandledRejection → core writeCrashReport）。
+// 仅本地落盘、零遥测；钩子自身 try/catch 兜底，绝不再抛。
+installCrashHooks();
+
+// ZS5-T4：启动分段计时基线（进程模块加载时刻）。
+// 早期（InitLocal 前）host 日志通道（HostResponseTypes.Log）尚未有结构化回帖可保证，
+// 降级 console：utilityProcess 的 stdout/stderr 由 scratch main 的 hostLogRelay
+// 转入主日志（D:/AI_Projects/harness2-zs1-build/ZCode/packages/desktop/src/main/desktopHostProcess.ts:288-294
+// child.stdout/stderr 'data' → hostLogRelay.onStdout/onStderr；createHostLogRelay 优先结构化，
+// 早期缓存 stdout 作为兜底）。故 module_load 行即使被后续结构化日志冲掉也无害；后续里程碑走 log()。
+const bootTimingOrigin =
+  typeof performance !== 'undefined' && typeof performance.now === 'function' ? performance.now() : Date.now();
 
 interface ElectronMessagePortMainLike {
   on(event: 'message', listener: (e: { data: unknown }) => void): unknown;
@@ -64,6 +80,36 @@ const parentPort = (
     parentPort?: ElectronMessagePortMainLike;
   }
 ).parentPort;
+
+// ZS5-T4：module_load 里程碑。优先走 host 现有日志通道（HostResponseTypes.Log → main 落盘），
+// 通道不可用（非 Electron / parentPort 缺失）时降级 console（utilityProcess stdout → hostLogRelay）。
+{
+  const _now =
+    typeof performance !== 'undefined' && typeof performance.now === 'function' ? performance.now() : Date.now();
+  const _ms = Math.max(0, Math.round(_now - bootTimingOrigin));
+  const _line = `[h2-boot-timing] module_load +${_ms}ms`;
+  let _posted = false;
+  if (parentPort) {
+    try {
+      parentPort.postMessage({ type: HostResponseTypes.Log, level: 'info', source: 'zs1-stub-host', message: _line });
+      _posted = true;
+    } catch {
+      _posted = false;
+    }
+  }
+  if (!_posted) {
+    try {
+      console.log(_line);
+    } catch {
+      // ignore
+    }
+  }
+}
+
+if (parentPort) {
+  // ZS5-T1：应答资源管理器采样协议（纯加性，不影响 InitLocal/DatabaseStartup/ChannelServer）
+  attachHostSampling(parentPort as unknown as Parameters<typeof attachHostSampling>[0]);
+}
 
 function postToMain(message: unknown): void {
   if (!parentPort) throw new Error('parentPort unavailable');
@@ -129,6 +175,22 @@ let startupStartedAt = Date.now();
 let currentStartupId = '';
 let currentAttemptId = '';
 
+// ZS5-T4：启动分段计时实例（基线=模块加载时刻）；emit 走 host 现有日志通道 log()，
+// 失败降级 console（与 module_load 早期策略一致）。
+const bootTiming = createBootTiming({
+  now: () =>
+    typeof performance !== 'undefined' && typeof performance.now === 'function' ? performance.now() : Date.now(),
+  origin: bootTimingOrigin,
+  emit: (line) => {
+    try {
+      log('info', line);
+    } catch {
+      console.log(line);
+    }
+  },
+});
+let servicesTimingMarked = false;
+
 parentPort.on('message', (e: { data?: unknown }) => {
   const raw = e.data as { type?: string; [key: string]: unknown } | undefined;
   if (!raw || typeof raw.type !== 'string') return;
@@ -136,6 +198,7 @@ parentPort.on('message', (e: { data?: unknown }) => {
 
   switch (raw.type) {
     case HostMessageTypes.InitLocal: {
+      bootTiming.mark('init_local');
       const msg = raw as { databaseStartupId?: string };
       startupStartedAt = Date.now();
       currentStartupId = msg.databaseStartupId ?? 'zs1-stub';
@@ -147,8 +210,13 @@ parentPort.on('message', (e: { data?: unknown }) => {
       }
       // 1) 报 ready（renderer 的 DatabaseStartupAdmission 按 startupId 配对 state+port）
       publishReady(readyState(currentStartupId, currentAttemptId, startupStartedAt));
+      bootTiming.mark('database_ready');
       // 2) 在端口上暴露全部桩频道
       exposeServicesOnPort(port);
+      if (!servicesTimingMarked) {
+        servicesTimingMarked = true;
+        bootTiming.mark('services_ready');
+      }
       log('info', 'stub services exposed on ChannelServer (all channels registered)');
       return;
     }
@@ -183,3 +251,11 @@ parentPort.on('message', (e: { data?: unknown }) => {
 });
 
 log('info', `zs1 stub host started (pid=${process.pid})`);
+
+// 仅 e2e（ZS5_TEST_CRASH=1）：启动后 ~3s 主动抛出，走 unhandledRejection 路径，
+// 验证崩溃报告落盘且壳不连坐崩。生产/正常启动不触发。
+if (process.env.ZS5_TEST_CRASH === '1') {
+  setTimeout(() => {
+    void Promise.reject(new Error('zs5-e2e-crash-probe'));
+  }, 3000);
+}

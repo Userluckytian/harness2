@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -93,6 +93,50 @@ describe('task-service write surface', () => {
     expect(res.failedTaskIds).toContain(c.taskId);
 
     writer.close();
+    rmSync(home, { recursive: true, force: true });
+  });
+
+  it('invalid taskId throws invalid session id for all write ops (T8)', async () => {
+    const home = mkdtempSync(join(tmpdir(), 'h2-tsw-invalid-'));
+    const svc: any = createTaskService({ home, useMock: true });
+    const ws = process.cwd();
+    const invalidIds = ['../evil', 'a/b', '..%2f', ''];
+    const { SessionManager } = await import('../src/real/core-bridge.js');
+    const spy = vi.spyOn(SessionManager.prototype, 'locate');
+
+    for (const id of invalidIds) {
+      await expect(svc.archiveTask({ taskId: id, workspacePath: ws })).rejects.toThrow(/invalid session id/);
+      await expect(svc.unarchiveTask({ taskId: id, workspacePath: ws })).rejects.toThrow(/invalid session id/);
+      await expect(svc.renameTask({ taskId: id, workspacePath: ws, title: 'x' })).rejects.toThrow(/invalid session id/);
+      await expect(svc.deleteTask({ taskId: id, workspacePath: ws })).rejects.toThrow(/invalid session id/);
+      await expect(svc.setTaskUnread({ taskId: id, workspacePath: ws, unread: true })).rejects.toThrow(
+        /invalid session id/,
+      );
+    }
+    expect(spy).not.toHaveBeenCalled();
+    spy.mockRestore();
+    rmSync(home, { recursive: true, force: true });
+  });
+
+  it('renameTask title validation (T8)', async () => {
+    const home = mkdtempSync(join(tmpdir(), 'h2-tsw-title-'));
+    const svc: any = createTaskService({ home, useMock: true });
+    const ws = process.cwd();
+    const created: any = await svc.createTask({ workspacePath: ws });
+    const id = created.taskId;
+
+    await expect(svc.renameTask({ taskId: id, workspacePath: ws, title: 123 as unknown })).rejects.toThrow(
+      /invalid title/,
+    );
+    await expect(svc.renameTask({ taskId: id, workspacePath: ws, title: '' })).rejects.toThrow(/invalid title/);
+    await expect(svc.renameTask({ taskId: id, workspacePath: ws, title: '   ' })).rejects.toThrow(/invalid title/);
+    await expect(svc.renameTask({ taskId: id, workspacePath: ws, title: 'a'.repeat(201) })).rejects.toThrow(
+      /invalid title/,
+    );
+
+    // 200 字符合法
+    const meta = await svc.renameTask({ taskId: id, workspacePath: ws, title: 'a'.repeat(200) });
+    expect(meta).toBeTruthy();
     rmSync(home, { recursive: true, force: true });
   });
 

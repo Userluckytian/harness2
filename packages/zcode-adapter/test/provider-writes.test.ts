@@ -179,7 +179,7 @@ describe('provider 写路径（ZS4-T4）', () => {
     rmSync(home, { recursive: true, force: true });
   });
 
-  it('reorderPersonalProviders 影响 providerOrder；deletePersonalProvider 不隐式删密钥', async () => {
+  it('reorderPersonalProviders 影响 providerOrder；deletePersonalProvider 同步删密钥与 UI 位', async () => {
     const home = makeHome();
     const svc: any = createProviderSettingsService({ home });
     await svc.savePersonalProviderOverlay('alpha', {
@@ -188,12 +188,18 @@ describe('provider 写路径（ZS4-T4）', () => {
       apiKey: SECRET,
       models: { 'm-a': {} },
     });
+    // _h2Ui 位种子（ZS4.5e）：确保删除时一并回收
+    await svc.addPersonalModel('alpha', 'm-ui', { properties: { inputFormat: { supportsImage: true } } });
     let view: any = await svc.reorderPersonalProviders(['beta', 'alpha']);
     expect(view.providerOrder).toEqual(['beta', 'alpha']);
     view = await svc.deletePersonalProvider('alpha');
     expect(view.providers.map((p: any) => p.providerId)).toEqual(['beta']);
-    // 密钥保留（偏差登记：ZCode 删 provider 是否清凭据未见上游实现）
-    expect(readAuth(home).channels.alpha.apiKey).toBe(SECRET);
+    // 密钥同步清理（ZS5-T5 A）：auth.json 不再含该 provider 键
+    expect(readAuth(home).channels?.alpha).toBeUndefined();
+    // config 无幽灵
+    expect(readConfig(home).providers.alpha).toBeUndefined();
+    // _h2Ui 回收
+    expect(readConfig(home)._h2Ui?.alpha).toBeUndefined();
     await expect(svc.deletePersonalProvider('alpha')).rejects.toThrow(/不存在/);
     rmSync(home, { recursive: true, force: true });
   });

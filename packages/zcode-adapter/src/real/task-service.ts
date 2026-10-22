@@ -7,6 +7,7 @@ import {
   createProvider,
   runTurn,
   resolveHarness2Home,
+  SESSION_ID_PATTERN,
 } from './core-bridge.js';
 import { MockProvider } from './core-bridge.js';
 import type { IZCodeTaskService } from '@zcode/services';
@@ -46,6 +47,13 @@ export function createTaskService(opts: TaskServiceOptions = {}): IZCodeTaskServ
     }
   } catch {
     provider = new MockProvider(defaultMock);
+  }
+
+  function validateTaskId(taskId: unknown): string {
+    if (typeof taskId !== 'string' || !SESSION_ID_PATTERN.test(taskId)) {
+      throw new Error('invalid session id');
+    }
+    return taskId;
   }
 
   function cwdOf(workspacePath?: string): string {
@@ -118,7 +126,7 @@ export function createTaskService(opts: TaskServiceOptions = {}): IZCodeTaskServ
     },
     async sendPrompt(params: { taskId: string; content: string | unknown }): Promise<void> {
       if (process.env.ZS2_PROBE === '1') console.error('[zs2-probe] task-service.sendPrompt', params?.taskId);
-      const id = params.taskId;
+      const id = validateTaskId(params?.taskId);
       const text = typeof params.content === 'string' ? params.content : JSON.stringify(params.content);
       const resumed = manager.resume(id);
       const ac = new AbortController();
@@ -172,24 +180,27 @@ export function createTaskService(opts: TaskServiceOptions = {}): IZCodeTaskServ
       workspacePath?: string;
       workspaceIdentity?: string;
     }): Promise<ZCodeTaskMeta> {
+      const id = validateTaskId(params?.taskId);
       const cwd = cwdOf(params?.workspacePath);
-      const dir = manager.locate(params.taskId, { cwd });
+      const dir = manager.locate(id, { cwd });
       writeSessionMeta(dir, { archived: true });
-      return buildMeta(params.taskId, params?.workspacePath);
+      return buildMeta(id, params?.workspacePath);
     },
     async unarchiveTask(params: {
       taskId: string;
       workspacePath?: string;
       workspaceIdentity?: string;
     }): Promise<ZCodeTaskMeta> {
+      const id = validateTaskId(params?.taskId);
       const cwd = cwdOf(params?.workspacePath);
-      const dir = manager.locate(params.taskId, { cwd });
+      const dir = manager.locate(id, { cwd });
       writeSessionMeta(dir, { archived: false });
-      return buildMeta(params.taskId, params?.workspacePath);
+      return buildMeta(id, params?.workspacePath);
     },
     async deleteTask(params: { taskId: string; workspacePath?: string; workspaceIdentity?: string }): Promise<void> {
+      const id = validateTaskId(params?.taskId);
       const cwd = cwdOf(params?.workspacePath);
-      manager.deleteSession(params.taskId, { cwd });
+      manager.deleteSession(id, { cwd });
     },
     async renameTask(params: {
       taskId: string;
@@ -197,9 +208,14 @@ export function createTaskService(opts: TaskServiceOptions = {}): IZCodeTaskServ
       workspaceIdentity?: string;
       title: string;
     }): Promise<ZCodeTaskMeta> {
+      const id = validateTaskId(params?.taskId);
+      const title = params?.title;
+      if (typeof title !== 'string') throw new Error('invalid title');
+      if (title.trim() === '') throw new Error('invalid title');
+      if (title.length > 200) throw new Error('invalid title');
       const cwd = cwdOf(params?.workspacePath);
-      manager.rename(params.taskId, params.title, { cwd, source: 'manual' });
-      return buildMeta(params.taskId, params?.workspacePath);
+      manager.rename(id, title, { cwd, source: 'manual' });
+      return buildMeta(id, params?.workspacePath);
     },
     async setTaskPinned(params: {
       taskId: string;
@@ -207,10 +223,11 @@ export function createTaskService(opts: TaskServiceOptions = {}): IZCodeTaskServ
       workspaceIdentity?: string;
       pinned: boolean;
     }): Promise<ZCodeTaskMeta> {
+      const id = validateTaskId(params?.taskId);
       const cwd = cwdOf(params?.workspacePath);
-      const dir = manager.locate(params.taskId, { cwd });
+      const dir = manager.locate(id, { cwd });
       writeSessionMeta(dir, { pinned: params.pinned });
-      return buildMeta(params.taskId, params?.workspacePath);
+      return buildMeta(id, params?.workspacePath);
     },
     async setTaskUnread(params: {
       taskId: string;
@@ -219,56 +236,60 @@ export function createTaskService(opts: TaskServiceOptions = {}): IZCodeTaskServ
       unread: boolean;
       expectedUnreadAt?: number;
     }): Promise<ZCodeTaskMeta> {
+      const id = validateTaskId(params?.taskId);
       const cwd = cwdOf(params?.workspacePath);
-      const dir = manager.locate(params.taskId, { cwd });
+      const dir = manager.locate(id, { cwd });
       const current = readSessionMeta(dir);
       if (!params.unread && typeof params.expectedUnreadAt === 'number') {
         if (current.unreadAt === params.expectedUnreadAt) {
           writeSessionMeta(dir, { unread: false, unreadAt: undefined });
         }
-        return buildMeta(params.taskId, params?.workspacePath);
+        return buildMeta(id, params?.workspacePath);
       }
       if (params.unread) {
         writeSessionMeta(dir, { unread: true, unreadAt: Date.now() });
       } else {
         writeSessionMeta(dir, { unread: false, unreadAt: undefined });
       }
-      return buildMeta(params.taskId, params?.workspacePath);
+      return buildMeta(id, params?.workspacePath);
     },
     async getTaskMeta(params: {
       taskId: string;
       workspacePath?: string;
       workspaceIdentity?: string;
     }): Promise<ZCodeTaskMeta | null> {
+      const id = validateTaskId(params?.taskId);
       const cwd = cwdOf(params?.workspacePath);
       try {
-        manager.locate(params.taskId, { cwd });
+        manager.locate(id, { cwd });
       } catch {
         return null;
       }
-      return buildMeta(params.taskId, params?.workspacePath);
+      return buildMeta(id, params?.workspacePath);
     },
     async listArchivedTasks(params: { workspacePath?: string; workspaceIdentity?: string }): Promise<ZCodeTaskMeta[]> {
       return listArchived(params?.workspacePath);
     },
     async getModelTrajectory(params: { taskId: string; limit?: number }): Promise<unknown> {
-      return buildModelTrajectory(manager, params.taskId, params.limit);
+      const id = validateTaskId(params?.taskId);
+      return buildModelTrajectory(manager, id, params.limit);
     },
     async deleteArchivedTask(params: {
       taskId: string;
       workspacePath?: string;
       workspaceIdentity?: string;
     }): Promise<boolean> {
+      const id = validateTaskId(params?.taskId);
       const cwd = cwdOf(params?.workspacePath);
       let dir: string;
       try {
-        dir = manager.locate(params.taskId, { cwd });
+        dir = manager.locate(id, { cwd });
       } catch {
         return false;
       }
       const meta = readSessionMeta(dir);
       if (!meta.archived) return false;
-      manager.deleteSession(params.taskId, { cwd });
+      manager.deleteSession(id, { cwd });
       return true;
     },
     async deleteArchivedTasks(params: {

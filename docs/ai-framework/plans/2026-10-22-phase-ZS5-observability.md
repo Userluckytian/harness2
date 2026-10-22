@@ -1,6 +1,6 @@
 # 阶段 ZS5：观测性与监控（崩溃归因 / 运行日志 / 启动计时 / 资源监控 / soak）
 
-> **状态：** 计划已就绪（待用户确认档位与开工）  
+> **状态：** **收口（2026-10-23）**——T0–T9 全落地；e2e 五轮矩阵+soak PASS；V8 双审查（ZS5 分支+ZS4 补账欠账）P0=0 且 P1 全清偿；core 根治提案待人类批准；V9 交用户真机
 > **For agentic workers:** 按 Task 顺序执行；每 Task 测完再进下一 Task。  
 > **交接提示词**见文末「给接手 AI 的完整提示词」。  
 > **元规范:** `docs/ai-framework/phased-plan-driven.md`

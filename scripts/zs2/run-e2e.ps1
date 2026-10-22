@@ -1,7 +1,7 @@
 ﻿# ZS2 e2e 一键 runbook（编排者安全重写，2026-10-21；旧版三处不可放行：`*ZCode*` 过宽误杀面 / 未验证的 dev-desktop-env 启动 / 180s 死等）
 # 用法: powershell -NoProfile -ExecutionPolicy Bypass -File scripts/zs2\run-e2e.ps1 [-Fresh]
-# 退出码: 透传 e2e-round.cjs（0 通过 / 3 实例锁定失败 / 4 输入未落 / 5 用户行未现 / 6 无 composer / 1 其他）
-param([switch]$Fresh, [switch]$Approval, [switch]$SidebarDelete, [switch]$SettingsProvider)
+# 退出码: 透传各轮 cjs（e2e-round: 0 通过 / 3 实例锁定失败 / 4 输入未落 / 5 用户行未现 / 6 无 composer / 1 其他；crash-round: 0 通过 / 3 实例锁定失败 / 4 无崩溃报告 / 5 密钥泄露 / 6 壳连坐崩 / 1 其他）
+param([switch]$Fresh, [switch]$Approval, [switch]$SidebarDelete, [switch]$SettingsProvider, [switch]$Crash)
 $ErrorActionPreference = 'Stop'
 
 $HarnessRoot  = 'D:\AI_Projects\harness2'
@@ -46,7 +46,7 @@ if (-not (Test-Path $AdapterHost)) {
 
 # -Fresh：清壳配置 + 会话工作区/草稿数据（草稿持久化在 zs1-data 与 HARNESS2_HOME 的 zs 目录，
 # 2026-10-21 实证跨重启残留会污染 composer 初值）
-if ($Fresh -or $Approval -or $SidebarDelete -or $SettingsProvider) {
+if ($Fresh -or $Approval -or $SidebarDelete -or $SettingsProvider -or $Crash) {
   # AppData 一并清：composer 模型选择与草稿持久化在 renderer Local Storage，
   # 跨轮换 home（fake mock ↔ real local）会带着失效 selection 让发送门永久禁用（2026-10-22 实证）
   foreach ($p in @((Join-Path $FakeHome '.zcode'), (Join-Path $FakeHome '.harness2'), (Join-Path $DataDir '.zcode'),
@@ -64,7 +64,7 @@ $env:USERPROFILE = $FakeHome
 $env:APPDATA = Join-Path $FakeHome 'AppData\Roaming'
 $env:LOCALAPPDATA = Join-Path $FakeHome 'AppData\Local'
 $env:HARNESS2_HOME = 'C:\Users\ASUS'
-if ($Approval -or $SidebarDelete -or $SettingsProvider) {
+if ($Approval -or $SidebarDelete -or $SettingsProvider -or $Crash) {
   # ZS4-T6 收口（2026-10-22）：审批轮也走 fake-home 种子——e2e 轮一律不依赖真机用户状态
   # （真机污染/漂移会让轮子假红；provider 反正被 ZS3_E2E_APPROVAL 强制 MockProvider）。
   $env:HARNESS2_HOME = $FakeHome
@@ -87,6 +87,7 @@ $env:ZS2_PROBE = '1'
 if ($Approval) { $env:ZS3_E2E_APPROVAL = '1' }
 if ($SidebarDelete) { $env:ZS4_SIDEBAR_DELETE = '1' }
 if ($SettingsProvider) { $env:ZS4_SETTINGS_PROVIDER = '1' }
+if ($Crash) { $env:ZS5_TEST_CRASH = '1' }
 
 Start-Process -FilePath $Electron -ArgumentList '.' -WorkingDirectory (Join-Path $ZCodeRoot 'packages\desktop') | Out-Null
 
@@ -109,6 +110,8 @@ if ($Approval) {
   node scripts/zs4/sidebar-delete-round.cjs
 } elseif ($SettingsProvider) {
   node scripts/zs4/settings-provider-round.cjs
+} elseif ($Crash) {
+  node scripts/zs5/crash-round.cjs
 } else {
   node scripts/zs2/e2e-round.cjs
 }

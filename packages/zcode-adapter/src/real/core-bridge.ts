@@ -49,6 +49,7 @@ const core = loadCore() as typeof import('@harness2/core', { with: { 'resolution
 
 export const defaultSessionsRoot = core.defaultSessionsRoot;
 export const SessionManager = core.SessionManager;
+export const SESSION_ID_PATTERN = core.SESSION_ID_PATTERN;
 export const loadConfig = core.loadConfig;
 export const defaultConfigPaths = core.defaultConfigPaths;
 export const createProvider = core.createProvider;
@@ -67,6 +68,14 @@ export const projectSkillsRoot = core.projectSkillsRoot;
 export const defaultSkillsRoot = core.defaultSkillsRoot;
 export const MemoryStore = core.MemoryStore;
 export const defaultMemoriesRoot = core.defaultMemoriesRoot;
+/** 模型未声明 contextWindow 时 core 运行时真实生效的兜底容量（ZS4.5c UI 基线同源用） */
+export const writeCrashReport = core.writeCrashReport;
+export const crashReportDir = core.crashReportDir;
+export const formatCrashReport = core.formatCrashReport;
+export const crashReportFileName = core.crashReportFileName;
+export const noteCrashSessionId = core.noteCrashSessionId;
+export const installCrashReporter = core.installCrashReporter;
+export const CRASH_DIR_NAME = core.CRASH_DIR_NAME;
 /** 模型未声明 contextWindow 时 core 运行时真实生效的兜底容量（ZS4.5c UI 基线同源用） */
 export const DEFAULT_CONTEXT_WINDOW: number = core.DEFAULT_CONTEXT_WINDOW;
 
