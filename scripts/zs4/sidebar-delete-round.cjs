@@ -61,7 +61,8 @@ function findSessionDir(idPrefix) {
   }
   const targets = await getJson('/json/list');
   const page = targets.find(
-    (t) => t.type === 'page' && /harness2-zs1-build/.test(t.url || '') && !/packages\/desktop\/dist\/renderer/.test(t.url),
+    (t) =>
+      t.type === 'page' && /harness2-zs1-build/.test(t.url || '') && !/packages\/desktop\/dist\/renderer/.test(t.url),
   );
   if (!page) {
     console.error('WRONG INSTANCE/NOT UP');
@@ -105,23 +106,46 @@ function findSessionDir(idPrefix) {
    *  点 v4-composer-send → rawKeyDown 重清空+重输入再 Enter。
    *  2026-10-22 实测：脏草稿环境 keyDown 清空无效需 rawKeyDown；Enter 在部分状态不提交。 */
   async function sendAndAwaitRow(mark) {
-    await ev(`(() => { const b=document.querySelector('[data-testid="task-new-button"]'); if(b){b.click();return 1;} return 0; })()`);
+    await ev(
+      `(() => { const b=document.querySelector('[data-testid="task-new-button"]'); if(b){b.click();return 1;} return 0; })()`,
+    );
     await sleep(1200);
     await dismissDialogs();
     const clearComposer = async () => {
-      const ok = await ev(`(() => { const c=document.querySelector('[contenteditable=true]'); if(c) c.focus(); return !!c; })()`);
+      const ok = await ev(
+        `(() => { const c=document.querySelector('[contenteditable=true]'); if(c) c.focus(); return !!c; })()`,
+      );
       if (!ok) console.log('WARN_NO_COMPOSER=1');
       await sleep(150);
-      await send('Input.dispatchKeyEvent', { type: 'rawKeyDown', key: 'a', code: 'KeyA', windowsVirtualKeyCode: 65, modifiers: 2 });
-      await send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'a', code: 'KeyA', windowsVirtualKeyCode: 65, modifiers: 2 });
-      await send('Input.dispatchKeyEvent', { type: 'rawKeyDown', key: 'Delete', code: 'Delete', windowsVirtualKeyCode: 46 });
+      await send('Input.dispatchKeyEvent', {
+        type: 'rawKeyDown',
+        key: 'a',
+        code: 'KeyA',
+        windowsVirtualKeyCode: 65,
+        modifiers: 2,
+      });
+      await send('Input.dispatchKeyEvent', {
+        type: 'keyUp',
+        key: 'a',
+        code: 'KeyA',
+        windowsVirtualKeyCode: 65,
+        modifiers: 2,
+      });
+      await send('Input.dispatchKeyEvent', {
+        type: 'rawKeyDown',
+        key: 'Delete',
+        code: 'Delete',
+        windowsVirtualKeyCode: 46,
+      });
       await send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Delete', code: 'Delete', windowsVirtualKeyCode: 46 });
       await sleep(200);
     };
     const waitRow = async (seconds) => {
       for (let i = 0; i < seconds * 2; i++) {
         await sleep(500);
-        const seen = await ev(`(() => { const el=Array.from(document.querySelectorAll('[data-testid^="task-item-"]')).find(i=>(i.innerText||'').includes(${JSON.stringify(mark)})); return el? el.getAttribute('data-testid') : null; })()`);
+        const seen = await ev(
+          `(() => { const el=Array.from(document.querySelectorAll('[data-testid^="task-item-"]')).find(i=>(i.innerText||'').includes(${JSON.stringify(mark)})); return el? el.getAttribute('data-testid') : null; })()`,
+        );
         if (seen) return String(seen).replace(/^task-item-/, '');
       }
       return null;
@@ -134,22 +158,30 @@ function findSessionDir(idPrefix) {
     let id = await waitRow(8);
     if (!id) {
       console.log('RETRY_VIA_SEND_BUTTON=1');
-      await ev(`(() => { const b=document.querySelector('[data-testid="v4-composer-send"]'); if(b){b.click();return 1;} return 0; })()`);
+      await ev(
+        `(() => { const b=document.querySelector('[data-testid="v4-composer-send"]'); if(b){b.click();return 1;} return 0; })()`,
+      );
       id = await waitRow(8);
     }
     if (!id) {
       console.log('RETRY_FULL_RETYPE=1');
-      const dump = await ev(`(() => { const c=document.querySelector('[contenteditable=true]'); return c? JSON.stringify((c.innerText||'').slice(0,40)) : 'no-composer'; })()`);
+      const dump = await ev(
+        `(() => { const c=document.querySelector('[contenteditable=true]'); return c? JSON.stringify((c.innerText||'').slice(0,40)) : 'no-composer'; })()`,
+      );
       console.log('COMPOSER_STUCK=' + dump);
       // 冷启动 landing 竞态（sb10 实证：首条 Enter/send 均不提交，第二条正常）——
       // 先点新建任务强制切 draft 会话视图，再 clear+type+send
-      await ev(`(() => { const b=document.querySelector('[data-testid="task-new-button"]'); if(b){b.click();return 1;} return 0; })()`);
+      await ev(
+        `(() => { const b=document.querySelector('[data-testid="task-new-button"]'); if(b){b.click();return 1;} return 0; })()`,
+      );
       await sleep(1200);
       await dismissDialogs();
       await clearComposer();
       await send('Input.insertText', { text: mark });
       await sleep(400);
-      await ev(`(() => { const b=document.querySelector('[data-testid="v4-composer-send"]'); if(b){b.click();return 1;} return 0; })()`);
+      await ev(
+        `(() => { const b=document.querySelector('[data-testid="v4-composer-send"]'); if(b){b.click();return 1;} return 0; })()`,
+      );
       id = await waitRow(20);
     }
     return id;
@@ -204,7 +236,12 @@ function findSessionDir(idPrefix) {
         if (diskOk && !(await rowPresent(mark, { hard: true }))) return 'ok';
         return diskOk ? 'ui-stale' : 'failed:menu-noop-disk';
       }
-      await send('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27 });
+      await send('Input.dispatchKeyEvent', {
+        type: 'keyDown',
+        key: 'Escape',
+        code: 'Escape',
+        windowsVirtualKeyCode: 27,
+      });
       await send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27 });
       await sleep(400);
     }
@@ -261,7 +298,9 @@ function findSessionDir(idPrefix) {
       `(() => { const el=Array.from(document.querySelectorAll('[data-testid^="task-item-"]')).find(i=>(i.innerText||'').includes(${JSON.stringify(MARK_B)}))||Array.from(document.querySelectorAll('[data-testid^="task-item-"]')).find(i=>(i.innerText||'').includes(${JSON.stringify(MARK_A)}))||document.querySelector('[data-testid^="task-item-"]'); if(el){const b=el.querySelector('button')||el; b.click(); return 1;} return 0; })()`,
     );
     await sleep(1500);
-    const r = await ev(`(() => { const el=Array.from(document.querySelectorAll('[data-testid^="task-item-"]'))[0]; if(!el) return 0; el.scrollIntoView({block:'center'}); const s=getComputedStyle(el); return el.getBoundingClientRect().width>0?1:0; })()`);
+    const r = await ev(
+      `(() => { const el=Array.from(document.querySelectorAll('[data-testid^="task-item-"]'))[0]; if(!el) return 0; el.scrollIntoView({block:'center'}); const s=getComputedStyle(el); return el.getBoundingClientRect().width>0?1:0; })()`,
+    );
     return r;
   }
 
@@ -269,22 +308,30 @@ function findSessionDir(idPrefix) {
    *  背景：adapter 不广播 controller 帧，mutation 后主列表行消失依赖刷新时机（sb12/sb13
    *  对照实证 flaky）——权威判据=归档视图/磁盘（写面），UI 消失用刷新兜底后二次判。 */
   async function forceListRefresh() {
-    await ev(`(() => { const secs=Array.from(document.querySelectorAll('[data-testid="task-item-"]')).length; const proj=document.querySelector('button[aria-label="项目"]'); if(proj){proj.click();return 'proj';} return 'none'; })()`);
+    await ev(
+      `(() => { const secs=Array.from(document.querySelectorAll('[data-testid="task-item-"]')).length; const proj=document.querySelector('button[aria-label="项目"]'); if(proj){proj.click();return 'proj';} return 'none'; })()`,
+    );
     await sleep(1200);
-    await ev(`(() => { const task=document.querySelector('button[aria-label="任务"]'); if(task){task.click();return 'task';} return 'none'; })()`);
+    await ev(
+      `(() => { const task=document.querySelector('button[aria-label="任务"]'); if(task){task.click();return 'task';} return 'none'; })()`,
+    );
     await sleep(1500);
   }
 
   /** 主列表可见性（先探，未命中点显示更多；带 tab 切换强制刷新的二次判） */
   async function rowPresent(mark, opts = {}) {
     const probe = async () =>
-      ev(`!!Array.from(document.querySelectorAll('[data-testid^="task-item-"]')).find(i=>(i.innerText||'').includes(${JSON.stringify(mark)}))`);
+      ev(
+        `!!Array.from(document.querySelectorAll('[data-testid^="task-item-"]')).find(i=>(i.innerText||'').includes(${JSON.stringify(mark)}))`,
+      );
     if (await probe()) return true;
     if (opts.hard) {
       await forceListRefresh();
       if (await probe()) return true;
     }
-    await ev(`(() => { const b=Array.from(document.querySelectorAll('button,[role="button"]')).find(x=>/显示更多/.test((x.innerText||'').trim())); if(b){b.click();return 1;} return 0; })()`);
+    await ev(
+      `(() => { const b=Array.from(document.querySelectorAll('button,[role="button"]')).find(x=>/显示更多/.test((x.innerText||'').trim())); if(b){b.click();return 1;} return 0; })()`,
+    );
     for (let i = 0; i < 12; i++) {
       if (await probe()) return true;
       await sleep(500);
@@ -294,13 +341,19 @@ function findSessionDir(idPrefix) {
 
   /** 打开 设置→归档管理；展开组；返回 archive-task 行列表 [{id,title}] */
   async function openArchives() {
-    await ev(`(() => { const b=document.querySelector('[data-testid="task-settings-button"]'); if(b)b.click(); return !!b; })()`);
+    await ev(
+      `(() => { const b=document.querySelector('[data-testid="task-settings-button"]'); if(b)b.click(); return !!b; })()`,
+    );
     await sleep(1800);
-    await ev(`(() => { const b=document.querySelector('[data-settings-section-nav="archives"]'); if(b)b.click(); return !!b; })()`);
+    await ev(
+      `(() => { const b=document.querySelector('[data-settings-section-nav="archives"]'); if(b)b.click(); return !!b; })()`,
+    );
     await sleep(1500);
     const ok = await ev(`!!document.querySelector('[data-testid="archive-management"]')`);
     if (!ok) return false;
-    await ev(`(() => { const t=document.querySelectorAll('[data-testid="archive-group-toggle"]'); t.forEach(x=>x.click()); return t.length; })()`);
+    await ev(
+      `(() => { const t=document.querySelectorAll('[data-testid="archive-group-toggle"]'); t.forEach(x=>x.click()); return t.length; })()`,
+    );
     await sleep(800);
     return true;
   }
@@ -313,7 +366,7 @@ function findSessionDir(idPrefix) {
 
   async function actOnArchiveTask(idPrefix, which) {
     return ev(
-      `(() => { const row=Array.from(document.querySelectorAll('[data-testid="archive-task"]')).find(el=>(el.getAttribute('data-task-id')||'').startsWith(${JSON.stringify(idPrefix.slice(0,22))})||${JSON.stringify(idPrefix)}.startsWith(el.getAttribute('data-task-id')||'')); if(!row) return 'no-row'; const b=row.querySelector('[data-testid="${which}"]'); if(!b) return 'no-btn'; b.click(); return 'ok'; })()`,
+      `(() => { const row=Array.from(document.querySelectorAll('[data-testid="archive-task"]')).find(el=>(el.getAttribute('data-task-id')||'').startsWith(${JSON.stringify(idPrefix.slice(0, 22))})||${JSON.stringify(idPrefix)}.startsWith(el.getAttribute('data-task-id')||'')); if(!row) return 'no-row'; const b=row.querySelector('[data-testid="${which}"]'); if(!b) return 'no-btn'; b.click(); return 'ok'; })()`,
     );
   }
 
@@ -379,7 +432,9 @@ function findSessionDir(idPrefix) {
       process.exit(6);
     }
     console.log('ARCHIVE_ROWS=' + (await archiveRowsDump()));
-    const inArchiveView = await ev(`(() => { const row=Array.from(document.querySelectorAll('[data-testid="archive-task"]')).find(el=>(el.getAttribute('data-task-id')||'').startsWith(${JSON.stringify(idA.slice(0, 22))})); return !!row; })()`);
+    const inArchiveView = await ev(
+      `(() => { const row=Array.from(document.querySelectorAll('[data-testid="archive-task"]')).find(el=>(el.getAttribute('data-task-id')||'').startsWith(${JSON.stringify(idA.slice(0, 22))})); return !!row; })()`,
+    );
     console.log('A_IN_ARCHIVE_VIEW=' + inArchiveView);
     if (!inArchiveView) process.exit(6);
     const un = await actOnArchiveTask(idA, 'archive-unarchive');
@@ -422,7 +477,9 @@ function findSessionDir(idPrefix) {
 
     const dirA = findSessionDir(idA);
     const diskGone = !dirA;
-    const stillInArchive = await ev(`(() => { const row=Array.from(document.querySelectorAll('[data-testid="archive-task"]')).find(el=>(el.getAttribute('data-task-id')||'').startsWith(${JSON.stringify(idA.slice(0, 22))})); return !!row; })()`);
+    const stillInArchive = await ev(
+      `(() => { const row=Array.from(document.querySelectorAll('[data-testid="archive-task"]')).find(el=>(el.getAttribute('data-task-id')||'').startsWith(${JSON.stringify(idA.slice(0, 22))})); return !!row; })()`,
+    );
     console.log('DISK_GONE=' + diskGone + ' IN_ARCHIVE_VIEW=' + stillInArchive);
     if (!diskGone || stillInArchive) process.exit(7);
 
@@ -435,7 +492,10 @@ function findSessionDir(idPrefix) {
     fs.mkdirSync(path.dirname(SHOT), { recursive: true });
     const shot = await send('Page.captureScreenshot', { format: 'png' });
     fs.writeFileSync(SHOT, Buffer.from(shot.result.data, 'base64'));
-    console.log('RESULT=' + JSON.stringify({ status: 'pass', sessionA: idA, diskGone: true, restoredThenDeleted: true, screenshot: SHOT }));
+    console.log(
+      'RESULT=' +
+        JSON.stringify({ status: 'pass', sessionA: idA, diskGone: true, restoredThenDeleted: true, screenshot: SHOT }),
+    );
     ws.close();
     process.exit(0);
   } catch (e) {

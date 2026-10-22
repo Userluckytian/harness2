@@ -264,7 +264,9 @@ function findProviderIdByBaseUrl(cfg) {
       })()`);
       console.log('DIALOG_FILL=' + filled);
       await new Promise((r) => setTimeout(r, 600));
-      const backfill = await ev(`document.querySelector('div[role="dialog"] input') ? document.querySelector('div[role="dialog"] input').value : 'no-input'`);
+      const backfill = await ev(
+        `document.querySelector('div[role="dialog"] input') ? document.querySelector('div[role="dialog"] input').value : 'no-input'`,
+      );
       console.log('DIALOG_VALUE=' + backfill);
       // 第二个 input = Context window（numeric；harness2 无内置推荐基线 → 必须手填，
       // ProviderModelMetadata.ts:130-134 空值即 invalid）
@@ -331,7 +333,9 @@ function findProviderIdByBaseUrl(cfg) {
       }
       console.log('MODEL_ROW=' + modelRow);
       if (!modelRow) {
-        const dlgText = await ev("(() => { const d = document.querySelector('div[role=\"dialog\"]'); return d ? d.innerText.replace(/\\s+/g,' ').slice(0,600) : 'no-dialog'; })()");
+        const dlgText = await ev(
+          "(() => { const d = document.querySelector('div[role=\"dialog\"]'); return d ? d.innerText.replace(/\\s+/g,' ').slice(0,600) : 'no-dialog'; })()",
+        );
         console.error('MODEL ADD FAILED, dialog text: ' + dlgText);
         process.exit(6);
       }
