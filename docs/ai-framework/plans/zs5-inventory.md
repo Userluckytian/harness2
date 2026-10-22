@@ -222,7 +222,21 @@
 
 ---
 
-## 附：探针/文件引用速查
+---
+
+## T5 C 项判定（2026-10-22，ZS5-T5）
+
+**结论：降级不做（零 patch 不可达）。** UI 不渲染 `resolveModelConfig` 返回的 `issues` 字段到表单，故 adapter 侧给 issues 提示文案无法触达用户，按计划降级，仅登记。
+
+**证据（scratch，只读）：**
+- `packages/ui/src/settings/model-provider-section/ProviderModelMetadataDialog.tsx`：组件 props 无 `issues` 字段；对话框内无 `issues` 渲染点（grep `issues` 仅命中 `modelConfigResolutionPending` 等非 issues 词）。
+- `packages/ui/src/settings/model-provider-section/useModelConfigResolution.ts:58`：`resolution.issues.length === 0` 仅用于门控「默认值已加载」反馈（`setDefaultsLoaded`），**不把 issues 文案渲染到表单**。
+- `packages/ui/src/settings/model-provider-section/ProviderCardSections.tsx:645`：渲染的是模型行的 `model.issues`（`ProviderSettingsModelCandidateView.issues`，provider settings 视图字段），**不是** `resolveModelConfig` 返回的 `ModelConfigResolution.issues`。
+- `packages/provider/src/facades.ts:122-125`：`ModelConfigResolution.issues` 类型存在，但消费方（UI）未将其作为表单提示文案渲染。
+
+**判定依据：** 计划 §T5 要求「若 UI 渲染 issues → adapter 给真实提示文案（零 patch）；若不渲染 → 降级不做 + 登记」。实测 UI 不渲染 → 降级。空基线（无磁盘记录、目录零命中精确+松配、无 `_h2Ui`）时上下文窗口仍按 `DEFAULT_CONTEXT_WINDOW`（131072）合成，这是运行时真实行为，已在 `resolveModelConfig` 返回的 `inheritedConfig.properties.contextWindow` 中体现，无需额外 issues 文案。
+
+**后续：** 若未来 UI 增加 issues 渲染（patch #3 人类拍板），再补文案；登记于本行。
 
 | 项                                | 路径:行                                                                              |
 | --------------------------------- | ------------------------------------------------------------------------------------ |
