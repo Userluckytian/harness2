@@ -72,24 +72,28 @@
   （`HostResponseTypes`）
 - `packages/shared/src/validation.ts:958-965` 请求消息 schema：
   ```ts
-  hostResourceUsageSnapshotRequestMessageSchema = z.object({
-    type: z.literal("resource-usage-snapshot-request"),
-    requestId: nonEmptyStringSchema,
-  }).strict();
+  hostResourceUsageSnapshotRequestMessageSchema = z
+    .object({
+      type: z.literal('resource-usage-snapshot-request'),
+      requestId: nonEmptyStringSchema,
+    })
+    .strict();
   ```
 - 取消消息：`{ type: "resource-usage-snapshot-cancel", requestId }`（`validation.ts` hostIncomingMessageSchema 内联）。
 - `packages/shared/src/validation.ts:1559-1568` 响应 schema：
   ```ts
-  hostResourceUsageSnapshotResultResponseSchema = z.object({
-    type: z.literal("resource-usage-snapshot-result"),
-    requestId: nonEmptyStringSchema,
-    sampledAt: z.number().int().nonnegative(),
-    processes: z.array(hostResourceUsageProcessSchema).max(10_000),
-  }).strict();
+  hostResourceUsageSnapshotResultResponseSchema = z
+    .object({
+      type: z.literal('resource-usage-snapshot-result'),
+      requestId: nonEmptyStringSchema,
+      sampledAt: z.number().int().nonnegative(),
+      processes: z.array(hostResourceUsageProcessSchema).max(10_000),
+    })
+    .strict();
   ```
 - `packages/shared/src/protocol.ts:237`：
   ```ts
-  export type HostResourceUsageProcess = Omit<ResourceUsageProcess, "sampled">;
+  export type HostResourceUsageProcess = Omit<ResourceUsageProcess, 'sampled'>;
   ```
 - `packages/shared/src/protocol.ts:224-236` `ResourceUsageProcess` 字段：
   - `pid: number`（正整数）
@@ -166,7 +170,7 @@
   ```ts
   const result = await agentService.subscribeSessionsIndexV4({
     ...workspace,
-    runtimePolicy: "existing-only",
+    runtimePolicy: 'existing-only',
     ...(params.base ? { base: params.base } : {}),
     ...(params.visibility ? { visibility: params.visibility } : {}),
   });
@@ -200,10 +204,10 @@
 
 ## 决策点（T0 登记）
 
-| # | 决策 | 结论 | 状态 |
-|---|------|------|------|
-| ① 资源管理器入口在装配壳是否可用 | **可用**：Help 按钮下拉 → 资源管理器（native 窗口），无 UI patch | T4/T1 复用原生；悬浮卡片不另造（patch 仍 =2） | ✅ 已确认，无需人类拍板 |
-| ② soak 阈值 1.25 是否维持 | **建议维持 1.25**（比值判据，抗开发机抖动；绝对值不作门）；最终数字在 T6 实跑前与用户一次确认 | T6 定稿前复核 | 🟡 待 T6 用户确认 |
+| #                                | 决策                                                                                          | 结论                                          | 状态                    |
+| -------------------------------- | --------------------------------------------------------------------------------------------- | --------------------------------------------- | ----------------------- |
+| ① 资源管理器入口在装配壳是否可用 | **可用**：Help 按钮下拉 → 资源管理器（native 窗口），无 UI patch                              | T4/T1 复用原生；悬浮卡片不另造（patch 仍 =2） | ✅ 已确认，无需人类拍板 |
+| ② soak 阈值 1.25 是否维持        | **建议维持 1.25**（比值判据，抗开发机抖动；绝对值不作门）；最终数字在 T6 实跑前与用户一次确认 | T6 定稿前复核                                 | 🟡 待 T6 用户确认       |
 
 ### 补充：UI patch 计数复核
 
@@ -220,25 +224,25 @@
 
 ## 附：探针/文件引用速查
 
-| 项 | 路径:行 |
-|---|---------|
-| openResourceManager | `harness2-zs1-build/ZCode/packages/desktop/src/main/resourceManagerWindow.ts:257` |
-| 菜单注册 | `.../desktop/src/main/desktopApplicationMenu.ts:340-346` |
-| 命令处理 | `.../desktop/src/main/desktopCommandHandlers.ts:622-624` |
-| IPC 通道 | `.../desktop/src/main/desktopMainIpcPlatform.ts:215-217` |
-| UI 入口 | `.../ui/src/WorkspaceHelpMenuButton.tsx:65-66,139` |
-| testid | `.../shared/src/test-ids.ts:554,556` |
-| HostMessageTypes 采样 | `.../shared/src/channels.ts:659-660,708` |
-| 请求/响应 schema | `.../shared/src/validation.ts:958-965,1559-1568` |
-| HostResourceUsageProcess | `.../shared/src/protocol.ts:224-237` |
-| fan-out 超时 | `.../desktop/src/main/resourceManagerHostSampling.ts:15` |
-| logger 落盘 | `.../desktop/src/main/logger.ts:7-14` |
-| 路径解析 | `.../services/src/paths.ts:56-68` |
-| crash capture | `.../desktop/src/main/desktopCrashCapture.ts:55-58,353-388` |
-| unhandledRejection（main） | `.../desktop/src/main/index.ts:309-311` |
-| host uncaughtException（scratch） | `.../desktop/src/host/index.ts:2921-2940` |
-| core crash exports | `harness2/packages/core/src/doctor/crash.ts:12-90`；`index.ts:87` |
-| adapter host 入口 | `harness2/packages/zcode-adapter/src/host-entry.ts`（采样/崩溃均未实现） |
-| agent-service 契约 | `harness2/packages/zcode-adapter/src/real/agent-service.ts:1414,1442` |
-| SessionManager.list | `harness2/packages/core/src/session/manager.ts:198-216` |
-| consumer transport | `harness2-zs1-build/ZCode/packages/ui/src/v4/agentSessionsIndexTransport.ts:126-192` |
+| 项                                | 路径:行                                                                              |
+| --------------------------------- | ------------------------------------------------------------------------------------ |
+| openResourceManager               | `harness2-zs1-build/ZCode/packages/desktop/src/main/resourceManagerWindow.ts:257`    |
+| 菜单注册                          | `.../desktop/src/main/desktopApplicationMenu.ts:340-346`                             |
+| 命令处理                          | `.../desktop/src/main/desktopCommandHandlers.ts:622-624`                             |
+| IPC 通道                          | `.../desktop/src/main/desktopMainIpcPlatform.ts:215-217`                             |
+| UI 入口                           | `.../ui/src/WorkspaceHelpMenuButton.tsx:65-66,139`                                   |
+| testid                            | `.../shared/src/test-ids.ts:554,556`                                                 |
+| HostMessageTypes 采样             | `.../shared/src/channels.ts:659-660,708`                                             |
+| 请求/响应 schema                  | `.../shared/src/validation.ts:958-965,1559-1568`                                     |
+| HostResourceUsageProcess          | `.../shared/src/protocol.ts:224-237`                                                 |
+| fan-out 超时                      | `.../desktop/src/main/resourceManagerHostSampling.ts:15`                             |
+| logger 落盘                       | `.../desktop/src/main/logger.ts:7-14`                                                |
+| 路径解析                          | `.../services/src/paths.ts:56-68`                                                    |
+| crash capture                     | `.../desktop/src/main/desktopCrashCapture.ts:55-58,353-388`                          |
+| unhandledRejection（main）        | `.../desktop/src/main/index.ts:309-311`                                              |
+| host uncaughtException（scratch） | `.../desktop/src/host/index.ts:2921-2940`                                            |
+| core crash exports                | `harness2/packages/core/src/doctor/crash.ts:12-90`；`index.ts:87`                    |
+| adapter host 入口                 | `harness2/packages/zcode-adapter/src/host-entry.ts`（采样/崩溃均未实现）             |
+| agent-service 契约                | `harness2/packages/zcode-adapter/src/real/agent-service.ts:1414,1442`                |
+| SessionManager.list               | `harness2/packages/core/src/session/manager.ts:198-216`                              |
+| consumer transport                | `harness2-zs1-build/ZCode/packages/ui/src/v4/agentSessionsIndexTransport.ts:126-192` |

@@ -28,6 +28,7 @@ import {
 } from '@zcode/rpc';
 import { HostMessageTypes, HostResponseTypes } from '@zcode/shared';
 import { createHarness2Services } from './createHarness2Services.js';
+import { attachHostSampling } from './real/host-sampling.js';
 
 interface ElectronMessagePortMainLike {
   on(event: 'message', listener: (e: { data: unknown }) => void): unknown;
@@ -64,6 +65,11 @@ const parentPort = (
     parentPort?: ElectronMessagePortMainLike;
   }
 ).parentPort;
+
+if (parentPort) {
+  // ZS5-T1：应答资源管理器采样协议（纯加性，不影响 InitLocal/DatabaseStartup/ChannelServer）
+  attachHostSampling(parentPort as unknown as Parameters<typeof attachHostSampling>[0]);
+}
 
 function postToMain(message: unknown): void {
   if (!parentPort) throw new Error('parentPort unavailable');
