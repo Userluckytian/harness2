@@ -7,6 +7,7 @@ import {
   toUiProviderConfig,
 } from './provider-writes.js';
 import type { StoredProviderConfig } from './provider-writes.js';
+import { mergePulledModels } from './model-pull.js';
 import { Emitter } from '@zcode/rpc';
 import type { IModelSelectionService, IProviderSettingsService } from '@zcode/services';
 import { createStubService } from '../stub-factory.js';
@@ -14,6 +15,8 @@ import { createStubService } from '../stub-factory.js';
 export interface ProviderViewsOptions {
   dataRoot?: string;
   home?: string;
+  /** 测试缝：模型列表拉取用的 fetch（单测注入本地假响应；默认真实 fetch）。 */
+  fetchImpl?: typeof fetch;
 }
 
 export function createModelSelectionService(opts: ProviderViewsOptions = {}): IModelSelectionService {
@@ -251,6 +254,42 @@ export function createProviderSettingsService(opts: ProviderViewsOptions = {}): 
     raw['_h2Revision'] = prev + 1;
   }
 
+  /**
+   * ZS4.5：provider 合法保存后的后台模型拉取（fire-and-forget，绝不 throw）。
+   * 重新读盘取最新条目（保存与拉取间可能有别的写）→ mergePulledModels → 有增则
+   * 落盘 + afterMutation 广播（UI 经 onDidChange 吸收，模型行自动出现）。
+   */
+  async function pullModelsIntoProvider(providerId: string): Promise<void> {
+    try {
+      const raw = store.readRaw();
+      const entry = (raw.providers?.[providerId] ?? undefined) as StoredProviderConfig | undefined;
+      if (!entry || !ProviderWriteStore.isCoreProviderConfigValid(entry)) return;
+      const added = await mergePulledModels(
+        entry,
+        {
+          protocol: typeof entry.protocol === 'string' ? entry.protocol : undefined,
+          baseUrl: typeof entry.baseUrl === 'string' ? entry.baseUrl : undefined,
+          apiKey: store.apiKeyFor(providerId),
+        },
+        opts.fetchImpl ?? fetch,
+      );
+      if (added.length === 0) return;
+      const raw2 = store.readRaw();
+      const target = raw2.providers?.[providerId] as StoredProviderConfig | undefined;
+      if (!target) return; // 已被删除——不复活
+      const models = { ...(target.models ?? {}) } as Record<string, unknown>;
+      for (const id of added) {
+        if (!Object.prototype.hasOwnProperty.call(models, id)) models[id] = {};
+      }
+      target.models = models;
+      writeRevision(raw2);
+      store.writeRaw(raw2);
+      afterMutation();
+    } catch {
+      // best-effort 兜底：任何异常都不能冒到保存路径外（fire-and-forget 的 unhandled rejection）
+    }
+  }
+
   const impl = {
     async getView(): Promise<unknown> {
       return buildView();
@@ -346,6 +385,9 @@ export function createProviderSettingsService(opts: ProviderViewsOptions = {}): 
         raw.providers = { ...raw.providers, [providerId]: merged };
         writeRevision(raw);
         store.writeRaw(raw);
+        // ZS4.5（用户批准）：合法保存后台 best-effort 拉取渠道模型列表回填，
+        // 成功则再落盘 + afterMutation 二次广播（UI onDidChange 吸收，模型行自动出现）。
+        void pullModelsIntoProvider(providerId);
       } else {
         // 编辑中的非法草稿（空 baseUrl 等）留在内存：磁盘永不含半配置（防 core 整份归 null）
         pendingDrafts.set(providerId, merged);
