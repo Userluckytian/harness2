@@ -185,8 +185,8 @@
 | --------------------- | ------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | 冷启动首轮不渲染 P0   | `e22c24c` + 回归钉 `a25ac43` + 根因修订报告                                          | 根因=**createSession 用 process.cwd() 而 UI prepareSession 用 workspacePath**（组目录劈叉，67ce1e4 引入）；修后 `-Fresh` 双跑 exit=0                                                                                                            |
 | hover 归档/删除不生效 | `01de328`（window-controller.mutateTask 接 IZCodeTaskService）                       | UI 行悬停归档/删除走 window-controller 而非 task 服务；原 B 桩 throw。接线 rename/pin/archive/delete/delete-archived/mark-read/open/resume；`task-service-write.test.ts` 新 42 行测（归档→listArchived 真值、删除→getTaskMeta null）            |
-| 设置页写面契约缺口    | `6cfc206`（嵌套↔扁平翻译层+内存草稿）+ `7e563cd`（revisionClock+resolveModelConfig） | e2e 实证三连坑：①UI 回传嵌套形 ProviderConfigObject 被扁平校验拒；②草稿视图不推 revision 被 UI 快照守卫吞（providerSettingsSnapshot.ts:45-46）；③缺 resolveModelConfig → 添加模型对话框读 null.inheritedConfig 炸。adapter 98 测绿              |
-| e2e 双轮真跑绿        | `4df22d3`（探针重写+runbook fake-home 种子）                                         | `-SidebarDelete` 磁盘真删+UI 一致+截图；`-SettingsProvider` 建卡→导航→表单→密钥进 auth 不进 config→加模型→连通测试显失败→删除闭环，RESULT pass。两轮各 ≥2 次连续绿                                                                              |
+| 设置页写面契约缺口    | `6cfc206`（嵌套↔扁平翻译层+内存草稿）+ `29d873a`（revisionClock+resolveModelConfig） | e2e 实证三连坑：①UI 回传嵌套形 ProviderConfigObject 被扁平校验拒；②草稿视图不推 revision 被 UI 快照守卫吞（providerSettingsSnapshot.ts:45-46）；③缺 resolveModelConfig → 添加模型对话框读 null.inheritedConfig 炸。adapter 98 测绿              |
+| e2e 双轮真跑绿        | `c5833b8`（探针重写+runbook fake-home 种子）                                         | `-SidebarDelete` 磁盘真删+UI 一致+截图；`-SettingsProvider` 建卡→导航→表单→密钥进 auth 不进 config→加模型→连通测试显失败→删除闭环，RESULT pass。两轮各 ≥2 次连续绿                                                                              |
 | 四轮回归矩阵          | 同上                                                                                 | `-Fresh -Approval`=0 / `-Fresh -SidebarDelete`=0 / `-Fresh -SettingsProvider`=0 / `-Fresh`（真机渠道真实模型回复）=0，顺序单实例跑                                                                                                              |
 | 真机配置污染事件      | —                                                                                    | 探针曾用 launch-manual.ps1（真 home）建草稿写坏 `C:\Users\ASUS\.harness2\config.json`（4 空 provider）；当场清理+备份，本收口又剥净 enabled/_h2Revision 漂移键，loadConfig warnings=[] 验证。教训登记：provider 写探针只走 runbook（fake-home） |
 
@@ -198,7 +198,9 @@
 4. **产品缺口（不带入收口判定，归 ZS5 输入）**：①adapter 不推 window-controller 帧 → mutate 后 UI 行移除靠刷新时机（探针以磁盘为真相+ui-stale 分类）；②`subscribeSessionsIndexV4` 未实现（host log 每 20s FAIL 重试）；③deletePersonalProvider 不清 auth 密钥（保守）。
 5. 批量删除入口=原生归档区（`archive-delete`/deleteAllArchived），「删除其他」右键菜单不做（UI 零改动）。
 
-**V1–V8 自评**：V1 ✅（侧栏轮：hover 归档→归档视图→恢复→再归档→删除→磁盘消失，`docs/screenshots/zs4/sidebar-delete-round.png`）；V2 ✅（T2 自动标题+pin 排序，task-service 测）；V3 ✅（设置轮全链路+密钥红线断言）；V4 ✅（T5 盘点映射对账+降级如实）；V5 ✅（仅 deleteSession 窗口+api-surface 同步）；V6 ✅（六包 diff=0、UI patch=1）；V7 ✅（本收口重跑 adapter 全绿+buildAll+smokeBundle；全仓门=T6a）；V8 ⚠️ 挂账（子代理通道 5xx 累计，收口后再试）。V9 → 交用户真机清单（见上节）。
+**V1–V8 自评**：V1 ✅（侧栏轮：hover 归档→归档视图→恢复→再归档→删除→磁盘消失，`docs/screenshots/zs4/sidebar-delete-round.png`）；V2 ✅（T2 自动标题+pin 排序，task-service 测）；V3 ✅（设置轮全链路+密钥红线断言）；V4 ✅（T5 盘点映射对账+降级如实）；V5 ✅（仅 deleteSession 窗口+api-surface 同步）；V6 ✅（六包 diff=0、UI patch=1）；V7 ✅（本收口重跑 adapter 全绿+buildAll+smokeBundle；全仓门=T6a）；V8 ⚠️ 挂账（收口后复审代理再度 provider 5xx 阵亡，累计 6 次；通道恢复后补）。V9 → 交用户真机清单（见上节）。
+
+**CI**：首发 `6933c0e` 三平台红于 Prettier 门（探针 cjs 未格式化，本地漏跑全仓 `--check .`——教训：含脚本提交必过全仓门）；`1d1ad7c` 修+双轮复跑 exit=0 → CI `39714671011` **三平台全绿**。
 
 **决策登记**：
 
