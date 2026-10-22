@@ -1,4 +1,11 @@
-import { DEFAULT_CONTEXT_WINDOW, loadConfig, readAuthFile, redactSecrets, resolveHarness2Home } from './core-bridge.js';
+import {
+  DEFAULT_CONTEXT_WINDOW,
+  loadConfig,
+  readAuthFile,
+  redactSecrets,
+  resolveHarness2Home,
+  writeAuthFile,
+} from './core-bridge.js';
 import {
   ProviderWriteStore,
   reorderRecord,
@@ -529,6 +536,18 @@ export function createProviderSettingsService(opts: ProviderViewsOptions = {}): 
       const raw = store.readRaw();
       requireProvider(raw, providerId); // 磁盘或草稿任一存在即可删
       pendingDrafts.delete(providerId);
+      // 密钥同步清理（ZS5-T5 A）：删 provider 时同步删 auth.json 该 providerId 密钥条目，
+      // 防止幽灵密钥残留（ZS4 收口缺口③）。best-effort：auth 缺失/损坏不阻断删除。
+      try {
+        const { auth } = readAuthFile(store.authPath);
+        if (auth.channels && Object.prototype.hasOwnProperty.call(auth.channels, providerId)) {
+          const { [providerId]: _dropAuth, ...restAuth } = auth.channels;
+          auth.channels = restAuth as typeof auth.channels;
+          writeAuthFile(store.authPath, auth);
+        }
+      } catch {
+        // best-effort：auth 清理失败不阻断 provider 删除
+      }
       if (raw.providers?.[providerId] === undefined) return afterMutation(); // 纯草稿删除
       const { [providerId]: _removed, ...rest } = raw.providers ?? {};
       raw.providers = rest;
@@ -543,7 +562,6 @@ export function createProviderSettingsService(opts: ProviderViewsOptions = {}): 
       }
       writeRevision(raw);
       store.writeRaw(raw);
-      // 密钥不隐式删除（语义偏差登记：ZCode 删 provider 是否清凭据未见上游实现）
       return afterMutation();
     },
     async reorderPersonalProviders(providerIds: readonly string[]): Promise<unknown> {
@@ -571,16 +589,21 @@ export function createProviderSettingsService(opts: ProviderViewsOptions = {}): 
       const entry = requireProvider(raw, providerId);
       if (!ProviderWriteStore.isCoreProviderConfigValid(entry))
         throw new Error('请先填写有效的 Base URL 并保存，再获取模型');
-      const ids = await pullModelIds(
-        {
-          protocol: typeof entry.protocol === 'string' ? entry.protocol : undefined,
-          baseUrl: typeof entry.baseUrl === 'string' ? entry.baseUrl : undefined,
-          apiKey: store.apiKeyFor(providerId),
-        },
-        opts.fetchImpl ?? fetch,
-      );
-      const existing = new Set(Object.keys((entry.models ?? {}) as Record<string, unknown>));
-      return { modelIds: ids, existingIds: [...existing] };
+      try {
+        const ids = await pullModelIds(
+          {
+            protocol: typeof entry.protocol === 'string' ? entry.protocol : undefined,
+            baseUrl: typeof entry.baseUrl === 'string' ? entry.baseUrl : undefined,
+            apiKey: store.apiKeyFor(providerId),
+          },
+          opts.fetchImpl ?? fetch,
+        );
+        const existing = new Set(Object.keys((entry.models ?? {}) as Record<string, unknown>));
+        return { modelIds: ids, existingIds: [...existing] };
+      } catch (e) {
+        // providerViews 层出口统一 redact（ZS5-T5 B①）：pullModelIds 错误消息可能含 baseUrl/密钥形态
+        throw new Error(redactSecrets((e as Error)?.message ?? String(e)));
+      }
     },
     /**
      * 勾选确认后落盘：只把选中的 ID 写入 models（core 扁平空条目 + 目录精确命中富化
