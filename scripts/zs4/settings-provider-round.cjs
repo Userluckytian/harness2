@@ -268,54 +268,19 @@ function findProviderIdByBaseUrl(cfg) {
         `document.querySelector('div[role="dialog"] input') ? document.querySelector('div[role="dialog"] input').value : 'no-input'`,
       );
       console.log('DIALOG_VALUE=' + backfill);
-      // 第二个 input = Context window（numeric；harness2 无内置推荐基线 → 必须手填，
-      // ProviderModelMetadata.ts:130-134 空值即 invalid）
-      await ev(`(() => {
-        const inputs = document.querySelectorAll('div[role="dialog"] input');
-        const inp = inputs[1];
-        if (!inp) return 'missing';
-        const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
-        setter.call(inp, '200000');
-        inp.dispatchEvent(new Event('input', {bubbles:true}));
-        inp.dispatchEvent(new Event('blur', {bubbles:true}));
-        return 'done';
+      // ZS4.5d 验收（用户要求）：只填模型 ID，**不碰任何其他字段**，直接点保存——
+      // 验证宿主基线（DEFAULT_CONTEXT_WINDOW + disabled 档位占位）贯通表单校验。
+      // 先等异步 resolveModelConfig 回填基线，dump 表单自动带出的值作证据。
+      await new Promise((r) => setTimeout(r, 1500));
+      const formDump = await ev(`(() => {
+        const dlg = document.querySelector('div[role="dialog"]');
+        if (!dlg) return 'no-dialog';
+        const inputs = Array.from(dlg.querySelectorAll('input')).map(i => ({ v: i.value, ph: i.placeholder || '' }));
+        const chips = Array.from(dlg.querySelectorAll('[data-model-reasoning-chip]')).map(c => (c.innerText||'').trim());
+        const ta = document.querySelector('[data-model-reasoning-level-map-editor="true"] textarea');
+        return JSON.stringify({ inputs: inputs.slice(0,4), chips, mapPlaceholder: ta ? ta.placeholder : null, mapValue: ta ? ta.value : null });
       })()`);
-      await new Promise((r) => setTimeout(r, 600));
-      // ZCode 智能配置校验（ProviderModelMetadata.ts:148-167）：模型必须有 ≥1 个推理档位
-      // + 可编译的 map 表达式，否则「保存」永远 invalid。harness2 无内置推荐基线 →
-      // 探针按 UI 真实路径手填。Advanced 默认折叠，先点开展开触发器。
-      await ev(
-        "(() => { const b = document.querySelector('[data-model-advanced-trigger=\"true\"]'); if (b) { b.click(); return 'opened'; } return 'no-trigger'; })()",
-      );
-      await new Promise((r) => setTimeout(r, 400));
-      const addLevel = await ev(
-        "(() => { const b = document.querySelector('button[data-model-reasoning-level-add=\"true\"]'); if (b) { b.click(); return 'clicked'; } return 'missing'; })()",
-      );
-      console.log('REASONING_ADD=' + addLevel);
-      await new Promise((r) => setTimeout(r, 400));
-      const levelFilled = await ev(`(() => {
-        const inp = document.querySelector('input[data-model-reasoning-level-input="true"]');
-        if (!inp) return 'missing';
-        const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
-        setter.call(inp, 'low');
-        inp.dispatchEvent(new Event('input', {bubbles:true}));
-        inp.dispatchEvent(new KeyboardEvent('keydown', {key:'Enter', bubbles:true}));
-        return 'done';
-      })()`);
-      console.log('REASONING_LEVEL=' + levelFilled);
-      // map textarea（对话框内唯一 textarea，data-language="json"）
-      const mapFilled = await ev(`(() => {
-        const host = document.querySelector('[data-model-reasoning-level-map-editor="true"]');
-        const ta = host ? host.querySelector('textarea') : document.querySelector('div[role="dialog"] textarea[data-language="json"]');
-        if (!ta) return 'missing';
-        const setter = Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, 'value').set;
-        setter.call(ta, '{"effort": reasoningLevel}');
-        ta.dispatchEvent(new Event('input', {bubbles:true}));
-        ta.dispatchEvent(new Event('blur', {bubbles:true}));
-        return 'done';
-      })()`);
-      console.log('REASONING_MAP=' + mapFilled);
-      await new Promise((r) => setTimeout(r, 600));
+      console.log('FORM_BASELINE=' + formDump);
       // click save button in dialog（variant=default 的「保存」，zh common.save）
       const saved = await ev(
         "(() => { const dlg = document.querySelector('div[role=\"dialog\"]'); const btns = dlg ? Array.from(dlg.querySelectorAll('button')) : []; const b = btns.find(x => /^\\s*(保存|Save)\\s*$/.test(x.textContent||'')); if (b) { b.click(); return 'clicked'; } return 'missing'; })()",

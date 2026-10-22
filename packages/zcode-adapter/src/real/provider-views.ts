@@ -387,10 +387,20 @@ export function createProviderSettingsService(opts: ProviderViewsOptions = {}): 
       const props = inherited.properties as Record<string, unknown> | undefined;
       if (props?.contextWindow === undefined) {
         // ZS4.5c：缺容量 → 注入 core 运行时真实兜底 DEFAULT_CONTEXT_WINDOW（非编造：
-        // 未声明时压缩/用量就按它执行；仅本返回值，不写盘）。档位/最大输出不给默认：
-        // reasoning 给值会让 core 真实发送 reasoning_effort（不支持的模型请求被打回），
-        // maxOutputTokens 智能模式下本就可选——两者无安全通用默认。
+        // 未声明时压缩/用量就按它执行；仅本返回值，不写盘）。
         inherited = { ...inherited, properties: { ...(props ?? {}), contextWindow: DEFAULT_CONTEXT_WINDOW } };
+      }
+      // ZS4.5d：推理档位基线恒非空（UI 提交校验 ProviderModelMetadata.ts:148-167 无条件
+      // 要求 ≥1 档 + 可编译 map，缺则「保存」永远 invalid）。无目录/磁盘推理数据时按
+      // ZCode 自家「无推理模型」惯例 { values: ["disabled"], map: "{}" }（其 facades.test.ts:51
+      // 同源）——语义=没有真实档位、映射注入空对象，与 core「未声明=不发参数」一致；
+      // 智能模式下与草稿投影相等 → 提交不落个人覆盖，磁盘保持干净。有 effort 档位则用真实值。
+      const specs = inherited.optionSpecs as Record<string, unknown> | undefined;
+      if (specs?.reasoningLevel === undefined) {
+        inherited = {
+          ...inherited,
+          optionSpecs: { ...(specs ?? {}), reasoningLevel: { values: ['disabled'], map: '{}' } },
+        };
       }
       const fromPersonal = input.personalConfig && typeof input.personalConfig === 'object';
       const effective = fromPersonal

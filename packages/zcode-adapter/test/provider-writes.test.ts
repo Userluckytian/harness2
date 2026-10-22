@@ -269,8 +269,12 @@ describe('provider 写路径（ZS4-T4）', () => {
     const { DEFAULT_CONTEXT_WINDOW } = await import('../src/real/core-bridge.js');
     expect(DEFAULT_CONTEXT_WINDOW).toBe(128 * 1024); // 钉住与 core compaction 兜底同源
     const r: any = await svc.resolveModelConfig({ providerId: 'alpha', modelId: 'm-a' });
-    // m-a 磁盘是空对象 → 兜底注入（UI 基线=运行时事实，非编造）
-    expect(r.inheritedConfig).toEqual({ properties: { contextWindow: DEFAULT_CONTEXT_WINDOW } });
+    // m-a 磁盘是空对象 → 兜底注入（UI 基线=运行时事实，非编造）；推理档位给
+    // ZCode「无推理」惯例 disabled/{}（否则 UI 保存校验永远 invalid）
+    expect(r.inheritedConfig).toEqual({
+      properties: { contextWindow: DEFAULT_CONTEXT_WINDOW },
+      optionSpecs: { reasoningLevel: { values: ['disabled'], map: '{}' } },
+    });
     expect(r.effectiveConfig.properties.contextWindow).toBe(DEFAULT_CONTEXT_WINDOW);
     expect(r.issues).toEqual([]);
     // 不写盘：config.json 的 m-a 仍空；视图 effectiveConfig 仍空
@@ -283,7 +287,11 @@ describe('provider 写路径（ZS4-T4）', () => {
       modelId: 'm-b2',
       personalConfig: { properties: { contextWindow: 4096 } },
     });
-    expect(r2.effectiveConfig).toEqual({ properties: { contextWindow: 4096 } });
+    // personal 覆盖 contextWindow；inherited 兜底（disabled 档位）保留在合并结果里
+    expect(r2.effectiveConfig).toEqual({
+      properties: { contextWindow: 4096 },
+      optionSpecs: { reasoningLevel: { values: ['disabled'], map: '{}' } },
+    });
     await expect(svc.resolveModelConfig({ providerId: 'nope', modelId: 'x' })).rejects.toThrow(/不存在/);
     rmSync(home, { recursive: true, force: true });
   });
