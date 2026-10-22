@@ -10,13 +10,16 @@ import type { StoredProviderConfig } from './provider-writes.js';
 import { mergePulledModels } from './model-pull.js';
 import {
   catalogEntryToCoreModel,
+  catalogEntryToUiBits,
   enrichModelsFromCatalog,
-  flatCoreModelToUiConfig,
+  extractUiModelBits,
   lookupCatalogEntry,
   lookupCatalogEntryLoose,
   mergeUiModelConfigs,
   peekCatalog,
+  synthesizeUiModelConfig,
   toStoredModelConfig,
+  type UiModelBits,
 } from './model-catalog.js';
 import { Emitter } from '@zcode/rpc';
 import type { IModelSelectionService, IProviderSettingsService } from '@zcode/services';
@@ -224,16 +227,22 @@ export function createProviderSettingsService(opts: ProviderViewsOptions = {}): 
             const entryEnabled = (mv as { enabled?: unknown } | null)?.enabled;
             const mEnabled = typeof entryEnabled === 'boolean' ? entryEnabled : true;
             // ProviderSettingsModelCandidateView（facades.ts:107-120）契约形状。
-            // 磁盘条目是 core 扁平形（contextWindow/maxOutputTokens/reasoning）→
-            // 出站翻译成 UI 嵌套 ModelConfigObject（providerSettingsFormProjection.ts
-            // 按 properties/optionSpecs 读；ZS4.5b：此前直传扁平形 → UI 智能匹配读不到
-            // 基线，模型编辑器永远空必填）。
+            // ZS4.5e：出站合成**全形状**（徽章判据要求 inputFormat 五模态/outputFormat
+            // 恒非空；缺失=每行红字「模型配置不完整」）；用户在对话框编辑的 UI 专属位
+            // （模态勾选/映射表达式）从 `_h2Ui` 命名空间回放 → 保存后内容不再丢。
+            const uiBits = (raw['_h2Ui'] as Record<string, Record<string, UiModelBits>> | undefined)?.[channel]?.[
+              modelId
+            ];
             return {
               kind: 'candidate',
               modelId,
               builtin: false,
               effectiveBuiltinConfig: {},
-              effectiveConfig: flatCoreModelToUiConfig(mv as Record<string, unknown>),
+              effectiveConfig: synthesizeUiModelConfig(
+                mv as Record<string, unknown>,
+                uiBits ?? null,
+                DEFAULT_CONTEXT_WINDOW,
+              ),
               enabled: mEnabled,
               executable,
               selectable: executable && mEnabled,
@@ -266,6 +275,41 @@ export function createProviderSettingsService(opts: ProviderViewsOptions = {}): 
   function writeRevision(raw: Record<string, unknown>): void {
     const prev = typeof raw['_h2Revision'] === 'number' ? (raw['_h2Revision'] as number) : 1;
     raw['_h2Revision'] = prev + 1;
+  }
+
+  /**
+   * `_h2Ui` 命名空间写缝（ZS4.5e）：UI 专属模型位（模态勾选/映射表达式——core
+   * ModelEntry 表达不了、又必须跨保存回放否则「编辑内容丢失」）持久化在 config
+   * 顶层，providers.*.models.* 条目本体保持纯 core 形状（先例=_h2Revision；
+   * core 加载只报一条顶层「未知字段已忽略」告警）。null=删该位。
+   */
+  function setUiModelBits(
+    raw: Record<string, unknown>,
+    providerId: string,
+    modelId: string,
+    bits: UiModelBits | null,
+    merge = false,
+  ): void {
+    const all = (raw['_h2Ui'] ?? {}) as Record<string, Record<string, UiModelBits>>;
+    const per = (all[providerId] ?? {}) as Record<string, UiModelBits>;
+    if (bits === null) delete per[modelId];
+    else if (merge) {
+      const prev = per[modelId] ?? {};
+      per[modelId] = {
+        ...prev,
+        ...bits,
+        ...(bits.inputFormat || prev.inputFormat
+          ? { inputFormat: { ...(prev.inputFormat ?? {}), ...(bits.inputFormat ?? {}) } }
+          : {}),
+        ...(bits.outputFormat || prev.outputFormat
+          ? { outputFormat: { ...(prev.outputFormat ?? {}), ...(bits.outputFormat ?? {}) } }
+          : {}),
+      };
+    } else per[modelId] = bits;
+    if (Object.keys(per).length > 0) all[providerId] = per;
+    else delete all[providerId];
+    if (Object.keys(all).length > 0) raw['_h2Ui'] = all;
+    else delete raw['_h2Ui'];
   }
 
   /**
@@ -326,6 +370,15 @@ export function createProviderSettingsService(opts: ProviderViewsOptions = {}): 
           models2[id] = existing;
           dirty = true;
         }
+        // ZS4.5e：精确命中同时把目录模态/能力 UI 位写 `_h2Ui`（徽章形状持久化；
+        // 用户编辑过的位优先，不覆盖 reasoningMap/已存在的 inputFormat 键）
+        const cat = peekCatalog();
+        const hit = cat ? lookupCatalogEntry(cat, id) : null;
+        const bits = hit ? catalogEntryToUiBits(hit) : null;
+        if (bits) {
+          setUiModelBits(raw2, providerId, id, bits, true);
+          dirty = true;
+        }
       }
       if (!dirty) return;
       target.models = models2;
@@ -345,16 +398,15 @@ export function createProviderSettingsService(opts: ProviderViewsOptions = {}): 
       return buildView();
     },
     /**
-     * 模型配置解析（ZS4-T6 e2e 实证缺口；ZS4.5b 基线真实化；ZS4.5c 容量兜底）。
-     * 添加/编辑模型对话框打开即调用（ProviderCardSections.tsx:401）。
-     * inherited 基线来源（按优先级）：
-     * ① 该 provider 磁盘条目里此模型的扁平配置（翻译嵌套形）——自动拉取富化过的
-     * 真实数据在此；② opencode 公开目录按 ID 精确/前缀命中（对话框正在添加的新模型，
-     * 磁盘还没有）；③ 双落空 → contextWindow 回退 DEFAULT_CONTEXT_WINDOW——这不是
-     * 编造：core 在模型未声明容量时，压缩/用量计算真实就按它执行
-     * （compaction.ts:22 / loop.ts:369），UI 基线=运行时事实；**仅注入本返回值，
-     * 不写盘**（磁盘保持诚实空声明，红线⑩）。maxOutputTokens/reasoning 无通用正确
-     * 默认（未声明=不发参数是 core 语义，给数字反而误导）→ 保持空。
+     * 模型配置解析（ZS4-T6 缺口；ZS4.5b/c/d/e 基线演进）。添加/编辑模型对话框打开
+     * 即调用（ProviderCardSections.tsx:401）。inherited 基线 = `synthesizeUiModelConfig`
+     * （徽章完整判定形），数据源按优先级合并：
+     * ① 磁盘扁平条目（自动拉取富化过的真实数据）；
+     * ② 空壳/无记录 → opencode 目录实时兜底（精确>尾段松配；peek 非阻塞不卡对话框），
+     *    含模态/工具能力 UI 位；
+     * ③ 用户在对话框显式编辑过的 UI 位（`_h2Ui` 回放，最高优先）；
+     * ④ 缺容量 → DEFAULT_CONTEXT_WINDOW（core 运行时真实兜底，仅返回值不写盘）；
+     * ⑤ 无真实推理档位 → ZCode「无推理」惯例 disabled/{}（UI 保存硬校验要求 ≥1 档）。
      * effective=inherited ⊕ personalConfig（用户覆盖优先，UI 草稿预览语义）。
      */
     async resolveModelConfig(input: {
@@ -366,35 +418,39 @@ export function createProviderSettingsService(opts: ProviderViewsOptions = {}): 
       const raw = store.readRaw();
       const entry = requireProvider(raw, input.providerId);
       const models = (entry.models ?? {}) as Record<string, unknown>;
-      const own = models[input.modelId];
-      let inherited: Record<string, unknown> =
-        own && typeof own === 'object' ? flatCoreModelToUiConfig(own as Record<string, unknown>) : {};
-      if (Object.keys(inherited).length === 0) {
-        // 磁盘无配置或空壳（早期仅 ID 拉取）→ 目录兜底：精确优先，尾段松配次之
-        // （loomy/X、buddyhub/cn:X 这类网关别名大概率是同名公共模型；仅 UI 基线，
-        // 落盘富化只用精确——见 model-catalog.ts lookupCatalogEntryLoose 头注）。
-        // peek 非阻塞（读路径不碰网络——目录在保存富化路径已入缓存；冷缓存走下方
-        // DEFAULT_CONTEXT_WINDOW 兜底，用户首次保存供应商后即热）。命中优先精确、
-        // 次之尾段松配：loomy/X、buddyhub/cn:X 这类网关别名大概率是同名公共模型，
-        // 但松配只进 UI 基线；落盘富化仍只用精确（lookupCatalogEntryLoose 头注）。
+      const ownFlat =
+        models[input.modelId] && typeof models[input.modelId] === 'object'
+          ? (models[input.modelId] as Record<string, unknown>)
+          : null;
+      // 磁盘空壳/无记录 → 目录实时兜底（精确 > 尾段松配；peek 非阻塞——保存富化路径
+      // 已把目录入缓存；冷缓存走默认合成形，不拿 6MB 下载卡对话框）
+      let catalogCore: Record<string, unknown> | null = null;
+      let catalogBits: UiModelBits | null = null;
+      const shellEmpty =
+        !ownFlat ||
+        (ownFlat.contextWindow === undefined &&
+          ownFlat.maxOutputTokens === undefined &&
+          ownFlat.reasoning === undefined);
+      if (shellEmpty) {
         const catalog = peekCatalog();
         if (catalog) {
           const hit = lookupCatalogEntry(catalog, input.modelId) ?? lookupCatalogEntryLoose(catalog, input.modelId);
-          const core = hit ? catalogEntryToCoreModel(hit) : null;
-          if (core) inherited = flatCoreModelToUiConfig(core);
+          if (hit) {
+            catalogCore = catalogEntryToCoreModel(hit);
+            catalogBits = catalogEntryToUiBits(hit);
+          }
         }
       }
-      const props = inherited.properties as Record<string, unknown> | undefined;
-      if (props?.contextWindow === undefined) {
-        // ZS4.5c：缺容量 → 注入 core 运行时真实兜底 DEFAULT_CONTEXT_WINDOW（非编造：
-        // 未声明时压缩/用量就按它执行；仅本返回值，不写盘）。
-        inherited = { ...inherited, properties: { ...(props ?? {}), contextWindow: DEFAULT_CONTEXT_WINDOW } };
-      }
-      // ZS4.5d：推理档位基线恒非空（UI 提交校验 ProviderModelMetadata.ts:148-167 无条件
-      // 要求 ≥1 档 + 可编译 map，缺则「保存」永远 invalid）。无目录/磁盘推理数据时按
-      // ZCode 自家「无推理模型」惯例 { values: ["disabled"], map: "{}" }（其 facades.test.ts:51
-      // 同源）——语义=没有真实档位、映射注入空对象，与 core「未声明=不发参数」一致；
-      // 智能模式下与草稿投影相等 → 提交不落个人覆盖，磁盘保持干净。有 effort 档位则用真实值。
+      const effFlat = { ...(catalogCore ?? {}), ...(ownFlat ?? {}) };
+      const savedBits = (raw['_h2Ui'] as Record<string, Record<string, UiModelBits>> | undefined)?.[input.providerId]?.[
+        input.modelId
+      ];
+      const uiBits: UiModelBits = { ...(catalogBits ?? {}), ...(savedBits ?? {}) };
+      let inherited: Record<string, unknown> = synthesizeUiModelConfig(effFlat, uiBits, DEFAULT_CONTEXT_WINDOW);
+      // ZS4.5d：档位基线恒非空（UI 提交校验 ProviderModelMetadata.ts:148-167 无条件
+      // 要求 ≥1 档 + 可编译 map）。无真实推理数据时按 ZCode「无推理模型」惯例
+      // { values:["disabled"], map:"{}" }（其 facades.test.ts:51 同源，非发明）；
+      // 智能模式下与草稿投影相等 → 提交不落个人覆盖，磁盘保持干净。
       const specs = inherited.optionSpecs as Record<string, unknown> | undefined;
       if (specs?.reasoningLevel === undefined) {
         inherited = {
@@ -491,6 +547,15 @@ export function createProviderSettingsService(opts: ProviderViewsOptions = {}): 
       if (raw.providers?.[providerId] === undefined) return afterMutation(); // 纯草稿删除
       const { [providerId]: _removed, ...rest } = raw.providers ?? {};
       raw.providers = rest;
+      // UI 位分片一并回收（ZS4.5e）
+      {
+        const allUi = raw['_h2Ui'] as Record<string, unknown> | undefined;
+        if (allUi && providerId in allUi) {
+          const { [providerId]: _drop, ...restUi } = allUi;
+          if (Object.keys(restUi).length > 0) raw['_h2Ui'] = restUi;
+          else delete raw['_h2Ui'];
+        }
+      }
       writeRevision(raw);
       store.writeRaw(raw);
       // 密钥不隐式删除（语义偏差登记：ZCode 删 provider 是否清凭据未见上游实现）
@@ -520,9 +585,11 @@ export function createProviderSettingsService(opts: ProviderViewsOptions = {}): 
         throw new Error(`模型已存在: ${redactSecrets(modelId)}`);
       }
       // UI 添加对话框回传嵌套形（{properties,optionSpecs}）→ 磁盘恒 core 扁平形
-      // （ZS4.5b：直存嵌套会污染 schema 未知键 + 破坏扁平读路径）
+      // （ZS4.5b：直存嵌套会污染 schema 未知键 + 破坏扁平读路径）；
+      // core 表达不了的 UI 位（模态/映射表达式）进 `_h2Ui` 回放（ZS4.5e）
       models[modelId] = { enabled: true, ...toStoredModelConfig(config) };
       entry.models = models;
+      setUiModelBits(raw, providerId, modelId, extractUiModelBits(config));
       writeRevision(raw);
       store.writeRaw(raw);
       return afterMutation();
@@ -539,6 +606,16 @@ export function createProviderSettingsService(opts: ProviderViewsOptions = {}): 
         throw new Error(`模型已存在: ${redactSecrets(nextModelId)}`);
       }
       entry.models = replaceKeyPreserveOrder(models, currentModelId, nextModelId, models[currentModelId]);
+      // UI 位随键迁移（ZS4.5e）
+      {
+        const carry = ((raw['_h2Ui'] ?? {}) as Record<string, Record<string, UiModelBits>>)[providerId]?.[
+          currentModelId
+        ];
+        if (carry) {
+          setUiModelBits(raw, providerId, currentModelId, null);
+          setUiModelBits(raw, providerId, nextModelId, carry);
+        }
+      }
       writeRevision(raw);
       store.writeRaw(raw);
       return afterMutation();
@@ -552,6 +629,7 @@ export function createProviderSettingsService(opts: ProviderViewsOptions = {}): 
       }
       const { [modelId]: _removed, ...rest } = models;
       entry.models = rest;
+      setUiModelBits(raw, providerId, modelId, null); // UI 位一并回收（ZS4.5e）
       writeRevision(raw);
       store.writeRaw(raw);
       return afterMutation();
@@ -592,6 +670,16 @@ export function createProviderSettingsService(opts: ProviderViewsOptions = {}): 
         if (/api[_-]?key/i.test(key)) delete merged[key];
       }
       entry.models = replaceKeyPreserveOrder(models, input.originalModelId, input.nextModelId, merged);
+      // UI 位随键迁移 + 增量合并（ZS4.5e：编辑保存后模态/映射不丢；UI 只回传显式
+      // 覆盖项——null 位不得清掉携带值，故 merge=true 且仅在有位时调用）
+      {
+        const allUi = (raw['_h2Ui'] ?? {}) as Record<string, Record<string, UiModelBits>>;
+        const carry = allUi[input.providerId]?.[input.originalModelId];
+        if (input.originalModelId !== input.nextModelId && carry)
+          setUiModelBits(raw, input.providerId, input.nextModelId, carry);
+      }
+      const newBits = extractUiModelBits(input.personalConfig);
+      if (newBits) setUiModelBits(raw, input.providerId, input.nextModelId, newBits, true);
       writeRevision(raw);
       store.writeRaw(raw);
       return afterMutation();

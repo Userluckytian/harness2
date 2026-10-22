@@ -269,29 +269,85 @@ describe('provider 写路径（ZS4-T4）', () => {
     const { DEFAULT_CONTEXT_WINDOW } = await import('../src/real/core-bridge.js');
     expect(DEFAULT_CONTEXT_WINDOW).toBe(128 * 1024); // 钉住与 core compaction 兜底同源
     const r: any = await svc.resolveModelConfig({ providerId: 'alpha', modelId: 'm-a' });
-    // m-a 磁盘是空对象 → 兜底注入（UI 基线=运行时事实，非编造）；推理档位给
-    // ZCode「无推理」惯例 disabled/{}（否则 UI 保存校验永远 invalid）
+    // m-a 磁盘空对象 → ZS4.5e 合成全形状：徽章判据字段恒非空（inputFormat 五模态/
+    // outputFormat）+ 容量回退 DEFAULT_CONTEXT_WINDOW + disabled 档位占位。
     expect(r.inheritedConfig).toEqual({
-      properties: { contextWindow: DEFAULT_CONTEXT_WINDOW },
+      properties: {
+        contextWindow: DEFAULT_CONTEXT_WINDOW,
+        inputFormat: {
+          supportsText: true,
+          supportsImage: false,
+          supportsVideo: false,
+          supportsAudio: false,
+          supportsPdf: false,
+        },
+        outputFormat: { supportsText: true },
+      },
       optionSpecs: { reasoningLevel: { values: ['disabled'], map: '{}' } },
     });
-    expect(r.effectiveConfig.properties.contextWindow).toBe(DEFAULT_CONTEXT_WINDOW);
+    // 徽章完整性谓词（ProviderCardSections.tsx:502-509 同款）必须为真
+    const p = r.inheritedConfig.properties;
+    const complete =
+      p.contextWindow != null &&
+      p.inputFormat.supportsText != null &&
+      p.inputFormat.supportsImage != null &&
+      p.inputFormat.supportsVideo != null &&
+      p.inputFormat.supportsAudio != null &&
+      p.inputFormat.supportsPdf != null &&
+      p.outputFormat.supportsText != null;
+    expect(complete).toBe(true);
     expect(r.issues).toEqual([]);
-    // 不写盘：config.json 的 m-a 仍空；视图 effectiveConfig 仍空
+    // 不写盘：config.json 的 m-a 仍空；视图出站=ZS4.5e 合成完整形（徽章判据全字段，
+    // contextWindow 回退 DEFAULT——行上不再挂「模型配置不完整」）
     expect(readConfig(home).providers.alpha.models['m-a']).toEqual({});
     const view: any = await svc.getView();
     const ma = view.providers.find((p: any) => p.providerId === 'alpha').models.find((m: any) => m.modelId === 'm-a');
-    expect(ma.effectiveConfig).toEqual({});
+    expect(ma.effectiveConfig.properties.inputFormat.supportsText).toBe(true);
+    expect(ma.effectiveConfig.properties.contextWindow).toBe(DEFAULT_CONTEXT_WINDOW);
     const r2: any = await svc.resolveModelConfig({
       providerId: 'beta',
-      modelId: 'm-b2',
+      modelId: 'm-b',
       personalConfig: { properties: { contextWindow: 4096 } },
     });
-    // personal 覆盖 contextWindow；inherited 兜底（disabled 档位）保留在合并结果里
+    // personal 覆盖 contextWindow；inherited 合成全形状（徽章字段+disabled 占位）保留
     expect(r2.effectiveConfig).toEqual({
-      properties: { contextWindow: 4096 },
+      properties: {
+        contextWindow: 4096,
+        inputFormat: {
+          supportsText: true,
+          supportsImage: false,
+          supportsVideo: false,
+          supportsAudio: false,
+          supportsPdf: false,
+        },
+        outputFormat: { supportsText: true },
+      },
       optionSpecs: { reasoningLevel: { values: ['disabled'], map: '{}' } },
     });
+    // 编辑保存→内容回放（ZS4.5e bug② 回归钉）：用户显式模态勾选+映射表达式落 `_h2Ui`，
+    // 视图出站与对话框基线都回放出来；core 扁平键（contextWindow）走磁盘正路。
+    const edited = {
+      properties: { contextWindow: 200000, inputFormat: { supportsText: true, supportsImage: true } },
+      optionSpecs: { reasoningLevel: { values: ['low', 'high'], map: '{"thinking": true}' } },
+    };
+    const rev: any = await svc.getView();
+    await svc.savePersonalModelDraft({
+      providerId: 'beta',
+      originalModelId: 'm-b',
+      nextModelId: 'm-b',
+      personalConfig: edited,
+      basedOnRevision: rev.revision,
+    });
+    const cfgB = readConfig(home).providers.beta.models['m-b'];
+    expect(cfgB.contextWindow).toBe(200000); // core 扁平键落盘
+    expect('inputFormat' in cfgB).toBe(false); // UI 专属不进 core 条目（零告警纪律）
+    const viewB: any = await svc.getView();
+    const rowB = viewB.providers.find((p: any) => p.providerId === 'beta').models.find((m: any) => m.modelId === 'm-b');
+    expect(rowB.effectiveConfig.properties.inputFormat.supportsImage).toBe(true); // 勾选回放
+    expect(rowB.effectiveConfig.optionSpecs.reasoningLevel.values).toEqual(['low', 'high']);
+    expect(rowB.effectiveConfig.optionSpecs.reasoningLevel.map).toBe('{"thinking": true}'); // 映射回放
+    const r4: any = await svc.resolveModelConfig({ providerId: 'beta', modelId: 'm-b' });
+    expect(r4.inheritedConfig.properties.inputFormat.supportsImage).toBe(true);
     await expect(svc.resolveModelConfig({ providerId: 'nope', modelId: 'x' })).rejects.toThrow(/不存在/);
     rmSync(home, { recursive: true, force: true });
   });

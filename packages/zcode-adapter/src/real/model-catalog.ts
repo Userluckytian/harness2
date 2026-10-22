@@ -141,6 +141,94 @@ export function lookupCatalogEntryLoose(catalog: CatalogMap, modelId: string): C
 export const UI_REASONING_MAP = '{"reasoning_effort": reasoningLevel}';
 
 /**
+ * UI 专属模型位（core ModelEntry 表达不了的字段）：模态勾选、输出格式、能力开关、
+ * 用户自定义档位映射表达式。持久化于 config.json 顶层 `_h2Ui[provider][model]`
+ * （先例：`_h2Revision`——core 加载仅一条「未知字段已忽略」告警；providers.*.models.*
+ * 条目本体保持纯 core 形状，零新增告警）。
+ */
+export interface UiModelBits {
+  inputFormat?: {
+    supportsText?: boolean;
+    supportsImage?: boolean;
+    supportsVideo?: boolean;
+    supportsAudio?: boolean;
+    supportsPdf?: boolean;
+  };
+  outputFormat?: { supportsText?: boolean };
+  supportsToolCall?: boolean;
+  supportsJsonSchemaOutput?: boolean;
+  supportsNativeWebSearch?: boolean;
+  supportsMidConversationSystem?: boolean;
+  /** 用户在对话框改过的档位映射表达式（缺省=UI_REASONING_MAP 派生） */
+  reasoningMap?: string;
+}
+
+/** 目录条目的模态/能力 → UI 位（只收真实存在的键）。 */
+export function catalogEntryToUiBits(entry: CatalogModelEntry): UiModelBits | null {
+  const bits: UiModelBits = {};
+  const e = entry as Record<string, unknown>;
+  const modalities = e.modalities as { input?: unknown; output?: unknown } | undefined;
+  if (Array.isArray(modalities?.input)) {
+    const set = new Set(
+      modalities!.input.filter((v): v is string => typeof v === 'string').map((v) => v.toLowerCase()),
+    );
+    bits.inputFormat = {
+      supportsText: set.has('text'),
+      supportsImage: set.has('image'),
+      supportsVideo: set.has('video'),
+      supportsAudio: set.has('audio'),
+      supportsPdf: set.has('pdf'),
+    };
+  }
+  if (Array.isArray(modalities?.output)) {
+    const set = new Set(
+      modalities!.output.filter((v): v is string => typeof v === 'string').map((v) => v.toLowerCase()),
+    );
+    bits.outputFormat = { supportsText: set.has('text') };
+  }
+  if (typeof e.tool_call === 'boolean') bits.supportsToolCall = e.tool_call;
+  if (typeof e.structured_output === 'boolean') bits.supportsJsonSchemaOutput = e.structured_output;
+  return Object.keys(bits).length > 0 ? bits : null;
+}
+
+/**
+ * UI 嵌套模型配置 → 抽取 UI 位（保存回传时调用；core 键由 toStoredModelConfig 另行处理）。
+ */
+export function extractUiModelBits(config: unknown): UiModelBits | null {
+  if (!config || typeof config !== 'object' || Array.isArray(config)) return null;
+  const c = config as Record<string, unknown>;
+  const props = c.properties as Record<string, unknown> | undefined;
+  const specs = c.optionSpecs as Record<string, unknown> | undefined;
+  const bits: UiModelBits = {};
+  if (props?.inputFormat && typeof props.inputFormat === 'object') {
+    const f = props.inputFormat as Record<string, unknown>;
+    const pick = (k: string) => (typeof f[k] === 'boolean' ? (f[k] as boolean) : undefined);
+    bits.inputFormat = {
+      supportsText: pick('supportsText'),
+      supportsImage: pick('supportsImage'),
+      supportsVideo: pick('supportsVideo'),
+      supportsAudio: pick('supportsAudio'),
+      supportsPdf: pick('supportsPdf'),
+    };
+  }
+  if (props?.outputFormat && typeof props.outputFormat === 'object') {
+    const o = props.outputFormat as Record<string, unknown>;
+    if (typeof o.supportsText === 'boolean') bits.outputFormat = { supportsText: o.supportsText };
+  }
+  for (const key of [
+    'supportsToolCall',
+    'supportsJsonSchemaOutput',
+    'supportsNativeWebSearch',
+    'supportsMidConversationSystem',
+  ] as const) {
+    if (typeof props?.[key] === 'boolean') bits[key] = props[key] as boolean;
+  }
+  const level = specs?.reasoningLevel as { map?: unknown } | undefined;
+  if (typeof level?.map === 'string' && level.map.trim() !== '') bits.reasoningMap = level.map.trim();
+  return Object.keys(bits).length > 0 ? bits : null;
+}
+
+/**
  * core 扁平模型条目 → ZCode UI 嵌套 ModelConfigObject
  * （scratch UI 投影按 properties/optionSpecs 读取：providerSettingsFormProjection.ts:25/33、
  * useProviderModelDraft.ts:24、ProviderModelDraftState.ts:24）。只映射真实存在的键。
@@ -182,9 +270,67 @@ export function toStoredModelConfig(config: unknown): Record<string, unknown> {
   if (typeof maxTok === 'number' && maxTok > 0) out.maxOutputTokens = maxTok;
   const level = specs?.reasoningLevel as { values?: unknown } | undefined;
   if (Array.isArray(level?.values)) {
-    const values = level.values.filter((v): v is string => typeof v === 'string' && v.trim() !== '');
+    const seen = new Set<string>();
+    const values: string[] = [];
+    for (const v of level.values) {
+      if (typeof v === 'string' && v.trim() !== '' && !seen.has(v)) {
+        seen.add(v);
+        values.push(v);
+      }
+    }
     if (values.length > 0) out.reasoning = { values };
   }
+  return out;
+}
+
+/**
+ * 视图出站合成（ZS4.5e，修「模型配置不完整」徽章 + 编辑内容丢失）：
+ * core 扁平条目 + `_h2Ui` 用户位 → 行徽章完整判定所需的**全形状** ModelConfigObject：
+ * - properties.inputFormat 五模态恒非空（保守协议事实默认=文本进其余关；有 _h2Ui
+ *   或目录真实值则用之——与 ZCode createEmptyModel「能力控件用保守初值」同规则）；
+ * - properties.outputFormat.supportsText 恒 true（文本生成模型协议事实）；
+ * - contextWindow：磁盘值 > 缺省注入 DEFAULT_CONTEXT_WINDOW（UI 显示=core 运行时事实，
+ *   与 resolveModelConfig 基线同源；不写盘）；
+ * - optionSpecs：有数据才给（reasoningLevel.map 用户覆盖优先于派生默认）。
+ */
+export function synthesizeUiModelConfig(
+  flat: Record<string, unknown> | null | undefined,
+  uiBits: UiModelBits | null | undefined,
+  defaultContextWindow: number,
+): Record<string, unknown> {
+  const inputFormat = {
+    supportsText: uiBits?.inputFormat?.supportsText ?? true,
+    supportsImage: uiBits?.inputFormat?.supportsImage ?? false,
+    supportsVideo: uiBits?.inputFormat?.supportsVideo ?? false,
+    supportsAudio: uiBits?.inputFormat?.supportsAudio ?? false,
+    supportsPdf: uiBits?.inputFormat?.supportsPdf ?? false,
+  };
+  const properties: Record<string, unknown> = {
+    contextWindow:
+      typeof flat?.contextWindow === 'number' && flat.contextWindow > 0 ? flat.contextWindow : defaultContextWindow,
+    inputFormat,
+    outputFormat: { supportsText: uiBits?.outputFormat?.supportsText ?? true },
+  };
+  for (const key of [
+    'supportsToolCall',
+    'supportsJsonSchemaOutput',
+    'supportsNativeWebSearch',
+    'supportsMidConversationSystem',
+  ] as const) {
+    if (uiBits?.[key] !== undefined) properties[key] = uiBits[key];
+  }
+  const optionSpecs: Record<string, unknown> = {};
+  if (typeof flat?.maxOutputTokens === 'number' && flat.maxOutputTokens > 0)
+    optionSpecs.maxOutputTokens = { max: flat.maxOutputTokens };
+  const reasoning = flat?.reasoning as { values?: unknown } | undefined;
+  if (Array.isArray(reasoning?.values) && reasoning.values.length > 0) {
+    optionSpecs.reasoningLevel = {
+      values: reasoning.values.filter((v): v is string => typeof v === 'string' && v !== ''),
+      map: uiBits?.reasoningMap ?? UI_REASONING_MAP,
+    };
+  }
+  const out: Record<string, unknown> = { properties };
+  if (Object.keys(optionSpecs).length > 0) out.optionSpecs = optionSpecs;
   return out;
 }
 
