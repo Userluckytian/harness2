@@ -12,16 +12,15 @@ const os = require('os');
 const SHOT = 'D:/AI_Projects/harness2/docs/screenshots/zs4/settings-provider-round.png';
 const HOME = process.env.HARNESS2_HOME || os.homedir();
 const SECRET = 'sk-probe-secret-123';
-// ZS4.5f：模型列表来自本探针自带的 mock server——保存时 allowModels=false（404 →
-// 自动拉取静默失败，模型区保持只有所需证据）；点「获取模型」前置 true，让显式
-// discoverModels 拿到全量列表。这样 fetch+勾选路径与自动回填路径可分辨。
+// ZS4.5f/4.5g：模型列表来自本探针自带的 mock server，且**总是**返回全量 4 ID——
+// ZS4.5g 契约=保存路径绝不回填列表（旧 ZS4.5 自动拉取已移除），新增唯一入口=
+// 「获取模型」勾选/手填。保存后立即断言 models 为空（回归=全量悄悄入库）。
 const MODEL_SERVER_PORT = 9317;
 const BASE_URL = `http://127.0.0.1:${MODEL_SERVER_PORT}/v1`;
 const CONFIG_PATH = path.join(HOME, '.harness2', 'config.json');
 const AUTH_PATH = path.join(HOME, '.harness2', 'auth.json');
-let mockAllowModels = false;
 const mockServer = http.createServer((req, res) => {
-  if (mockAllowModels && /^\/v1\/models(\?|$)/.test(req.url || '')) {
+  if (/^\/v1\/models(\?|$)/.test(req.url || '')) {
     res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
     res.end(
       JSON.stringify({
@@ -244,6 +243,18 @@ function findProviderIdByBaseUrl(cfg) {
         console.error('SAVE NOT PERSISTED');
         process.exit(6);
       }
+      // ZS4.5g：列表端点全程可用，但**保存绝不回填**——等 1s 后 models 必须仍为空
+      await new Promise((r) => setTimeout(r, 1200));
+      {
+        const cfg2 = readJsonSafe(CONFIG_PATH);
+        const saved = cfg2 && cfg2.providers && cfg2.providers[providerId];
+        const keys = saved && saved.models ? Object.keys(saved.models) : [];
+        console.log('SAVE_NO_BACKFILL=' + (keys.length === 0) + ' KEYS=' + JSON.stringify(keys));
+        if (keys.length !== 0) {
+          console.error('ZS4.5g REGRESSION: provider save auto-backfilled models');
+          process.exit(10);
+        }
+      }
 
       // secret leakage check in config
       const cfgText = fs.existsSync(CONFIG_PATH) ? fs.readFileSync(CONFIG_PATH, 'utf8') : '';
@@ -331,8 +342,6 @@ function findProviderIdByBaseUrl(cfg) {
       }
 
       // ── ZS4.5f：获取模型 → 勾选 → 添加所选（用户点名流程：100+ 模型只加勾选的） ──
-      // mock server 此刻翻牌 200（模型列表 = probe-model 已存在 + alpha/beta/gamma 三个新）
-      mockAllowModels = true;
       const fetchBtn = await ev(
         "(() => { const b = document.querySelector('[data-testid=\"model-provider-fetch-models-button\"]'); if (b) { b.click(); return 'clicked'; } return 'missing'; })()",
       );
@@ -425,7 +434,6 @@ function findProviderIdByBaseUrl(cfg) {
       // 弹窗应已自动关闭
       const fetchDlgGone = await ev('!document.querySelector(\'[data-testid="model-provider-fetch-dialog"]\')');
       console.log('FETCH_DIALOG_CLOSED=' + fetchDlgGone);
-      mockAllowModels = false;
 
       // test connectivity
       let testClicked = false;

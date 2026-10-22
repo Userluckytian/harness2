@@ -173,7 +173,7 @@ describe('lookupCatalogEntryLoose（ZS4.5c 尾段松配：仅 UI 基线层）', 
   });
 });
 
-describe('拉取富化集成：空 provider 保存 → 新增带真实配置 + 既有空壳补富化', () => {
+describe('富化集成（ZS4.5g 语义：新增只走显式勾选；保存只补既有空壳）', () => {
   function makeHome(): string {
     const home = mkdtempSync(join(tmpdir(), 'h2-cat-'));
     mkdirSync(join(home, '.harness2'), { recursive: true });
@@ -182,15 +182,17 @@ describe('拉取富化集成：空 provider 保存 → 新增带真实配置 + �
   }
   const readCfg = (home: string) => JSON.parse(readFileSync(join(home, '.harness2', 'config.json'), 'utf8'));
   const SECRET = 'sk-cat-test';
+  // 渠道 /models 永远回全量列表；任何「保存后列表自己变多」的回归都会在这里炸
+  const gwList: unknown = { data: [{ id: 'big-pickle' }, { id: 'space-bunny' }] };
 
-  it('保存合法 provider → /models 两 ID → 目录命中 big-pickle：磁盘条目带 contextWindow/reasoning', async () => {
+  it('合法保存不新增模型；勾选 addDiscoveredModels → 目录命中 big-pickle：磁盘条目带 contextWindow/reasoning', async () => {
     const home = makeHome();
     resetCatalogCacheForTests();
     const svc: any = createProviderSettingsService({
       home,
       fetchImpl: (async (url: any) => {
         if (String(url).includes('models.opencode.ai')) return { ok: true, status: 200, json: async () => CATALOG };
-        return { ok: true, status: 200, json: async () => ({ data: [{ id: 'big-pickle' }, { id: 'space-bunny' }] }) };
+        return { ok: true, status: 200, json: async () => gwList };
       }) as unknown as typeof fetch,
     });
     const created = await svc.createPersonalProvider({ providerName: 'cat' });
@@ -199,11 +201,12 @@ describe('拉取富化集成：空 provider 保存 → 新增带真实配置 + �
       api: { type: 'openai-chat-completions', baseUrl: 'https://gw.example/v1' },
       access: { type: 'api-key', apiKey: SECRET },
     });
-    for (let i = 0; i < 60; i++) {
-      const ms = readCfg(home).providers?.[pid]?.models ?? {};
-      if (ms['big-pickle']?.contextWindow !== undefined && Object.keys(ms).length === 2) break;
+    await new Promise((r) => setTimeout(r, 300)); // 旧语义=此处会悄悄回填两 ID（ZS4.5g 禁止）
+    expect(Object.keys(readCfg(home).providers[pid].models ?? {})).toEqual([]);
+    // 显式勾选入口才新增；勾选两个 → 带真实配置落盘
+    await svc.addDiscoveredModels(pid, ['big-pickle', 'space-bunny']);
+    for (let i = 0; i < 60 && readCfg(home).providers[pid].models['big-pickle']?.contextWindow === undefined; i++)
       await new Promise((r) => setTimeout(r, 50));
-    }
     const models = readCfg(home).providers[pid].models;
     expect(Object.keys(models)).toEqual(['big-pickle', 'space-bunny']);
     expect(models['big-pickle']).toMatchObject({ contextWindow: 200000, maxOutputTokens: 8192 });
@@ -212,32 +215,48 @@ describe('拉取富化集成：空 provider 保存 → 新增带真实配置 + �
     rmSync(home, { recursive: true, force: true });
   });
 
-  it('二次保存（added=0）仍补富化既有空壳；已富化不重复写（revision 不动）', async () => {
-    const home = makeHome();
+  it('保存路径富化磁盘既有空壳（目录命中填属性）；已富化后再保存不重复 bump', async () => {
+    const home = mkdtempSync(join(tmpdir(), 'h2-cat2-'));
+    mkdirSync(join(home, '.harness2'), { recursive: true });
+    // 种子=旧 ZS4.5 时代仅-ID 空壳产物（合法 provider）
+    writeFileSync(
+      join(home, '.harness2', 'config.json'),
+      JSON.stringify({
+        providers: {
+          legacy: {
+            protocol: 'openai',
+            baseUrl: 'https://gw.example/v1',
+            models: { 'big-pickle': { enabled: true } },
+            enabled: true,
+          },
+        },
+        roles: {},
+      }),
+    );
     resetCatalogCacheForTests();
     const svc: any = createProviderSettingsService({
       home,
       fetchImpl: (async (url: any) => {
         if (String(url).includes('models.opencode.ai')) return { ok: true, status: 200, json: async () => CATALOG };
-        return { ok: true, status: 200, json: async () => ({ data: [{ id: 'big-pickle' }] }) };
+        return { ok: true, status: 200, json: async () => gwList };
       }) as unknown as typeof fetch,
     });
-    const created = await svc.createPersonalProvider({});
-    const pid = created.providerId;
-    const overlay = {
+    await svc.savePersonalProviderOverlay('legacy', {
       api: { type: 'openai-chat-completions', baseUrl: 'https://gw.example/v1' },
       access: { type: 'api-key', apiKey: SECRET },
-    };
-    await svc.savePersonalProviderOverlay(pid, overlay);
-    for (let i = 0; i < 60 && readCfg(home).providers?.[pid]?.models?.['big-pickle']?.contextWindow === undefined; i++)
+    });
+    for (let i = 0; i < 60 && readCfg(home).providers.legacy.models['big-pickle']?.contextWindow === undefined; i++)
       await new Promise((r) => setTimeout(r, 50));
-    const revAfterFirst = readCfg(home)._h2Revision;
-    // 再保存一次：/models 无新增（已在磁盘），目录命中但键已存在 → 不得无谓 bump
-    await svc.savePersonalProviderOverlay(pid, overlay);
+    expect(readCfg(home).providers.legacy.models['big-pickle'].contextWindow).toBe(200000); // 空壳补全
+    expect(Object.keys(readCfg(home).providers.legacy.models)).toEqual(['big-pickle']); // 渠道列表不回填 space-bunny
+    const revAfter = readCfg(home)._h2Revision;
+    await svc.savePersonalProviderOverlay('legacy', {
+      api: { type: 'openai-chat-completions', baseUrl: 'https://gw.example/v1' },
+      access: { type: 'api-key', apiKey: SECRET },
+    });
     await new Promise((r) => setTimeout(r, 400));
-    expect(readCfg(home).providers[pid].models['big-pickle'].contextWindow).toBe(200000);
-    // 第二次保存自身 bump 一次（合法写），富化不得再 bump 第二次 → 总增量 ≤2
-    expect(readCfg(home)._h2Revision).toBeLessThanOrEqual(revAfterFirst + 2);
+    // 再保存=保存自身 bump 1 次；富化零变化不得再 bump
+    expect(readCfg(home)._h2Revision).toBeLessThanOrEqual(revAfter + 1);
     rmSync(home, { recursive: true, force: true });
   });
 });

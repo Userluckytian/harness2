@@ -142,7 +142,7 @@ describe('mergePulledModels（就地合并 + 密钥只在头 + 静默失败）',
   });
 });
 
-describe('服务集成：合法保存后后台回填 + 二次广播', () => {
+describe('服务集成：合法保存后 ZS4.5g 语义（不新增模型，只富化空壳）', () => {
   function makeHome(): string {
     const home = mkdtempSync(join(tmpdir(), 'h2-pull-'));
     mkdirSync(join(home, '.harness2'), { recursive: true });
@@ -151,20 +151,19 @@ describe('服务集成：合法保存后后台回填 + 二次广播', () => {
   }
   const readCfg = (home: string) => JSON.parse(readFileSync(join(home, '.harness2', 'config.json'), 'utf8'));
 
-  it('savePersonalProviderOverlay 合法落盘 → 拉取 → config.models 回填 + onDidChange 第二播', async () => {
+  it('ZS4.5g：合法保存**不再拉渠道列表**（新增唯一入口=勾选/手填）；无模型=零后台网络零新播', async () => {
     const home = makeHome();
+    resetCatalogCacheForTests();
     let pulls = 0;
     const svc: any = createProviderSettingsService({
       home,
       fetchImpl: fakeFetch(async (url) => {
         if (String(url).includes('api.x.com')) pulls++; // 渠道列表请求
-        // opencode 目录请求（ZS4.5b 富化）：回 {} = 无命中 → 模型保持空壳（本测试不验富化）
         return { ok: true, status: 200, json: async () => ({ data: [{ id: 'auto-1' }, { id: 'auto-2' }] }) };
       }),
     });
     const seen: any[] = [];
     svc.onDidChange((v: any) => seen.push(v));
-    // 真实 UI 流：先建卡（空 baseUrl 草稿）→ 表单填完 overlay 保存
     const created = await svc.createPersonalProvider({ providerName: 'x' });
     const pid = created.providerId;
     await svc.savePersonalProviderOverlay(pid, {
@@ -172,18 +171,62 @@ describe('服务集成：合法保存后后台回填 + 二次广播', () => {
       access: { type: 'api-key', apiKey: SECRET },
       group: 'standard-personal',
     });
-    // fire-and-forget：轮询等待后台完成（上限 2s）
-    for (let i = 0; i < 40 && readCfg(home).providers?.[pid] === undefined; i++)
-      await new Promise((r) => setTimeout(r, 50));
-    for (let i = 0; i < 40 && Object.keys(readCfg(home).providers[pid].models || {}).length === 0; i++)
-      await new Promise((r) => setTimeout(r, 50));
-    expect(pulls).toBe(1);
+    await new Promise((r) => setTimeout(r, 400)); // 给任何后台任务充分机会
+    expect(pulls).toBe(0); // 保存绝不碰渠道 /models（旧 ZS4.5 全量回填已移除）
     const cfg = readCfg(home);
-    expect(Object.keys(cfg.providers[pid].models)).toEqual(['auto-1', 'auto-2']);
+    expect(Object.keys(cfg.providers[pid].models)).toEqual([]); // 磁盘模型零新增
     expect(JSON.stringify(cfg)).not.toContain(SECRET);
-    // 拉取回填后最后一次广播的视图应含新模型
-    const last = seen[seen.length - 1].providers.find((p: any) => p.providerId === pid);
-    expect(last.models.map((m: any) => m.modelId)).toEqual(['auto-1', 'auto-2']);
+    expect(seen.length).toBe(2); // 建卡一播+保存一播，无回填二播
+    rmSync(home, { recursive: true, force: true });
+  });
+
+  it('ZS4.5g：保存只富化既有空壳（目录命中填属性），仍绝不新增模型键', async () => {
+    // 种子=旧 ZS4.5 时代产物：provider 已合法 + models 里躺一个仅-ID 空壳
+    const home = mkdtempSync(join(tmpdir(), 'h2-pull2-'));
+    resetCatalogCacheForTests();
+    mkdirSync(join(home, '.harness2'), { recursive: true });
+    writeFileSync(
+      join(home, '.harness2', 'config.json'),
+      JSON.stringify({
+        providers: {
+          legacy: {
+            protocol: 'openai',
+            baseUrl: 'https://gw.example/v1',
+            models: { 'shell-1': { enabled: true } },
+            enabled: true,
+          },
+        },
+        roles: {},
+      }),
+    );
+    const svc: any = createProviderSettingsService({
+      home,
+      fetchImpl: fakeFetch(async (url) => {
+        if (String(url).includes('models.opencode.ai'))
+          return {
+            ok: true,
+            status: 200,
+            json: async () => ({
+              gw: { models: { 'shell-1': { id: 'shell-1', limit: { context: 64000, output: 4000 } } } },
+            }),
+          };
+        return { ok: true, status: 200, json: async () => ({ data: [{ id: 'never-added' }] }) };
+      }),
+    });
+    const seen: any[] = [];
+    svc.onDidChange((v: any) => seen.push(v));
+    await svc.savePersonalProviderOverlay('legacy', {
+      api: { type: 'openai-chat-completions', baseUrl: 'https://gw.example/v1' },
+      access: { type: 'api-key', apiKey: SECRET },
+      group: 'standard-personal',
+    });
+    // 轮询等后台富化（上限 2s）
+    for (let i = 0; i < 40 && readCfg(home).providers.legacy.models['shell-1'].contextWindow === undefined; i++)
+      await new Promise((r) => setTimeout(r, 50));
+    const m = readCfg(home).providers.legacy.models;
+    expect(m['shell-1'].contextWindow).toBe(64000); // 空壳被目录补全（core 扁平键）
+    expect(Object.keys(m)).toEqual(['shell-1']); // 键集不变：渠道列表绝不回填
+    expect(Object.keys(m)).not.toContain('never-added');
     rmSync(home, { recursive: true, force: true });
   });
 

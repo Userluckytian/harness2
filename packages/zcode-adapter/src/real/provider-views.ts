@@ -7,7 +7,7 @@ import {
   toUiProviderConfig,
 } from './provider-writes.js';
 import type { StoredProviderConfig } from './provider-writes.js';
-import { mergePulledModels, pullModelIds } from './model-pull.js';
+import { pullModelIds } from './model-pull.js';
 import {
   catalogEntryToCoreModel,
   catalogEntryToUiBits,
@@ -313,50 +313,35 @@ export function createProviderSettingsService(opts: ProviderViewsOptions = {}): 
   }
 
   /**
-   * ZS4.5/4.5b：provider 合法保存后的后台模型拉取+目录富化（fire-and-forget，绝不 throw）。
-   * ① mergePulledModels 拿渠道 /models 新增 ID（内存 entry 已含）；
-   * ② 富化候选=新增 ID ∪ 既有「空壳」条目（无 contextWindow/maxOutputTokens/reasoning——
-   *    早期仅 ID 拉取的产物；重保存时 added=0 也要补，故候选判断独立于 added）；
-   * ③ opencode 公开目录命中则填 core 扁平键（只补缺失键，用户手工值不覆盖）；
-   * ④ 有任何实际变化才落盘 + afterMutation 广播（UI 经 onDidChange 吸收）。
-   * 目录失败/无命中 → 新增 ID 落空条目（退化为 ZS4.5 初版），静默。
+   * ZS4.5g（用户反馈修正）：provider 合法保存后的后台**只做目录富化，绝不新增模型**。
+   * 旧 ZS4.5 行为=保存即拉渠道 /models 全量回填——与 ZS4.5f「获取模型+勾选」显式动作
+   * 冲突（用户 2026-10-22：「勾选 3 个保存后下面的模型列表全出来了」）。现语义：
+   * ① 新增 ID 唯一入口=addDiscoveredModels（显式勾选）/ addPersonalModel（手填）；
+   * ② 保存路径只把磁盘**既有空壳**（无 contextWindow/maxOutputTokens/reasoning 的
+   *    早期条目）用 opencode 目录精确命中补全 core 扁平键 + `_h2Ui` 模态位
+   *    ——补全影响 core 压缩/用量的真实容量，属数据修正不属列表扩张；
+   * ③ 无任何变化不落盘不广播；任何异常静默（fire-and-forget 不冒到保存路径）。
    */
-  async function pullModelsIntoProvider(providerId: string): Promise<void> {
+  async function enrichShellModelsForProvider(providerId: string): Promise<void> {
     try {
       const raw = store.readRaw();
       const entry = (raw.providers?.[providerId] ?? undefined) as StoredProviderConfig | undefined;
       if (!entry || !ProviderWriteStore.isCoreProviderConfigValid(entry)) return;
-      const added = await mergePulledModels(
-        entry,
-        {
-          protocol: typeof entry.protocol === 'string' ? entry.protocol : undefined,
-          baseUrl: typeof entry.baseUrl === 'string' ? entry.baseUrl : undefined,
-          apiKey: store.apiKeyFor(providerId),
-        },
-        opts.fetchImpl ?? fetch,
-      );
       const allModels = { ...(entry.models ?? {}) } as Record<string, unknown>;
       const candidates: string[] = [];
-      for (const id of added) candidates.push(id);
       for (const [id, mv] of Object.entries(allModels)) {
-        if (candidates.includes(id)) continue;
         const flat = (mv ?? {}) as Record<string, unknown>;
         if (flat.contextWindow === undefined && flat.maxOutputTokens === undefined && flat.reasoning === undefined)
           candidates.push(id); // 空壳 → 补富化机会（仅 enabled/未知键也算空壳）
       }
       if (candidates.length === 0) return;
       const enriched = await enrichModelsFromCatalog(candidates, opts.fetchImpl ?? fetch);
+      if (enriched.size === 0) return;
       const raw2 = store.readRaw();
       const target = raw2.providers?.[providerId] as StoredProviderConfig | undefined;
       if (!target) return; // 已被删除——不复活
       const models2 = { ...(target.models ?? {}) } as Record<string, unknown>;
       let dirty = false;
-      for (const id of added) {
-        if (!Object.prototype.hasOwnProperty.call(models2, id)) {
-          models2[id] = {};
-          dirty = true;
-        }
-      }
       for (const [id, add] of enriched) {
         const existing = (models2[id] ?? {}) as Record<string, unknown>;
         let changed = false;
@@ -531,9 +516,9 @@ export function createProviderSettingsService(opts: ProviderViewsOptions = {}): 
         raw.providers = { ...raw.providers, [providerId]: merged };
         writeRevision(raw);
         store.writeRaw(raw);
-        // ZS4.5（用户批准）：合法保存后台 best-effort 拉取渠道模型列表回填，
-        // 成功则再落盘 + afterMutation 二次广播（UI onDidChange 吸收，模型行自动出现）。
-        void pullModelsIntoProvider(providerId);
+        // ZS4.5g：保存**不新增模型**（新增唯一入口=获取模型+勾选/手填）；
+        // 后台只把既有空壳用目录精确命中补全属性，有变化才二次广播。
+        void enrichShellModelsForProvider(providerId);
       } else {
         // 编辑中的非法草稿（空 baseUrl 等）留在内存：磁盘永不含半配置（防 core 整份归 null）
         pendingDrafts.set(providerId, merged);
