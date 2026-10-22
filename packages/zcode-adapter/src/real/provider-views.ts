@@ -1,5 +1,11 @@
 import { loadConfig, readAuthFile, redactSecrets, resolveHarness2Home } from './core-bridge.js';
-import { ProviderWriteStore, reorderRecord, replaceKeyPreserveOrder } from './provider-writes.js';
+import {
+  ProviderWriteStore,
+  reorderRecord,
+  replaceKeyPreserveOrder,
+  toCoreProviderConfig,
+  toUiProviderConfig,
+} from './provider-writes.js';
 import type { StoredProviderConfig } from './provider-writes.js';
 import { Emitter } from '@zcode/rpc';
 import type { IModelSelectionService, IProviderSettingsService } from '@zcode/services';
@@ -131,14 +137,24 @@ export function createProviderSettingsService(opts: ProviderViewsOptions = {}): 
   }
 
   /**
-   * 视图从**原始 config.json** 投影（写路径同源，避免归一化丢字段）。
+   * 内存草稿（ZS4-T6 e2e 实证设计）：UI「添加供应商」是先建后填的两步流，
+   * 建时 baseUrl 为空。core parseConfig 对任一非法 provider 会**整份 config 归 null**
+   * （schema.ts:1348）——若空配置落盘，用户的真实主渠道（roles.main）会连带全灭，
+   * 整个应用炸回「No model available」。因此 create 只分配 id 进 `pendingDrafts`（内存），
+   * 视图合并渲染；首次**合法**保存才落盘。进程重启草稿消失（可接受：未完成的表单本就无痕）。
+   */
+  const pendingDrafts = new Map<string, StoredProviderConfig>();
+
+  /**
+   * 视图从**原始 config.json** + 内存草稿投影（写路径同源，避免归一化丢字段）。
    * 形状：`ProviderSettingsProviderView`（facades.ts:149-163）；`enabled` 与模型 `enabled`
    * 存为条目上的布尔扩展键（core schema 对未知键只告警——已核实 PROVIDER_KNOWN_KEYS 外不报错）。
    */
   function buildView(): unknown {
     try {
       const raw = store.readRaw();
-      const providersCfg = raw.providers ?? {};
+      const providersCfg = { ...raw.providers } as Record<string, StoredProviderConfig>;
+      for (const [id, draft] of pendingDrafts) providersCfg[id] = draft;
       const authResult = readAuthFile(store.authPath);
       const auth = authResult.auth;
       let revision = 1;
@@ -154,26 +170,39 @@ export function createProviderSettingsService(opts: ProviderViewsOptions = {}): 
         const executable = keyExists || envExists;
         const enabledValue = pcfg.enabled;
         const enabled = typeof enabledValue === 'boolean' ? enabledValue : true;
+        // 出站翻译：core 扁平条目 → ZCode UI 嵌套形（表单绑定 config.api.baseUrl /
+        // config.access；导航硬判据 group==='standard-personal' 由 toUiProviderConfig 恒定注入）。
+        // e2e 实证（2026-10-22）：不翻译则表单打开即空值、导航不显示（T4 原样透传扁平形=契约缺口）。
+        const effectiveConfig = toUiProviderConfig(pcfg);
         return {
           providerId: channel,
+          providerName:
+            typeof pcfg.providerName === 'string' && pcfg.providerName.trim() !== '' ? pcfg.providerName : channel,
           enabled,
           executable,
           issues: executable ? [] : ['no_api_key'],
-          effectiveConfig: {
-            protocol: pcfg.protocol,
-            baseUrl: pcfg.baseUrl,
-            models: Object.keys(models).map((m) => ({ modelId: m })),
-          },
+          effectiveConfig,
+          // UI 保存回传 personalConfig（providerPersonalSave.ts:11-18 只发 personal 层），
+          // harness2 的整个条目就是用户自撰层 → 与 effective 同值镜像。
+          personalConfig: effectiveConfig,
           accountState: {
             availability: executable ? 'available' : 'unavailable',
             unavailableReason: executable ? undefined : 'no_api_key',
           },
           models: Object.entries(models).map(([modelId, mv]) => {
             const entryEnabled = (mv as { enabled?: unknown } | null)?.enabled;
+            const mEnabled = typeof entryEnabled === 'boolean' ? entryEnabled : true;
+            // ProviderSettingsModelCandidateView（facades.ts:107-120）契约形状
             return {
+              kind: 'candidate',
               modelId,
-              enabled: typeof entryEnabled === 'boolean' ? entryEnabled : true,
-              config: mv && typeof mv === 'object' ? mv : {},
+              builtin: false,
+              effectiveBuiltinConfig: {},
+              effectiveConfig: mv && typeof mv === 'object' ? mv : {},
+              enabled: mEnabled,
+              executable,
+              selectable: executable && mEnabled,
+              issues: [],
             };
           }),
         };
@@ -190,9 +219,9 @@ export function createProviderSettingsService(opts: ProviderViewsOptions = {}): 
     }
   }
 
-  /** 取原始 provider 条目，不存在抛错（redact 出口）。 */
+  /** 取 provider 条目（磁盘或内存草稿），不存在抛错（redact 出口）。 */
   function requireProvider(raw: ReturnType<ProviderWriteStore['readRaw']>, providerId: string): StoredProviderConfig {
-    const entry = raw.providers?.[providerId];
+    const entry = raw.providers?.[providerId] ?? pendingDrafts.get(providerId);
     if (entry === undefined) {
       throw new Error(`provider 不存在: ${redactSecrets(providerId)}`);
     }
@@ -212,51 +241,85 @@ export function createProviderSettingsService(opts: ProviderViewsOptions = {}): 
       return buildView();
     },
     // ── ZS4-T4 写路径（十投） ──
+    // 形状契约（ZS4-T6 e2e 实证补）：UI 入参是 ZCode 嵌套形 ProviderConfigObject
+    // （config.api.baseUrl / config.access.apiKey / group…，providerPersonalSave.ts:6-29），
+    // 一律先 toCoreProviderConfig 翻译再处理；磁盘恒 core 扁平形。
     async createPersonalProvider(input?: {
       templateId?: string;
       providerName?: string;
       initialConfig?: StoredProviderConfig;
     }): Promise<unknown> {
       const raw = store.readRaw();
-      const taken = new Set(Object.keys(raw.providers ?? {}));
+      const taken = new Set([...Object.keys(raw.providers ?? {}), ...pendingDrafts.keys()]);
       const providerId = ProviderWriteStore.newProviderId(taken);
       const config: StoredProviderConfig = {
         protocol: 'openai',
         baseUrl: '',
         models: {},
-        ...(input?.initialConfig ?? {}),
+        ...(input?.initialConfig ? toCoreProviderConfig(input.initialConfig) : {}),
       };
-      // 密钥经 absorbSecrets 摘出（就地删除 config 上的密钥键，写入 auth 0600）
-      store.absorbSecrets(providerId, config);
+      const name = typeof input?.providerName === 'string' ? input.providerName.trim() : '';
+      if (name !== '') config.providerName = name;
+      store.absorbSecrets(providerId, config); // 就地剥密钥 → auth（create 携带密钥的模板流兼容）
       config.enabled = true;
-      raw.providers = { ...raw.providers, [providerId]: config };
-      writeRevision(raw);
-      store.writeRaw(raw);
+      if (ProviderWriteStore.isCoreProviderConfigValid(config)) {
+        raw.providers = { ...raw.providers, [providerId]: config };
+        writeRevision(raw);
+        store.writeRaw(raw);
+      } else {
+        // 空 baseUrl（UI 两步建卡的第一步）绝不落盘：core 整份 config 会归 null 炸全盘
+        pendingDrafts.set(providerId, config);
+      }
       const view = afterMutation();
       return { providerId, view };
     },
-    async savePersonalProviderOverlay(providerId: string, config: StoredProviderConfig): Promise<unknown> {
+    async savePersonalProviderOverlay(
+      providerId: string,
+      config: StoredProviderConfig,
+      metadata?: { providerName?: string; enabled?: boolean },
+    ): Promise<unknown> {
       const raw = store.readRaw();
       const existing = requireProvider(raw, providerId);
-      ProviderWriteStore.validateProviderConfig(providerId, config);
-      // absorbSecrets 就地剥密钥：非空值写 auth 0600，密钥键绝不落 config
-      store.absorbSecrets(providerId, config);
-      const enabledValue = config.enabled ?? existing.enabled;
-      config.enabled = typeof enabledValue === 'boolean' ? enabledValue : true;
-      raw.providers = { ...raw.providers, [providerId]: config };
-      writeRevision(raw);
-      store.writeRaw(raw);
+      const translated = toCoreProviderConfig(config);
+      // 显式非法 protocol（非 openai/anthropic 的实际值）= 契约违规 → throw；
+      // 空/缺 baseUrl = 编辑中暂存（ZCode personalProviderApiDataSchema 同义）→ 草稿不落盘。
+      if (
+        translated.protocol !== undefined &&
+        translated.protocol !== 'openai' &&
+        translated.protocol !== 'anthropic'
+      ) {
+        throw new Error(`providers.${redactSecrets(providerId)}.protocol 必须是 openai | anthropic`);
+      }
+      const merged = { ...existing, ...translated } as StoredProviderConfig;
+      // absorbSecrets 就地剥密钥：非空值写 auth 0600，密钥键绝不落 config/draft
+      store.absorbSecrets(providerId, merged);
+      const enabledValue = metadata?.enabled ?? merged.enabled ?? existing.enabled;
+      merged.enabled = typeof enabledValue === 'boolean' ? enabledValue : true;
+      if (typeof metadata?.providerName === 'string' && metadata.providerName.trim() !== '') {
+        merged.providerName = metadata.providerName.trim();
+      }
+      if (ProviderWriteStore.isCoreProviderConfigValid(merged)) {
+        pendingDrafts.delete(providerId);
+        raw.providers = { ...raw.providers, [providerId]: merged };
+        writeRevision(raw);
+        store.writeRaw(raw);
+      } else {
+        // 编辑中的非法草稿（空 baseUrl 等）留在内存：磁盘永不含半配置（防 core 整份归 null）
+        pendingDrafts.set(providerId, merged);
+      }
       return afterMutation();
     },
     async deletePersonalProvider(providerId: string): Promise<unknown> {
       const raw = store.readRaw();
-      requireProvider(raw, providerId);
+      requireProvider(raw, providerId); // 磁盘或草稿任一存在即可删
+      pendingDrafts.delete(providerId);
+      if (raw.providers?.[providerId] === undefined) return afterMutation(); // 纯草稿删除
       const { [providerId]: _removed, ...rest } = raw.providers ?? {};
       raw.providers = rest;
       writeRevision(raw);
       store.writeRaw(raw);
       // 密钥不隐式删除（语义偏差登记：ZCode 删 provider 是否清凭据未见上游实现）
-      return buildView();
+      return afterMutation();
     },
     async reorderPersonalProviders(providerIds: readonly string[]): Promise<unknown> {
       const raw = store.readRaw();

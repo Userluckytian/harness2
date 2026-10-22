@@ -82,16 +82,70 @@ describe('provider 写路径（ZS4-T4）', () => {
     rmSync(home, { recursive: true, force: true });
   });
 
-  it('overlay 校验：坏 protocol / 空 baseUrl 拒绝，不落盘', async () => {
+  it('overlay 校验：坏 protocol 拒绝；空 baseUrl=编辑草稿（不落盘防炸全盘，ZS4-T6 语义）', async () => {
     const home = makeHome();
     const svc: any = createProviderSettingsService({ home });
     await expect(svc.savePersonalProviderOverlay('alpha', { protocol: 'grpc', baseUrl: 'x' })).rejects.toThrow(
       /protocol/,
     );
-    await expect(svc.savePersonalProviderOverlay('alpha', { protocol: 'openai', baseUrl: '  ' })).rejects.toThrow(
-      /baseUrl/,
-    );
+    // 空 baseUrl：不 throw（UI 表单空值自动保存流），但**不落盘**——磁盘保持旧合法值
+    const view: any = await svc.savePersonalProviderOverlay('alpha', { protocol: 'openai', baseUrl: '  ' });
     expect(readConfig(home).providers.alpha.baseUrl).toBe('https://a.example/v1');
+    const alpha = view.providers.find((p: any) => p.providerId === 'alpha');
+    expect(alpha.effectiveConfig.api.baseUrl).toBe('  '); // 视图含草稿（表单不丢编辑值）
+    rmSync(home, { recursive: true, force: true });
+  });
+
+  it('形状翻译（ZS4-T6 e2e 实证缺口）：UI 嵌套形入参 ↔ 磁盘 core 扁平形 ↔ 视图嵌套形', async () => {
+    const home = makeHome();
+    const svc: any = createProviderSettingsService({ home });
+    // UI 嵌套形保存（providerPersonalSave 负载：api/access，无扁平键）
+    await svc.savePersonalProviderOverlay('alpha', {
+      group: 'standard-personal',
+      api: { type: 'openai-chat-completions', baseUrl: 'https://nested.example/v1' },
+      access: { type: 'api-key', apiKey: SECRET },
+    });
+    const cfg = readConfig(home);
+    expect(cfg.providers.alpha.baseUrl).toBe('https://nested.example/v1'); // 落盘=扁平形
+    expect(cfg.providers.alpha.protocol).toBe('openai');
+    expect('api' in cfg.providers.alpha).toBe(false);
+    expect(JSON.stringify(cfg)).not.toContain(SECRET);
+    expect(readAuth(home).channels.alpha.apiKey).toBe(SECRET);
+    // 视图出站=嵌套形 + group 判据 + personalConfig 镜像（表单读 config.api.baseUrl）
+    const view: any = await svc.getView();
+    const alpha = view.providers.find((p: any) => p.providerId === 'alpha');
+    expect(alpha.effectiveConfig.group).toBe('standard-personal');
+    expect(alpha.effectiveConfig.api.baseUrl).toBe('https://nested.example/v1');
+    expect(alpha.effectiveConfig.api.type).toBe('openai-chat-completions');
+    expect(alpha.personalConfig.api.baseUrl).toBe('https://nested.example/v1');
+    // anthropic 映射
+    await svc.savePersonalProviderOverlay('beta', {
+      api: { type: 'anthropic-messages', baseUrl: 'https://ant.example' },
+    });
+    expect(readConfig(home).providers.beta.protocol).toBe('anthropic');
+    rmSync(home, { recursive: true, force: true });
+  });
+
+  it('create 空 baseUrl 走内存草稿：视图有、盘无、再落盘合法才进 config', async () => {
+    const home = makeHome();
+    const svc: any = createProviderSettingsService({ home });
+    const created: any = await svc.createPersonalProvider({ providerName: 'New provider' });
+    const pid: string = created.providerId;
+    // 未配置渠道不在视图里出现非法盘态——磁盘仍是原样
+    expect(readConfig(home).providers[pid]).toBeUndefined();
+    const v1: any = created.view;
+    const draft = v1.providers.find((p: any) => p.providerId === pid);
+    expect(draft.providerName).toBe('New provider');
+    expect(draft.executable).toBe(false);
+    // 合法保存 → 落盘 + 草稿出栈
+    await svc.savePersonalProviderOverlay(pid, {
+      api: { type: 'openai-chat-completions', baseUrl: 'http://127.0.0.1:9/v1' },
+    });
+    expect(readConfig(home).providers[pid].baseUrl).toBe('http://127.0.0.1:9/v1');
+    // 删除草稿态 provider（未落盘）不炸
+    const created2: any = await svc.createPersonalProvider({});
+    const vdel: any = await svc.deletePersonalProvider(created2.providerId);
+    expect(vdel.providers.find((p: any) => p.providerId === created2.providerId)).toBeUndefined();
     rmSync(home, { recursive: true, force: true });
   });
 

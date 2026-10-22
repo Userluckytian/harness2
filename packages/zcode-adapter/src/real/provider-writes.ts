@@ -18,6 +18,8 @@ export interface StoredProviderConfig {
   baseUrl?: unknown;
   envKey?: unknown;
   models?: unknown;
+  providerName?: unknown;
+  enabled?: unknown;
   [key: string]: unknown;
 }
 
@@ -115,6 +117,18 @@ export class ProviderWriteStore {
     }
   }
 
+  /** 合法=能进磁盘（protocol+非空 baseUrl）。核心约束：core parseConfig 任一 provider 非法
+   *  → 整份 config 归 null（schema.ts:1348）→ 主聊天 provider 一并崩（ZS2 发送门）。
+   *  因此**非法 provider 绝不落盘**（草稿走内存 pending，见 provider-views）。 */
+  static isCoreProviderConfigValid(config: StoredProviderConfig): boolean {
+    try {
+      ProviderWriteStore.validateProviderConfig('draft', config);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
   static validateModelId(modelId: string): void {
     if (typeof modelId !== 'string' || modelId.trim() === '') {
       throw new Error('modelId 必须是非空字符串');
@@ -143,6 +157,69 @@ export function reorderRecord<T>(record: Record<string, T>, orderedIds: readonly
     if (!Object.prototype.hasOwnProperty.call(out, id)) out[id] = value;
   }
   return out;
+}
+
+const API_TYPE_TO_PROTOCOL: Record<string, 'openai' | 'anthropic'> = {
+  'openai-chat-completions': 'openai',
+  'openai-responses': 'openai',
+  'anthropic-messages': 'anthropic',
+};
+const PROTOCOL_TO_API_TYPE: Record<string, string> = {
+  openai: 'openai-chat-completions',
+  anthropic: 'anthropic-messages',
+};
+
+function isPlainRecord(v: unknown): v is Record<string, unknown> {
+  return typeof v === 'object' && v !== null && !Array.isArray(v);
+}
+
+/**
+ * ZS4-T6 契约翻译（e2e 实证缺口）：ZCode 设置页 UI 读写**嵌套形**
+ * `ProviderConfigObject = { group, access:{type:'api-key',apiKey?}, api:{type,baseUrl}, … }`
+ * （provider-data-schema.ts:86-96；表单绑定 InlineEditableProviderCard.tsx:191-241），
+ * 而 harness2 core 磁盘是**扁平形** `{protocol, baseUrl, envKey, models}`（config/schema.ts）。
+ * 本函数把 UI 入参归一为 core 扁平形再校验落盘；两种形状都接受（幂等），
+ * 密钥只透出到顶层 `apiKey` 键，由 absorbSecrets 统一剥到 auth.json。
+ * `group`/`logo`/`visibility`/`modelOrder` 不落盘（harness2 全部渠道恒为 personal，group 由视图恒定注入）。
+ */
+export function toCoreProviderConfig(uiConfig: Record<string, unknown>): StoredProviderConfig {
+  const out: StoredProviderConfig = {};
+  const api = isPlainRecord(uiConfig['api']) ? uiConfig['api'] : undefined;
+  const access = isPlainRecord(uiConfig['access']) ? uiConfig['access'] : undefined;
+
+  if (api !== undefined) {
+    if (typeof api['type'] === 'string' && API_TYPE_TO_PROTOCOL[api['type']]) {
+      out.protocol = API_TYPE_TO_PROTOCOL[api['type']];
+    }
+    if (typeof api['baseUrl'] === 'string') out.baseUrl = api['baseUrl'];
+  }
+  if (access !== undefined && typeof access['apiKey'] === 'string' && access['apiKey'].length > 0) {
+    out.apiKey = access['apiKey']; // 由调用方 absorbSecrets 剥除落 auth
+  }
+  if (isPlainRecord(uiConfig['models'])) out.models = uiConfig['models'];
+  for (const key of ['protocol', 'baseUrl', 'envKey', 'providerName', 'enabled', 'apiKey']) {
+    if (out[key] === undefined && uiConfig[key] !== undefined) out[key] = uiConfig[key];
+  }
+  return out;
+}
+
+/** 出站翻译：core 扁平条目 → UI 嵌套形（`config.group==='standard-personal'` 是导航硬判据，
+ *  恒定注入=如实映射，见 buildView 注释）。密钥**永不进视图**（红线：key 不过 renderer RPC；
+ *  ZCode 自家把 key 存 config 里随视图下发，harness2 安全模型更严——偏差如实登记）。 */
+export function toUiProviderConfig(pcfg: StoredProviderConfig): Record<string, unknown> {
+  const protocol = typeof pcfg.protocol === 'string' ? pcfg.protocol : 'openai';
+  const ui: Record<string, unknown> = {
+    group: 'standard-personal',
+    access: { type: 'api-key' },
+    api: {
+      type: PROTOCOL_TO_API_TYPE[protocol] ?? 'openai-chat-completions',
+      ...(typeof pcfg.baseUrl === 'string' ? { baseUrl: pcfg.baseUrl } : {}),
+    },
+  };
+  if (typeof pcfg.providerName === 'string' && pcfg.providerName.trim() !== '') {
+    ui.providerName = pcfg.providerName;
+  }
+  return ui;
 }
 
 /** 同键替换但保持插入位置（rename 用：先记录位置，重建时按位放新键）。 */
