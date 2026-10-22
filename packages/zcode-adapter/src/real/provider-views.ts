@@ -129,8 +129,24 @@ export function createProviderSettingsService(opts: ProviderViewsOptions = {}): 
   const store = new ProviderWriteStore(home);
   const changeEmitter = new Emitter<unknown>();
 
-  /** 写路径统一出口：重建视图 + 广播 onDidChange（UI commitProviderSettingsView 消费）。 */
+  /**
+   * 视图 revision 时钟（ZS4-T6 e2e 实证）：UI 快照守卫按 revision 单调性去重
+   * （providerSettingsSnapshot.ts:45-46：相等或更小 = 丢弃）。草稿不落盘、不写文件
+   * revision，若无内存时钟则 create 草稿的视图被 UI 吞掉（导航不出现新项）。
+   * 时钟初值=文件 `_h2Revision`，每次 afterMutation 递增；draft 乐观并发判据也用它。
+   */
+  let revisionClock = (() => {
+    try {
+      const v = store.readRaw()['_h2Revision'];
+      return typeof v === 'number' ? v : 1;
+    } catch {
+      return 1;
+    }
+  })();
+
+  /** 写路径统一出口：递增 revision 时钟 + 重建视图 + 广播 onDidChange（UI commit 消费）。 */
   function afterMutation(): unknown {
+    revisionClock += 1;
     const view = buildView();
     changeEmitter.fire(view);
     return view;
@@ -160,6 +176,8 @@ export function createProviderSettingsService(opts: ProviderViewsOptions = {}): 
       let revision = 1;
       if (typeof raw.revision === 'number') revision = raw.revision;
       else if (typeof raw['_h2Revision'] === 'number') revision = raw['_h2Revision'] as number;
+      // 视图单调性必须跟内存时钟一致（草稿不落盘也推 revision，UI 快照守卫才不吞更新）
+      revision = Math.max(revision, revisionClock);
 
       const providers = Object.entries(providersCfg).map(([channel, entry]) => {
         const pcfg = (entry ?? {}) as StoredProviderConfig;
@@ -239,6 +257,31 @@ export function createProviderSettingsService(opts: ProviderViewsOptions = {}): 
     },
     async refresh(): Promise<unknown> {
       return buildView();
+    },
+    /**
+     * 模型配置解析（ZS4-T6 e2e 实证缺口）：添加/编辑模型对话框打开即调用
+     * （resolveAddModelConfig，ProviderCardSections.tsx:401）。缺此方法时 host 代理
+     * 返回 null，UI 读 `resolution.inheritedConfig` 直接炸。harness2 没有 ZCode 的
+     * zcodeBuiltinModelRules（内置推荐基线）→ inherited 恒空（红线⑩：不编造推荐值）；
+     * effective 取该 provider 条目里模型自身的存储配置，personalConfig 分支取其预览形。
+     */
+    async resolveModelConfig(input: {
+      providerId: string;
+      modelId: string;
+      originalModelId?: string;
+      personalConfig?: Record<string, unknown>;
+    }): Promise<unknown> {
+      const raw = store.readRaw();
+      const entry = requireProvider(raw, input.providerId);
+      const models = (entry.models ?? {}) as Record<string, unknown>;
+      const own = models[input.modelId];
+      const fromPersonal = input.personalConfig && typeof input.personalConfig === 'object';
+      const effective = fromPersonal ? input.personalConfig : own && typeof own === 'object' ? own : {};
+      return Object.freeze({
+        inheritedConfig: Object.freeze({}),
+        effectiveConfig: effective,
+        issues: Object.freeze([]),
+      });
     },
     // ── ZS4-T4 写路径（十投） ──
     // 形状契约（ZS4-T6 e2e 实证补）：UI 入参是 ZCode 嵌套形 ProviderConfigObject
@@ -389,7 +432,10 @@ export function createProviderSettingsService(opts: ProviderViewsOptions = {}): 
       const raw = store.readRaw();
       const entry = requireProvider(raw, input.providerId);
       ProviderWriteStore.validateModelId(input.nextModelId);
-      const currentRevision = typeof raw['_h2Revision'] === 'number' ? (raw['_h2Revision'] as number) : 1;
+      // 乐观并发判据必须与视图 revision 同源（max(文件, 时钟)）：草稿 create 只拨时钟
+      // 不落盘，若仍拿文件值比较，UI 刚收到的视图 revision 会被误判「冲突」。
+      const fileRev = typeof raw['_h2Revision'] === 'number' ? (raw['_h2Revision'] as number) : 1;
+      const currentRevision = Math.max(fileRev, revisionClock);
       if (typeof input.basedOnRevision === 'number' && input.basedOnRevision !== currentRevision) {
         throw new Error(`revision 冲突: 期望 ${input.basedOnRevision}，当前 ${currentRevision}`);
       }

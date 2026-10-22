@@ -262,4 +262,52 @@ describe('provider 写路径（ZS4-T4）', () => {
     expect(r.error.message).not.toContain(SECRET);
     rmSync(home, { recursive: true, force: true });
   }, 30_000);
+
+  it('resolveModelConfig：inherited 恒空（无内置推荐基线，红线⑩不编造）；effective=存储模型配置；personalConfig 分支取草稿预览', async () => {
+    const home = makeHome();
+    const svc: any = createProviderSettingsService({ home });
+    const r: any = await svc.resolveModelConfig({ providerId: 'alpha', modelId: 'm-a' });
+    expect(r.inheritedConfig).toEqual({});
+    expect(r.effectiveConfig).toEqual({}); // m-a 存的是空对象
+    expect(r.issues).toEqual([]);
+    const r2: any = await svc.resolveModelConfig({
+      providerId: 'beta',
+      modelId: 'm-b2',
+      personalConfig: { properties: { contextWindow: 4096 } },
+    });
+    expect(r2.effectiveConfig).toEqual({ properties: { contextWindow: 4096 } });
+    await expect(svc.resolveModelConfig({ providerId: 'nope', modelId: 'x' })).rejects.toThrow(/不存在/);
+    rmSync(home, { recursive: true, force: true });
+  });
+
+  it('revisionClock：草稿 create 不落盘也推视图 revision；乐观并发判据与视图同源（ZS4-T6 P0 钉）', async () => {
+    const home = makeHome();
+    const svc: any = createProviderSettingsService({ home });
+    const v0: any = await svc.getView();
+    // 空 baseUrl → 只进内存草稿，config.json 不动
+    const v1: any = (await svc.createPersonalProvider({ providerName: 'draft-x' })).view; // 契约返回 {providerId, view}
+    expect(readConfig(home).providers.alpha).toBeDefined();
+    expect(Object.keys(readConfig(home).providers)).toEqual(['alpha', 'beta']);
+    const draft = v1.providers.find((p: any) => p.providerName === 'draft-x');
+    expect(draft).toBeDefined();
+    expect(v1.revision).toBeGreaterThan(v0.revision);
+    // UI 拿到的视图 revision=时钟值；若判据仍拿文件值（没涨）比较 → 误判冲突（P0 回归点）
+    await svc.savePersonalModelDraft({
+      providerId: 'beta',
+      originalModelId: 'm-b',
+      nextModelId: 'm-b',
+      personalConfig: { properties: { contextWindow: 128 } },
+      basedOnRevision: v1.revision,
+    });
+    await expect(
+      svc.savePersonalModelDraft({
+        providerId: 'beta',
+        originalModelId: 'm-b',
+        nextModelId: 'm-b',
+        personalConfig: {},
+        basedOnRevision: v1.revision, // 已被上一次 mutation 推高 → 必须拒绝
+      }),
+    ).rejects.toThrow(/revision 冲突/);
+    rmSync(home, { recursive: true, force: true });
+  });
 });
