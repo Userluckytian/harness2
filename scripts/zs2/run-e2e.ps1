@@ -46,8 +46,11 @@ if (-not (Test-Path $AdapterHost)) {
 
 # -Fresh：清壳配置 + 会话工作区/草稿数据（草稿持久化在 zs1-data 与 HARNESS2_HOME 的 zs 目录，
 # 2026-10-21 实证跨重启残留会污染 composer 初值）
-if ($Fresh -or $SidebarDelete -or $SettingsProvider) {
-  foreach ($p in @((Join-Path $FakeHome '.zcode'), (Join-Path $FakeHome '.harness2'), (Join-Path $DataDir '.zcode'))) {
+if ($Fresh -or $Approval -or $SidebarDelete -or $SettingsProvider) {
+  # AppData 一并清：composer 模型选择与草稿持久化在 renderer Local Storage，
+  # 跨轮换 home（fake mock ↔ real local）会带着失效 selection 让发送门永久禁用（2026-10-22 实证）
+  foreach ($p in @((Join-Path $FakeHome '.zcode'), (Join-Path $FakeHome '.harness2'), (Join-Path $DataDir '.zcode'),
+                   (Join-Path $FakeHome 'AppData\Roaming'), (Join-Path $FakeHome 'AppData\Local'))) {
     if (Test-Path $p) { Remove-Item -Recurse -Force $p -ErrorAction SilentlyContinue }
   }
 }
@@ -61,7 +64,23 @@ $env:USERPROFILE = $FakeHome
 $env:APPDATA = Join-Path $FakeHome 'AppData\Roaming'
 $env:LOCALAPPDATA = Join-Path $FakeHome 'AppData\Local'
 $env:HARNESS2_HOME = 'C:\Users\ASUS'
-if ($SidebarDelete -or $SettingsProvider) { $env:HARNESS2_HOME = $FakeHome }
+if ($Approval -or $SidebarDelete -or $SettingsProvider) {
+  # ZS4-T6 收口（2026-10-22）：审批轮也走 fake-home 种子——e2e 轮一律不依赖真机用户状态
+  # （真机污染/漂移会让轮子假红；provider 反正被 ZS3_E2E_APPROVAL 强制 MockProvider）。
+  $env:HARNESS2_HOME = $FakeHome
+  # fake-home 无 provider 配置 ⇒ snapshotConfig 空 ⇒ 发送按钮禁用（ZS2/ZS3 门，2026-10-22 实证）。
+  # 种最小 config：roles.main 指 mock 渠道；无密钥 ⇒ adapter createProvider 抛 ⇒ 既有 catch
+  # 回落 MockProvider(defaultMock)（agent-service.ts:170-173），确定性假流。
+  $h2 = Join-Path $FakeHome '.harness2'
+  if (-not (Test-Path $h2)) { New-Item -ItemType Directory -Force -Path $h2 | Out-Null }
+  $mockCfg = @{
+    providers = @{ mock = @{ protocol = 'openai'; baseUrl = 'http://127.0.0.1:19099/v1'; models = @{ 'mock-model' = @{} } } }
+    roles = @{ main = @{ channel = 'mock'; model = 'mock-model' } }
+  } | ConvertTo-Json -Depth 6
+  # .NET WriteAllText=无 BOM（Windows PowerShell UTF8 带 BOM，jsonc-parser 解析失败 ⇒
+  # loadConfig 无 config ⇒ snapshotConfig 缺 modelSelection ⇒ 发送永久禁用，2026-10-22 实证）
+  [System.IO.File]::WriteAllText((Join-Path $h2 'config.json'), $mockCfg, (New-Object System.Text.UTF8Encoding($false)))
+}
 $env:ZS1_HOST_MODULE_PATH = $AdapterHost
 $env:ZCODE_DATA_BASE_DIR = $DataDir
 $env:ZS2_PROBE = '1'

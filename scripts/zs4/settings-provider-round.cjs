@@ -150,7 +150,8 @@ function findProviderIdByBaseUrl(cfg) {
         process.exit(4);
       }
 
-      // add provider
+      // add provider：模板卡=立即 createPersonalProvider（草稿态）；随后必须点导航项
+      // 才进详情表单（2026-10-22 dump 实证：create 后表单不自动打开）
       await ev(
         "(() => { const b = document.querySelector('[data-testid=\"model-provider-add-provider-button\"]'); if (b) { b.click(); return 'clicked'; } return 'missing'; })()",
       );
@@ -159,9 +160,19 @@ function findProviderIdByBaseUrl(cfg) {
         const v = await ev('!!document.querySelector(\'[data-testid="model-provider-template-picker"]\')');
         if (v === true) break;
       }
+      const navBefore = await ev(
+        'JSON.stringify(Array.from(document.querySelectorAll(\'[data-testid^="model-provider-nav-item-custom"]\')).map(e=>e.getAttribute("data-testid")))',
+      );
+      const preSet = new Set(JSON.parse(navBefore || '[]'));
       await ev(
         "(() => { const b = document.querySelector('[data-testid=\"model-provider-template-item-custom\"]'); if (b) { b.click(); return 'clicked'; } return 'missing'; })()",
       );
+      await new Promise((r) => setTimeout(r, 3500));
+      // 点新出现的 custom 导航项
+      const newNav = await ev(
+        `(() => { const items=Array.from(document.querySelectorAll('[data-testid^="model-provider-nav-item-custom"]')); const n=items.find(e=>!${JSON.stringify([...preSet])}.includes(e.getAttribute('data-testid'))); if(n){n.click();return n.getAttribute('data-testid');} return 'none-new'; })()`,
+      );
+      console.log('NEW_NAV=' + newNav);
 
       let formOpened = false;
       for (let i = 0; i < 40; i++) {
@@ -177,26 +188,23 @@ function findProviderIdByBaseUrl(cfg) {
         process.exit(5);
       }
 
+      // React 受控 input：直接 el.value= 被 value-tracker 吞掉（2026-10-22 实证空 baseUrl 落盘）
+      // ——必须走 HTMLInputElement.prototype 原生 value setter 再 dispatch input。
+      async function fillReactInput(testid, value) {
+        return ev(`(() => {
+          const el = document.querySelector('[data-testid="${testid}"]');
+          if (!el) return 'missing';
+          const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
+          setter.call(el, ${JSON.stringify(value)});
+          el.dispatchEvent(new Event('input', {bubbles:true}));
+          el.dispatchEvent(new Event('blur', {bubbles:true}));
+          return 'done';
+        })()`);
+      }
       // fill baseUrl
-      await ev(`(() => {
-        const el = document.querySelector('[data-testid="model-provider-base-url-input"]');
-        if (!el) return 'missing';
-        el.value = ${JSON.stringify(BASE_URL)};
-        el.dispatchEvent(new Event('input', {bubbles:true}));
-        el.dispatchEvent(new Event('change', {bubbles:true}));
-        el.blur();
-        return 'done';
-      })()`);
+      await fillReactInput('model-provider-base-url-input', BASE_URL);
       // fill apiKey
-      await ev(`(() => {
-        const el = document.querySelector('[data-testid="model-provider-api-key-input"]');
-        if (!el) return 'missing';
-        el.value = ${JSON.stringify(SECRET)};
-        el.dispatchEvent(new Event('input', {bubbles:true}));
-        el.dispatchEvent(new Event('change', {bubbles:true}));
-        el.blur();
-        return 'done';
-      })()`);
+      await fillReactInput('model-provider-api-key-input', SECRET);
 
       // wait save persisted
       let providerId = null;
@@ -226,32 +234,94 @@ function findProviderIdByBaseUrl(cfg) {
         process.exit(6);
       }
 
-      // add a model
+      // add a model（ProviderModelMetadataDialog：modelId Input 是 React 受控 → 必须原生 setter）
       await ev(
         "(() => { const b = document.querySelector('[data-testid=\"model-provider-add-model-button\"]'); if (b) { b.click(); return 'clicked'; } return 'missing'; })()",
       );
-      // fill model id in dialog: first text input in dialog
+      // wait dialog with inputs
+      let dialogReady = false;
       for (let i = 0; i < 40; i++) {
         await new Promise((r) => setTimeout(r, 300));
         const v = await ev('!!document.querySelector(\'div[role="dialog"] input\')');
-        if (v === true) break;
+        if (v === true) {
+          dialogReady = true;
+          break;
+        }
       }
-      await ev(`(() => {
-        const dlg = document.querySelector('div[role="dialog"]');
-        const inp = dlg ? dlg.querySelector('input') : null;
+      if (!dialogReady) {
+        console.error('ADD-MODEL DIALOG NOT OPENED');
+        process.exit(6);
+      }
+      // 第一个 input = 模型 ID（DOM 顺序：ProviderModelMetadataDialog.tsx:181）
+      const filled = await ev(`(() => {
+        const inp = document.querySelector('div[role="dialog"] input');
         if (!inp) return 'missing';
-        inp.value = 'probe-model';
+        const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
+        setter.call(inp, 'probe-model');
         inp.dispatchEvent(new Event('input', {bubbles:true}));
-        inp.dispatchEvent(new Event('change', {bubbles:true}));
+        inp.dispatchEvent(new Event('blur', {bubbles:true}));
         return 'done';
       })()`);
-      // click save button in dialog
+      console.log('DIALOG_FILL=' + filled);
+      await new Promise((r) => setTimeout(r, 600));
+      const backfill = await ev(`document.querySelector('div[role="dialog"] input') ? document.querySelector('div[role="dialog"] input').value : 'no-input'`);
+      console.log('DIALOG_VALUE=' + backfill);
+      // 第二个 input = Context window（numeric；harness2 无内置推荐基线 → 必须手填，
+      // ProviderModelMetadata.ts:130-134 空值即 invalid）
+      await ev(`(() => {
+        const inputs = document.querySelectorAll('div[role="dialog"] input');
+        const inp = inputs[1];
+        if (!inp) return 'missing';
+        const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
+        setter.call(inp, '200000');
+        inp.dispatchEvent(new Event('input', {bubbles:true}));
+        inp.dispatchEvent(new Event('blur', {bubbles:true}));
+        return 'done';
+      })()`);
+      await new Promise((r) => setTimeout(r, 600));
+      // ZCode 智能配置校验（ProviderModelMetadata.ts:148-167）：模型必须有 ≥1 个推理档位
+      // + 可编译的 map 表达式，否则「保存」永远 invalid。harness2 无内置推荐基线 →
+      // 探针按 UI 真实路径手填。Advanced 默认折叠，先点开展开触发器。
       await ev(
-        "(() => { const dlg = document.querySelector('div[role=\"dialog\"]'); const btns = dlg ? Array.from(dlg.querySelectorAll('button')) : []; const b = btns.find(x => /保存|Save/i.test(x.textContent||'')); if (b) { b.click(); return 'clicked'; } return 'missing'; })()",
+        "(() => { const b = document.querySelector('[data-model-advanced-trigger=\"true\"]'); if (b) { b.click(); return 'opened'; } return 'no-trigger'; })()",
       );
-      // wait model row appears
+      await new Promise((r) => setTimeout(r, 400));
+      const addLevel = await ev(
+        "(() => { const b = document.querySelector('button[data-model-reasoning-level-add=\"true\"]'); if (b) { b.click(); return 'clicked'; } return 'missing'; })()",
+      );
+      console.log('REASONING_ADD=' + addLevel);
+      await new Promise((r) => setTimeout(r, 400));
+      const levelFilled = await ev(`(() => {
+        const inp = document.querySelector('input[data-model-reasoning-level-input="true"]');
+        if (!inp) return 'missing';
+        const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
+        setter.call(inp, 'low');
+        inp.dispatchEvent(new Event('input', {bubbles:true}));
+        inp.dispatchEvent(new KeyboardEvent('keydown', {key:'Enter', bubbles:true}));
+        return 'done';
+      })()`);
+      console.log('REASONING_LEVEL=' + levelFilled);
+      // map textarea（对话框内唯一 textarea，data-language="json"）
+      const mapFilled = await ev(`(() => {
+        const host = document.querySelector('[data-model-reasoning-level-map-editor="true"]');
+        const ta = host ? host.querySelector('textarea') : document.querySelector('div[role="dialog"] textarea[data-language="json"]');
+        if (!ta) return 'missing';
+        const setter = Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, 'value').set;
+        setter.call(ta, '{"effort": reasoningLevel}');
+        ta.dispatchEvent(new Event('input', {bubbles:true}));
+        ta.dispatchEvent(new Event('blur', {bubbles:true}));
+        return 'done';
+      })()`);
+      console.log('REASONING_MAP=' + mapFilled);
+      await new Promise((r) => setTimeout(r, 600));
+      // click save button in dialog（variant=default 的「保存」，zh common.save）
+      const saved = await ev(
+        "(() => { const dlg = document.querySelector('div[role=\"dialog\"]'); const btns = dlg ? Array.from(dlg.querySelectorAll('button')) : []; const b = btns.find(x => /^\\s*(保存|Save)\\s*$/.test(x.textContent||'')); if (b) { b.click(); return 'clicked'; } return 'missing'; })()",
+      );
+      console.log('DIALOG_SAVE=' + saved);
+      // wait model row appears（行 testid 在 span 上：model-provider-model-input-<index>）
       let modelRow = false;
-      for (let i = 0; i < 40; i++) {
+      for (let i = 0; i < 60; i++) {
         await new Promise((r) => setTimeout(r, 300));
         const v = await ev('!!document.querySelector(\'[data-testid^="model-provider-model-input-"]\')');
         if (v === true) {
@@ -260,6 +330,11 @@ function findProviderIdByBaseUrl(cfg) {
         }
       }
       console.log('MODEL_ROW=' + modelRow);
+      if (!modelRow) {
+        const dlgText = await ev("(() => { const d = document.querySelector('div[role=\"dialog\"]'); return d ? d.innerText.replace(/\\s+/g,' ').slice(0,600) : 'no-dialog'; })()");
+        console.error('MODEL ADD FAILED, dialog text: ' + dlgText);
+        process.exit(6);
+      }
 
       // test connectivity
       let testClicked = false;
@@ -302,28 +377,56 @@ function findProviderIdByBaseUrl(cfg) {
         process.exit(9);
       }
 
-      // delete provider via actions menu
-      await ev(
-        "(() => { const b = document.querySelector('[data-testid=\"model-provider-actions-button\"]'); if (b) { b.click(); return 'clicked'; } return 'missing'; })()",
+      // delete provider via actions menu —— Radix DropdownMenu 不认 el.click()（无真实
+      // pointerdown），必须 CDP 鼠标事件打按钮坐标（与 sidebar 探针右键菜单同一实证）
+      async function clickByTestId(testid) {
+        const pos = await ev(
+          `(() => { const b = document.querySelector('[data-testid="${testid}"]'); if (!b) return null; const r = b.getBoundingClientRect(); return JSON.stringify({x: Math.round(r.x + r.width/2), y: Math.round(r.y + r.height/2)}); })()`,
+        );
+        if (!pos) return 'missing';
+        const { x, y } = JSON.parse(pos);
+        await send('Input.dispatchMouseEvent', { type: 'mouseMoved', x, y });
+        await send('Input.dispatchMouseEvent', { type: 'mousePressed', x, y, button: 'left', clickCount: 1 });
+        await send('Input.dispatchMouseEvent', { type: 'mouseReleased', x, y, button: 'left', clickCount: 1 });
+        return 'clicked';
+      }
+      const acts = await clickByTestId('model-provider-actions-button');
+      console.log('DELETE_ACTS_BTN=' + acts);
+      await new Promise((r) => setTimeout(r, 600));
+      const menuDump = await ev(
+        "JSON.stringify(Array.from(document.querySelectorAll('[role=\"menuitem\"]')).map(x=>(x.textContent||'').trim()).slice(0,20))",
       );
+      console.log('DELETE_MENU_ITEMS=' + menuDump);
+      let menuClicked = 'no';
       for (let i = 0; i < 20; i++) {
         await new Promise((r) => setTimeout(r, 250));
         const v = await ev(
           "(() => { const items = Array.from(document.querySelectorAll('[role=\"menuitem\"]')); const b = items.find(x => /删除|Delete/i.test(x.textContent||'')); if (b) { b.click(); return 'clicked'; } return 'missing'; })()",
         );
-        if (v === 'clicked') break;
+        if (v === 'clicked') {
+          menuClicked = 'yes';
+          break;
+        }
       }
+      console.log('DELETE_MENU_CLICKED=' + menuClicked);
+      await new Promise((r) => setTimeout(r, 500));
+      const dlgDump = await ev(
+        "(() => { const d = document.querySelector('div[role=\"dialog\"]'); return d ? d.innerText.replace(/\\s+/g,' ').slice(0,300) : 'no-dialog'; })()",
+      );
+      console.log('DELETE_CONFIRM_DIALOG=' + dlgDump);
       // confirm dialog if present
+      let confirmClicked = 'no';
       for (let i = 0; i < 20; i++) {
         await new Promise((r) => setTimeout(r, 250));
         const v = await ev('!!document.querySelector(\'[data-testid="confirm-dialog-confirm"]\')');
         if (v === true) {
-          await ev(
+          confirmClicked = await ev(
             "(() => { const b = document.querySelector('[data-testid=\"confirm-dialog-confirm\"]'); if (b) { b.click(); return 'clicked'; } return 'missing'; })()",
           );
           break;
         }
       }
+      console.log('DELETE_CONFIRM=' + confirmClicked);
 
       // wait provider removed from config
       let removed = false;

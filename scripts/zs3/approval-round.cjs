@@ -264,7 +264,8 @@ function getJson(p) {
           expression: "document.body.innerText.replace(/\\s+/g,' ').slice(0,2000)",
         });
         pageText = r.result?.result?.value || '';
-        if (/denied by approval policy|denied|拒绝|已拒绝|失败|error/i.test(pageText)) {
+        // UI locale 固定 en-US（adapter setting.get）→ 行状态渲染 "Failed"；中文标记留给真机中文环境
+        if (/denied by approval policy|denied|拒绝|已拒绝|失败|failed|error/i.test(pageText)) {
           deniedSeen = true;
           break;
         }
