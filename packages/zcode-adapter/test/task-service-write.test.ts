@@ -122,3 +122,45 @@ describe('task-service write surface', () => {
     rmSync(home, { recursive: true, force: true });
   });
 });
+
+describe('window-controller.mutateTask 接线（ZS4-T6：hover 归档/删除路由缺口）', () => {
+  it('archive/pin/rename/delete 经 controller 落到 taskService 写面；无 taskService 时保持 throw', async () => {
+    const { createWindowControllerService } = await import('../src/root-mount-stubs.js');
+    const { windowControllerServiceStub } = await import('../src/root-mount-stubs.js');
+    // 旧桩：mutateTask throw（红线⑩：未接线不假成功）
+    await expect(windowControllerServiceStub.mutateTask({} as never)).rejects.toThrow(/ZS1: not implemented/);
+
+    const home = mkdtempSync(join(tmpdir(), 'h2-wctl-'));
+    const svc: any = createTaskService({ home, useMock: true });
+    const created: any = await svc.createTask({ workspacePath: process.cwd() });
+    const ws = process.cwd();
+    const addr = { taskId: created.taskId, workspacePath: ws };
+    const ctrl: any = createWindowControllerService(svc);
+
+    const archMeta: any = await ctrl.mutateTask({ address: addr, mutation: { kind: 'archive', archived: true } });
+    expect(archMeta.taskId).toBe(created.taskId);
+    const archivedList: any = await svc.listArchivedTasks({ workspacePath: ws });
+    expect(archivedList.some((t: any) => t.taskId === created.taskId)).toBe(true);
+
+    await ctrl.mutateTask({ address: addr, mutation: { kind: 'archive', archived: false } });
+    const archivedList2: any = await svc.listArchivedTasks({ workspacePath: ws });
+    expect(archivedList2.some((t: any) => t.taskId === created.taskId)).toBe(false);
+
+    await ctrl.mutateTask({ address: addr, mutation: { kind: 'pin', pinned: true } });
+    const meta: any = await ctrl.getTaskMeta({ address: addr });
+    expect(meta.taskId).toBe(created.taskId);
+
+    await ctrl.mutateTask({ address: addr, mutation: { kind: 'rename', title: '改名成功' } });
+    const meta2: any = await svc.getTaskMeta({ taskId: created.taskId, workspacePath: ws });
+    expect(meta2.title).toBe('改名成功');
+
+    // open/resume 校验型 no-op 回 meta
+    const openMeta: any = await ctrl.mutateTask({ address: addr, mutation: { kind: 'open' } });
+    expect(openMeta.taskId).toBe(created.taskId);
+
+    await ctrl.mutateTask({ address: addr, mutation: { kind: 'delete' } });
+    const meta3: any = await svc.getTaskMeta({ taskId: created.taskId, workspacePath: ws });
+    expect(meta3).toBeNull();
+    rmSync(home, { recursive: true, force: true });
+  });
+});

@@ -47,6 +47,7 @@ import type {
   IUsageStatsService,
   IWindowControllerService,
   IZCodeAgentService,
+  IZCodeTaskService,
   ModelSelectionView,
   OffPeakClientConfig,
   ProjectTree,
@@ -54,6 +55,7 @@ import type {
   RemoteProjectDirectory,
   TaskGroupStructure,
   VirtualProject,
+  WindowHostControllerMutation,
   WindowHostControllerTaskListResult,
   ZCodeTaskListQuery,
 } from '@zcode/services';
@@ -197,13 +199,85 @@ const windowControllerServiceImpl: {
     return null;
   },
 };
-/** B: 窗口聚合投影；空态方法空形状（boot log 高频触达），变更动作 throw */
-export const windowControllerServiceStub: IWindowControllerService = createStubService<IWindowControllerService>({
-  channelName: 'window-controller',
-  classification: 'B',
-  impl: windowControllerServiceImpl,
-  throws: ['mutateTask', 'deleteArchivedTask', 'deleteArchivedTasks'],
-});
+
+/**
+ * ZS4-T6：主列表行的 hover 归档/删除经 `controller.mutateTask` 路由（scratch 实测
+ * TaskList.tsx:140-162 二段确认 → task-mutation.ts controller 分支），harness2 单窗口
+ * 时 UI 仍走此频道——注入 IZCodeTaskService 写面（语义对齐 ZCode 宿主
+ * windowHostControllerService.ts:248-300 的 projection.mutate switch）。
+ * 不注入 = 旧桩行为（mutateTask/deleteArchived* → ZS1 throw，兼容既有测试）。
+ */
+export function createWindowControllerService(taskService?: IZCodeTaskService): IWindowControllerService {
+  const impl: Record<string, unknown> = { ...windowControllerServiceImpl };
+  if (taskService) {
+    const base = (address: WindowHostTaskAddress) => ({
+      taskId: address.taskId,
+      workspacePath: address.workspacePath,
+      ...(address.workspaceIdentity ? { workspaceIdentity: address.workspaceIdentity } : {}),
+    });
+    impl.getTaskMeta = async (params: { address: WindowHostTaskAddress }): Promise<ZCodeTaskMeta | null> =>
+      taskService.getTaskMeta(base(params.address));
+    impl.mutateTask = async (params: {
+      address: WindowHostTaskAddress;
+      mutation: WindowHostControllerMutation;
+    }): Promise<ZCodeTaskMeta | null> => {
+      const m = params.mutation;
+      const b = base(params.address);
+      switch (m.kind) {
+        case 'rename':
+          await taskService.renameTask({ ...b, title: m.title });
+          break;
+        case 'pin':
+          await taskService.setTaskPinned({ ...b, pinned: m.pinned });
+          break;
+        case 'archive':
+          if (m.archived) await taskService.archiveTask(b);
+          else await taskService.unarchiveTask(b);
+          break;
+        case 'delete':
+          await taskService.deleteTask(b);
+          break;
+        case 'delete-archived':
+          await taskService.deleteArchivedTask(b);
+          break;
+        case 'mark-read':
+          return taskService.setTaskUnread({
+            ...b,
+            unread: false,
+            ...(m.expectedUnreadAt != null ? { expectedUnreadAt: m.expectedUnreadAt } : {}),
+          });
+        case 'mark-unread':
+          return taskService.setTaskUnread({ ...b, unread: true });
+        case 'open':
+        case 'resume':
+          // Controller 职责是校验唯一 source；harness2 单机无路由，conversation 走 scoped facade
+          break;
+        default: {
+          const exhaustive: never = m;
+          throw new Error(`未知 Controller mutation: ${String(exhaustive)}`);
+        }
+      }
+      return taskService.getTaskMeta(b);
+    };
+    impl.deleteArchivedTask = async (params: { address: WindowHostTaskAddress }): Promise<boolean> =>
+      taskService.deleteArchivedTask(base(params.address));
+    impl.deleteArchivedTasks = async (params: {
+      address: WindowHostTaskAddress;
+      taskIds: string[];
+    }): Promise<{ deletedTaskIds: string[]; skippedTaskIds: string[]; failedTaskIds: string[] }> =>
+      taskService.deleteArchivedTasks({
+        ...base(params.address),
+        taskIds: params.taskIds,
+      });
+  }
+  return createStubService<IWindowControllerService>({
+    channelName: 'window-controller',
+    classification: 'B',
+    impl,
+  });
+}
+/** B: 窗口聚合投影；无 taskService 的旧空态桩（boot log 高频触达方法给空形状，变更动作 throw） */
+export const windowControllerServiceStub: IWindowControllerService = createWindowControllerService();
 
 const projectServiceImpl: {
   readTree(params?: { includeDeleted?: boolean; includeDeletedTasks?: boolean; hostId?: string }): Promise<ProjectTree>;

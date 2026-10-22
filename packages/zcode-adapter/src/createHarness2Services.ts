@@ -101,7 +101,7 @@ import {
   sourceServerManagementServiceStub,
   taskGroupServiceStub,
   usageStatsServiceStub,
-  windowControllerServiceStub,
+  createWindowControllerService,
 } from './root-mount-stubs.js';
 
 function wrapProbe(service: unknown, channel: string): unknown {
@@ -286,7 +286,7 @@ export function createHarness2Services(opts: Harness2ServicesOptions = {}): Harn
     [ISubagentsService.channelName, subagentsServiceStub],
     [ITaskGroupService.channelName, taskGroupServiceStub],
     [IUsageStatsService.channelName, usageStatsServiceStub],
-    [IWindowControllerService.channelName, windowControllerServiceStub],
+    [IWindowControllerService.channelName, createWindowControllerService(realTaskService)],
     [IZCodeAgentService.channelName, realAgentService],
     [IZCodeSessionService.channelName, realSessionService],
     [IZCodeTaskService.channelName, realTaskService],
