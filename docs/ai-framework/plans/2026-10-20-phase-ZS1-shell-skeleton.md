@@ -267,9 +267,12 @@ V2 原结论「空态渲染以行为证据核定，截图留编排者核图」�
 
 **patch 清单（scratch 内，非 refs；随 Task 3 落地后在此登记 diff）：**
 
-| #   | 文件（scratch 内）                               | 内容                                                    | 理由                                                                                  |
-| --- | ------------------------------------------------ | ------------------------------------------------------- | ------------------------------------------------------------------------------------- |
-| P1  | `packages/desktop/src/main/desktopRuntimeEnv.ts` | hostModulePath 支持 `ZS1_HOST_MODULE_PATH` 环境变量注入 | 唯一装配点 patch：把 host 进程模块指向本仓 zcode-adapter 构建的 host bundle（Task 3） |
+| #   | 文件（scratch 内）                                                         | 内容                                                                                     | 理由                                                                                                                                                                                  |
+| --- | -------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| P1  | `packages/desktop/src/main/desktopRuntimeEnv.ts`                           | hostModulePath 支持 `ZS1_HOST_MODULE_PATH` 环境变量注入                                  | 唯一装配点 patch：把 host 进程模块指向本仓 zcode-adapter 构建的 host bundle（Task 3）                                                                                                 |
+| P2  | `packages/ui/src/settings/model-provider-section/ProviderCardSections.tsx` | 「模型」区加**获取模型**按钮 + 勾选面板（Discover→列表勾选→添加所选，2026-10-22 ZS4.5f） | 用户点名需求：「在【添加模型】按钮左侧增加一个获取模型的按钮……我勾选了哪些，下面才显示哪些」；后端 discoverModels/addDiscoveredModels 纯适配器侧，UI 只加交互壳，不改任何既有组件行为 |
+
+> **2026-10-22 红线变更登记**：UI patch 基线由 **1 处 → 2 处**（+P2，用户明确拍板的功能诉求；AskUserQuestion 时未答复但前一条消息已点名「建议直接……增加一个获取模型的按钮」，视为授权）。除 P2 外 UI 仍零改动；后续阶段引用「UI patch 仍 1 处」的验收行按 2 处口径复核。
 
 构建绕行全部使用 ZCode 原生环境开关（非 patch）：`ZCODE_BOOTSTRAP_WITH_REMOTE=1`（纯 node 构建通道）、`ZCODE_DATA_BASE_DIR`（数据根）、`ELECTRON_MIRROR`（二进制下载）。
 

@@ -36,7 +36,7 @@
 
 ## Global Constraints（冲突时以本节为准）
 
-1. **ZCode UI 零改动**：UI patch 仍仅 ZS1 的 `desktopRuntimeEnv.ts` 一处；不得为批量菜单改 UI。
+1. **ZCode UI 零改动**：UI patch 仍仅 ZS1 的 `desktopRuntimeEnv.ts` 一处；不得为批量菜单改 UI。（收口后微波 **ZS4.5f**（2026-10-22，用户点名「添加模型按钮左侧加获取模型按钮，勾选哪些显示哪些」）新增 P2 = `packages/ui/.../ProviderCardSections.tsx` 获取模型按钮+勾选面板，基线 1→2，登记见 ZS1 计划 patch 清单；本行保留收口时点原状，不改写历史验收。）
 2. **core 解冻纪律**：默认零改动。**计划内唯一窗口 = deleteSession**（提案先行：函数签名 + 锁/竞态处理 + 测试清单，编排者批准后实施；被否 → 批量删除降级为「归档隐藏」并如实登记，物理删除归 ZS5+）。`packages/gateway` 零改动。
 3. **红线⑩**：写路径十投逐个真实现或保持显式 throw（不许假成功）；pinned/archived 状态读面与写面对称；commands/skills 等若无 core 能力 → C 类静默空态而非假列表。
 4. **密钥与数据安全**：auth.json 写 0600 + `redactSecrets` 出口；**deleteSession 物理删除不可恢复**——UI 已有确认弹窗（ZCode 原生），我方不得跳过确认路径；测试只删临时目录内会话。

@@ -1,8 +1,8 @@
 // ZS4 e2e settings provider round.
 // Exit codes: 0 pass / 3 wrong instance / 4 settings not opened / 5 provider not created /
 //             6 save not persisted / 7 connectivity failure not shown / 8 delete not effective /
-//             9 secret leaked / 1 other
-'use strict';
+//             9 secret leaked / 10 fetch-models flow failure / 1 other
+
 const http = require('http');
 const WebSocket = require('D:/AI_Projects/harness2/node_modules/.pnpm/ws@8.21.3/node_modules/ws');
 const fs = require('fs');
@@ -12,9 +12,28 @@ const os = require('os');
 const SHOT = 'D:/AI_Projects/harness2/docs/screenshots/zs4/settings-provider-round.png';
 const HOME = process.env.HARNESS2_HOME || os.homedir();
 const SECRET = 'sk-probe-secret-123';
-const BASE_URL = 'http://127.0.0.1:9/v1';
+// ZS4.5f：模型列表来自本探针自带的 mock server——保存时 allowModels=false（404 →
+// 自动拉取静默失败，模型区保持只有所需证据）；点「获取模型」前置 true，让显式
+// discoverModels 拿到全量列表。这样 fetch+勾选路径与自动回填路径可分辨。
+const MODEL_SERVER_PORT = 9317;
+const BASE_URL = `http://127.0.0.1:${MODEL_SERVER_PORT}/v1`;
 const CONFIG_PATH = path.join(HOME, '.harness2', 'config.json');
 const AUTH_PATH = path.join(HOME, '.harness2', 'auth.json');
+let mockAllowModels = false;
+const mockServer = http.createServer((req, res) => {
+  if (mockAllowModels && /^\/v1\/models(\?|$)/.test(req.url || '')) {
+    res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
+    res.end(
+      JSON.stringify({
+        data: [{ id: 'probe-model' }, { id: 'fetch-alpha' }, { id: 'fetch-beta' }, { id: 'fetch-gamma' }],
+      }),
+    );
+    return;
+  }
+  res.writeHead(404, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store', Connection: 'close' });
+  res.end('{"error":"not_found"}');
+});
+mockServer.listen(MODEL_SERVER_PORT, '127.0.0.1');
 
 function getJson(p) {
   return new Promise((resolve, reject) => {
@@ -304,6 +323,101 @@ function findProviderIdByBaseUrl(cfg) {
         console.error('MODEL ADD FAILED, dialog text: ' + dlgText);
         process.exit(6);
       }
+
+      // ── ZS4.5f：获取模型 → 勾选 → 添加所选（用户点名流程：100+ 模型只加勾选的） ──
+      // mock server 此刻翻牌 200（模型列表 = probe-model 已存在 + alpha/beta/gamma 三个新）
+      mockAllowModels = true;
+      const fetchBtn = await ev(
+        "(() => { const b = document.querySelector('[data-testid=\"model-provider-fetch-models-button\"]'); if (b) { b.click(); return 'clicked'; } return 'missing'; })()",
+      );
+      console.log('FETCH_BTN=' + fetchBtn);
+      if (fetchBtn !== 'clicked') {
+        console.error('FETCH MODELS BUTTON MISSING');
+        process.exit(10);
+      }
+      // 等面板出现且列表渲染（行 testid 逐模型；最多 ~12s）
+      let fetchRowsReady = false;
+      let fetchRowIds = [];
+      for (let i = 0; i < 40; i++) {
+        await new Promise((r) => setTimeout(r, 300));
+        fetchRowIds = await ev(
+          "JSON.stringify(Array.from(document.querySelectorAll('[data-testid^=\"model-provider-fetch-row-\"]')).map(e=>e.getAttribute('data-testid').replace('model-provider-fetch-row-','')))",
+        );
+        const ids = JSON.parse(fetchRowIds || '[]');
+        if (ids.length === 4) {
+          fetchRowsReady = true;
+          break;
+        }
+      }
+      console.log('FETCH_ROWS=' + (fetchRowsReady ? '4' : 'partial:' + fetchRowIds));
+      if (!fetchRowsReady) {
+        const dlgText = await ev(
+          "(() => { const d = Array.from(document.querySelectorAll('div[role=\"dialog\"]')).map(x=>x.innerText.replace(/\\s+/g,' ').slice(0,400)); return JSON.stringify(d); })()",
+        );
+        console.error('FETCH DIALOG ROWS NOT RENDERED, dialogs: ' + dlgText);
+        process.exit(10);
+      }
+      // 已存在的 probe-model 行必须标「已添加」且复选框禁用（Radix 落 native disabled）
+      const existingMark = await ev(
+        "(() => { const row = document.querySelector('[data-testid=\"model-provider-fetch-row-probe-model\"]'); if (!row) return 'no-row'; const cb = row.querySelector('[role=\"checkbox\"]'); return JSON.stringify({ marked: /已添加|Added/.test(row.innerText), disabled: cb ? Boolean(cb.disabled) : null }); })()",
+      );
+      console.log('FETCH_EXISTING_MARK=' + existingMark);
+      // 勾选 fetch-alpha 与 fetch-gamma（fetch-beta 故意不勾 → 证明只加所选）。
+      // Radix Checkbox 的 button 接受 .click()（非 DropdownMenu 的 pointerdown 依赖）
+      const ticked = await ev(
+        "(() => { const pick = (id) => { const row = document.querySelector('[data-testid=\"model-provider-fetch-row-'+id+'\"]'); const cb = row && row.querySelector('[role=\"checkbox\"]'); if (!cb) return id+':missing'; cb.click(); return id+':ok'; }; return [pick('fetch-alpha'), pick('fetch-gamma')].join(','); })()",
+      );
+      console.log('FETCH_TICK=' + ticked);
+      await new Promise((r) => setTimeout(r, 400));
+      const addBtnState = await ev(
+        "(() => { const b = document.querySelector('[data-testid=\"model-provider-fetch-add-button\"]'); if (!b) return 'missing'; return JSON.stringify({ disabled: b.disabled, text: (b.textContent||'').trim() }); })()",
+      );
+      console.log('FETCH_ADD_STATE=' + addBtnState);
+      const addClicked = await ev(
+        "(() => { const b = document.querySelector('[data-testid=\"model-provider-fetch-add-button\"]'); if (b && !b.disabled) { b.click(); return 'clicked'; } return 'blocked'; })()",
+      );
+      console.log('FETCH_ADD_CLICK=' + addClicked);
+      if (addClicked !== 'clicked') {
+        console.error('FETCH ADD SELECTED BLOCKED');
+        process.exit(10);
+      }
+      // 磁盘断言：models 键 = probe-model + fetch-alpha + fetch-gamma（beta 绝不出现）
+      let fetched = false;
+      let diskKeys = [];
+      for (let i = 0; i < 60; i++) {
+        await new Promise((r) => setTimeout(r, 500));
+        const cfg = readJsonSafe(CONFIG_PATH);
+        const p = cfg && cfg.providers && cfg.providers[providerId];
+        diskKeys = p && p.models ? Object.keys(p.models) : [];
+        if (
+          diskKeys.length === 3 &&
+          diskKeys.includes('probe-model') &&
+          diskKeys.includes('fetch-alpha') &&
+          diskKeys.includes('fetch-gamma')
+        ) {
+          fetched = true;
+          break;
+        }
+      }
+      console.log('FETCH_DISK=' + fetched + ' KEYS=' + JSON.stringify(diskKeys));
+      if (!fetched) {
+        console.error('FETCH+SELECT NOT PERSISTED (只加所选断言失败)');
+        process.exit(10);
+      }
+      if (diskKeys.includes('fetch-beta')) {
+        console.error('UNSELECTED MODEL LEAKED TO DISK');
+        process.exit(10);
+      }
+      // UI 行同步（视图广播后 3 行）
+      await new Promise((r) => setTimeout(r, 800));
+      const uiRows = await ev(
+        '(() => document.querySelectorAll(\'[data-testid^="model-provider-model-input-"]\').length)()',
+      );
+      console.log('FETCH_UI_ROWS=' + uiRows);
+      // 弹窗应已自动关闭
+      const fetchDlgGone = await ev('!document.querySelector(\'[data-testid="model-provider-fetch-dialog"]\')');
+      console.log('FETCH_DIALOG_CLOSED=' + fetchDlgGone);
+      mockAllowModels = false;
 
       // test connectivity
       let testClicked = false;
