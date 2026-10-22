@@ -179,6 +179,27 @@
 | T6a 全仓门         | —                             | 编排者                | 逐包 core1638/adapter92/gateway40/web150/ui-shared776/cli1575 绿；`-r typecheck` 0；eslint 0 err；prettier 绿；冻结通过。desktop 满载 flaky（隔离绿+零 diff）非回归                                                                                                                                                          |
 | T6b e2e（阻塞）    | `3418bf7`+`55e03b9`           | cat-jam 探针 + 编排者 | 两探针轮入库未真跑；**冷启动首轮发送不渲染**（后端全成功/点侧栏快照正常/热态正常/pre-ZS4 同坏但未碰帧代码）——诊断代理定位中                                                                                                                                                                                                  |
 
+## T6 收口执行记录（2026-10-22 回填）
+
+| 项                    | 提交                                                                                 | 证据（实际命令输出）                                                                                                                                                                                                                            |
+| --------------------- | ------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 冷启动首轮不渲染 P0   | `e22c24c` + 回归钉 `a25ac43` + 根因修订报告                                          | 根因=**createSession 用 process.cwd() 而 UI prepareSession 用 workspacePath**（组目录劈叉，67ce1e4 引入）；修后 `-Fresh` 双跑 exit=0                                                                                                            |
+| hover 归档/删除不生效 | `01de328`（window-controller.mutateTask 接 IZCodeTaskService）                       | UI 行悬停归档/删除走 window-controller 而非 task 服务；原 B 桩 throw。接线 rename/pin/archive/delete/delete-archived/mark-read/open/resume；`task-service-write.test.ts` 新 42 行测（归档→listArchived 真值、删除→getTaskMeta null）            |
+| 设置页写面契约缺口    | `6cfc206`（嵌套↔扁平翻译层+内存草稿）+ `7e563cd`（revisionClock+resolveModelConfig） | e2e 实证三连坑：①UI 回传嵌套形 ProviderConfigObject 被扁平校验拒；②草稿视图不推 revision 被 UI 快照守卫吞（providerSettingsSnapshot.ts:45-46）；③缺 resolveModelConfig → 添加模型对话框读 null.inheritedConfig 炸。adapter 98 测绿              |
+| e2e 双轮真跑绿        | `4df22d3`（探针重写+runbook fake-home 种子）                                         | `-SidebarDelete` 磁盘真删+UI 一致+截图；`-SettingsProvider` 建卡→导航→表单→密钥进 auth 不进 config→加模型→连通测试显失败→删除闭环，RESULT pass。两轮各 ≥2 次连续绿                                                                              |
+| 四轮回归矩阵          | 同上                                                                                 | `-Fresh -Approval`=0 / `-Fresh -SidebarDelete`=0 / `-Fresh -SettingsProvider`=0 / `-Fresh`（真机渠道真实模型回复）=0，顺序单实例跑                                                                                                              |
+| 真机配置污染事件      | —                                                                                    | 探针曾用 launch-manual.ps1（真 home）建草稿写坏 `C:\Users\ASUS\.harness2\config.json`（4 空 provider）；当场清理+备份，本收口又剥净 enabled/_h2Revision 漂移键，loadConfig warnings=[] 验证。教训登记：provider 写探针只走 runbook（fake-home） |
+
+**如实偏差登记（全能档验收口径）**：
+
+1. T5 子代理 0 新增测试（违约），编排者补 6 测——已录 T5 行。
+2. 两枚 ZS4 探针初版选择器抄旧壳 `ui-shared`（运行时实际渲染 scratch `packages/ui`），全线打空；重写以运行时 DOM dump 为准。
+3. **e2e 轮一律 fake-home**：`-Approval` 原走真 home（依赖用户渠道可用性），收口时改种 mock config——轮子不再被真机状态假红；provider 由 `ZS3_E2E_APPROVAL` 强制 MockProvider，判定强度不变。
+4. **产品缺口（不带入收口判定，归 ZS5 输入）**：①adapter 不推 window-controller 帧 → mutate 后 UI 行移除靠刷新时机（探针以磁盘为真相+ui-stale 分类）；②`subscribeSessionsIndexV4` 未实现（host log 每 20s FAIL 重试）；③deletePersonalProvider 不清 auth 密钥（保守）。
+5. 批量删除入口=原生归档区（`archive-delete`/deleteAllArchived），「删除其他」右键菜单不做（UI 零改动）。
+
+**V1–V8 自评**：V1 ✅（侧栏轮：hover 归档→归档视图→恢复→再归档→删除→磁盘消失，`docs/screenshots/zs4/sidebar-delete-round.png`）；V2 ✅（T2 自动标题+pin 排序，task-service 测）；V3 ✅（设置轮全链路+密钥红线断言）；V4 ✅（T5 盘点映射对账+降级如实）；V5 ✅（仅 deleteSession 窗口+api-surface 同步）；V6 ✅（六包 diff=0、UI patch=1）；V7 ✅（本收口重跑 adapter 全绿+buildAll+smokeBundle；全仓门=T6a）；V8 ⚠️ 挂账（子代理通道 5xx 累计，收口后再试）。V9 → 交用户真机清单（见上节）。
+
 **决策登记**：
 
 1. **批量入口落点（盘点决策点 2）= 选项 1「原生路径 + 脚本」**：ZCode UI 零改动约束下，批量删除走原生归档区（`ArchiveGroupCard` unarchiveAll/deleteAll + `DeleteAllArchivedTasksButton`，服务端 `deleteArchivedTasks` T3 已实现）；「删除其他/归档其他」右键菜单项**不做**（不造 UI patch）；兜底 `scripts/zs4/cleanup-sessions.cjs`（默认 dry-run）。命令面板/快捷键入口列为后续升级。
