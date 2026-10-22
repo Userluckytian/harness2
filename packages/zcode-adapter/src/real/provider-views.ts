@@ -539,7 +539,15 @@ export function createProviderSettingsService(opts: ProviderViewsOptions = {}): 
       // 密钥同步清理（ZS5-T5 A）：删 provider 时同步删 auth.json 该 providerId 密钥条目，
       // 防止幽灵密钥残留（ZS4 收口缺口③）。best-effort：auth 缺失/损坏不阻断删除。
       try {
-        const { auth } = readAuthFile(store.authPath);
+        const authResult = readAuthFile(store.authPath);
+        if (authResult.error) {
+          // auth 文件损坏/非法：记录告警，便于观测密钥残留；provider 删除仍成功。
+          console.error(
+            '[provider-settings] deletePersonalProvider auth cleanup failed:',
+            redactSecrets(authResult.error),
+          );
+        }
+        const auth = authResult.auth;
         if (auth.channels && Object.prototype.hasOwnProperty.call(auth.channels, providerId)) {
           const { [providerId]: _dropAuth, ...restAuth } = auth.channels;
           auth.channels = restAuth as typeof auth.channels;

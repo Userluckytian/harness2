@@ -162,7 +162,7 @@ export function buildHostSamplingResponse(
   return {
     type: HostResponseTypes.ResourceUsageSnapshotResult,
     requestId,
-    sampledAt: Math.max(0, Math.trunc(sampledAt)),
+    sampledAt: Number.isFinite(sampledAt) ? Math.max(0, Math.trunc(sampledAt)) : 0,
     processes: [redactHostSamplingProcess(processRow, redact)],
   };
 }
@@ -192,10 +192,21 @@ export function createHostSamplingController(
   const redact = options.redact ?? redactSecrets;
   const sampler = createHostSamplingSampler(options);
   const pending = new Map<string, PendingToken>();
+  // cancel 先于 request 到达时的登记表（one-shot）：handleRequest 入口消费并丢弃
+  const cancelledIds = new Set<string>();
 
   const sampledAtFn = options.now ?? (() => Date.now());
 
   function handleRequest(requestId: string): void {
+    // ① cancel-before-request：登记过则直接丢弃、不回帖
+    if (cancelledIds.has(requestId)) {
+      cancelledIds.delete(requestId);
+      return;
+    }
+    // ② 同一 requestId 已 pending 时拒绝覆盖，保留旧 token/cancel 状态
+    if (pending.has(requestId)) {
+      return;
+    }
     const token: PendingToken = { cancelled: false };
     pending.set(requestId, token);
     const row = sampler.sample();
@@ -215,8 +226,12 @@ export function createHostSamplingController(
 
   function cancelRequest(requestId: string): void {
     const token = pending.get(requestId);
-    if (!token) return; // 已回帖或未知 → 忽略
-    token.cancelled = true;
+    if (token) {
+      token.cancelled = true;
+      return;
+    }
+    // request 尚未登记（cancel 先到）：登记到 cancelledIds，handleRequest 入口消费
+    cancelledIds.add(requestId);
   }
 
   function handleMessage(raw: unknown): boolean {

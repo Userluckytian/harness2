@@ -88,5 +88,10 @@ describe('boot-timing (ZS5-T4)', () => {
   it('parseBootTimingLine 解析失败返回 null', () => {
     expect(parseBootTimingLine('no timing here')).toBeNull();
     expect(parseBootTimingLine('[h2-boot-timing] foo +12ms')).toEqual({ name: 'foo', ms: 12 });
+    // 畸形输入
+    expect(parseBootTimingLine('[h2-boot-timing] foo 12ms')).toBeNull(); // 缺 +
+    expect(parseBootTimingLine('[h2-boot-timing] foo -5ms')).toBeNull(); // 负数
+    expect(parseBootTimingLine('[h2-boot-timing] foo + 12ms')).toBeNull(); // 多空格
+    expect(parseBootTimingLine('')).toBeNull(); // 空串
   });
 });

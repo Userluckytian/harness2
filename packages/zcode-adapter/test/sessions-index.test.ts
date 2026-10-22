@@ -98,7 +98,12 @@ describe('ZS5-T3 sessions-index subscribe', () => {
       const before = frames.length;
       // create a session after unsubscribe -> should not produce sessions-index frame
       await (agent as any).createSession({ workspacePath: home });
-      await new Promise((r) => setTimeout(r, 3500));
+      // 轮询：最多 8s 内帧数不应增长
+      const pollStart = Date.now();
+      while (Date.now() - pollStart < 3500) {
+        await new Promise((r) => setTimeout(r, 50));
+        if (frames.length !== before) break;
+      }
       const after = frames.length;
       expect(after).toBe(before);
     } finally {

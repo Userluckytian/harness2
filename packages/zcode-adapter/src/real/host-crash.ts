@@ -14,9 +14,9 @@
  *
  * 本适配层决策：adapter host 无等价资源释放器，且为避免连坐杀死壳/测试进程，
  * 两类钩子均**写报告后吞掉**（不 process.exit）；recoverable 分配失败仅 warn。
- * 依据行号已标于上；若后续需要 fatal 退出，可在 options.exit 注入 process.exit。
+ * 依据行号已标于上；两类钩子写报告后均吞、不退出（对齐 ZCode main 仅记日志语义）。
  *
- * 测试缝：home / writeCrashReport / now / exit 全可注入；导出的 handle* 函数可被单测直接调用，
+ * 测试缝：home / writeCrashReport / now 全可注入；导出的 handle* 函数可被单测直接调用，
  * 不真正注册 process 监听、不真杀进程。
  */
 import process from 'node:process';
@@ -29,8 +29,6 @@ export interface CrashHookOptions {
   writeCrashReport?: (err: unknown, opts?: { home?: string; now?: Date }) => string | null;
   /** 时钟（测试注入以生成多文件） */
   now?: () => Date;
-  /** 退出函数（默认 no-op；生产如需 fatal 退出可注入 process.exit） */
-  exit?: (code?: number) => void;
 }
 
 let installed = false;
@@ -65,10 +63,7 @@ export function handleUncaughtException(err: unknown, options: CrashHookOptions 
       // ignore
     }
   }
-  // 不退出：见文件头处置语义说明；exit 注入点保留给需要 fatal 的调用方
-  if (options.exit) {
-    // 默认不调用；仅当调用方显式要求 fatal 时使用。此处保持 no-op 以避免连坐。
-  }
+  // 两类钩子写报告后均吞、不退出（对齐 ZCode main 仅记日志语义）
   return reportPath;
 }
 

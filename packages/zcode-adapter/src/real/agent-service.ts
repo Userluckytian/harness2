@@ -200,20 +200,28 @@ export function createAgentService(opts: AgentServiceOptions = {}): IZCodeAgentS
   function ensureSessionsIndexTimer(): void {
     if (sessionsIndexTimer) return;
     sessionsIndexTimer = setInterval(() => {
-      for (const subId of [...sessionsIndexSubs.keys()]) {
-        const sub = sessionsIndexSubs.get(subId);
-        if (!sub) continue;
-        const fp = sessionsIndexFingerprint(sub.cwd);
-        if (fp !== sub.lastFingerprint) {
-          sub.lastFingerprint = fp;
-          fireSessionsIndexFrame(subId, 'online');
+      try {
+        for (const subId of [...sessionsIndexSubs.keys()]) {
+          try {
+            const sub = sessionsIndexSubs.get(subId);
+            if (!sub) continue;
+            const fp = sessionsIndexFingerprint(sub.cwd);
+            if (fp !== sub.lastFingerprint) {
+              sub.lastFingerprint = fp;
+              fireSessionsIndexFrame(subId, 'online');
+            }
+          } catch (e) {
+            console.error('[agent-service] sessions-index timer tick failed:', (e as Error)?.message ?? e);
+          }
         }
-      }
-      if (sessionsIndexSubs.size === 0) {
-        if (sessionsIndexTimer) {
-          clearInterval(sessionsIndexTimer);
-          sessionsIndexTimer = null;
+        if (sessionsIndexSubs.size === 0) {
+          if (sessionsIndexTimer) {
+            clearInterval(sessionsIndexTimer);
+            sessionsIndexTimer = null;
+          }
         }
+      } catch (e) {
+        console.error('[agent-service] sessions-index timer tick failed:', (e as Error)?.message ?? e);
       }
     }, 3000);
     sessionsIndexTimer.unref?.();
@@ -1540,7 +1548,8 @@ export function createAgentService(opts: AgentServiceOptions = {}): IZCodeAgentS
     async resyncSessionsIndexV4(params: any): Promise<unknown> {
       const subscriptionId = params?.subscriptionId;
       if (typeof subscriptionId !== 'string' || !sessionsIndexSubs.has(subscriptionId)) {
-        // unknown subscriptionId：no-op ack，不抛
+        console.error('[agent-service] resyncSessionsIndex unknown subscriptionId:', subscriptionId);
+        // unknown subscriptionId：no-op ack，不抛（契约不变）
         return { ack: { subscriptionId: subscriptionId ?? '', mode: 'snapshot', logEpoch } };
       }
       fireSessionsIndexFrame(subscriptionId, 'recovery');
