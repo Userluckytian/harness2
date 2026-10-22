@@ -29,6 +29,11 @@ import {
 import { HostMessageTypes, HostResponseTypes } from '@zcode/shared';
 import { createHarness2Services } from './createHarness2Services.js';
 import { attachHostSampling } from './real/host-sampling.js';
+import { installCrashHooks } from './real/host-crash.js';
+
+// ZS5-T2：host 进程崩溃归因接线（uncaughtException / unhandledRejection → core writeCrashReport）。
+// 仅本地落盘、零遥测；钩子自身 try/catch 兜底，绝不再抛。
+installCrashHooks();
 
 interface ElectronMessagePortMainLike {
   on(event: 'message', listener: (e: { data: unknown }) => void): unknown;
@@ -189,3 +194,11 @@ parentPort.on('message', (e: { data?: unknown }) => {
 });
 
 log('info', `zs1 stub host started (pid=${process.pid})`);
+
+// 仅 e2e（ZS5_TEST_CRASH=1）：启动后 ~3s 主动抛出，走 unhandledRejection 路径，
+// 验证崩溃报告落盘且壳不连坐崩。生产/正常启动不触发。
+if (process.env.ZS5_TEST_CRASH === '1') {
+  setTimeout(() => {
+    void Promise.reject(new Error('zs5-e2e-crash-probe'));
+  }, 3000);
+}
