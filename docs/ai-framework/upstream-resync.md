@@ -51,15 +51,20 @@ node "..." exec prettier --check .   # 根目录全仓
 
 - 管道吃退出码坑：`prettier --check ... | tail` 会让 `$?` 变成 tail 的码——CI 门前先单独跑不带管道，或 `; echo EXIT=$?`。
 
-## 5. ZCode 上游前进时（patch 重放清单，当前基线=2 处 + 品牌/隐藏待批）
+## 5. ZCode 上游前进时（patch 重放清单，当前基线=11 处，载体提交 scratch `247b4c0e`）
 
-| #      | 文件（scratch 内）                                                         | 内容                                              | 重放要点                                                                                                                             |
-| ------ | -------------------------------------------------------------------------- | ------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
-| P1     | `packages/desktop/src/main/desktopRuntimeEnv.ts`                           | `ZS1_HOST_MODULE_PATH` 注入                       | 锚行=hostModulePath 定义；上游若重构 desktop main 需逐行核对                                                                         |
-| P2     | `packages/ui/src/settings/model-provider-section/ProviderCardSections.tsx` | 获取模型按钮+勾选面板（ZS4.5f）                   | 上游改版该卡片时先读旧版 diff；`discoverModels/addDiscoveredModels` 契约在本仓 `packages/zcode-adapter`，勿丢 testid（e2e 探针依赖） |
-| （批） | `packages/ui/src/lib/settingsNavigation.ts`                                | HIDDEN_SETTINGS_SECTIONS 追加 usage/remoteDevices | ZS6-T1 提案中，未执行；见 `zs6-hide-audit.md`                                                                                        |
+**唯一事实源=本仓 `docs/patches/zs-shell-patches.patch`（自锚点 `3c5b2276` 的完整 diff，18 文件）+ `docs/ai-framework/plans/2026-10-20-phase-ZS1-shell-skeleton.md` patch 表（P1–P11 逐条理由）**。上游前进时先 `git -C refs/ZCode log <锚>..<新>` 判触及面，再按文件逐组重放：
 
-重放后必跑：adapter `buildAll`（含 smokeBundle）→ 桌面 renderer vite 重建 → `run-e2e.ps1` 全矩阵（含 `-Crash`）→ `zs6/audit-sweep.cjs` 复跑（红线⑩回归）。
+| 组                   | 文件与要点                                                                                                                                                                                                                 |
+| -------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| P1（内心）           | `desktopRuntimeEnv.ts` hostModulePath env 注入——上游重构 desktop main 时锚行逐核对                                                                                                                                         |
+| P2（交互）           | `ProviderCardSections.tsx` 获取模型按钮+勾选面板——上游改版该卡片先读旧 diff；勿丢 testid（e2e 探针依赖）；契约在本仓 adapter                                                                                               |
+| P3–P6（隐藏）        | settingsNavigation 隐藏集 / 预设卡表置空 / Navigation 空组标题 / Help 外链常量门——**纯「不渲染」语义**，上游若给这些区块加 feature-gate 数据驱动则弃重放改走数据形状并登记降级                                             |
+| P7–P11（品牌）       | packaged 应用名 / about 窗+版权 / shared 菜单标签×6 / UI i18n about×2 / index.html 壳标题——上游若自带品牌替换机制（u1 曾有 `intl-brand-product` 传闻，实证 scratch 树**不存在**该包，勿凭记忆假设存在）则弃 patch 改走机制 |
+| 构建配置（不占编号） | `desktop-product-identity.mjs` production identity + builder `extraMetadata`（`zs6-brand-checklist.md` §2 列表）                                                                                                           |
+| 打包暂存（非 patch） | `zs6-pack.ps1` 把 adapter bundle 写成 `out/host/index.js`(ESM 桥)+`harness2-host.cjs`——上游若改 host 产物布局（fork 路径/格式）此步必查                                                                                    |
+
+重放后必跑门：adapter `buildAll`（含 smokeBundle）→ desktop `tsup`+vite renderer 重建 → `run-e2e.ps1` 全矩阵（含 `-Crash`）→ `zs6/t1-verify.cjs`+`zs6/t2-brand-verify.cjs`（隐藏+品牌回归门）→ `zs6/audit-sweep.cjs` 复跑（红线⑩）。已知既有障碍（勿误判新坑）：tsup plugin-sandbox gen-ui vendor 哈希本机永红（产物已全出，脚本按产物存在性判）；winCodeSign 归档本机无符号链接特权永解败（打包走 `signAndEditExecutable=false`）。
 
 ## 6. 执行纪律（本程序血泪两条）
 
