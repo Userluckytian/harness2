@@ -3,6 +3,8 @@
 > 制定日期：2026-09-06 · 依据：`docs/research/2026-09-06-reference-analysis.md`
 > 原则：实事求是（不确定的不做）；轨迹优先；每个功能尽可能完善后再推进下一个。
 > 状态图例：⬜ 未开始 · 🔶 进行中 · ✅ 完成
+>
+> **⚠️ 2026-10-23 口径更新**：产品主线已转 ZS 程序（ZCode 壳 + harness2 内心，见 `docs/HANDOFF.md` 与 `docs/ai-framework/plans/2026-10-20-zs-shell-migration-program.md`）。本清单中「桌面端 D2（Electron+React 自研壳）」已被 ZCode 壳替代；旧壳六包退役决议材料=`docs/ai-framework/plans/zs6-retirement-proposal.md`（待人类拍板）。本文件保留为 core/内心能力面的功能台账。
 
 ## 核心架构决策（2026-09-06 用户确认生效）
 

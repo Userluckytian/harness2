@@ -119,6 +119,8 @@
 
 **Steps:** 纯文档+引用扫描证据（`grep -rl "@harness2/ui-shared" packages/` 等）；commit `📝docs(zs6): 旧壳退役与 web 去留提案（待人类拍板）`。
 
+> **执行记录（2026-10-23 T4，编排者直做）**：`docs/ai-framework/plans/zs6-retirement-proposal.md` 成文。依赖图实证（package.json grep：旧壳层 desktop/ui-shared/web **零反向依赖**，删之只伤自身；cli/gateway 与 adapter 各自依赖 core 独立存活）；规模实证（git 跟踪 537 文件 / 213 冻结测试 / 本地 845MB release 产物）；CI 成本实证（六包 test + desktop 三平台打包 job 全为冻结包付费）。两案 A（全删归档）/B（保 cli·gateway 删旧桌面壳层，**推荐**）+ web 单独论（旧 web 随案 B 删；未来 Web 面走 ZCode web build + adapter=另立项，不复活旧码）。红线⑩自查=合规（旧壳不在新壳分发物内，冻结≠假入口）。**拍板时机建议**=V9 装机验收+tag 发出后（一个 chore commit 半天含回归），删前打归档 tag 保可复原。HANDOFF/ROADMAP 指针已同步。
+
 ---
 
 ## Task 5：上游 re-sync 流程文档化
