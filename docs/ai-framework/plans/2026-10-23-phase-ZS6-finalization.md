@@ -31,6 +31,7 @@
 ## Global Constraints（冲突时以本节为准）
 
 1. **UI patch 基线=2 处**（P1 desktopRuntimeEnv / P2 ProviderCardSections）。本阶段允许新增 patch 的范围**仅限品牌与隐藏所需的装配点**（desktop main / 构建配置 / index.html 壳），每处照 ZS1 法登记进本计划执行记录；`packages/ui` 源码**零新改动**。隐藏不得用 CSS 全局硬藏（脆弱），优先数据形状/feature-gate。
+   > **执行期偏离登记（2026-10-23 T1）**：实证核查（zs5-inventory/审计探针）发现「零 patch 通道」在本阶段隐藏面上**不成立**——usage/remoteDevices 分区（`HIDDEN_SETTINGS_SECTIONS`）、Z.ai/Start Plan 预设卡（`PRESET/CODING_PLAN_PROVIDER_SPECS`）、Help 运营外链（`WorkspaceHelpMenuButton` 硬编码）**均为 packages/ui 内静态渲染，无 adapter 数据形状或 services feature-gate 可外部驱动**。故改走**唯一可用且 ZCode 自家既有的隐藏机制**（同 automations/plugins 的静态集合 + 数据表置空 + 常量门），登记为 **P3–P6，UI patch 基线 2→6**；全部为「不渲染假入口」，**零改任何交互组件行为**，与 P2（加新交互）性质不同。总纲 ZS6 行「C 类隐藏清单执行」即授权此动作；红线⑩为全程序硬约束，不留可点必炸入口。完整 diff 落 `docs/patches/zs-shell-patches.patch`，运行态回归 `scripts/zs6/t1-verify.cjs` GATE=PASS。
 2. **发版红线**：`git tag`、GitHub Release、安装包对外分发=**人类亲手或逐次明确授权**；代理只做到「产物就绪+校验报告」。
 3. **零遥测/密钥/红线⑩纪律不变**；假入口判据=用户在 UI 能看到并可点击的每个功能入口，其后端要么真实、要么该入口消失（不是「点了弹报错」）。
 4. **旧壳六包（desktop 旧 renderer/ui-shared/web/cli/gateway）** 退役决策=**人类拍板门**（T4），本阶段之前维持冻结现状。

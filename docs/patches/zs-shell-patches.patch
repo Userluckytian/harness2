@@ -1,0 +1,514 @@
+diff --git a/packages/desktop/src/main/desktopRuntimeEnv.ts b/packages/desktop/src/main/desktopRuntimeEnv.ts
+index 467f780e..a73bd829 100644
+--- a/packages/desktop/src/main/desktopRuntimeEnv.ts
++++ b/packages/desktop/src/main/desktopRuntimeEnv.ts
+@@ -83,7 +83,11 @@ export const runtimeSessionDataPath =
+ // Chromedriver 会注入临时 --user-data-dir，并在该目录等待 DevToolsActivePort。
+ // e2e 如果再用 app.setPath 覆盖 userData/sessionData，端口文件会被写到另一个目录，
+ // 导致 Electron 已启动但 WebDriver session 一直创建失败。测试态打开该开关后保留 Chromedriver 的目录。
+-export const hostModulePath = join(import.meta.dirname, "../host/index.js");
++// ZS1-P1（harness2 装配点 patch，登记于 ZS1 计划执行记录）：
++// host 进程模块路径支持 ZS1_HOST_MODULE_PATH 环境变量注入——指向 harness2
++// zcode-adapter 构建的桩 host bundle（dist/host-entry.cjs）；缺省回落原版 host。
++export const hostModulePath =
++  process.env.ZS1_HOST_MODULE_PATH?.trim() || join(import.meta.dirname, "../host/index.js");
+ export const schedulerModulePath = join(import.meta.dirname, "../scheduler/index.js");
+ export function getCredentialsDir() {
+   return getAppConfigDir();
+diff --git a/packages/ui/src/WorkspaceHelpMenuButton.tsx b/packages/ui/src/WorkspaceHelpMenuButton.tsx
+index 2306cee2..42e72d15 100644
+--- a/packages/ui/src/WorkspaceHelpMenuButton.tsx
++++ b/packages/ui/src/WorkspaceHelpMenuButton.tsx
+@@ -34,6 +34,14 @@ import { useVulnerabilityReportUrl } from "@/hooks/useVulnerabilityReportUrl.js"
+ import { useZCodeIntl } from "@/i18n/IntlProvider.js";
+ import { createHelpMenuActionHandlers } from "@/lib/helpMenuActions.js";
+ 
++/**
++ * harness2 装配开关（ZS6-T1 patch 登记，非 ZCode 上游语义）：
++ * true=隐藏指向 ZCode 运营/私有 SaaS 的 5 个帮助外链（文档/社群/反馈/漏洞/需求）。
++ * 这些频道的后端在 harness2 内心为空态桩（Feedback/CloudContent/ClientScenes=C 类），
++ * 红线⑩不允许「可见可点但无后端」。恢复上游形态时置 false 即可整块回归。
++ */
++const VENDOR_HELP_LINKS_HIDDEN = true;
++
+ export function WorkspaceHelpMenuButton({
+   className,
+   isDesktop = false,
+@@ -95,36 +103,44 @@ export function WorkspaceHelpMenuButton({
+         align="end"
+         className="min-w-0 w-max [&_[data-slot=dropdown-menu-item]]:pr-6"
+       >
+-        <DropdownMenuItem onSelect={helpMenuActions.openProductDocs}>
+-          <BookOpenIcon className="size-4" />
+-          {intl.formatMessage({ id: "workspaceHeader.help.docs" })}
+-        </DropdownMenuItem>
+-        <DropdownMenuItem onSelect={handleOpenCommunity}>
+-          <UsersIcon className="size-4" />
+-          {intl.formatMessage({ id: "workspaceHeader.help.community" })}
+-        </DropdownMenuItem>
+-        <DropdownMenuItem onSelect={helpMenuActions.openIssueReport}>
+-          <MessageSquareIcon className="size-4" />
+-          {intl.formatMessage({ id: "workspaceHeader.help.issueReport" })}
+-        </DropdownMenuItem>
+-        {vulnerabilityReportLoading || vulnerabilityReportUrl ? (
+-          <DropdownMenuItem
+-            disabled={vulnerabilityReportLoading}
+-            aria-busy={vulnerabilityReportLoading}
+-            onSelect={
+-              vulnerabilityReportUrl
+-                ? () => platform.openExternal(vulnerabilityReportUrl)
+-                : undefined
+-            }
+-          >
+-            <ShieldAlertIcon className="size-4" />
+-            {intl.formatMessage({ id: "workspaceHeader.help.reportVulnerability" })}
+-          </DropdownMenuItem>
++        {/* harness2 ZS6-T1（红线⑩隐藏清单·patch 登记）：文档/社群/反馈/漏洞/需求 5 项
++            指向 ZCode 官方运营与私有 SaaS（Feedback/CloudContent/ClientScenes=空态桩），
++            对 harness2 内心产品既无后端也误导流；按「隐藏入口不改交互」原则整块不渲染。
++            导出日志/资源管理器/关于=真实能力（ZS5），保留。恢复 vendor 构建时置 false。 */}
++        {!VENDOR_HELP_LINKS_HIDDEN ? (
++          <>
++            <DropdownMenuItem onSelect={helpMenuActions.openProductDocs}>
++              <BookOpenIcon className="size-4" />
++              {intl.formatMessage({ id: "workspaceHeader.help.docs" })}
++            </DropdownMenuItem>
++            <DropdownMenuItem onSelect={handleOpenCommunity}>
++              <UsersIcon className="size-4" />
++              {intl.formatMessage({ id: "workspaceHeader.help.community" })}
++            </DropdownMenuItem>
++            <DropdownMenuItem onSelect={helpMenuActions.openIssueReport}>
++              <MessageSquareIcon className="size-4" />
++              {intl.formatMessage({ id: "workspaceHeader.help.issueReport" })}
++            </DropdownMenuItem>
++            {vulnerabilityReportLoading || vulnerabilityReportUrl ? (
++              <DropdownMenuItem
++                disabled={vulnerabilityReportLoading}
++                aria-busy={vulnerabilityReportLoading}
++                onSelect={
++                  vulnerabilityReportUrl
++                    ? () => platform.openExternal(vulnerabilityReportUrl)
++                    : undefined
++                }
++              >
++                <ShieldAlertIcon className="size-4" />
++                {intl.formatMessage({ id: "workspaceHeader.help.reportVulnerability" })}
++              </DropdownMenuItem>
++            ) : null}
++            <DropdownMenuItem onSelect={openFeatureRequest}>
++              <LightbulbIcon className="size-4" />
++              {intl.formatMessage({ id: "workspaceHeader.help.productRequest" })}
++            </DropdownMenuItem>
++          </>
+         ) : null}
+-        <DropdownMenuItem onSelect={openFeatureRequest}>
+-          <LightbulbIcon className="size-4" />
+-          {intl.formatMessage({ id: "workspaceHeader.help.productRequest" })}
+-        </DropdownMenuItem>
+         {/* Windows/Linux 没有原生菜单栏，自绘标题栏箭头菜单也已下线，
+             资源管理器只能从这里进；Web 端没有该窗口，不渲染。 */}
+         {isDesktop ? (
+@@ -142,7 +158,9 @@ export function WorkspaceHelpMenuButton({
+               <ActivityIcon className="size-4" />
+               {intl.formatMessage({ id: "titleBar.menu.help.resourceManager" })}
+             </DropdownMenuItem>
+-            {updateMenu.visible ? (
++            {/* harness2 ZS6-T1（同 P6 清单）：自动更新 feed 指向 ZCode 私有分发 SaaS，
++                harness2 内心无更新通道=假入口，随 VENDOR_HELP_LINKS_HIDDEN 一并隐藏。 */}
++            {updateMenu.visible && !VENDOR_HELP_LINKS_HIDDEN ? (
+               <DropdownMenuItem
+                 disabled={updateMenu.disabled}
+                 onSelect={updateMenu.checkForUpdates}
+diff --git a/packages/ui/src/lib/settingsNavigation.ts b/packages/ui/src/lib/settingsNavigation.ts
+index 637dcfa5..3634f187 100644
+--- a/packages/ui/src/lib/settingsNavigation.ts
++++ b/packages/ui/src/lib/settingsNavigation.ts
+@@ -46,6 +46,11 @@ const HIDDEN_SETTINGS_SECTIONS = new Set<SettingsSectionId>([
+   // 工作区搜索（.zcodeignore）设置入口先隐藏：规则文件仍生效并可手动编辑，
+   // 编辑页代码保留，放开时从这里移除即可。
+   "workspaceFileSearch",
++  // harness2 ZS6-T1（红线⑩隐藏清单）：用量统计与远程设备的后端在 harness2 内心
++  // 不存在（UsageStats/RemoteProject/SourceServer=空态桩，入口可见即点即空壳）。
++  // 按本清单既有语义处理：分区代码保留，放开时从这里移除即可。
++  "usage",
++  "remoteDevices",
+ ]);
+ 
+ export interface SettingsSectionIntentEventDetail {
+diff --git a/packages/ui/src/settings/model-provider-section/Navigation.tsx b/packages/ui/src/settings/model-provider-section/Navigation.tsx
+index fa6f476e..3f0eb4a0 100644
+--- a/packages/ui/src/settings/model-provider-section/Navigation.tsx
++++ b/packages/ui/src/settings/model-provider-section/Navigation.tsx
+@@ -386,7 +386,10 @@ export function ModelProviderSectionNavigation({
+     <aside className="px-1.5 py-3 md:py-2 md:px-2">
+       <div className="flex min-h-0 flex-col gap-3 max-md:gap-1">
+         {navigationGroups
+-          .filter((group) => group.id !== "custom" || group.items.length > 0)
++          // harness2 ZS6-T1（patch P5 登记）：原式仅空 custom 组隐藏标题；预设卡数据置空后
++          // 「预设」空标题会孤悬 → 统一为一切空组均不渲染标题（custom 原行为保留，preset
++          // 仅数据全空时行为变化，对上游非空数据无影响）。
++          .filter((group) => group.items.length > 0)
+           .map((group) => (
+             <div key={group.id} className="flex flex-col gap-2 max-md:gap-1">
+               <div className="flex h-7 items-center justify-between px-2 py-1 max-md:hidden">
+diff --git a/packages/ui/src/settings/model-provider-section/ProviderCardSections.tsx b/packages/ui/src/settings/model-provider-section/ProviderCardSections.tsx
+index 3bf5e371..05bf3770 100644
+--- a/packages/ui/src/settings/model-provider-section/ProviderCardSections.tsx
++++ b/packages/ui/src/settings/model-provider-section/ProviderCardSections.tsx
+@@ -1,6 +1,7 @@
+ /* eslint-disable max-lines -- 模型供应商卡片仍在迁移期集中维护多个紧耦合区块，后续拆分时再移除。 */
+ import {
+   useCallback,
++  useMemo,
+   useRef,
+   useState,
+   type KeyboardEvent as ReactKeyboardEvent,
+@@ -22,9 +23,19 @@ import {
+   TID_MODEL_PROVIDER_NAME_INPUT,
+   testId,
+ } from "@zcode/shared/test-ids";
+-import { InfoIcon, LockKeyholeIcon, Plus, Pencil, Trash2, MoreHorizontal } from "lucide-react";
++import { InfoIcon, LockKeyholeIcon, Plus, Pencil, Trash2, MoreHorizontal, DownloadIcon } from "lucide-react";
+ import { Button } from "@/components/ui/button.js";
+ import { Input } from "@/components/ui/input.js";
++import { Checkbox } from "@/components/ui/checkbox.js";
++import {
++  Dialog,
++  DialogContent,
++  DialogDescription,
++  DialogFooter,
++  DialogHeader,
++  DialogTitle,
++} from "@/components/ui/dialog.js";
++import { ScrollArea } from "@/components/ui/scroll-area.js";
+ import {
+   DropdownMenu,
+   DropdownMenuTrigger,
+@@ -381,7 +392,7 @@ export function ProviderModelsSection({
+   onReorderModelIds?: (modelIds: string[]) => void;
+   settingsRevision?: number;
+ }) {
+-  const { intl } = useZCodeIntl();
++  const { intl, locale } = useZCodeIntl();
+   const { providerSettingsService } = useServices();
+   const [addDialogOpen, setAddDialogOpen] = useState(false);
+   const [addSaving, setAddSaving] = useState(false);
+@@ -471,23 +482,114 @@ export function ProviderModelsSection({
+       })
+     : null;
+ 
++  // -- 获取模型（harness2 ZS4.5f 补丁：拉取全量列表 → 勾选落盘，避免 100+ 模型全量入库） --
++  const t = (zh: string, en: string) => (String(locale).startsWith("zh") ? zh : en);
++  const [fetchOpen, setFetchOpen] = useState(false);
++  const [fetching, setFetching] = useState(false);
++  const [fetchAdding, setFetchAdding] = useState(false);
++  const [fetchError, setFetchError] = useState<string | null>(null);
++  const [discoveredIds, setDiscoveredIds] = useState<string[]>([]);
++  const [discoveredExisting, setDiscoveredExisting] = useState<string[]>([]);
++  const [fetchChecked, setFetchChecked] = useState<string[]>([]);
++  const fetchSeqRef = useRef(0);
++  const providerIdRef = useRef(providerId);
++  providerIdRef.current = providerId;
++  const existingSet = useMemo(() => new Set(discoveredExisting), [discoveredExisting]);
++
++  const fetchService = () =>
++    providerSettingsService as unknown as {
++      discoverModels?: (providerId: string) => Promise<{ modelIds: string[]; existingIds: string[] }>;
++      addDiscoveredModels?: (providerId: string, modelIds: readonly string[]) => Promise<unknown>;
++    };
++
++  const runDiscover = async () => {
++    const svc = fetchService();
++    if (typeof svc.discoverModels !== "function") {
++      setFetchError(t("当前版本不支持获取模型。", "Fetching models is not supported."));
++      return;
++    }
++    // 请求序号 + 归属 provider 双守卫：快速重开弹窗或切卡时，旧请求不得覆盖新列表。
++    const seq = ++fetchSeqRef.current;
++    const owner = providerId;
++    setFetching(true);
++    setFetchError(null);
++    try {
++      const result = await svc.discoverModels(providerId);
++      if (seq !== fetchSeqRef.current || providerIdRef.current !== owner) return;
++      if (!result || !Array.isArray(result.modelIds)) {
++        throw new Error(t("当前版本不支持获取模型。", "Fetching models is not supported."));
++      }
++      setDiscoveredIds(result.modelIds);
++      setDiscoveredExisting(result.existingIds);
++      setFetchChecked([]);
++    } catch (error) {
++      if (seq !== fetchSeqRef.current) return;
++      setFetchError(error instanceof Error ? error.message : String(error));
++    } finally {
++      if (seq === fetchSeqRef.current) setFetching(false);
++    }
++  };
++
++  const openFetchDialog = () => {
++    setFetchOpen(true);
++    setFetchError(null);
++    setDiscoveredIds([]);
++    setDiscoveredExisting([]);
++    setFetchChecked([]);
++    void runDiscover();
++  };
++
++  const confirmFetchAdd = async () => {
++    if (fetchChecked.length === 0 || fetchAdding) return;
++    const svc = fetchService();
++    if (typeof svc.addDiscoveredModels !== "function") {
++      setFetchError(t("当前版本不支持添加所选模型。", "Adding selected models is not supported."));
++      return;
++    }
++    setFetchAdding(true);
++    setFetchError(null);
++    try {
++      await svc.addDiscoveredModels(providerId, fetchChecked);
++      // 宿主落盘后会广播新视图，列表自动刷新；此处只负责收口弹窗。
++      setFetchOpen(false);
++    } catch (error) {
++      setFetchError(error instanceof Error ? error.message : String(error));
++    } finally {
++      setFetchAdding(false);
++    }
++  };
++
+   return (
+     <div>
+       <div className="mb-1 flex flex-wrap items-center justify-between gap-3">
+         <span className="text-ui-base text-foreground-subtle">
+           {intl.formatMessage({ id: "settings.modelProvider.models" })}
+         </span>
+-        <Button
+-          type="button"
+-          variant="secondary"
+-          size="default"
+-          className="rounded-lg"
+-          data-testid={TID_MODEL_PROVIDER_ADD_MODEL_BUTTON}
+-          onClick={openAddDialog}
+-        >
+-          <Plus data-icon="inline-start" aria-hidden="true" />
+-          {intl.formatMessage({ id: "settings.modelProvider.addModel" })}
+-        </Button>
++        <div className="flex items-center gap-2">
++          <Button
++            type="button"
++            variant="secondary"
++            size="default"
++            className="rounded-lg"
++            data-testid="model-provider-fetch-models-button"
++            onClick={openFetchDialog}
++            disabled={fetching}
++          >
++            <DownloadIcon data-icon="inline-start" aria-hidden="true" />
++            {t("获取模型", "Fetch models")}
++          </Button>
++          <Button
++            type="button"
++            variant="secondary"
++            size="default"
++            className="rounded-lg"
++            data-testid={TID_MODEL_PROVIDER_ADD_MODEL_BUTTON}
++            onClick={openAddDialog}
++          >
++            <Plus data-icon="inline-start" aria-hidden="true" />
++            {intl.formatMessage({ id: "settings.modelProvider.addModel" })}
++          </Button>
++        </div>
+       </div>
+       {models.length > 0 ? (
+         <div className="overflow-hidden rounded-lg border border-input-border bg-input">
+@@ -583,6 +685,110 @@ export function ProviderModelsSection({
+             void editor.flush().catch(() => undefined);
+           }}
+         />
++        <Dialog
++          open={fetchOpen}
++          onOpenChange={(open) => {
++            if (fetchAdding) return;
++            setFetchOpen(open);
++          }}
++        >
++          <DialogContent
++            className="max-w-lg"
++            data-testid="model-provider-fetch-dialog"
++            aria-label={t("获取模型", "Fetch models")}
++          >
++            <DialogHeader>
++              <DialogTitle>{t("获取模型", "Fetch models")}</DialogTitle>
++              <DialogDescription>
++                {fetching
++                  ? t("正在从服务商拉取模型列表…", "Fetching model list from the provider…")
++                  : fetchError && discoveredIds.length === 0
++                    ? fetchError
++                    : t(
++                        `勾选要添加的模型（共 ${discoveredIds.length} 个可用）。`,
++                        `Tick the models to add (${discoveredIds.length} available).`,
++                      )}
++              </DialogDescription>
++            </DialogHeader>
++            {!fetching && discoveredIds.length > 0 ? (
++              <>
++                {fetchError ? (
++                  <div className="rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 text-ui-sm text-destructive">
++                    {fetchError}
++                  </div>
++                ) : null}
++                <div className="flex items-center justify-between text-ui-sm text-foreground-subtle">
++                  <span>
++                    {t("已选", "Selected")} {fetchChecked.length} / {discoveredIds.length}
++                  </span>
++                  <button
++                    type="button"
++                    className="text-ui-sm text-foreground underline-offset-2 hover:underline disabled:cursor-not-allowed disabled:opacity-50"
++                    data-testid="model-provider-fetch-toggle-all"
++                    disabled={fetchAdding}
++                    onClick={() => {
++                      const addable = discoveredIds.filter((id) => !existingSet.has(id));
++                      setFetchChecked(
++                        addable.length > 0 && fetchChecked.length >= addable.length ? [] : addable,
++                      );
++                    }}
++                  >
++                    {t("全选可添加", "Select all new")}
++                  </button>
++                </div>
++                <ScrollArea className="h-72 rounded-lg border border-input-border bg-input px-3">
++                  <div className="flex flex-col">
++                    {discoveredIds.map((id) => {
++                      const isExisting = existingSet.has(id);
++                      return (
++                        <label
++                          key={id}
++                          className="flex cursor-pointer items-center gap-2 border-b border-input-border/50 py-2 text-ui-base last:border-b-0"
++                          data-testid={`model-provider-fetch-row-${id}`}
++                        >
++                          <Checkbox
++                            data-testid={`model-provider-fetch-check-${id}`}
++                            checked={fetchChecked.includes(id)}
++                            disabled={isExisting || fetchAdding}
++                            onCheckedChange={(checked) => {
++                              setFetchChecked((prev) =>
++                                checked === true
++                                  ? prev.includes(id)
++                                    ? prev
++                                    : [...prev, id]
++                                  : prev.filter((x) => x !== id),
++                              );
++                            }}
++                          />
++                          <span className="min-w-0 flex-1 truncate font-mono">{id}</span>
++                          {isExisting ? (
++                            <span className="shrink-0 text-ui-sm text-foreground-subtle">
++                              {t("已添加", "Added")}
++                            </span>
++                          ) : null}
++                        </label>
++                      );
++                    })}
++                  </div>
++                </ScrollArea>
++              </>
++            ) : null}
++            <DialogFooter>
++              <Button
++                type="button"
++                variant="secondary"
++                size="default"
++                disabled={fetching || fetchAdding || fetchChecked.length === 0}
++                data-testid="model-provider-fetch-add-button"
++                onClick={() => {
++                  void confirmFetchAdd();
++                }}
++              >
++                {t(`添加所选（${fetchChecked.length}）`, `Add selected (${fetchChecked.length})`)}
++              </Button>
++            </DialogFooter>
++          </DialogContent>
++        </Dialog>
+       </>
+     </div>
+   );
+diff --git a/packages/ui/src/settings/model-provider-section/constants.ts b/packages/ui/src/settings/model-provider-section/constants.ts
+index 6d72fcf2..e882416a 100644
+--- a/packages/ui/src/settings/model-provider-section/constants.ts
++++ b/packages/ui/src/settings/model-provider-section/constants.ts
+@@ -1,12 +1,10 @@
+ import {
+-  BIGMODEL_PROVIDER_ID,
+   buildBigModelApiUrl,
+   buildBigModelCodingPlanPersonalManageUrl,
+   BUILTIN_MODEL_PROVIDER_IDS,
+   createUuid,
+   type OAuthProviderId,
+   ZCODE_ENV,
+-  ZAI_PROVIDER_ID,
+   type BuiltinModelProviderId,
+   type UsageQuotaLimit,
+   type UsageEntitlementSubscriptionDetail,
+@@ -31,18 +29,14 @@ export interface PresetProviderSpec {
+   oauthProviderId?: OAuthProviderId;
+ }
+ 
+-export const PRESET_PROVIDER_SPECS: PresetProviderSpec[] = [
+-  {
+-    id: BUILTIN_MODEL_PROVIDER_IDS.zaiStartPlan,
+-    displayName: "Z.ai",
+-    oauthProviderId: ZAI_PROVIDER_ID,
+-  },
+-  {
+-    id: BUILTIN_MODEL_PROVIDER_IDS.bigmodelStartPlan,
+-    displayName: "BigModel",
+-    oauthProviderId: BIGMODEL_PROVIDER_ID,
+-  },
+-];
++/**
++ * harness2 ZS6-T1（红线⑩隐藏清单·patch P4 登记）：预设 OAuth 供应商卡（Z.ai/BigModel）与
++ * Coding Plan/Start Plan 订阅卡的后端（OAuth/订阅/配额 SaaS）在 harness2 内心不存在
++ * （OAuth/CodingPlan=空态桩），「连接 Z.ai」「Start Plan」可见即假入口 → 两表置空，
++ * 整族卡片/订阅导航不渲染。消费面已核：仅 ModelProviderSection/useModelProviderNavigation/
++ * utils.tsx 读表且全经 .get()/.find() 可选链；恢复上游形态时还原数组即可。
++ */
++export const PRESET_PROVIDER_SPECS: PresetProviderSpec[] = [];
+ 
+ export const PRESET_PROVIDER_SPEC_BY_ID = new Map<BuiltinModelProviderId, PresetProviderSpec>(
+   PRESET_PROVIDER_SPECS.map((item) => [item.id, item]),
+@@ -74,36 +68,7 @@ interface CodingPlanProviderSpec {
+   purchaseUrl?: string;
+ }
+ 
+-export const CODING_PLAN_PROVIDER_SPECS: CodingPlanProviderSpec[] = [
+-  {
+-    id: BUILTIN_MODEL_PROVIDER_IDS.zaiStartPlan,
+-    oauthProviderId: ZAI_PROVIDER_ID,
+-    label: "Z.ai - Coding Plan",
+-    providerName: "Z.ai",
+-    purchaseUrl: "https://z.ai/manage-apikey/subscription",
+-  },
+-  {
+-    id: BUILTIN_MODEL_PROVIDER_IDS.zaiIndividualCodingPlan,
+-    oauthProviderId: ZAI_PROVIDER_ID,
+-    label: "Z.ai - Coding Plan",
+-    providerName: "Z.ai",
+-    purchaseUrl: "https://z.ai/manage-apikey/subscription",
+-  },
+-  {
+-    id: BUILTIN_MODEL_PROVIDER_IDS.bigmodelIndividualCodingPlan,
+-    oauthProviderId: BIGMODEL_PROVIDER_ID,
+-    label: "BigModel - Coding Plan",
+-    providerName: "BigModel",
+-    purchaseUrl: BIGMODEL_CODING_PLAN_PERSONAL_MANAGE_URL,
+-  },
+-  {
+-    id: BUILTIN_MODEL_PROVIDER_IDS.bigmodelStartPlan,
+-    oauthProviderId: BIGMODEL_PROVIDER_ID,
+-    label: "BigModel- Coding Plan",
+-    providerName: "BigModel",
+-    purchaseUrl: BIGMODEL_CODING_PLAN_PERSONAL_MANAGE_URL,
+-  },
+-];
++export const CODING_PLAN_PROVIDER_SPECS: CodingPlanProviderSpec[] = [];
+ 
+ export interface CodingPlanEntitlementState {
+   snapshot: UsageEntitlementSnapshot | null;

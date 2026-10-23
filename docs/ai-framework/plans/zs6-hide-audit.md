@@ -39,6 +39,19 @@
 
 `node scripts/zs6/audit-sweep.cjs`（壳需在线）；处置后复跑判据反用=对应入口从 dump 消失/文案不含桩字串，即 T1 回归门。
 
+## T1 处置结果（2026-10-23 执行，回归门 `scripts/zs6/t1-verify.cjs` GATE=PASS）
+
+| #   | 处置                                                                                                                                                   | 通道（偏离原建议处注明）                                                                                                                                                  | 运行态证据                                                                         |
+| --- | ------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------- |
+| 1   | plugin-management 读 4 方法=空态形状（listPlugins/getPluginsOverview/getPluginReferenceCatalog/resolveSuggestedPluginReference），写 13 方法保持 throw | adapter 数据形状（`a2dc135`）+ 单测 158 测绿                                                                                                                              | hooks 页 DOM 实读=「钩子 0 / 尚未安装钩子」正常空态，LEAK=false                    |
+| 2   | Z.ai/BigModel 预设卡+Start Plan 导航                                                                                                                   | **偏离**：原建议「provider views 数据形状剔除」不成立——卡片源=UI 静态表 `PRESET/CODING_PLAN_PROVIDER_SPECS`（非我方视图驱动）→ 置空两表（**P4**）+ 空组标题修复（**P5**） | `zai_gone=true startplan_gone=true preset_title_gone=true add_provider=true`       |
+| 3/4 | usage / remoteDevices 分区                                                                                                                             | **偏离**：无 services feature-gate 可驱动→用 ZCode 自家 `HIDDEN_SETTINGS_SECTIONS` 机制（同 automations/plugins 先例）（**P3**）                                          | SECTIONS=14（16-2），usage_hidden=true remote_hidden=true                          |
+| 5   | Help 运营外链 5 项 + 检查更新（更新 feed=ZCode 私有 SaaS，内心无通道）                                                                                 | UI 静态硬编码，唯一门=`VENDOR_HELP_LINKS_HIDDEN` 常量（**P6**）                                                                                                           | HELP_ITEMS=["导出日志","资源管理器","关于 ZCode"]，keep_real=true vendor_gone=true |
+| 6   | plugin store browse 条件项                                                                                                                             | 点击实证未做（入口保留）：store 列表经 overview 空态=显示空市场非报错，判非违例                                                                                           | capability.supported=false（单测钉）                                               |
+
+- 回归：e2e 三轮（settings/plain/sidebar）exit=0；`t1-verify.cjs` 全断言 PASS。
+- 「关于 ZCode」文案=品牌项，归 T2 处理（未隐藏）。
+
 ## 诚实边界
 
 - 只读遍历，未点击任何写操作/外链；「点了会怎样」中除 hooks 文案为 DOM 实读外，其余判后端现状以 `channel-registry.ts` classification+grep 为准（标注处「待实证」）。
