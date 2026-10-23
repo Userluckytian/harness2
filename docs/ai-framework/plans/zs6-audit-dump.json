@@ -1,0 +1,4090 @@
+{
+  "ts": "2026-10-23T05:03:39.379Z",
+  "url": "file:///D:/AI_Projects/harness2-zs1-build/ZCode/packages/desktop/out/renderer/index.html?restoreSession=true&supportsSettings=true&initialWorkspacePath=D%3A%5CAI_Projects%5Charness2-zs1-build%5Czs1-data%5C.zcode%5Cworkspace%5Cdefault&initialWorkspacePurpose=conversation&zcodeLaunchMarks=%7B%22createdAt%22%3A1792687372407.989%2C%22mainStart%22%3A1792687373372%2C%22appReady%22%3A1792687373454%2C%22loadUrl%22%3A1792687373802%7D",
+  "areas": {
+    "main_sidebar": [
+      {
+        "testid": "sidebar-primary-navigation",
+        "text": "新建任务Ctrl+N自动化插件市场",
+        "visible": true,
+        "disabled": false
+      },
+      {
+        "testid": "task-new-button",
+        "text": "新建任务Ctrl+N",
+        "visible": true,
+        "disabled": false
+      },
+      {
+        "testid": "automations-open",
+        "text": "自动化",
+        "visible": true,
+        "disabled": false
+      },
+      {
+        "testid": "plugin-store-sidebar-open",
+        "text": "插件市场",
+        "visible": true,
+        "disabled": false
+      },
+      {
+        "testid": "sidebar-task-list-region",
+        "text": "任务列表 To pick up a draggable item, press the space bar. While",
+        "visible": true,
+        "disabled": false
+      },
+      {
+        "testid": "sidebar-search-toolbar",
+        "text": "任务列表",
+        "visible": true,
+        "disabled": false
+      },
+      {
+        "testid": "sidebar-list-title",
+        "text": "任务列表",
+        "visible": true,
+        "disabled": false
+      },
+      {
+        "testid": "sidebar-search-open",
+        "text": "",
+        "visible": true,
+        "disabled": false
+      },
+      {
+        "testid": "sidebar-view-menu",
+        "text": "",
+        "visible": true,
+        "disabled": false
+      },
+      {
+        "testid": "project-section",
+        "text": "项目 To pick up a draggable item, press the space bar. While d",
+        "visible": true,
+        "disabled": false
+      },
+      {
+        "testid": "",
+        "text": "项目",
+        "visible": true,
+        "disabled": false
+      },
+      {
+        "testid": "virtual-project-toggle-all",
+        "text": "",
+        "visible": true,
+        "disabled": true
+      },
+      {
+        "testid": "virtual-project-add",
+        "text": "",
+        "visible": true,
+        "disabled": false
+      },
+      {
+        "testid": "conversation-section",
+        "text": "任务New task刚刚第一句20分第一句20分第一句20分第一句20分第一句20分第一句29分第一句29分第一句29分",
+        "visible": true,
+        "disabled": false
+      },
+      {
+        "testid": "",
+        "text": "任务",
+        "visible": true,
+        "disabled": false
+      },
+      {
+        "testid": "virtual-project-new-task",
+        "text": "",
+        "visible": true,
+        "disabled": false
+      },
+      {
+        "testid": "task-list",
+        "text": "New task刚刚",
+        "visible": true,
+        "disabled": false
+      },
+      {
+        "testid": "task-item-20261023-045854-114ff0",
+        "text": "New task刚刚",
+        "visible": true,
+        "disabled": false
+      },
+      {
+        "testid": "task-item-20261023-043817-d15773",
+        "text": "第一句20分",
+        "visible": true,
+        "disabled": false
+      },
+      {
+        "testid": "task-item-20261023-043817-5e4036",
+        "text": "第一句20分",
+        "visible": true,
+        "disabled": false
+      },
+      {
+        "testid": "task-item-20261023-043817-cd062a",
+        "text": "第一句20分",
+        "visible": true,
+        "disabled": false
+      },
+      {
+        "testid": "task-item-20261023-043817-da0d22",
+        "text": "第一句20分",
+        "visible": true,
+        "disabled": false
+      },
+      {
+        "testid": "task-item-20261023-043817-a83d70",
+        "text": "第一句20分",
+        "visible": true,
+        "disabled": false
+      },
+      {
+        "testid": "task-item-20261023-042932-09ea35",
+        "text": "第一句29分",
+        "visible": true,
+        "disabled": false
+      },
+      {
+        "testid": "task-item-20261023-042932-f01bb3",
+        "text": "第一句29分",
+        "visible": true,
+        "disabled": false
+      },
+      {
+        "testid": "task-item-20261023-042932-36170f",
+        "text": "第一句29分",
+        "visible": true,
+        "disabled": false
+      },
+      {
+        "testid": "task-item-20261023-042932-38c8a2",
+        "text": "第一句29分",
+        "visible": true,
+        "disabled": false
+      },
+      {
+        "testid": "task-item-20261023-041320-a8c87b",
+        "text": "New task45分",
+        "visible": true,
+        "disabled": false
+      },
+      {
+        "testid": "task-item-20261022-163232-303248",
+        "text": "第一句12小时",
+        "visible": true,
+        "disabled": false
+      },
+      {
+        "testid": "task-item-20261022-163231-b46c85",
+        "text": "第一句12小时",
+        "visible": true,
+        "disabled": false
+      },
+      {
+        "testid": "task-item-20261022-163230-986f31",
+        "text": "第一句12小时",
+        "visible": true,
+        "disabled": false
+      },
+      {
+        "testid": "task-item-20261022-161753-7efb8e",
+        "text": "请用三句话介绍你自己12小时",
+        "visible": true,
+        "disabled": false
+      },
+      {
+        "testid": "",
+        "text": "显示更多",
+        "visible": true,
+        "disabled": false
+      },
+      {
+        "testid": "login-trigger",
+        "text": "Hharness2",
+        "visible": true,
+        "disabled": false
+      },
+      {
+        "testid": "",
+        "text": "移动端远程控制",
+        "visible": true,
+        "disabled": false
+      },
+      {
+        "testid": "task-settings-button",
+        "text": "",
+        "visible": true,
+        "disabled": false
+      }
+    ],
+    "main_body_testids": [
+      "_r_15_",
+      "_r_17_",
+      "automations-open",
+      "browser",
+      "chat-attachment-button",
+      "chat-empty",
+      "chat-mode-select-trigger",
+      "chat-model-select-trigger",
+      "composer-workspace-trigger",
+      "conversation",
+      "conversation-bottom-dock-transition",
+      "conversation-bottom-dock-transition-layer",
+      "conversation-column",
+      "conversation-section",
+      "desktop-top-logo-sidebar-toggle",
+      "desktop-top-nav-back",
+      "desktop-window-controls",
+      "login-trigger",
+      "plugin-store-sidebar-open",
+      "project-section",
+      "resizable-handle",
+      "side-pane-full-view-host",
+      "side-pane-toggle",
+      "sidebar",
+      "sidebar-list-title",
+      "sidebar-primary-navigation",
+      "sidebar-search-open",
+      "sidebar-search-toolbar",
+      "sidebar-task-list-region",
+      "sidebar-view-menu",
+      "task-item-20261022-161753-7efb8e",
+      "task-item-20261022-163230-986f31",
+      "task-item-20261022-163231-b46c85",
+      "task-item-20261022-163232-303248",
+      "task-item-20261023-041320-a8c87b",
+      "task-item-20261023-042932-09ea35",
+      "task-item-20261023-042932-36170f",
+      "task-item-20261023-042932-38c8a2",
+      "task-item-20261023-042932-f01bb3",
+      "task-item-20261023-043817-5e4036",
+      "task-item-20261023-043817-a83d70",
+      "task-item-20261023-043817-cd062a",
+      "task-item-20261023-043817-d15773",
+      "task-item-20261023-043817-da0d22",
+      "task-item-20261023-045854-114ff0",
+      "task-list",
+      "task-new-button",
+      "task-settings-button",
+      "terminal",
+      "terminal-toggle",
+      "v4-composer",
+      "v4-composer-input",
+      "v4-composer-send",
+      "v4-model-config",
+      "v4-pane-shell-workspace-main",
+      "v4-session-pane-workspace-main",
+      "v4-session-title",
+      "v4-timeline",
+      "virtual-project-add",
+      "virtual-project-new-task",
+      "virtual-project-toggle-all",
+      "window-control-close",
+      "window-control-maximize",
+      "window-control-minimize",
+      "workspace-header",
+      "workspace-help-menu-trigger"
+    ],
+    "settings": {
+      "settings-section-nav-general": [
+        {
+          "testid": "settings-logo",
+          "text": "",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "workspace-help-menu-trigger",
+          "text": "",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "desktop-window-controls",
+          "text": "",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "window-control-minimize",
+          "text": "",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "window-control-maximize",
+          "text": "",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "window-control-close",
+          "text": "",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-back-button",
+          "text": "返回工作区",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-section-nav-general",
+          "text": "常规",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-section-nav-appearance",
+          "text": "外观",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-section-nav-modelProvider",
+          "text": "模型设置",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-section-nav-browser",
+          "text": "浏览器控制",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-section-nav-remoteDevices",
+          "text": "远程设备",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-section-nav-computerUse",
+          "text": "电脑控制",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-section-nav-shortcuts",
+          "text": "键盘快捷键",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-section-nav-memory",
+          "text": "记忆",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-section-nav-subagents",
+          "text": "子智能体",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-section-nav-plugin",
+          "text": "插件",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-section-nav-mcp",
+          "text": "MCP 服务器",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-section-nav-skill",
+          "text": "技能",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-section-nav-commands",
+          "text": "命令",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-section-nav-hooks",
+          "text": "钩子",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-section-nav-usage",
+          "text": "使用统计",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-section-nav-archives",
+          "text": "归档管理",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "",
+          "text": "引导",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "login-trigger",
+          "text": "Hharness2",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "task-settings-button",
+          "text": "",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-locale-select-trigger",
+          "text": "中文简体",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "",
+          "text": "编程模式",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "",
+          "text": "",
+          "visible": true,
+          "disabled": true
+        },
+        {
+          "testid": "",
+          "text": "保存",
+          "visible": true,
+          "disabled": true
+        },
+        {
+          "testid": "settings-tool-search-select",
+          "text": "关闭",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-native-search-switch",
+          "text": "",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "",
+          "text": "队列",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-ask-user-question-auto-resolution-switch",
+          "text": "",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-dynamic-workflow-mode-trigger",
+          "text": "关闭",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-data-base-dir-input",
+          "text": "",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-data-base-dir-browse",
+          "text": "选择文件夹",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-data-base-dir-save",
+          "text": "保存",
+          "visible": true,
+          "disabled": true
+        },
+        {
+          "testid": "",
+          "text": "打开引导",
+          "visible": true,
+          "disabled": false
+        }
+      ],
+      "settings-section-nav-appearance": [
+        {
+          "testid": "settings-logo",
+          "text": "",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "workspace-help-menu-trigger",
+          "text": "",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "desktop-window-controls",
+          "text": "",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "window-control-minimize",
+          "text": "",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "window-control-maximize",
+          "text": "",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "window-control-close",
+          "text": "",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-back-button",
+          "text": "返回工作区",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-section-nav-general",
+          "text": "常规",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-section-nav-appearance",
+          "text": "外观",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-section-nav-modelProvider",
+          "text": "模型设置",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-section-nav-browser",
+          "text": "浏览器控制",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-section-nav-remoteDevices",
+          "text": "远程设备",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-section-nav-computerUse",
+          "text": "电脑控制",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-section-nav-shortcuts",
+          "text": "键盘快捷键",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-section-nav-memory",
+          "text": "记忆",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-section-nav-subagents",
+          "text": "子智能体",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-section-nav-plugin",
+          "text": "插件",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-section-nav-mcp",
+          "text": "MCP 服务器",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-section-nav-skill",
+          "text": "技能",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-section-nav-commands",
+          "text": "命令",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-section-nav-hooks",
+          "text": "钩子",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-section-nav-usage",
+          "text": "使用统计",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-section-nav-archives",
+          "text": "归档管理",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "",
+          "text": "引导",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "login-trigger",
+          "text": "Hharness2",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "task-settings-button",
+          "text": "",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "",
+          "text": "深色",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "",
+          "text": "GitHub Light",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "",
+          "text": "GitHub Dark",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "",
+          "text": "",
+          "visible": true,
+          "disabled": false
+        }
+      ],
+      "settings-section-nav-modelProvider": [
+        {
+          "testid": "settings-logo",
+          "text": "",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "workspace-help-menu-trigger",
+          "text": "",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "desktop-window-controls",
+          "text": "",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "window-control-minimize",
+          "text": "",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "window-control-maximize",
+          "text": "",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "window-control-close",
+          "text": "",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-back-button",
+          "text": "返回工作区",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-section-nav-general",
+          "text": "常规",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-section-nav-appearance",
+          "text": "外观",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-section-nav-modelProvider",
+          "text": "模型设置",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-section-nav-browser",
+          "text": "浏览器控制",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-section-nav-remoteDevices",
+          "text": "远程设备",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-section-nav-computerUse",
+          "text": "电脑控制",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-section-nav-shortcuts",
+          "text": "键盘快捷键",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-section-nav-memory",
+          "text": "记忆",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-section-nav-subagents",
+          "text": "子智能体",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-section-nav-plugin",
+          "text": "插件",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-section-nav-mcp",
+          "text": "MCP 服务器",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-section-nav-skill",
+          "text": "技能",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-section-nav-commands",
+          "text": "命令",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-section-nav-hooks",
+          "text": "钩子",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-section-nav-usage",
+          "text": "使用统计",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-section-nav-archives",
+          "text": "归档管理",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "",
+          "text": "引导",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "login-trigger",
+          "text": "Hharness2",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "task-settings-button",
+          "text": "",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "",
+          "text": "",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "model-provider-add-provider-button",
+          "text": "添加供应商",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "model-provider-nav-item-preset:account:zai-start-plan",
+          "text": "Z.ai",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "model-provider-nav-item-coding-plan:account:zai-start-plan",
+          "text": "Start Plan",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "model-provider-nav-item-custom:local",
+          "text": "local",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "model-provider-nav-item-custom:personal-8e3dbf31",
+          "text": "新供应商",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "model-provider-connection-mode-trigger",
+          "text": "选择",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "",
+          "text": "连接 Z.ai",
+          "visible": true,
+          "disabled": false
+        }
+      ],
+      "settings-section-nav-browser": [
+        {
+          "testid": "settings-logo",
+          "text": "",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "workspace-help-menu-trigger",
+          "text": "",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "desktop-window-controls",
+          "text": "",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "window-control-minimize",
+          "text": "",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "window-control-maximize",
+          "text": "",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "window-control-close",
+          "text": "",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-back-button",
+          "text": "返回工作区",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-section-nav-general",
+          "text": "常规",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-section-nav-appearance",
+          "text": "外观",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-section-nav-modelProvider",
+          "text": "模型设置",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-section-nav-browser",
+          "text": "浏览器控制",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-section-nav-remoteDevices",
+          "text": "远程设备",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-section-nav-computerUse",
+          "text": "电脑控制",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-section-nav-shortcuts",
+          "text": "键盘快捷键",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-section-nav-memory",
+          "text": "记忆",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-section-nav-subagents",
+          "text": "子智能体",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-section-nav-plugin",
+          "text": "插件",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-section-nav-mcp",
+          "text": "MCP 服务器",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-section-nav-skill",
+          "text": "技能",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-section-nav-commands",
+          "text": "命令",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-section-nav-hooks",
+          "text": "钩子",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-section-nav-usage",
+          "text": "使用统计",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-section-nav-archives",
+          "text": "归档管理",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "",
+          "text": "引导",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "login-trigger",
+          "text": "Hharness2",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "task-settings-button",
+          "text": "",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "",
+          "text": "",
+          "visible": true,
+          "disabled": true
+        },
+        {
+          "testid": "",
+          "text": "清除缓存",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "",
+          "text": "清除全部",
+          "visible": true,
+          "disabled": false
+        }
+      ],
+      "settings-section-nav-remoteDevices": [
+        {
+          "testid": "settings-logo",
+          "text": "",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "workspace-help-menu-trigger",
+          "text": "",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "desktop-window-controls",
+          "text": "",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "window-control-minimize",
+          "text": "",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "window-control-maximize",
+          "text": "",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "window-control-close",
+          "text": "",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-back-button",
+          "text": "返回工作区",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-section-nav-general",
+          "text": "常规",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-section-nav-appearance",
+          "text": "外观",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-section-nav-modelProvider",
+          "text": "模型设置",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-section-nav-browser",
+          "text": "浏览器控制",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-section-nav-remoteDevices",
+          "text": "远程设备",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-section-nav-computerUse",
+          "text": "电脑控制",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-section-nav-shortcuts",
+          "text": "键盘快捷键",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-section-nav-memory",
+          "text": "记忆",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-section-nav-subagents",
+          "text": "子智能体",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-section-nav-plugin",
+          "text": "插件",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-section-nav-mcp",
+          "text": "MCP 服务器",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-section-nav-skill",
+          "text": "技能",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-section-nav-commands",
+          "text": "命令",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-section-nav-hooks",
+          "text": "钩子",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-section-nav-usage",
+          "text": "使用统计",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-section-nav-archives",
+          "text": "归档管理",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "",
+          "text": "引导",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "login-trigger",
+          "text": "Hharness2",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "task-settings-button",
+          "text": "",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "",
+          "text": "",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "",
+          "text": "新建连接",
+          "visible": true,
+          "disabled": false
+        }
+      ],
+      "settings-section-nav-computerUse": [
+        {
+          "testid": "settings-logo",
+          "text": "",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "workspace-help-menu-trigger",
+          "text": "",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "desktop-window-controls",
+          "text": "",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "window-control-minimize",
+          "text": "",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "window-control-maximize",
+          "text": "",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "window-control-close",
+          "text": "",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-back-button",
+          "text": "返回工作区",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-section-nav-general",
+          "text": "常规",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-section-nav-appearance",
+          "text": "外观",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-section-nav-modelProvider",
+          "text": "模型设置",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-section-nav-browser",
+          "text": "浏览器控制",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-section-nav-remoteDevices",
+          "text": "远程设备",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-section-nav-computerUse",
+          "text": "电脑控制",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-section-nav-shortcuts",
+          "text": "键盘快捷键",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-section-nav-memory",
+          "text": "记忆",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-section-nav-subagents",
+          "text": "子智能体",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-section-nav-plugin",
+          "text": "插件",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-section-nav-mcp",
+          "text": "MCP 服务器",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-section-nav-skill",
+          "text": "技能",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-section-nav-commands",
+          "text": "命令",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-section-nav-hooks",
+          "text": "钩子",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-section-nav-usage",
+          "text": "使用统计",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-section-nav-archives",
+          "text": "归档管理",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "",
+          "text": "引导",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "login-trigger",
+          "text": "Hharness2",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "task-settings-button",
+          "text": "",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "",
+          "text": "",
+          "visible": true,
+          "disabled": false
+        }
+      ],
+      "settings-section-nav-shortcuts": [
+        {
+          "testid": "settings-logo",
+          "text": "",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "workspace-help-menu-trigger",
+          "text": "",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "desktop-window-controls",
+          "text": "",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "window-control-minimize",
+          "text": "",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "window-control-maximize",
+          "text": "",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "window-control-close",
+          "text": "",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-back-button",
+          "text": "返回工作区",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-section-nav-general",
+          "text": "常规",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-section-nav-appearance",
+          "text": "外观",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-section-nav-modelProvider",
+          "text": "模型设置",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-section-nav-browser",
+          "text": "浏览器控制",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-section-nav-remoteDevices",
+          "text": "远程设备",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-section-nav-computerUse",
+          "text": "电脑控制",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-section-nav-shortcuts",
+          "text": "键盘快捷键",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-section-nav-memory",
+          "text": "记忆",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-section-nav-subagents",
+          "text": "子智能体",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-section-nav-plugin",
+          "text": "插件",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-section-nav-mcp",
+          "text": "MCP 服务器",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-section-nav-skill",
+          "text": "技能",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-section-nav-commands",
+          "text": "命令",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-section-nav-hooks",
+          "text": "钩子",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-section-nav-usage",
+          "text": "使用统计",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-section-nav-archives",
+          "text": "归档管理",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "",
+          "text": "引导",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "login-trigger",
+          "text": "Hharness2",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "task-settings-button",
+          "text": "",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-shortcuts-section",
+          "text": "全部恢复默认命令按键绑定作用域操作打开命令中心CtrlKCtrlShiftP全局打开设置Ctrl,全局任务内查找Ctrl",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-shortcut-reset-all",
+          "text": "全部恢复默认",
+          "visible": true,
+          "disabled": true
+        },
+        {
+          "testid": "settings-shortcut-search-input",
+          "text": "",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-shortcut-key-search",
+          "text": "",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-shortcut-row-openCommandCenter",
+          "text": "打开命令中心CtrlKCtrlShiftP全局",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-shortcut-bind-openCommandCenter-0",
+          "text": "CtrlK",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-shortcut-edit-openCommandCenter-0",
+          "text": "",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-shortcut-bind-openCommandCenter-1",
+          "text": "CtrlShiftP",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-shortcut-edit-openCommandCenter-1",
+          "text": "",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-shortcut-scope-openCommandCenter",
+          "text": "全局",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-shortcut-clear-openCommandCenter",
+          "text": "",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-shortcut-row-openSettings",
+          "text": "打开设置Ctrl,全局",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-shortcut-bind-openSettings-0",
+          "text": "Ctrl,",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-shortcut-edit-openSettings-0",
+          "text": "",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-shortcut-scope-openSettings",
+          "text": "全局",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-shortcut-clear-openSettings",
+          "text": "",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-shortcut-row-findInTask",
+          "text": "任务内查找CtrlF全局",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-shortcut-bind-findInTask-0",
+          "text": "CtrlF",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-shortcut-edit-findInTask-0",
+          "text": "",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-shortcut-scope-findInTask",
+          "text": "全局",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-shortcut-clear-findInTask",
+          "text": "",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-shortcut-row-toggleSidebar",
+          "text": "切换左侧栏CtrlB全局",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-shortcut-bind-toggleSidebar-0",
+          "text": "CtrlB",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-shortcut-edit-toggleSidebar-0",
+          "text": "",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-shortcut-scope-toggleSidebar",
+          "text": "全局",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-shortcut-clear-toggleSidebar",
+          "text": "",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-shortcut-row-switchTheme",
+          "text": "切换深色/浅色主题CtrlShiftL全局",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-shortcut-bind-switchTheme-0",
+          "text": "CtrlShiftL",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-shortcut-edit-switchTheme-0",
+          "text": "",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-shortcut-scope-switchTheme",
+          "text": "全局",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-shortcut-clear-switchTheme",
+          "text": "",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-shortcut-row-toggleTerminal",
+          "text": "切换终端CtrlJ全局",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-shortcut-bind-toggleTerminal-0",
+          "text": "CtrlJ",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-shortcut-edit-toggleTerminal-0",
+          "text": "",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-shortcut-scope-toggleTerminal",
+          "text": "全局",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-shortcut-clear-toggleTerminal",
+          "text": "",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-shortcut-row-toggleSidePane",
+          "text": "切换右侧面板CtrlAltB全局",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-shortcut-bind-toggleSidePane-0",
+          "text": "CtrlAltB",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-shortcut-edit-toggleSidePane-0",
+          "text": "",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-shortcut-scope-toggleSidePane",
+          "text": "全局",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-shortcut-clear-toggleSidePane",
+          "text": "",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-shortcut-row-toggleSidePaneFullView",
+          "text": "进入或退出完整视图CtrlShiftF全局",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-shortcut-bind-toggleSidePaneFullView-0",
+          "text": "CtrlShiftF",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-shortcut-edit-toggleSidePaneFullView-0",
+          "text": "",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-shortcut-scope-toggleSidePaneFullView",
+          "text": "全局",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-shortcut-clear-toggleSidePaneFullView",
+          "text": "",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-shortcut-row-previousConversation",
+          "text": "上一个任务CtrlShift[全局",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-shortcut-bind-previousConversation-0",
+          "text": "CtrlShift[",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-shortcut-edit-previousConversation-0",
+          "text": "",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-shortcut-scope-previousConversation",
+          "text": "全局",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-shortcut-clear-previousConversation",
+          "text": "",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-shortcut-row-nextConversation",
+          "text": "下一个任务CtrlShift]全局",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-shortcut-bind-nextConversation-0",
+          "text": "CtrlShift]",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-shortcut-edit-nextConversation-0",
+          "text": "",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-shortcut-scope-nextConversation",
+          "text": "全局",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-shortcut-clear-nextConversation",
+          "text": "",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-shortcut-row-navigateBack",
+          "text": "后退Ctrl[全局",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-shortcut-bind-navigateBack-0",
+          "text": "Ctrl[",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-shortcut-edit-navigateBack-0",
+          "text": "",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-shortcut-scope-navigateBack",
+          "text": "全局",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-shortcut-clear-navigateBack",
+          "text": "",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-shortcut-row-navigateForward",
+          "text": "前进Ctrl]全局",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-shortcut-bind-navigateForward-0",
+          "text": "Ctrl]",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-shortcut-edit-navigateForward-0",
+          "text": "",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-shortcut-scope-navigateForward",
+          "text": "全局",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-shortcut-clear-navigateForward",
+          "text": "",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-shortcut-row-openModelMenu",
+          "text": "打开模型菜单CtrlM全局",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-shortcut-bind-openModelMenu-0",
+          "text": "CtrlM",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-shortcut-edit-openModelMenu-0",
+          "text": "",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-shortcut-scope-openModelMenu",
+          "text": "全局",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-shortcut-clear-openModelMenu",
+          "text": "",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-shortcut-row-cycleSessionMode",
+          "text": "切换会话模式CtrlShiftM全局",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-shortcut-bind-cycleSessionMode-0",
+          "text": "CtrlShiftM",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-shortcut-edit-cycleSessionMode-0",
+          "text": "",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-shortcut-scope-cycleSessionMode",
+          "text": "全局",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-shortcut-clear-cycleSessionMode",
+          "text": "",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-shortcut-row-cycleThoughtLevel",
+          "text": "切换思考深度CtrlT全局",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-shortcut-bind-cycleThoughtLevel-0",
+          "text": "CtrlT",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-shortcut-edit-cycleThoughtLevel-0",
+          "text": "",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-shortcut-scope-cycleThoughtLevel",
+          "text": "全局",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-shortcut-clear-cycleThoughtLevel",
+          "text": "",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-shortcut-row-newTask",
+          "text": "新建任务CtrlN全局",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-shortcut-bind-newTask-0",
+          "text": "CtrlN",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-shortcut-edit-newTask-0",
+          "text": "",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-shortcut-scope-newTask",
+          "text": "全局",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-shortcut-clear-newTask",
+          "text": "",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-shortcut-row-openWorkspace",
+          "text": "打开工作区CtrlO全局",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-shortcut-bind-openWorkspace-0",
+          "text": "CtrlO",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-shortcut-edit-openWorkspace-0",
+          "text": "",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-shortcut-scope-openWorkspace",
+          "text": "全局",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-shortcut-clear-openWorkspace",
+          "text": "",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-shortcut-row-closeActiveContext",
+          "text": "关闭当前上下文CtrlW全局",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-shortcut-bind-closeActiveContext-0",
+          "text": "CtrlW",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-shortcut-edit-closeActiveContext-0",
+          "text": "",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-shortcut-scope-closeActiveContext",
+          "text": "全局",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-shortcut-clear-closeActiveContext",
+          "text": "",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-shortcut-row-zoomIn",
+          "text": "放大Ctrl+全局",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-shortcut-bind-zoomIn-0",
+          "text": "Ctrl+",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-shortcut-edit-zoomIn-0",
+          "text": "",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-shortcut-scope-zoomIn",
+          "text": "全局",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-shortcut-clear-zoomIn",
+          "text": "",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-shortcut-row-zoomOut",
+          "text": "缩小Ctrl-全局",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-shortcut-bind-zoomOut-0",
+          "text": "Ctrl-",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-shortcut-edit-zoomOut-0",
+          "text": "",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-shortcut-scope-zoomOut",
+          "text": "全局",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-shortcut-clear-zoomOut",
+          "text": "",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-shortcut-row-resetZoom",
+          "text": "恢复缩放Ctrl0全局",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-shortcut-bind-resetZoom-0",
+          "text": "Ctrl0",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-shortcut-edit-resetZoom-0",
+          "text": "",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-shortcut-scope-resetZoom",
+          "text": "全局",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-shortcut-clear-resetZoom",
+          "text": "",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-shortcut-row-composerSend",
+          "text": "发送消息Enter输入框",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-shortcut-bind-composerSend-0",
+          "text": "Enter",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-shortcut-edit-composerSend-0",
+          "text": "",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-shortcut-scope-composerSend",
+          "text": "输入框",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-shortcut-clear-composerSend",
+          "text": "",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-shortcut-row-composerInsertNewline",
+          "text": "输入框换行ShiftEnter输入框",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-shortcut-bind-composerInsertNewline-0",
+          "text": "ShiftEnter",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-shortcut-edit-composerInsertNewline-0",
+          "text": "",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-shortcut-scope-composerInsertNewline",
+          "text": "输入框",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-shortcut-clear-composerInsertNewline",
+          "text": "",
+          "visible": true,
+          "disabled": false
+        }
+      ],
+      "settings-section-nav-memory": [
+        {
+          "testid": "settings-logo",
+          "text": "",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "workspace-help-menu-trigger",
+          "text": "",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "desktop-window-controls",
+          "text": "",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "window-control-minimize",
+          "text": "",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "window-control-maximize",
+          "text": "",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "window-control-close",
+          "text": "",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-back-button",
+          "text": "返回工作区",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-section-nav-general",
+          "text": "常规",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-section-nav-appearance",
+          "text": "外观",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-section-nav-modelProvider",
+          "text": "模型设置",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-section-nav-browser",
+          "text": "浏览器控制",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-section-nav-remoteDevices",
+          "text": "远程设备",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-section-nav-computerUse",
+          "text": "电脑控制",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-section-nav-shortcuts",
+          "text": "键盘快捷键",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-section-nav-memory",
+          "text": "记忆",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-section-nav-subagents",
+          "text": "子智能体",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-section-nav-plugin",
+          "text": "插件",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-section-nav-mcp",
+          "text": "MCP 服务器",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-section-nav-skill",
+          "text": "技能",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-section-nav-commands",
+          "text": "命令",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-section-nav-hooks",
+          "text": "钩子",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-section-nav-usage",
+          "text": "使用统计",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-section-nav-archives",
+          "text": "归档管理",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "",
+          "text": "引导",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "login-trigger",
+          "text": "Hharness2",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "task-settings-button",
+          "text": "",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-memory-switch",
+          "text": "",
+          "visible": true,
+          "disabled": false
+        }
+      ],
+      "settings-section-nav-subagents": [
+        {
+          "testid": "settings-logo",
+          "text": "",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "workspace-help-menu-trigger",
+          "text": "",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "desktop-window-controls",
+          "text": "",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "window-control-minimize",
+          "text": "",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "window-control-maximize",
+          "text": "",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "window-control-close",
+          "text": "",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-back-button",
+          "text": "返回工作区",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-section-nav-general",
+          "text": "常规",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-section-nav-appearance",
+          "text": "外观",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-section-nav-modelProvider",
+          "text": "模型设置",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-section-nav-browser",
+          "text": "浏览器控制",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-section-nav-remoteDevices",
+          "text": "远程设备",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-section-nav-computerUse",
+          "text": "电脑控制",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-section-nav-shortcuts",
+          "text": "键盘快捷键",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-section-nav-memory",
+          "text": "记忆",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-section-nav-subagents",
+          "text": "子智能体",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-section-nav-plugin",
+          "text": "插件",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-section-nav-mcp",
+          "text": "MCP 服务器",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-section-nav-skill",
+          "text": "技能",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-section-nav-commands",
+          "text": "命令",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-section-nav-hooks",
+          "text": "钩子",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-section-nav-usage",
+          "text": "使用统计",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-section-nav-archives",
+          "text": "归档管理",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "",
+          "text": "引导",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "login-trigger",
+          "text": "Hharness2",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "task-settings-button",
+          "text": "",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "",
+          "text": "用户 · 本机",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "",
+          "text": "",
+          "visible": true,
+          "disabled": false
+        }
+      ],
+      "settings-section-nav-plugin": [
+        {
+          "testid": "settings-logo",
+          "text": "",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "workspace-help-menu-trigger",
+          "text": "",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "desktop-window-controls",
+          "text": "",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "window-control-minimize",
+          "text": "",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "window-control-maximize",
+          "text": "",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "window-control-close",
+          "text": "",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-back-button",
+          "text": "返回工作区",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-section-nav-general",
+          "text": "常规",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-section-nav-appearance",
+          "text": "外观",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-section-nav-modelProvider",
+          "text": "模型设置",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-section-nav-browser",
+          "text": "浏览器控制",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-section-nav-remoteDevices",
+          "text": "远程设备",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-section-nav-computerUse",
+          "text": "电脑控制",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-section-nav-shortcuts",
+          "text": "键盘快捷键",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-section-nav-memory",
+          "text": "记忆",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-section-nav-subagents",
+          "text": "子智能体",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-section-nav-plugin",
+          "text": "插件",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-section-nav-mcp",
+          "text": "MCP 服务器",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-section-nav-skill",
+          "text": "技能",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-section-nav-commands",
+          "text": "命令",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-section-nav-hooks",
+          "text": "钩子",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-section-nav-usage",
+          "text": "使用统计",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-section-nav-archives",
+          "text": "归档管理",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "",
+          "text": "引导",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "login-trigger",
+          "text": "Hharness2",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "task-settings-button",
+          "text": "",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "plugin-settings-scope-trigger",
+          "text": "用户 · 本机",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "",
+          "text": "插件0",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "",
+          "text": "MCP0",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "",
+          "text": "技能0",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "plugin-settings-search",
+          "text": "",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "",
+          "text": "",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "plugin-store-browse",
+          "text": "浏览插件",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "plugin-settings-add",
+          "text": "添加",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "",
+          "text": "浏览插件",
+          "visible": true,
+          "disabled": false
+        }
+      ],
+      "settings-section-nav-mcp": [
+        {
+          "testid": "settings-logo",
+          "text": "",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "workspace-help-menu-trigger",
+          "text": "",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "desktop-window-controls",
+          "text": "",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "window-control-minimize",
+          "text": "",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "window-control-maximize",
+          "text": "",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "window-control-close",
+          "text": "",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-back-button",
+          "text": "返回工作区",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-section-nav-general",
+          "text": "常规",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-section-nav-appearance",
+          "text": "外观",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-section-nav-modelProvider",
+          "text": "模型设置",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-section-nav-browser",
+          "text": "浏览器控制",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-section-nav-remoteDevices",
+          "text": "远程设备",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-section-nav-computerUse",
+          "text": "电脑控制",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-section-nav-shortcuts",
+          "text": "键盘快捷键",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-section-nav-memory",
+          "text": "记忆",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-section-nav-subagents",
+          "text": "子智能体",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-section-nav-plugin",
+          "text": "插件",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-section-nav-mcp",
+          "text": "MCP 服务器",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-section-nav-skill",
+          "text": "技能",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-section-nav-commands",
+          "text": "命令",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-section-nav-hooks",
+          "text": "钩子",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-section-nav-usage",
+          "text": "使用统计",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-section-nav-archives",
+          "text": "归档管理",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "",
+          "text": "引导",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "login-trigger",
+          "text": "Hharness2",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "task-settings-button",
+          "text": "",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "plugin-settings-scope-trigger",
+          "text": "用户 · 本机",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "plugin-settings-search",
+          "text": "",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "",
+          "text": "",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "",
+          "text": "新建",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "",
+          "text": "新建 MCP 服务器",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "",
+          "text": "导入",
+          "visible": true,
+          "disabled": false
+        }
+      ],
+      "settings-section-nav-skill": [
+        {
+          "testid": "settings-logo",
+          "text": "",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "workspace-help-menu-trigger",
+          "text": "",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "desktop-window-controls",
+          "text": "",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "window-control-minimize",
+          "text": "",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "window-control-maximize",
+          "text": "",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "window-control-close",
+          "text": "",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-back-button",
+          "text": "返回工作区",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-section-nav-general",
+          "text": "常规",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-section-nav-appearance",
+          "text": "外观",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-section-nav-modelProvider",
+          "text": "模型设置",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-section-nav-browser",
+          "text": "浏览器控制",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-section-nav-remoteDevices",
+          "text": "远程设备",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-section-nav-computerUse",
+          "text": "电脑控制",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-section-nav-shortcuts",
+          "text": "键盘快捷键",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-section-nav-memory",
+          "text": "记忆",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-section-nav-subagents",
+          "text": "子智能体",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-section-nav-plugin",
+          "text": "插件",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-section-nav-mcp",
+          "text": "MCP 服务器",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-section-nav-skill",
+          "text": "技能",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-section-nav-commands",
+          "text": "命令",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-section-nav-hooks",
+          "text": "钩子",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-section-nav-usage",
+          "text": "使用统计",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-section-nav-archives",
+          "text": "归档管理",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "",
+          "text": "引导",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "login-trigger",
+          "text": "Hharness2",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "task-settings-button",
+          "text": "",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "plugin-settings-scope-trigger",
+          "text": "用户 · 本机",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "plugin-settings-search",
+          "text": "",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "",
+          "text": "",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "",
+          "text": "新建",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "",
+          "text": "新建技能",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "",
+          "text": "导入",
+          "visible": true,
+          "disabled": true
+        }
+      ],
+      "settings-section-nav-commands": [
+        {
+          "testid": "settings-logo",
+          "text": "",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "workspace-help-menu-trigger",
+          "text": "",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "desktop-window-controls",
+          "text": "",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "window-control-minimize",
+          "text": "",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "window-control-maximize",
+          "text": "",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "window-control-close",
+          "text": "",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-back-button",
+          "text": "返回工作区",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-section-nav-general",
+          "text": "常规",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-section-nav-appearance",
+          "text": "外观",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-section-nav-modelProvider",
+          "text": "模型设置",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-section-nav-browser",
+          "text": "浏览器控制",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-section-nav-remoteDevices",
+          "text": "远程设备",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-section-nav-computerUse",
+          "text": "电脑控制",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-section-nav-shortcuts",
+          "text": "键盘快捷键",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-section-nav-memory",
+          "text": "记忆",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-section-nav-subagents",
+          "text": "子智能体",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-section-nav-plugin",
+          "text": "插件",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-section-nav-mcp",
+          "text": "MCP 服务器",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-section-nav-skill",
+          "text": "技能",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-section-nav-commands",
+          "text": "命令",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-section-nav-hooks",
+          "text": "钩子",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-section-nav-usage",
+          "text": "使用统计",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-section-nav-archives",
+          "text": "归档管理",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "",
+          "text": "引导",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "login-trigger",
+          "text": "Hharness2",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "task-settings-button",
+          "text": "",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "plugin-settings-scope-trigger",
+          "text": "用户 · 本机",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "plugin-settings-search",
+          "text": "",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "",
+          "text": "",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "",
+          "text": "新建",
+          "visible": true,
+          "disabled": false
+        }
+      ],
+      "settings-section-nav-hooks": [
+        {
+          "testid": "settings-logo",
+          "text": "",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "workspace-help-menu-trigger",
+          "text": "",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "desktop-window-controls",
+          "text": "",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "window-control-minimize",
+          "text": "",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "window-control-maximize",
+          "text": "",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "window-control-close",
+          "text": "",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-back-button",
+          "text": "返回工作区",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-section-nav-general",
+          "text": "常规",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-section-nav-appearance",
+          "text": "外观",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-section-nav-modelProvider",
+          "text": "模型设置",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-section-nav-browser",
+          "text": "浏览器控制",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-section-nav-remoteDevices",
+          "text": "远程设备",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-section-nav-computerUse",
+          "text": "电脑控制",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-section-nav-shortcuts",
+          "text": "键盘快捷键",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-section-nav-memory",
+          "text": "记忆",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-section-nav-subagents",
+          "text": "子智能体",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-section-nav-plugin",
+          "text": "插件",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-section-nav-mcp",
+          "text": "MCP 服务器",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-section-nav-skill",
+          "text": "技能",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-section-nav-commands",
+          "text": "命令",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-section-nav-hooks",
+          "text": "钩子",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-section-nav-usage",
+          "text": "使用统计",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-section-nav-archives",
+          "text": "归档管理",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "",
+          "text": "引导",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "login-trigger",
+          "text": "Hharness2",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "task-settings-button",
+          "text": "",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "hooks-settings-section",
+          "text": "用户 · 本机钩子0ZS1: not implemented (channel=plugin-management, m",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "",
+          "text": "用户 · 本机",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "",
+          "text": "",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "",
+          "text": "新建",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "",
+          "text": "新建钩子",
+          "visible": true,
+          "disabled": false
+        }
+      ],
+      "settings-section-nav-usage": [
+        {
+          "testid": "settings-logo",
+          "text": "",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "workspace-help-menu-trigger",
+          "text": "",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "desktop-window-controls",
+          "text": "",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "window-control-minimize",
+          "text": "",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "window-control-maximize",
+          "text": "",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "window-control-close",
+          "text": "",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-back-button",
+          "text": "返回工作区",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-section-nav-general",
+          "text": "常规",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-section-nav-appearance",
+          "text": "外观",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-section-nav-modelProvider",
+          "text": "模型设置",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-section-nav-browser",
+          "text": "浏览器控制",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-section-nav-remoteDevices",
+          "text": "远程设备",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-section-nav-computerUse",
+          "text": "电脑控制",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-section-nav-shortcuts",
+          "text": "键盘快捷键",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-section-nav-memory",
+          "text": "记忆",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-section-nav-subagents",
+          "text": "子智能体",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-section-nav-plugin",
+          "text": "插件",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-section-nav-mcp",
+          "text": "MCP 服务器",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-section-nav-skill",
+          "text": "技能",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-section-nav-commands",
+          "text": "命令",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-section-nav-hooks",
+          "text": "钩子",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-section-nav-usage",
+          "text": "使用统计",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-section-nav-archives",
+          "text": "归档管理",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "",
+          "text": "引导",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "login-trigger",
+          "text": "Hharness2",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "task-settings-button",
+          "text": "",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-usage-tab-app",
+          "text": "应用用量",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "",
+          "text": "近 7 日",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "",
+          "text": "近 30 日",
+          "visible": true,
+          "disabled": false
+        }
+      ],
+      "settings-section-nav-archives": [
+        {
+          "testid": "settings-logo",
+          "text": "",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "workspace-help-menu-trigger",
+          "text": "",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "desktop-window-controls",
+          "text": "",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "window-control-minimize",
+          "text": "",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "window-control-maximize",
+          "text": "",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "window-control-close",
+          "text": "",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-back-button",
+          "text": "返回工作区",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-section-nav-general",
+          "text": "常规",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-section-nav-appearance",
+          "text": "外观",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-section-nav-modelProvider",
+          "text": "模型设置",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-section-nav-browser",
+          "text": "浏览器控制",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-section-nav-remoteDevices",
+          "text": "远程设备",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-section-nav-computerUse",
+          "text": "电脑控制",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-section-nav-shortcuts",
+          "text": "键盘快捷键",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-section-nav-memory",
+          "text": "记忆",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-section-nav-subagents",
+          "text": "子智能体",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-section-nav-plugin",
+          "text": "插件",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-section-nav-mcp",
+          "text": "MCP 服务器",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-section-nav-skill",
+          "text": "技能",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-section-nav-commands",
+          "text": "命令",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-section-nav-hooks",
+          "text": "钩子",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-section-nav-usage",
+          "text": "使用统计",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "settings-section-nav-archives",
+          "text": "归档管理",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "",
+          "text": "引导",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "login-trigger",
+          "text": "Hharness2",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "task-settings-button",
+          "text": "",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "archive-auto-archive-switch",
+          "text": "",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "archive-auto-archive-days",
+          "text": "30 天后归档",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "archive-management",
+          "text": "已归档的会话全部删除排序方式更新时间所有项目未归类50 个会话",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "archive-delete-all",
+          "text": "全部删除",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "archive-filters",
+          "text": "排序方式更新时间所有项目",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "archive-search",
+          "text": "",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "archive-sort",
+          "text": "更新时间",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "archive-project-filter",
+          "text": "所有项目",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "archive-group",
+          "text": "未归类50 个会话",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "archive-group-toggle",
+          "text": "未归类",
+          "visible": true,
+          "disabled": false
+        },
+        {
+          "testid": "archive-group-menu",
+          "text": "",
+          "visible": true,
+          "disabled": false
+        }
+      ]
+    },
+    "help_menu": {
+      "trigger": "workspace-help-menu-trigger",
+      "items": [
+        {
+          "text": "产品文档",
+          "testid": ""
+        },
+        {
+          "text": "用户社群",
+          "testid": ""
+        },
+        {
+          "text": "问题上报",
+          "testid": ""
+        },
+        {
+          "text": "提交漏洞",
+          "testid": ""
+        },
+        {
+          "text": "给产品提需求",
+          "testid": ""
+        },
+        {
+          "text": "导出日志",
+          "testid": ""
+        },
+        {
+          "text": "资源管理器",
+          "testid": "workspace-help-menu-resource-manager"
+        },
+        {
+          "text": "检查更新",
+          "testid": ""
+        },
+        {
+          "text": "关于 ZCode",
+          "testid": ""
+        }
+      ]
+    }
+  },
+  "settings_navs": [
+    "settings-section-nav-general",
+    "settings-section-nav-appearance",
+    "settings-section-nav-modelProvider",
+    "settings-section-nav-browser",
+    "settings-section-nav-remoteDevices",
+    "settings-section-nav-computerUse",
+    "settings-section-nav-shortcuts",
+    "settings-section-nav-memory",
+    "settings-section-nav-subagents",
+    "settings-section-nav-plugin",
+    "settings-section-nav-mcp",
+    "settings-section-nav-skill",
+    "settings-section-nav-commands",
+    "settings-section-nav-hooks",
+    "settings-section-nav-usage",
+    "settings-section-nav-archives"
+  ],
+  "account_probe": {
+    "hits": {
+      "登录": false,
+      "账号": false,
+      "升级": false,
+      "Upgrade": false,
+      "Sign in": false,
+      "Login": false,
+      "Pro": false,
+      "奖励": false,
+      "Redeem": false,
+      "兑换": false
+    },
+    "testids": ["login-trigger"]
+  }
+}
