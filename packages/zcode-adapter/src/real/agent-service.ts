@@ -110,6 +110,14 @@ export interface AgentServiceOptions {
   approvalTimeoutMs?: number;
   /** 测试缝：创建后回传 provider 实例（断言 ChatRequest 形状用）。 */
   providerSink?: (provider: unknown) => void;
+  /**
+   * ZS6 尾巴清偿（zs5-review-t1t5 §4 subscriptionId 残留建议）：宿主连接销毁钩子——
+   * host-entry 在 MessagePort close（连接死亡/renderer 重载）时统一 dispose，
+   * 清除轮询定时器与订阅表，杜绝每连接孤儿增长。
+   * （评审原提 TTL 扫描被实证否决：活体 idle 订阅无心跳信号可辨，TTL 会静默杀死
+   * 侧栏合法长驻订阅=新缺陷；孤儿矢量=端口生命周期，dispose 即根治。）
+   */
+  registerDispose?: (dispose: () => void) => void;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any -- RPC/协议边界动态类型，仅用于 lint 收敛，不改变运行时行为
   emitter?: Emitter<any>;
 }
@@ -344,6 +352,17 @@ export function createAgentService(opts: AgentServiceOptions = {}): IZCodeAgentS
     { workspaceKey: string; cwd: string; ordinal: number; lastFingerprint: string }
   >();
   let sessionsIndexTimer: NodeJS.Timeout | null = null;
+  // ZS6 尾巴清偿（zs5-review-t1t5 §4）：宿主连接销毁时回收轮询定时器+订阅表。
+  // 孤儿矢量=端口生命周期（renderer 重载/异常断开→exposeServicesOnPort 旧实例滞留），
+  // 评审所提 TTL 已实证否决（活体 idle 订阅无心跳可辨，TTL 会误杀合法长驻订阅）。
+  const disposeSessionsIndex = (): void => {
+    if (sessionsIndexTimer) {
+      clearInterval(sessionsIndexTimer);
+      sessionsIndexTimer = null;
+    }
+    sessionsIndexSubs.clear();
+  };
+  opts.registerDispose?.(disposeSessionsIndex);
   /** 运行中 turn 的取消源（stop 命令真正 abort）。 */
   const runningAborts = new Map<string, AbortController>();
   const attachmentStore = new AttachmentStore({ home });

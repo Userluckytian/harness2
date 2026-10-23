@@ -26,6 +26,9 @@ describe('host-crash (ZS5-T2)', () => {
 
   it('SECRET 样例在 error message 里 -> 报告文件不含明文', () => {
     const home = fs.mkdtempSync(path.join(os.tmpdir(), 'zs5-crash-'));
+    // P2#8（ZS6 尾巴登记）：夹具保留 sk- 前缀是刻意——core redactSecrets SK_KEY_PATTERN
+    // 只识别该形态，改前缀=测不到 redact 本体。若未来引入 secret 扫描 CI 门，此值应进
+    // allowlist（它不是凭据，只是被 redact 的输入样例）。
     const secret = 'sk-supersecret-ABCDEFGHIJKLMNOP';
     const err = new Error(`boom token=${secret}`);
 

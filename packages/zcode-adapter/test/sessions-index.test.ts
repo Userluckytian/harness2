@@ -154,4 +154,35 @@ describe('ZS5-T3 sessions-index subscribe', () => {
       rmSync(home, { recursive: true, force: true });
     }
   });
+
+  it('ZS6 尾巴清偿：连接 dispose 回收轮询定时器并停帧', async () => {
+    const home = mkdtempSync(join(tmpdir(), 'h2-si-dispose-'));
+    const emitter = new Emitter<unknown>();
+    const frames = collectFrames(emitter);
+    try {
+      let disposer: (() => void) | null = null;
+      const agent = createAgentService({
+        home,
+        emitter,
+        registerDispose: (fn) => {
+          disposer = fn;
+        },
+      });
+      // 构造期即注册回收闭包（host factory→port close 链路的源头契约）
+      expect(typeof disposer).toBe('function');
+      await (agent as any).subscribeSessionsIndexV4({ workspacePath: home });
+      // 模拟宿主连接死亡：调 dispose→定时器清除+订阅表清空
+      (disposer as unknown as () => void)();
+      const before = frames.length;
+      await (agent as any).createSession({ workspacePath: home });
+      const pollStart = Date.now();
+      while (Date.now() - pollStart < 3500) {
+        await new Promise((r) => setTimeout(r, 50));
+        if (frames.length !== before) break;
+      }
+      expect(frames.length).toBe(before);
+    } finally {
+      rmSync(home, { recursive: true, force: true });
+    }
+  }, 8000);
 });

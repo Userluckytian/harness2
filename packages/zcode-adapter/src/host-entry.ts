@@ -153,7 +153,7 @@ function publishReady(state: DatabaseStartupStateReady): void {
 
 /** 在一个转移端口上暴露全部桩服务（桌面 local clientMode：无曝光过滤） */
 function exposeServicesOnPort(port: ElectronMessagePortMainLike): void {
-  const { services } = createHarness2Services();
+  const { services, dispose } = createHarness2Services();
   const protocol = new MessagePortProtocol(wrapElectronPort(port));
   const rawServer = new ChannelServer(protocol, 'host', 1000, false);
   // rpc:call 日志层（与原版 host 同款中间件）：T3 取证用——证明 renderer 在消费桩
@@ -162,6 +162,9 @@ function exposeServicesOnPort(port: ElectronMessagePortMainLike): void {
   port.once('close', () => {
     rawServer.dispose();
     protocol.disconnect();
+    // ZS6 尾巴清偿（zs5-review-t1t5 §4）：连接死亡→回收服务后台资源（sessions-index
+    // 轮询定时器/订阅表），杜绝 renderer 重载累积孤儿定时器。
+    dispose();
   });
 }
 
@@ -252,9 +255,11 @@ parentPort.on('message', (e: { data?: unknown }) => {
 
 log('info', `zs1 stub host started (pid=${process.pid})`);
 
-// 仅 e2e（ZS5_TEST_CRASH=1）：启动后 ~3s 主动抛出，走 unhandledRejection 路径，
-// 验证崩溃报告落盘且壳不连坐崩。生产/正常启动不触发。
-if (process.env.ZS5_TEST_CRASH === '1') {
+// 仅 e2e：启动后 ~3s 主动抛出，走 unhandledRejection 路径，验证崩溃报告落盘且壳不连坐崩。
+// ZS6 尾巴清偿（zs5-review-t1t5 §3）：**双信号门**——ZS5_TEST_CRASH=1 且 ZS2_PROBE=1
+// （run-e2e.ps1 两枚均只有 e2e runbook 会设；正常 launch-manual/用户环境不带 ZS2_PROBE），
+// 单 env 误带入不再可能触发主动崩溃。
+if (process.env.ZS5_TEST_CRASH === '1' && process.env.ZS2_PROBE === '1') {
   setTimeout(() => {
     void Promise.reject(new Error('zs5-e2e-crash-probe'));
   }, 3000);

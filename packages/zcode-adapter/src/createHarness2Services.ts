@@ -223,6 +223,8 @@ export interface Harness2ServicesResult {
   readonly services: ServiceCollection;
   /** 已注册频道名清单（诊断/单测用） */
   readonly registeredChannels: readonly string[];
+  /** 连接销毁：回收各服务的后台资源（ZS6 尾巴清偿），幂等 */
+  dispose(): void;
 }
 
 /**
@@ -238,11 +240,18 @@ export function createHarness2Services(opts: Harness2ServicesOptions = {}): Harn
   const home = opts.home ?? process.env.HARNESS2_HOME;
   const dataRoot = opts.dataRoot ?? process.env.HARNESS2_DATA_ROOT;
 
+  // ZS6 尾巴清偿：连接级 dispose 登记表——带后台资源的服务（agent 的 sessions-index 轮询）
+  // 经 registerDispose 注册回收函数；host-entry 在 MessagePort close 时调用 dispose()。
+  const disposers: Array<() => void> = [];
+  const registerDispose = (fn: () => void): void => {
+    disposers.push(fn);
+  };
+
   const sharedEmitter = new Emitter<unknown>();
   const realFileService = createFileService({ dataRoot, home });
   const realSessionService = createSessionService({ dataRoot, home });
   const realTaskService = createTaskService({ dataRoot, home, emitter: sharedEmitter });
-  const realAgentService = createAgentService({ dataRoot, home, emitter: sharedEmitter });
+  const realAgentService = createAgentService({ dataRoot, home, emitter: sharedEmitter, registerDispose });
   const realModelSelectionService = createModelSelectionService({ dataRoot, home });
   const realProviderSettingsService = createProviderSettingsService({ dataRoot, home });
   const realSettingsStore = createSettingsStore({ dataRoot, home });
@@ -310,5 +319,18 @@ export function createHarness2Services(opts: Harness2ServicesOptions = {}): Harn
     services.register(descriptor as never, wrapProbe(stub, entry.channel));
     registeredChannels.push(entry.channel);
   }
-  return { services, registeredChannels };
+  return {
+    services,
+    registeredChannels,
+    dispose() {
+      while (disposers.length > 0) {
+        const fn = disposers.shift();
+        try {
+          fn?.();
+        } catch {
+          // 回收失败不连坐其它 disposer；最坏=定时器自然 unref
+        }
+      }
+    },
+  };
 }
