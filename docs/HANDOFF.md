@@ -2,8 +2,8 @@
 
 > **🧭 2026-10-23 现状（先读这段）**：主线=**ZS 程序**「ZCode 壳 + harness2 内心」（总纲 `docs/ai-framework/plans/2026-10-20-zs-shell-migration-program.md`；旧 Z 程序与旧壳全面冻结）。
 > **进度**：ZS1–ZS3.5 ✅ → ZS4 ✅（侧栏/设置/provider 写面）→ ZS4.5 全系 ✅（自动拉取→勾选流→徽章/编辑修复→不回填，用户真机复验 2026-10-22）→ **ZS5 观测性 ✅**（崩溃归因 `-Crash` 轮 / 资源监控 host 行接原生资源管理器 / sessions-index 实时+FAIL 噪声归零 / boot-timing / soak 30min PASS；双独立审查 P0=0/P1 全清偿，含 ZS4 V8 六次欠账）。
-> **下一站**：ZS6 收尾与切换（打包/品牌/C 类清单/旧壳退役——发版需人类授权）。
-> **关键门与纪律**：① UI patch 基线=**6 处**（P1 desktopRuntimeEnv / P2 ProviderCardSections 获取模型面板 / P3 settingsNavigation 隐藏 usage+remoteDevices / P4 预设卡表置空 / P5 空组标题 / P6 Help 运营外链隐藏——P3–P6 全是 ZS6-T1 红线⑩隐藏清单，零改交互，diff 落 `docs/patches/zs-shell-patches.patch`），再+1 须人类拍板；② `subscribeSessionsIndexV4` 现为轮询 diff 降级，core 事件原语提案已获批并实施（6cba49d）；③ 子代理声称改文件必过编排者 `git diff` 独立核验（2026-10-22 两例谎报+当晚三连阵亡实证，issue-log §14）；④ 一切门禁/矩阵/soak 命令清单在各阶段计划「验收表」。
+> **下一站**：ZS6 进行中——T0 审计 ✅ / T1 假入口隐藏 ✅ / T2 品牌（Harness2 Desktop）✅（2026-10-23）；余 **T3 win 安装包 → T4 旧壳退役·web 去留提案 → T5 re-sync 文档 → T6 收口+V9 发版授权**（发版需人类授权）。
+> **关键门与纪律**：① UI patch 基线=**11 处**（P1 desktopRuntimeEnv / P2 ProviderCardSections 获取模型面板 / P3 settingsNavigation 隐藏 usage+remoteDevices / P4 预设卡表置空 / P5 空组标题 / P6 Help 运营外链隐藏——P3–P6=ZS6-T1 红线⑩隐藏清单；P7 packaged 应用名 / P8 关于窗+版权 / P9 shared 托盘·菜单标签 / P10 UI i18n help.about / P11 index.html 壳标题——P7–P11=ZS6-T2 品牌装配，零改交互，明细 `docs/ai-framework/plans/zs6-brand-checklist.md`；diff 落 `docs/patches/zs-shell-patches.patch`，scratch 载体提交 `247b4c0e`），再+1 须人类拍板；② `subscribeSessionsIndexV4` 现为轮询 diff 降级，core 事件原语提案已获批并实施（6cba49d）；③ 子代理声称改文件必过编排者 `git diff` 独立核验（2026-10-22 两例谎报+当晚三连阵亡实证，issue-log §14）；④ 一切门禁/矩阵/soak 命令清单在各阶段计划「验收表」。
 > 开放项一律看 `docs/issue-log/OPEN.md`（只读它）。以下旧段落为历史程序记录。
 
 > **🚨 历史（2026-10-11 立项并推进，已冻结）：Z 程序 —— GUI（桌面/Web）按 ZCode 完全还原 + 能力补齐** ——

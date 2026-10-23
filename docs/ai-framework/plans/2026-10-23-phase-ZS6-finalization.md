@@ -32,6 +32,7 @@
 
 1. **UI patch 基线=2 处**（P1 desktopRuntimeEnv / P2 ProviderCardSections）。本阶段允许新增 patch 的范围**仅限品牌与隐藏所需的装配点**（desktop main / 构建配置 / index.html 壳），每处照 ZS1 法登记进本计划执行记录；`packages/ui` 源码**零新改动**。隐藏不得用 CSS 全局硬藏（脆弱），优先数据形状/feature-gate。
    > **执行期偏离登记（2026-10-23 T1）**：实证核查（zs5-inventory/审计探针）发现「零 patch 通道」在本阶段隐藏面上**不成立**——usage/remoteDevices 分区（`HIDDEN_SETTINGS_SECTIONS`）、Z.ai/Start Plan 预设卡（`PRESET/CODING_PLAN_PROVIDER_SPECS`）、Help 运营外链（`WorkspaceHelpMenuButton` 硬编码）**均为 packages/ui 内静态渲染，无 adapter 数据形状或 services feature-gate 可外部驱动**。故改走**唯一可用且 ZCode 自家既有的隐藏机制**（同 automations/plugins 的静态集合 + 数据表置空 + 常量门），登记为 **P3–P6，UI patch 基线 2→6**；全部为「不渲染假入口」，**零改任何交互组件行为**，与 P2（加新交互）性质不同。总纲 ZS6 行「C 类隐藏清单执行」即授权此动作；红线⑩为全程序硬约束，不留可点必炸入口。完整 diff 落 `docs/patches/zs-shell-patches.patch`，运行态回归 `scripts/zs6/t1-verify.cjs` GATE=PASS。
+   > **执行期追加登记（2026-10-23 T2）**：品牌装配按本条授权面（装配点+构建配置+index.html 壳）新增 **P7–P11，UI patch 基线 6→11**；明细见 `zs6-brand-checklist.md` 与 Task 2 执行记录。
 2. **发版红线**：`git tag`、GitHub Release、安装包对外分发=**人类亲手或逐次明确授权**；代理只做到「产物就绪+校验报告」。
 3. **零遥测/密钥/红线⑩纪律不变**；假入口判据=用户在 UI 能看到并可点击的每个功能入口，其后端要么真实、要么该入口消失（不是「点了弹报错」）。
 4. **旧壳六包（desktop 旧 renderer/ui-shared/web/cli/gateway）** 退役决策=**人类拍板门**（T4），本阶段之前维持冻结现状。
@@ -97,6 +98,8 @@
 **行为:** 产品名/窗口标题/任务栏名/安装器名/图标：electron-builder 配置段 + desktop main 品牌字符串（grep `productName`/`ZCode` 于 desktop main 与 build 配置，逐处清单化）+ `index.html` 壳标题。图标：`docs/refs/` 无关——用 harness2 现有素材或占位（正式 logo 属人类供给面，登记待供）。**每处 scratch 改动=登记 patch P3/P4…（品牌类，装配点）**。
 
 **Steps:** 改动清单先出（`zs6-brand-checklist.md`）再动手；起壳肉眼验证任务栏/标题/关于页=V3 证据（截图）；commit。
+
+> **执行记录（2026-10-23 T2）**：工作名 **Harness2 Desktop**（OPEN.md 拍板行）落地。清单 `zs6-brand-checklist.md`（10 触点全量盘点，grep 实证）先行 → 装配点 **P7–P11 登记，UI patch 基线 6→11**（P11=index.html 壳标题，Electron 传播页面 title 到窗口/任务栏已实证）；构建配置面（identity `productName`/`appId=dev.harness2.desktop` + builder `extraMetadata`）按 §1 口径不占编号。scratch 提交 `247b4c0e`（P1–P11 全集+受影响测试同步一并入库；此前 P1–P6 未提交在 scratch 工作树，`docs/patches/zs-shell-patches.patch` 自 base `3c5b2276` 重生成=18 文件 830 行=re-sync 重放源）。运行态门 `t2-brand-verify.cjs` **GATE=PASS 6/6**（document.title / Help 菜单标签 / 关于窗文本全品牌化，零旧字串残留）；V3 截图三张 `docs/screenshots/zs6/zs6-t2-{main,help-menu,about}.png` 人工核验；T1 隐藏门复跑 GATE=PASS（两 patch 族共存无冲突）；e2e `-Fresh` 基础轮 exit=0（真实 provider 回复流式渲染）。图标=人类供给面沿用现 icon 出包（T3 后一键替换）；`zcode://` scheme 与 macOS dev bundle 名（ZCode Dev，win 链路不可达）登记保留不改。
 
 ---
 
