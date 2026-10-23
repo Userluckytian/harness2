@@ -103,6 +103,7 @@ import {
   usageStatsServiceStub,
   createWindowControllerService,
 } from './root-mount-stubs.js';
+import { pluginManagementServiceStub } from './plugin-management-stub.js';
 
 function wrapProbe(service: unknown, channel: string): unknown {
   if (process.env.ZS2_PROBE !== '1') return service;
@@ -277,6 +278,7 @@ export function createHarness2Services(opts: Harness2ServicesOptions = {}): Harn
     [IOAuthService.channelName, oauthServiceStub],
     [IOffPeakTaskService.channelName, offPeakTaskServiceStub],
     [IProjectService.channelName, createProjectService({ home })],
+    [IPluginManagementService.channelName, pluginManagementServiceStub],
     [IPromptAttachmentTransferService.channelName, createLocalPromptAttachmentTransferService()],
     [IProviderSettingsService.channelName, realProviderSettingsService],
     [IRemoteProjectService.channelName, remoteProjectServiceStub],

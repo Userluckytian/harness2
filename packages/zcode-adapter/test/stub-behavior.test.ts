@@ -342,4 +342,29 @@ describe('与 @zcode/rpc ProxyChannel 的兼容性（服务端暴露路径集成
     await expect(channel.call('host', 'load', ['k'])).resolves.toBeNull();
     await expect(channel.call('host', 'save', ['k', 'v'])).rejects.toThrow(/ZS1: not implemented/);
   });
+
+  // ZS6-T0 审计首要违例处置：plugin-management（B 类）设置页触达读方法原样 throw，
+  // UI store 把 error.message 渲染进 DOM（hooks 页「钩子0ZS1: not implemented…」）。
+  // 现读方法=空态形状（无异常字面量可泄漏），写/安装方法保持 throw（不假成功）。
+  it('plugin-management 读路径空态形状 + 写路径仍 throw（ZS6-T0 红线⑩处置）', async () => {
+    const { IPluginManagementService } = await import('@zcode/services');
+    const { services } = createHarness2Services();
+    const channel = ProxyChannel.fromService(services.getOptional(IPluginManagementService)!);
+    await expect(channel.call('host', 'listPlugins', [{}])).resolves.toEqual({ plugins: [], diagnostics: [] });
+    const overview = (await channel.call('host', 'getPluginsOverview', [{}])) as {
+      capability: { supported: boolean };
+    };
+    expect(overview.capability.supported).toBe(false);
+    await expect(channel.call('host', 'getPluginReferenceCatalog', [{}])).resolves.toEqual({
+      authority: 'workspace',
+      plugins: [],
+    });
+    await expect(channel.call('host', 'resolveSuggestedPluginReference', [{ stableId: 'x' }])).resolves.toEqual({
+      stableId: 'x',
+      status: 'unavailable',
+      diagnostics: [],
+    });
+    await expect(channel.call('host', 'installPlugin', [{}])).rejects.toThrow(/ZS1: not implemented/);
+    await expect(channel.call('host', 'setPluginEnabled', [{}])).rejects.toThrow(/ZS1: not implemented/);
+  });
 });
