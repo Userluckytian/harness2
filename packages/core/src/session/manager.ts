@@ -352,20 +352,28 @@ export class SessionManager {
   }
 
   // —— H-14 会话标题（title.json 辅助文件；事实源零触碰） ——
+  // ZS5-core 提案（人类批准 2026-10-23）：标题四法入口统一 SESSION_ID_PATTERN 校验。
+  // 判因：title 写面=路径穿越改他组 title.json 的真实风险面；server 面已有
+  // sessions-assembly assertValidSessionId、桌面面已有 adapter T8 封堵，此为 core 根治。
+  // locate **不**下沉校验：fork/resume 对畸形 id 的既有契约=「session not found」
+  //（fork.test.ts:146 / manager.test.ts:190 测试钉），改 throw 文案属行为变更非本提案范围。
 
   /** 读取某会话标题（未生成 → null）。cwd 提供时按该组定位。 */
   titleOf(id: string, opts: { cwd?: string } = {}): SessionTitle | null {
+    SessionManager.assertSessionId(id);
     return readSessionTitle(this.locate(id, opts));
   }
 
   /** 人工重命名（source: 'manual'）。标题写入 title.json，不追加任何事件。 */
   rename(id: string, title: string, opts: { cwd?: string; source?: TitleSource } = {}): SessionTitle {
+    SessionManager.assertSessionId(id);
     const dir = this.locate(id, opts);
     return writeSessionTitle(dir, title, { source: opts.source ?? 'manual' });
   }
 
   /** 自动标题（启发式 + 可选注入精炼）；已有标题默认复用。 */
   async autoTitle(id: string, opts: AutoTitleOptions & { cwd?: string } = {}): Promise<AutoTitleResult> {
+    SessionManager.assertSessionId(id);
     const { cwd, ...rest } = opts;
     const dir = this.locate(id, cwd !== undefined ? { cwd } : {});
     return autoTitleSession(dir, rest);
@@ -373,7 +381,15 @@ export class SessionManager {
 
   /** 清空标题（返回是否实际删除）。 */
   clearTitle(id: string, opts: { cwd?: string } = {}): boolean {
+    SessionManager.assertSessionId(id);
     return clearSessionTitle(this.locate(id, opts));
+  }
+
+  /** 会话 id 形状出口（与 deleteSession/SESSION_ID_PATTERN 同源）：非法 → throw。 */
+  private static assertSessionId(id: string): void {
+    if (!SESSION_ID_PATTERN.test(id)) {
+      throw new Error(`invalid session id: ${id}`);
+    }
   }
 
   /**
@@ -435,8 +451,16 @@ export class SessionManager {
       writer = SessionWriter.open(dir, { fsync: false });
     } catch (e) {
       if (e instanceof SessionLockedError) throw e;
-      // 非锁原因（残行恢复/seq 漂移等）不阻断清理——删除正是坏日志的出路；
-      // open 失败路径已自行 releaseOnFailure，不会留下本进程的锁。
+      // ZS5-core 提案（人类批准）：非锁异常不再无痕——权限/IO 异常经 emitWarning
+      // 上浮（可观测），仍继续 rmSync（坏目录清理正当性；open 失败路径已自行
+      // releaseOnFailure，不留本进程锁）。ENOENT=日志本就缺失，属正常清理不告警。
+      const code = (e as NodeJS.ErrnoException)?.code;
+      if (code !== 'ENOENT') {
+        process.emitWarning(
+          `deleteSession: SessionWriter.open failed (${e instanceof Error ? e.message : String(e)}); proceeding with removal`,
+          'Warning',
+        );
+      }
     }
     writer?.close();
     rmSync(dir, { recursive: true, force: true });

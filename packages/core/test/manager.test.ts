@@ -1,6 +1,6 @@
 // 会话管理器测试：cwd 编码规则 / 全局布局 / list 排序与摘要 / search 命中 / resume 续写。
-import { afterEach, describe, expect, it } from 'vitest';
-import { existsSync, mkdtempSync, readFileSync, rmSync, utimesSync, writeFileSync } from 'node:fs';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, utimesSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { defaultSessionsRoot, encodeCwd, SessionManager } from '../src/session/manager.js';
@@ -237,5 +237,34 @@ describe('deleteSession 物理删除（ZS4-T1 加性窗口）', () => {
 
     expect(mgr.deleteSession(id)).toBe(true);
     expect(existsSync(dir)).toBe(false);
+  });
+
+  // ZS5-core 提案（人类批准 2026-10-23）：deleteSession 非锁异常不再无痕——
+  // open 的非 ENOENT IO 错（日志位被目录占据 → EISDIR）经 process.emitWarning
+  // 上浮后仍继续清理（坏目录删除正当性保留）。
+  // 断言用同步 spy 而非 'warning' 事件监听：事件经异步派发，测试 runner 环境不保序。
+  it('非锁异常（日志位为目录 → EISDIR）：告警可观测且删除仍完成（ZS5-core 提案）', () => {
+    const root = tmpDir('h2-mgr-root-');
+    const cwd = tmpDir('h2-mgr-cwd-');
+    const mgr = new SessionManager(root);
+    const id = makeSession(mgr, cwd, ['待清理'], []);
+    const dir = join(root, encodeCwd(cwd), id);
+    // 日志路径放一个目录：existsSync 通过，open 内部读取抛 EISDIR（非锁 IO 错）
+    rmSync(join(dir, SESSION_LOG_FILE));
+    mkdirSync(join(dir, SESSION_LOG_FILE));
+
+    const emitted: string[] = [];
+    const spy = vi
+      .spyOn(process, 'emitWarning')
+      .mockImplementation((...args: Parameters<typeof process.emitWarning>) => {
+        emitted.push(String(args[0]));
+      });
+    try {
+      expect(mgr.deleteSession(id)).toBe(true);
+    } finally {
+      spy.mockRestore();
+    }
+    expect(existsSync(dir)).toBe(false); // 清理完成（正当性保留）
+    expect(emitted.some((m) => /deleteSession: SessionWriter\.open failed/.test(m))).toBe(true);
   });
 });

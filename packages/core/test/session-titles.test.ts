@@ -227,3 +227,31 @@ describe('H-14 管理器集成', () => {
     expect(existsSync(join(dir, SESSION_TITLE_FILE))).toBe(true);
   });
 });
+
+// ZS5-core 提案（人类批准 2026-10-23）：标题四法入口统一 SESSION_ID_PATTERN 校验，
+// 封堵路径穿越（`../evil` 经 locate join 会改写他组 title.json）。与 deleteSession
+// 既有闸门同源；合法 id 正常落盘。
+describe('标题四法 id 形状闸门（ZS5-core 提案）', () => {
+  const bad = ['../evil', 'a/b', '..%2f', '', 'nope-id', '20260914-333333-zz'];
+  it('rename/titleOf/clearTitle/autoTitle 对畸形 id 全部 throw invalid session id', async () => {
+    const root = tmpDir();
+    const mgr = new SessionManager(root);
+    for (const id of bad) {
+      expect(() => mgr.titleOf(id)).toThrow(/invalid session id/);
+      expect(() => mgr.rename(id, 'x')).toThrow(/invalid session id/);
+      expect(() => mgr.clearTitle(id)).toThrow(/invalid session id/);
+      await expect(mgr.autoTitle(id)).rejects.toThrow(/invalid session id/);
+    }
+  });
+  it('合法 id 正常（回归：闸门不误伤）', async () => {
+    const root = tmpDir();
+    const cwd = '/proj/t';
+    const { id, writer } = createSession(root, cwd, '20260914-333333-dd0003');
+    writer.append('user/message', { text: '闸门合法路径' });
+    writer.close();
+    const mgr = new SessionManager(root);
+    mgr.rename(id, '合法标题', { cwd });
+    expect(mgr.titleOf(id, { cwd })?.title).toBe('合法标题');
+    expect(mgr.clearTitle(id, { cwd })).toBe(true);
+  });
+});
