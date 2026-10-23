@@ -81,28 +81,29 @@ index 769ca4e3..4806d31e 100644
  };
  
 diff --git a/packages/desktop/src/main/desktopRuntimeEnv.ts b/packages/desktop/src/main/desktopRuntimeEnv.ts
-index 467f780e..e652d2ea 100644
+index 467f780e..4792a6f9 100644
 --- a/packages/desktop/src/main/desktopRuntimeEnv.ts
 +++ b/packages/desktop/src/main/desktopRuntimeEnv.ts
-@@ -62,9 +62,16 @@ function isTruthyRuntimeEnvOverride(name: string): boolean {
+@@ -62,9 +62,17 @@ function isTruthyRuntimeEnvOverride(name: string): boolean {
  // e2e 运行的是生产构建，默认会和本机正式版 ZCode 共用 app name / userData，
  // 触发 Electron 单实例锁后只激活已有窗口，Chromedriver 无法接管测试进程。
  // 这里允许测试显式隔离运行时身份，正常桌面/远控路径保持原来的默认值。
 +// ZS6-P7（harness2 品牌装配点 patch，登记于 ZS6 计划 zs6-brand-checklist.md）：
-+// 打包/开发回退身份 = harness2 工作名「Harness2 Desktop」（正式名人类后替）；
-+// dev 态同时由 launcher 注入 ZCODE_DESKTOP_APPLICATION_NAME 覆盖（零 patch 通道）。
++// packaged 回退身份 = harness2 工作名「Harness2 Desktop」（正式名人类后替）；
++// dev 回退「Harness2 Desktop Dev」——保留上游 ZCode/ZCode Dev 的 userData+单实例
++// 分离语义（ZS6 审查 P2-1 闭环：同机并行起壳与装包实例不得互抢单实例锁）。
  export const runtimeApplicationName =
    readRuntimeEnvOverride("ZCODE_DESKTOP_APPLICATION_NAME") ??
 -  (isLocalDevelopmentRuntime ? "ZCode Dev" : isPreviewPackagedRuntime ? "ZCode Preview" : "ZCode");
 +  (isLocalDevelopmentRuntime
-+    ? "Harness2 Desktop"
++    ? "Harness2 Desktop Dev"
 +    : isPreviewPackagedRuntime
 +      ? "ZCode Preview"
 +      : "Harness2 Desktop");
  // Electron 的 app.getPath("home") 不一定跟随测试进程里的 HOME 覆盖。
  // e2e 默认工作区依赖 home 路径，因此提供显式覆盖，避免测试写到开发者真实 ~/ZCodeProject。
  export const runtimeHomePath = readRuntimeEnvOverride("ZCODE_DESKTOP_HOME_DIR");
-@@ -83,7 +90,11 @@ export const runtimeSessionDataPath =
+@@ -83,7 +91,11 @@ export const runtimeSessionDataPath =
  // Chromedriver 会注入临时 --user-data-dir，并在该目录等待 DevToolsActivePort。
  // e2e 如果再用 app.setPath 覆盖 userData/sessionData，端口文件会被写到另一个目录，
  // 导致 Electron 已启动但 WebDriver session 一直创建失败。测试态打开该开关后保留 Chromedriver 的目录。
@@ -271,7 +272,7 @@ index 49aa6542..4331e2cd 100644
  
      menuItem.click(undefined as never, undefined, undefined as never);
 diff --git a/packages/shared/src/desktopMenu.ts b/packages/shared/src/desktopMenu.ts
-index 5c0f4325..db9eaefd 100644
+index 5c0f4325..1b8143b1 100644
 --- a/packages/shared/src/desktopMenu.ts
 +++ b/packages/shared/src/desktopMenu.ts
 @@ -87,7 +87,9 @@ export const desktopMenuMessages: Record<Locale, DesktopMenuLocaleMessages> = {
@@ -305,6 +306,17 @@ index 5c0f4325..db9eaefd 100644
      "titleBar.menu.help.whatsNew": "What's new",
      "titleBar.menu.help.checkForUpdates": "Check for updates",
      "titleBar.menu.help.toggleDevTools": "Toggle developer tools",
+@@ -159,8 +161,8 @@ export const desktopMenuMessages: Record<Locale, DesktopMenuLocaleMessages> = {
+     "desktopMenu.help.downloadingUpdateProgress": "Downloading update... {progress}",
+     "desktopMenu.help.restartToUpdate": "Restart to update ({version})",
+     "dock.menu.showCurrentWindow": "Show current window",
+-    "tray.tooltip": "ZCode",
+-    "tray.menu.openZCode": "Open ZCode",
++    "tray.tooltip": "Harness2 Desktop",
++    "tray.menu.openZCode": "Open Harness2 Desktop",
+     "tray.menu.quit": "Quit",
+   },
+ };
 diff --git a/packages/ui/src/WorkspaceHelpMenuButton.tsx b/packages/ui/src/WorkspaceHelpMenuButton.tsx
 index 2306cee2..42e72d15 100644
 --- a/packages/ui/src/WorkspaceHelpMenuButton.tsx

@@ -99,7 +99,7 @@
 
 **Steps:** 改动清单先出（`zs6-brand-checklist.md`）再动手；起壳肉眼验证任务栏/标题/关于页=V3 证据（截图）；commit。
 
-> **执行记录（2026-10-23 T2）**：工作名 **Harness2 Desktop**（OPEN.md 拍板行）落地。清单 `zs6-brand-checklist.md`（10 触点全量盘点，grep 实证）先行 → 装配点 **P7–P11 登记，UI patch 基线 6→11**（P11=index.html 壳标题，Electron 传播页面 title 到窗口/任务栏已实证）；构建配置面（identity `productName`/`appId=dev.harness2.desktop` + builder `extraMetadata`）按 §1 口径不占编号。scratch 提交 `247b4c0e`（P1–P11 全集+受影响测试同步一并入库；此前 P1–P6 未提交在 scratch 工作树，`docs/patches/zs-shell-patches.patch` 自 base `3c5b2276` 重生成=18 文件 830 行=re-sync 重放源）。运行态门 `t2-brand-verify.cjs` **GATE=PASS 6/6**（document.title / Help 菜单标签 / 关于窗文本全品牌化，零旧字串残留）；V3 截图三张 `docs/screenshots/zs6/zs6-t2-{main,help-menu,about}.png` 人工核验；T1 隐藏门复跑 GATE=PASS（两 patch 族共存无冲突）；e2e `-Fresh` 基础轮 exit=0（真实 provider 回复流式渲染）。图标=人类供给面沿用现 icon 出包（T3 后一键替换）；`zcode://` scheme 与 macOS dev bundle 名（ZCode Dev，win 链路不可达）登记保留不改。
+> **执行记录（2026-10-23 T2）**：工作名 **Harness2 Desktop**（OPEN.md 拍板行）落地。清单 `zs6-brand-checklist.md`（10 触点全量盘点，grep 实证）先行 → 装配点 **P7–P11 登记，UI patch 基线 6→11**（P11=index.html 壳标题，Electron 传播页面 title 到窗口/任务栏已实证）；构建配置面（identity `productName`/`appId=dev.harness2.desktop` + builder `extraMetadata`）按 §1 口径不占编号。scratch 提交 `247b4c0e`（P1–P11 全集+受影响测试同步一并入库；此前 P1–P6 未提交在 scratch 工作树）+ 审查闭环追加 `48915dd1`（P1=en 托盘 2 值漏改补齐；P2-1=dev 身份回退「Harness2 Desktop Dev」保留单实例分离），`docs/patches/zs-shell-patches.patch` 自 base `3c5b2276` 重生成=18 文件 842 行=re-sync 重放源）。运行态门 `t2-brand-verify.cjs` **GATE=PASS 6/6**（document.title / Help 菜单标签 / 关于窗文本全品牌化，零旧字串残留；审查修复后复跑同绿）；V3 截图三张 `docs/screenshots/zs6/zs6-t2-{main,help-menu,about}.png` 人工核验；T1 隐藏门复跑 GATE=PASS（两 patch 族共存无冲突）；e2e `-Fresh` 基础轮 exit=0（真实 provider 回复流式渲染）。图标=人类供给面沿用现 icon 出包（T3 后一键替换）；`zcode://` scheme 与 macOS dev bundle 名（ZCode Dev，win 链路不可达）登记保留不改。
 
 ---
 
@@ -149,6 +149,8 @@
 
 **审查方：** cat-jam 只读，报告落盘 `docs/ai-framework/plans/zs6-review.md`（§14 自证条款照旧）。  
 **审查面：** 红线⑩（隐藏=消失非报错）、patch 登记完备性、打包脚本无危险动作、品牌改动无越界进 UI 源码、退役提案证据真实性。
+
+> **执行记录（2026-10-23 T6 审查）**：通道如实登记——buddyhub/deepseek 全量面 1 亡、qwork-auto high 拆分 A/B 双双 250s server error（issue-log §10），第 4 次**合并精简面**派发成功。结果=**P0=0 / P1=1 / P2=2**，逐项证据全落（含 `PATCH-IDENTICAL` 逐字互证）。闭环：**P1-1** en-US 托盘 2 值补品牌+dev 身份回退「Harness2 Desktop Dev」（单实例分离恢复，P2-1 同修）→ scratch `48915dd1`，受影响单测 39 绿、`t2-brand-verify` 复跑 GATE=PASS 6/6；**P2-2** pack 脚本 try/finally；产物重打终版（NSIS `77325B1C…`/portable `F723A616…`）+ 打包体 smoke GATE=PASS 6/6；patch 重生成 18 文件 842 行。详见 zs6-review.md「闭环处置」节。**V6=✅（P1 清零）**。
 
 ---
 

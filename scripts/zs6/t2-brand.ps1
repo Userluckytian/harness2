@@ -1,4 +1,4 @@
-# ZS6-T2 品牌验证启动器（复用 run-e2e 的 fake-home 装配面，只起壳+验证+清场）
+﻿# ZS6-T2 品牌验证启动器（复用 run-e2e 的 fake-home 装配面，只起壳+验证+清场）
 # 用法: powershell -NoProfile -ExecutionPolicy Bypass -File scripts/zs6/t2-brand.ps1 [-Capture]
 # -Capture：跑 t2-capture.cjs 取 V3 证据截图；默认跑 t2-brand-verify.cjs 判定门
 param([switch]$Capture)

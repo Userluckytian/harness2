@@ -75,21 +75,24 @@ Copy-Item $AdapterHost (Join-Path $HostDir 'harness2-host.cjs') -Force
 # 4) electron-builder（直调 cli；nsis+portable 经 CLI 目标覆盖，不动 scratch 配置）
 # desktop/package.json 的 version 上游故意留 null（workspace 成员），但 app-builder-lib
 # 在应用 extraMetadata 前先校验源 package.json → 临时戳 build-meta 版本，pack 完还原，
-# 保持 scratch 工作树=登记 patch 集（T6 diff -rq 口径）。
+# 保持 scratch 工作树=登记 patch 集（T6 diff -rq 口径）。try/finally 保证异常路径也还原（审查 P2-2）。
 Push-Location $Desktop
 $meta = Get-Content 'out\metadata\build-meta.json' -Raw | ConvertFrom-Json
 $pkg = Get-Content 'package.json' -Raw | ConvertFrom-Json
 $pkg | Add-Member -NotePropertyName version -NotePropertyValue $meta.appVersion -Force
 [System.IO.File]::WriteAllText((Join-Path $Desktop 'package.json'), ($pkg | ConvertTo-Json -Depth 30))
-# 关键：-c 显式加载 electron-builder.config.js（非标准自动探测名；缺它=无 npmRebuild:false
-# → builder 对 node-pty 本地 node-gyp 重建，VS BuildTools 缺 Spectre 库必炸 MSB8040，实证）。
-# signAndEditExecutable=false：本机无签名证书通道（ZCode 自家本地构建同口径，config ~L832
-# 注释「本地开发不被签名配置绑死」），且 builder 的 winCodeSign 工具包在本机永远解包失败
-# （含 macOS 符号链接，无特权=实证 MSB 之外的另一硬障碍）→ 跳过 signtool 查找。
-# 代价=EXE 文件元数据（图标/版本资源）不落，SmartScreen 警告本地装包时出现——正式签名归 CI/人类运营面。
-node $BuilderCli -c electron-builder.config.js --config.win.signAndEditExecutable=false --config.nsis.artifactName='${productName}-${version}-${platform}-${arch}.${ext}' --config.portable.artifactName='${productName}-${version}-${platform}-${arch}-portable.${ext}' --win nsis portable --x64
-$buildCode = $LASTEXITCODE
-git -C $ZCodeRoot checkout -- packages/desktop/package.json
+try {
+  # 关键：-c 显式加载 electron-builder.config.js（非标准自动探测名；缺它=无 npmRebuild:false
+  # → builder 对 node-pty 本地 node-gyp 重建，VS BuildTools 缺 Spectre 库必炸 MSB8040，实证）。
+  # signAndEditExecutable=false：本机无签名证书通道（ZCode 自家本地构建同口径，config ~L832
+  # 注释「本地开发不被签名配置绑死」），且 builder 的 winCodeSign 工具包在本机永远解包失败
+  # （含 macOS 符号链接，无特权=实证 MSB 之外的另一硬障碍）→ 跳过 signtool 查找。
+  # 代价=EXE 文件元数据（图标/版本资源）不落，SmartScreen 警告本地装包时出现——正式签名归 CI/人类运营面。
+  node $BuilderCli -c electron-builder.config.js --config.win.signAndEditExecutable=false --config.nsis.artifactName='${productName}-${version}-${platform}-${arch}.${ext}' --config.portable.artifactName='${productName}-${version}-${platform}-${arch}-portable.${ext}' --win nsis portable --x64
+  $buildCode = $LASTEXITCODE
+} finally {
+  git -C $ZCodeRoot checkout -- packages/desktop/package.json
+}
 Pop-Location
 if ($buildCode -ne 0) { Write-Host 'BUILDER-EXIT-NONZERO'; }
 

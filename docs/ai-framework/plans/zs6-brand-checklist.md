@@ -20,13 +20,13 @@
 
 ## 2. patch 登记（基线 6 → 11）
 
-| 编号 | 文件                                  | 内容                                                                | 性质                     |
-| ---- | ------------------------------------- | ------------------------------------------------------------------- | ------------------------ |
-| P7   | desktop/src/main/desktopRuntimeEnv.ts | packaged 应用名回退「ZCode」→「Harness2 Desktop」（P1 同文件）      | 品牌·装配点              |
-| P8   | desktop/src/main/about.ts             | 关于窗应用名 + 中英文版权行                                         | 品牌·装配点              |
-| P9   | shared/src/desktopMenu.ts             | 托盘 tooltip/菜单/主菜单 Help 标签 ×6（zh+en）                      | 品牌·菜单数据            |
-| P10  | ui/src/i18n/locales/{zh-CN,en-US}.ts  | help.about 字串 ×2                                                  | 品牌·i18n 字串（零交互） |
-| P11  | desktop/src/renderer/index.html       | 壳标题 `<title>`=Harness2 Desktop（Electron 传播到任务栏/窗口标题） | 品牌·壳 html             |
+| 编号 | 文件                                  | 内容                                                                                                                                                | 性质                     |
+| ---- | ------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------ |
+| P7   | desktop/src/main/desktopRuntimeEnv.ts | packaged 回退「ZCode」→「Harness2 Desktop」；dev 回退「ZCode Dev」→「Harness2 Desktop Dev」（单实例/userData 分离语义保留，审查 P2-1）（P1 同文件） | 品牌·装配点              |
+| P8   | desktop/src/main/about.ts             | 关于窗应用名 + 中英文版权行                                                                                                                         | 品牌·装配点              |
+| P9   | shared/src/desktopMenu.ts             | 托盘 tooltip/菜单/主菜单 Help 标签 ×6（zh+en；审查 P1 补 en 托盘 2 值，scratch `48915dd1`）                                                         | 品牌·菜单数据            |
+| P10  | ui/src/i18n/locales/{zh-CN,en-US}.ts  | help.about 字串 ×2                                                                                                                                  | 品牌·i18n 字串（零交互） |
+| P11  | desktop/src/renderer/index.html       | 壳标题 `<title>`=Harness2 Desktop（Electron 传播到任务栏/窗口标题）                                                                                 | 品牌·壳 html             |
 
 构建配置改动（identity 文件 `productName`/`appId` + builder `extraMetadata`）单独列表，不占 patch 编号（计划 Global Constraints §1 口径）。受影响测试同步：`about.test.ts`/`desktopTray.test.ts`/`desktopProductIdentity.test.ts` 品牌断言 + e2e `help-menu-about.test.ts`/`helpers/desktop-app.ts` About 标签（ZCode 自家测试钉旧字串，随 patch 一并更新以保持冻结包绿）。
 

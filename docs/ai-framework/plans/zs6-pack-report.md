@@ -1,11 +1,13 @@
-# ZS6-T3 win 安装包报告（2026-10-23，正常通道跑通）
+# ZS6-T3 win 安装包报告（2026-10-23，正常通道跑通；审查闭环后终版）
 
-## 产物（不进 git：`release/` 已 gitignore 实证）
+## 产物（不进 git：`release/` 已 gitignore 实证；**发版候选=本表终版**）
 
 | 文件                                                            | 大小    | SHA256                                                             |
 | --------------------------------------------------------------- | ------- | ------------------------------------------------------------------ |
-| `Harness2 Desktop-3.16.2-win32-x64.exe`（NSIS，oneClick=false） | 170.5MB | `8C15C7A20B901C68536D1253263409A30463FCAD6721248C6E447552658C7FE8` |
-| `Harness2 Desktop-3.16.2-win32-x64-portable.exe`                | 170.2MB | `A85E6B831714F7FACC865DE93B7F146ACB1DF86A2D3982250E753CAA9FFD0A80` |
+| `Harness2 Desktop-3.16.2-win32-x64.exe`（NSIS，oneClick=false） | 171.8MB | `77325B1C4197C598B21F45C5668AC7BD2A90BADF995232019A9D2DD84C3BA151` |
+| `Harness2 Desktop-3.16.2-win32-x64-portable.exe`                | 171.4MB | `F723A616A41B0A3BACEA0934CDBDD19891637D3413629D25F9A1BEA92411F9C2` |
+
+> **重打包史（如实）**：①首发 NSIS `8C15…C7FE8`/portable `A85E…0A80`（170.5/170.2MB）；②独立审查（`zs6-review.md`）判 P1=en-US 托盘两值漏品牌 → 修复提交 scratch `48915dd1`；重打过程一次误用非 production tsup 产物（172.3/172.6MB，作废未发布）；③**终版**（21:41）=完整管道（脚本内 NODE_ENV=production 全链重建）+ 打包体 smoke **GATE=PASS 6/6**（英文 locale 下 UA=Harness2Desktop/3.16.2、Help「About Harness2 Desktop」、关于窗「Copyright © 2026 harness2.」），即上表哈希。旧对号哈希仅存历史勿用于发布。
 
 附产物：`.blockmap`、`latest.yml`（updater 元数据，本程序不接自动更新链，仅 builder 副产物）。
 构建身份：`ZCODE_ENV=production` + production identity → productName「Harness2 Desktop」/ appId `dev.harness2.desktop`；version=3.16.2（上游对齐）；Electron 41.0.3。
