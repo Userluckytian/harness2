@@ -30,9 +30,12 @@ function getJson(p) {
     console.error('CANNOT REACH CDP:', e.message);
     process.exit(3);
   }
-  const page = list.find(
-    (t) => t.type === 'page' && /localhost:5174|harness2-zs1-build/.test(t.url) && !/dist\/renderer/.test(t.url),
-  );
+  // 页面选择：dev 壳=localhost:5174/harness2-zs1-build；打包态 win-unpacked 经
+  // ZS6_PAGE_MATCH（pack 脚本设）放宽——只认主窗口页，排除 devtools/worker。
+  const pagePattern = process.env.ZS6_PAGE_MATCH
+    ? new RegExp(process.env.ZS6_PAGE_MATCH)
+    : /localhost:5174|harness2-zs1-build/;
+  const page = list.find((t) => t.type === 'page' && pagePattern.test(t.url) && !/dist\/renderer/.test(t.url));
   if (!page) {
     console.error('NO PAGE TARGET');
     process.exit(3);
@@ -114,19 +117,18 @@ function getJson(p) {
     );
   }
   console.log('HELP_ITEMS=' + JSON.stringify(menu));
-  check(
-    'P10_help_about_label',
-    menu.some((x) => x.includes('关于 Harness2 Desktop')),
-  );
-  check('P10_no_old_label', !menu.some((x) => /关于 ZCode(?! )/.test(x) && !x.includes('Harness2')));
+  // 语言无关匹配：dev 壳历史偏好=中文，打包态首启=英文；两态都判定同一品牌词。
+  const aboutLabel = (x) => /harness2 desktop/i.test(x) && /(关于|about)/i.test(x);
+  check('P10_help_about_label', menu.some(aboutLabel));
+  check('P10_no_old_label', !menu.some((x) => /关于 ZCode|About ZCode/i.test(x)));
   // 旧 ZCode 字样彻底不在可见菜单里（关于项也已是新名）
   check('menu_no_zcode', !menu.some((x) => x.includes('ZCode')));
 
-  // 3. 点「关于 Harness2 Desktop」→ 关于窗（data URL 独立 target）
+  // 3. 点关于项 → 关于窗（data URL 独立 target）
   const aboutPos = JSON.parse(
     String(
       (await ev(
-        "(() => { const mi=Array.from(document.querySelectorAll('[role=\"menuitem\"]')).find(x=>(x.textContent||'').includes('关于 Harness2 Desktop')); if(!mi) return 'null'; const r=mi.getBoundingClientRect(); if(r.width===0) return 'null'; return JSON.stringify({x:Math.round(r.x+r.width/2),y:Math.round(r.y+r.height/2)}); })()",
+        "(() => { const re=/harness2 desktop/i; const mi=Array.from(document.querySelectorAll('[role=\"menuitem\"]')).find(x=>{const t=x.textContent||'';return re.test(t)&&/(关于|about)/i.test(t)}); if(!mi) return 'null'; const r=mi.getBoundingClientRect(); if(r.width===0) return 'null'; return JSON.stringify({x:Math.round(r.x+r.width/2),y:Math.round(r.y+r.height/2)}); })()",
       )) || 'null',
     ),
   );

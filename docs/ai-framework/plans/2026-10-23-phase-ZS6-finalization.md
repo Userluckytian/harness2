@@ -109,6 +109,8 @@
 
 **Steps:** 打包脚本入库 `scripts/zs6-pack.ps1`（幂等、无危险动作、不删仓外文件）；跑通出产物清单+大小+哈希；commit `🐳ci(zs6): win 安装包通道（正常/回退双轨）`。
 
+> **执行记录（2026-10-23 T3，编排者直做）**：正常通道跑通，脚本实落 `scripts/zs6/zs6-pack.ps1`（计划路径 scripts/zs6-pack.ps1 → 归 zs6 目录，同例 zs5）。产物 **NSIS 170.5MB + portable 170.2MB**（SHA256 见 `zs6-pack-report.md`；`release/` gitignore 实证不入库）。四障碍逐破并登记（详见报告）：`-c` 显式配置（否则 MSB8040）/ package.json version 临时戳+还原（scratch 零漂移）/ **winCodeSign 归档 macOS 符号链接本机永解失败→`signAndEditExecutable=false`**（ZCode 自家本地口径，EXE 元数据/SmartScreen=待人类签名面）/ 打包态 CDP 用 `--remote-debugging-port` 直传。**内心装配实证**：pack 脚本暂存 adapter bundle 为 `out/host/harness2-host.cjs`+ESM 桥 `index.js`（零新 patch，P1 回落路径契约不变），asar 内核标记全中。**打包体 smoke GATE=PASS 6/6**（UA=Harness2Desktop/3.16.2、标题/Help/关于页全品牌；t2-brand-verify 改语言无关匹配）。manual-pack 回退轨=旧壳脚本在位、scratch 移植未做（前提未触发，备忘入报告）。装机真对话=V9 人类项。
+
 ---
 
 ## Task 4：旧壳退役与 web 去留提案（**人类拍板材料，不执行删除**）
