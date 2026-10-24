@@ -60,14 +60,7 @@ jobs:
       - name: Test cli
         run: pnpm --filter harness2 test
 
-      - name: Test desktop
-        run: pnpm --filter @harness2/desktop test
-
-      - name: Test ui-shared
-        run: pnpm --filter @harness2/ui-shared test
-
-      - name: Test web
-        run: pnpm --filter @harness2/web test
+      # ZS6-T4 退役（2026-10-24）：desktop/ui-shared/web 三包已删，测试步同步移除
 
   publish:
     name: publish (npm)
@@ -108,99 +101,6 @@ jobs:
           echo "::notice::NPM_TOKEN 未配置，本次 release 跳过 npm publish（发布需人类授权，见 docs/issue-log/OPEN.md）"
           echo "::notice::待办：配置 NPM_TOKEN secret 并人工授权后重新触发发布（重推 tag 或手跑 workflow）"
 
-  # 桌面产物（阶段 11 Task 3）：三平台 unsigned 构建 → artifact → 附加到 GitHub Release。
-  # macOS 无证书：CSC_IDENTITY_AUTO_DISCOVERY=false + identity: null 显式跳过签名/公证。
-  desktop:
-    name: desktop artifacts (${{ matrix.name }})
-    needs: test
-    runs-on: ${{ matrix.os }}
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - os: windows-latest
-            name: win-setup
-            script: dist:win
-            artifact: packages/desktop/release/*.exe
-          - os: macos-latest
-            name: mac-dmg
-            script: dist:mac
-            artifact: packages/desktop/release/*.dmg
-          - os: ubuntu-latest
-            name: linux-appimage
-            script: dist:linux
-            artifact: packages/desktop/release/*.AppImage
-    env:
-      CSC_IDENTITY_AUTO_DISCOVERY: false
-    steps:
-      - uses: actions/checkout@v5
-
-      - uses: pnpm/action-setup@v5
-
-      - uses: actions/setup-node@v5
-        with:
-          node-version: 22
-          cache: pnpm
-
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile
-
-      # 必须先 build 全仓：dist:* 里的 `pnpm --filter harness2 bundle` 用 esbuild 打包
-      # `src/serve-entry.ts`，其中 `import ... from '@harness2/core'` 经 node 解析落到
-      # `packages/core/dist/index.js`（core 的 exports 只指 dist，全仓也没有 tsconfig paths 别名）。
-      # 干净 runner 上 dist 不存在 → bundle 直接 ERR_PNPM_RECURSIVE_RUN_FIRST_FAIL。
-      # 2026-10-13 实测取证：把 packages/core/dist 临时改名后复跑 `pnpm --filter harness2 bundle`
-      # 必红（Exit status 1）。ci.yml 的 build-desktop job 本就有这步，release 的 desktop job 漏了，
-      # 首次真跑必失败——补上与 ci.yml 同口径的 build。
-      - name: Build packages
-        run: pnpm build
-
-      - name: Package（unsigned）
-        run: pnpm --filter @harness2/desktop ${{ matrix.script }}
-
-      - name: Upload artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: harness2-${{ matrix.name }}
-          path: ${{ matrix.artifact }}
-          if-no-files-found: error
-
-  release-assets:
-    name: attach desktop artifacts to release
-    needs: [publish, desktop]
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
-    steps:
-      - name: Download desktop artifacts
-        uses: actions/download-artifact@v4
-        with:
-          path: release-assets
-          merge-multiple: true
-
-      - name: Attach to GitHub Release（幂等 + 显式诊断 + notes 回退）
-        # 两次真跑（v1.0.0 @629de9a / @0941211）均在本步 14~20s 失败且 Release 未建出来。
-        # 根因（推断已收敛）：本 job 无 actions/checkout，gh CLI 在既无本地 git 仓库、又无
-        # GH_REPO 时解析不出目标仓库 → `gh release view/create` 直接报 "no repository"退出。
-        # 修法：显式 GH_REPO=github.repository（gh 官方支持的 repo 上下文来源）。
-        # 诊断加固：失败时把 stderr 压成单行 ::error:: 注解——未登录也能在 Run 页面看到真因。
-        env:
-          GH_TOKEN: ${{ github.token }}
-          GH_REPO: ${{ github.repository }}
-          TAG: ${{ github.ref_name }}
-        run: |
-          set -u
-          one_line() { tr '\n\r' '  ' | cut -c1-400; }
-          if ! gh release view "$TAG" >/dev/null 2>&1; then
-            echo "::group::create release $TAG"
-            if ! gh release create "$TAG" --generate-notes --title "$TAG" 2>err.log; then
-              echo "::warning::--generate-notes 失败：$(one_line <err.log)"
-              gh release create "$TAG" --title "$TAG" \
-                --notes "harness2 $TAG：三平台桌面产物（win nsis+portable / mac dmg arm64+x64 / linux AppImage），全部 unsigned。" \
-                2>err.log || { echo "::error::gh release create 失败（含回退）：$(one_line <err.log)"; exit 1; }
-            fi
-            echo "::endgroup::"
-          fi
-          gh release view "$TAG" --json tagName,uploadUrl >/dev/null || { echo "::error::Release $TAG 视图复核失败"; exit 1; }
-          gh release upload "$TAG" release-assets/* --clobber
-          echo "::notice::桌面产物已附加到 Release $TAG（全部 unsigned，无签名/公证）"
+  # ZS6-T4 退役（2026-10-24）：旧壳三平台 desktop 产物 job 与 release-assets 附加 job 已移除。
+  # 现行桌面产物 = 本地 zs6-pack 通道（scripts/zs6/zs6-pack.ps1，win NSIS/portable unsigned），
+  # 由人类在 V9 发版时手动附加到 GitHub Release（材料：docs/ai-framework/plans/zs6-release-draft.md）。

@@ -2,7 +2,7 @@
 
 > **🧭 2026-10-23 现状（先读这段）**：主线=**ZS 程序**「ZCode 壳 + harness2 内心」（总纲 `docs/ai-framework/plans/2026-10-20-zs-shell-migration-program.md`；旧 Z 程序与旧壳全面冻结）。
 > **进度**：ZS1–ZS3.5 ✅ → ZS4 ✅（侧栏/设置/provider 写面）→ ZS4.5 全系 ✅（自动拉取→勾选流→徽章/编辑修复→不回填，用户真机复验 2026-10-22）→ **ZS5 观测性 ✅**（崩溃归因 `-Crash` 轮 / 资源监控 host 行接原生资源管理器 / sessions-index 实时+FAIL 噪声归零 / boot-timing / soak 30min PASS；双独立审查 P0=0/P1 全清偿，含 ZS4 V8 六次欠账）。
-> **下一站**：ZS6 执行面**全部完成**——T0–T5 ✅ / T6 全门+独立审查 ✅（P0=0/P1 闭环，报告 `zs6-review.md`）/ win 安装包终版就绪（`zs6-pack-report.md`）。**剩=人类三件事**：①V9 装机验收+tag/Release 发版授权（材料 `zs6-release-draft.md` 含粘贴文案）；②T4 退役案拍板（推荐案 B，`zs6-retirement-proposal.md`）；③push 授权（本地 main 领先 origin，CI 跑后全绿才算收口）。
+> **下一站**：ZS6 全部执行完毕——T0–T6 ✅ / T4 案 B 退役已执行（2026-10-24：旧 desktop/ui-shared/web 537 文件删除，归档 tag `pre-zs-retirement`；CI=四包 test+pages，release.yml 产物改手动附加）/ win 安装包终版就绪 / push CI 全绿（run `40047614218`）。**剩=仅 V9 人类终验**：装机验收（9 项清单 `zs6-release-draft.md`）→ 过则 tag/Release（文案粘贴即用）。ZS 程序至此终结；后续按 ROADMAP 另立项（跨平台打包/Web 壳/hermes 长尾功能）。
 > **关键门与纪律**：① UI patch 基线=**11 处**（P1 desktopRuntimeEnv / P2 ProviderCardSections 获取模型面板 / P3 settingsNavigation 隐藏 usage+remoteDevices / P4 预设卡表置空 / P5 空组标题 / P6 Help 运营外链隐藏——P3–P6=ZS6-T1 红线⑩隐藏清单；P7 packaged 应用名 / P8 关于窗+版权 / P9 shared 托盘·菜单标签 / P10 UI i18n help.about / P11 index.html 壳标题——P7–P11=ZS6-T2 品牌装配，零改交互，明细 `docs/ai-framework/plans/zs6-brand-checklist.md`；diff 落 `docs/patches/zs-shell-patches.patch`，scratch 载体提交 `247b4c0e`+审查闭环 `48915dd1`），再+1 须人类拍板；② `subscribeSessionsIndexV4` 现为轮询 diff 降级，core 事件原语提案已获批并实施（6cba49d）；③ 子代理声称改文件必过编排者 `git diff` 独立核验（2026-10-22 两例谎报+当晚三连阵亡实证，issue-log §14）；④ 一切门禁/矩阵/soak 命令清单在各阶段计划「验收表」。
 > 开放项一律看 `docs/issue-log/OPEN.md`（只读它）。以下旧段落为历史程序记录。
 

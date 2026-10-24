@@ -1,8 +1,9 @@
 # harness2 CI：三平台 matrix，typecheck + test（mock provider，零 API key）。
 # 远程：https://github.com/Userluckytian/harness2（public → Actions 分钟免费）。
-# 2026-10-13 起 main 已持续 push，CI 每次 push/PR 真跑：最近一次为 `4082e96` 的 **7 job 全绿**
-# （三平台 test + 三平台 desktop build + pages）。本 workflow 只在 push/PR 时触发，
-# 本地未 push 的提交不会被 CI 验证。
+# 2026-10-24 ZS6-T4 案 B 退役：旧壳 desktop/ui-shared/web 三包删除 → test job 收敛为
+# core/gateway/cli（+zcode-adapter 经 workspace `pnpm build`/test 覆盖），desktop 打包 job
+# 移除（产品桌面端=ZCode 壳装配通道 `scripts/zs6/zs6-pack.ps1`，本地出包，不入 CI）。
+# 本 workflow 只在 push/PR 时触发，本地未 push 的提交不会被 CI 验证。
 name: CI
 
 on:
@@ -58,7 +59,7 @@ jobs:
       # projectService 需要解析各包 tsconfig，且 core 的 api-surface.test.ts 引用 dist/。
       #
       # 以下均拆成独立步骤（消除单点红掩盖：2026-09-11 CI #61 在 core 失败后，
-      # gateway/cli/desktop 三包当次根本没跑到，见 docs/issue-log/OPEN.md）。
+      # 其余包当次根本没跑到，见 docs/issue-log/OPEN.md）。
       # 条件只看 build 成败：build 红则后续全跳（无意义）；其余步骤互不遮蔽
       # —— typecheck/lint 红不挡测试，某一包红不挡其余包；任一步红则整个 job 红。
       - name: Lint (ESLint)
@@ -82,73 +83,10 @@ jobs:
         if: ${{ !cancelled() && steps.build.outcome == 'success' }}
         run: pnpm --filter harness2 test
 
-      - name: Test desktop
+      # zcode-adapter（ZS 内心装配，2026-10 起为活跃开发面）：与三包同口径独立步骤
+      - name: Test zcode-adapter
         if: ${{ !cancelled() && steps.build.outcome == 'success' }}
-        run: pnpm --filter @harness2/desktop test
-
-      # P8：共享 UI 包与 web 壳各自独立测试步骤（与 core/gateway 同口径，单点红不遮蔽其余包）
-      - name: Test ui-shared
-        if: ${{ !cancelled() && steps.build.outcome == 'success' }}
-        run: pnpm --filter @harness2/ui-shared test
-
-      - name: Test web
-        if: ${{ !cancelled() && steps.build.outcome == 'success' }}
-        run: pnpm --filter @harness2/web test
-
-  # 桌面端构建矩阵（阶段 11 Task 3）：三平台各自构建 + artifact 上传（unsigned；
-  # 构建失败即红）。GUI 测试不做（见 docs/issue-log/OPEN.md）；桌面单测为纯逻辑
-  # （jsdom，无 GUI），仅 windows 跑一次即可覆盖。
-  build-desktop:
-    name: desktop build (${{ matrix.name }})
-    runs-on: ${{ matrix.os }}
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - os: windows-latest
-            name: win-setup
-            script: dist:win
-            artifact: packages/desktop/release/*.exe
-          - os: macos-latest
-            name: mac-dmg
-            script: dist:mac
-            artifact: packages/desktop/release/*.dmg
-          - os: ubuntu-latest
-            name: linux-appimage
-            script: dist:linux
-            artifact: packages/desktop/release/*.AppImage
-    env:
-      # macOS 无证书（总控计划既定）：显式跳过签名发现，构建日志声明 unsigned
-      CSC_IDENTITY_AUTO_DISCOVERY: false
-    steps:
-      - uses: actions/checkout@v5
-
-      - uses: pnpm/action-setup@v5
-
-      - uses: actions/setup-node@v5
-        with:
-          node-version: 22
-          cache: pnpm
-
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile
-
-      - name: Build packages
-        run: pnpm build
-
-      - name: Desktop unit tests（纯逻辑/jsdom，无 GUI；仅 windows 跑一次）
-        if: runner.os == 'Windows'
-        run: pnpm --filter @harness2/desktop test
-
-      - name: Package（unsigned）
-        run: pnpm --filter @harness2/desktop ${{ matrix.script }}
-
-      - name: Upload artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: harness2-${{ matrix.name }}
-          path: ${{ matrix.artifact }}
-          if-no-files-found: error
+        run: pnpm --filter @harness2/zcode-adapter test
 
   # 文档站（阶段 12 Task 2）：docsify 零构建单页（docs/site/index.html）+ 根/文档 md 拷贝暂存部署。
   # 开启前提：仓库 Settings → Pages 来源选 GitHub Actions（见 docs/issue-log/OPEN.md——待人类操作）。

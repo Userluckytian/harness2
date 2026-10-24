@@ -72,3 +72,14 @@ zcode-adapter(新内心) ──→ core       ZCode 壳(scratch) ──→ adapt
 ---
 
 **证据附录**：`git ls-files packages/desktop packages/ui-shared packages/web | wc -l`=537（207/296/34）；ci.yml test 步骤 L74-96（六包）+ desktop 打包 job L102+；§1.2 grep 命令原文可复跑。本文件成文于 9452ed4 基线。
+
+---
+
+## 执行记录（2026-10-24，用户拍板「按你推荐的来做吧」→ 案 B）
+
+- 归档 tag `pre-zs-retirement`@`5c01d9b`（三包最后状态，可复原）；`git rm` 537 文件（与 §1 实证数字精确一致）。
+- ci.yml：删三 test 步 + desktop 三平台打包 job；新增 zcode-adapter test 步（活跃开发面同口径）→ 现行=test（四包×三平台）+ pages。
+- release.yml：删三 test 步 + desktop 产物 job + release-assets job；桌面产物改人类 V9 手动附加（`zs6-release-draft.md`）。
+- lockfile 重生成；AGENTS §7 / README / architecture 活文档更新（历史节加注记不抹历史）；反向引用复扫零命中。
+- 全门：四包 build/typecheck exit=0；test 1641/40/1575/159 全绿；eslint 0 error；prettier 0。
+- 退役前最后一张全绿 CI 存照：run `40047614218`（`5c01d9b`，7 job 含旧六包）success。

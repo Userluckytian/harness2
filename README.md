@@ -80,7 +80,7 @@ pnpm -r typecheck
 node packages/cli/dist/index.js chat --provider mock   # 本地冒烟
 ```
 
-结构：`packages/core`（会话内核 + agent loop + 工具系统 + Provider 缝，npm: `@harness2/core`）、`packages/cli`（npm: `harness2`）、`packages/desktop`、`packages/gateway`（QQ/飞书 IM 网关）。
+结构：`packages/core`（会话内核 + agent loop + 工具系统 + Provider 缝，npm: `@harness2/core`）、`packages/cli`（npm: `harness2`）、`packages/gateway`（QQ/飞书 IM 网关）、`packages/zcode-adapter`（ZCode 壳内心装配）。桌面端 = ZCode 壳（scratch 装配区 + `scripts/zs6/zs6-pack.ps1` 出包；旧自研 `packages/desktop` 已于 2026-10-24 退役，归档 tag `pre-zs-retirement`）。
 
 ## License
 

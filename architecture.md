@@ -6,17 +6,17 @@
 
 ## 技术栈（2026-09-06 确认）
 
-| 分类          | 技术                                        | 版本 | 说明                                                                                                                        |
-| ------------- | ------------------------------------------- | ---- | --------------------------------------------------------------------------------------------------------------------------- |
-| 语言          | TypeScript（strict）                        | 5.x  | 全栈同语言                                                                                                                  |
-| 运行时        | Node.js                                     | ≥22  | LTS                                                                                                                         |
-| 包管理        | pnpm workspaces                             | 11.x | 备选 npm workspaces（Windows 符号链接异常时降级）                                                                           |
-| 测试          | vitest                                      | 3.x  | 含快照回放测试                                                                                                              |
-| CLI 框架      | commander                                   | 14.x | 轻量命令解析                                                                                                                |
-| 桌面端（P1）  | Electron + React                            | —    | WebContentsView 内嵌浏览器                                                                                                  |
-| GUI 样式栈    | Tailwind v4 + shadcn/ui(radix-mira) + Radix | —    | 2026-10-10 起；视觉/布局基线 = ZCode（`docs/refs/refs-zcode*.md`），token 三层见 `packages/ui-shared/src/styles/styles.css` |
-| 存储          | JSONL（会话事件）+ SQLite（索引/FTS，后期） | —    | 事件日志为唯一事实源                                                                                                        |
-| IM 网关（P2） | Node 常驻进程 + QQ 官方 Bot API v2          | —    | 用户已在 QQ 开放平台注册                                                                                                    |
+| 分类          | 技术                                        | 版本 | 说明                                                                                                                                                  |
+| ------------- | ------------------------------------------- | ---- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 语言          | TypeScript（strict）                        | 5.x  | 全栈同语言                                                                                                                                            |
+| 运行时        | Node.js                                     | ≥22  | LTS                                                                                                                                                   |
+| 包管理        | pnpm workspaces                             | 11.x | 备选 npm workspaces（Windows 符号链接异常时降级）                                                                                                     |
+| 测试          | vitest                                      | 3.x  | 含快照回放测试                                                                                                                                        |
+| CLI 框架      | commander                                   | 14.x | 轻量命令解析                                                                                                                                          |
+| 桌面端（P1）  | Electron + React                            | —    | WebContentsView 内嵌浏览器                                                                                                                            |
+| GUI 样式栈    | Tailwind v4 + shadcn/ui(radix-mira) + Radix | —    | 2026-10-10 起；视觉/布局基线 = ZCode（`docs/refs/refs-zcode*.md`）；旧 ui-shared token 仓已随 ZS6-T4 退役（2026-10-24，归档 tag `pre-zs-retirement`） |
+| 存储          | JSONL（会话事件）+ SQLite（索引/FTS，后期） | —    | 事件日志为唯一事实源                                                                                                                                  |
+| IM 网关（P2） | Node 常驻进程 + QQ 官方 Bot API v2          | —    | 用户已在 QQ 开放平台注册                                                                                                                              |
 
 ## 目录结构（四包位形）
 
@@ -269,7 +269,7 @@ target: memory|user, text?, oldText?}` 或 `operations` 批量数组（**原子�
   busy 会话也可分叉（fork 只读日志，与持锁写者并发安全）。
 - 桌面端 fork 按钮（分叉 UI）属后续迭代；事件面契约已就绪。
 
-## 桌面端（阶段 5 交付，`packages/desktop`）
+## 桌面端（阶段 5 交付，`packages/desktop`；**本节为历史记录**——旧自研壳已于 2026-10-24 ZS6-T4 退役，现行桌面端 = ZCode 壳装配，见 `docs/ai-framework/upstream-resync.md` 与 `scripts/zs6/zs6-pack.ps1`）
 
 Electron 主进程 spawn `harness2 serve --port 0`（`ELECTRON_RUN_AS_NODE=1` 复用运行时 node 能力，
 打包后用 extraResources 的 cli 单文件 esbuild bundle，零系统 node 依赖），解析 stdout 端口行 →
@@ -417,7 +417,7 @@ Electron 主进程 spawn `harness2 serve --port 0`（`ELECTRON_RUN_AS_NODE=1` �
   错误消息与栈，全文过 `redactSecrets`；控制台打印路径与「手动反馈」指引。
   **零网络发送**：报告仅本地落盘，需要反馈时由用户手动提供文件（opt-in 语义）。
 
-## 分发矩阵（阶段 11 交付，unsigned）
+## 分发矩阵（阶段 11 交付，unsigned；**本节为历史记录**——旧壳三平台分发已随 ZS6-T4 退役 2026-10-24。现行分发 = win NSIS/portable 经 `scripts/zs6/zs6-pack.ps1` 本地出包，产物清单见 `docs/ai-framework/plans/zs6-pack-report.md`）
 
 - **electron-builder 三平台**：win nsis x64 / mac dmg（arm64+x64，`identity: null` 显式跳过
   签名公证，CI 另设 `CSC_IDENTITY_AUTO_DISCOVERY=false` 双保险）/ linux AppImage x64；

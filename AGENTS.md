@@ -22,7 +22,7 @@
 4. **Git 提交**见下文规范；默认不 push。
 5. 编码约定见 `coding-standards.md`（若存在）。
 6. **按天问题日志**：处理任何问题/需求时，同步维护 `docs/issue-log/YYYY-MM-DD.md`（描述 / 分析 / 修改结果 / 状态）；修复后更新状态为「已关闭」并附验证证据；未关闭项次日自动带过。**开工先读 `docs/issue-log/OPEN.md`（开放事项索引，只读它即可掌握全部未完成项，无需翻历史日志）**，再按需读对应日期文件。约定详见 `docs/issue-log/README.md`。
-7. **参考项目先行分析（强制，无论谁来做）**：动手改动上层壳（`packages/cli`、`packages/desktop`、未来的 `packages/web`）之前，**必须先读 `docs/refs/README.md` 并按其 §2 六步流程执行**：拉取 `D:/AI_Projects/refs/{grok-build,deepseek-harness,hermes-agent,ZCode}` 最新代码 → 判断 `docs/refs/refs-*.md` 是否过期 → 重新分析并补充/更新文档 → 再依据文档实施。**禁止凭记忆或凭想象设计交互**；文档里没有的交互条目，先补条目再写代码。**CLI 交互以 `refs-grok-build.md` 为准（完全复刻）；GUI（桌面/Web）的视觉、组件与布局以 `refs-zcode.md` + `refs-zcode-layout.md` 为准（完全还原，2026-10-10 起生效）；`refs-deepseek-harness.md` 降为页面布局既有参考；功能完整性以 `refs-hermes-agent.md` 为准（补齐）。**
+7. **参考项目先行分析（强制，无论谁来做）**：动手改动上层壳（`packages/cli`；桌面壳 = scratch 装配区 `D:/AI_Projects/harness2-zs1-build/ZCode`，patch 纪律见 `docs/ai-framework/upstream-resync.md`）之前，**必须先读 `docs/refs/README.md` 并按其 §2 六步流程执行**：拉取 `D:/AI_Projects/refs/{grok-build,deepseek-harness,hermes-agent,ZCode}` 最新代码 → 判断 `docs/refs/refs-*.md` 是否过期 → 重新分析并补充/更新文档 → 再依据文档实施。**禁止凭记忆或凭想象设计交互**；文档里没有的交互条目，先补条目再写代码。**CLI 交互以 `refs-grok-build.md` 为准（完全复刻）；GUI（桌面/Web）的视觉、组件与布局以 `refs-zcode.md` + `refs-zcode-layout.md` 为准（完全还原，2026-10-10 起生效）；`refs-deepseek-harness.md` 降为页面布局既有参考；功能完整性以 `refs-hermes-agent.md` 为准（补齐）。**（旧自研 `packages/desktop`/`ui-shared`/`web` 已于 2026-10-24 ZS6-T4 退役，归档 tag `pre-zs-retirement`。）
 
 ## 工作模式（2026-09-06 用户确认，长期有效）
 
