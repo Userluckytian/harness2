@@ -127,4 +127,4 @@ T1 (F7) → T2 (F2/F3/F10/F12/F14) → T3 (F13) → T4 (F8/F9/F11)
 - 被 WIP 阻塞（按归因留证）：`pnpm -r build` exit=2、`pnpm -r --no-bail typecheck` exit=1（恰 3 错：core http.ts:347、cli render.ts:25 及其 adapter 同源连坐——行级核实全部位于并行会话未提交改动）；core 全量测试局部红（49 failed 集中于 WIP 重构区域）；gateway 唯一红用例为该会话自建未跟踪测试。**全量绿门以该 WIP 收口为准**。
 - 排除项：`pnpm test` 全量与 CI 实跑（后者待 push 授权）。
 
-**R1 审查**：进行中（结果与处置记当日日志）。
+**R1 审查（已完成）**：**有条件通过**——P0=0，五条红线全过；P1-1（SMOKE-TEST 版本预期）与 P2-3/P2-4 已当场修正，P2-1/2/5 登记至当日日志。

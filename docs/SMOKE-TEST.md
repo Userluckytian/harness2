@@ -61,10 +61,10 @@ pnpm build        # = pnpm -r build（tsc 增量；本机空闲冷启动实测 5
 
 ```
 D:\Programs\nodejs\harness2       →  junction  →  D:\AI_Projects\harness2\packages\cli
-harness2 --version                →  1.0.0
+harness2 --version                →  1.0.2
 ```
 
-正确结果：任意目录下 `harness2 --version` 输出 `1.0.0`；`harness2 --help` 列出 §2 的 15 个子命令。
+正确结果：任意目录下 `harness2 --version` 输出 CORE_VERSION（`packages/core/src/version.ts`，当前 `1.0.2`，随版本演进）；`harness2 --help` 列出 §2 的 15 个子命令。
 
 注意三点：
 
