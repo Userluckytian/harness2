@@ -15,5 +15,5 @@
       ]
     }
   },
-  "include": ["src", "test", "build", "vitest.config.mts"]
+  "include": ["src", "test", "build", "vitest.config.mts", "vitest.ci.config.mts"]
 }
