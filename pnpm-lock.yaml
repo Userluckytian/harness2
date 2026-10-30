@@ -137,6 +137,10 @@ importers:
         version: 5.0.0(@types/node@24.13.3)(jsdom@30.0.1(@noble/hashes@2.4.0))(vite@8.2.2(@types/node@24.13.3)(esbuild@0.28.2)(jiti@2.7.0))
 
   packages/zcode-adapter:
+    dependencies:
+      '@harness2/core':
+        specifier: workspace:*
+        version: link:../core
     devDependencies:
       '@types/node':
         specifier: ^26.4.1

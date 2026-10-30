@@ -16,6 +16,9 @@
     "typecheck": "node scripts/zs1-guard.mjs typecheck",
     "test": "node scripts/zs1-guard.mjs test"
   },
+  "dependencies": {
+    "@harness2/core": "workspace:*"
+  },
   "devDependencies": {
     "@types/node": "^26.4.1",
     "esbuild": "^0.25.0",

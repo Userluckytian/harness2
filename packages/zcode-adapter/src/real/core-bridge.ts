@@ -24,23 +24,18 @@ const req = createRequire(
 );
 
 function loadCore(): unknown {
-  // 1) 测试/开发：@harness2/core 已通过 tsconfig/vitest alias 解析
+  // 1) 常规：@harness2/core 已声明为 workspace 依赖，经 createRequire 按包解析
+  //    （测试/开发下另有 tsconfig/vitest alias 指向 core 源，同走此入口）
   try {
     return req('@harness2/core');
   } catch {
     // fall through
   }
-  // 2) host bundle 运行时：core dist 相对 bundle 位置
-  const candidates = [
-    path.resolve(process.cwd(), 'packages/core/dist/index.js'),
-    'D:/AI_Projects/harness2/packages/core/dist/index.js',
-  ];
-  for (const c of candidates) {
-    try {
-      return req(c);
-    } catch {
-      // try next
-    }
+  // 2) 兜底：monorepo 根为 cwd 时相对定位 core dist；不再内置任何机器特定绝对路径
+  try {
+    return req(path.resolve(process.cwd(), 'packages/core/dist/index.js'));
+  } catch {
+    // fall through
   }
   throw new Error('core-bridge: cannot load @harness2/core');
 }

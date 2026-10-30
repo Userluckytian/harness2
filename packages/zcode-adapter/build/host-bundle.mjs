@@ -29,9 +29,11 @@ const result = await build({
   format: 'cjs',
   target: 'node20',
   outfile: outPath,
-  // 模块解析：@zcode/* 精确匹配走包内 tsconfig paths（指向 scratch 源）；
-  // 子路径依赖（@zcode/shared/zcode-protocol-v4 等）不经 paths，由 scratch 源内
-  // 的包级 node_modules workspace 链接 + package.json exports 自然解析。
+  // 模块解析：src 实际用到的 4 个 @zcode/* 说明符（rpc / services / shared /
+  // shared/zcode-protocol-v4）在包内 tsconfig paths 逐条精确映射到 scratch 源，
+  // esbuild 按 paths 原样打包；scratch 区 node_modules 并无 rpc/services/shared
+  // 的 workspace 链接（根 node_modules/@zcode 现仅 zcode-cua），不存在兜底解析路径，
+  // 新增 @zcode/* 导入时必须同步补 tsconfig paths 条目。
   tsconfig: resolve(packageRoot, 'tsconfig.json'),
   // node 内建由 platform 处理；zod 等 npm 依赖一并打包（运行期不依赖 scratch node_modules）
   external: ['playwright', 'playwright-core', 'chromium-bidi'],
