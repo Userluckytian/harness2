@@ -1,176 +1,150 @@
 # HANDOFF — 交接入口（新维护者/AI 从这里开始）
 
-> **🧭 2026-10-23 现状（先读这段）**：主线=**ZS 程序**「ZCode 壳 + harness2 内心」（总纲 `docs/ai-framework/plans/2026-10-20-zs-shell-migration-program.md`；旧 Z 程序与旧壳全面冻结）。
-> **进度**：ZS1–ZS3.5 ✅ → ZS4 ✅（侧栏/设置/provider 写面）→ ZS4.5 全系 ✅（自动拉取→勾选流→徽章/编辑修复→不回填，用户真机复验 2026-10-22）→ **ZS5 观测性 ✅**（崩溃归因 `-Crash` 轮 / 资源监控 host 行接原生资源管理器 / sessions-index 实时+FAIL 噪声归零 / boot-timing / soak 30min PASS；双独立审查 P0=0/P1 全清偿，含 ZS4 V8 六次欠账）。
-> **下一站**：ZS6 全部执行完毕——T0–T6 ✅ / T4 案 B 退役已执行（2026-10-24：旧 desktop/ui-shared/web 537 文件删除，归档 tag `pre-zs-retirement`；CI=四包 test+pages，release.yml 产物改手动附加）/ win 安装包终版就绪 / push CI 全绿（run `40047614218`）。**剩=仅 V9 人类终验**：装机验收（9 项清单 `zs6-release-draft.md`）→ 过则 tag/Release（文案粘贴即用）。ZS 程序至此终结；后续按 ROADMAP 另立项（跨平台打包/Web 壳/hermes 长尾功能）。
-> **关键门与纪律**：① UI patch 基线=**11 处**（P1 desktopRuntimeEnv / P2 ProviderCardSections 获取模型面板 / P3 settingsNavigation 隐藏 usage+remoteDevices / P4 预设卡表置空 / P5 空组标题 / P6 Help 运营外链隐藏——P3–P6=ZS6-T1 红线⑩隐藏清单；P7 packaged 应用名 / P8 关于窗+版权 / P9 shared 托盘·菜单标签 / P10 UI i18n help.about / P11 index.html 壳标题——P7–P11=ZS6-T2 品牌装配，零改交互，明细 `docs/ai-framework/plans/zs6-brand-checklist.md`；diff 落 `docs/patches/zs-shell-patches.patch`，scratch 载体提交 `247b4c0e`+审查闭环 `48915dd1`），再+1 须人类拍板；② `subscribeSessionsIndexV4` 现为轮询 diff 降级，core 事件原语提案已获批并实施（6cba49d）；③ 子代理声称改文件必过编排者 `git diff` 独立核验（2026-10-22 两例谎报+当晚三连阵亡实证，issue-log §14）；④ 一切门禁/矩阵/soak 命令清单在各阶段计划「验收表」。
-> 开放项一律看 `docs/issue-log/OPEN.md`（只读它）。以下旧段落为历史程序记录。
+> **🧭 现状（2026-10-31 FIX-1 修复轮后，先读这段）**
+>
+> - **活跃四包**：`@harness2/core` / `@harness2/gateway` / `harness2`(cli) / `@harness2/zcode-adapter`。旧壳 `packages/desktop` / `packages/ui-shared` / `packages/web` 已于 **2026-10-24 退役**（ZS6-T4 案 B，537 文件删除，归档 tag `pre-zs-retirement`）；产品桌面端 = **ZCode 壳 + harness2 内心**（出包通道 `scripts/zs6/zs6-pack.ps1`，本地出包不入 CI）。
+> - **阶段线**：ZS 程序（「ZCode 壳 + harness2 内心」，总纲 `docs/ai-framework/plans/2026-10-20-zs-shell-migration-program.md`）**ZS1–ZS6 全部完成 ✅**（ZS6 收口 = T0–T6 + T4 案 B 旧壳退役 + win 安装包终版 + push CI run `40047614218` 绿；仅剩 V9 人类终验）→ **FIX-1 优化分析修复轮完成**（2026-10-31，计划 `docs/ai-framework/plans/2026-10-31-phase-analysis-fixes-round.md`，14 条发现 13 条直接修复 + F1 单独立计划）。
+> - **基线数字（编排者 2026-10-31 终验取证，时点 = FIX-1 末提交 `af36d86`；⚠️ 全量绿门以在途 WIP 收口为准，见下条）**：生产依赖 audit **0 漏洞**（升级前 20：1C/6H/11M/2L）；dev 侧 19 条全在 vitest 工具链（不挡门）；adapter 全量 **159 用例绿**（本地 scratch 环境）+ CI 子集 **23 用例绿**（16 文件依赖 ZS1 scratch 区，CI 显式排除）；gateway **40 用例绿**；core cron **17 用例绿**；本机空闲 `pnpm -r build` 冷 **5.6s**。
+> - **⚠️ 在途并行 WIP（诚实登记）**：另一会话在 `fix/perf-startup-render` 分支有 **30+ 文件未提交改动**（core serve/session/tools、cli render 等），当前为**破损中间态**（typecheck 3 错、core 测试局部红）——全量绿门以其收口为准；对 WIP 文件不做任何 git 操作（不 add / 不 stash / 不 checkout）。
+> - **待人类事项**：① V9 装机验收 + tag/Release 授权（ZS6 尾巴，材料 `docs/ai-framework/plans/zs6-release-draft.md`）② push 授权（FIX-1 的 9 个本地提交未 push）③ 上述 WIP 处置 ④ F1 拆解计划排期（`docs/ai-framework/plans/2026-10-31-phase-cli-harness-decompose.md`）。
+>
+> 开放项一律看 `docs/issue-log/OPEN.md`（只读它即可掌握全部未完成项）。
 
-> **🚨 历史（2026-10-11 立项并推进，已冻结）：Z 程序 —— GUI（桌面/Web）按 ZCode 完全还原 + 能力补齐** ——
+## 0. 本文件哪些是现状、哪些是历史
+
+| 节                                                                                  | 性质                                                                                                                                                                                                                                         |
+| ----------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| §1 项目一句话 / §2 状态快照 / §3 环境与命令 / §4 文档地图 / §5 标准循环 / §6 已知坑 | **现状**（2026-10-31 对齐四包现实）                                                                                                                                                                                                          |
+| §7 历史档案                                                                         | **历史**：ZS6 收口时点快照、Z 程序（旧桌面/Web 壳）、2026-09 契约冻结与 I1 双轨、退役包相关坑。**现状一律以 §2 为准**；本文档 2026-10-31 之前的完整旧版（含六包时代的快照表/命令表/文档地图）经 git 历史可查（`git log -- docs/HANDOFF.md`） |
+
+## 1. 项目一句话
+
+**harness2**：自研跨端 AI agent harness。当前形态 = **四包 monorepo（core / gateway / cli / zcode-adapter）+ ZCode 壳装配桌面端**；CLI 为自研 TUI（next 渲染层 + piped readline），桌面端经 zcode-adapter 把 harness2 内心装进 ZCode 壳（Apache-2.0 上游，patch 纪律见 `docs/ai-framework/upstream-resync.md`）。对标 opencode / hermes / deepseek-harness / grok（调研见 `docs/research/`）。
+
+## 2. 当前状态快照（2026-10-31）
+
+| 项           | 状态                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
+| ------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 分支         | 当前工作分支 `fix/perf-startup-render`（基线 `af36d86` = FIX-1 末提交）；主线 `main`（ZS6 收口 + push CI 绿）。**FIX-1 的 9 个本地提交未 push**（push 待人类授权）。分支策略沿旧例：长期 `main`，阶段工作开 `feat/phase-*` / `fix/*` 分支，全绿后 `--no-ff` 合入                                                                                                                                                                                                                                                                                  |
+| 活跃包       | **core / gateway / cli（包名 `harness2`）/ zcode-adapter** 四包；`pnpm -r` 即四包                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
+| 退役包       | `desktop` / `ui-shared` / `web`（2026-10-24 删除，归档 tag `pre-zs-retirement` 可复原）；任何文档提及六包（含 ui-shared/web 组件）的均为历史口径                                                                                                                                                                                                                                                                                                                                                                                                  |
+| 阶段线       | 阶段 1–15（内核→v1.0.0）→ R2/I1/P0–P9（2026-09）→ Z 程序（旧壳 GUI 复刻，已随退役终结）→ **ZS 程序 ZS1–ZS6 ✅**（ZCode 壳迁移）→ **FIX-1 修复轮 ✅**（2026-10-31，9 提交：`af2d983` tsc 增量构建、`0f5b004` core 升级 MCP SDK 1.32.2/zod 4.6.7、`f782b31` gateway 对齐 TS7/vitest5+30s 超时、`cf66c77` adapter 声明 core 依赖去硬编码、`2fab9ac` 清退役壳 eslint/electron 配置、`8bc6a4e` gateway vitest 配置纳入 tsconfig、`9c234ab` cron 月末断言修复、`5531110` CI 拆 quality/audit job+生产依赖审计门、`af36d86` adapter test:ci 去 CI 假绿） |
+| 测试与门禁   | 实测（2026-10-31，时点 `af36d86`）：adapter 159 绿（本地 scratch）+ CI 子集 23 绿；gateway 40 绿；core cron 17 绿；audit 生产依赖 0 漏洞（dev 19 条 vitest 工具链不挡门）；`pnpm -r build` 冷 5.6s。**⚠️ core/cli 全量与 typecheck 当前受在途 WIP 影响（破损中间态），全量绿门以 WIP 收口为准**                                                                                                                                                                                                                                                   |
+| CI           | `.github/workflows/ci.yml` 三 job：**quality**（typecheck + eslint + prettier，单跑）+ **test**（三平台 matrix：core/gateway/cli/adapter test:ci）+ **audit**（`scripts/audit-gate.mjs` 生产依赖漏洞门，critical/high 红灯）+ pages（main push 部署 docsify）。adapter 在 CI 只跑无 scratch 依赖子集（`vitest.ci.config.mts`，4 文件 23 用例）——完整测试须本地 scratch 环境，CI 不再产出假绿                                                                                                                                                      |
+| API 稳定承诺 | `docs/API-STABILITY.md`（semver 政策 + 导出面快照更新流程）；core 导出面变更必须同步 `packages/core/test/fixtures/api-surface-baseline.json`（同提交更新）                                                                                                                                                                                                                                                                                                                                                                                        |
+| 未关闭事项   | 读 `docs/issue-log/OPEN.md`（零上下文第一读；已决策/已关闭/已知限制归 `docs/issue-log/DECISIONS.md`）                                                                                                                                                                                                                                                                                                                                                                                                                                             |
+
+## 3. 环境与命令（四包现实）
+
+- Node ≥22（实测 v22.23.1）、pnpm 11（实测 11.13.0）、Windows + Git Bash
+- 全量命令（根 `package.json`）：
+  - `pnpm install` → `pnpm build`（= `pnpm -r build`，tsc 增量，本机空闲冷 5.6s）
+  - `pnpm typecheck`（= `pnpm -r --no-bail run typecheck`）
+  - `pnpm lint`（= `eslint . && prettier --check .`）
+  - `pnpm test`（= `pnpm -r build` + 四包 vitest；已 build 后只跑测试可 `pnpm -r --no-bail run test`）
+- 分包测试：
+  - `pnpm --filter @harness2/core test` · `pnpm --filter @harness2/gateway test` · `pnpm --filter harness2 test`（cli 的包名就是 `harness2`，不能写 `@harness2/cli`）
+  - **adapter**：`pnpm --filter @harness2/zcode-adapter test` 走 `scripts/zs1-guard.mjs` 门控，**依赖本机 ZS1 scratch 构建区**（`D:/AI_Projects/harness2-zs1-build/ZCode`），无 scratch 环境会 SKIP——完整 159 用例只能本地 scratch 跑；**无 scratch 环境（含 CI）用 `pnpm --filter @harness2/zcode-adapter test:ci`**（`vitest.ci.config.mts`：无 scratch 依赖的 4 文件 23 用例；新增含 `@zcode/*` 依赖的测试文件不要加进 include）
+- 生产依赖漏洞门：`node scripts/audit-gate.mjs`（只读 `pnpm-lock.yaml`，无需 install；critical/high 红灯、moderate/low 与 dev 只报告；审计走 `--registry=https://registry.npmjs.org`，npmmirror 无 audit 端点；2026-10-31 实测生产 0 漏洞、dev 19 条全在 vitest 工具链）
+- **构建先行（dist 会过期）**：任何引用 `@harness2/core` / `@harness2/gateway` 实现的审查、验收或测试，先 `pnpm -r build`——各包互相引用 dist，本地单独跑测试会静默用旧产物；**禁止对可能过期的 dist 下结论**
+- CLI 冒烟（零 key）：`node packages/cli/dist/index.js chat --provider mock --root <临时目录>`；`doctor`（`--probe` 实连 MCP）；`config check`（脱敏）；`serve --port 0 --provider mock`（stdout 一行 JSON 端口）
+- 性能基线：`pnpm build && pnpm bench`（10 万事件合成日志；预算表见 architecture.md）
+- 注意：`packages/cli` 的 npm 包名是 `harness2`，根工作区名 `harness2-monorepo`；`pnpm --filter harness2` 指向 packages/cli
+
+## 4. 文档地图（按阅读顺序）
+
+1. `AGENTS.md` —— 协作规范入口：工作模式（编排者/子代理）、强制遵循、提交规范
+2. `docs/ai-framework/workflow-delegation.md` —— 角色/流程细则（交接必读）
+3. **`docs/refs/README.md`** —— 参考项目分析强制规范（改上层壳前必读六步流程）。四份基线：`refs-grok-build.md`（CLI 交互完全复刻）、`refs-zcode.md` + `refs-zcode-layout.md`（GUI 视觉/布局完全还原）、`refs-deepseek-harness.md`（页面布局既有参考）、`refs-hermes-agent.md`（功能完整性补齐）
+4. **`docs/ai-framework/plans/2026-10-31-phase-analysis-fixes-round.md`** —— FIX-1 修复轮计划（14 条发现/13 修复/F1 立计划；本轮提交范围 `f3ccac6..af36d86`）
+5. **`docs/ai-framework/plans/2026-10-31-phase-cli-harness-decompose.md`** —— F1-DECOMP：next-shell 闭包工厂拆解计划（**只立计划未实施**，排期待人类）
+6. **ZS6 收口材料**（V9 装机验收用）：`docs/ai-framework/plans/zs6-release-draft.md`（tag 三选一 + Release 文案粘贴即用 + 装机验收 9 项清单）· `zs6-pack-report.md`（出包报告与产物 SHA256）· `zs6-brand-checklist.md`（品牌装配 11 处 patch 红线）· `zs6-review.md`（独立审查闭环）· `zs6-retirement-proposal.md`（旧壳退役案）
+7. **`docs/ai-framework/upstream-resync.md`** —— ZCode 上游 patch 纪律（scratch 装配区 `D:/AI_Projects/harness2-zs1-build/ZCode`，diff 落 `docs/patches/zs-shell-patches.patch`）
+8. `docs/issue-log/` —— `README.md`（元约定）+ `OPEN.md`（**未关闭索引，每天第一读**）+ `DECISIONS.md`（已决策/已关闭/已知限制/退役失效归档）
+9. `docs/API-STABILITY.md` —— API 稳定承诺与导出面快照流程 · `docs/RELEASE-CHECKLIST.md` —— 发布动作清单（③ 待人类授权项）
+10. `docs/SMOKE-TEST.md` —— 冒烟测试手册（2026-10-31 起钉四包基线；桌面验收走 ZS6 链路）
+11. `architecture.md` · `docs/ROADMAP.md` · `docs/MASTER-PLAN.md` —— 技术栈/不变量与里程碑记录（M1–M4 与阶段 1–15 为历史口径，现状看 §2）
+12. `docs/ai-framework/plans/` —— 全部阶段计划（每份含零上下文交接提示词）。活跃：ZS 总纲 `2026-10-20-zs-shell-migration-program.md` 及 ZS1–ZS6 各阶段计划；历史：Z 程序（2026-10-10）/ V 总纲（2026-09-17）/ R2 与 I1 双轨 / 阶段 1–15（2026-08~09）
+13. `docs/tui-parity/`（对照报告）+ `scripts/tui-parity/`（ConPTY 抓屏对照台，Python venv，不进 packages 依赖）
+
+## 5. 如何继续开发（标准循环）
+
+```
+读 AGENTS.md + workflow-delegation.md
+→ 读 OPEN.md 掌握未关闭项（已决策类查 DECISIONS.md）
+→ 读下一阶段计划（docs/ai-framework/plans/）；大块工作先写阶段计划再实现
+→ 编排者派实现代理（用计划文末的交接提示词）
+→ 编排者派只读审查代理 → P0/P1 修复 → 编排者验收（重跑证据）
+→ 更新：计划状态 / issue-log（当日日志 + OPEN.md）/ 本文件快照
+```
+
+## 6. 已知坑（现行有效，四包）
+
+- Windows 下 tsc/commit 有 CRLF warning，无害
+- **会话日志写入依赖「换行即提交」语义**（未以 \n 结尾的尾行视为未提交丢弃），改 writer 前先读其测试
+- **redo 的投影复活依赖 reason 前缀 `redo` 的标记链语义**：手工构造 rewind 标记时不要用 `redo` 前缀，除非明确想触发复活（见 reader.ts computeProjection 注释与测试）
+- **bash 副作用不进文件快照**（write/edit 才有 before/after）：对外已如实声明（README、chat /help），改快照范围时同步这两处
+- **core 测试固定占用端口 `127.0.0.1:46213`**（`packages/core/test/fork.test.ts` 三例）：本机正跑 `harness2 serve --port 46213` 会 EADDRINUSE（技术债，建议改 `--port 0`）
+- **chat 审批内联提示**：ask 等待期间下一行输入即答案（含 `/` 开头行）；取消用 Ctrl+C / Ctrl+D——改 chat.ts 的 askUser/answerResolver 前先读 chat-cancel.test.ts
+- grep 工具优先 spawn ripgrep，无 rg 自动回退纯 JS 扫描（行为一致但大目录更慢）
+- **记忆文件（~/.harness2/memories/）属用户私有数据**：绝不入 git、不出现在错误出口；写入按 `§` 条目结构 + 字符硬预算（memory 2200 / user 1375）校验
+- **memory/snapshot 事件 = ChatRequest.system 的唯一来源**（Model-visible ⟺ logged）：改注入逻辑前先读 loop.test.ts 的「记忆开关与冻结注入」组
+- **nudge 复盘不落主会话日志**（临时会话跑完即删）；改 hub 的 buildTurnTools/bumpNudge 前先读 nudge.test.ts
+- **分叉不复制 rewind/marker 与影子事件、不迁移文件快照**：改 fork.ts 前先读 fork.test.ts
+- **打包后 serve 子进程 = esbuild 单文件 bundle**（packages/cli/dist-bundle/harness2-cli.cjs）：jsonc-parser 必须走 ESM 入口（bundle 脚本带 `--alias:jsonc-parser=…`）；改 cli 依赖后先 `pnpm --filter harness2 bundle` 并本地跑一次 bundle serve 验证；**bundle 必须 `--external:playwright`**（browser 工具进 core 导出图后 chromium-bidi require 打不进 cjs 单文件）
+- **插件 v1 进程内非隔离**：manifest 权限是 API 层约束不是强制隔离——改插件层时不得弱化 allow 审批与权限清单展示
+- **MCP 工具名 sanitize 后撞名 = 后者跳过**（`mcp__<server>__<tool>` 须满足 ^[a-z0-9_]+$；server 名在 config 校验同规则）
+- **MCP SDK 已升级至锁 ^1.32.2 / zod ^4.6.7（FIX-1 `0f5b004`，清 high/critical）**：客户端只依赖 listTools/callTool 两面，SDK 升级先跑 mcp.test.ts
+- **subagent 深度红线的实现点**：`buildSubagentChildTools` 重挂时血缘重绑——改 subagent.ts 前先读 subagent.test.ts；hub 侧每次 turn 按会话 id 重绑，改 SessionHub 装配前先读 assembly.test.ts
+- **导出幂等依赖固定 mtime**（2000-01-01；zip DOS 时间仅支持 1980-2099）；**importReplay 有 256 MiB 解压上限**（双闸门，`maxDecompressedBytes` 可覆盖）；core 运行时 zip 依赖 `fflate`——改 export.ts 前先读 export.test.ts 与 bench.test.ts
+- **skills 列表不落事件**（唯一事实源 = 磁盘目录，每 turn 重扫、turn 内冻结）：改注入逻辑前先读 skills.test.ts
+- **时序敏感测试的写法约定**：并行/取消类断言优先用事件相对时序而非绝对墙钟上限；必须用墙钟时给足余量并注释依据
+- **公开导出面变更必须同步快照基线**：改 `packages/core/src/index.ts` 导出后跑 `pnpm build && H2_UPDATE_API_SNAPSHOT=1 pnpm --filter @harness2/core exec vitest run test/api-surface.test.ts` 并在同一提交更新 fixture——删除/改名是 breaking（走 major），流程见 `docs/API-STABILITY.md`
+- **终端只有一个 TUI**：CLI 只有 `src/tui/next/**`（TTY）与 piped readline（非 TTY/CI）两条路，**不要再引入 React/ink**；**终端宽度必须用 `displayWidth`/`charWidth`**（把 `.length` 当显示宽度会 CJK 错位）；渲染层改动必须补**版面级断言**并做变异验证
+- **抓屏对照台**：`scripts/tui-parity/` 产物是「ConPTY 抓屏 + 本地重绘」**不是系统截图**；grok 侧每跑一次消耗额度（`--allow-grok` 显式授权）；抓屏产物会进 prettier 门禁
+- **别用 stdin 管道验证 prettier**（不加载项目配置，会得假结论）；对照基线用 `git checkout <ref>` 后跑 `prettier --check .`
+- 密钥只在 `~/.harness2/auth.json`（不入 git）与环境变量；config/日志/错误消息里疑似密钥一律经 `redactSecrets` 脱敏——新增错误路径记得过这个闸门
+- **pnpm 11 的构建脚本白名单/overrides 在 pnpm-workspace.yaml**（allowBuilds / overrides），package.json 的 pnpm 字段被忽略
+- CI：`.github/workflows/**`、根 `package.json`、`tsconfig.base.json`、eslint/prettier 配置属**编排者独占**，并行轨不得改；release.yml publish 步骤为条件跳过语义（无 `NPM_TOKEN` → notice 跳过）
+- **1.0 发布动作清单在 `docs/RELEASE-CHECKLIST.md` ③**（npm publish/NPM_TOKEN 等）——待人类授权，勿自行执行
+
+## 7. 历史档案（以下各节为历史程序记录，现状以 §2 为准）
+
+> **🧭 2026-10-23 时点快照（ZS6 收口，原文保留）**：主线=**ZS 程序**「ZCode 壳 + harness2 内心」。进度：ZS1–ZS3.5 ✅ → ZS4 ✅ → ZS4.5 全系 ✅（用户真机复验 2026-10-22）→ **ZS5 观测性 ✅**（双独立审查 P0=0/P1 全清偿，含 ZS4 V8 六次欠账）→ **ZS6 全部执行完毕**——T0–T6 ✅ / T4 案 B 退役已执行（2026-10-24：旧 desktop/ui-shared/web 537 文件删除，归档 tag `pre-zs-retirement`；CI=四包 test+pages，release.yml 产物改手动附加）/ win 安装包终版就绪 / push CI 全绿（run `40047614218`）。剩=仅 V9 人类终验：装机验收（9 项清单 `zs6-release-draft.md`）→ 过则 tag/Release。
+> **关键门与纪律（ZS 线）**：① UI patch 基线=**11 处**（P1 desktopRuntimeEnv / P2 ProviderCardSections 获取模型面板 / P3 settingsNavigation 隐藏 usage+remoteDevices / P4 预设卡表置空 / P5 空组标题 / P6 Help 运营外链隐藏 / P7 packaged 应用名 / P8 关于窗+版权 / P9 shared 托盘·菜单标签 / P10 UI i18n help.about / P11 index.html 壳标题；明细 `docs/ai-framework/plans/zs6-brand-checklist.md`；diff 落 `docs/patches/zs-shell-patches.patch`，scratch 载体提交 `247b4c0e`+审查闭环 `48915dd1`），再+1 须人类拍板；② `subscribeSessionsIndexV4` 现为轮询 diff 降级，core 事件原语提案已获批并实施（6cba49d）；③ 子代理声称改文件必过编排者 `git diff` 独立核验（2026-10-22 两例谎报实证，issue-log §14）；④ 一切门禁/矩阵/soak 命令清单在各阶段计划「验收表」。
+
+> **🚨 历史（2026-10-11 立项，已随 2026-10-24 旧壳退役终结）：Z 程序 —— GUI（桌面/Web）按 ZCode 完全还原 + 能力补齐** ——
 > 总纲 [`2026-10-10-phase-zcode-ui-overhaul.md`](ai-framework/plans/2026-10-10-phase-zcode-ui-overhaul.md)（Z0–Z7）·
 > **功能总账（每项状态/证据）** [`zcode-ui-traceability.md`](ai-framework/plans/zcode-ui-traceability.md) ·
 > 视觉/布局权威 [`refs-zcode.md`](refs/refs-zcode.md)（Z-60～95）+ [`refs-zcode-layout.md`](refs/refs-zcode-layout.md)（Z-01～45）·
 > 按天日志 [`2026-10-10.md`](issue-log/2026-10-10.md) / [`2026-10-11.md`](issue-log/2026-10-11.md)。
 > **进度**：Z0 ✅（两份 refs 文档 + 台账 + 总纲 + 规范修订）· Z1 ✅（Tailwind v4 + shadcn 基建，八项验收全绿）·
-> Z2/Z3/Z4/Z5 **四个阶段全部收口**（Z2 9 项、Z3 7 项、Z4 4 行=01 收口/02·03 完成/04 改期 Z6、Z5 设置页全屏骨架+分区+字号；Z2-07 终端与 Z4-04 Codemap 如实改期 Z6）·
+> Z2/Z3/Z4/Z5 四个阶段全部收口 ·
 > **Z 程序（Z0–Z7）实现已全部收口**（2026-10-11）：
-> Z0 ✅ refs 文档+台账+总纲 · Z1 ✅ Tailwind v4 + shadcn 基建 · Z2 ✅ 9 项骨架 · Z3 ✅ 7 项对话页 · Z4 ✅ 轨迹页+代码面 · Z5 ✅ 设置页全屏骨架 · Z6 ✅ 批次 1–7（D02 三开放 / provider 三件套 / A05·A16·A17 / A10+MCP·技能 / A09 Hooks / A14 工作流 / A11 Teams / A22 符号索引）· Z7 ✅ 收口（web 与桌面同构：布局/面板/轨迹/设置/命令面板/分屏全部下沉 ui-shared 两壳共用；网关·IM 分区；文档同步；V-Z7-1～10 取证通过）。
-> **core 导出基线 846 → 1113（+267，0 removed / 0 kindChanged，全程纯加性）**；`packages/cli` / `packages/gateway` 自 Z 程序起点起**零改动**。
-> **测试基线**（Z7-3 收口）：core 1519(+2skip) · ui-shared 308 · desktop 1114(+1skip) · web 67 · gateway 40 · cli 1575(+2skip)，全绿；`pnpm lint` 0 error。
-> **收口文档**：Z7 计划 [`2026-10-11-phase-Z7-closeout.md`](ai-framework/plans/2026-10-11-phase-Z7-closeout.md)（§4.1 验收结果 / §5 拍板项 10 条 / §6 真机清单 10 项）· 功能总账 [`zcode-ui-traceability.md`](ai-framework/plans/zcode-ui-traceability.md)。
-> **⚠️ 未闭合 = 待人工**：§5 拍板项 10 条（右栏 45%/52% 口径、侧栏宽度持久化、分屏持久化 vs D-14、旧偏好归一、终端 PTY、Codemap 路线、A15 沙箱、A19/A20 ACP-LSP、上游拉取、子代理额度）与 §6 真机项 10 项，均已登记 `docs/issue-log/OPEN.md` Z 节。
-> **⚠️ 子代理额度**：批4 执行中子代理曾 `exceed quota limit` 崩溃（编排者验收收尾）；后续批次可能再现，如遇中断由编排者按验收流程接手。
-> **⚠️ 上游**：refs/ZCode 三次拉取均 `fetch-pack: unexpected disconnect` 失败，仍停 `29628c9`（v3.14.3）——refs 文档继续以该版本为权威。
-> **⚠️ 工作区状态**：Z0–Z3-06 已按子分段拆分提交（`4ccfddc`→ 最新 feat 提交，见 `git log`）；接手时以台账状态列为准。
-> **⚠️ 待人工拍板/核对**：①右栏比例 45%↔52% 口径（OPEN.md Z 节）；②真机核对 5 项（`frame:false` 窗口行为/明暗防闪/折叠 4px/嵌套分栏/浮层覆盖）；③Z1-05 旧偏好归一是否补；④CI Lint 待 push 后复核；⑤radix-ui 伞包 barrel 的全量深路径改造（可选项，见日志 §18）。
-> **未启动的说明**：Z2-02 的 8 类左栏分区经证据化核实缺前置能力，已再映射（台账 §6.1）——**不是漏做**；Plugin Store 为"不采纳"。
-> **注**：本轮在 ZCode 会话中执行，项目 `.opencode/agents/` 的命名子代理不可用，改用通用子代理模拟"实现/测试/审查"分工（审查由编排者承担，**未达 H12 的角色独立**——已在日志如实登记）。
+> Z0 ✅ · Z1 ✅ · Z2 ✅ 9 项骨架 · Z3 ✅ 7 项对话页 · Z4 ✅ 轨迹页+代码面 · Z5 ✅ 设置页全屏骨架 · Z6 ✅ 批次 1–7 · Z7 ✅ 收口（web 与桌面同构：布局/面板/轨迹/设置/命令面板/分屏全部下沉 ui-shared 两壳共用）。
+> **core 导出基线 846 → 1113（+267，0 removed / 0 kindChanged，全程纯加性）**；`packages/cli` / `packages/gateway` 自 Z 程序起点起零改动。
+> **测试基线（Z7-3 收口，六包时代历史数字）**：core 1519(+2skip) · ui-shared 308 · desktop 1114(+1skip) · web 67 · gateway 40 · cli 1575(+2skip)。
+> **收口文档**：Z7 计划 [`2026-10-11-phase-Z7-closeout.md`](ai-framework/plans/2026-10-11-phase-Z7-closeout.md) · 功能总账 [`zcode-ui-traceability.md`](ai-framework/plans/zcode-ui-traceability.md)。
+> **未闭合 = 待人工（历史，多随退役失效或转 ZS 线）**：§5 拍板项 10 条与 §6 真机项 10 项，处置记录见 `docs/issue-log/DECISIONS.md`。
+> **⚠️ 上游（历史）**：refs/ZCode 曾三次拉取失败停 `29628c9`（v3.14.3）——后经 ZS 线补拉并日更（见 `docs/ai-framework/upstream-resync.md`）。
+> **注**：Z 程序在 ZCode 会话中执行时项目 `.opencode/agents/` 命名子代理不可用，改用通用子代理模拟分工（未达 H12 角色独立，已登记）。
 
-> **🆕 2026-09-17 立项：桌面端改造总纲** —— 外部评审已完成桌面端定性与取证，立项计划见 `docs/ai-framework/plans/2026-09-17-phase-desktop-overhaul.md`，完整取证与结论写在该计划 §1（注：`docs/issue-log/` 被 gitignore，不作为交接载体）。与同日的「视觉复刻总纲 V0–V6」为**两个并行程序**，分工与协调规则见计划 §0.1。
-> 路线：**先修核 → 再换皮 → 后放大特色**（R0 取证 → R1 核心补强 → R2 壳重做 → R3 特色放大），只做桌面形态，`packages/gateway` 零改动。
-> 本轮新增两条红线：⑨缓存边界不得被非压缩路径破坏 ⑩UI 不得显示假状态。
-> **启动阻塞**：P10/P11 两条未 push 分支须先处理，否则 R0 基线不明。
+> **🆕 2026-09-17 立项（历史）：桌面端改造总纲** —— 外部评审定性与取证见 `docs/ai-framework/plans/2026-09-17-phase-desktop-overhaul.md` §1。路线「先修核 → 再换皮 → 后放大特色」，只做桌面形态，`packages/gateway` 零改动。本轮新增红线：⑨缓存边界不得被非压缩路径破坏 ⑩UI 不得显示假状态。
 
-> 更新：2026-09-15（**P10 单轨化 + P11 界面拉齐已完成（本地，未合 main）**：旧终端壳（React/ink）代码/测试/依赖/现行文档**零残留**，CLI 只剩 next TUI + piped readline 两条路；新建可复跑的**双 TUI 抓屏对照台** `scripts/tui-parity/`（ConPTY + pyte + Pillow，18 场景矩阵）与对照报告 `docs/tui-parity/`（含与 grok 1.0.13 的逐场景差异）；据此修掉 **1 项 P0**（`/help` 面板渲染错位——根因是换行符被当作可打印字符写进单元格）与 **6 项 P1**（输入区可见性、候选两列化、时间戳/耗时/token 用量、工具行人类化、忙碌态反馈、冷启动引导卡）；cli 测试 1575 passed、`pnpm lint` 0 error + prettier 全绿、六包 build/typecheck 全绿、冻结区改动 0 文件；**两个分支未 push / 未合并 main —— 接手请先读 `docs/ai-framework/plans/2026-09-15-p12-backlog.md`**）
-> · 2026-09-14（**内核下沉与三壳复刻 P0–P8 已全部合入 main（`c62721d` → `c7c76a0`）**：core 吸走命令注册表与能力面（`describeCapabilities()`）、CLI 单一 TUI（P10 起旧壳已删）与 Esc 新规格、桌面 slot 四席位 + 三栅 + 对话/轨迹/模型配置、新增 `@harness2/ui-shared` 共享包与 `packages/web` 最小壳；**六包结构成型**，测试 4033 passed + 5 skipped、导出面 499→846 纯加性（0 removed / 0 kindChanged）、CI 七 job 全绿；P9 文档收口进行中） · 2026-09-12（**阶段 I1 交互复刻双轨（甲 CLI/TUI · 乙桌面）已各自独立验收并按 D→T 顺序 `--no-ff` 合入 main**；解冻窗口 #1/#2 均已闭环；CI `test` job 改为分包独立步骤，单点红不再掩盖其余包；两条轨道分支已删，本地与远程仅剩 `main`） · 2026-09-11（地基补丁 P0–P4：网关双会话/挂死/测试缺口、serve token 三端贯通与默认严格、401 误判健康、playwright 降级、锁文件权限、turn 终态文本语义已全部闭环，`packages/core` 与 `packages/gateway` 契约冻结） · 2026-09-09（阶段 15 质量收口进行中：A0/A1/A2 自动化/A3/A4/A5 与 B1–B4 已落地——Windows P0 修复、本地网关真机验证、serve 安全加固、大文件拆分、lint/format 基建、规范文档；阶段 9 复审已补；B5 文档部分完成、README 三图与 B6 发布另待） · 本文件是唯一交接入口，保持与实际状态同步。
+> 更新链（历史）：2026-09-15（P10 单轨化 + P11 界面拉齐完成——旧终端壳零残留，CLI 只剩 next TUI + piped readline；对照台 `scripts/tui-parity/`；修 1 P0 + 6 P1；cli 1575 passed；**两分支后已合入 main**，接手事项见 `docs/ai-framework/plans/2026-09-15-p12-backlog.md`）· 2026-09-14（内核下沉与三壳复刻 P0–P8 合入 main `c62721d`→`c7c76a0`：core 吸走命令注册表与能力面、CLI 单一 TUI、桌面 slot 四席位、新增 ui-shared 与 web 壳，六包结构成型）· 2026-09-12（I1 交互复刻双轨甲 CLI/乙桌面各自独立验收 `--no-ff` 合入 main；解冻窗口 #1/#2 闭环）· 2026-09-11（地基补丁 P0–P4 闭环，core/gateway 契约冻结）· 2026-09-09（阶段 15 质量收口）· 2026-09-06/07（阶段 1–12 与 v1.0.0 收口）· 本文件是唯一交接入口，保持与实际状态同步。
 
-## 0. 🔒 冻结公告：core/gateway 契约冻结（2026-09-11）
+### 7.1 🔒 冻结公告：core/gateway 契约冻结（2026-09-11，历史）
 
-- **冻结 commit：** `3c9b31f`（`✨feat(core): turn 终态文本语义 final/partial/empty 跨端定死（P3-a/P3-b）`）——地基补丁 P0–P4 中 `packages/core` / `packages/gateway` 的**最后变更点**；`fix/foundation-patch` 以 `--no-ff` 合入 main，合并提交为该冻结提交之后第一个提交。
-- **冻结范围：** `packages/core/**`、`packages/gateway/**`（含 serve HTTP/WS 帧形状、默认严格鉴权 + 一次性 token、`turn-end` 的 `finalText`/`partialText`/`textOutcome` 展示语义、`api-surface-baseline.json` 导出面快照）。契约文本：`docs/API-STABILITY.md`「跨端展示语义」节。
-- **生效时间：** 2026-09-11。**冻结仍然有效**：`packages/core` / `packages/gateway` 的公开契约不得在并行轨中改动。
-- **并行两轨状态（2026-09-12 更新）：** 甲 `feat/notion-i1-tui`（只动 `packages/cli`）、乙 `feat/notion-i1-desktop`（只动 `packages/desktop`）均已独立验收，按 D→T 顺序 `--no-ff` 合入 main（`a0686fb` / `6330f76`），两条分支本地与 origin 均已删除。
-- **已用解冻窗口：** #1 `fix/gateway-serve-client-orphan-socket`（gateway 竞态 B1：`1dd40d8` → `05c3cd7`，CI #63 绿） · #2 `fix/core-flake-and-steer-export`（core 并发上限用例屏障化 + `SessionSteerSink`/`SteerSinkObserver` **加性**导出：`a442f4b`+`d7834c8` → `5aa1ff2` / `34354d2`，CI #64/#66 绿；加性变更经批准，基线 493 → 495）。
-- **解冻方式：** 只能由**编排者**在 main 上开独立小补丁窗口（`fix/*` 分支 → 三平台 CI 全绿 → `--no-ff` 合入 main → 通知两轨`git fetch && git merge origin/main`）。两轨不得自行改 core/gateway，也不得复制逻辑绕过。
-- **越界信号：** `packages/core/test/fixtures/api-surface-baseline.json` 变化。
-- **冻结的接续（2026-09-13/14，P0–P9 主线）：** 冻结公告保留为历史依据与并行纪律，但 `packages/core` 已由**获批主线计划** `docs/ai-framework/plans/2026-09-13-phase-shell-replication.md` 二次开放——命令注册表下沉（P1）、会话能力/工具/子代理/flows（P7）均改 core **且为纯加性导出**（基线 495→846，0 removed / 0 kindChanged，按 `docs/API-STABILITY.md` 流程同步）。**`packages/gateway` 本轮零改动**（H-47 多平台网关待人类拍板）。纪律不变：任何并行轨不得私改 core/gateway；改动须「计划授权 + 基线同步 + 编排者验收」。
+- **冻结 commit：** `3c9b31f`——地基补丁 P0–P4 中 `packages/core` / `packages/gateway` 的最后变更点。
+- **冻结范围：** serve HTTP/WS 帧形状、默认严格鉴权 + 一次性 token、`turn-end` 的 `finalText`/`partialText`/`textOutcome` 展示语义、`api-surface-baseline.json` 导出面快照。契约文本：`docs/API-STABILITY.md`「跨端展示语义」节。
+- **冻结的接续（2026-09-13/14）**：core 由获批主线计划二次开放——命令注册表下沉（P1）、会话能力/工具/子代理/flows（P7）均改 core 且为纯加性导出（495→846）。纪律存续：任何并行轨不得私改 core/gateway；改动须「计划授权 + 基线同步 + 编排者验收」。
+- 已用解冻窗口：#1 gateway `ServeClient` 孤儿 WS 竞态（`1dd40d8`→`05c3cd7`）；#2 core 测试抖动屏障化 + steer 加性导出（`a442f4b`+`d7834c8`→`5aa1ff2`/`34354d2`）。
 
-## 1. 项目一句话
+### 7.2 退役包时代的坑（pre-2026-10-24，仅考古）
 
-**harness2**：自研跨端 AI agent harness（CLI / 桌面 / IM 网关多形态），TypeScript monorepo。对标 opencode / hermes / deepseek-harness / grok（调研见 `docs/research/`）。
-
-## 2. 当前状态快照
-
-| 项                                          | 状态                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
-| ------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 默认分支                                    | `main`（**唯一长期分支**，2026-09-07 确立：从 master 平移建立后，应用户要求删除了 master 与全部 feat/phase-* 分支——内容零丢失，12 阶段全部包含于 main。历史文档提及 master/feat/phase-* 的均指已并入 main 的历史）                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
-| 分支策略                                    | 长期只有 `main`；阶段工作在 `feat/phase-<阶段>-<slug>` 分支上进行（`feat/phase-p9-closeout` 即本轮 P9 文档收口分支），阶段分支 CI 七 job 全绿后 `--no-ff` 合入 main，合完整批**一次**推送并回查 run `conclusion`，随后删除本地与远程分支。`main` 直推仅限编排者的文档/极小修（本次 P9 亦开分支，不直推）。子代理不单独开分支、不 force push、不在 main 上试错                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
-| 开发分支                                    | `main` = `48fca36`（本地领先 origin 2 个文档提交）。**未合并的两条分支**：`feat/phase-p10-next-only`（P10 单轨化：删旧壳 + 对照台）与 `feat/phase-p11-tui-polish`（P11 界面拉齐：P0 + 6 项 P1，HEAD `cb477d2`，P11 叠在 P10 之上，相对 main 共 29 个提交）。两者本地闸门全绿但**未 push**（需人类授权）。合并顺序：先 P10 后 P11，各自 `--no-ff`。处理步骤与 CI 注意事项见 `docs/ai-framework/plans/2026-09-15-p12-backlog.md` §A                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
-| 阶段 1–12                                   | ✅ 全部完成（内核 → loop+工具 → Provider+配置 → CLI chat+undo/redo → 服务化+桌面 → 记忆+分叉 → 浏览器+压缩+cron[M2] → 插件+MCP+subagent → QQ/飞书网关 → 轨迹导出/回放+Skills[M3] → 稳定化+分发 → **v1.0.0 收口**：API 导出面快照 + API-STABILITY semver 政策 + MIGRATION + docsify 文档站 + RELEASE-CHECKLIST + 版本物料 1.0.0）；各阶段独立审查/验收记录见 plans 与 issue-log                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
-| 阶段 13–14（R2）                            | R2 方向 2026-09-08 确立（Grok 终端复刻 T0–T5 + 功能优先桌面 D0–D6，原「交互复刻 CodexMonitor」方向废止并删除计划）；**共享底座 S0–S7 已实现、独立验收通过并合并 main**（验收时点 789 passed + 1 skipped，记录见 issue-log 2026-09-08；含 runtime.v1.jsonl 运行账本、submit/resumeSubscription/approval/cancel/task/steer 契约、protocolVersion=2、任务协调器）；激进-终端/激进-桌面计划已就绪（`plans/2026-09-08-phase-aggressive-{core-foundation,cli-interaction,desktop-interaction}.md`）→ **已于 2026-09-11/12 以并行双轨执行完毕**（见下「阶段 I1（交互复刻双轨）」行）                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
-| 阶段 15（质量收口）                         | 🔶 **进行中**（2026-09-09）：A0 仓库卫生+基线 ✅ · B1 OPEN.md 拆分 ✅ · B2 lint/format 基建+CI+全量格式化 ✅ · A1 Windows 可用性 P0 ✅（自动化全绿；真机联网检索待 A2 环境）· A2 本地网关真机验证 🟡（八项中自动化批次全过；桌面端真机 🟡、云端厂商 A2-2 ➖ 待 key）· A3 serve 安全加固 ⚠️ 有条件通过（2 个 P1 发布前必闭环，见 acceptance 第 6 节）· A4 sessions.ts 拆分 ✅（71862B→2844B）· B3 cli/desktop 拆分 ✅ · B4 规范文档补齐 ✅ · A5 阶段 9 网关独立复审 ⚠️ 有条件通过（3 个 P1 下放）· B5 文档与验收欠账 🟡（文档部分完成：形式验收补记/复审归位/本文件/diary；README 三图另处理）· B6 发布准备 ⬜ 待人类授权。**唯一计划** `plans/2026-09-09-phase-quality-closeout.md`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
-| **地基补丁 P0–P4**                          | ✅ 已闭环（2026-09-11，`fix/foundation-patch` → `ad12a08`）：网关双会话/挂死/测试缺口、serve token 三端贯通与默认严格、401 误判健康、playwright 降级、锁文件 POSIX 0600、turn 终态文本语义；末点 `3c9b31f` 即契约冻结提交。计划 `plans/2026-09-11-phase-foundation-patch.md`（由独立第三人执行，两轨等待期间只读预研）                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
-| **阶段 I1（交互复刻双轨）**                 | ✅ 已验收并合入 main（2026-09-12）。**甲 = 终端 T0–T5**（只动 `packages/cli`：steer 边界收窄 113→45 行、live 流式 timer 卸载清理、`SIGTERM`/`SIGHUP` 退出码 143/129、本地统一网关 E2E；链尾 `4defd0a`）；**乙 = 桌面 D0–D6**（只动 `packages/desktop`：修掉阻塞级 P1-1「`assignToPane` 不调 `store.select` → 分屏右侧六页签数据源永不写入」并做变异取证、草稿原子写、模式切换真落盘、resume 补真实入口；链尾 `eac21ee`）。两轨文件交集 0、越界文件各 0、基线 diff 各 0；合入前后 CI #67/#68/#70/#71 均绿。T 轨一条 `/help` 计时假红经授权由编排者屏障化加固（`4e2c7a6`）。**仍待人工签收**：甲的 IME/raw-mode/alt-screen 真机项与两行 `➖` 跳过项、乙的关窗口对话框真机项                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
-| 阶段 9 特别说明                             | 独立审查曾判 **fail**（P0 网关聋哑 + 7 P1，审查引用 QQ 官方文档纠偏），修复落地（`fb837bb`）后全量绿；**复审已补：有条件通过**（阶段 15 A5，2026-09-09——startGateway 生命周期/断线重连重订阅/msg_seq 递增三关注点核心行为正确，`pnpm --filter @harness2/gateway test` 5 files / 14 passed 与基线一致；3 个 P1 已下放，见 acceptance 第 6 节；四段结论归位见 `plans/2026-09-06-phase-9-im-gateway.md` 顶部）                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
-| **内核下沉与三壳复刻 P0–P8**                | ✅ **已全部合入 main**（2026-09-13/14，`c62721d` → `c7c76a0`），计划 `plans/2026-09-13-phase-shell-replication.md`。P0 三仓基线刷新（grok `37949780`、deepseek `c291e7961a`；hermes 因网络未拉取沿用 `79445a4`，补拉登记 OPEN.md）+ refs 重分析 · P1 命令注册表下沉 core（`packages/core/src/commands/`、`describeCapabilities()`，导出面加性）· P2 CLI TUI（当时双渲染；P10 已收敛为单 TUI）+ Esc 新规格（回合中永不取消、Ctrl+C 唯一取消、双击 stash/rewind、1000ms 宽限）+ 焦点环 · P3 命令面 29 条 + 卡片四件套（仅 permission 有真实来源）+ 队列/转向 + 状态行契约 + minimal 实体基座 · P4 桌面 slot 四席位 + 三栅（让步链按上游改正）+ 侧栏（PaneArea/SessionList 拆除）· P5 桌面对话页视图环 + composer（乐观提交/失败合并还原/@path 引用/图片不伪造）· P6 桌面轨迹页（TTFT 与解码分段/虚拟化尾部 50/inspect 定位）+ 模型配置页（**不手改文件闭环**、密钥只写不回显）+ 设置壳/审批/工具卡 · P7 core 能力 H-11~H-46（索引化全文检索/分层压缩/可移植导入/自动标题/记忆自进化/工具启禁与工具集/隔离与并行扇出/**零开销轮次**/特权流/自然语言 cron）· P8 `@harness2/ui-shared` 共享包 + `packages/web` 最小壳（浏览器真机一轮真实对话通过）。**P9 收口进行中**（文档/HANDOFF/ROADMAP/MASTER-PLAN/RELEASE-CHECKLIST 与冒烟手册） |
-| **M1 v0.1 / M2 v0.3 / M3 v0.6 / M4 v1.0.0** | 🔶 代码/物料全部就绪（**六包**版本均为 **1.0.0**：`@harness2/core` / `harness2`(cli) / `@harness2/desktop` / `@harness2/gateway` / `@harness2/ui-shared` / `@harness2/web`；`harness2 --version` 输出 1.0.0）；~~发布动作待人类操作~~ → **2026-10-13：tag `v1.0.0` 已推（用户授权），GitHub Release 已发布五件 unsigned 安装包**（https://github.com/Userluckytian/harness2/releases/tag/v1.0.0 ）。**注意**：该构建已含 Z 程序 GUI 复刻改动，下次发版按 semver 递增版本号。npm publish 仍开放（包名两枚已核空闲；待配 `NPM_TOKEN`）——清单见 `docs/RELEASE-CHECKLIST.md` ③ 与 OPEN.md                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
-| 未关闭事项                                  | 读 `docs/issue-log/OPEN.md`（零上下文第一读）。2026-09-15 新增三类：①**待人类授权**——P10/P11 两分支 push 与 CI（`plans/2026-09-15-p12-backlog.md` §A）；②**真机项**——`/help` 观感、`❯` 锚点、时间戳对齐、引导卡小画布、鼠标/IME/粘贴等 12 项（同文件 §B）；③**P12 待排期 + 技术债**——缺模型名/分支、会话 id 降档、`/rewind` 别名、子任务卡耗时，以及 live 时间戳口径等 8 条技术债（同文件 §C/§D）                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
-| 测试                                        | `pnpm test`（= `pnpm -r build` + **六包** vitest，**2026-09-15 P11 收口实测**）—— cli **93 files / 1575 passed + 2 skipped**；core 1232 + 2 skipped（**与基线一致 ⇒ 冻结区零改动**）；gateway 40；ui-shared 70；web 36；desktop 94/96 files、930 passed + 1 skipped（**2 个红文件为预存环境问题**：`serve-manager.test.ts` 需 `127.0.0.1:46213` 空闲、`settings/models/*.test.tsx` 的 jsdom `node:` 报错，已用 `main` 同环境对照证明非本阶段引入）；`pnpm lint` **0 error / 46 warnings** + prettier 全绿；`pnpm -r typecheck` 6/6 Done。历史：P10 前 cli 1703（含旧壳用例）· P10 后 1520 · P11 后 1575                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
-| API 稳定承诺                                | `docs/API-STABILITY.md`（1.0 起 semver：breaking 只进 major；导出面快照测试，基线 fixture 随导出变更同步更新——更新命令见该文件）。当前基线 fixture 为 **846 导出**（P0–P9 内核下沉与三壳复刻由 495 → 846 **纯加性**：0 removed / 0 kindChanged；其中 P1 499→522、P2 522→524、P7 主体净增。历史写 495 / 493 / 491 / 489 / 372 均为旧口径）                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
-| 性能基线                                    | `pnpm bench`（10 万事件合成日志，可复跑）——全部操作 <1.5s，无 >3s 痛点；预算表见 architecture.md「性能预算」节                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
-| 远程                                        | `origin → github.com/Userluckytian/harness2`（public）。**2026-09-11 起 push 已获用户授权**，`main` 与 `origin/main` 同步（**2026-10-13：`main` 与 `origin/main` 同步，625+ 次提交**）；GitHub Actions 已真实运行且稳定全绿（七 job：3 平台 test + 3 平台 build-desktop + pages；`test` job 含六包独立测试步骤）；**release 工作流 2026-10-13 首跑，修掉两个独立缺陷（attach 缺 GH_REPO / test job 并行全量致 windows flaky 红）后 v1.0.0 发布成功**，见 [issue-log §77](issue-log/2026-10-11.md)。Pages 在线：https://userluckytian.github.io/harness2/ 。**CI 状态可经 GitHub API 公开查（`/actions/runs`，curl 走 `--noproxy '*'` 绕本机代理 TLS 问题），不必依赖 `gh` 登录**。**仍待人类**：`NPM_TOKEN` secret（npm publish 用）                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
-
-## 3. 文档地图（按阅读顺序）
-
-1. `AGENTS.md` —— 协作规范入口：工作模式（编排者/子代理分工）、强制遵循、提交规范
-2. `docs/ai-framework/workflow-delegation.md` —— 角色/流程细则（每阶段标准流程、验收规则、交接要求）
-3. `docs/MASTER-PLAN.md` —— **总控计划**（里程碑 M1–M4、阶段 Ph2–Ph12、横切线）——批准后为全局实施依据
-4. `docs/ROADMAP.md` —— 26 项功能清单 + 架构决策 D1–D6 + 明确不做；**文末新增「内核下沉与三壳复刻（P0–P9）」对齐节**（26 项对齐 / 架构决策落地情况 / H-47 待决策）
-5. `architecture.md` —— 技术栈与核心不变量（阶段 3 起：含 Provider 缝 / Agent loop / 工具系统 / 配置体系小节）
-6. `docs/API-STABILITY.md` —— API 稳定承诺（semver 政策 + 导出面快照更新流程）
-7. `docs/MIGRATION.md` —— 迁移指南（0.6→1.0 零迁移 + 演进索引）· `docs/RELEASE-CHECKLIST.md` —— 发布回归汇总（自动化覆盖 + 手工清单索引 + 发布动作清单在 ③；**P9 本地核验结果表**在 ② 之后）· `docs/SMOKE-TEST.md` —— **冒烟测试手册**（三种启动入口 + 手工用例 + 期望结果；命令面取自 `--help` 实测与源码）。**P9 新增节**：`§1.5 web 壳启动入口`、`TUI 斜杠命令 29 条（core 注册表唯一来源）`、`F. CLI 单一 TUI/命令面板/阻塞卡片/状态行（P2~P3）`、`G. 桌面三栅让步链/轨迹页/模型配置（P4~P6）`、`H. web 壳（P8）`、`I. core 会话能力与工具面命令（P7）`、`J. 定时任务确定性调度与自然语言（H-46）`
-8. `docs/ai-framework/plans/` —— 阶段计划（每份含零上下文交接提示词）。**当前阶段 15 四件套**：`2026-09-09-phase-quality-closeout.md`（唯一计划：背景/执行顺序/12 任务/全局约束）、`…-closeout-acceptance.md`（验收与证据登记表，进度以它为准）、`…-closeout-review-brief.md`（专职审查者任务书）、`…-closeout-executor.md`（执行者提示词）。**阶段 I1（已完成）的双轨计划**：`2026-09-08-phase-aggressive-cli-interaction.md`（甲/终端轨）、`2026-09-08-phase-aggressive-desktop-interaction.md`（乙/桌面轨）、`2026-09-11-phase-foundation-patch.md`（地基补丁 P，独立第三人执行）——三份均含并行边界表与零上下文交接提示词
-9. `docs/diary/YYYY-MM-DD.md` —— 每日日志（发版 release note 素材）
-10. `docs/issue-log/` —— 问题日志（README 约定 + OPEN.md 未关闭索引）
-11. `docs/research/2026-09-06-reference-analysis.md` —— 四参考项目实证调研
-12. **`docs/refs/README.md`** —— 参考项目分析**强制规范**（改上层壳前必读；含开工六步流程、文档模板、编号与复刻等级、过期判定）。三份基线文档：`docs/refs/refs-grok-build.md`（CLI 交互完全复刻，G-01～G-95，基线 grok `37949780`）、`docs/refs/refs-deepseek-harness.md`（桌面壳/对话页/会话列表/模型配置/轨迹参考，D-01～D-86，基线 deepseek `c291e7961a`）、`docs/refs/refs-hermes-agent.md`（功能完整性对标，H-01～H-70，基线 hermes `79445a4` **本轮未拉取，下轮涉及 H-\* 前须先补拉**）
-13. `docs/ai-framework/plans/2026-09-13-phase-shell-replication.md` —— **本轮主线计划**：内核下沉 core + 三壳复刻（P0～P9，含四段子代理模式、并行窗口与目录独占表、反半成品硬规则、零上下文开工提示）。**P0–P8 已完成并合入 main，P9 收口进行中**（每阶段执行记录与闸门数字回填在计划内）
-14. **`docs/ai-framework/plans/2026-09-15-p12-backlog.md`** —— **★ 接手先读**：P10/P11 收工快照、**未合并分支的处理步骤（§A，含 CI 注意事项）**、真机验收清单（§B）、P12 待办（§C）、技术债（§D）、对照台遗留（§E）、可直接粘贴的开工提示词（§F）与明确不做（§G）
-15. **`docs/tui-parity/README.md`｜`matrix.md`｜`images/`** —— 终端双 TUI 抓屏对照：方法与诚实边界（PNG 是 ConPTY 重绘、非系统截图）、12 组场景逐项差异与严重度、P11 前后对照（`images/p11/before-after.md`）。工具 `scripts/tui-parity/`（venv + pywinpty/pyte/Pillow，**不进 packages 依赖**）
-
-## 4. 如何继续开发（标准循环）
-
-```
-读 AGENTS.md + workflow-delegation.md
-→ 读 OPEN.md 掌握未关闭项
-→ 读下一阶段计划（docs/ai-framework/plans/）
-→ 编排者派实现代理（用计划文末的交接提示词）
-→ 编排者派只读审查代理 → P0/P1 修复 → 编排者验收（重跑证据）
-→ 更新：计划状态 / ROADMAP / diary / issue-log / 本文件快照
-```
-
-## 5. 关键决策（详见 ROADMAP D1–D6）
-
-- TS/Node ≥22 + pnpm monorepo；Electron+React 桌面（P1）；**2026-09-14 起新增浏览器壳 `packages/web`，与桌面共用 `@harness2/ui-shared` 壳层组件包**
-- 会话 = append-only JSONL 事件日志（唯一事实源，Model-visible ⟺ logged）；SQLite 只做索引（后期）。**派生原则（已落 core）**：全文检索索引 `search.index.json`、自动标题 `title.json`、分层压缩 `compaction.layers.jsonl` 均为**可重建派生物**，`session.v1.jsonl` 字节不变且不入导出 zip
-- 撤回/分叉 = 同一日志上的投影操作（undo 为主、fork 为辅、grok 三模式为增强）
-- 自研轻量插件总线，不引 Cordis；文件快照不依赖 git
-- QQ 机器人走官方 Bot API v2（用户已注册）；不做个人号逆向
-- **内核/壳边界（H-70 两层分层已落）**：命令注册表下沉 `packages/core/src/commands/`（`CoreCommand` + 壳分发表），三壳由 core `describeCapabilities()` 派生菜单，**永不三份命令表分叉**；壳只保留必须 UI 的命令（清屏/密度/主题/重绘/模式）。桌面/web 接线见 P5/P6/P8 执行记录
-- **多平台网关（H-47）待人类拍板**：未拍板前 `packages/gateway` 不扩大范围（本轮零改动）
-
-## 6. 环境与命令
-
-- Node ≥22（实测 v22.23.1）、pnpm 11（实测 11.13.0）、Windows + Git Bash
-- `pnpm install` → `pnpm test`（= `pnpm -r build` + **六包** vitest）→ `pnpm -r typecheck`；只跑测试可 `pnpm -r --no-bail run test`（已 build 时）
-- **构建先行（共享包/核心 dist 会过期）**：任何引用 `@harness2/core` / `@harness2/ui-shared` 实现的审查、验收或壳测试，**先 `pnpm -r build`**（desktop/web 经 `exports` 解析到 dist，本地单独跑壳测试会静默用旧产物；CI 中 build 先于 test 无此风险）
-- 试轨迹：`node packages/cli/dist/index.js traj packages/core/fixtures/demo-session`（阶段 1 手写样例）；`node packages/cli/dist/index.js traj packages/core/fixtures/loop-demo`（阶段 2 agent loop 实跑生成的会话）
-- 查配置：`node packages/cli/dist/index.js config check`（`--root`/`--home` 可重定向路径；key 来源只显示 auth.json / env:XXX / **missing**，不显示明文）
-- **服务冒烟（阶段 5）**：`node packages/cli/dist/index.js serve --port 0 --provider mock`——stdout 一行 JSON 端口 → `curl http://127.0.0.1:<port>/api/sessions` / WS `ws://127.0.0.1:<port>/ws`
-- **桌面冒烟（阶段 5）**：`pnpm --filter @harness2/desktop smoke`——无头冒烟输出 `{ok,port,rendererLoaded,bridgeReady}`；打包后 `packages/desktop/release/win-unpacked/harness2.exe --smoke` 同样可验；GUI 交互（拖拽手感/多会话实机体验）待真机
-- **web 壳（P8）**：①先起 serve（严格鉴权，token 在数据根 `serve.lock`）`node packages/cli/dist/index.js serve --port <p>`；②再 `pnpm --filter @harness2/web dev`——Vite dev server 代理 `/api` 与 `/ws` 到 serve（避开 CORS），浏览器打开后应显示「已连接」+ 真实会话列表；生产构建 `pnpm --filter @harness2/web build`。**token 暴露面**：web 直连 serve 时 `VITE_HARNESS2_TOKEN`（构建期内联）/ URL `?token=` / WS 握手 `?token=` 三条路径客户端可见，仅用于本地/受信网络（详见 §7 与 `docs/API-STABILITY.md`）
-- **chat 冒烟（阶段 4）**：`node packages/cli/dist/index.js chat --provider mock --root <临时目录>`——演示 write+read 两轮工具 → `/undo --dry-run` → `/undo`（创建的文件被删）→ `/redo`（内容回放）→ `/sessions` → `/exit`
-- **记忆冒烟（阶段 6）**：config 写 `"memory": {"mode":"auto"}` 后 `harness2 chat` 让模型记一条偏好 → `harness2 memory show` 查看；改 `"mode":"ask"` → 让模型记忆 → `harness2 memory pending` → `approve <id>` 落盘；`off`（缺省）时模型看不到 memory 工具
-- **插件/MCP/subagent 冒烟（阶段 8）**：①插件：把样例插件放 `~/.harness2/plugins/<name>/`（manifest + ESM index.js）→ `harness2 plugin list` 看权限清单 → `plugin enable <name>` 确认 → config `plugins.allow` 出现该名 → chat/serve 重启后工具可调；②MCP：config 写 `"mcpServers": {"filesystem": {"command": "npx", "args": ["-y", "@modelcontextprotocol/server-filesystem", "/tmp"]}}` → `harness2 mcp list` 探测连接与工具数 → chat/serve 里出现 `mcp__filesystem__*` 工具；③subagent：mock REPL `harness2 chat --provider mock` 让模型派子任务（或真实模型说"派子代理去做 X"）→ 工具行 `subagent_start` → 子会话独立 traj（桌面端工具行「子会话 ↗」跳转）
-- **分叉冒烟（阶段 6）**：`harness2 chat --fork <id>`（或 REPL `/fork [seq]`）→ banner 标血缘与复制事件数 → 原会话零改动（traj 对比）；serve 模式 `POST /api/sessions/:id/fork` / WS op `fork`
-- **导出/回放/Skills 冒烟（阶段 10）**：①`harness2 export <会话目录>` → 当前目录得 `<sessionId>.zip`（再跑一次字节数一致=幂等）；②`harness2 replay <zip>` → 主会话/子会话投影摘要（events/messages/lastSeq/badLines）；③把带 frontmatter 的 .md 放进 `.harness2/skills/` → `harness2 skill list` 出现（[project] 标注）→ chat 里 system 注入「[Skills 可用]」列表、模型可 `skill` 工具取全文
-- **性能基线（阶段 11）**：`pnpm build && pnpm bench`——10 万事件合成日志六项操作耗时表（`H2_BENCH_EVENTS`/`H2_BENCH_SEED` 可调）；对照 architecture.md「性能预算」节
-- **doctor（阶段 11）**：`node packages/cli/dist/index.js doctor [--probe]`——node/config+auth（脱敏）/目录可写/MCP/会话库完整性/skills 分节报告，exit 0/1；崩溃报告 `~/.harness2/crash/`（无遥测，手动反馈）
-- **桌面包构建（阶段 11）**：`pnpm --filter @harness2/desktop dist:win|dist:mac|dist:linux`（三平台 unsigned；本地已验 win nsis，mac/linux 待远程 CI）
-- 注意：cli 包名已改为 `harness2`（npm 发布名），根工作区更名为 `harness2-monorepo`（避免重名）；`pnpm --filter harness2` 指向 packages/cli
-- 注意：`pnpm --filter harness2 test` 在干净检出需先 build（根脚本已串 build）
-- 跑一次 loop 演示：任意 node 脚本 `runTurn(dir, { provider, tools, cwd, userText })`；provider 可用 `createProvider(config, role)`（真实协议，需 stub/真实端点）或 `new MockProvider(script)`（见 `packages/core/test/loop.test.ts`、`packages/core/test/providers.test.ts` 的 E2E 用例）
-
-## 7. 已知坑
-
-- Windows 下 tsc/commit 有 CRLF warning，无害
-- 会话日志写入依赖「换行即提交」语义（未以 \n 结尾的尾行视为未提交丢弃），改 writer 前先读其测试
-- **redo 的投影复活依赖 reason 前缀 `redo` 的标记链语义**（按 `rewindToSeq+1` 精确中立化被重做的 undo 标记）：手工构造 rewind 标记时不要用 `redo` 前缀，除非明确想触发复活（见 reader.ts computeProjection 注释与测试）
-- **bash 副作用不进文件快照**（write/edit 才有 before/after）：对外已如实声明（README、chat /help），改快照范围时同步这两处
-- **审查/验收引用实现前必须先 `pnpm -r build`**（P7 教训）：desktop/web 经 `exports` 解析到 `@harness2/ui-shared/dist`、各包互相引用核心 `dist`，本地 dist 可能过期；P7 审查曾对过期 `packages/core/dist/tools/script.js` 取证，误报「vm 沙箱逃逸 P0」（源码 `script.ts` 已是 `spawn` 子进程、逃逸用例 9 种链全过）。**禁止对可能过期的 dist 下结论**；引用实现行为前先读源码或先 build。CI 中 build 先于 test，无此风险
-- **core 测试固定占用端口 `127.0.0.1:46213`**：`packages/core/test/fork.test.ts` 的 hub/HTTP/WS 分叉入口三例绑定该端口；若本机正跑 `harness2 serve --port 46213`，三例会以 `EADDRINUSE` 失败（非缺陷，技术债，建议后续改用 `--port 0`/随机端口）
-- **web 壳 token 暴露面（如实边界）**：web 直连 serve 时 token 三条路径均客户端可见——① `VITE_HARNESS2_TOKEN` 构建期被 Vite 静态内联进产物；② 页面 URL `?token=` 进浏览器历史/Referer（`packages/web/src/env.ts`）；③ WS 握手 `?token=`（浏览器 WebSocket 不支持自定义头，与桌面主进程同因）。**结论：web token 仅用于本地/受信网络，生产须同源反代注入鉴权**（已在 `docs/API-STABILITY.md` 补记）
-- **`@harness2/ui-shared` 是壳层共享包，core 仍是内核**：ui-shared 只收敛壳层 React 组件与端口层（`HarnessClient`/`Persistence`/`AttachmentReader`/`HostBridge`），**零 electron/node 依赖**，线协议以它为唯一事实源；业务语义一律在 `packages/core`，禁止把壳逻辑或内核逻辑写进 ui-shared（参考 `docs/refs/README.md` §5 与主线计划硬规则）
-- **真实模型验证（阶段 15 A2-1，2026-09-09 已补）**：本地统一网关 openai/anthropic 双协议真机验证八项中自动化批次全过（config check/chat+工具调用/undo-redo-审批-会话/记忆三态/MCP-插件/上下文压缩/失败与降级，均无 key 明文）；**云端厂商（DeepSeek/智谱/Anthropic 官方）差异仍待真实 key**（A2-2 ➖，不得用本地网关或 stub 顶替）；桌面端真机一轮亦待补。早期阶段（3 起）的 stub 口径已由本地网关真机验证部分覆盖，未覆盖部分见 OPEN.md
-- 密钥只在 `~/.harness2/auth.json`（不入 git，.gitignore 已含 `auth.json`）与环境变量；config/日志/错误消息里出现疑似密钥一律经 `redactSecrets` 脱敏——新增错误路径时记得过这个闸门
-- 外部脚手架（.opencode/、ai-framework 文档）由项目负责人维护，更新时注意与 `workflow-delegation.md` 的角色约定保持一致
-- CI（ci.yml）**已在远程真实运行并稳定全绿**（P8 后七 job：三平台 test + 三平台 desktop build + pages）。`test` job 自 2026-09-12 起为**分包独立步骤**，自 P8 起覆盖**六包**（Typecheck / Lint (ESLint) / Lint (Prettier check) / Test core|gateway|cli|desktop|ui-shared|web），步骤条件只看 `steps.build.outcome`：build 红则整段跳过，其余互不遮蔽且任一步红则 job 红——起因是 run #61 里 core 一个抖动用例让其余三包当次根本没跑到（本机已做探针变异取证）。`.github/workflows/**`、根 `package.json`、`tsconfig.base.json`、eslint/prettier 配置属**编排者独占**，并行轨不得改。release.yml 已通过本地 YAML 语法校验（js-yaml / 四 job：test+publish+desktop+release-assets），真跑待 tag。release.yml 的 publish 步骤为**条件跳过**语义：无 `NPM_TOKEN` → 明确 notice 跳过；有 token 但发布失败 → workflow 红（2026-09-06 审查修复 P1-1，勿再加 continue-on-error）
-- chat 审批内联提示：ask 等待期间下一行输入即答案（含以 / 开头的行）；取消等待用 Ctrl+C / Ctrl+D（ask 与 turn 取消信号竞速，abort 后按拒绝处理且不再吞行）——改 chat.ts 的 askUser/answerResolver 前先读 chat-cancel.test.ts
-- grep 工具优先 spawn ripgrep，CI 镜像若未装 rg 会自动回退纯 JS 扫描（行为一致但大目录更慢）
-- **记忆文件（~/.harness2/memories/）属用户私有数据**：绝不入 git（测试全临时目录）、不出现在错误消息出口；写入按 `§` 条目结构 + 字符硬预算（memory 2200 / user 1375）校验，改 store.ts 前先读 memory.test.ts（round-trip/漂移/原子批量语义都在那）
-- **memory/snapshot 事件 = ChatRequest.system 的唯一来源**（Model-visible ⟺ logged 扩展到 system）：loop 会话内冻结（活动投影已有快照就复用不重读文件）——改注入逻辑前先读 loop.test.ts 的「记忆开关与冻结注入」组
-- **nudge 复盘不落主会话日志**（一次性临时会话预置系统提示、跑完即删）；计数在 SessionHub（turn 内调过 memory 工具即归零）；改 hub 的 buildTurnTools/bumpNudge 前先读 nudge.test.ts
-- **分叉不复制 rewind/marker 与影子事件、不迁移文件快照**（新会话 undo 从零开始，README 已注明）；改 fork.ts 前先读 fork.test.ts（字节级零变化/投影一致断言在那）
-- **sandbox preload 不能 require 相对模块**：IPC 通道名在 preload.ts 内联，与 shared/protocol.ts 的同名常量有静态一致性测试（test/protocol.test.ts）——改通道名先看这个测试
-- **pnpm 11 的构建脚本白名单/overrides 在 pnpm-workspace.yaml**（allowBuilds / overrides），package.json 的 pnpm 字段已被忽略；electron 二进制下载失败可设 `ELECTRON_MIRROR=https://npmmirror.com/mirrors/electron/` 后重跑 install
-- **electron-builder 26 需要 @electron/get ≥4**（ElectronDownloadCacheMode）：已用 workspace overrides `@electron/get: ^5.1.0` 钉住，动依赖版本时注意
-- **打包后 serve 子进程 = esbuild 单文件 bundle**（packages/cli/dist-bundle/harness2-cli.cjs，经 extraResources）：jsonc-parser 必须走 ESM 入口（bundle 脚本带 `--alias:jsonc-parser=jsonc-parser/lib/esm/main.js`，UMD 运行时动态 require 打不进单文件）；改 cli 依赖后先 `pnpm --filter harness2 bundle` 并本地跑一次 bundle serve 验证
-- **插件 v1 进程内非隔离（阶段 8）**：manifest 权限是 API 层约束不是强制隔离，恶意代码可绕过——改插件层时不得弱化 allow 审批与权限清单展示；worker/isolate 隔离留档评估（见 architecture.md 插件小节）
-- **MCP 工具名 sanitize 后撞名 = 后者跳过**（`mcp__<server>__<tool>` 必须满足工具名约束 ^[a-z0-9_]+$，config 层拦 server 名，tool 名非法字符折叠 `_`）；MCP server 名在 config 校验里必须匹配 ^[a-z0-9_]+$
-- **subagent 深度红线的实现点**：`buildSubagentChildTools` 重挂时血缘重绑（parentSessionId=子会话 id、depth+1）——改 subagent.ts 前先读 subagent.test.ts（孙会话血缘/深度断言在那）；hub 侧每次 turn 按会话 id 重绑（buildTurnTools），改 SessionHub 装配前先读 assembly.test.ts
-- **导出幂等依赖固定 mtime**（2000-01-01；zip DOS 时间仅支持 1980-2099，用 `new Date(0)` 会抛 date not in range）：改 export.ts 前先读 export.test.ts（只读红线/幂等/黄金断言/坏行容错都在那）；子会话扫描只认「直接子会话」（parentSession === 本会话 id），孙会话不在冻结结构内
-- **skills 列表不落事件**（唯一事实源 = 磁盘目录，与 memory/snapshot 冻结语义不同）：system 组装顺序 = memory 快照在前 + 空行 + `[Skills 可用]` 列表；每 turn 重扫、同一 turn 内冻结——改注入逻辑前先读 skills.test.ts（两级/覆盖/上限/零注入/每 turn 重扫描断言都在那）；**子会话 turn 同样注入宿主同款 skills 列表**（阶段 11 口径统一，SubagentOptions.skills；子会话工具集同时剔除 per-session 绑定类 memory/browser_*——改装配前先读 subagent.test.ts 口径统一组）
-- **阶段 10 新增运行时依赖 `fflate`（^0.8.3，纯 JS zip）**：core 运行时唯一新增第三方依赖（cli 侧仅测试 devDep）——zip 结构已冻结（计划），改打包路径/条目命名先对照 architecture.md「轨迹导出与回放」小节
-- **阶段 8 新增依赖 `@modelcontextprotocol/sdk`（锁 ^1.30.0）**：客户端只依赖 listTools/callTool 两面（适配层薄封装，SDK 升级先跑 mcp.test.ts）；stateless Streamable HTTP server 夹具每请求新建 transport（web-standard 传输禁止跨请求复用）
-- **bundle 必须 `--external:playwright`**（阶段 11 修复：browser 工具进 core 导出图后，playwright-core 的 chromium-bidi require 打不进 cjs 单文件）——打包产物内 browser_* 走「未安装指引」降级是设计口径；改 bundle 脚本后先 `pnpm --filter harness2 bundle` 再跑一次桌面 dist
-- **importReplay 有 256 MiB 解压上限**（前置中央目录声明体积 + 后置实际体积双闸门，`maxDecompressedBytes` 可覆盖）：改 export.ts 回放路径前先读 bench.test.ts 上限两例
-- **时序敏感测试的写法约定**（阶段 11 抖动根治）：并行性/取消类断言优先用事件相对时序（tool/result 同批落盘间隔）而非绝对墙钟上限；必须用墙钟时给出充足余量并注释依据——新增测试前读 loop.test.ts 并行波次与 tools.test.ts P1-3 的注释
-- **公开导出面变更必须同步快照基线**（阶段 12）：改 `packages/core/src/index.ts` 导出后跑 `pnpm build && H2_UPDATE_API_SNAPSHOT=1 pnpm --filter @harness2/core exec vitest run test/api-surface.test.ts` 并在同一提交更新 fixture——删除/改名/声明种类变更是 breaking（走 major），流程见 `docs/API-STABILITY.md`
-- **1.0 发布动作清单在 `docs/RELEASE-CHECKLIST.md` ③**（push/NPM_TOKEN/包名占用/tag/Pages）——全部待人类授权，勿自行执行
-
-- **终端只有一个 TUI（P10 起）**：旧终端壳（React/ink）已连代码/测试/依赖/文档一起删除，**不要再引入 React/ink**，也不要在文档里把已删实现当现状描述；CLI 只有 `src/tui/next/**`（TTY）与 piped readline（非 TTY/CI）两条路。
-- **`--ink` 是配色 token 不是库**：`packages/ui-shared/src/styles/*.css` 里的 `--ink` 是颜色名（ink=墨色），做"去痕"时**禁止**全局替换误伤。
-- **终端宽度必须用 `displayWidth`/`charWidth`**：把 `.length` 当显示宽度会导致 CJK 错位；P11 的 P0（`/help` 面板文字互相覆盖）根因就是「换行符被当成 1 列可打印字符写进单元格」，修法与防线见 `plans/2026-09-15-phase-p11-tui-polish.md`。改渲染层前先跑 `packages/cli/test/tui/next/help-panel-layout.test.ts` 这类**版面级**用例。
-- **抓屏对照台用法与边界**：`scripts/tui-parity/`（`ptycap.py` 单会话、`run.py` 场景矩阵）。产物是「ConPTY 抓屏 + 本地重绘」，**不是系统截图**；结论以同名 `.txt` 屏幕网格为准。grok 侧接真实模型（默认本地 40080 端点 `big-pickle`，单轮约 3.7s），**每跑一次消耗额度**，`--allow-grok` 显式授权、默认预算 1 个场景。抓屏产物（`.log.json`/notes）会进 prettier 门禁，每批次记得 `prettier --write`。
-- **别用 stdin 管道验证 prettier**：`git show <ref>:<file> | npx prettier --check` **不会加载项目配置**，会得出"基线也不达标"的假结论（P11 审查踩过）。要对照基线就 `git checkout <ref>` 后跑 `npx prettier --check .`。
-- **渲染层改动的验收口径**：功能类断言（`.toContain`）挡不住"文字对、版面错"。UI 改动必须补**版面级断言**（逐格/逐行/宽度契约）并做**变异验证**（改坏必红）。
+- **web 壳 token 暴露面**：`VITE_HARNESS2_TOKEN` 构建期内联 / URL `?token=` / WS 握手 `?token=` 三条路径客户端可见（口径已入 `docs/API-STABILITY.md`）
+- **ui-shared 是壳层共享包**：零 electron/node 依赖，线协议以它为唯一事实源；业务语义一律在 core（该包已退役，纪律对 adapter 内的壳装配仍可类比）
+- **desktop `frame:false` 窗控行为 / 三栅让步链 / 虚拟化轨迹页 / 模型配置页**等交互规格：见 `docs/refs/refs-deepseek-harness.md` 与 Z 程序台账（退役留档）
+- **electron 链**：pnpm 构建脚本白名单曾为 electron 二进制下载服务（`ELECTRON_MIRROR` 可解下载失败）；electron-builder 26 需 `@electron/get ≥4`（workspace overrides 钉住）；sandbox preload 不能 require 相对模块（IPC 通道名与 shared/protocol.ts 有静态一致性测试）——**均已随 2026-10-24 退役失效**，现桌面出包走 `scripts/zs6/zs6-pack.ps1`（ZCode 壳装配）
+- **`--ink` 是配色 token 不是库**（ui-shared styles 里的颜色名，非 ink 库）
+- 旧桌面 dev/smoke 命令（`pnpm --filter @harness2/desktop dev|smoke|dist:win`）与 web dev（`pnpm --filter @harness2/web dev`）随退役删除，不要再引用
