@@ -42,7 +42,7 @@ desktop-preferences.json（同上）
 ```powershell
 cd D:\AI_Projects\harness2
 pnpm install --frozen-lockfile
-pnpm build        # = pnpm -r build（tsc 增量；本机空闲冷启动实测 5.6s @ 2026-10-31）
+pnpm build        # = pnpm -r build（本机空闲冷启动实测 5.6s @ 2026-10-31；tsc 增量试验已回退，见 `77439ae`）
 ```
 
 正确结果：四个包（core / gateway / cli / zcode-adapter）全部 exit 0，且下列产物存在——
@@ -144,7 +144,7 @@ node scripts/audit-gate.mjs   # 生产依赖漏洞门（CI audit job 同款；�
 | 生产依赖 audit            | **0 漏洞**（升级前 20：1C/6H/11M/2L；`0f5b004` 升级 MCP SDK 1.32.2 / zod 4.6.7 后清零）                            |
 | dev 依赖漏洞              | 19 条（high 7 / moderate 11 / low 1）全在 vitest 工具链——**只报告不挡门**（audit-gate 策略），待工具链升级自然消退 |
 
-- `pnpm -r build` 冷启动（本机空闲）实测 **5.6s**（tsc 增量，`af2d983`）。
+- `pnpm -r build` 冷启动（本机空闲）实测 **5.6s**（2026-10-31；tsc 增量试验已回退 `77439ae`——tsbuildinfo 会被多会话并行的文件增删污染，静默产出残缺 dist，风险收益不成立）。
 - **adapter 测试口径（F8 假绿治理，`af36d86`）**：包内 `test` script 经 `scripts/zs1-guard.mjs` 门控，依赖本机 ZS1 scratch 构建区（`D:/AI_Projects/harness2-zs1-build/ZCode`），无 scratch 环境会 SKIP——**完整 159 用例只能本地 scratch 跑**；无 scratch 环境（含 CI）用 `pnpm --filter @harness2/zcode-adapter test:ci`（`vitest.ci.config.mts`：无 scratch 依赖的 4 文件 23 用例；其余 16 文件依赖 `@zcode/*` alias，CI 显式排除并在运行时打印排除清单）。**CI 不再产出「zcode-adapter 测试全绿」假信号，结论以本地 scratch 全门为准**。
 - `test/api-surface.test.ts` 必须绿：导出面基线为 `packages/core/test/fixtures/api-surface-baseline.json` 当前快照。它红 = 动了 core 公开导出，必须走计划授权流程并同步基线，不能就地改基线文件。
 - CI（`.github/workflows/ci.yml`）：**quality**（typecheck + eslint + prettier，平台无关单跑）+ **test**（三平台 matrix：core / gateway / cli / adapter test:ci）+ **audit**（生产依赖漏洞门）+ pages（main push 部署 docsify）。
