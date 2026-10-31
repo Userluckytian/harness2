@@ -8,7 +8,7 @@
 //   - WS 断线重连：订阅后 pending approvals 重发（含 scope/expiresAt 卡片字段）。
 // TDD：本文件先红（approval-queue 模块不存在），再实现最小改动。
 import { afterEach, describe, expect, it } from 'vitest';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { ApprovalQueue, type ApprovalQueueCard, type ApprovalSettleReason } from '../src/interaction/approval-queue.js';
@@ -410,21 +410,25 @@ describe('SessionHub 接线：Z10-5 决策语义（本次 / 本会话 / 始终�
 });
 
 describe('WS 接线：断线重连补发 pending approvals', () => {
-  async function createSession(handle: ServeHandle): Promise<string> {
+  async function createSession(handle: ServeHandle, cwd: string): Promise<string> {
     const res = await fetch(`http://127.0.0.1:${handle.port}/api/sessions`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ cwd: tmpDir('h2-queue-cwd-') }),
+      body: JSON.stringify({ cwd }),
     });
     return ((await res.json()) as { id: string }).id;
   }
 
   it('订阅（重连）即补发该 session 的 pending approval（含 scope/expiresAt）；respond allow 后工具执行', async () => {
+    // 安全修复 #297：会话 cwd 必须位于 serve root 内——root 下建子目录作会话工作区
+    const root = tmpDir('h2-queue-root-');
+    const sessionDir = join(root, 'ws');
+    mkdirSync(sessionDir, { recursive: true });
     const handle = await startServe({
       requireToken: false,
       port: 0,
       home: tmpDir('h2-queue-home-'),
-      root: tmpDir('h2-queue-root-'),
+      root,
       provider: new MockProvider([
         { toolCalls: [{ id: 'c1', name: 'glob', arguments: JSON.stringify({ pattern: '*' }) }] },
         { textChunks: ['执行完'] },
@@ -432,7 +436,7 @@ describe('WS 接线：断线重连补发 pending approvals', () => {
       decide: () => 'ask',
     });
     handles.push(handle);
-    const id = await createSession(handle);
+    const id = await createSession(handle, sessionDir);
 
     // 直接经 hub 起 turn（无需先建订阅）：让审批进入待处理表
     let asked: ApprovalRequestContract | null = null;

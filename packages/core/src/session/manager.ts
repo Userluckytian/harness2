@@ -10,11 +10,26 @@
 // 列表/搜索为只读（loadSession 不截断日志）；resume 打开 writer，沿用其崩溃残行恢复语义。
 import { randomBytes } from 'node:crypto';
 import { createHash } from 'node:crypto';
-import { existsSync, readdirSync, rmSync, statSync, type Dirent } from 'node:fs';
+import {
+  existsSync,
+  mkdirSync,
+  readdirSync,
+  readFileSync,
+  renameSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+  type Dirent,
+} from 'node:fs';
 import { homedir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { computeProjection, loadSession, type ProjectionMessage } from './reader.js';
-import { SessionSearchIndex, type IndexedSearchOptions } from './searchIndex.js';
+import {
+  getSessionSearchIndex,
+  rebuildSessionIndex,
+  removeSessionIndex,
+  type IndexedSearchOptions,
+} from './searchIndex.js';
 import {
   autoTitleSession,
   clearSessionTitle,
@@ -131,26 +146,101 @@ export interface SessionResumeResult {
   recoveredBytes: number;
 }
 
-function summarizeSession(id: string, dir: string): SessionSummary {
-  const logPath = join(dir, SESSION_LOG_FILE);
-  const session = loadSession(dir); // 只读；非法行跳过并进 warnings（此处忽略告警）
-  const messages = computeProjection(session).messages;
-  let mtimeMs = 0;
+/** 列表摘要的派生缓存核心字段（不含 title：title 来自 title.json，每次现读，开销极小）。 */
+interface SummaryCore {
+  /** 缓存对应的日志大小/修改时间：任一变化即视为失效，重新解析 */
+  size: number;
+  mtimeMs: number;
+  cwd?: string;
+  firstUserText: string;
+  messageCount: number;
+  lastSeq: number;
+}
+
+const SUMMARY_CACHE_VERSION = 1;
+/** 摘要缓存目录名（位于会话根目录内；以点开头，不会被当作 cwd 组枚举） */
+const SUMMARY_CACHE_DIR_NAME = '.summary-cache';
+
+function summaryCachePath(cacheDir: string, dir: string): string {
+  return join(cacheDir, `${createHash('sha1').update(dir).digest('hex').slice(0, 24)}.json`);
+}
+
+/** 读取派生缓存；任何不匹配/损坏均返回 null（回落为重新解析，绝不抛错）。 */
+function readSummaryCache(cacheDir: string, dir: string, size: number, mtimeMs: number): SummaryCore | null {
   try {
-    mtimeMs = statSync(logPath).mtimeMs;
+    const raw = JSON.parse(readFileSync(summaryCachePath(cacheDir, dir), 'utf8')) as {
+      v?: unknown;
+      core?: SummaryCore;
+    };
+    if (raw.v !== SUMMARY_CACHE_VERSION || raw.core === undefined) return null;
+    if (raw.core.size !== size || raw.core.mtimeMs !== mtimeMs) return null;
+    return raw.core;
+  } catch {
+    return null;
+  }
+}
+
+/** 写入派生缓存（临时文件 + 原子改名）。写失败只影响下次列表速度，不影响结果。 */
+function writeSummaryCache(cacheDir: string, dir: string, core: SummaryCore): void {
+  try {
+    mkdirSync(cacheDir, { recursive: true });
+    const path = summaryCachePath(cacheDir, dir);
+    const tmp = `${path}.${process.pid}.tmp`;
+    writeFileSync(tmp, JSON.stringify({ v: SUMMARY_CACHE_VERSION, core }), 'utf8');
+    renameSync(tmp, path);
+  } catch {
+    // 派生缓存，写失败可忽略
+  }
+}
+
+/**
+ * 会话列表摘要。缓存命中时只做 stat + 读 title，不再解析整份日志（此前每次列表都会
+ * 把全部历史会话的日志完整解析一遍，会话越多、越长，打开项目就越卡）。
+ */
+function summarizeSession(id: string, dir: string, cacheDir?: string): SessionSummary {
+  const logPath = join(dir, SESSION_LOG_FILE);
+  let mtimeMs = 0;
+  let size = -1;
+  try {
+    const st = statSync(logPath);
+    mtimeMs = st.mtimeMs;
+    size = st.size;
   } catch {
     mtimeMs = 0;
   }
+  let core = cacheDir !== undefined ? readSummaryCache(cacheDir, dir, size, mtimeMs) : null;
+  if (core === null) {
+    const session = loadSession(dir); // 只读；非法行跳过并进 warnings（此处忽略告警）
+    core = buildSummaryCore(session, size, mtimeMs);
+    if (cacheDir !== undefined) writeSummaryCache(cacheDir, dir, core);
+  }
+  return summaryFromCore(id, dir, core, readSessionTitle(dir));
+}
+
+/** 从已加载会话构建摘要核心（与 summarizeSession 的缓存核心同构；供 search 复用，避免同一日志解析两遍） */
+function buildSummaryCore(session: ReturnType<typeof loadSession>, size: number, mtimeMs: number): SummaryCore {
+  const messages = computeProjection(session).messages;
   const firstUser = messages.find((m) => m.role === 'user');
-  const title = readSessionTitle(dir);
   return {
-    id,
-    dir,
-    ...(session.header?.cwd !== undefined ? { cwd: session.header.cwd } : {}),
+    size,
     mtimeMs,
+    ...(session.header?.cwd !== undefined ? { cwd: session.header.cwd } : {}),
     firstUserText: firstUser ? summarize(firstUser.text) : '',
     messageCount: messages.length,
     lastSeq: session.events.at(-1)?.event.seq ?? 0,
+  };
+}
+
+/** 由摘要核心 + title 组装最终摘要对象（summarizeSession 与 search 共用，保证两处口径一致） */
+function summaryFromCore(id: string, dir: string, core: SummaryCore, title: SessionTitle | null): SessionSummary {
+  return {
+    id,
+    dir,
+    ...(core.cwd !== undefined ? { cwd: core.cwd } : {}),
+    mtimeMs: core.mtimeMs,
+    firstUserText: core.firstUserText,
+    messageCount: core.messageCount,
+    lastSeq: core.lastSeq,
     ...(title !== null ? { title: title.title } : {}),
   };
 }
@@ -197,6 +287,8 @@ export class SessionManager {
     opts: {
       id?: string;
       fsync?: boolean;
+      /** fsync 批量刷盘间隔（毫秒，透传至 SessionWriter） */
+      fsyncIntervalMs?: number;
       /** fork 血缘：派生自哪个会话 */
       parentSession?: string;
       isSeeded?: boolean;
@@ -215,7 +307,7 @@ export class SessionManager {
         ...(opts.isSeeded !== undefined ? { isSeeded: opts.isSeeded } : {}),
         ...(opts.subagent !== undefined ? { subagent: opts.subagent } : {}),
       },
-      { fsync: opts.fsync ?? true },
+      { fsync: opts.fsync ?? true, fsyncIntervalMs: opts.fsyncIntervalMs },
     );
     return { id, dir, writer };
   }
@@ -234,7 +326,7 @@ export class SessionManager {
         const dir = join(group, entry.name);
         if (!existsSync(join(dir, SESSION_LOG_FILE))) continue;
         try {
-          summaries.push(summarizeSession(entry.name, dir));
+          summaries.push(summarizeSession(entry.name, dir, join(this.root, SUMMARY_CACHE_DIR_NAME)));
         } catch {
           // 损坏会话不阻塞列表
         }
@@ -246,25 +338,38 @@ export class SessionManager {
   /**
    * 会话搜索：活动 user/assistant 消息文本的子串命中（大小写不敏感）。
    * cwd 提供时只搜该 cwd 组。返回带命中片段的会话列表（mtime 倒序）。
+   * 实现：单遍遍历会话目录，每会话只 loadSession+computeProjection 一次，
+   * 命中即复用同一份已加载会话构建摘要（此前先 this.list 再逐会话二次
+   * loadSession+computeProjection，同一日志读两遍、投影算两遍），并共享摘要缓存。
    */
   search(cwd: string | undefined, text: string): SessionSearchHit[] {
     const needle = text.toLowerCase();
     if (needle.length === 0) return [];
-    return this.list(cwd)
-      .map((s): SessionSearchHit | null => {
-        const session = loadSession(s.dir);
+    const cacheDir = join(this.root, SUMMARY_CACHE_DIR_NAME);
+    const hits: SessionSearchHit[] = [];
+    for (const { id, dir } of this.sessionDirs(cwd)) {
+      try {
+        const session = loadSession(dir); // 只读；非法行跳过并进 warnings（此处忽略告警）
         const messages = computeProjection(session).messages;
-        const hits: SessionSearchHit['hits'] = [];
+        const msgHits: SessionSearchHit['hits'] = [];
         for (const m of messages) {
           const idx = m.text.toLowerCase().indexOf(needle);
           if (idx === -1) continue;
           const start = Math.max(0, Math.min(idx - 16, m.text.length - SUMMARY_TEXT_MAX));
-          hits.push({ role: m.role, seq: m.seq, snippet: summarize(m.text.slice(start)) });
-          if (hits.length >= 3) break;
+          msgHits.push({ role: m.role, seq: m.seq, snippet: summarize(m.text.slice(start)) });
+          if (msgHits.length >= 3) break;
         }
-        return hits.length > 0 ? { ...s, hits } : null;
-      })
-      .filter((x): x is SessionSearchHit => x !== null);
+        if (msgHits.length > 0) {
+          const st = statSync(join(dir, SESSION_LOG_FILE));
+          const core = buildSummaryCore(session, st.size, st.mtimeMs);
+          writeSummaryCache(cacheDir, dir, core); // 与 list 共享摘要缓存（派生优化，写失败可忽略）
+          hits.push({ ...summaryFromCore(id, dir, core, readSessionTitle(dir)), hits: msgHits });
+        }
+      } catch {
+        // 损坏会话不阻塞搜索
+      }
+    }
+    return hits.sort((a, b) => b.mtimeMs - a.mtimeMs);
   }
 
   /**
@@ -292,7 +397,9 @@ export class SessionManager {
 
   /**
    * H-11 索引化全文检索：每个会话先增量同步自己的倒排索引（索引缺失自动重建），
-   * 再在索引上检索；只有命中的会话才做一次摘要求值（loadSession）。
+   * 再在索引上检索；只有命中的会话才做一次摘要求值（loadSession，共享摘要缓存）。
+   * 索引实例按 dir 复用（searchIndex.ts 的 LRU 实例缓存）：不再每次检索都
+   * new SessionSearchIndex(dir) 从头整份读索引 JSON + 重建 postings 映射。
    * 语义差异（相对 search 的线性子串）：查询先分词（NFKC + 小写 + CJK 单字/双字），
    * 多 token 默认 AND（全部命中），与 FTS5 缺省口径一致；mode:'or' 可放宽。
    * 返回 mtime 倒序（与 list/search 一致），每个会话最多 3 条命中片段。
@@ -303,10 +410,10 @@ export class SessionManager {
     for (const { id, dir } of this.sessionDirs(cwd)) {
       let hit: IndexedSessionSearchHit;
       try {
-        const result = new SessionSearchIndex(dir).search(query, opts);
+        const result = getSessionSearchIndex(dir).search(query, opts);
         if (result.hits.length === 0) continue;
         hit = {
-          ...summarizeSession(id, dir),
+          ...summarizeSession(id, dir, join(this.root, SUMMARY_CACHE_DIR_NAME)),
           hits: result.hits.slice(0, 3).map((h) => ({ role: h.role, seq: h.seq, snippet: h.snippet })),
           score: result.hits[0]?.score ?? 0,
           matchedTokens: result.tokens,
@@ -328,7 +435,7 @@ export class SessionManager {
     for (const { id, dir } of this.sessionDirs(cwd)) {
       report.sessions += 1;
       try {
-        const data = new SessionSearchIndex(dir).rebuild();
+        const data = rebuildSessionIndex(dir);
         report.indexed += 1;
         report.messages += data.messages.length;
       } catch (e) {
@@ -343,7 +450,7 @@ export class SessionManager {
     let removed = 0;
     for (const { dir } of this.sessionDirs(cwd)) {
       try {
-        if (new SessionSearchIndex(dir).remove()) removed += 1;
+        if (removeSessionIndex(dir)) removed += 1;
       } catch {
         // 删除失败（并发删除等）：忽略，索引本就是派生缓存
       }
@@ -426,10 +533,10 @@ export class SessionManager {
   /**
    * 恢复会话：locate 定位后打开 writer（崩溃残行恢复语义沿用 SessionWriter.open）。
    */
-  resume(id: string, opts: { cwd?: string; fsync?: boolean } = {}): SessionResumeResult {
+  resume(id: string, opts: { cwd?: string; fsync?: boolean; fsyncIntervalMs?: number } = {}): SessionResumeResult {
     const dir = this.locate(id, { ...(opts.cwd !== undefined ? { cwd: opts.cwd } : {}) });
     const header = loadSession(dir).header;
-    const writer = SessionWriter.open(dir, { fsync: opts.fsync ?? true });
+    const writer = SessionWriter.open(dir, { fsync: opts.fsync ?? true, fsyncIntervalMs: opts.fsyncIntervalMs });
     return { id, dir, writer, header, recoveredBytes: writer.recoveredBytes };
   }
 

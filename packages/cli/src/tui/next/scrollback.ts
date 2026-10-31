@@ -213,6 +213,8 @@ function wrapSegment(text: string, maxCols: number): string[] {
 /** 逻辑行：text 原样（可含宽字符，不裁剪不换行）；fg = 24bit RGB 前景色（undefined = 终端默认色） */
 export interface ScrollbackLine {
   text: string;
+  /** #5510：所属转录 item 下标（折叠局部重投影反查块行区间用；字符串行缺省） */
+  lineIndex?: number;
   fg?: number;
   /**
    * P11-T4：右侧对齐的弱化附属文本（消息时间戳）。**不属于 text**——复制/选区/
@@ -355,6 +357,64 @@ export class Scrollback {
   /** 批量追加（一次贴底同步，O(新增)）；行对象/字符串可混排 */
   appendLines(lines: readonly LineInput[]): void {
     for (const l of lines) this.lines.push(toLine(l));
+    if (this.followFlag) this.scrollTopValue = this.maxScrollRow;
+  }
+
+  /** 更新指定逻辑行（流式文本原地增长时使用，finding #5508） */
+  updateLine(index: number, line: LineInput): void {
+    if (index < 0 || index >= this.lines.length) return;
+    this.lines[index] = toLine(line);
+    // 该行文本变化可能改变其换行后的物理行数：换行缓存与前缀和需从该行起失效。
+    // wrapCache 按逻辑行下标缓存；prefix/built 只前向构建（ensurePrefix 不回退），
+    // 故删除本行的 wrap 缓存并把 built 回退到 index，ensurePrefix 会从 index+1 起重算。
+    this.wrapCache.delete(index);
+    if (this.built > index) this.built = index;
+    if (this.followFlag) this.scrollTopValue = this.maxScrollRow;
+  }
+
+  /** 逻辑行所属转录 item 下标（字符串行缺省 -1；折叠局部重投影反查块行区间用，#5510） */
+  lineIndexAt(lineIndex: number): number {
+    return this.lines[lineIndex]?.lineIndex ?? -1;
+  }
+
+  /**
+   * 仅更新行前景色/右侧色（主题切换局部重投影用，#5510）：文本与右侧文本均未变时
+   * 保留换行缓存（仅替换颜色对象）；文本变化时回退 updateLine 语义（缓存失效）。
+   */
+  recolorLine(index: number, line: LineInput): void {
+    const cur = this.lines[index];
+    if (cur === undefined) return;
+    const next = toLine(line);
+    if (cur.text === next.text && (cur.right ?? '') === (next.right ?? '')) {
+      this.lines[index] = next;
+      return;
+    }
+    this.updateLine(index, next);
+  }
+
+  /**
+   * 局部替换逻辑行区间 [start, start+deleteCount) 为新行（折叠开合局部重投影用，#5510）。
+   * 前缀和自 start 起惰性失效（ensurePrefix 从 built+1 前向重建）；换行缓存仅保留 < start
+   * 的行；turn 锚点 ≥ start 的下标按 delta 平移（锚点落在用户行首，不会落在被替换的
+   * 折叠块区间内）；贴底跟随照旧。
+   */
+  spliceLines(start: number, deleteCount: number, insert: readonly LineInput[]): void {
+    if (start < 0 || start > this.lines.length) return;
+    const end = Math.min(this.lines.length, start + deleteCount);
+    const next = insert.map(toLine);
+    this.lines.splice(start, end - start, ...next);
+    if (this.built > start) this.built = start;
+    for (const key of [...this.wrapCache.keys()]) {
+      if (key >= start) this.wrapCache.delete(key);
+    }
+    const delta = next.length - (end - start);
+    if (delta !== 0) {
+      const marks: number[] = [];
+      for (const i of this.turnMarks) {
+        marks.push(i < start ? i : i + delta);
+      }
+      this.turnMarks = marks;
+    }
     if (this.followFlag) this.scrollTopValue = this.maxScrollRow;
   }
 
@@ -754,6 +814,7 @@ export function writeRowClipped(buf: CellBuffer, y: number, text: string, maxCol
     buf.setCell(x, y, ch, w, fg);
     x += w;
   }
+  buf.clearTail(y, x, maxCols); // 写短行后清行尾（防旧字符残留）
 }
 
 /**
@@ -770,6 +831,7 @@ function writeTextAtCol(buf: CellBuffer, y: number, x0: number, text: string, ma
     buf.setCell(x, y, ch, w, fg);
     x += w;
   }
+  buf.clearTail(y, x, maxCols); // 写短行后清行尾（防旧字符残留）
 }
 
 /**

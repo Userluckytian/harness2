@@ -18,7 +18,8 @@
 import { spawn as nodeSpawn, type ChildProcess } from 'node:child_process';
 import { existsSync, mkdirSync, appendFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { HARNESS_DIR } from '@harness2/core';
+// P1-2 审查统一：子进程安全环境白名单单一共享出口（core；原本地 buildSafeEnv 副本删除）
+import { buildSubprocessSafeEnv, HARNESS_DIR } from '@harness2/core';
 import { STATUS_LINE_MAX_STDOUT_BYTES, STATUS_LINE_TIMEOUT_MS } from './config.js';
 import { statusLineChildEnv } from './contract.js';
 
@@ -41,7 +42,11 @@ function killProcessTree(child: ChildProcess): void {
   }
   if (IS_WINDOWS) {
     try {
-      nodeSpawn('taskkill', ['/pid', String(pid), '/T', '/F'], { windowsHide: true, stdio: 'ignore' }).unref();
+      nodeSpawn('taskkill', ['/pid', String(pid), '/T', '/F'], {
+        windowsHide: true,
+        stdio: 'ignore',
+        env: buildSubprocessSafeEnv(),
+      }).unref();
     } catch {
       try {
         child.kill();

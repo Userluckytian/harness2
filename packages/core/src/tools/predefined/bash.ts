@@ -17,6 +17,8 @@ import type { ToolDefinition, ToolOutput } from '../types.js';
 import { expectObject, expectString, optionalNumber, truncateText } from './common.js';
 import { OutputCollector } from '../process-output.js';
 import { loadConfiguredBashShell, resolveBashShell } from '../shell.js';
+// P1-2 审查统一：子进程安全环境白名单单一共享出口（原本地 buildSafeEnv 副本删除）
+import { buildSubprocessSafeEnv } from '../process-env.js';
 
 export const MAX_BASH_OUTPUT_CHARS = 32 * 1024;
 export const DEFAULT_BASH_TIMEOUT_MS = 30_000;
@@ -33,7 +35,20 @@ function killTree(child: ChildProcess): void {
   if (IS_WINDOWS) {
     // /T = 树杀（shell 及全部子孙） /F = 强制。用 spawn 发起避免阻塞事件循环。
     try {
-      spawn('taskkill', ['/pid', String(pid), '/T', '/F'], { windowsHide: true, stdio: 'ignore' }).unref();
+      const taskkill = spawn('taskkill', ['/pid', String(pid), '/T', '/F'], {
+        windowsHide: true,
+        stdio: 'ignore',
+        env: buildSubprocessSafeEnv(),
+      });
+      // 监听 error 事件：taskkill 异步失败时退回 child.kill()（finding #307）
+      taskkill.on('error', () => {
+        try {
+          child.kill();
+        } catch {
+          /* 已死 */
+        }
+      });
+      taskkill.unref();
     } catch {
       try {
         child.kill();
@@ -86,7 +101,13 @@ export const bashTool: ToolDefinition = {
       try {
         const args = expectObject(rawArgs, 'bash');
         command = expectString(args, 'command', 'bash');
-        timeoutMs = optionalNumber(args, 'timeoutMs') ?? DEFAULT_BASH_TIMEOUT_MS;
+        // finding #307：timeoutMs <= 0 会关闭超时保护（模型可传 0 让命令无限运行，
+        // 且 `0 ?? default` 不会回退到默认值），显式拒绝非正数，缺省才用默认值。
+        const parsedTimeout = optionalNumber(args, 'timeoutMs');
+        if (parsedTimeout !== undefined && parsedTimeout <= 0) {
+          throw new Error('bash: timeoutMs must be a positive number');
+        }
+        timeoutMs = parsedTimeout ?? DEFAULT_BASH_TIMEOUT_MS;
       } catch (e) {
         resolve({ error: (e as Error).message });
         return;
@@ -118,12 +139,14 @@ export const bashTool: ToolDefinition = {
             detached: !IS_WINDOWS,
             windowsHide: true,
             stdio: ['ignore', 'pipe', 'pipe'],
+            env: buildSubprocessSafeEnv(),
           })
         : spawn(shell.executable, [...shell.argsPrefix, command], {
             cwd: ctx.cwd,
             detached: !IS_WINDOWS,
             windowsHide: true,
             stdio: ['ignore', 'pipe', 'pipe'],
+            env: buildSubprocessSafeEnv(),
           });
 
       let timer: NodeJS.Timeout | undefined;
@@ -131,9 +154,16 @@ export const bashTool: ToolDefinition = {
         timer = setTimeout(() => {
           timedOut = true;
           killTree(child);
+          // 确保即使 killTree 失败（taskkill 异常/进程已死）也完成 Promise（finding #307）
+          setTimeout(() => finish(), 1000);
         }, timeoutMs);
       }
-      const onAbort = (): void => killTree(child);
+      // finding #307：abort 路径与超时路径同类缺口——killTree 失败（taskkill 异常/进程已死）
+      // 时 close 不触发，Promise 永不 resolve。补 1000ms 兜底 finish，settled 幂等守卫保证不重复结算。
+      const onAbort = (): void => {
+        killTree(child);
+        setTimeout(() => finish(), 1000);
+      };
       ctx.signal.addEventListener('abort', onAbort, { once: true });
 
       const finish = (): void => {

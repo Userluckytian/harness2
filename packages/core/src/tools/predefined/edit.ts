@@ -1,8 +1,7 @@
 // edit 工具：唯一子串替换（old_text 必须恰好出现 1 次）。unsafe（独占执行，天然串行）。
 import { readFileSync } from 'node:fs';
-import { resolve } from 'node:path';
 import type { ToolDefinition } from '../types.js';
-import { expectObject, expectString, writeAtomic } from './common.js';
+import { expectObject, expectString, resolveWithinCwd, writeAtomic } from './common.js';
 
 export const editTool: ToolDefinition = {
   name: 'edit',
@@ -24,7 +23,7 @@ export const editTool: ToolDefinition = {
   cancelGuaranteed: true,
   execute: async (rawArgs, ctx) => {
     const args = expectObject(rawArgs, 'edit');
-    const filePath = resolve(ctx.cwd, expectString(args, 'file_path', 'edit'));
+    const filePath = resolveWithinCwd(ctx.cwd, expectString(args, 'file_path', 'edit'), 'edit');
     const oldText = expectString(args, 'old_text', 'edit');
     const newText = expectString(args, 'new_text', 'edit');
     if (oldText.length === 0) return { error: 'edit: old_text must be non-empty' };

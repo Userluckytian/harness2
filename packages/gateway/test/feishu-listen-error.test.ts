@@ -22,6 +22,7 @@ function makeAdapter(webhookPort: number): FeishuAdapter {
     config: { enabled: true, appId: 'a', dmPolicy: 'open', groupPolicy: 'open', allow: [] },
     auth: { appId: 'a', appSecret: 's' },
     webhookPort,
+    verificationToken: 'test-token',
   });
 }
 

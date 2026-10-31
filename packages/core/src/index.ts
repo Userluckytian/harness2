@@ -48,6 +48,9 @@ export * from './tools/rpc-stdio.js';
 export * from './tools/script.js';
 export * from './tools/predefined/index.js';
 export * from './tools/predefined/browser.js';
+// 审查 P1-2（2026-10-31）加性导出：子进程安全环境白名单单一共享出口（原 6 份 buildSafeEnv
+// 副本统一收编；core 四工具与 cli 两调用点共用，配套更新 api-surface 基线）。
+export * from './tools/process-env.js';
 export * from './approval/policy.js';
 // Z6-A16（2026-10-11）加性导出：权限规则 DSL 的 glob 匹配（* / ?，自写小函数）。
 export * from './approval/glob.js';

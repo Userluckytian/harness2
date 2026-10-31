@@ -15,7 +15,9 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { Browser, BrowserContext, Page } from 'playwright';
 import type { ToolDefinition, ToolOutput } from '../types.js';
-import { expectObject, expectString, optionalString, truncateText } from './common.js';
+import { expectObject, expectString, optionalString, resolveWithinCwd, truncateText } from './common.js';
+// P1-2 审查统一：子进程安全环境白名单单一共享出口（原本地 buildSafeEnv 副本删除）
+import { buildSubprocessSafeEnv } from '../process-env.js';
 
 /** 池默认参数（可被 config.browser 覆盖） */
 export const BROWSER_IDLE_DESTROY_MS = 300_000;
@@ -441,10 +443,23 @@ export function createBrowserTools(sessionKey: string, pool: BrowserPool): ToolD
       properties: { path: { type: 'string', description: 'Optional absolute .png file path' } },
     },
     timeoutMs: 15_000,
-    execute: async (rawArgs): Promise<ToolOutput> => {
+    execute: async (rawArgs, ctx): Promise<ToolOutput> => {
       const args = expectObject(rawArgs ?? {}, 'browser_screenshot');
       const requested = optionalString(args, 'path');
-      const path = requested ?? join(tmpdir(), `harness2-browser-${Date.now()}-${randomUUID().slice(0, 8)}.png`);
+      let path: string;
+      if (requested !== undefined) {
+        // 越界防护（finding #5422）：模型可控的 path 必须位于工作目录内，
+        // 否则可写工作区外任意 .png（含覆盖已有文件）。
+        // 复用 common.ts resolveWithinCwd（与 read/write/edit/glob/grep 一致）。
+        try {
+          path = resolveWithinCwd(ctx.cwd, requested, 'browser_screenshot');
+        } catch {
+          return { error: `browser_screenshot: path 必须位于工作目录内: ${requested}` };
+        }
+      } else {
+        // 未指定 path 时回退临时目录（默认行为，不受工作区边界限制）
+        path = join(tmpdir(), `harness2-browser-${Date.now()}-${randomUUID().slice(0, 8)}.png`);
+      }
       if (!path.toLowerCase().endsWith('.png')) {
         return { error: 'browser_screenshot: 截图仅支持 .png 路径' };
       }
@@ -510,7 +525,10 @@ export async function installBrowserRuntime(): Promise<number> {
   const cliPath = resolvePlaywrightCliPath(require);
   const { spawn } = await import('node:child_process');
   return new Promise((resolve, reject) => {
-    const child = spawn(process.execPath, [cliPath, 'install', 'chromium'], { stdio: 'inherit' });
+    const child = spawn(process.execPath, [cliPath, 'install', 'chromium'], {
+      stdio: 'inherit',
+      env: buildSubprocessSafeEnv(),
+    });
     child.on('error', reject);
     child.on('exit', (code) => resolve(code ?? 1));
   });

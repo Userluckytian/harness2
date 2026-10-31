@@ -3,7 +3,7 @@
 //   delta 与落盘事件一致性断言（text 拼接 = assistant/message.text；reasoning 同理）；
 //   双会话并行互不阻塞；abort 取消；审批 request/response 往返；坏帧 error。
 import { afterEach, describe, expect, it } from 'vitest';
-import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
@@ -20,6 +20,8 @@ import type { ApprovalDecision, ApprovalInput } from '../src/tools/types.js';
 
 const dirs: string[] = [];
 const handles: ServeHandle[] = [];
+/** serve root 登记（安全修复 #297：会话 cwd 白名单要求 cwd 位于 root 内，测试基建据此派生 cwd） */
+const rootByHandle = new WeakMap<ServeHandle, string>();
 function tmpDir(prefix = 'h2-ws-'): string {
   const d = mkdtempSync(join(tmpdir(), prefix));
   dirs.push(d);
@@ -85,24 +87,33 @@ class WsClient {
 async function start(
   opts: { script?: MockScript; approvalTimeoutMs?: number; decide?: (input: ApprovalInput) => ApprovalDecision } = {},
 ): Promise<ServeHandle> {
+  const serveRoot = tmpDir('h2-ws-root-');
   const handle = await startServe({
     requireToken: false,
     port: 0,
     home: tmpDir('h2-ws-home-'),
-    root: tmpDir('h2-ws-root-'),
+    root: serveRoot,
     provider: new MockProvider(opts.script ?? [{ textChunks: ['回复。'] }]),
     ...(opts.approvalTimeoutMs !== undefined ? { approvalTimeoutMs: opts.approvalTimeoutMs } : {}),
     ...(opts.decide !== undefined ? { decide: opts.decide } : {}),
   });
+  rootByHandle.set(handle, serveRoot);
   handles.push(handle);
   return handle;
+}
+
+/** serve root 内的会话 cwd（#297 白名单）；同 serve 多会话可共用同一子目录 */
+function sessionCwd(handle: ServeHandle): string {
+  const d = join(rootByHandle.get(handle)!, 'ws');
+  mkdirSync(d, { recursive: true });
+  return d;
 }
 
 async function createSession(handle: ServeHandle, cwd?: string): Promise<string> {
   const res = await fetch(`http://127.0.0.1:${handle.port}/api/sessions`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ cwd: cwd ?? tmpDir('h2-ws-cwd-') }),
+    body: JSON.stringify({ cwd: cwd ?? sessionCwd(handle) }),
   });
   return ((await res.json()) as { id: string }).id;
 }
@@ -254,11 +265,12 @@ describe('WS abort 与审批往返', () => {
   });
 
   it('approval-request → approval-response(allow) 往返：工具真实执行', async () => {
+    const serveRoot = tmpDir('h2-ws-root-'); // #297：会话 cwd 白名单的登记源
     const askHandle = await startServe({
       requireToken: false,
       port: 0,
       home: tmpDir('h2-ws-home-'),
-      root: tmpDir('h2-ws-root-'),
+      root: serveRoot,
       provider: new MockProvider([
         { toolCalls: [{ id: 'call-ok', name: 'glob', arguments: JSON.stringify({ pattern: '*' }) }] },
         { textChunks: ['执行完'] },
@@ -266,6 +278,7 @@ describe('WS abort 与审批往返', () => {
       decide: () => 'ask',
     });
     handles.push(askHandle);
+    rootByHandle.set(askHandle, serveRoot);
 
     const id = await createSession(askHandle);
     const client = new WsClient(`ws://127.0.0.1:${askHandle.port}/ws`);
@@ -291,11 +304,12 @@ describe('WS abort 与审批往返', () => {
   });
 
   it('approval-response(deny) → tool/result ok:false（denied by approval policy）', async () => {
+    const serveRoot = tmpDir('h2-ws-root-'); // #297：会话 cwd 白名单的登记源
     const askHandle = await startServe({
       requireToken: false,
       port: 0,
       home: tmpDir('h2-ws-home-'),
-      root: tmpDir('h2-ws-root-'),
+      root: serveRoot,
       provider: new MockProvider([
         { toolCalls: [{ id: 'call-deny', name: 'glob', arguments: JSON.stringify({ pattern: '*' }) }] },
         { textChunks: ['拒绝后收尾'] },
@@ -303,6 +317,7 @@ describe('WS abort 与审批往返', () => {
       decide: () => 'ask',
     });
     handles.push(askHandle);
+    rootByHandle.set(askHandle, serveRoot);
     const id = await createSession(askHandle);
     const client = new WsClient(`ws://127.0.0.1:${askHandle.port}/ws`);
     await client.open;
@@ -333,16 +348,18 @@ describe('serve 记忆装配（审查 P1-1 防回归）', () => {
     // 注入假 store + 记录 requests 的 mock provider（nudgeInterval 拉高：本例不触发复盘）；
     // skills 显式注入空 store：本用例只关心 memory 装配，不受真机 ~/.agents/skills 默认扫描影响
     const provider = new MockProvider([{ textChunks: ['回复。'] }]);
+    const serveRoot = tmpDir('h2-ws-root-'); // #297：会话 cwd 白名单的登记源
     const handle = await startServe({
       requireToken: false,
       port: 0,
       home: tmpDir('h2-ws-home-'),
-      root: tmpDir('h2-ws-root-'),
+      root: serveRoot,
       provider,
       skills: new SkillStore(undefined, undefined),
       memory: { store, mode: 'auto', nudgeInterval: 999, reviewProvider: provider },
     });
     handles.push(handle);
+    rootByHandle.set(handle, serveRoot);
     const id = await createSession(handle);
     const client = new WsClient(`ws://127.0.0.1:${handle.port}/ws`);
     await client.open;

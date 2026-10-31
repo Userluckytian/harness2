@@ -71,9 +71,15 @@ export function registerGatewayCommand(program: Command): void {
             process.exitCode = 1;
             return;
           }
-          adapters.push(
-            new FeishuAdapter({ config: fs, auth: cred, verificationToken: process.env['FEISHU_VERIFICATION_TOKEN'] }),
-          );
+          const verificationToken = process.env['FEISHU_VERIFICATION_TOKEN'];
+          if (typeof verificationToken !== 'string' || verificationToken.length === 0) {
+            console.error(
+              'error: 飞书 webhook 鉴权缺失——未配置 FEISHU_VERIFICATION_TOKEN 时拒绝启动（防止本地进程伪造入站事件注入会话）',
+            );
+            process.exitCode = 1;
+            return;
+          }
+          adapters.push(new FeishuAdapter({ config: fs, auth: cred, verificationToken }));
         }
       }
       if (adapters.length === 0) {

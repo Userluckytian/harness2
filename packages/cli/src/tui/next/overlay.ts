@@ -215,6 +215,7 @@ function writeRowClipped(buf: CellBuffer, y: number, text: string, maxCols: numb
     buf.setCell(x, y, ch, w, fg);
     x += w;
   }
+  buf.clearTail(y, x, maxCols); // 写短行后清行尾（防旧字符残留）
 }
 
 function normalizeItems(items: ReadonlyArray<string | OverlayItem>): OverlayItem[] {

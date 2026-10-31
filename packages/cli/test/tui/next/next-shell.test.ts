@@ -314,6 +314,48 @@ describe('转录流式投影到 scrollback', () => {
     h.dispose();
   });
 
+  it('并行工具波次：先完成者的结果行落自身块内，未完成者保持 pending（P1-1 中段更新漏检回归）', async () => {
+    // 场景：toolA/toolB 同时 pending（非末位 item = toolA），toolA 先返回 tool/result、
+    // toolB 仍 pending。put 已改 Object.assign 原地替换（引用稳定），generic 投影路径若
+    // 依赖「行数+末行文本」短路会漏检 toolA 的中段更新：行数增长时从尾部错位追加（toolB
+    // 调用行重复、toolA 结果行丢失）。断言：toolA 的 `└ ✓` 出现在 toolA 块内（toolB 行之前）、
+    // toolB 调用行恰一份、无重复行。
+    const { h } = makeHarness(
+      makeRuntime({
+        runUserTurn: async (_text, onStream) => {
+          onStream({
+            type: 'tool-call',
+            call: { id: 'c1', name: 'write', arguments: JSON.stringify({ file_path: 'a.txt' }) },
+            turnId: 't1',
+          });
+          onStream({
+            type: 'tool-call',
+            call: { id: 'c2', name: 'bash', arguments: '{"command":"sleep"}' },
+            turnId: 't1',
+          });
+          await vi.advanceTimersByTimeAsync(60); // 调度器落帧：两个 pending 工具行已投影
+          onStream({ type: 'tool-result', callId: 'c1', ok: true, turnId: 't1' });
+          await vi.advanceTimersByTimeAsync(60); // 调度器落帧：toolA（非末位 item）原地更新
+          return result('完成');
+        },
+      }),
+    );
+    h.submit('并行');
+    await settle(h);
+    const lines = linesOf(h);
+    const writeIdx = lines.findIndex((l) => l.includes('写入 a.txt'));
+    const bashIdx = lines.findIndex((l) => l.includes('运行命令 sleep'));
+    expect(writeIdx).toBeGreaterThan(-1);
+    expect(bashIdx).toBeGreaterThan(writeIdx); // 转录顺序保持：toolA 在 toolB 之前
+    const resultIdx = lines.findIndex((l) => l.startsWith('  └ ✓'));
+    expect(resultIdx).toBeGreaterThan(writeIdx); // toolA 结果行存在于 toolA 块内
+    expect(resultIdx).toBeLessThan(bashIdx); // 而非尾部错位追加
+    expect(lines.filter((l) => l.includes('运行命令 sleep'))).toHaveLength(1); // toolB 无重复行
+    expect(lines[writeIdx]).toContain('写入 a.txt'); // 调用行无重复
+    expect(lines.filter((l) => l.includes('写入 a.txt'))).toHaveLength(1);
+    h.dispose();
+  });
+
   it('turn 结束追加 status 摘要行', async () => {
     const { h } = makeHarness();
     h.submit('你好');

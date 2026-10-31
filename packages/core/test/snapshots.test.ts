@@ -327,6 +327,15 @@ describe('snapshotTargetFile / readTextOrNull（loop 钩子助手）', () => {
     expect(snapshotTargetFile('edit', { file_path: abs }, cwd)).toBe(abs);
   });
 
+  it('越界防护分段判定（审查 P2-5）：`..foo` 是 cwd 内合法目录名不误拒；`../x` 仍拒绝', () => {
+    const cwd = tmpDir();
+    // 旧 startsWith('..') 会把 cwd 下一层的 `..foo` 目录误判为越界；分段判定（首段恰为 '..'，
+    // 与 tools/common.ts resolveWithinCwd 同口径）修复；反斜杠分隔变体由同一 split(/[\\/]/) 覆盖，
+    // 不在此单列（`..\x` 在 POSIX 是合法文件名，平台相关断言不写）。
+    expect(snapshotTargetFile('write', { file_path: '..foo/a.txt' }, cwd)).toBe(join(cwd, '..foo', 'a.txt'));
+    expect(snapshotTargetFile('write', { file_path: '../outside.txt' }, cwd)).toBeNull();
+  });
+
   it('readTextOrNull：存在返回内容，不存在返回 null', () => {
     const dir = tmpDir();
     const file = join(dir, 'a.txt');

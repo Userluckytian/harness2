@@ -1,8 +1,7 @@
 // read 工具：按行读取文本文件（cat -n 风格行号；上限 2000 行）。safe。
 import { readFileSync } from 'node:fs';
-import { resolve } from 'node:path';
 import type { ToolDefinition } from '../types.js';
-import { expectObject, expectString, optionalNumber } from './common.js';
+import { expectObject, expectString, optionalNumber, resolveWithinCwd } from './common.js';
 
 export const MAX_READ_LINES = 2000;
 
@@ -24,7 +23,7 @@ export const readTool: ToolDefinition = {
   concurrencySafe: true,
   execute: async (rawArgs, ctx) => {
     const args = expectObject(rawArgs, 'read');
-    const filePath = resolve(ctx.cwd, expectString(args, 'file_path', 'read'));
+    const filePath = resolveWithinCwd(ctx.cwd, expectString(args, 'file_path', 'read'), 'read');
     const offset = Math.max(1, Math.floor(optionalNumber(args, 'offset') ?? 1));
     const limit = Math.min(MAX_READ_LINES, Math.max(1, Math.floor(optionalNumber(args, 'limit') ?? MAX_READ_LINES)));
 

@@ -14,6 +14,8 @@
 //   下只杀直接子进程、孙进程继续产生副作用）。守护进程化自行脱离进程组者平台原语亦
 //   无法触达（与 core bash 的已知限制同口径，不承诺）。
 import { spawn, type ChildProcess } from 'node:child_process';
+// P1-2 审查统一：子进程安全环境白名单单一共享出口（core；原本地 buildSafeEnv 副本删除）
+import { buildSubprocessSafeEnv } from '@harness2/core';
 
 const IS_WINDOWS = process.platform === 'win32';
 
@@ -35,7 +37,11 @@ function killProcessTree(child: ChildProcess): void {
   }
   if (IS_WINDOWS) {
     try {
-      spawn('taskkill', ['/pid', String(pid), '/T', '/F'], { windowsHide: true, stdio: 'ignore' }).unref();
+      spawn('taskkill', ['/pid', String(pid), '/T', '/F'], {
+        windowsHide: true,
+        stdio: 'ignore',
+        env: buildSubprocessSafeEnv(),
+      }).unref();
     } catch {
       try {
         child.kill();

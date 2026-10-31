@@ -29,10 +29,14 @@ export interface HookRunnerOptions {
   /** 告警 sink（fail-open 时如实记）；缺省写 stderr（一行一条） */
   warn?: (message: string) => void;
   /**
-   * 执行门控（对齐 ZCode workspace-hook admission 缝）：返回 false 的条目被跳过（不执行、
-   * 不落记录）。缺省全放行——config 里的 hook 与权限 DSL 同级信任（用户自撰）。
+   * 执行门控（对齐 ZCode workspace-hook admission 缝）：返回 true 的条目才执行（执行并落记录），
+   * 返回 false 的条目被跳过（不执行、不落记录）。
+   *
+   * **必填**：调用方必须显式决策——hook 命令会以子进程形式在用户工作区执行，未显式授权一律拒绝。
+   * 生产装配见 server/http.ts：hook 命令须先过 decide 审批管线，未获明确 allow 一律拒绝。
+   * 运行时若缺省（如纯 JS 调用方），按 fail-closed 处理：全部条目跳过，杜绝隐式全放行。
    */
-  admit?: (entry: HookEntry) => boolean;
+  admit: (entry: HookEntry) => boolean;
 }
 
 /** 事件是否为「工具事件」（matcher 匹配工具名） */
@@ -226,7 +230,7 @@ export function createHookRunner(options: HookRunnerOptions): HookRunner {
       for (const entry of entries) {
         if (entry.event !== payload.event) continue;
         if (entry.enabled === false) continue;
-        if (admit !== undefined && !admit(entry)) continue;
+        if (!admit?.(entry)) continue;
         if (!matchHookMatcher(entry.matcher, target)) continue;
         const timeoutMs = entry.timeoutMs ?? config?.timeoutMs ?? 30_000;
         const maxOutputBytes = config?.maxOutputBytes ?? 32_768;

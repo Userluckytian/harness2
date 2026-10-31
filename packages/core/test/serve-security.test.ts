@@ -40,12 +40,13 @@ async function start(
   opts: {
     requireToken?: boolean;
     onFrameOversize?: (info: { remote: string; limitBytes: number }) => void;
+    root?: string;
   } = {},
 ): Promise<ServeHandle> {
   const handle = await startServe({
     port: 0,
     home: tmpDir('h2-a3-home-'),
-    root: tmpDir('h2-a3-root-'),
+    root: opts.root ?? tmpDir('h2-a3-root-'),
     provider: new MockProvider([{ text: '回复。' }]),
     token: TEST_TOKEN,
     // 本文件非鉴权用例默认显式关闭严格模式（默认严格另由「默认严格鉴权」块单独断言）
@@ -105,6 +106,17 @@ describe('A3-1 一次性 token（HTTP）', () => {
     expect(handle.security.noTokenAllowed).toBe(0); // 带 token 不走回退
   });
 
+  it('HTTP 显式拒绝 ?token= 查询参数（token 仅经头传递，URL 传 token 会泄漏到日志/Referer）', async () => {
+    const handle = await start({ requireToken: true });
+    const base = `http://127.0.0.1:${handle.port}/api/sessions`;
+    // 安全修复 #5456：?token= 显式拒绝（fail-closed），计入 invalidTokenRejected
+    const r = await get(`${base}?token=${handle.token}`);
+    expect(r.status).toBe(401);
+    expect(handle.security.invalidTokenRejected).toBe(1);
+    expect(handle.security.noTokenRejected).toBe(0);
+    expect(r.body).not.toContain(handle.token);
+  });
+
   it('错误 token 一律 401（兼容模式下也不回退，杜绝降级绕过）', async () => {
     const handle = await start();
     const base = `http://127.0.0.1:${handle.port}/api/sessions`;
@@ -140,6 +152,34 @@ describe('A3-1 一次性 token（HTTP）', () => {
     } finally {
       spy.mockRestore();
     }
+  });
+});
+
+describe('A3-4 会话创建 cwd 工作区根白名单（#297）', () => {
+  it('拒绝工作区根之外的 cwd（越界绝对路径），返回 400 且不创建会话', async () => {
+    const handle = await start({ requireToken: true });
+    const base = `http://127.0.0.1:${handle.port}/api/sessions`;
+    // 越界 cwd：tmpdir（root 的父目录，relative 首段为 ..）
+    const r = await fetch(base, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'x-harness2-token': handle.token },
+      body: JSON.stringify({ cwd: tmpdir() }),
+    });
+    expect(r.status).toBe(400);
+    const body = (await r.json()) as { error?: string };
+    expect(body.error).toMatch(/escapes workspace/);
+  });
+
+  it('接受工作区根内的 cwd（根自身），创建会话成功', async () => {
+    const myRoot = tmpDir('h2-a3-cwd-root-');
+    const handle = await start({ root: myRoot, requireToken: true });
+    const base = `http://127.0.0.1:${handle.port}/api/sessions`;
+    const r = await fetch(base, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'x-harness2-token': handle.token },
+      body: JSON.stringify({ cwd: myRoot }),
+    });
+    expect(r.status).toBe(200);
   });
 });
 

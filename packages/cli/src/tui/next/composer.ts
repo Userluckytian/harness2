@@ -286,6 +286,7 @@ function writeRowAt(buf: CellBuffer, y: number, x0: number, text: string, maxX: 
     buf.setCell(x, y, ch, w, fg);
     x += w;
   }
+  buf.clearTail(y, x, maxX); // 写短行后清行尾（防旧字符残留）
 }
 
 /** 候选滚动窗口起始下标：窗口贴住 active，钳制在 [0, items.length - n]（导出供命中测试复用） */

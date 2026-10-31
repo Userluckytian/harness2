@@ -1,5 +1,6 @@
 // SessionHub 共享状态与观察者分发（A4 拆分自 sessions.ts，纯搬运）：会话注册表/运行状态字段、
 // 构造与 hooks 注册、emit* 观察者分发、出口断言，以及 EventMirrorWriter 与内部条目类型。
+import { resolve } from 'node:path';
 import { TaskCoordinator, type TaskTransitionRecorder } from '../agent/task-coordinator.js';
 import { CompactionBreaker } from '../agent/compactionBreaker.js';
 import type { TurnResult } from '../agent/types.js';
@@ -219,6 +220,11 @@ export abstract class SessionHubCore {
 
   get manager(): SessionManager {
     return this.options.manager;
+  }
+
+  /** serve 工作区根（绝对路径）：WS 终端帧 cwd 白名单校验用（与 create/list 的 assertCwdWithinRoot 同口径） */
+  get workspaceRoot(): string {
+    return resolve(this.options.cwd);
   }
 
   // —— 观察者分发（异常互不影响：单观察者抛错不阻断其他分发与内核） ——

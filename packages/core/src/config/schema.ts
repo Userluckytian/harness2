@@ -493,9 +493,7 @@ export function parseConfig(raw: unknown): ConfigParseResult {
       collectUnknownKeys(v, PROVIDER_KNOWN_KEYS, `providers.${channel}`, warnings);
       const protocol = v['protocol'];
       if (typeof protocol !== 'string' || !PROTOCOLS.includes(protocol as ProviderConfig['protocol'])) {
-        errors.push(
-          `providers.${channel}.protocol 必须是 ${PROTOCOLS.join(' | ')}，实际为 ${JSON.stringify(protocol)}`,
-        );
+        errors.push(`providers.${channel}.protocol 必须是 ${PROTOCOLS.join(' | ')} 之一`);
         continue;
       }
       const baseUrl = v['baseUrl'];
@@ -575,7 +573,7 @@ export function parseConfig(raw: unknown): ConfigParseResult {
                   modelsOk = false;
                 } else if (values !== undefined && !values.includes(rawDefault)) {
                   errors.push(
-                    `providers.${channel}.models.${model}.reasoning.default "${rawDefault}" 不在 values 内（${values.join('、')}）`,
+                    `providers.${channel}.models.${model}.reasoning.default 必须是非空字符串且在 values 值域内`,
                   );
                   modelsOk = false;
                 } else if (values !== undefined) {
@@ -651,7 +649,7 @@ export function parseConfig(raw: unknown): ConfigParseResult {
       const mode = rawApproval['mode'];
       if (mode !== undefined) {
         if (typeof mode !== 'string' || !APPROVAL_MODES.includes(mode as ApprovalMode)) {
-          errors.push(`approval.mode 必须是 ${APPROVAL_MODES.join(' | ')}，实际为 ${JSON.stringify(mode)}`);
+          errors.push(`approval.mode 必须是 ${APPROVAL_MODES.join(' | ')} 之一`);
         } else {
           approval.mode = mode as ApprovalMode;
         }
@@ -670,9 +668,7 @@ export function parseConfig(raw: unknown): ConfigParseResult {
               continue;
             }
             if (typeof rule !== 'string' || !APPROVAL_TOOL_RULES.includes(rule as ApprovalToolRule)) {
-              errors.push(
-                `approval.tools.${tool} 必须是 ${APPROVAL_TOOL_RULES.join(' | ')}，实际为 ${JSON.stringify(rule)}`,
-              );
+              errors.push(`approval.tools.${tool} 必须是 ${APPROVAL_TOOL_RULES.join(' | ')} 之一`);
               continue;
             }
             approval.tools[tool] = rule as ApprovalToolRule;
@@ -693,7 +689,7 @@ export function parseConfig(raw: unknown): ConfigParseResult {
       const mode = rawMemory['mode'];
       if (mode !== undefined) {
         if (typeof mode !== 'string' || !MEMORY_MODES.includes(mode as MemoryMode)) {
-          errors.push(`memory.mode 必须是 ${MEMORY_MODES.join(' | ')}，实际为 ${JSON.stringify(mode)}`);
+          errors.push(`memory.mode 必须是 ${MEMORY_MODES.join(' | ')} 之一`);
         } else {
           memory.mode = mode as MemoryMode;
         }
@@ -861,7 +857,7 @@ export function parseConfig(raw: unknown): ConfigParseResult {
         }
         if (typeof url === 'string') {
           if (!/^https?:\/\//.test(url)) {
-            errors.push(`mcpServers.${serverName}.url 必须是 http(s) 地址，实际为 ${JSON.stringify(url)}`);
+            errors.push(`mcpServers.${serverName}.url 必须是 http(s) 地址`);
             continue;
           }
           const cfg: McpUrlServerConfig = { url };
@@ -927,7 +923,7 @@ export function parseConfig(raw: unknown): ConfigParseResult {
       const toolset = rawTools['toolset'];
       if (toolset !== undefined) {
         if (typeof toolset !== 'string' || !TOOLSET_NAMES.includes(toolset)) {
-          errors.push(`tools.toolset 必须是 ${TOOLSET_NAMES.join(' | ')}，实际为 ${JSON.stringify(toolset)}`);
+          errors.push(`tools.toolset 必须是 ${TOOLSET_NAMES.join(' | ')} 之一`);
         } else {
           tools.toolset = toolset;
         }
@@ -940,11 +936,11 @@ export function parseConfig(raw: unknown): ConfigParseResult {
           const parsed: Record<string, boolean> = {};
           for (const [name, value] of Object.entries(enable)) {
             if (!TOOL_NAME_PATTERN.test(name)) {
-              errors.push(`tools.enable 键 ${JSON.stringify(name)} 必须是合法工具名（匹配 ${TOOL_NAME_PATTERN}）`);
+              errors.push(`tools.enable 键必须是合法工具名（匹配 ${TOOL_NAME_PATTERN}）`);
               continue;
             }
             if (typeof value !== 'boolean') {
-              errors.push(`tools.enable.${name} 必须是布尔值，实际为 ${JSON.stringify(value)}`);
+              errors.push(`tools.enable.${name} 必须是布尔值`);
               continue;
             }
             parsed[name] = value;
@@ -969,9 +965,7 @@ export function parseConfig(raw: unknown): ConfigParseResult {
       const authoring = rawSkills['authoring'];
       if (authoring !== undefined) {
         if (typeof authoring !== 'string' || !SKILL_AUTHORING_MODES.includes(authoring as SkillAuthoringMode)) {
-          errors.push(
-            `skills.authoring 必须是 ${SKILL_AUTHORING_MODES.join(' | ')}，实际为 ${JSON.stringify(authoring)}`,
-          );
+          errors.push(`skills.authoring 必须是 ${SKILL_AUTHORING_MODES.join(' | ')} 之一`);
         } else {
           skills.authoring = authoring as SkillAuthoringMode;
         }
@@ -1043,7 +1037,7 @@ export function parseConfig(raw: unknown): ConfigParseResult {
             collectUnknownKeys(rawEntry, HOOK_ENTRY_KNOWN_KEYS, where, warnings);
             const event = rawEntry['event'];
             if (typeof event !== 'string' || !HOOK_EVENT_NAMES.includes(event as HookEventName)) {
-              errors.push(`${where}.event 必须是 ${HOOK_EVENT_NAMES.join(' | ')}，实际为 ${JSON.stringify(event)}`);
+              errors.push(`${where}.event 必须是 ${HOOK_EVENT_NAMES.join(' | ')} 之一`);
               continue;
             }
             const eventName = event as HookEventName;
@@ -1153,9 +1147,7 @@ export function parseConfig(raw: unknown): ConfigParseResult {
           const policy = v[field];
           if (policy === undefined) continue;
           if (typeof policy !== 'string' || !GATEWAY_POLICIES.includes(policy as GatewayPolicy)) {
-            errors.push(
-              `gateways.${name}.${field} 必须是 ${GATEWAY_POLICIES.join(' | ')}，实际为 ${JSON.stringify(policy)}`,
-            );
+            errors.push(`gateways.${name}.${field} 必须是 ${GATEWAY_POLICIES.join(' | ')} 之一`);
             channelOk = false;
             continue;
           }
@@ -1190,7 +1182,7 @@ export function parseConfig(raw: unknown): ConfigParseResult {
       const screenMode = rawUi['screen_mode'];
       if (screenMode !== undefined) {
         if (typeof screenMode !== 'string' || (screenMode !== 'fullscreen' && screenMode !== 'minimal')) {
-          errors.push(`ui.screen_mode 必须是 fullscreen | minimal，实际为 ${JSON.stringify(screenMode)}`);
+          errors.push(`ui.screen_mode 必须是 fullscreen | minimal 之一`);
         } else {
           ui.screen_mode = screenMode;
         }
@@ -1199,9 +1191,7 @@ export function parseConfig(raw: unknown): ConfigParseResult {
       const followUp = rawUi['follow_up_behavior'];
       if (followUp !== undefined) {
         if (typeof followUp !== 'string' || !FOLLOW_UP_BEHAVIORS.includes(followUp as FollowUpBehavior)) {
-          errors.push(
-            `ui.follow_up_behavior 必须是 ${FOLLOW_UP_BEHAVIORS.join(' | ')}，实际为 ${JSON.stringify(followUp)}`,
-          );
+          errors.push(`ui.follow_up_behavior 必须是 ${FOLLOW_UP_BEHAVIORS.join(' | ')} 之一`);
         } else {
           ui.follow_up_behavior = followUp as FollowUpBehavior;
         }
@@ -1219,16 +1209,14 @@ export function parseConfig(raw: unknown): ConfigParseResult {
           const rawType = rawStatusLine['type'];
           if (rawType !== undefined) {
             if (typeof rawType !== 'string') {
-              errors.push(
-                `ui.status_line.type 必须是 ${STATUS_LINE_TYPES.join(' | ')}，实际为 ${JSON.stringify(rawType)}`,
-              );
+              errors.push(`ui.status_line.type 必须是 ${STATUS_LINE_TYPES.join(' | ')} 之一`);
             } else if ((STATUS_LINE_TYPES as readonly string[]).includes(rawType)) {
               statusLine.type = rawType as StatusLineType;
             } else if (STATUS_LINE_DISABLED_SYNONYMS.includes(rawType)) {
               statusLine.type = 'disabled'; // G-42：同义拼写归一
             } else {
               errors.push(
-                `ui.status_line.type 必须是 ${[...STATUS_LINE_TYPES, ...STATUS_LINE_DISABLED_SYNONYMS].join(' | ')}，实际为 ${JSON.stringify(rawType)}`,
+                `ui.status_line.type 必须是 ${[...STATUS_LINE_TYPES, ...STATUS_LINE_DISABLED_SYNONYMS].join(' | ')} 之一`,
               );
             }
           }
@@ -1239,9 +1227,7 @@ export function parseConfig(raw: unknown): ConfigParseResult {
             } else {
               const bad = (rawItems as string[]).filter((x) => !STATUS_LINE_BUILTIN_ITEMS.includes(x));
               if (bad.length > 0) {
-                errors.push(
-                  `ui.status_line.items 含未知条目 ${JSON.stringify(bad)}（可选：${STATUS_LINE_BUILTIN_ITEMS.join('、')}）`,
-                );
+                errors.push(`ui.status_line.items 含未知条目（可选：${STATUS_LINE_BUILTIN_ITEMS.join('、')}）`);
               } else {
                 statusLine.items = [...(rawItems as string[])];
               }
@@ -1322,11 +1308,11 @@ export function parseConfig(raw: unknown): ConfigParseResult {
         // channel 存在但自身校验失败：错误已在上面报过，不重复
         continue;
       }
-      errors.push(`roles.${role}.channel "${rc.channel}" 不存在于 providers`);
+      errors.push(`roles.${role}.channel 不存在于 providers`);
       continue;
     }
     if (provider.models !== undefined && provider.models[rc.model] === undefined) {
-      errors.push(`roles.${role}.model "${rc.model}" 未在 providers.${rc.channel}.models 中声明`);
+      errors.push(`roles.${role}.model 未在 providers.${rc.channel}.models 中声明`);
     }
     // effort 一致性（Z6-A03）：模型声明了 reasoning.values 时，effort 必须在值域内
     //（无效档位 → config 校验错误，不做静默降级）；模型未声明 reasoning 时不校验
@@ -1335,9 +1321,7 @@ export function parseConfig(raw: unknown): ConfigParseResult {
     if (effort !== undefined) {
       const reasoning = provider.models?.[rc.model]?.reasoning;
       if (reasoning !== undefined && !reasoning.values.includes(effort)) {
-        errors.push(
-          `roles.${role}.effort "${effort}" 不在 providers.${rc.channel}.models.${rc.model}.reasoning.values 内（${reasoning.values.join('、')}）`,
-        );
+        errors.push(`roles.${role}.effort 不在 providers.${rc.channel}.models.${rc.model}.reasoning.values 值域内`);
       }
     }
   }

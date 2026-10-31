@@ -33,19 +33,30 @@ export class DiffPresenter {
   }
 
   /** 呈现一帧：与 front diff，只写变化段。返回写入字节数（空 diff 为 0）。 */
-  present(next: CellBuffer): number {
+  present(next: CellBuffer, dirtyRows?: readonly number[]): number {
+    let fullScan = false;
     if (this.front === null) {
       this.front = new CellBuffer(next.cols, next.rows);
+      fullScan = true;
     } else if (next.cols !== this.front.cols || next.rows !== this.front.rows) {
       // 尺寸变化：清屏 + 重建空 front → 全量重绘
       this.out.write(CLEAR_SCREEN);
       this.front = new CellBuffer(next.cols, next.rows);
       this.curX = -1;
       this.curY = -1;
+      fullScan = true;
     }
     const out: string[] = [];
-    for (let y = 0; y < next.rows; y += 1) {
-      this.diffRow(next, y, out);
+    // 逐行差量：只重写变化的连续段；段间用 CUP 绝对定位。
+    // 脏行优化（#313）：仅扫描本帧被写入的行；front 刚重建或未给脏行时全量扫描。
+    if (fullScan || dirtyRows === undefined) {
+      for (let y = 0; y < next.rows; y += 1) {
+        this.diffRow(next, y, out);
+      }
+    } else {
+      for (const y of dirtyRows) {
+        this.diffRow(next, y, out);
+      }
     }
     if (out.length === 0) return 0;
     const s = out.join('');

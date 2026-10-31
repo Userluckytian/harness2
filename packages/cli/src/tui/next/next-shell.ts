@@ -391,6 +391,7 @@ import {
   isSubagentTool,
   projectSession,
   sessionEventToTranscript,
+  takeDirtyItemIds,
   transcriptReducer,
   type TranscriptEvent,
   type TranscriptItem,
@@ -480,6 +481,13 @@ export function formatRetryBudget(budget: RetryBudgetSnapshot): string {
 export const SPINNER_FRAMES: readonly string[] = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
 /** spinner 推进周期（ms） */
 export const SPINNER_INTERVAL_MS = 150;
+/**
+ * 有运行中子代理时，行级 spinner 需要全量重建 scrollback（reprojectAll）。对话越长越贵，
+ * 若每 150ms 重建一次，忙碌期间输入框会明显卡顿；节流到此间隔（子代理行帧率降为约 2 fps）。
+ */
+export const SUBAGENT_REPROJECT_INTERVAL_MS = 500;
+/** 转录条目数超过此值（长对话）才对子代理行 spinner 的全量重建做节流；短对话保持 SPINNER_INTERVAL_MS 逐帧推进。 */
+export const LONG_TRANSCRIPT_ITEMS = 200;
 /**
  * P3-D 键位裁决（差异登记 keymap 文档）：滚动区焦点下 `v` 打开子代理全屏视图（多子代理 =
  * 列表选择）。grok 是「选中块 + Enter/Ctrl+F」——本层无块光标，且 Enter 在滚动区焦点保留
@@ -1182,6 +1190,7 @@ export function createNextChatHarness(runtime: ChatRuntime, deps: NextChatHarnes
   const subagentDurations = new Map<string, number>(); // callId → 秒（完成/失败后保留，重投影用）
   let spinnerFrame = 0;
   let spinnerTimer: ReturnType<typeof setInterval> | null = null;
+  let lastSubagentReprojectAt = 0;
   // 子会话登记（onChildEvent 桥；childId → 描述 = 子会话首条 user/message 文本）。
   // live 流的 tool/result 不带 output（StreamEvent 契约），childSessionId 不能从父转录解析——
   // 视图候选以本登记 + 转录 item（磁盘重投影后）并集为准。
@@ -1233,6 +1242,13 @@ export function createNextChatHarness(runtime: ChatRuntime, deps: NextChatHarnes
   // 块账按稳定 item id（f:<item.id>）：rewind/会话切换后存活块的 id 不变，手动开合可
   // 按 respect_manual_folds 决定去留。缺省 true = 自动折叠不覆盖手动折叠。
   let foldsState: FoldsState = emptyFoldsState(deps.respectManualFolds ?? true);
+  // #5512：syncFolds/collapsedIndices 输入签名缓存——items/openStep/foldsState 引用均不变时
+  // 跳过重建（折叠账本已是最新）。折叠账本输入是 (items 引用, openStep, foldsState 引用)；
+  // item 原地改写 kind 稳定（tool↔result 均为 kind:'tool'），故引用签名足够。
+  let syncedFoldsItems: readonly TranscriptItem[] | null = null;
+  let syncedFoldsOpenStep: string | null = null;
+  let syncedFoldsState: FoldsState | null = null;
+  let collapsedMemo: { state: FoldsState; items: readonly TranscriptItem[]; set: Set<number> } | null = null;
   // G-05 r（原始视图）之外的运行期开关都走 reduceFolds；配置值仅构造期注入。
 
   // —— P3-D G-06 块查看器（现有 overlay 承载；Esc/q/Enter/Ctrl+F 关闭）——
@@ -1253,6 +1269,9 @@ export function createNextChatHarness(runtime: ChatRuntime, deps: NextChatHarnes
   // —— 投影同步（增量追加 / 全量重建，见文件头取舍） ——
   let syncedItems: readonly TranscriptItem[] = [];
   let syncedLineCount = 0;
+  let syncedLastLineText = '';
+  // #6118：末 item 上次投影的逻辑行数（流式快路径据此判断 append / updateLine / 保守全量）
+  let syncedLastItemLineCount = 0;
 
   function projectLines(): ProjectionLine[] {
     syncFolds(); // G-05：折叠账本随转录同步（注册新块 + live 尾部 autoFold）
@@ -1263,9 +1282,14 @@ export function createNextChatHarness(runtime: ChatRuntime, deps: NextChatHarnes
       rawMarkdown: foldsState.rawMarkdown, // G-05 r：原始视图（工具行 args 原文 + 不截断）
       // P11-T4：时间戳 12/24 小时制（缺省 = 系统偏好；测试注入）
       ...(deps.clock12h !== undefined ? { hour12: deps.clock12h } : {}),
-      // P3-D：耗时命中才随行显示；spinner 仅在动画定时器活动时传当前帧
+      // P3-D：耗时命中才随行显示；spinner 仅在动画定时器活动时传当前帧。
+      // P1-1 修复伴随口径收紧：帧必须同时要求 subagentStarts 非空（与 tick 的行级动画
+      // 同条件，见 updateSpinner）——否则异常中止 turn 的残留 pending 子代理行会在下一个
+      // busy turn 的全量重投影中被烤上冻结帧（P2-3「残留条目不续命」语义被绕过）。
       ...(subagentDurations.size > 0 ? { durations: subagentDurations } : {}),
-      ...(spinnerTimer !== null ? { spinner: SPINNER_FRAMES[spinnerFrame % SPINNER_FRAMES.length] } : {}),
+      ...(spinnerTimer !== null && subagentStarts.size > 0
+        ? { spinner: SPINNER_FRAMES[spinnerFrame % SPINNER_FRAMES.length] }
+        : {}),
     });
     return applySearchHighlight(lines);
   }
@@ -1283,10 +1307,14 @@ export function createNextChatHarness(runtime: ChatRuntime, deps: NextChatHarnes
 
   /** 折叠账本同步：注册新块（id 稳定重登记幂等）+ live 尾部 autoFold（respect_manual_folds 生效点之一） */
   function syncFolds(): void {
+    const items = transcript.items;
+    const openStep = bridge.openStepId();
+    if (syncedFoldsItems === items && syncedFoldsOpenStep === openStep && syncedFoldsState === foldsState) {
+      return; // 输入签名未变：折叠账本已是最新，跳过重建（#5512）
+    }
     const specs: FoldBlockSpec[] = [];
     const autoUpdates: { blockId: string; collapsed: boolean }[] = [];
-    const openStep = bridge.openStepId();
-    for (const item of transcript.items) {
+    for (const item of items) {
       const kind = foldKindOf(item);
       if (kind === null) continue;
       specs.push({ id: foldBlockId(item), kind, defaultCollapsed: true });
@@ -1299,6 +1327,9 @@ export function createNextChatHarness(runtime: ChatRuntime, deps: NextChatHarnes
     let next = reduceFolds(foldsState, { type: 'register', blocks: specs });
     next = reduceFolds(next, { type: 'autoFold', updates: autoUpdates });
     foldsState = next;
+    syncedFoldsItems = items;
+    syncedFoldsOpenStep = openStep;
+    syncedFoldsState = foldsState;
   }
 
   /**
@@ -1306,11 +1337,15 @@ export function createNextChatHarness(runtime: ChatRuntime, deps: NextChatHarnes
    * 语义换算：覆盖集「在集 = 与默认折叠态取反」= 未折叠（展开）； folds「未折叠」同义。
    */
   function collapsedIndices(): Set<number> {
+    if (collapsedMemo !== null && collapsedMemo.state === foldsState && collapsedMemo.items === transcript.items) {
+      return collapsedMemo.set; // 引用未变：覆盖集与上次逐元素一致（#5512）
+    }
     const out = new Set<number>();
     transcript.items.forEach((item, i) => {
       if (foldKindOf(item) === null) return;
       if (!isCollapsed(foldsState, foldBlockId(item))) out.add(i);
     });
+    collapsedMemo = { state: foldsState, items: transcript.items, set: out };
     return out;
   }
 
@@ -1334,8 +1369,21 @@ export function createNextChatHarness(runtime: ChatRuntime, deps: NextChatHarnes
       return;
     }
     const before = foldsState;
-    foldsState = reduceFoldKey(foldsState, key, focusedFoldBlockId());
-    if (foldsState !== before) reprojectAll();
+    const blockId = focusedFoldBlockId();
+    foldsState = reduceFoldKey(foldsState, key, blockId);
+    // respect=false 语义（folds.ts 规格钉死）：autoFold 覆盖手动开合，且须与键位同轮生效。
+    // 旧实现经 reprojectAll→projectLines→syncFolds 隐式达成；#5510 局部重投影（reprojectBlock）
+    // 不经过 projectLines，须在此显式同步折叠账本——autoFold 对开口 step/pending 工具重推
+    // collapsed=true（respect=false 覆盖手动标记；respect=true 跳过 manual 块，内容不变无副作用）。
+    syncFolds();
+    // #5510：h/l/←/→/e（聚焦块单块开合）走局部重投影（仅重算该块行区间，
+    // 切片投影 + splice 替换，消除全量 projectLines/rebuild/syncedItems 拷贝）；
+    // Shift+E/Ctrl+E（多块/全局视图）与 r（rawMarkdown 全局视图标志）仍走全量 reprojectAll。
+    if (foldsState !== before) {
+      const local = key === 'h' || key === 'ArrowLeft' || key === 'l' || key === 'ArrowRight' || key === 'e';
+      if (local && blockId !== null) reprojectBlock(blockId);
+      else reprojectAll();
+    }
   }
 
   // —— P4-2 搜索高亮（post-pass）——
@@ -1375,7 +1423,6 @@ export function createNextChatHarness(runtime: ChatRuntime, deps: NextChatHarnes
   }
 
   function syncProjection(): void {
-    const lines = projectLines();
     const items = transcript.items;
     let appendable = items.length >= syncedItems.length;
     if (appendable) {
@@ -1386,7 +1433,85 @@ export function createNextChatHarness(runtime: ChatRuntime, deps: NextChatHarnes
         }
       }
     }
-    if (appendable && items.length === syncedItems.length && lines.length === syncedLineCount) return; // 无变化
+    // #6118 流式快路径：仅末 item（开口 live step）被原地改动（dirty 集恰为 openStepId 且即末 item），
+    // 且追加语义成立（items 引用前缀相等 + 无增删）→ 只投影该 item，避免全量 projectLines O(N)。
+    // 注意 takeDirtyItemIds 是「取出并清空」语义：此处读取一次后复用变量，不得二次调用。
+    const dirty = takeDirtyItemIds(items);
+    const openStepId = bridge.openStepId();
+    const streamingFastPath =
+      appendable &&
+      items.length === syncedItems.length &&
+      items.length > 0 &&
+      dirty !== undefined &&
+      dirty.size === 1 &&
+      openStepId !== null &&
+      dirty.has(openStepId) &&
+      items[items.length - 1]!.id === openStepId;
+    // P1-1（security/perf 审查修复）：put 已改为 Object.assign 原地替换（#6118，引用稳定支撑
+    // 上面的流式快路径），副作用 = 下方 generic 路径失去「元素引用变化」检测——非末位 item 的
+    // 原地更新（如并行工具波次先完成者的 tool/result）在行数不变时被「行数+末行文本」短路跳过、
+    // 行数增长时从尾部错位追加并逐次放大。故 dirty 非空但不满足流式快路径时直接走全量
+    // rebuildScrollback（与旧「替换产生新引用 → 全量重建」行为等价）。
+    if (!streamingFastPath && dirty !== undefined && dirty.size > 0) {
+      const full = projectLines();
+      rebuildScrollback(full);
+      syncTurnAnchors(full);
+      syncedItems = items;
+      syncedLineCount = full.length;
+      syncedLastLineText = full.length > 0 ? full[full.length - 1]!.text : '';
+      // 维护末 item 投影行数（与 generic 收尾同口径，供流式快路径）
+      const rebuildLastIdx = items.length - 1;
+      let rebuildCnt = 0;
+      for (let i = full.length - 1; i >= 0 && full[i]!.lineIndex === rebuildLastIdx; i -= 1) rebuildCnt += 1;
+      syncedLastItemLineCount = rebuildCnt;
+      invalidate();
+      return;
+    }
+    if (streamingFastPath) {
+      const lastIdx = items.length - 1;
+      const expanded = collapsedIndices().has(lastIdx);
+      const blockLines = projectTranscript([items[lastIdx]!], {
+        cols: contentCols(),
+        collapsed: expanded ? new Set([0]) : undefined,
+        theme,
+        rawMarkdown: foldsState.rawMarkdown,
+        ...(deps.clock12h !== undefined ? { hour12: deps.clock12h } : {}),
+        ...(subagentDurations.size > 0 ? { durations: subagentDurations } : {}),
+        ...(spinnerTimer !== null ? { spinner: SPINNER_FRAMES[spinnerFrame % SPINNER_FRAMES.length] } : {}),
+      });
+      for (const l of blockLines) l.lineIndex = lastIdx; // 切片下标重映射（行反查/锚点语义不变）
+      const sb = state.scrollback;
+      const newCount = blockLines.length;
+      if (newCount >= syncedLastItemLineCount) {
+        // append-only 流式文本：行数只增不减；新行追加到 scrollback 末尾
+        if (newCount > syncedLastItemLineCount) {
+          sb.appendLines(blockLines.slice(syncedLastItemLineCount));
+        } else if (newCount > 0) {
+          // 行数不变：逐行原地更新（末行文本变化）
+          const base = sb.lineCount - newCount;
+          for (let i = 0; i < newCount; i += 1) sb.updateLine(base + i, blockLines[i]!);
+        }
+        syncedLineCount = sb.lineCount;
+        syncedLastLineText = syncedLineCount > 0 ? (sb.lineAt(syncedLineCount - 1)?.text ?? '') : '';
+        syncedLastItemLineCount = newCount;
+        invalidate();
+        return;
+      }
+      // 行数缩减（理论上流式 append-only 不发生）：保守落全量
+    }
+    const lines = projectLines();
+    // 检查最后一行是否有变化（流式文本原地增长但行数不变，finding #5508）
+    const lastLineText = lines.length > 0 ? lines[lines.length - 1]!.text : '';
+    if (appendable && items.length === syncedItems.length && lines.length === syncedLineCount) {
+      if (lastLineText === syncedLastLineText) return; // 无变化
+      // 最后一行变化：增量更新（流式文本原地增长但行数不变）
+      if (lines.length > 0) {
+        state.scrollback.updateLine(lines.length - 1, lines[lines.length - 1]!);
+      }
+      syncedLastLineText = lastLineText;
+      invalidate();
+      return;
+    }
     if (appendable) {
       const added = lines.slice(syncedLineCount);
       if (added.length > 0) state.scrollback.appendLines(added); // ProjectionLine 直传（text + fg）
@@ -1394,8 +1519,14 @@ export function createNextChatHarness(runtime: ChatRuntime, deps: NextChatHarnes
       rebuildScrollback(lines);
     }
     syncTurnAnchors(lines); // G-09：用户回合首行注册为 turn 锚点（重建/追加后都重放，O(n)）
-    syncedItems = [...items];
+    syncedItems = items;
     syncedLineCount = lines.length;
+    syncedLastLineText = lastLineText;
+    // #6118：维护末 item 投影行数（供流式快路径）
+    const lastIdx = items.length - 1;
+    let cnt = 0;
+    for (let i = lines.length - 1; i >= 0 && lines[i]!.lineIndex === lastIdx; i -= 1) cnt += 1;
+    syncedLastItemLineCount = cnt;
   }
 
   /** 折叠/强制全量重投影（折叠变化时整体重建，见任务规格取舍） */
@@ -1403,9 +1534,123 @@ export function createNextChatHarness(runtime: ChatRuntime, deps: NextChatHarnes
     const lines = projectLines();
     rebuildScrollback(lines);
     syncTurnAnchors(lines);
-    syncedItems = [...transcript.items];
+    syncedItems = transcript.items;
     syncedLineCount = lines.length;
+    syncedLastLineText = lines.length > 0 ? lines[lines.length - 1]!.text : '';
+    // #6118：维护末 item 投影行数（供流式快路径）
+    const lastIdx = transcript.items.length - 1;
+    let cnt = 0;
+    for (let i = lines.length - 1; i >= 0 && lines[i]!.lineIndex === lastIdx; i -= 1) cnt += 1;
+    syncedLastItemLineCount = cnt;
     invalidate();
+  }
+
+  /**
+   * #5510 局部重投影：折叠开合（h/l/←/→/e 聚焦块单块）只影响该块自身的行集合——
+   * 切片投影该块（projectTranscript 逐 item 自包含）+ splice 替换块行区间，消除全量
+   * projectLines + rebuildScrollback + syncedItems 拷贝；turn 锚点/换行缓存/前缀和由
+   * spliceLines 自受影响行起平移/失效。幽灵块/行数不一致等异常兜底回退 reprojectAll。
+   */
+  function reprojectBlock(blockId: string): void {
+    const itemIdx = transcript.items.findIndex((it) => foldBlockId(it) === blockId);
+    if (itemIdx < 0) {
+      reprojectAll();
+      return;
+    } // 兜底：块未登记/已裁出投影
+    const expanded = collapsedIndices().has(itemIdx);
+    const lines = projectTranscript([transcript.items[itemIdx]!], {
+      cols: contentCols(),
+      collapsed: expanded ? new Set([0]) : undefined,
+      theme,
+      rawMarkdown: foldsState.rawMarkdown,
+      ...(deps.clock12h !== undefined ? { hour12: deps.clock12h } : {}),
+      ...(subagentDurations.size > 0 ? { durations: subagentDurations } : {}),
+      ...(spinnerTimer !== null ? { spinner: SPINNER_FRAMES[spinnerFrame % SPINNER_FRAMES.length] } : {}),
+    });
+    for (const l of lines) l.lineIndex = itemIdx; // 切片下标重映射（行反查/锚点语义不变）
+    const blockLines = applySearchHighlight(lines);
+    const sb = state.scrollback;
+    let start = -1;
+    let end = -1;
+    for (let i = 0; i < sb.lineCount; i += 1) {
+      if (sb.lineIndexAt(i) === itemIdx) {
+        if (start < 0) start = i;
+        end = i + 1;
+      }
+    }
+    if (start < 0 || end <= start) {
+      reprojectAll();
+      return;
+    } // 兜底：块行未投影（不应发生）
+    sb.spliceLines(start, end - start, blockLines);
+    syncedLineCount = sb.lineCount;
+    syncedLastLineText = sb.lineCount > 0 ? (sb.lineAt(sb.lineCount - 1)?.text ?? '') : '';
+    // #6118：若折叠块即末 item，同步其投影行数（供流式快路径）
+    if (itemIdx === transcript.items.length - 1) syncedLastItemLineCount = blockLines.length;
+    invalidate();
+  }
+
+  /**
+   * #5510 局部重投影：spinner 帧只改写「运行中子代理」tool 块的行文本（projection.ts
+   * 仅对 status==='pending' 的子代理行加 spinner 前缀）。逐块 reprojectBlock 替换对应行，
+   * 避免全量 reprojectAll；无任何运行中子代理块可定位时兜底全量。
+   */
+  function reprojectRunningSubagents(): void {
+    let found = false;
+    for (const item of transcript.items) {
+      if (item.kind === 'tool' && isSubagentTool(item.tool) && item.status === 'pending') {
+        reprojectBlock(foldBlockId(item));
+        found = true;
+      }
+    }
+    if (!found) reprojectAll();
+  }
+
+  /**
+   * #5510 局部重投影：主题切换只改每行 fg（文本/行结构不变），逐行原地换色，
+   * 保留 Scrollback 实例（换行缓存/滚动位置/turn 锚点不动），消除 rebuildScrollback
+   * + syncedItems 拷贝 + syncTurnAnchors；行数不一致（理论上主题不改变行数）兜底全量。
+   */
+  function recolorProjection(): void {
+    const lines = projectLines();
+    const sb = state.scrollback;
+    if (lines.length !== sb.lineCount) {
+      reprojectAll();
+      return;
+    }
+    for (let i = 0; i < lines.length; i += 1) {
+      sb.recolorLine(i, lines[i]!);
+    }
+    syncedLastLineText = lines.length > 0 ? lines[lines.length - 1]!.text : '';
+    invalidate();
+  }
+
+  /**
+   * #5510 行级增量重投影（搜索高亮命中/清除）：applySearchHighlight 仅改命中行的 fg
+   * （前景色），不改文本长度/行数/右侧文本——故高亮态变化的行仅需换色。仅对
+   * `fg` 与新投影结果不一致的逻辑行做 recolorLine（复用 #5510 缓存保留语义），
+   * 未变化行原样跳过；保留 Scrollback 实例（换行缓存/滚动位置/turn 锚点不动），
+   * 消除 reprojectAll 的 rebuildScrollback + syncTurnAnchors + syncedItems 拷贝。
+   * 行数不一致（理论上高亮不改变行数）兜底 reprojectAll。
+   */
+  function rehighlightProjection(): void {
+    const lines = projectLines();
+    const sb = state.scrollback;
+    if (lines.length !== sb.lineCount) {
+      reprojectAll();
+      return;
+    }
+    let changed = 0;
+    for (let i = 0; i < lines.length; i += 1) {
+      const cur = sb.lineAt(i);
+      const next = lines[i]!;
+      if (cur === undefined || cur.fg !== next.fg) {
+        sb.recolorLine(i, next);
+        changed += 1;
+      }
+    }
+    syncedLastLineText = lines.length > 0 ? lines[lines.length - 1]!.text : '';
+    if (changed > 0) invalidate();
   }
 
   // —— P3-D G-09 turn 锚点注册（投影层已知 user turn 边界）——
@@ -1505,9 +1750,16 @@ export function createNextChatHarness(runtime: ChatRuntime, deps: NextChatHarnes
       spinnerFrame = 0;
       spinnerTimer = setInterval(() => {
         spinnerFrame += 1;
-        if (subagentStarts.size > 0)
-          reprojectAll(); // 行级 spinner（P3-D 语义不回退）
-        else invalidate(); // 状态行 spinner（P4-2）
+        if (subagentStarts.size > 0) {
+          // 行级 spinner（P3-D 语义不回退）：spinner 帧只改写「运行中子代理」tool 块的行文本，
+          // 逐块 reprojectBlock 局部重投影（#5510）；短对话逐帧推进，长对话节流；无法定位块兜底全量。
+          const now = Date.now();
+          const throttleMs = transcript.items.length > LONG_TRANSCRIPT_ITEMS ? SUBAGENT_REPROJECT_INTERVAL_MS : 0;
+          if (now - lastSubagentReprojectAt >= throttleMs) {
+            lastSubagentReprojectAt = now;
+            reprojectRunningSubagents();
+          }
+        } else invalidate(); // 状态行 spinner（P4-2）
       }, SPINNER_INTERVAL_MS);
     } else if (!shouldRun && spinnerTimer !== null) {
       clearInterval(spinnerTimer);
@@ -2846,7 +3098,7 @@ export function createNextChatHarness(runtime: ChatRuntime, deps: NextChatHarnes
     const hits = computeHits(query);
     if (hits.length === 0) {
       searchState = { query, lastHit: -1 }; // 记忆查询（无参重试同词）；未命中 = 高亮清空（属「下次搜索」）
-      reprojectAll(); // 清掉上一轮高亮（若有）
+      rehighlightProjection(); // #5510：行级增量重投影（仅高亮态变化的行 recolorLine）
       sendSystem(`搜索 "${query}"：未找到`);
       return;
     }
@@ -2862,9 +3114,9 @@ export function createNextChatHarness(runtime: ChatRuntime, deps: NextChatHarnes
       target = hits.find((h) => state.scrollback.lineStart(h) > bottomRow) ?? hits[0]!;
     }
     searchState = { query, lastHit: target };
-    reprojectAll(); // 命中行高亮（fg 变化需全量重投影；anchor 尽力保留）
-    // 注意：reprojectAll 会整体替换 state.scrollback（rebuildScrollback）——定位必须作用于
-    // 重建后的新实例，不能用重建前捕获的旧引用（否则跳转落在孤儿实例上，视口不动）。
+    rehighlightProjection(); // #5510：仅命中行 fg 变化，逐行 recolorLine（保留 scrollback 实例/anchor）
+    // 注意：rehighlightProjection 不替换 state.scrollback 实例（仅原地换色），定位直接作用于
+    // 当前实例；无需重建，故 goToTop/scrollBy 作用于同一实例，视口可靠。
     const sb = state.scrollback;
     sb.goToTop();
     sb.scrollBy(sb.lineStart(target)); // 命中行定位到视口顶（钳制到底部时仍可见）
@@ -2886,7 +3138,7 @@ export function createNextChatHarness(runtime: ChatRuntime, deps: NextChatHarnes
     }
     if (arg.toLowerCase() === 'clear') {
       searchState = null;
-      reprojectAll(); // 清高亮
+      rehighlightProjection(); // #5510：仅高亮态变化的行 recolorLine
       sendSystem('搜索高亮已清除');
       return;
     }
@@ -2914,7 +3166,8 @@ export function createNextChatHarness(runtime: ChatRuntime, deps: NextChatHarnes
     }
     theme = next;
     state.theme = next;
-    reprojectAll(); // 行级 fg 烤进 scrollback 行对象：切主题必须全量重投影（anchor 尽力保留）
+    recolorProjection(); // #5510：行级 fg 局部重投影——逐行原地换色，保留 Scrollback 实例/
+    // 换行缓存/滚动位置/锚点，不重建、不拷贝 syncedItems、不重放锚点
     sendSystem(`已切换主题: ${next.name}（会话内存级，不持久化）`);
   }
 

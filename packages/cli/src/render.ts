@@ -9,6 +9,91 @@ export interface RenderOutput {
 
 const ARGS_SUMMARY_MAX = 96;
 
+/**
+ * 控制字符过滤（安全修复 #308）：剥离 ESC 引入的 OSC/危险 CSI/其它终端序列与 C0/C1 控制字符，
+ * 防止模型可控文本注入 OSC52（剪贴板劫持）、OSC8（超链接钓鱼）、OSC0/2（标题伪造）、
+ * CSI 光标/模式切换等。保留换行、制表符与形状合法的 SGR 颜色序列（\x1b[31m 等），
+ * 其余控制字符一律清除。
+ *
+ * 逐增量（chunk）调用即可中和注入——任何以 ESC 开头的序列若被 chunk 切断，其 ESC 引入符
+ * 会被整体丢弃，不会与后续增量拼成完整序列，故无需跨 chunk 状态机。
+ */
+export function stripEscapes(text: string): string {
+  let out = '';
+  let i = 0;
+  while (i < text.length) {
+    const ch = text.charAt(i);
+    const code = ch.charCodeAt(0);
+    if (ch !== '\u001b') {
+      // C0 控制字符（含 \r）除 \n/\t 外丢弃；C1 8 位控制字符一并丢弃
+      if ((code < 0x20 && ch !== '\n' && ch !== '\t') || (code >= 0x80 && code <= 0x9f)) {
+        i += 1;
+        continue;
+      }
+      out += ch;
+      i += 1;
+      continue;
+    }
+    // 命中 ESC：吞掉其后的完整序列；未终止的序列连同引入符一并丢弃
+    const next = text[i + 1];
+    if (next === ']') {
+      // OSC：至 BEL(\x07) 或 ST(ESC \) 终止
+      let j = i + 2;
+      while (j < text.length) {
+        if (text[j] === '\x07') {
+          j += 1;
+          break;
+        }
+        if (text[j] === '\u001b' && text[j + 1] === '\\') {
+          j += 2;
+          break;
+        }
+        j += 1;
+      }
+      i = j; // 未找到终止符时 j === text.length → 丢弃余下
+      continue;
+    }
+    if (next === '[') {
+      // CSI：至 0x40..0x7e 终结字节；仅保留形状合法的 SGR（终结 m）颜色序列，
+      // 其余 CSI（光标移动/清屏/模式切换等）一律剥离（对齐 status-line stripNonColorEscapes 语义）
+      let j = i + 2;
+      while (j < text.length) {
+        const c = text.charCodeAt(j);
+        if (c >= 0x40 && c <= 0x7e) {
+          j += 1;
+          break;
+        }
+        j += 1;
+      }
+      const isSgr =
+        j > i + 2 &&
+        text[j - 1] === 'm' &&
+        text
+          .slice(i + 2, j - 1)
+          .split('')
+          .every((ch) => {
+            const c = ch.charCodeAt(0);
+            // 审查 P2-3：参数字节白名单收紧为 数字(0x30-0x39)/分号(0x3b)/冒号(0x3a)。
+            // 旧口径放行 0x3c-0x3f（< = > ?）私有参数前缀与 0x20-0x2f 中间字节——
+            // `\x1b[>4;2m`（私有 SGR 变体）/`\x1b[?1049m`（备用屏缓冲切换）这类
+            // 携带私有参数的序列会被误判为「形状合法的颜色序列」而保留。
+            return (c >= 0x30 && c <= 0x39) || c === 0x3b || c === 0x3a;
+          });
+      if (isSgr) {
+        out += text.slice(i, j); // 合法 ANSI 颜色序列：保留
+      }
+      i = j;
+      continue;
+    }
+    if (next === undefined) {
+      i += 1;
+      continue;
+    } // 落单 ESC：丢弃
+    i += 2; // 其它 ESC 双字节序列（ESC c/=/7/8/\ 等）：整体丢弃
+  }
+  return out;
+}
+
 /** 截断工具参数摘要（单行、可读优先） */
 export function summarizeArgs(rawArguments: string): string {
   let text = rawArguments;
@@ -43,8 +128,9 @@ export function turnSummaryLine(result: TurnResult): string {
     `steps ${result.steps}`,
     `toolCalls ${result.toolCalls}`,
   ];
-  if (result.error !== undefined) parts.push(`error: ${result.error}`);
-  if (result.warning !== undefined) parts.push(`warning: ${result.warning}`);
+  // error/warning 可携带工具执行输出文本（loop.ts:828/892/901），输出前过滤控制字符
+  if (result.error !== undefined) parts.push(`error: ${stripEscapes(result.error)}`);
+  if (result.warning !== undefined) parts.push(`warning: ${stripEscapes(result.warning)}`);
   return parts.join(' · ') + ']';
 }
 
@@ -61,31 +147,35 @@ export class StreamRenderer {
     private readonly color = false,
   ) {}
 
-  /** provider 文本增量：直写 stdout，不换行拼流 */
+  /** provider 文本增量：直写 stdout，不换行拼流（输出前过滤控制字符，见 stripEscapes） */
   textDelta(text: string): void {
     if (text.length === 0) return;
-    this.out.write(text);
+    this.out.write(stripEscapes(text));
     this.wroteText = true;
   }
 
   /** 推理过程增量（仅 /reasoning on 时由 REPL 转发）：灰色斜体；无色模式用 [reasoning] 标记 */
   reasoning(text: string): void {
     if (text.length === 0) return;
-    const styled = this.color ? `\x1b[90m\x1b[3m${text}\x1b[0m` : `[reasoning] ${oneLine(text)}`;
+    // 先过滤模型可控内容的控制字符，再套渲染器自加的样式码（否则会连样式一并清除）
+    const safe = stripEscapes(text);
+    const styled = this.color ? `\x1b[90m\x1b[3m${safe}\x1b[0m` : `[reasoning] ${oneLine(safe)}`;
     this.out.write(styled);
     this.wroteText = true;
   }
 
-  /** 工具调用单行：> tool (args摘要) */
+  /** 工具调用单行：> tool (args摘要)（tool 名与 args 均模型可控，输出前过滤控制字符） */
   toolCall(tool: string, rawArguments: string): void {
-    this.out.write(`${this.wroteText ? '\n' : ''}> ${tool} (${summarizeArgs(rawArguments)})\n`);
+    this.out.write(stripEscapes(`${this.wroteText ? '\n' : ''}> ${tool} (${summarizeArgs(rawArguments)})\n`));
     this.wroteText = false;
   }
 
-  /** 工具结果单行：< ok/FAILED [callId] */
+  /** 工具结果单行：< ok/FAILED [callId]（callId/工具错误均模型可控，输出前过滤控制字符） */
   toolResult(callId: string, ok: boolean, error?: string): void {
     this.out.write(
-      `< ${ok ? 'ok' : 'FAILED'} [${callId}]${error !== undefined && error.length > 0 ? ` ${oneLine(error)}` : ''}\n`,
+      stripEscapes(
+        `< ${ok ? 'ok' : 'FAILED'} [${callId}]${error !== undefined && error.length > 0 ? ` ${oneLine(error)}` : ''}\n`,
+      ),
     );
     this.wroteText = false;
   }

@@ -28,6 +28,7 @@
 // 事件溯源不破坏：text/reasoning/reasoning-* delta 是**展示投影**，非模型上下文；模型可见输入仍
 // 由 session.log 投影。旧客户端继续既有帧（未强制 protocolVersion=2 不突然切形状）。
 import { WebSocketServer, type WebSocket } from 'ws';
+import { isAbsolute, relative, resolve } from 'node:path';
 import type { IncomingMessage, Server } from 'node:http';
 import type { TurnStopReason } from '../agent/types.js';
 import type { ToolCallRequest } from '../provider/types.js';
@@ -63,7 +64,7 @@ export { WatermarkCursor } from '../interaction/resume-state.js';
 export type { DeltaAttribution, ResumeStateProvider } from '../interaction/resume-state.js';
 import { isTrustedHost, isTrustedOrigin, normalizeOriginHeader, WS_MAX_PAYLOAD } from './trust.js';
 import {
-  extractServeToken,
+  extractServeTokenFromWsHandshake,
   isServeTokenValid,
   isWsPayloadExceededError,
   warnServeNoTokenOnce,
@@ -243,6 +244,19 @@ function approvalFrame(a: ApprovalRequestContract): WsServerMessage {
 /** 把 WS 事件面挂到 HTTP server 上（hub 观察者 → 订阅连接分发）。
  *  升级握手经信任域校验（Origin/Host 与 HTTP 同规则，Task 4）+ A3-1 token 鉴权；
  *  A3-2 帧上限 1MiB 对齐 HTTP，超限断连并计数/日志。 */
+
+/** 安全修复：终端帧 cwd 白名单——与 sessions-assembly.assertCwdWithinRoot 同模式，
+ *  拒绝相对回溯/绝对路径越出 serve 工作区根的客户端可控 cwd（含跨盘符）；返回 resolve 后的绝对路径。 */
+function assertTerminalCwdWithinRoot(cwd: string, allowedRoot: string): string {
+  const resolvedCwd = resolve(cwd);
+  const rel = relative(resolve(allowedRoot), resolvedCwd);
+  const escaped = rel !== '' && (isAbsolute(rel) || rel.split(/[\\/]/)[0] === '..');
+  if (escaped) {
+    throw new HubError('invalid', `terminal cwd escapes workspace root: ${cwd}`);
+  }
+  return resolvedCwd;
+}
+
 export function attachWsServer(server: Server, hub: SessionHub, options: WsPlaneOptions = {}): WsPlane {
   const path = options.path ?? WS_PATH;
   const auth = options.auth;
@@ -268,9 +282,9 @@ export function attachWsServer(server: Server, hub: SessionHub, options: WsPlane
       socket.destroy();
       return;
     }
-    // A3-1：token 门禁（与 HTTP checkServeToken 同口径；错误 token 绝不回退）
+    // A3-1：token 门禁（WS 握手专用：头优先 + ?token= 一次性兼容；错误 token 绝不回退）
     if (auth !== undefined) {
-      const provided = extractServeToken(req.headers, url);
+      const provided = extractServeTokenFromWsHandshake(req.headers, url);
       if (provided !== undefined) {
         if (!isServeTokenValid(provided, auth.token)) {
           if (stats !== undefined) stats.invalidTokenRejected += 1;
@@ -524,20 +538,25 @@ export function attachWsServer(server: Server, hub: SessionHub, options: WsPlane
           }
           // —— Z9-2 终端帧：会话属创建它的连接；他连接访问其 id 一律 terminal/error（如实拒绝） ——
           case 'terminal/open': {
-            const spawnOpts: TerminalSpawnOptions = {
-              cols: msg.cols,
-              rows: msg.rows,
-              ...(msg.cwd !== undefined ? { cwd: msg.cwd } : {}),
-            };
             try {
+              // 安全修复：终端帧 cwd 白名单——拒绝越出 serve 工作区根的客户端可控 cwd；
+              // msg.cwd 缺省时保持原语义（不校验，node-pty 用进程默认 cwd）。
+              const cwd = msg.cwd !== undefined ? assertTerminalCwdWithinRoot(msg.cwd, hub.workspaceRoot) : undefined;
+              const spawnOpts: TerminalSpawnOptions = {
+                cols: msg.cols,
+                rows: msg.rows,
+                ...(cwd !== undefined ? { cwd } : {}),
+              };
               const { id } = terminal.spawn(spawnOpts);
               conn.terminals.add(id);
               termOwner.set(id, conn);
               sendSafe(ws, { type: 'terminal/opened', requestId: msg.requestId, id });
             } catch (e) {
-              // PTY 不可用（平台不支持/依赖缺失）→ 如实回 terminal/error，绝不假装 opened
+              // PTY 不可用（平台不支持/依赖缺失）/ cwd 越界 → 如实回 terminal/error，绝不假装 opened
               const detail =
-                e instanceof TerminalUnavailableError ? e.message : `终端创建失败: ${(e as Error).message}`;
+                e instanceof TerminalUnavailableError || e instanceof HubError
+                  ? e.message
+                  : `终端创建失败: ${(e as Error).message}`;
               sendSafe(ws, { type: 'terminal/error', requestId: msg.requestId, error: detail });
             }
             break;
@@ -745,8 +764,8 @@ export function parseClientMessage(data: unknown): WsClientMessage {
     // Z9-2 终端帧校验（cols/rows 正整数字段级把关；未知 id 的交由分发器回 terminal/error）
     case 'terminal/open': {
       const requestId = requireString(m['requestId'], 'requestId');
-      const cols = requirePositiveInt(m['cols'], 'cols');
-      const rows = requirePositiveInt(m['rows'], 'rows');
+      const cols = requireTerminalDim(m['cols'], 'cols');
+      const rows = requireTerminalDim(m['rows'], 'rows');
       const cwd = m['cwd'];
       if (cwd !== undefined && (typeof cwd !== 'string' || cwd.length === 0)) {
         throw new Error('cwd 必须是非空字符串');
@@ -764,8 +783,8 @@ export function parseClientMessage(data: unknown): WsClientMessage {
       return {
         op,
         id: requireString(m['id'], 'id'),
-        cols: requirePositiveInt(m['cols'], 'cols'),
-        rows: requirePositiveInt(m['rows'], 'rows'),
+        cols: requireTerminalDim(m['cols'], 'cols'),
+        rows: requireTerminalDim(m['rows'], 'rows'),
       };
     case 'terminal/close':
       return { op, id: requireString(m['id'], 'id') };
@@ -780,4 +799,14 @@ function requireString(v: unknown, name: string): string {
 function requirePositiveInt(v: unknown, name: string): number {
   if (typeof v !== 'number' || !Number.isInteger(v) || v < 1) throw new Error(`${name} 必须是 >= 1 的整数`);
   return v;
+}
+
+/** 终端尺寸上界：cols/rows 超过此值拒绝（防 node-pty/ConPTY 大缓冲区分配/DoS）。
+ *  10000 与常见终端/ConPTY 尺寸相容；terminal/open 与 terminal/resize 共用同一校验。 */
+const TERMINAL_MAX_DIM = 10000;
+
+function requireTerminalDim(v: unknown, name: string): number {
+  const n = requirePositiveInt(v, name);
+  if (n > TERMINAL_MAX_DIM) throw new Error(`${name} 不能超过 ${TERMINAL_MAX_DIM}`);
+  return n;
 }

@@ -100,7 +100,10 @@ export class CellBuffer {
   fg: Uint32Array; // 0=默认色，否则 24bit RGB
   linkIds: Uint16Array; // 0=无链接，1..65535 = linkUrl 表下标（P4-1 OSC8）
 
-  private linkUrls: string[] = []; // linkId → URL（下标 0 恒空置；clear() 重置）
+  private linkUrls: string[] = [];
+  /** 脏行标记：本帧有单元格被写入的行（行粒度；present 只扫描脏行） */
+  private dirty: Uint8Array = new Uint8Array(0);
+  private dirtyList: number[] = []; // linkId → URL（下标 0 恒空置；clear() 重置）
 
   constructor(cols: number, rows: number) {
     this.cols = 0;
@@ -126,6 +129,8 @@ export class CellBuffer {
     this.widths = new Uint8Array(cols * rows);
     this.fg = new Uint32Array(cols * rows);
     this.linkIds = new Uint16Array(cols * rows);
+    this.dirty = new Uint8Array(rows);
+    this.dirtyList = [];
     if (oldCols === 0 || oldRows === 0) return;
     const copyCols = Math.min(cols, oldCols);
     const copyRows = Math.min(rows, oldRows);
@@ -148,6 +153,53 @@ export class CellBuffer {
     this.fg.fill(0);
     this.linkIds.fill(0);
     this.linkUrls.length = 0;
+    this.dirty.fill(0);
+    this.dirtyList.length = 0;
+  }
+
+  /** 标记行 y 为脏（本帧有单元格写入）。行粒度，越界忽略。 */
+  markDirty(y: number): void {
+    if (y < 0 || y >= this.rows) return;
+    if (this.dirty[y] === 0) {
+      this.dirty[y] = 1;
+      this.dirtyList.push(y);
+    }
+  }
+
+  /** 帧开始：重置脏标记（不清屏，保留上一帧内容）。 */
+  beginFrame(): void {
+    for (const y of this.dirtyList) this.dirty[y] = 0;
+    this.dirtyList.length = 0;
+  }
+
+  /** 清空整行（区域消失/擦除语义）；标记为脏以便 diff。 */
+  clearRow(y: number): void {
+    if (y < 0 || y >= this.rows) return;
+    const base = y * this.cols;
+    this.chars.fill(' ', base, base + this.cols);
+    this.widths.fill(0, base, base + this.cols);
+    this.fg.fill(0, base, base + this.cols);
+    this.linkIds.fill(0, base, base + this.cols);
+    this.markDirty(y);
+  }
+
+  /** 清空第 y 行的 [fromX, maxCols) 区域（写短行后行尾清理，防旧字符残留）。只标记该行脏，不清整帧 */
+  clearTail(y: number, fromX: number, maxCols: number): void {
+    if (y < 0 || y >= this.rows) return;
+    const x0 = Math.max(0, Math.min(Math.floor(fromX), this.cols));
+    const x1 = Math.max(0, Math.min(Math.floor(maxCols), this.cols));
+    if (x1 <= x0) return;
+    const base = y * this.cols;
+    this.chars.fill(' ', base + x0, base + x1);
+    this.widths.fill(0, base + x0, base + x1);
+    this.fg.fill(0, base + x0, base + x1);
+    this.linkIds.fill(0, base + x0, base + x1);
+    this.markDirty(y);
+  }
+
+  /** 返回本帧脏行列表（行粒度）。 */
+  dirtyRows(): readonly number[] {
+    return this.dirtyList;
   }
 
   /** 注册一个 URL，返回其 linkId（1 起递增；调用方每帧对可见 URL 区段调用） */
@@ -165,6 +217,7 @@ export class CellBuffer {
   setLinkId(x: number, y: number, id: number): void {
     if (x < 0 || x >= this.cols || y < 0 || y >= this.rows) return;
     this.linkIds[y * this.cols + x] = id;
+    this.markDirty(y);
   }
 
   /** 读取 (x,y) 的链接 id（0=无链接） */
@@ -180,6 +233,7 @@ export class CellBuffer {
     this.chars[i] = sanitizeCellChar(ch);
     this.widths[i] = w;
     this.fg[i] = fg;
+    this.markDirty(y);
     if (w === 2 && x + 1 < this.cols) {
       const j = i + 1;
       this.chars[j] = '';
@@ -199,6 +253,7 @@ export class CellBuffer {
       this.setCell(x, y, ch, w, fg);
       x += w;
     }
+    this.clearTail(y, x, this.cols);
   }
 
   /** 读取第 y 行渲染文本（长度恒等于 cols；续列跳过，终端遇宽字符自动占两列） */

@@ -138,9 +138,13 @@ describe('FixA /run-config：有效运行配置真接线（装配来源 + root/c
     writeConfigHome(homeB);
     const rootA = tmpDir('h2-fq-rootA-');
     const rootB = tmpDir('h2-fq-rootB-');
-    const cwdA = tmpDir('h2-fq-cwdA-');
-    const cwdB = tmpDir('h2-fq-cwdB-');
-    const cwdC = tmpDir('h2-fq-cwdC-');
+    // 安全修复 #297：会话 cwd 必须位于对应 serve root 内——root 下建子目录（A/B 两会话同属 serveA）
+    const cwdA = join(rootA, 'a');
+    const cwdB = join(rootA, 'b');
+    const cwdC = join(rootB, 'c');
+    mkdirSync(cwdA, { recursive: true });
+    mkdirSync(cwdB, { recursive: true });
+    mkdirSync(cwdC, { recursive: true });
     const serveA = await startServe({ requireToken: false, port: 0, home: homeA, root: rootA });
     const serveB = await startServe({ requireToken: false, port: 0, home: homeB, root: rootB });
     handles.push(serveA, serveB);
@@ -217,11 +221,12 @@ describe('FixA /run-config：有效运行配置真接线（装配来源 + root/c
 
 describe('FixA /plan-state：账本重建只读 + 展示不触发审批放行', () => {
   it('真实 startServe：种 task/transition 账本 → 端点重建计划；查询不改 journal；挂起审批不被展示放行', async () => {
+    const serveRoot = tmpDir('h2-fq-root-');
     const handle = await startServe({
       requireToken: false,
       port: 0,
       home: tmpDir('h2-fq-home-'),
-      root: tmpDir('h2-fq-root-'),
+      root: serveRoot,
       provider: new MockProvider([
         {
           toolCalls: [
@@ -233,7 +238,8 @@ describe('FixA /plan-state：账本重建只读 + 展示不触发审批放行', 
       decide: () => 'ask',
     });
     handles.push(handle);
-    const cwd = tmpDir('h2-fq-plan-cwd-');
+    const cwd = join(serveRoot, 'plan'); // #297 白名单：会话 cwd 在 root 内
+    mkdirSync(cwd, { recursive: true });
     const id = await createSession(handle, cwd);
     const dir = handle.hub.locate(id);
 
@@ -307,15 +313,18 @@ describe('FixA /plan-state：账本重建只读 + 展示不触发审批放行', 
   });
 
   it('无账本 → 明确 error 帧 404（会话暂无计划数据），不臆造空计划', async () => {
+    const serveRoot = tmpDir('h2-fq-root-');
     const handle = await startServe({
       requireToken: false,
       port: 0,
       home: tmpDir('h2-fq-home-'),
-      root: tmpDir('h2-fq-root-'),
+      root: serveRoot,
       provider: new MockProvider([{ textChunks: ['回复'] }]),
     });
     handles.push(handle);
-    const id = await createSession(handle, tmpDir('h2-fq-no-plan-cwd-'));
+    const noPlanCwd = join(serveRoot, 'no-plan'); // #297 白名单：会话 cwd 在 root 内
+    mkdirSync(noPlanCwd, { recursive: true });
+    const id = await createSession(handle, noPlanCwd);
     const res = await api(handle, 'GET', `/api/session/${id}/plan-state`);
     expect(res.status).toBe(404);
     expect(res.json.error).toContain('暂无计划数据');
@@ -324,11 +333,12 @@ describe('FixA /plan-state：账本重建只读 + 展示不触发审批放行', 
 
 describe('FixA /execution-view：真实 shell/exitCode 归属 + cwd 归属 + 脱敏', () => {
   it('真实 serve turn 执行 bash（exit 7 + 输出含密钥）→ 端点如实归属 shell/exitCode，密钥被脱敏', async () => {
+    const serveRoot = tmpDir('h2-fq-root-');
     const handle = await startServe({
       requireToken: false,
       port: 0,
       home: tmpDir('h2-fq-home-'),
-      root: tmpDir('h2-fq-root-'),
+      root: serveRoot,
       provider: new MockProvider([
         {
           toolCalls: [
@@ -346,7 +356,8 @@ describe('FixA /execution-view：真实 shell/exitCode 归属 + cwd 归属 + 脱
       decide: () => 'allow',
     });
     handles.push(handle);
-    const cwd = tmpDir('h2-fq-exec-cwd-');
+    const cwd = join(serveRoot, 'exec'); // #297 白名单：会话 cwd 在 root 内
+    mkdirSync(cwd, { recursive: true });
     const id = await createSession(handle, cwd);
     const client = new WsClient(`ws://127.0.0.1:${handle.port}/ws`);
     await client.open;
@@ -388,11 +399,12 @@ describe('FixA /execution-view：真实 shell/exitCode 归属 + cwd 归属 + 脱
 
 describe('FixA /change-review：外部修改标 dirty 不静默覆盖', () => {
   it('真实 serve turn 写文件 → 端点 changeSet；外部修改后 dirty=true、matchesPlan=false、不覆盖', async () => {
+    const serveRoot = tmpDir('h2-fq-root-');
     const handle = await startServe({
       requireToken: false,
       port: 0,
       home: tmpDir('h2-fq-home-'),
-      root: tmpDir('h2-fq-root-'),
+      root: serveRoot,
       provider: new MockProvider([
         {
           toolCalls: [
@@ -404,7 +416,8 @@ describe('FixA /change-review：外部修改标 dirty 不静默覆盖', () => {
       decide: () => 'allow',
     });
     handles.push(handle);
-    const cwd = tmpDir('h2-fq-review-cwd-');
+    const cwd = join(serveRoot, 'review'); // #297 白名单：会话 cwd 在 root 内
+    mkdirSync(cwd, { recursive: true });
     const id = await createSession(handle, cwd);
     const file = join(cwd, 'hello.txt');
     const client = new WsClient(`ws://127.0.0.1:${handle.port}/ws`);

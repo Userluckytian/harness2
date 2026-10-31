@@ -5,12 +5,16 @@
 // 已知差异（如实声明）：rg 尊重 .gitignore（非隐藏的已忽略文件不会出现），
 // JS 回退不解析 .gitignore，无法复现该过滤。
 import { spawn } from 'node:child_process';
-import { readdirSync, readFileSync, statSync } from 'node:fs';
-import { join, relative, resolve, sep } from 'node:path';
+import { readFileSync, statSync } from 'node:fs';
+import { join, relative, sep } from 'node:path';
 import type { ToolDefinition, ToolOutput } from '../types.js';
-import { expectObject, expectString, optionalString } from './common.js';
+import { expectObject, expectString, optionalString, resolveWithinCwd } from './common.js';
 import { isSkippedEntryName } from './ignore.js';
+// 目录级缓存：与 glob 共用（按目录 mtimeMs 失效，见 dirCache.ts）
+import { readDirCached } from './dirCache.js';
 import { OutputCollector } from '../process-output.js';
+// P1-2 审查统一：子进程安全环境白名单单一共享出口（原本地 buildSafeEnv 副本删除）
+import { buildSubprocessSafeEnv } from '../process-env.js';
 
 export const MAX_GREP_RESULTS = 500;
 const MAX_FILE_BYTES = 1024 * 1024;
@@ -35,7 +39,7 @@ export const grepTool: ToolDefinition = {
     const args = expectObject(rawArgs, 'grep');
     const pattern = expectString(args, 'pattern', 'grep');
     const pathArg = optionalString(args, 'path');
-    const searchPath = pathArg !== undefined ? resolve(ctx.cwd, pathArg) : ctx.cwd;
+    const searchPath = pathArg !== undefined ? resolveWithinCwd(ctx.cwd, pathArg, 'grep') : ctx.cwd;
 
     const viaRg = await grepWithRipgrep(pattern, ctx.cwd, searchPath, ctx.signal);
     if (viaRg !== null) return viaRg; // rg 可用（含“无匹配”）
@@ -82,7 +86,7 @@ function grepWithRipgrep(
           pattern,
           relTarget,
         ],
-        { cwd, signal, windowsHide: true },
+        { cwd, signal, windowsHide: true, env: buildSubprocessSafeEnv() },
       );
     } catch {
       done(null); // 平台不支持 spawn 时直接回退
@@ -162,7 +166,7 @@ export function scanTextFiles(pattern: string, cwd: string, searchPath: string, 
     if (signal.aborted || results.length >= MAX_GREP_RESULTS) return;
     let entries: import('node:fs').Dirent[];
     try {
-      entries = readdirSync(dir, { withFileTypes: true });
+      entries = readDirCached(dir); // 目录级缓存：命中跳过 readdirSync
     } catch {
       return;
     }

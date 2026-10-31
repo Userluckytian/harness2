@@ -8,6 +8,8 @@ import { MockProvider } from '../src/provider/mock.js';
 import { runTurn } from '../src/agent/loop.js';
 import { ToolRegistry } from '../src/tools/registry.js';
 import { exportAllEvents, loadSession } from '../src/session/reader.js';
+import { SessionWriter, type SessionAppender } from '../src/session/writer.js';
+import type { AnySessionEvent, SessionEvent, SessionEventMap, SessionEventType } from '../src/session/types.js';
 import { createHookRunner } from '../src/hooks/runner.js';
 import { HOOK_INVOCATION_EVENT_TYPE, readHookInvocations } from '../src/hooks/extension.js';
 import type { HookSpawnHook, HookSpawnResult } from '../src/hooks/executor.js';
@@ -53,6 +55,7 @@ describe('preTool 拦截语义（对齐 ZCode：可阻止执行 / 改写输入�
     const hooks = createHookRunner({
       config: cfg([{ event: 'preTool', matcher: 'bash', command: 'guard' }]),
       spawnHook: spawnReturning({ guard: { stdout: '{"continue":false,"reason":"危险命令"}' } }),
+      admit: () => true,
     });
 
     const result = await runTurn(dir, { provider, tools: registry, cwd: dir, userText: '删库', hooks });
@@ -85,6 +88,7 @@ describe('preTool 拦截语义（对齐 ZCode：可阻止执行 / 改写输入�
     const hooks = createHookRunner({
       config: cfg([{ event: 'preTool', matcher: 'bash', command: 'rewrite' }]),
       spawnHook: spawnReturning({ rewrite: { stdout: '{"updatedInput":{"command":"echo safe"}}' } }),
+      admit: () => true,
     });
 
     await runTurn(dir, { provider, tools: registry, cwd: dir, userText: 'x', hooks });
@@ -104,6 +108,7 @@ describe('postTool 回注（结果文本随事件落盘，可从日志重建）'
     const hooks = createHookRunner({
       config: cfg([{ event: 'postTool', matcher: 'bash', command: 'ctx' }]),
       spawnHook: spawnReturning({ ctx: { stdout: '{"additionalContext":"记得提交"}' } }),
+      admit: () => true,
     });
 
     await runTurn(dir, { provider, tools: registry, cwd: dir, userText: 'x', hooks });
@@ -126,6 +131,7 @@ describe('postTool 回注（结果文本随事件落盘，可从日志重建）'
     const hooks = createHookRunner({
       config: cfg([{ event: 'postTool', matcher: 'bash', command: 'ctx' }]),
       spawnHook: spawnReturning({ ctx: { stdout: '{"additionalContext":"补丁提示"}' } }),
+      admit: () => true,
     });
     await runTurn(dir, { provider, tools: registry, cwd: dir, userText: 'x', hooks });
     const session = loadSession(dir);
@@ -151,6 +157,7 @@ describe('turnEnd / sessionStart / sessionEnd 触发 + hook/invocation 扩展事
         turns.push(input.command);
         return { status: 'completed', exitCode: 0, stdout: '', stderr: '' };
       },
+      admit: () => true,
     });
     const provider = new MockProvider([{ text: '你好' }]);
     await runTurn(dir, { provider, tools: new ToolRegistry(), cwd: dir, userText: 'hi', hooks });
@@ -186,6 +193,7 @@ describe('turnEnd / sessionStart / sessionEnd 触发 + hook/invocation 扩展事
         turns.push(input.command);
         return { status: 'completed', exitCode: 0, stdout: '', stderr: '' };
       },
+      admit: () => true,
     });
     await runTurn(dir, {
       provider: new MockProvider([{ text: '2' }]),
@@ -207,5 +215,62 @@ describe('turnEnd / sessionStart / sessionEnd 触发 + hook/invocation 扩展事
     });
     const session = loadSession(dir);
     expect(readHookInvocations(session.extensionEvents)).toEqual([]);
+  });
+});
+
+// —— 审查 P2-2：底层 appender 无 appendExtension（SessionAppender 可选契约）时 hook 链不炸 ——
+describe('appender 无 appendExtension 的 hook 降级（P2-2）', () => {
+  it('turnWriter 条件性挂载：缺失时 step 内 hook（postTool）照常触发、只降级为不落扩展事件，turn 不炸', async () => {
+    const dir = tmpDir();
+    // 先用真实 writer 建立含会话日志的目录（loadSession 依赖磁盘日志存在），关闭后仅作底座
+    const seed = SessionWriter.create(dir, { sessionId: 'bare-appender' }, { fsync: false });
+    seed.close();
+    // 裸 appender：仅实现必有契约（dir/lastSeq/append），**不实现可选的 appendExtension**
+    // （对应观察包裹器等既有实现）；事件只进内存，不落盘。
+    const log: AnySessionEvent[] = [];
+    let seq = 0;
+    const bare: SessionAppender = {
+      get dir() {
+        return dir;
+      },
+      get lastSeq() {
+        return seq;
+      },
+      append<T extends SessionEventType>(type: T, payload: SessionEventMap[T]): SessionEvent<T> {
+        seq += 1;
+        const event: SessionEvent<T> = { v: 1, seq, ts: new Date().toISOString(), type, payload };
+        log.push(event as unknown as AnySessionEvent);
+        return event;
+      },
+    };
+    const hookCmds: string[] = [];
+    const hooks = createHookRunner({
+      // postTool 在 runTurnWithWriter 的 step 循环内经 turnWriter 落 hook/invocation——
+      // 正是旧实现 `underlying.appendExtension!` 非空断言会炸的路径（turnEnd 走外层真实
+      // writer，不经 turnWriter，覆盖不到本缺陷）。
+      config: cfg([{ event: 'postTool', matcher: 'bash', command: 'note-post-tool' }]),
+      spawnHook: async (input) => {
+        hookCmds.push(input.command);
+        return { status: 'completed', exitCode: 0, stdout: '', stderr: '' };
+      },
+      admit: () => true,
+    });
+    const registry = new ToolRegistry();
+    registry.register(makeTool('bash', () => ({ output: 'ran' })));
+    // 旧实现（turnWriter 恒挂 appendExtension + `underlying.appendExtension!` 非空断言直调）
+    // 在此处会因 hook/invocation 落盘而 TypeError；修复后守卫自然跳过，turn 正常完成。
+    const result = await runTurn(bare, {
+      provider: new MockProvider([
+        { text: 'run', toolCalls: [{ id: 'c1', name: 'bash', arguments: '{"command":"ls"}' }] },
+        { text: 'ok' },
+      ]),
+      tools: registry,
+      cwd: dir,
+      userText: 'hi',
+      hooks,
+    });
+    expect(result.stopReason).toBe('end_turn');
+    expect(hookCmds).toEqual(['note-post-tool']); // hook 确实触发（invocation 记录非空路径已走到）
+    expect(log.some((e) => e.type === 'assistant/message')).toBe(true); // 事件照常经裸 appender 记录
   });
 });

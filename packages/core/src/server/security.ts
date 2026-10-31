@@ -4,7 +4,7 @@
 // 红线：本模块任何路径都不得把 token 写入日志、错误消息或事件流。
 import { randomBytes, timingSafeEqual } from 'node:crypto';
 
-/** token 请求头名（非浏览器客户端首选；Authorization: Bearer 与 ?token= 亦支持） */
+/** token 请求头名（首选；Authorization: Bearer 亦支持；?token= 仅作 WS 握手一次性兼容，见 extractServeTokenFromWsHandshake） */
 export const SERVE_TOKEN_HEADER = 'x-harness2-token';
 /** 预置 token 环境变量（可选；未设则启动时随机生成 32 字节 base64url） */
 export const SERVE_TOKEN_ENV = 'HARNESS2_SERVE_TOKEN';
@@ -47,10 +47,12 @@ function firstHeader(value: HeaderValue): string | undefined {
 }
 
 /**
- * 从请求提取 token（优先级：x-harness2-token > Authorization: Bearer > ?token=）。
+ * 从请求头提取 token（优先级：x-harness2-token > Authorization: Bearer）。
+ * **不读 ?token= 查询参数**——token 经 URL 传递会写入浏览器历史/代理网关访问日志/Referer。
+ * WS 握手的 ?token= 一次性兼容见 extractServeTokenFromWsHandshake。
  * 重复头（数组）取首值，与 Origin 校验同口径。
  */
-export function extractServeToken(headers: Record<string, HeaderValue>, url?: URL): string | undefined {
+export function extractServeToken(headers: Record<string, HeaderValue>): string | undefined {
   const direct = firstHeader(headers[SERVE_TOKEN_HEADER]);
   if (direct !== undefined && direct.trim().length > 0) return direct.trim();
   const auth = firstHeader(headers['authorization']);
@@ -58,8 +60,35 @@ export function extractServeToken(headers: Record<string, HeaderValue>, url?: UR
     const m = /^bearer\s+(.+)$/i.exec(auth.trim());
     if (m?.[1] !== undefined && m[1].length > 0) return m[1];
   }
-  const fromQuery = url?.searchParams.get('token');
-  return fromQuery !== null && fromQuery !== undefined && fromQuery.length > 0 ? fromQuery : undefined;
+  return undefined;
+}
+
+let warnedQueryToken = false;
+
+/** WS 握手使用 ?token= 的一次性告警（进程内只打印一次；不含 token 值）。
+ *  浏览器无法在 WS 握手设自定义头，?token= 仅作一次性兼容回退。 */
+export function warnServeQueryTokenOnce(): void {
+  if (warnedQueryToken) return;
+  warnedQueryToken = true;
+  console.error(
+    `warning: serve WS 握手使用 ?token= 查询参数（token 经 URL 传递会写入访问日志/Referer）；请改用 ${SERVE_TOKEN_HEADER} 或 Authorization: Bearer 头`,
+  );
+}
+
+/**
+ * WS 握手专用 token 提取：头优先（x-harness2-token > Authorization: Bearer），
+ * ?token= 仅作一次性 WS 握手兼容回退（浏览器无法在 WS 握手设头）。
+ * 使用 ?token= 时发一次性告警（不记录 token 值）。
+ */
+export function extractServeTokenFromWsHandshake(headers: Record<string, HeaderValue>, url: URL): string | undefined {
+  const fromHeader = extractServeToken(headers);
+  if (fromHeader !== undefined) return fromHeader;
+  const fromQuery = url.searchParams.get('token');
+  if (fromQuery !== null && fromQuery.length > 0) {
+    warnServeQueryTokenOnce();
+    return fromQuery;
+  }
+  return undefined;
 }
 
 /** 常量时间比较（长度不同直接 false；不记录、不回显任何一侧明文） */

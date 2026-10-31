@@ -166,13 +166,13 @@ describe('loadConfig ${VAR} 展开', () => {
 });
 
 describe('schema 校验', () => {
-  it('protocol 枚举拒绝 + 错误消息脱敏（值形似密钥时被 [REDACTED]）', () => {
+  it('protocol 枚举拒绝 + 错误消息不回显原始值（仅字段名+合法值域）', () => {
     const r = parseConfig({
       providers: { x: { protocol: 'sk-proto-abcdefgh', baseUrl: 'https://x' } },
       roles: {},
     });
     expect(r.config).toBeNull();
-    expect(r.errors[0]).toContain('[REDACTED]');
+    expect(r.errors[0]).toContain('protocol');
     expect(r.errors[0]).not.toContain('sk-proto-abcdefgh');
   });
 
@@ -551,6 +551,39 @@ describe('redactSecrets / redactedSummary / redactObject', () => {
     expect(s).not.toContain('secret-value-987654321');
   });
 
+  it('安全修复 #302：覆盖复合名/中文键/查询参数/自定义头名/sk- 特殊字符', () => {
+    const out = redactSecrets(
+      [
+        '{"appSecret":"app-secret-1","clientSecret":"client-secret-2","accessKey":"access-key-3"}',
+        '{"bearerToken":"bearer-token-4","authToken":"auth-token-5","tokenValue":"token-value-6"}',
+        '{"awsAccessKeyId":"AKIAIOSFODNN7EXAMPLE","SecretAccessKey":"wJalrXUtnFEMI-K7MDENG-bPxRfiCYEXAMPLEKEY"}',
+        '{"api_key_zh":"zh-key-777"}',
+        '{"密钥":"cj-key-888","访问令牌":"cj-token-999","密码":"cj-pass-111"}',
+        'https://example.com/api?access_key=qs-key-222',
+        'x-goog-api-key: goog-key-333; x-amz-security-token: amz-token-444',
+        'sk-abc.def.ghi sk-abc/def+ghi=jkl mysk-abcdef123456',
+      ].join('\n'),
+    );
+    expect(out).not.toContain('app-secret-1');
+    expect(out).not.toContain('client-secret-2');
+    expect(out).not.toContain('access-key-3');
+    expect(out).not.toContain('bearer-token-4');
+    expect(out).not.toContain('auth-token-5');
+    expect(out).not.toContain('token-value-6');
+    expect(out).not.toContain('AKIAIOSFODNN7EXAMPLE');
+    expect(out).not.toContain('wJalrXUtnFEMI-K7MDENG-bPxRfiCYEXAMPLEKEY');
+    expect(out).not.toContain('zh-key-777');
+    expect(out).not.toContain('cj-key-888');
+    expect(out).not.toContain('cj-token-999');
+    expect(out).not.toContain('cj-pass-111');
+    expect(out).not.toContain('qs-key-222');
+    expect(out).not.toContain('goog-key-333');
+    expect(out).not.toContain('amz-token-444');
+    expect(out).not.toContain('sk-abc.def.ghi');
+    expect(out).not.toContain('sk-abc/def+ghi=jkl');
+    expect(out).not.toContain('mysk-abcdef123456');
+  });
+
   it('redactObject 深拷贝并按字段名脱敏', () => {
     const obj = redactObject({
       status: 401,
@@ -640,7 +673,7 @@ describe('A03 推理档位配置（reasoning/effort）', () => {
       ),
     );
     expect(r.config).toBeNull();
-    expect(r.errors.some((e) => e.includes('reasoning.default') && e.includes('ultra'))).toBe(true);
+    expect(r.errors.some((e) => e.includes('reasoning.default') && !e.includes('ultra'))).toBe(true);
 
     const warn = parseConfig(
       cfgWith({ m: { reasoning: { values: ['low'], nope: 1 } } }, { main: { channel: 'deepseek', model: 'm' } }),
@@ -669,9 +702,7 @@ describe('A03 推理档位配置（reasoning/effort）', () => {
       ),
     );
     expect(mismatch.config).toBeNull();
-    expect(mismatch.errors.some((e) => e.includes('roles.main.effort "max"') && e.includes('reasoning.values'))).toBe(
-      true,
-    );
+    expect(mismatch.errors.some((e) => e.includes('roles.main.effort') && e.includes('reasoning.values'))).toBe(true);
 
     // 模型无 reasoning 声明 → effort 保留但不校验值域
     const ok = parseConfig(

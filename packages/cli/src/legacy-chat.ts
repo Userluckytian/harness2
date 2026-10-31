@@ -7,7 +7,7 @@
 // 审批"总是允许"仅存进程内会话级缓存，绝不落盘。
 import { createInterface, type Interface } from 'node:readline';
 import { SnapshotStore, getContextUsage, parseCoreCommand, runCoreCommand } from '@harness2/core';
-import { StreamRenderer } from './render.js';
+import { StreamRenderer, stripEscapes } from './render.js';
 import type { CommandContext } from './commands.js';
 import { createShellCommandDispatcher } from './shell-commands.js';
 import { matchCommands } from './command-registry.js';
@@ -95,7 +95,8 @@ export async function runLegacyReadlineChat(options: ChatOptions = {}): Promise<
         resolveAnswer(line);
       };
       const onAbort = (): void => settle(ASK_CANCELLED);
-      output.write(query);
+      // 审批查询含模型可控工具名（toolPrompt(input.tool)），写出前过滤 ANSI/OSC 控制字符
+      output.write(stripEscapes(query));
       answerResolver = resolveAnswer;
       if (signal === undefined) return;
       if (signal.aborted) {

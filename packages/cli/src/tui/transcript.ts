@@ -52,8 +52,11 @@ export function emptyTranscript(): TranscriptState {
  * 构造 TranscriptState：byId 惰性构建（首次访问才建 Map 并缓存）。
  * 长历史重投影会逐事件产生数千次 append；若每次 append 都 `new Map(state.byId)` 克隆，
  * 就是 O(n²)（万级事件下实测单 reduce 逾 500ms，逼近 1.5s 性能预算）。
- * 惰性索引让 reducer 全程只做「数组追加 + 反查」，Map 仅在读取时构建一次，
- * 同时保持 reducer 纯函数语义（不原地改旧 state 的 items/byId，React updater 可安全重放）。
+ * 惰性索引让 reducer 全程只做「数组追加 + 反查」，Map 仅在读取时构建一次。
+ * 纯度口径（如实）：append 路径（put 的 idx<0 分支）不原地改旧 state（新数组 + 惰性 byId）；
+ * 替换路径（#5508 安全修复 / #6118）是**受控原地更新**——Object.assign 就地改写字段 + dirty
+ * 登记，items 数组引用保持稳定（syncProjection 的增量判定与流式快路径依赖此不变量，
+ * 消费侧经 takeDirtyItemIds 感知被改动的 item）。
  */
 function stateWith(items: TranscriptItem[]): TranscriptState {
   let cached: Map<string, number> | undefined;
@@ -165,13 +168,35 @@ function tsOf(event: { ts?: string }): { ts?: string } {
   return event.ts !== undefined && event.ts.length > 0 ? { ts: event.ts } : {};
 }
 
-/** 按 id 追加或原地替换（惰性 byId 见 stateWith；未变化时复用 items） */
+/** #6118 流式增量投影：原地替换（put 的 idx>=0 分支）登记被改动的 item id，
+ *  按 items 数组引用索引（流式 put 期间数组引用稳定；append 产生新数组则登记在新数组上）。
+ *  仅 transcript.ts 写、next-shell.ts syncProjection 经 takeDirtyItemIds 消费清空。 */
+const dirtyByItems = new WeakMap<TranscriptItem[], Set<string>>();
+
+/** 取出并清空 items 数组的 dirty 集（消费后置空；无 dirty 返回 undefined）。 */
+export function takeDirtyItemIds(items: readonly TranscriptItem[]): Set<string> | undefined {
+  const set = dirtyByItems.get(items as TranscriptItem[]);
+  if (set === undefined || set.size === 0) return undefined;
+  dirtyByItems.set(items as TranscriptItem[], new Set());
+  return set;
+}
+
+/** 按 id 追加或原地替换（惰性 byId 见 stateWith；未变化时复用 items）
+ *  安全修复 #5508：替换已有 item 时原地更新字段（Object.assign），保持引用不变。
+ *  syncProjection 依赖 item 引用相等判断 appendable；若替换为新引用则触发全量 rebuildScrollback。 */
 function put(state: TranscriptState, item: TranscriptItem): TranscriptState {
   const idx = findItemIndex(state.items, item.id);
   if (idx < 0) return stateWith(state.items.concat(item));
-  const items = state.items.slice();
-  items[idx] = item;
-  return stateWith(items);
+  // 原地替换：保持 item 引用不变，仅更新内容字段
+  Object.assign(state.items[idx]!, item);
+  // #6118：登记被原地改动的 item id（供 syncProjection 流式快路径判定）
+  let dirty = dirtyByItems.get(state.items);
+  if (dirty === undefined) {
+    dirty = new Set<string>();
+    dirtyByItems.set(state.items, dirty);
+  }
+  dirty.add(item.id);
+  return stateWith(state.items);
 }
 
 /** subagent 工具名判定（与 core SUBAGENT_TOOL_NAMES 同源，避免 CLI 侧硬编码漂移） */
