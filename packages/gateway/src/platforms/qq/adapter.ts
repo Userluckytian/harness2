@@ -3,6 +3,7 @@
 import { QqApi, type QqApiOptions } from './api.js';
 import { QqGatewayWs, QQ_INTENT_DIRECT_MESSAGE, QQ_INTENT_GROUP_AND_C2C } from './gateway-ws.js';
 import { policyAllows, type GatewayChannelName, type InboundMessage, type PlatformAdapter } from '../../types.js';
+import { sanitizeInboundText } from '../sanitize.js';
 import type { GatewayChannelConfig } from '@harness2/core';
 
 export interface QqAdapterOptions {
@@ -104,7 +105,7 @@ export class QqAdapter implements PlatformAdapter {
 
     const rawText = typeof p.content === 'string' ? p.content : '';
     // 剥离 @ 前缀：官方 content 形如 <@!USER_OPENID>（openid 含字母数字）或纯 @昵称
-    const text = rawText.replace(/^\s*(?:<@[^>]*>|@[\w-]+)\s*/, '').trim();
+    const text = sanitizeInboundText(rawText.replace(/^\s*(?:<@[^>]*>|@[\w-]+)\s*/, ''));
     if (text.length === 0) return;
 
     const chatId = (isGroup ? p.group_openid : (p.user_openid ?? p.openid)) ?? '';

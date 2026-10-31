@@ -50,6 +50,7 @@ describe('FeishuAdapter（离线 stub）', () => {
       config: { enabled: true, appId: 'a', dmPolicy: 'open', groupPolicy: 'open', allow: [] },
       auth: { appId: 'a', appSecret: 's' },
       onEventMessage: () => {},
+      verificationToken: 'test-token',
     });
     await adapter.start();
     cleanups.push(() => adapter.stop());

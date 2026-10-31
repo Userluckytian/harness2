@@ -5,6 +5,7 @@
 // 红线：文本收发；tenant_access_token 单飞刷新（internal app：app_id+app_secret）；零新写入路径。
 import { createServer, type Server, type ServerResponse } from 'node:http';
 import { policyAllows, type GatewayChannelName, type InboundMessage, type PlatformAdapter } from '../../types.js';
+import { sanitizeInboundText } from '../sanitize.js';
 import type { GatewayChannelConfig } from '@harness2/core';
 
 export interface FeishuAdapterOptions {
@@ -56,11 +57,13 @@ export class FeishuAdapter implements PlatformAdapter {
     this.inboundHandler = handler;
   }
 
-  /** 启动本地 webhook 接收端点（P1-5：配置 verificationToken 时强制校验；未配置启动告警「仅限内网」） */
+  /** 启动本地 webhook 接收端点（P1-5：配置 verificationToken 时强制校验；未配置 fail-closed 拒绝启动——漏洞 #309） */
   async start(): Promise<void> {
+    // 漏洞 #309 修复（fail-closed）：未配置 verificationToken 时拒绝启动——
+    // 此前仅告警仍启动，本地任意进程可 POST 伪造 im.message.receive_v1 事件注入任意文本。
     if (this.options.verificationToken === undefined) {
-      console.error(
-        '[gateway/feishu] 警告：未配置 verificationToken，webhook 无鉴权——仅限 127.0.0.1 内网/穿透环境使用',
+      throw new Error(
+        '[gateway/feishu] 拒绝启动：未配置 FEISHU_VERIFICATION_TOKEN（webhook 无鉴权，本地进程可伪造入站事件）',
       );
     }
     const port = this.options.webhookPort ?? 9800;
@@ -139,7 +142,7 @@ export class FeishuAdapter implements PlatformAdapter {
           let text = '';
           try {
             const parsed = JSON.parse(contentRaw) as { text?: unknown };
-            if (typeof parsed.text === 'string') text = parsed.text.trim();
+            if (typeof parsed.text === 'string') text = sanitizeInboundText(parsed.text);
           } catch {
             text = '';
           }
