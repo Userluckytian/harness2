@@ -84,9 +84,11 @@ export function snapshotTargetFile(tool: string, args: unknown, cwd: string): st
   const raw = (args as Record<string, unknown>)[key];
   if (typeof raw !== 'string' || raw.length === 0) return null;
   const resolved = resolve(cwd, raw);
-  // 越界防护：resolve(cwd, raw) 后校验仍在 cwd 内
+  // 越界防护：resolve(cwd, raw) 后校验仍在 cwd 内。分段判定与 tools/common.ts
+  // resolveWithinCwd 同口径（rel 首段恰为 '..' 才算越界）——审查 P2-5：旧 startsWith('..')
+  // 会把 cwd 内合法的 `..foo`（下一段相对目录名）误判为越界而拒绝快照。
   const rel = relative(cwd, resolved);
-  if (rel !== '' && (rel.startsWith('..') || isAbsolute(rel))) {
+  if (rel !== '' && (isAbsolute(rel) || rel.split(/[\\/]/)[0] === '..')) {
     return null; // 越界路径不产生快照（工具自身会拒绝该路径）
   }
   return resolved;

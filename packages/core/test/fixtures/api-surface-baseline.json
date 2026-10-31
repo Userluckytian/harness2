@@ -853,6 +853,7 @@
     "buildSessionDigest": "function",
     "buildSkillDistillPrompt": "function",
     "buildSubagentChildTools": "function",
+    "buildSubprocessSafeEnv": "function",
     "buildTitleTranscript": "function",
     "buildToolExecutionView": "function",
     "buildToolInventory": "function",

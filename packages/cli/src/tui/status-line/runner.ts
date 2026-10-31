@@ -18,42 +18,12 @@
 import { spawn as nodeSpawn, type ChildProcess } from 'node:child_process';
 import { existsSync, mkdirSync, appendFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { HARNESS_DIR } from '@harness2/core';
+// P1-2 审查统一：子进程安全环境白名单单一共享出口（core；原本地 buildSafeEnv 副本删除）
+import { buildSubprocessSafeEnv, HARNESS_DIR } from '@harness2/core';
 import { STATUS_LINE_MAX_STDOUT_BYTES, STATUS_LINE_TIMEOUT_MS } from './config.js';
 import { statusLineChildEnv } from './contract.js';
 
 const IS_WINDOWS = process.platform === 'win32';
-
-/**
- * 构建子进程安全环境白名单（finding #5989，与 core bash.ts / grep.ts / script.ts 同款）：
- * killProcessTree 的 taskkill 子进程之前未传 env，继承宿主 process.env（含 API 密钥）。
- * 此处显式白名单，不透传应用密钥。
- */
-function buildSafeEnv(): NodeJS.ProcessEnv {
-  const env: NodeJS.ProcessEnv = {};
-  const whitelist = [
-    'PATH',
-    'HOME',
-    'TEMP',
-    'TMP',
-    'ComSpec',
-    'GIT_BASH',
-    'LANG',
-    'LC_ALL',
-    'USER',
-    'USERNAME',
-    'SYSTEMROOT',
-    'SYSTEMDRIVE',
-    'APPDATA',
-    'LOCALAPPDATA',
-  ];
-  for (const key of whitelist) {
-    if (process.env[key] !== undefined) {
-      env[key] = process.env[key];
-    }
-  }
-  return env;
-}
 
 /**
  * 尽力杀死整棵进程树（P2-4；与 core bash 工具同手法），失败不抛出：
@@ -75,7 +45,7 @@ function killProcessTree(child: ChildProcess): void {
       nodeSpawn('taskkill', ['/pid', String(pid), '/T', '/F'], {
         windowsHide: true,
         stdio: 'ignore',
-        env: buildSafeEnv(),
+        env: buildSubprocessSafeEnv(),
       }).unref();
     } catch {
       try {

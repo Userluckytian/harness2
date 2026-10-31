@@ -128,8 +128,10 @@ const SENSITIVE_KEY_COMPONENTS = new Set([
   'authorization',
 ]);
 
-/** 非英文（中文等）敏感键名：对原始键名做子串匹配，覆盖「API密钥」「配置密钥」等复合形态。 */
-const SENSITIVE_KEY_NON_ENGLISH = ['密钥', '配置', '密码', '口令', '凭证', '令牌', '私钥'];
+/** 非英文（中文等）敏感键名：对原始键名做子串匹配，覆盖「API密钥」「配置密钥」等复合形态。
+ *  审查 P2-9：移除过杀的 '配置'——子串口径会把「超时配置」「渲染配置」等无害键整值脱敏；
+ *  「配置密钥」复合形态由 '密钥' 子串覆盖，精确键名 '配置' 仍在 SENSITIVE_KEY_NAMES 兜底。 */
+const SENSITIVE_KEY_NON_ENGLISH = ['密钥', '密码', '口令', '凭证', '令牌', '私钥'];
 
 /** 把键名拆成小写组件：先按非字母数字切分，再按 camelCase 边界切分（accessKey -> access, key）。 */
 function splitKeyComponents(key: string): string[] {
@@ -153,7 +155,8 @@ function splitKeyComponents(key: string): string[] {
  * 判断键名是否敏感：命中即替换其值（宁可误杀，不可漏放）。
  * 安全修复 #303：由「精确匹配集合」升级为「精确集合 + 非英文子串 + 组件级匹配」三层：
  *   1) 精确集合：显式登记的复合名/头名/非英文键（向后兼容）；
- *   2) 非英文子串：覆盖 密钥/配置/密码 等中文键及其复合（API密钥、配置密钥）；
+ *   2) 非英文子串：覆盖 密钥/密码 等中文键及其复合（API密钥、配置密钥）；P2-9 起
+ *      '配置' 不再子串匹配（过杀「超时配置」等无害键），精确键名仍在精确集合兜底；
  *   3) 组件级匹配：兜底覆盖未登记的复合名与自定义头名（任意 *Key/*Token/*Secret/*Credential
  *      形态，含连字符头名 x-goog-api-key / x-amz-security-token）。
  * 组件级匹配用词界避免误伤 monkey/model/tokenize/secretary 等含敏感子串的普通词。

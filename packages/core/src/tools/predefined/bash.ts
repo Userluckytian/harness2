@@ -17,43 +17,14 @@ import type { ToolDefinition, ToolOutput } from '../types.js';
 import { expectObject, expectString, optionalNumber, truncateText } from './common.js';
 import { OutputCollector } from '../process-output.js';
 import { loadConfiguredBashShell, resolveBashShell } from '../shell.js';
+// P1-2 审查统一：子进程安全环境白名单单一共享出口（原本地 buildSafeEnv 副本删除）
+import { buildSubprocessSafeEnv } from '../process-env.js';
 
 export const MAX_BASH_OUTPUT_CHARS = 32 * 1024;
 export const DEFAULT_BASH_TIMEOUT_MS = 30_000;
 const MAX_CAPTURE_BYTES = 16 * 1024 * 1024; // 输出回收上限（防失控命令吃满内存；超限后停止追加，不再像 exec 那样杀进程）
 
 const IS_WINDOWS = process.platform === 'win32';
-
-/**
- * 构建子进程安全环境白名单（finding #305）：仅传递必要的系统变量，不透传应用密钥。
- * bash/script 工具之前未传 env，子进程继承宿主 process.env（含 API 密钥），
- * 模型可经 bash 读回上下文并进入日志/事件流。
- */
-function buildSafeEnv(): NodeJS.ProcessEnv {
-  const env: NodeJS.ProcessEnv = {};
-  const whitelist = [
-    'PATH',
-    'HOME',
-    'TEMP',
-    'TMP',
-    'ComSpec',
-    'GIT_BASH',
-    'LANG',
-    'LC_ALL',
-    'USER',
-    'USERNAME',
-    'SYSTEMROOT',
-    'SYSTEMDRIVE',
-    'APPDATA',
-    'LOCALAPPDATA',
-  ];
-  for (const key of whitelist) {
-    if (process.env[key] !== undefined) {
-      env[key] = process.env[key];
-    }
-  }
-  return env;
-}
 
 /** 尽力杀死整棵进程树；失败不抛出（结果由 close 事件统一回收）。
  *  Windows：taskkill /T 按父子关系树杀（不依赖进程组，无需 detached）；
@@ -67,7 +38,7 @@ function killTree(child: ChildProcess): void {
       const taskkill = spawn('taskkill', ['/pid', String(pid), '/T', '/F'], {
         windowsHide: true,
         stdio: 'ignore',
-        env: buildSafeEnv(),
+        env: buildSubprocessSafeEnv(),
       });
       // 监听 error 事件：taskkill 异步失败时退回 child.kill()（finding #307）
       taskkill.on('error', () => {
@@ -168,14 +139,14 @@ export const bashTool: ToolDefinition = {
             detached: !IS_WINDOWS,
             windowsHide: true,
             stdio: ['ignore', 'pipe', 'pipe'],
-            env: buildSafeEnv(),
+            env: buildSubprocessSafeEnv(),
           })
         : spawn(shell.executable, [...shell.argsPrefix, command], {
             cwd: ctx.cwd,
             detached: !IS_WINDOWS,
             windowsHide: true,
             stdio: ['ignore', 'pipe', 'pipe'],
-            env: buildSafeEnv(),
+            env: buildSubprocessSafeEnv(),
           });
 
       let timer: NodeJS.Timeout | undefined;

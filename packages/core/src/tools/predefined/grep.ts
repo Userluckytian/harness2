@@ -13,41 +13,12 @@ import { isSkippedEntryName } from './ignore.js';
 // 目录级缓存：与 glob 共用（按目录 mtimeMs 失效，见 dirCache.ts）
 import { readDirCached } from './dirCache.js';
 import { OutputCollector } from '../process-output.js';
+// P1-2 审查统一：子进程安全环境白名单单一共享出口（原本地 buildSafeEnv 副本删除）
+import { buildSubprocessSafeEnv } from '../process-env.js';
 
 export const MAX_GREP_RESULTS = 500;
 const MAX_FILE_BYTES = 1024 * 1024;
 const MAX_RG_STDOUT_BYTES = 8 * 1024 * 1024;
-
-/**
- * 构建子进程安全环境白名单（finding #5942）：仅传递必要的系统变量，不透传应用密钥。
- * rg 子进程之前未传 env，继承宿主 process.env（含 API 密钥）；与 bash.ts / script.ts /
- * hooks/executor.ts 同样采用显式白名单，绝不把宿主 process.env 整包交给子进程。
- */
-function buildSafeEnv(): NodeJS.ProcessEnv {
-  const env: NodeJS.ProcessEnv = {};
-  const whitelist = [
-    'PATH',
-    'HOME',
-    'TEMP',
-    'TMP',
-    'ComSpec',
-    'GIT_BASH',
-    'LANG',
-    'LC_ALL',
-    'USER',
-    'USERNAME',
-    'SYSTEMROOT',
-    'SYSTEMDRIVE',
-    'APPDATA',
-    'LOCALAPPDATA',
-  ];
-  for (const key of whitelist) {
-    if (process.env[key] !== undefined) {
-      env[key] = process.env[key];
-    }
-  }
-  return env;
-}
 
 export const grepTool: ToolDefinition = {
   name: 'grep',
@@ -115,7 +86,7 @@ function grepWithRipgrep(
           pattern,
           relTarget,
         ],
-        { cwd, signal, windowsHide: true, env: buildSafeEnv() },
+        { cwd, signal, windowsHide: true, env: buildSubprocessSafeEnv() },
       );
     } catch {
       done(null); // 平台不支持 spawn 时直接回退

@@ -23,6 +23,8 @@ import { spawn, type ChildProcess } from 'node:child_process';
 import { TOOL_RPC_PROTOCOL, ToolRpcLineServer } from './rpc-stdio.js';
 import type { ToolRpcService } from './rpc.js';
 import type { ToolDefinition, ToolOutput } from './types.js';
+// P1-2 审查统一：子进程安全环境白名单单一共享出口（原本地 buildSafeEnv 副本删除）
+import { buildSubprocessSafeEnv } from './process-env.js';
 
 /** 模型面工具名（^[a-z0-9_]+$ 约束内） */
 export const SCRIPT_TOOL_NAME = 'run_script';
@@ -34,38 +36,6 @@ export const SCRIPT_DEFAULT_MAX_OUTPUT_CHARS = 8_000;
 /** console 日志保留上限（行数/字符；防脚本用日志绕开输出上限） */
 export const SCRIPT_MAX_LOG_LINES = 200;
 export const SCRIPT_MAX_LOG_CHARS = 4_000;
-
-/**
- * 构建子进程安全环境白名单（finding #305）：仅传递必要的系统变量，不透传应用密钥。
- * run_script 子进程之前未传 env，继承宿主 process.env（含 API 密钥），模型可经脚本
- * 读回上下文并进入日志/事件流。与 bash.ts / hooks/executor.ts 同样采用显式白名单，
- * 绝不把宿主 process.env 整包交给子进程。
- */
-function buildSafeEnv(): NodeJS.ProcessEnv {
-  const env: NodeJS.ProcessEnv = {};
-  const whitelist = [
-    'PATH',
-    'HOME',
-    'TEMP',
-    'TMP',
-    'ComSpec',
-    'GIT_BASH',
-    'LANG',
-    'LC_ALL',
-    'USER',
-    'USERNAME',
-    'SYSTEMROOT',
-    'SYSTEMDRIVE',
-    'APPDATA',
-    'LOCALAPPDATA',
-  ];
-  for (const key of whitelist) {
-    if (process.env[key] !== undefined) {
-      env[key] = process.env[key];
-    }
-  }
-  return env;
-}
 
 export interface ScriptToolOptions {
   /** 工具 RPC 服务（脚本调工具的唯一出口；审批/白名单/超时在服务侧收口） */
@@ -257,7 +227,7 @@ export function createScriptTool(options: ScriptToolOptions): ToolDefinition {
           stdio: ['pipe', 'pipe', 'pipe', 'pipe'],
           windowsHide: true,
           // 显式 env 白名单：不透传宿主 process.env（防密钥外泄，finding #305）
-          env: buildSafeEnv(),
+          env: buildSubprocessSafeEnv(),
         });
       } catch (e) {
         ctx.signal.removeEventListener('abort', onOuterAbort);

@@ -14,39 +14,10 @@
 //   下只杀直接子进程、孙进程继续产生副作用）。守护进程化自行脱离进程组者平台原语亦
 //   无法触达（与 core bash 的已知限制同口径，不承诺）。
 import { spawn, type ChildProcess } from 'node:child_process';
+// P1-2 审查统一：子进程安全环境白名单单一共享出口（core；原本地 buildSafeEnv 副本删除）
+import { buildSubprocessSafeEnv } from '@harness2/core';
 
 const IS_WINDOWS = process.platform === 'win32';
-
-/**
- * 构建子进程安全环境白名单（finding #5989，与 core bash.ts 同款）：
- * killProcessTree 的 taskkill 子进程之前未传 env，继承宿主 process.env（含 API 密钥）。
- * 此处显式白名单，不透传应用密钥。
- */
-function buildSafeEnv(): NodeJS.ProcessEnv {
-  const env: NodeJS.ProcessEnv = {};
-  const whitelist = [
-    'PATH',
-    'HOME',
-    'TEMP',
-    'TMP',
-    'ComSpec',
-    'GIT_BASH',
-    'LANG',
-    'LC_ALL',
-    'USER',
-    'USERNAME',
-    'SYSTEMROOT',
-    'SYSTEMDRIVE',
-    'APPDATA',
-    'LOCALAPPDATA',
-  ];
-  for (const key of whitelist) {
-    if (process.env[key] !== undefined) {
-      env[key] = process.env[key];
-    }
-  }
-  return env;
-}
 
 /**
  * 尽力杀死整棵进程树；失败不抛出（结果由 close 事件统一回收）。
@@ -69,7 +40,7 @@ function killProcessTree(child: ChildProcess): void {
       spawn('taskkill', ['/pid', String(pid), '/T', '/F'], {
         windowsHide: true,
         stdio: 'ignore',
-        env: buildSafeEnv(),
+        env: buildSubprocessSafeEnv(),
       }).unref();
     } catch {
       try {

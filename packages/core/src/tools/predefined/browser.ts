@@ -16,6 +16,8 @@ import { join } from 'node:path';
 import type { Browser, BrowserContext, Page } from 'playwright';
 import type { ToolDefinition, ToolOutput } from '../types.js';
 import { expectObject, expectString, optionalString, resolveWithinCwd, truncateText } from './common.js';
+// P1-2 审查统一：子进程安全环境白名单单一共享出口（原本地 buildSafeEnv 副本删除）
+import { buildSubprocessSafeEnv } from '../process-env.js';
 
 /** 池默认参数（可被 config.browser 覆盖） */
 export const BROWSER_IDLE_DESTROY_MS = 300_000;
@@ -491,37 +493,6 @@ export function createBrowserTools(sessionKey: string, pool: BrowserPool): ToolD
   return [navigate, click, type, snapshot, screenshot, close];
 }
 
-/**
- * 构建子进程安全环境白名单（finding #5989，与 bash.ts / grep.ts / script.ts 同款）：
- * installBrowserRuntime 的 playwright install 子进程之前未传 env，继承宿主 process.env
- * （含 API 密钥）。此处显式白名单，不透传应用密钥。
- */
-function buildSafeEnv(): NodeJS.ProcessEnv {
-  const env: NodeJS.ProcessEnv = {};
-  const whitelist = [
-    'PATH',
-    'HOME',
-    'TEMP',
-    'TMP',
-    'ComSpec',
-    'GIT_BASH',
-    'LANG',
-    'LC_ALL',
-    'USER',
-    'USERNAME',
-    'SYSTEMROOT',
-    'SYSTEMDRIVE',
-    'APPDATA',
-    'LOCALAPPDATA',
-  ];
-  for (const key of whitelist) {
-    if (process.env[key] !== undefined) {
-      env[key] = process.env[key];
-    }
-  }
-  return env;
-}
-
 // —— 安装（harness2 browser install） ——
 
 /**
@@ -554,7 +525,10 @@ export async function installBrowserRuntime(): Promise<number> {
   const cliPath = resolvePlaywrightCliPath(require);
   const { spawn } = await import('node:child_process');
   return new Promise((resolve, reject) => {
-    const child = spawn(process.execPath, [cliPath, 'install', 'chromium'], { stdio: 'inherit', env: buildSafeEnv() });
+    const child = spawn(process.execPath, [cliPath, 'install', 'chromium'], {
+      stdio: 'inherit',
+      env: buildSubprocessSafeEnv(),
+    });
     child.on('error', reject);
     child.on('exit', (code) => resolve(code ?? 1));
   });

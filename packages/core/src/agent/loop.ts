@@ -81,6 +81,12 @@ function truncateCircuitError(text: string): string {
 function createRecordingAppender(underlying: SessionWriter | SessionAppender) {
   const pending: LoadedEvent[] = [];
   const pendingExtension: LoadedExtensionEvent[] = [];
+  // 审查 P2-2：appendExtension 在 SessionAppender 契约上是**可选**方法（观察包裹器等既有
+  // 实现无需跟进）。旧实现恒挂 appendExtension 并以 `underlying.appendExtension!` 非空断言
+  // 直调——底层缺该方法时 hook 链一旦触发即 TypeError。改为条件性定义：仅当底层确有该
+  // 方法时才挂（缺失时不挂，appendHookInvocations 的既有 `typeof !== 'function'` 守卫
+  // 自然跳过，hook 结果只降级为不落盘、绝不炸 turn）。
+  const supportsExtension = typeof underlying.appendExtension === 'function';
   const turnWriter: SessionAppender = {
     get dir() {
       return underlying.dir;
@@ -93,11 +99,15 @@ function createRecordingAppender(underlying: SessionWriter | SessionAppender) {
       pending.push({ event: event as unknown as AnySessionEvent, active: true });
       return event;
     },
-    appendExtension(type: string, payload: Record<string, unknown>): ExtensionSessionEvent {
-      const ext = underlying.appendExtension!(type, payload);
-      pendingExtension.push({ event: ext, active: true });
-      return ext;
-    },
+    ...(supportsExtension
+      ? {
+          appendExtension(type: string, payload: Record<string, unknown>): ExtensionSessionEvent {
+            const ext = underlying.appendExtension!(type, payload);
+            pendingExtension.push({ event: ext, active: true });
+            return ext;
+          },
+        }
+      : {}),
   };
   /** 把自上次 flush 以来缓存的事件增量追加到已加载会话（就地追加，返回追加条数） */
   const flushAppended = (target: LoadedSession): number => {
@@ -1008,6 +1018,15 @@ async function runTurnWithWriter(
         steers.resolve({ id: s.id, expectedTurnId: s.expectedTurnId, state: 'rejected' });
       }
     }
+  }
+
+  // 审查 P2-6：turn 收尾对 realWriter 做类型安全 flush——SessionWriter 开启批量 fsync
+  // （fsyncIntervalMs 合并逐事件同步）时，批内尚未刷盘的事件在进程崩溃下会丢；turn 结束
+  // 显式冲刷一次，把崩溃耐久窗口从「批量间隔（缺省 1s）」压回单 turn。flush 不在
+  // SessionAppender 契约上（可选能力），故结构化探测：确为函数才调，缺省（含测试 fake
+  // appender）静默跳过。
+  if (typeof (realWriter as { flush?: unknown }).flush === 'function') {
+    (realWriter as { flush: () => void }).flush();
   }
 
   return {
