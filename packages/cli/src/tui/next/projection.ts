@@ -104,6 +104,53 @@ function splitLines(text: string): string[] {
   return text.split(/\r\n|\r|\n/);
 }
 
+// --- 内容校验型 memo（#5512 projectTranscript 性能优化）---
+// transcript.put() 对已存在 item 原地 Object.assign：引用不变、内容变。故 memo 不能只看
+// 引用（纯引用早退已被证伪 #5967），必须校验内容。实现：外层 WeakMap 以 item 对象为键
+// （item 回收即释放，不泄漏）；内层按「字符串内容」缓存（JS 字符串相等 = 内容相等，天然
+// 内容校验）。item 被原地改写后新内容不在内层键中 → 重算并覆盖；旧键随 item 一起 GC。
+const SPLIT_MEMO_CAP = 6; // 单 item 内层条目上限（防流式文本持续增长；超限清空重算）
+
+type SplitMemo = Map<string, string[]>;
+const splitMemoByItem = new WeakMap<TranscriptItem, SplitMemo>();
+
+function splitMemoFor(item: TranscriptItem): SplitMemo {
+  let m = splitMemoByItem.get(item);
+  if (m === undefined) {
+    m = new Map();
+    splitMemoByItem.set(item, m);
+  }
+  return m;
+}
+
+/** 内容校验型 splitLines：同 item 同内容复用；item 原地改写内容后自动重算。 */
+function splitCached(item: TranscriptItem, text: string): string[] {
+  const m = splitMemoFor(item);
+  const hit = m.get(text);
+  if (hit !== undefined) return hit;
+  const lines = splitLines(text);
+  if (m.size >= SPLIT_MEMO_CAP) m.clear();
+  m.set(text, lines);
+  return lines;
+}
+
+interface ClockMemo {
+  ts: string | undefined;
+  hour12: boolean;
+  clock: string | undefined;
+}
+const clockMemoByItem = new WeakMap<TranscriptItem, ClockMemo>();
+
+/** 内容校验型 formatClock：同 item 同 (ts, hour12) 复用。 */
+function clockCached(item: TranscriptItem, ts: string | undefined, hour12: boolean | undefined): string | undefined {
+  const resolved = hour12 ?? false;
+  const memo = clockMemoByItem.get(item);
+  if (memo !== undefined && memo.ts === ts && memo.hour12 === resolved) return memo.clock;
+  const clock = formatClock(ts, hour12);
+  clockMemoByItem.set(item, { ts, hour12: resolved, clock });
+  return clock;
+}
+
 /**
  * P11-T4：消息时间戳文案（消息行右侧弱化显示）。
  *
@@ -306,13 +353,14 @@ const DIFF_MAX_LINES = 20; // 与 DiffCard DEFAULT_MAX_LINES 一致
 
 /** 推理块：折叠一行摘要 / 展开逐行 `  │ `（对齐 ReasoningBlock：默认折叠、灰色） */
 function projectReasoning(
-  text: string,
+  item: TranscriptItem,
   lineIndex: number,
   expanded: boolean,
   cols: number | undefined,
   out: ProjectionLine[],
   theme: Theme,
 ): void {
+  const text = item.kind === 'assistant' ? (item.reasoning ?? '') : '';
   const trimmed = text.trim();
   if (trimmed.length === 0) return;
   if (!expanded) {
@@ -324,7 +372,7 @@ function projectReasoning(
     });
     return;
   }
-  for (const line of splitLines(trimmed)) {
+  for (const line of splitCached(item, trimmed)) {
     out.push({ text: `  │ ${line}`, lineIndex, kind: 'reasoning', fg: theme.fg.reasoning });
   }
 }
@@ -456,7 +504,8 @@ function projectTool(
   // 结果行：pending 无；失败原因首行始终可见
   let deferredOutput: string[] = [];
   if (item.status === 'failed') {
-    const errLines = item.error !== undefined && item.error.length > 0 ? splitLines(item.error) : ['（无错误详情）'];
+    const errLines =
+      item.error !== undefined && item.error.length > 0 ? splitCached(item, item.error) : ['（无错误详情）'];
     out.push({ text: `  └ ✗ ${errLines[0] ?? ''}`, lineIndex, kind: 'tool-result', fg: theme.fg.toolResultFailed });
     if (expanded) {
       for (const line of errLines.slice(1)) {
@@ -464,12 +513,12 @@ function projectTool(
       }
     }
     const output = item.output ?? '';
-    if (expanded && output.length > 0) deferredOutput = splitLines(output);
+    if (expanded && output.length > 0) deferredOutput = splitCached(item, output);
   } else if (item.status === 'ok' && !isSub) {
     // 子代理 ok 的结果状态已由「完成」状态行表达，且其 output 是 childSessionId JSON（内部
     // 协议载荷，非人读文本），不再产出 `  └ ✓` 行；普通工具照常产出。
     const output = item.output ?? '';
-    const lines = output.length > 0 ? splitLines(output) : [];
+    const lines = output.length > 0 ? splitCached(item, output) : [];
     if (!expanded) {
       // 折叠态：摘要内联在 └ 行；多行带「共 N 行」提示（整体截断到 cols）
       const first = lines.length > 0 ? oneLine(lines[0] ?? '') : '';
@@ -511,8 +560,8 @@ export function projectTranscript(items: readonly TranscriptItem[], opts: Projec
         : undefined;
   const theme = opts.theme ?? DARK_THEME; // P4-2：缺省 dark = 现状默认色（零变化契约）
   // P11-T4：消息时间戳字段只从真实 ts 产出（formatClock 不可解析 → 空对象，不显示）
-  const stamp = (ts: string | undefined): Pick<ProjectionLine, 'right' | 'rightFg'> => {
-    const clock = formatClock(ts, opts.hour12);
+  const stamp = (item: TranscriptItem, ts: string | undefined): Pick<ProjectionLine, 'right' | 'rightFg'> => {
+    const clock = clockCached(item, ts, opts.hour12);
     return clock === undefined ? {} : { right: clock, rightFg: theme.fg.system };
   };
   const out: ProjectionLine[] = [];
@@ -523,15 +572,21 @@ export function projectTranscript(items: readonly TranscriptItem[], opts: Projec
     const expanded = collapsed?.has(i) ?? false;
     switch (item.kind) {
       case 'user': {
-        const lines = splitLines(item.text);
-        out.push({ text: `❯ ${lines[0] ?? ''}`, lineIndex: i, kind: 'user', fg: theme.fg.user, ...stamp(item.ts) });
+        const lines = splitCached(item, item.text);
+        out.push({
+          text: `❯ ${lines[0] ?? ''}`,
+          lineIndex: i,
+          kind: 'user',
+          fg: theme.fg.user,
+          ...stamp(item, item.ts),
+        });
         for (let k = 1; k < lines.length; k += 1) {
           out.push({ text: lines[k] ?? '', lineIndex: i, kind: 'user', fg: theme.fg.user });
         }
         break;
       }
       case 'assistant': {
-        const lines = splitLines(item.text);
+        const lines = splitCached(item, item.text);
         for (let k = 0; k < lines.length; k += 1) {
           out.push({
             text: lines[k] ?? '',
@@ -539,23 +594,23 @@ export function projectTranscript(items: readonly TranscriptItem[], opts: Projec
             kind: 'assistant',
             fg: theme.fg.assistant,
             // P11-T4：时间戳只挂首行（多行消息不在每行重复）
-            ...(k === 0 ? stamp(item.ts) : {}),
+            ...(k === 0 ? stamp(item, item.ts) : {}),
           });
         }
         if (item.reasoning !== undefined) {
-          projectReasoning(item.reasoning, i, expanded, cols, out, theme);
+          projectReasoning(item, i, expanded, cols, out, theme);
         }
         break;
       }
       case 'partial': {
-        const lines = splitLines(item.text);
+        const lines = splitCached(item, item.text);
         for (let k = 0; k < lines.length; k += 1) {
           out.push({
             text: lines[k] ?? '',
             lineIndex: i,
             kind: 'assistant',
             fg: theme.fg.assistant,
-            ...(k === 0 ? stamp(item.ts) : {}),
+            ...(k === 0 ? stamp(item, item.ts) : {}),
           });
         }
         out.push({
@@ -583,7 +638,7 @@ export function projectTranscript(items: readonly TranscriptItem[], opts: Projec
       case 'status':
         // 逐行投影（与 user/assistant 分支同构）：多行文本（如 core /help 的 HELP_TEXT、
         // 命令输出的多行报告）必须展开为多条逻辑行，否则换行符会被当成可打印字符进网格。
-        for (const line of splitLines(item.text)) {
+        for (const line of splitCached(item, item.text)) {
           out.push({ text: line, lineIndex: i, kind: 'system', fg: theme.fg.system });
         }
         break;

@@ -60,6 +60,7 @@ function writeRowAt(buf: CellBuffer, y: number, x0: number, text: string, maxX: 
     buf.setCell(x, y, ch, w, fg);
     x += w;
   }
+  buf.clearTail(y, x, maxX); // 写短行后清行尾（防旧字符残留）
 }
 
 /** 按显示宽度截断（宽字符放不下整字丢弃、零宽字符跳过） */

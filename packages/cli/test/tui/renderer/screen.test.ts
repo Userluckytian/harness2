@@ -79,18 +79,26 @@ describe('Screen 生命周期', () => {
     expect(out.text).toBe('');
   });
 
-  it('render 后 back buffer 已清空（每帧全量语义）', () => {
+  it('脏行制（#5478）：back buffer 内容跨帧保留，未重绘的上一帧行被局部擦除', () => {
     const out = new MemOut();
     const s = new Screen(out, 20, 4);
     s.start();
     s.render((buf) => {
       buf.writeText(0, 'old');
     });
+    expect(s.buffer.rowText(0)).toBe('old                 ');
+    out.clear();
     s.render((buf) => {
-      // 未写任何内容 → 上一帧的 "old" 应从屏幕上被差量擦除
-      expect(buf.rowText(0)).toBe('                    ');
+      // 新语义：帧开始只重置脏标记（beginFrame），不清内容——draw 回调仍读到上一帧内容
+      expect(buf.rowText(0)).toBe('old                 ');
     });
+    // 帧结束：上一帧脏行本帧未重绘 → clearRow 局部擦除（等价旧全量 clear 的局部化）
+    expect(s.buffer.rowText(0)).toBe('                    ');
+    // 差量擦除真实发射：CUP 定位行首 + 重写空白段（不重复叠加旧内容）
+    expect(out.text).toContain('\x1b[1;1H');
     expect(out.text).not.toContain('oldold');
+    // 本帧脏行 = 被擦除的行 0
+    expect(s.buffer.dirtyRows()).toEqual([0]);
   });
 
   it('resize：buffer 尺寸变化，下一帧全量重绘', () => {

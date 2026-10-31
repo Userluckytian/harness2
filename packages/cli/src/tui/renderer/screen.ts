@@ -22,6 +22,8 @@ export class Screen {
   private readonly back: CellBuffer;
   private _started = false;
   private _stopped = false;
+  /** 上一帧已绘制行（本帧未重绘的行需擦除以保持区域消失语义） */
+  private lastDirtyRows = new Set<number>();
 
   constructor(out: WriteTarget, cols: number, rows: number) {
     this.out = out;
@@ -60,9 +62,25 @@ export class Screen {
    */
   render(draw: (buf: CellBuffer) => void): number {
     if (!this._started || this._stopped) return 0;
-    this.back.clear();
+    // 帧开始：重置脏行标记（保留上一帧内容，避免全量清屏 O(R×C)）。
+    this.back.beginFrame();
+    // 绘制：writeText/setCell/setLinkId 按需标记脏行。
     draw(this.back);
-    return this.presenter.present(this.back);
+    const thisDirty = new Set(this.back.dirtyRows());
+    // 上一帧已绘制、本帧未重绘的行 → 擦除（区域消失/滚动擦除语义），
+    // 等价于旧 clear() 的局部化：仅作用于变化行，而非整屏。
+    for (const y of this.lastDirtyRows) {
+      if (!thisDirty.has(y)) {
+        this.back.clearRow(y);
+        thisDirty.add(y);
+      }
+    }
+    this.lastDirtyRows = thisDirty;
+    // present 仅扫描脏行（四元组比较按行局部化）。
+    return this.presenter.present(
+      this.back,
+      [...thisDirty].sort((a, b) => a - b),
+    );
   }
 
   /** 终端尺寸变化：back buffer 调整（内容保留左上），下一帧 diff 自动全量重绘 */
@@ -70,6 +88,7 @@ export class Screen {
     this.cols = cols;
     this.rows = rows;
     this.back.resize(cols, rows);
+    this.lastDirtyRows = new Set();
   }
 
   /**
