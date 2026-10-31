@@ -173,12 +173,6 @@ export const CHANNEL_REGISTRY: readonly ChannelRegistryEntry[] = [
     note: 'B: GenUI（字面量频道，services/src/gen-ui/contract.ts）',
   },
   { channel: ServiceChannels.OutputStyle, service: 'IOutputStyleService', classification: 'B', note: 'B: 输出样式' },
-  {
-    channel: ServiceChannels.SettingsSync,
-    service: 'ISettingsSyncService',
-    classification: 'B',
-    note: 'B: 首启设置同步',
-  },
 
   // ── C 类：云端绑定 / 专有，静默空实现（ZS6 feature-gate 隐藏） ────────────────
   {
@@ -294,6 +288,12 @@ export const CHANNEL_REGISTRY: readonly ChannelRegistryEntry[] = [
     service: 'IOnboardingRecordService',
     classification: 'C',
     note: 'C: ZCode onboarding 记录',
+  },
+  {
+    channel: ServiceChannels.SettingsSync,
+    service: 'ISettingsSyncService',
+    classification: 'C',
+    note: 'C: ZCode settings-sync 首启提示；getFirstRunPromptState→handled:true（消除每工作区必弹欢迎引导，2026-10-31）',
   },
 ];
 

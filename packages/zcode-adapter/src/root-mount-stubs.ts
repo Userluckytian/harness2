@@ -17,6 +17,11 @@ import type {
   DynamicWorkflowClientConfig,
   MarketingTouchSnapshot,
   OAuthCachedSessionRestoreResult,
+  SettingsSyncClaudeAgentsFileCopyResult,
+  SettingsSyncClaudeAgentsFileMigrationStatus,
+  SettingsSyncDiscoveryResult,
+  SettingsSyncFirstRunPromptState,
+  SettingsSyncImportResult,
   SourceServerManagementSnapshot,
   UserInfo,
   ZCodeTaskMeta,
@@ -42,6 +47,7 @@ import type {
   IProviderSettingsService,
   IRemoteProjectService,
   ISettingService,
+  ISettingsSyncService,
   ISourceServerManagementService,
   ITaskGroupService,
   IUsageStatsService,
@@ -575,6 +581,71 @@ export const onboardingRecordServiceStub: IOnboardingRecordService = createStubS
   channelName: 'onboarding-record',
   classification: 'C',
   impl: onboardingRecordServiceImpl,
+});
+
+// ── C 类：settings-sync 首启提示（显式桩——「欢迎使用 ZCode」弹窗循环修复，2026-10-31）──
+//
+// 缺桩实证（CDP）：UI useSettingsSync.ts 先读 getFirstRunPromptState() 判 handled，
+// 未 handled 才 detect 并弹首启引导。此前该频道按 B 类走工厂默认（方法全 throw）→
+// catch 分支 open:true → 每个工作区必弹「欢迎使用 ZCode」，且关闭路径
+// markFirstRunPromptHandled() 同样 throw → 标记永远落不了库 → 死循环。
+// 显式桩语义：handled 恒 true——首启提示视为已消费，弹窗永不再弹；
+// 用户如需迁移三方配置，可后续在设置页手动开（detect 返回空 discovery，
+// normalizeDiscovery 后为合法空态，manual intent 下欢迎页正常呈现不炸）。
+
+const settingsSyncServiceImpl: Pick<
+  ISettingsSyncService,
+  | 'getClaudeAgentsFileMigrationStatus'
+  | 'copyClaudeAgentsFileToZcodeAgentsFile'
+  | 'detect'
+  | 'importSelected'
+  | 'getFirstRunPromptState'
+  | 'markFirstRunPromptHandled'
+> = {
+  // 上游 supported=sourceExists（settingsSyncService.ts:2186-2200）；桩无源文件 →
+  // 不可迁移，UI 迁移勾选默认不选（useOnboardingAgentsFileMigration.ts:43）
+  async getClaudeAgentsFileMigrationStatus(): Promise<SettingsSyncClaudeAgentsFileMigrationStatus> {
+    return {
+      sourcePath: '',
+      targetPath: '',
+      sourceExists: false,
+      targetExists: false,
+      supported: false,
+      unavailableReason: 'missingSource',
+    };
+  },
+  // 无源可拷贝 → skipped/missingSource（形状对齐上游 copyClaudeAgentsFileToZcodeAgentsFile 空源分支）
+  async copyClaudeAgentsFileToZcodeAgentsFile(): Promise<SettingsSyncClaudeAgentsFileCopyResult> {
+    return {
+      sourcePath: '',
+      targetPath: '',
+      status: 'skipped',
+      overwritten: false,
+      skippedReason: 'missingSource',
+    };
+  },
+  // 空 discovery（对齐上游 buildEmptyDiscoveryResult）：设置页手动「重新打开引导」拿到合法空态不炸
+  async detect(): Promise<SettingsSyncDiscoveryResult> {
+    return { agents: [] };
+  },
+  // 无任务可导入的空结果（形状对齐上游 importSelected 汇总结构，计数全 0）
+  async importSelected(): Promise<SettingsSyncImportResult> {
+    return { successCount: 0, skippedCount: 0, failedCount: 0, taskResults: [] };
+  },
+  // 首启提示标记为已消费——useSettingsSync 判 handled=true 直接跳过 detect/弹窗
+  async getFirstRunPromptState(): Promise<SettingsSyncFirstRunPromptState> {
+    return { handled: true };
+  },
+  // no-op：handled 恒 true，本方法为 UI 关闭路径的幂等落库位（上游写
+  // settingService.settingsSyncFirstRunPromptHandled=true；桩下无状态可落）
+  async markFirstRunPromptHandled(): Promise<void> {},
+};
+
+/** C: ZCode settings-sync 首启提示；handled 恒 true（消除每工作区必弹的欢迎引导） */
+export const settingsSyncServiceStub: ISettingsSyncService = createStubService<ISettingsSyncService>({
+  channelName: 'settings-sync',
+  classification: 'C',
+  impl: settingsSyncServiceImpl,
 });
 
 // ── 其余频道：按分类走工厂默认（A/C 读 null；B throw；事件 Event.None） ──
