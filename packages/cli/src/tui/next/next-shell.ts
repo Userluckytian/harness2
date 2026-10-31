@@ -1282,9 +1282,14 @@ export function createNextChatHarness(runtime: ChatRuntime, deps: NextChatHarnes
       rawMarkdown: foldsState.rawMarkdown, // G-05 r：原始视图（工具行 args 原文 + 不截断）
       // P11-T4：时间戳 12/24 小时制（缺省 = 系统偏好；测试注入）
       ...(deps.clock12h !== undefined ? { hour12: deps.clock12h } : {}),
-      // P3-D：耗时命中才随行显示；spinner 仅在动画定时器活动时传当前帧
+      // P3-D：耗时命中才随行显示；spinner 仅在动画定时器活动时传当前帧。
+      // P1-1 修复伴随口径收紧：帧必须同时要求 subagentStarts 非空（与 tick 的行级动画
+      // 同条件，见 updateSpinner）——否则异常中止 turn 的残留 pending 子代理行会在下一个
+      // busy turn 的全量重投影中被烤上冻结帧（P2-3「残留条目不续命」语义被绕过）。
       ...(subagentDurations.size > 0 ? { durations: subagentDurations } : {}),
-      ...(spinnerTimer !== null ? { spinner: SPINNER_FRAMES[spinnerFrame % SPINNER_FRAMES.length] } : {}),
+      ...(spinnerTimer !== null && subagentStarts.size > 0
+        ? { spinner: SPINNER_FRAMES[spinnerFrame % SPINNER_FRAMES.length] }
+        : {}),
     });
     return applySearchHighlight(lines);
   }
@@ -1430,9 +1435,10 @@ export function createNextChatHarness(runtime: ChatRuntime, deps: NextChatHarnes
     }
     // #6118 流式快路径：仅末 item（开口 live step）被原地改动（dirty 集恰为 openStepId 且即末 item），
     // 且追加语义成立（items 引用前缀相等 + 无增删）→ 只投影该 item，避免全量 projectLines O(N)。
+    // 注意 takeDirtyItemIds 是「取出并清空」语义：此处读取一次后复用变量，不得二次调用。
     const dirty = takeDirtyItemIds(items);
     const openStepId = bridge.openStepId();
-    if (
+    const streamingFastPath =
       appendable &&
       items.length === syncedItems.length &&
       items.length > 0 &&
@@ -1440,8 +1446,28 @@ export function createNextChatHarness(runtime: ChatRuntime, deps: NextChatHarnes
       dirty.size === 1 &&
       openStepId !== null &&
       dirty.has(openStepId) &&
-      items[items.length - 1]!.id === openStepId
-    ) {
+      items[items.length - 1]!.id === openStepId;
+    // P1-1（security/perf 审查修复）：put 已改为 Object.assign 原地替换（#6118，引用稳定支撑
+    // 上面的流式快路径），副作用 = 下方 generic 路径失去「元素引用变化」检测——非末位 item 的
+    // 原地更新（如并行工具波次先完成者的 tool/result）在行数不变时被「行数+末行文本」短路跳过、
+    // 行数增长时从尾部错位追加并逐次放大。故 dirty 非空但不满足流式快路径时直接走全量
+    // rebuildScrollback（与旧「替换产生新引用 → 全量重建」行为等价）。
+    if (!streamingFastPath && dirty !== undefined && dirty.size > 0) {
+      const full = projectLines();
+      rebuildScrollback(full);
+      syncTurnAnchors(full);
+      syncedItems = items;
+      syncedLineCount = full.length;
+      syncedLastLineText = full.length > 0 ? full[full.length - 1]!.text : '';
+      // 维护末 item 投影行数（与 generic 收尾同口径，供流式快路径）
+      const rebuildLastIdx = items.length - 1;
+      let rebuildCnt = 0;
+      for (let i = full.length - 1; i >= 0 && full[i]!.lineIndex === rebuildLastIdx; i -= 1) rebuildCnt += 1;
+      syncedLastItemLineCount = rebuildCnt;
+      invalidate();
+      return;
+    }
+    if (streamingFastPath) {
       const lastIdx = items.length - 1;
       const expanded = collapsedIndices().has(lastIdx);
       const blockLines = projectTranscript([items[lastIdx]!], {

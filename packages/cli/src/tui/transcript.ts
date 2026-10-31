@@ -52,8 +52,11 @@ export function emptyTranscript(): TranscriptState {
  * 构造 TranscriptState：byId 惰性构建（首次访问才建 Map 并缓存）。
  * 长历史重投影会逐事件产生数千次 append；若每次 append 都 `new Map(state.byId)` 克隆，
  * 就是 O(n²)（万级事件下实测单 reduce 逾 500ms，逼近 1.5s 性能预算）。
- * 惰性索引让 reducer 全程只做「数组追加 + 反查」，Map 仅在读取时构建一次，
- * 同时保持 reducer 纯函数语义（不原地改旧 state 的 items/byId，React updater 可安全重放）。
+ * 惰性索引让 reducer 全程只做「数组追加 + 反查」，Map 仅在读取时构建一次。
+ * 纯度口径（如实）：append 路径（put 的 idx<0 分支）不原地改旧 state（新数组 + 惰性 byId）；
+ * 替换路径（#5508 安全修复 / #6118）是**受控原地更新**——Object.assign 就地改写字段 + dirty
+ * 登记，items 数组引用保持稳定（syncProjection 的增量判定与流式快路径依赖此不变量，
+ * 消费侧经 takeDirtyItemIds 感知被改动的 item）。
  */
 function stateWith(items: TranscriptItem[]): TranscriptState {
   let cached: Map<string, number> | undefined;

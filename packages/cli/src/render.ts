@@ -73,7 +73,11 @@ export function stripEscapes(text: string): string {
           .split('')
           .every((ch) => {
             const c = ch.charCodeAt(0);
-            return (c >= 0x30 && c <= 0x3f) || (c >= 0x20 && c <= 0x2f);
+            // 审查 P2-3：参数字节白名单收紧为 数字(0x30-0x39)/分号(0x3b)/冒号(0x3a)。
+            // 旧口径放行 0x3c-0x3f（< = > ?）私有参数前缀与 0x20-0x2f 中间字节——
+            // `\x1b[>4;2m`（私有 SGR 变体）/`\x1b[?1049m`（备用屏缓冲切换）这类
+            // 携带私有参数的序列会被误判为「形状合法的颜色序列」而保留。
+            return (c >= 0x30 && c <= 0x39) || c === 0x3b || c === 0x3a;
           });
       if (isSgr) {
         out += text.slice(i, j); // 合法 ANSI 颜色序列：保留
