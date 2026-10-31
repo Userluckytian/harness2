@@ -22,7 +22,7 @@
 // undo 与 redo 之间若发生了新的被快照追踪的写入，redo 的冲突检测会报告
 // externallyModified（恢复本身是最新 after 的幂等写，无数据风险）。
 import { existsSync, mkdirSync, readFileSync, renameSync, unlinkSync, writeFileSync } from 'node:fs';
-import { dirname, isAbsolute, join, resolve } from 'node:path';
+import { dirname, isAbsolute, join, relative, resolve } from 'node:path';
 /** 快照条目文件名（位于会话目录内，与 session.v1.jsonl 同级） */
 export const REWIND_POINTS_FILE = 'rewind_points.jsonl';
 
@@ -75,6 +75,7 @@ export const SNAPSHOT_TOOLS: Readonly<Record<string, string>> = {
 /**
  * 从工具调用参数中解析快照目标文件的绝对路径（相对路径按 cwd 解析）。
  * 非快照工具 / 参数缺失 / 类型不符返回 null（该调用不产生快照，工具自身会校验报错）。
+ * 越界防护（finding #5421 关联）：resolve 后校验仍在 cwd 内，否则返回 null（不产生快照）。
  */
 export function snapshotTargetFile(tool: string, args: unknown, cwd: string): string | null {
   const key = SNAPSHOT_TOOLS[tool];
@@ -82,7 +83,13 @@ export function snapshotTargetFile(tool: string, args: unknown, cwd: string): st
   if (typeof args !== 'object' || args === null || Array.isArray(args)) return null;
   const raw = (args as Record<string, unknown>)[key];
   if (typeof raw !== 'string' || raw.length === 0) return null;
-  return resolve(cwd, raw);
+  const resolved = resolve(cwd, raw);
+  // 越界防护：resolve(cwd, raw) 后校验仍在 cwd 内
+  const rel = relative(cwd, resolved);
+  if (rel !== '' && (rel.startsWith('..') || isAbsolute(rel))) {
+    return null; // 越界路径不产生快照（工具自身会拒绝该路径）
+  }
+  return resolved;
 }
 
 /** 读取文本文件内容；不存在返回 null（读取失败同样按不存在处理——快照尽力而为） */

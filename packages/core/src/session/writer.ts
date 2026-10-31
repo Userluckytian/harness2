@@ -31,9 +31,14 @@ import {
 } from './types.js';
 import { extensionEventTypes, parseExtensionEventLine, type ExtensionSessionEvent } from './extension-events.js';
 
+/** 批量 fsync 默认间隔（毫秒）：合并长会话事件流的逐事件磁盘同步，消除每次追加的 fsyncSync 阻塞。 */
+const DEFAULT_FSYNC_INTERVAL_MS = 1000;
+
 export interface SessionWriterOptions {
   /** 每次追加后 fsync（默认 true；测试可关） */
   fsync?: boolean;
+  /** 批量刷盘间隔（毫秒，默认 1000；仅在 fsync 开启时生效，用于合并逐事件同步） */
+  fsyncIntervalMs?: number;
 }
 
 /**
@@ -84,6 +89,9 @@ export class SessionWriter {
   private nextSeq = 1;
   private recoveredBytesValue = 0;
   private readonly doFsync: boolean;
+  private readonly fsyncIntervalMs: number;
+  private dirty = false;
+  private flushTimer: ReturnType<typeof setTimeout> | null = null;
   private closed = false;
 
   private constructor(
@@ -91,6 +99,7 @@ export class SessionWriter {
     options: SessionWriterOptions,
   ) {
     this.doFsync = options.fsync ?? true;
+    this.fsyncIntervalMs = options.fsyncIntervalMs ?? DEFAULT_FSYNC_INTERVAL_MS;
   }
 
   /** 新建会话目录并写入 header 事件（seq=1）。目录已有日志时抛错。 */
@@ -189,7 +198,7 @@ export class SessionWriter {
       payload,
     };
     writeSync(this.fd, JSON.stringify(event) + '\n');
-    if (this.doFsync) fsyncSync(this.fd);
+    this.markDirty();
     this.nextSeq += 1;
     return event;
   }
@@ -216,14 +225,49 @@ export class SessionWriter {
       payload,
     };
     writeSync(this.fd, JSON.stringify(event) + '\n');
-    if (this.doFsync) fsyncSync(this.fd);
+    this.markDirty();
     this.nextSeq += 1;
     return event;
+  }
+
+  /**
+   * 立即刷盘（公开）：把尚未落盘的脏数据 fsync 到磁盘。close() 会调用以确保正常结束的
+   * 会话尾部持久；调用方可在需要显式持久化的边界（如 turn 结束）主动调用。
+   */
+  flush(): void {
+    if (!this.doFsync || !this.dirty) return;
+    fsyncSync(this.fd);
+    this.dirty = false;
+  }
+
+  /**
+   * 标记本次追加后有未落盘数据，并惰性调度一次定时批量刷盘。
+   * 避免逐事件 fsyncSync 造成的同步阻塞 IO——长会话事件流下每次磁盘同步累积为显著卡顿。
+   * 定时器 unref 不阻止进程退出；flushTimer 已在等待时新事件并入本批，不重复调度。
+   */
+  private markDirty(): void {
+    if (!this.doFsync) return;
+    this.dirty = true;
+    if (this.flushTimer !== null) return;
+    this.flushTimer = setTimeout(() => {
+      this.flushTimer = null;
+      this.flush();
+    }, this.fsyncIntervalMs);
+    this.flushTimer.unref?.();
   }
 
   close(): void {
     if (this.closed) return;
     this.closed = true;
+    if (this.flushTimer !== null) {
+      clearTimeout(this.flushTimer);
+      this.flushTimer = null;
+    }
+    try {
+      this.flush();
+    } catch {
+      // 刷盘失败不阻塞关闭：数据已在 OS 缓冲，closeSync 仍会释放 fd
+    }
     closeSync(this.fd);
     unlinkSync(join(this.dir, SESSION_LOCK_FILE));
   }
@@ -231,7 +275,16 @@ export class SessionWriter {
   /** create()/open() 取锁后失败时的善后：释放已打开的 fd 并移除锁文件（由调用方 rethrow）。 */
   private releaseOnFailure(): void {
     this.closed = true;
+    if (this.flushTimer !== null) {
+      clearTimeout(this.flushTimer);
+      this.flushTimer = null;
+    }
     if (this.fd >= 0) {
+      try {
+        this.flush();
+      } catch {
+        // 刷盘失败不掩盖原始错误
+      }
       try {
         closeSync(this.fd);
       } catch {

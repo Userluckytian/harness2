@@ -727,21 +727,59 @@ export function searchInIndex(
   return { ...base, hits: scored.slice(0, limit) };
 }
 
+// —— 实例缓存：按会话目录缓存 SessionSearchIndex（LRU） ——
+
+/**
+ * 索引实例缓存上限：检索热路径（manager.searchIndexed 等）反复访问同一组会话目录，
+ * 若每次检索都 new SessionSearchIndex(dir)，每个新实例都要整份读索引 JSON、重建
+ * postings 映射（本实例的内存缓存无从发挥）。按 dir 缓存实例后，首个检索加载一次，
+ * 后续检索直接复用内存中的 messages/markers/postings（排序键列表与 postings 映射），
+ * update() 仅做 logSize 比对（日志无新增消息即零成本）。上限淘汰保证内存有界。
+ */
+const INDEX_INSTANCE_CACHE_MAX = 16;
+
+const indexInstanceCache = new Map<string, SessionSearchIndex>();
+
+/** 取（按 dir 缓存的）索引实例：LRU 触碰；未命中则新建并按上限淘汰最旧 */
+export function getSessionSearchIndex(dir: string): SessionSearchIndex {
+  const cached = indexInstanceCache.get(dir);
+  if (cached !== undefined) {
+    indexInstanceCache.delete(dir);
+    indexInstanceCache.set(dir, cached); // 触碰：Map 迭代序（=插入序）保持最新在前
+    return cached;
+  }
+  const idx = new SessionSearchIndex(dir);
+  indexInstanceCache.set(dir, idx);
+  if (indexInstanceCache.size > INDEX_INSTANCE_CACHE_MAX) {
+    const oldest = indexInstanceCache.keys().next().value;
+    if (oldest !== undefined) indexInstanceCache.delete(oldest);
+  }
+  return idx;
+}
+
+/** 驱逐某会话目录的缓存实例（removeSessionIndex 成功后调用） */
+function evictIndexInstance(dir: string): void {
+  indexInstanceCache.delete(dir);
+}
+
 // —— 便捷函数 ——
 
-/** 单会话检索（懒更新 + 增量同步；索引缺失/损坏自动重建） */
+/** 单会话检索（懒更新 + 增量同步；索引缺失/损坏自动重建；复用按 dir 缓存的索引实例） */
 export function searchSessionIndex(dir: string, query: string, opts: IndexedSearchOptions = {}): IndexedSearchResult {
-  return new SessionSearchIndex(dir).search(query, opts);
+  return getSessionSearchIndex(dir).search(query, opts);
 }
 
-/** 全量重建单会话索引 */
+/** 全量重建单会话索引（复用按 dir 缓存的索引实例，重建后内存缓存即时可用） */
 export function rebuildSessionIndex(dir: string): SessionSearchIndexData {
-  return new SessionSearchIndex(dir).rebuild();
+  return getSessionSearchIndex(dir).rebuild();
 }
 
-/** 删除单会话索引文件（返回是否实际删除） */
+/** 删除单会话索引文件（返回是否实际删除）；成功后驱逐缓存实例，下次检索重建 */
 export function removeSessionIndex(dir: string): boolean {
-  return new SessionSearchIndex(dir).remove();
+  const idx = getSessionSearchIndex(dir);
+  const removed = idx.remove();
+  if (removed) evictIndexInstance(dir);
+  return removed;
 }
 
 // —— 可选 LLM 摘要（注入式；core 不硬编模型调用） ——

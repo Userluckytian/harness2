@@ -18,11 +18,18 @@ import {
 import { assembleMemorySnapshot, type MemoryStore } from '../memory/store.js';
 import { assembleSkillsSystemBlock } from '../skills/store.js';
 import { applyLayeredCompaction } from '../session/layeredCompaction.js';
-import { computeProjection, loadSession, type LoadedSession } from '../session/reader.js';
+import { computeProjection, loadSession, type LoadedEvent, type LoadedSession } from '../session/reader.js';
 import { readTextOrNull, snapshotTargetFile } from '../session/snapshots.js';
 import { SessionWriter, type SessionAppender } from '../session/writer.js';
 import { SESSION_LOG_FILE } from '../session/types.js';
-import type { CompactionAppliedPayload } from '../session/types.js';
+import type {
+  AnySessionEvent,
+  CompactionAppliedPayload,
+  SessionEvent,
+  SessionEventMap,
+  SessionEventType,
+} from '../session/types.js';
+import type { ExtensionSessionEvent, LoadedExtensionEvent } from '../session/extension-events.js';
 import type {
   ChatContentPart,
   ChatMessage,
@@ -37,6 +44,7 @@ import type { ResolveChatAttachment, TurnOptions, TurnResult, TurnStopReason } f
 import type { SteerRequest } from '../interaction/types.js';
 import { appendHookInvocations } from '../hooks/extension.js';
 import { formatHookAdditionalContexts } from '../hooks/runner.js';
+import { redactSecrets } from '../config/redact.js';
 import type { HookRunPayload, HookRunResult, HookRunner } from '../hooks/types.js';
 import {
   classifyAttemptError,
@@ -61,6 +69,46 @@ const CIRCUIT_ERROR_MAX_CHARS = 500;
 function truncateCircuitError(text: string): string {
   if (text.length <= CIRCUIT_ERROR_MAX_CHARS) return text;
   return `${text.slice(0, CIRCUIT_ERROR_MAX_CHARS)}…（已截断，原文 ${text.length} 字符）`;
+}
+
+/**
+ * 记录型写入器装饰器（性能修复 #5478）：拦截 append/appendExtension，把新建事件
+ * 缓存到 pending 数组，供 step 循环顶部增量追加到已加载的 LoadedSession——避免每个
+ * agent step 全量 readFileSync 整份日志 + split('\n') + 逐行 JSON.parse（reader.ts）。
+ * dir/lastSeq 透传底层 writer；append 返回值与底层一致（同一事件对象）。
+ * 投影语义不变：新事件 active=true，computeProjection 每步就地重算全部活动性（rewind 感知）。
+ */
+function createRecordingAppender(underlying: SessionWriter | SessionAppender) {
+  const pending: LoadedEvent[] = [];
+  const pendingExtension: LoadedExtensionEvent[] = [];
+  const turnWriter: SessionAppender = {
+    get dir() {
+      return underlying.dir;
+    },
+    get lastSeq() {
+      return underlying.lastSeq;
+    },
+    append<T extends SessionEventType>(type: T, payload: SessionEventMap[T]): SessionEvent<T> {
+      const event = underlying.append(type, payload);
+      pending.push({ event: event as unknown as AnySessionEvent, active: true });
+      return event;
+    },
+    appendExtension(type: string, payload: Record<string, unknown>): ExtensionSessionEvent {
+      const ext = underlying.appendExtension!(type, payload);
+      pendingExtension.push({ event: ext, active: true });
+      return ext;
+    },
+  };
+  /** 把自上次 flush 以来缓存的事件增量追加到已加载会话（就地追加，返回追加条数） */
+  const flushAppended = (target: LoadedSession): number => {
+    const n = pending.length + pendingExtension.length;
+    for (const item of pending) target.events.push(item);
+    for (const item of pendingExtension) target.extensionEvents.push(item);
+    pending.length = 0;
+    pendingExtension.length = 0;
+    return n;
+  };
+  return { turnWriter, flushAppended };
 }
 
 /**
@@ -429,7 +477,16 @@ function abortReasonMessage(signal: AbortSignal): string {
   return reason instanceof Error ? reason.message : reason !== undefined ? String(reason) : 'aborted';
 }
 
-async function runTurnWithWriter(writer: SessionWriter | SessionAppender, options: TurnOptions): Promise<TurnResult> {
+async function runTurnWithWriter(
+  realWriter: SessionWriter | SessionAppender,
+  options: TurnOptions,
+): Promise<TurnResult> {
+  // 性能修复 #5478：跨 step 复用已加载会话，新事件增量追加（见 createRecordingAppender），
+  // 避免每个 agent step 全量 readFileSync + split + JSON.parse 整份日志（reader.ts）。
+  const { turnWriter, flushAppended } = createRecordingAppender(realWriter);
+  const writer: SessionAppender = turnWriter;
+  // 每 turn 只全量 loadSession 一次；step 循环内的事件经 turnWriter 拦截后增量追加。
+  const cachedSession = loadSession(writer.dir);
   const turnId = randomUUID();
   const maxSteps = Math.max(1, options.maxSteps ?? DEFAULT_MAX_STEPS);
   const maxConsecutiveToolFailures = options.maxConsecutiveToolFailures ?? DEFAULT_MAX_CONSECUTIVE_TOOL_FAILURES;
@@ -580,7 +637,8 @@ async function runTurnWithWriter(writer: SessionWriter | SessionAppender, option
       [environmentText, memorySystem, skillsSystem]
         .filter((part): part is string => typeof part === 'string' && part.length > 0)
         .join('\n\n') || undefined;
-    const messages = buildChatMessages(loadSession(writer.dir), {
+    flushAppended(cachedSession); // 增量追加本 step 以来的新事件（step/start 等）到已加载会话
+    const messages = buildChatMessages(cachedSession, {
       ...(options.resolveAttachment !== undefined ? { resolveAttachment: options.resolveAttachment } : {}),
     });
     // S6：上一步边界消费的 steer 作为**控制输入**叠加（追加一条 user 控制消息），
@@ -831,15 +889,16 @@ async function runTurnWithWriter(writer: SessionWriter | SessionAppender, option
     const byCallId = new Map(results.map((r) => [r.callId, r]));
     for (const p of pending) {
       if (p.parseError !== undefined) {
-        writer.append('tool/result', { callId: p.callId, tool: p.tool, ok: false, error: p.parseError, turnId });
-        options.onStream?.({ type: 'tool-result', callId: p.callId, ok: false, error: p.parseError, turnId });
-        recordToolResult(p.tool, false, p.parseError);
+        const parseErr = redactSecrets(p.parseError);
+        writer.append('tool/result', { callId: p.callId, tool: p.tool, ok: false, error: parseErr, turnId });
+        options.onStream?.({ type: 'tool-result', callId: p.callId, ok: false, error: parseErr, turnId });
+        recordToolResult(p.tool, false, parseErr);
         continue;
       }
       // Z6-A09：本调用被 preTool 钩子拦截 → 以 ok:false 的 tool/result 落盘（模型可见）
       const hookBlock = hookBlocked.get(p.callId);
       if (hookBlock !== undefined) {
-        const error = `已由钩子阻止：${hookBlock}`;
+        const error = redactSecrets(`已由钩子阻止：${hookBlock}`);
         writer.append('tool/result', { callId: p.callId, tool: p.tool, ok: false, error, turnId });
         options.onStream?.({ type: 'tool-result', callId: p.callId, ok: false, error, turnId });
         recordToolResult(p.tool, false, error);
@@ -886,8 +945,8 @@ async function runTurnWithWriter(writer: SessionWriter | SessionAppender, option
         callId: r.callId,
         tool: p.tool,
         ok: r.ok,
-        ...(resultOutput !== undefined ? { output: resultOutput } : {}),
-        ...(resultError !== undefined ? { error: resultError } : {}),
+        ...(resultOutput !== undefined ? { output: redactSecrets(resultOutput) } : {}),
+        ...(resultError !== undefined ? { error: redactSecrets(resultError) } : {}),
         durationMs: r.durationMs,
         turnId,
       });
@@ -896,7 +955,7 @@ async function runTurnWithWriter(writer: SessionWriter | SessionAppender, option
         callId: r.callId,
         ok: r.ok,
         turnId,
-        ...(r.error !== undefined ? { error: r.error } : {}),
+        ...(r.error !== undefined ? { error: redactSecrets(r.error) } : {}),
       });
       recordToolResult(p.tool, r.ok, r.error);
     }
@@ -913,7 +972,7 @@ async function runTurnWithWriter(writer: SessionWriter | SessionAppender, option
       const failure = lastToolFailure ?? { tool: 'unknown', error: 'unknown error' };
       const circuitText =
         `连续 ${consecutiveToolFailures} 次工具调用失败，已自动停止以避免继续空转（阈值 ${maxConsecutiveToolFailures}）。` +
-        `最近一次失败：${failure.tool} — ${truncateCircuitError(failure.error)}。` +
+        `最近一次失败：${failure.tool} — ${truncateCircuitError(redactSecrets(failure.error))}。` +
         `请检查工具参数或运行环境（shell/网络/依赖）后重试；也可以直接告诉我换一种做法。`;
       writer.append('assistant/message', { text: circuitText, model: provider.name, turnId });
       options.onStream?.({ type: 'text-delta', text: circuitText, turnId });

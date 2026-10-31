@@ -54,6 +54,43 @@ export const MAX_INDEX_FILE_BYTES = 1024 * 1024;
 /** 二进制探测窗口（与 grep 对齐：首 8KB 出现 NUL 视为二进制） */
 const BINARY_SNIFF_BYTES = 8192;
 
+/**
+ * 构建/打包产物目录：不是人写的源码，索引它只会拖慢重建、污染检索结果
+ * （例：dist/ 里的压缩 JS 单文件常达数百 KB）。仅作用于代码索引，不改 glob/grep 语义。
+ */
+export const GENERATED_DIR_GLOBS: readonly string[] = [
+  '**/dist',
+  '**/dist/**',
+  '**/dist-*',
+  '**/dist-*/**',
+  '**/build',
+  '**/build/**',
+  '**/out',
+  '**/out/**',
+  '**/coverage',
+  '**/coverage/**',
+  '**/release',
+  '**/release/**',
+  '**/target',
+  '**/target/**',
+];
+
+/** 单行超过此长度即视为压缩/混淆产物（人写的源码几乎不会出现），不解析。 */
+const MINIFIED_LINE_CHARS = 2000;
+
+/** 判断文本是否为压缩产物（任一行超过 MINIFIED_LINE_CHARS）。 */
+function isMinified(text: string): boolean {
+  let start = 0;
+  while (start < text.length) {
+    const nl = text.indexOf('\n', start);
+    const end = nl === -1 ? text.length : nl;
+    if (end - start > MINIFIED_LINE_CHARS) return true;
+    if (nl === -1) break;
+    start = nl + 1;
+  }
+  return false;
+}
+
 /** 全局数据根下的代码索引目录 */
 export function defaultCodeIndexRoot(home?: string): string {
   return join(home ?? homedir(), '.harness2', CODEINDEX_DIR_NAME);
@@ -143,7 +180,9 @@ function readParse(absPath: string, spec: LanguageSpec, maxBytes: number): Parse
     return null;
   }
   if (isBinary(buf)) return null;
-  const parsed = parseSource(buf.toString('utf8'), spec);
+  const text = buf.toString('utf8');
+  if (isMinified(text)) return null;
+  const parsed = parseSource(text, spec);
   return {
     hash: sha1(buf),
     mtimeMs: st.mtimeMs,
@@ -176,6 +215,8 @@ export class CodeIndexStore {
   private loaded = false;
   /** 查询时按文件缓存行数组（避免同一文件多次读盘） */
   private readonly lineCache = new Map<string, string[] | null>();
+  /** 统计摘要惰性缓存：键为索引数据对象引用，仅当索引被整体替换时失效。 */
+  private statsCache: { data: CodeIndexData; summary: { definitions: number; referenceNames: number } } | null = null;
 
   constructor(options: CodeIndexOptions) {
     const cwd = options.cwd ?? process.cwd();
@@ -195,10 +236,22 @@ export class CodeIndexStore {
     return this.data;
   }
 
+  /**
+   * 统计摘要（惰性缓存）：数据对象引用不变时复用，避免每次 status 全量遍历 files。
+   * 索引数据仅在 rebuild/update 时被整体替换（新对象引用），故按引用做键安全。
+   */
+  private summaryFor(data: CodeIndexData): { definitions: number; referenceNames: number } {
+    const cached = this.statsCache;
+    if (cached !== null && cached.data === data) return cached.summary;
+    const summary = entriesSummary(data.files);
+    this.statsCache = { data, summary };
+    return summary;
+  }
+
   /** 枚举当前应索引的文件（相对路径，`/` 分隔，排序稳定）。 */
   private scanFiles(): string[] {
     // 若索引文件本身位于 root 内，显式排除（防自索引）；默认在全局数据根，通常不命中。
-    const ignore = [...EXCLUDED_GLOBS];
+    const ignore = [...EXCLUDED_GLOBS, ...GENERATED_DIR_GLOBS];
     const relIndex = relative(this.root, this.indexPath).split(sep).join('/');
     if (relIndex.length > 0 && !relIndex.startsWith('..') && !relIndex.includes(':')) ignore.push(relIndex);
     const entries = fg.sync('**/*', {
@@ -340,6 +393,23 @@ export class CodeIndexStore {
       }
     }
 
+    // 无变更快速路径：所有条目均命中 mtime+size 预筛（未读盘、无新增/变更/删除）——
+    // 跳过整份索引对象重建、行缓存清空与整份 JSON 落盘，消除稳定态下的重复全量开销。
+    if (!dirty) {
+      return {
+        root: this.root,
+        scanned: paths.length,
+        parsed: 0,
+        skipped,
+        definitions,
+        indexPath: this.indexPath,
+        reused,
+        added: 0,
+        changed: 0,
+        removed: 0,
+      };
+    }
+
     const data: CodeIndexData = {
       v: CODE_INDEX_VERSION,
       root: this.root,
@@ -348,7 +418,7 @@ export class CodeIndexStore {
     };
     this.data = data;
     this.lineCache.clear();
-    if (dirty) saveCodeIndex(this.indexPath, data);
+    saveCodeIndex(this.indexPath, data);
     return {
       root: this.root,
       scanned: paths.length,
@@ -366,7 +436,7 @@ export class CodeIndexStore {
   /** 索引状态（只读；索引缺失/损坏时 exists 如实为 false）。 */
   status(): IndexStatus {
     const data = this.ensureLoaded();
-    const summary = data !== null ? entriesSummary(data.files) : { definitions: 0, referenceNames: 0 };
+    const summary = data !== null ? this.summaryFor(data) : { definitions: 0, referenceNames: 0 };
     return {
       indexPath: this.indexPath,
       exists: existsSync(this.indexPath),

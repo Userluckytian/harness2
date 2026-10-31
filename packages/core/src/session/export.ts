@@ -15,16 +15,19 @@
 //
 // 确定性（幂等）：fflate 默认给每个条目打「当前时间」时间戳——统一固定 mtime，
 // 同目录同内容两次导出得到逐字节相同的 zip。
-import { existsSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { closeSync, existsSync, openSync, readSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { mkdirSync } from 'node:fs';
 import { basename, dirname, join } from 'node:path';
 import { zipSync, unzipSync, type Zippable } from 'fflate';
-import { computeProjection, loadSession, type LoadedSession } from './reader.js';
+import { computeProjection, type LoadedSession } from './reader.js';
 import { REWIND_POINTS_FILE } from './snapshots.js';
 import { SESSION_LOG_FILE, parseEventLine, type SessionHeaderPayload } from './types.js';
 
 /** 快照辅助目录名（当前内核不创建；存在即随导出，冻结结构预留） */
 const SNAPSHOTS_DIR = 'snapshots';
+
+/** header 恒位于日志首行：块读上限（字节），远超任何 header 行；截断时回退整份读取 */
+const HEADER_READ_CHUNK = 64 * 1024;
 
 /** 导出条目的固定 mtime（幂等的唯一来源；zip DOS 时间仅支持 1980-2099，取区间内定值） */
 const EXPORT_MTIME = new Date(Date.UTC(2000, 0, 1));
@@ -45,17 +48,48 @@ export interface ExportResult {
   subagentIds: string[];
 }
 
+/**
+ * 读取日志首个非空行（只读前 HEADER_READ_CHUNK 字节；header 恒在首行）。
+ * 语义与 `readFileSync(...).split('\n')` 逐行扫描一致：只跳过 length===0 的行，
+ * 不剥离 '\r'；首个非空行缺失 → null；块满且首个非空行被截断 → 回退整份读取。
+ */
+function firstNonEmptyLine(logPath: string): string | null {
+  let fd: number | undefined;
+  try {
+    fd = openSync(logPath, 'r');
+    const buf = new Uint8Array(HEADER_READ_CHUNK);
+    const n = readSync(fd, buf, 0, HEADER_READ_CHUNK, 0);
+    if (n <= 0) return null;
+    const lines = new TextDecoder('utf8').decode(buf.subarray(0, n)).split('\n');
+    // 末段可能被块边界截断（无换行结尾）；前段均有换行结尾，完整
+    for (let i = 0; i + 1 < lines.length; i++) {
+      if (lines[i]!.length > 0) return lines[i]!;
+    }
+    if (n < HEADER_READ_CHUNK) {
+      // 文件已读完，末段完整
+      const last = lines[lines.length - 1]!;
+      return last.length > 0 ? last : null;
+    }
+    // 块满且前部完整行全空：首个非空行长度 > 上限或位于块外 → 回退整份读取
+    return (
+      readFileSync(logPath, 'utf8')
+        .split('\n')
+        .find((l) => l.length > 0) ?? null
+    );
+  } finally {
+    if (fd !== undefined) closeSync(fd);
+  }
+}
+
 /** 读取会话头（只读；日志缺失/首事件非法 → null） */
 function readSessionHeader(dir: string): SessionHeaderPayload | null {
   const logPath = join(dir, SESSION_LOG_FILE);
   if (!existsSync(logPath)) return null;
-  for (const line of readFileSync(logPath, 'utf8').split('\n')) {
-    if (line.length === 0) continue;
-    const e = parseEventLine(line);
-    if (e === null) return null; // 首个非空行必须是 header（writer.create 的写入顺序）
-    return e.type === 'session/header' ? e.payload : null;
-  }
-  return null;
+  const line = firstNonEmptyLine(logPath);
+  if (line === null) return null;
+  const e = parseEventLine(line);
+  if (e === null) return null; // 首个非空行必须是 header（writer.create 的写入顺序）
+  return e.type === 'session/header' ? e.payload : null;
 }
 
 /**
@@ -124,7 +158,7 @@ function findSubagentDirs(root: string, parentId: string): Array<{ id: string; d
       if (!existsSync(join(dir, SESSION_LOG_FILE))) continue;
       let header: SessionHeaderPayload | null = null;
       try {
-        header = loadSession(dir).header;
+        header = readSessionHeader(dir);
       } catch {
         continue; // 损坏会话不阻塞导出
       }

@@ -5,16 +5,49 @@
 // 已知差异（如实声明）：rg 尊重 .gitignore（非隐藏的已忽略文件不会出现），
 // JS 回退不解析 .gitignore，无法复现该过滤。
 import { spawn } from 'node:child_process';
-import { readdirSync, readFileSync, statSync } from 'node:fs';
-import { join, relative, resolve, sep } from 'node:path';
+import { readFileSync, statSync } from 'node:fs';
+import { join, relative, sep } from 'node:path';
 import type { ToolDefinition, ToolOutput } from '../types.js';
-import { expectObject, expectString, optionalString } from './common.js';
+import { expectObject, expectString, optionalString, resolveWithinCwd } from './common.js';
 import { isSkippedEntryName } from './ignore.js';
+// 目录级缓存：与 glob 共用（按目录 mtimeMs 失效，见 dirCache.ts）
+import { readDirCached } from './dirCache.js';
 import { OutputCollector } from '../process-output.js';
 
 export const MAX_GREP_RESULTS = 500;
 const MAX_FILE_BYTES = 1024 * 1024;
 const MAX_RG_STDOUT_BYTES = 8 * 1024 * 1024;
+
+/**
+ * 构建子进程安全环境白名单（finding #5942）：仅传递必要的系统变量，不透传应用密钥。
+ * rg 子进程之前未传 env，继承宿主 process.env（含 API 密钥）；与 bash.ts / script.ts /
+ * hooks/executor.ts 同样采用显式白名单，绝不把宿主 process.env 整包交给子进程。
+ */
+function buildSafeEnv(): NodeJS.ProcessEnv {
+  const env: NodeJS.ProcessEnv = {};
+  const whitelist = [
+    'PATH',
+    'HOME',
+    'TEMP',
+    'TMP',
+    'ComSpec',
+    'GIT_BASH',
+    'LANG',
+    'LC_ALL',
+    'USER',
+    'USERNAME',
+    'SYSTEMROOT',
+    'SYSTEMDRIVE',
+    'APPDATA',
+    'LOCALAPPDATA',
+  ];
+  for (const key of whitelist) {
+    if (process.env[key] !== undefined) {
+      env[key] = process.env[key];
+    }
+  }
+  return env;
+}
 
 export const grepTool: ToolDefinition = {
   name: 'grep',
@@ -35,7 +68,7 @@ export const grepTool: ToolDefinition = {
     const args = expectObject(rawArgs, 'grep');
     const pattern = expectString(args, 'pattern', 'grep');
     const pathArg = optionalString(args, 'path');
-    const searchPath = pathArg !== undefined ? resolve(ctx.cwd, pathArg) : ctx.cwd;
+    const searchPath = pathArg !== undefined ? resolveWithinCwd(ctx.cwd, pathArg, 'grep') : ctx.cwd;
 
     const viaRg = await grepWithRipgrep(pattern, ctx.cwd, searchPath, ctx.signal);
     if (viaRg !== null) return viaRg; // rg 可用（含“无匹配”）
@@ -82,7 +115,7 @@ function grepWithRipgrep(
           pattern,
           relTarget,
         ],
-        { cwd, signal, windowsHide: true },
+        { cwd, signal, windowsHide: true, env: buildSafeEnv() },
       );
     } catch {
       done(null); // 平台不支持 spawn 时直接回退
@@ -162,7 +195,7 @@ export function scanTextFiles(pattern: string, cwd: string, searchPath: string, 
     if (signal.aborted || results.length >= MAX_GREP_RESULTS) return;
     let entries: import('node:fs').Dirent[];
     try {
-      entries = readdirSync(dir, { withFileTypes: true });
+      entries = readDirCached(dir); // 目录级缓存：命中跳过 readdirSync
     } catch {
       return;
     }
