@@ -128,9 +128,11 @@ jobs:
         if: ${{ !cancelled() && steps.build.outcome == 'success' }}
         run: pnpm --filter @harness2/zcode-adapter test:ci
 
-  # F11（2026-10-31）：生产依赖漏洞门。只读 lockfile，无需 install；正常 job（红则整体 CI 红，
-  # 在 PR checks 里显眼可见）。critical/high 挡门、moderate/low 与 dev 只报告，策略与实测依据
-  # 见 scripts/audit-gate.mjs 头注释
+  # F11（2026-10-31）：生产依赖漏洞门。critical/high 挡门、moderate/low 与 dev 只报告，
+  # 策略与实测依据见 scripts/audit-gate.mjs 头注释。
+  # 2026-10-31 首跑修正：audit job 原设计 install-free，但 pnpm/action-setup@v5 的 post
+  # 步骤（pnpm store prune）在无 store 的 job 上失败导致整体红（门禁步骤本身绿）——
+  # 补 install（与其他 job 同形）换取 post 步骤确定性，audit 只读 lockfile 语义不变。
   audit:
     name: audit (prod deps)
     runs-on: ubuntu-latest
@@ -142,6 +144,10 @@ jobs:
       - uses: actions/setup-node@v5
         with:
           node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
 
       - name: Production dependency audit gate
         run: node scripts/audit-gate.mjs
