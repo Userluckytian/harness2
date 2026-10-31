@@ -338,7 +338,13 @@ export async function startServe(options: StartServeOptions = {}): Promise<Serve
     const policy = createApprovalPolicy(loaded.config.approval);
     decide ??= (input) => policy.decide(input);
     if (hookRunner === undefined && loaded.config.hooks !== undefined) {
-      hookRunner = createHookRunner({ config: loaded.config.hooks });
+      // 安全修复 #306：hook 命令执行前必须经过 decide 审批管线——把 hook 命令映射为
+      // bash 工具面（复用 approval.tools 规则链 + mode 推导，含 `bash:<命令主体>:<决策>`
+      // 规则匹配）；未获明确 allow 的 hook 一律拒绝（fail-closed，'ask' 视同拒绝）。
+      hookRunner = createHookRunner({
+        config: loaded.config.hooks,
+        admit: (entry) => decide?.({ tool: 'bash', args: { command: entry.command } }) === 'allow',
+      });
     }
     configWarnings = [...loaded.warnings];
     // S7：run-config 装配元数据 = config 同源（roles.main + providers.<channel> 派生；非第二套配置存储）
@@ -599,13 +605,23 @@ async function handleRequest(
  * A3-1 token 门禁（HTTP 侧；WS upgrade 在 ws.ts 用同一组 helper 与同一统计对象）：
  *   - 带 token：必须匹配，否则 401（任何模式下都不回退——防“故意送错 token 触发降级”）；
  *   - 不带 token：严格模式（默认）401；仅当环境变量显式关闭严格时放行并计数 + 一次性告警。
+ * 安全修复 #5456：HTTP 请求显式拒绝 ?token= 查询参数——token 经 URL 传递会写入浏览器
+ *   历史/代理网关访问日志/Referer；一律 401（fail-closed，任何模式都拒，含兼容回退），
+ *   计入 invalidTokenRejected。token 仅接受请求头（x-harness2-token / Authorization: Bearer）；
+ *   WS 握手的一次性 ?token= 兼容见 ws.ts（extractServeTokenFromWsHandshake，不经本函数）。
  */
 function checkServeToken(
   auth: ServeAuthContext,
   req: IncomingMessage,
   url: URL,
 ): { ok: true } | { ok: false; error: string } {
-  const provided = extractServeToken(req.headers, url);
+  // 安全修复 #5456：HTTP 侧 ?token= 一律拒绝（fail-closed）——URL 传 token 的泄漏面
+  // （浏览器历史/代理网关访问日志/Referer）在 HTTP 路径上不构成有效凭证。
+  if (url.searchParams.has('token')) {
+    auth.stats.invalidTokenRejected += 1;
+    return { ok: false, error: '拒绝访问：HTTP 请求不接受 ?token= 查询参数（token 仅接受请求头）' };
+  }
+  const provided = extractServeToken(req.headers);
   if (provided !== undefined) {
     if (!isServeTokenValid(provided, auth.token)) {
       auth.stats.invalidTokenRejected += 1;

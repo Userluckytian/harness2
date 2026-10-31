@@ -114,6 +114,7 @@ class WsClient {
 interface Harness {
   handle: ServeHandle;
   spawned: FakePty[];
+  root: string;
 }
 
 async function startWithPty(
@@ -130,16 +131,17 @@ async function startWithPty(
       }),
     defaultShell: 'fake-shell',
   });
+  const root = tmpDir('h2-term-root-');
   const handle = await startServe({
     requireToken: false,
     port: 0,
     home: tmpDir('h2-term-home-'),
-    root: tmpDir('h2-term-root-'),
+    root,
     provider: new MockProvider([{ textChunks: ['回复。'] }]),
     terminal: manager,
   });
   handles.push(handle);
-  return { handle, spawned };
+  return { handle, spawned, root };
 }
 
 async function connect(handle: ServeHandle): Promise<WsClient> {
@@ -150,9 +152,10 @@ async function connect(handle: ServeHandle): Promise<WsClient> {
 
 describe('Z9-2 终端帧：open/input/resize/close 与 opened/data/exit/error', () => {
   it('terminal/open → terminal/opened（requestId 回带）；spawn 收到 cols/rows/cwd', async () => {
-    const { handle, spawned } = await startWithPty();
+    const { handle, spawned, root } = await startWithPty();
     const client = await connect(handle);
-    client.send({ op: 'terminal/open', requestId: 'r-1', cols: 100, rows: 30, cwd: tmpDir('h2-term-cwd-') });
+    // cwd 必须在 serve 工作区根内（白名单）：用根下子目录，验证正常转发语义不变
+    client.send({ op: 'terminal/open', requestId: 'r-1', cols: 100, rows: 30, cwd: join(root, 'sub') });
 
     const opened = await client.waitFor((f) => f.type === 'terminal/opened', 'terminal/opened');
     expect(opened.type === 'terminal/opened' && opened.requestId).toBe('r-1');
@@ -164,6 +167,17 @@ describe('Z9-2 终端帧：open/input/resize/close 与 opened/data/exit/error', 
     expect(spawned[0]!.spawnOpts?.['cwd']).toBeTruthy();
     // 服务端已登记该 id（归属本连接）
     expect(handle.terminal.list()).toContain(id);
+    client.close();
+  });
+
+  it('terminal/open 的 cwd 越出 serve 根 → terminal/error（白名单拒绝，不 spawn）', async () => {
+    const { handle, spawned } = await startWithPty();
+    const client = await connect(handle);
+    // 根外临时目录 → 客户端可控 cwd 越界，必须如实拒绝
+    client.send({ op: 'terminal/open', requestId: 'r-bad', cols: 80, rows: 24, cwd: tmpDir('h2-term-evil-') });
+    const err = await client.waitFor((f) => f.type === 'terminal/error', 'terminal/error');
+    expect(err.type === 'terminal/error' && err.requestId).toBe('r-bad');
+    expect(spawned).toHaveLength(0);
     client.close();
   });
 
@@ -344,6 +358,30 @@ describe('Z9-2 终端帧协议校验', () => {
     const err = await client.waitFor((f) => f.type === 'error', '协议 error');
     expect(err.type === 'error' && err.error).toContain('cols');
     expect(spawned).toHaveLength(0);
+    client.close();
+  });
+
+  it('terminal/open 的 cols/rows 超上界(>10000) → error 帧（协议级，不 spawn）', async () => {
+    const { handle, spawned } = await startWithPty();
+    const client = await connect(handle);
+    client.send({ op: 'terminal/open', requestId: 'r', cols: 10001, rows: 24 });
+    const err = await client.waitFor((f) => f.type === 'error', '协议 error');
+    expect(err.type === 'error' && err.error).toContain('cols');
+    expect(spawned).toHaveLength(0);
+    client.close();
+  });
+
+  it('terminal/resize 的 cols/rows 超上界(>10000) → error 帧（协议级，不转调 PTY.resize）', async () => {
+    const { handle, spawned } = await startWithPty();
+    const client = await connect(handle);
+    client.send({ op: 'terminal/open', requestId: 'r', cols: 80, rows: 24 });
+    const opened = await client.waitFor((f) => f.type === 'terminal/opened', 'opened');
+    const id = opened.type === 'terminal/opened' ? opened.id : '';
+
+    client.send({ op: 'terminal/resize', id, cols: 10001, rows: 24 });
+    const err = await client.waitFor((f) => f.type === 'error', '协议 error');
+    expect(err.type === 'error' && err.error).toContain('cols');
+    expect(spawned[0]!.resizes).toHaveLength(0);
     client.close();
   });
 });

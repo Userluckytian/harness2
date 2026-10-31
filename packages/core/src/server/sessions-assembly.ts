@@ -30,7 +30,7 @@ import {
   headerCwdOr,
 } from './sessions-core.js';
 import { HubError, type SessionEventsPayload, type SessionHubProviderMeta } from './sessions-types.js';
-import { resolve } from 'node:path';
+import { isAbsolute, relative, resolve } from 'node:path';
 
 export abstract class SessionHubAssembly extends SessionHubCore {
   /** S6 会话级 steer sink：按会话惰性创建，跨 turn 持久（去重/排队/回帧观察都在 sink） */
@@ -65,7 +65,9 @@ export abstract class SessionHubAssembly extends SessionHubCore {
   /** 新建会话并保持 writer 打开（服务持有，close 时统一释放） */
   create(cwd: string): { id: string; dir: string } {
     this.assertNonEmpty(cwd, 'cwd');
-    const created = this.options.manager.create(cwd);
+    // 安全修复 #297：会话 cwd 必须位于服务端工作目录内，拒绝任意路径
+    const resolvedCwd = this.assertCwdWithinRoot(cwd);
+    const created = this.options.manager.create(resolvedCwd);
     // entry.cwd = header 真值（manager.create 落盘 resolve(cwd)）——工具执行与快照解析都用它
     const entry: HubEntry = {
       id: created.id,
@@ -82,7 +84,24 @@ export abstract class SessionHubAssembly extends SessionHubCore {
 
   /** 会话摘要列表（manager.list 同源；cwd 缺省 = 全库） */
   list(cwd?: string): ReturnType<SessionManager['list']> {
-    return this.options.manager.list(cwd);
+    if (cwd !== undefined) {
+      // 安全修复 #6134：与 create() 同等白名单校验——列表 cwd 不得越出服务端工作区根
+      this.assertNonEmpty(cwd, 'cwd');
+      return this.options.manager.list(this.assertCwdWithinRoot(cwd));
+    }
+    return this.options.manager.list();
+  }
+
+  /** 安全修复 #297/#6134：cwd 白名单校验（create/list 共用），返回 resolve 后的绝对路径 */
+  private assertCwdWithinRoot(cwd: string): string {
+    const resolvedCwd = resolve(cwd);
+    const allowedRoot = resolve(this.options.cwd);
+    const rel = relative(allowedRoot, resolvedCwd);
+    const escaped = rel !== '' && (isAbsolute(rel) || rel.split(/[\\/]/)[0] === '..');
+    if (escaped) {
+      throw new HubError('invalid', `session cwd escapes workspace root: ${cwd}`);
+    }
+    return resolvedCwd;
   }
 
   /** 只读定位会话目录（不取锁；与持锁写者并存） */

@@ -6,7 +6,7 @@
 //         绝不冒充 finalText；客户端须标注「未完成/已中断」。
 // 契约落在 serve WS `turn-end` 帧（终端 / 桌面 / 网关共用同一处定义）。
 import { afterEach, describe, expect, it } from 'vitest';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { startServe, MockProvider, type ServeHandle, type WsServerMessage } from '../src/index.js';
@@ -36,16 +36,28 @@ class ScriptedProvider implements ChatProvider {
   }
 }
 
+/** serve root 登记（安全修复 #297：会话 cwd 白名单要求 cwd 位于 root 内） */
+const rootByHandle = new WeakMap<ServeHandle, string>();
+
 async function start(provider: ChatProvider): Promise<ServeHandle> {
+  const serveRoot = tmpDir('h2-finaltext-root-');
   const handle = await startServe({
     requireToken: false,
     port: 0,
     home: tmpDir('h2-finaltext-home-'),
-    root: tmpDir('h2-finaltext-root-'),
+    root: serveRoot,
     provider,
   });
+  rootByHandle.set(handle, serveRoot);
   handles.push(handle);
   return handle;
+}
+
+/** serve root 内的会话 cwd（#297 白名单） */
+function sessionCwd(handle: ServeHandle): string {
+  const d = join(rootByHandle.get(handle)!, 'ws');
+  mkdirSync(d, { recursive: true });
+  return d;
 }
 
 /** 最小 WS 客户端（收集 turn-end 帧） */
@@ -90,7 +102,7 @@ async function runTurn(
   handle: ServeHandle,
   text: string,
 ): Promise<{ end: WsServerMessage; client: WsClient; sessionId: string; root: string }> {
-  const root = tmpDir('h2-finaltext-cwd-');
+  const root = sessionCwd(handle);
   const sessionId = await createSession(handle, root);
   const client = new WsClient(`ws://127.0.0.1:${handle.port}/ws`);
   await client.open;
@@ -151,7 +163,7 @@ describe('P3-a/P3-b 跨端 turn 终态文本语义（turn-end 帧）', () => {
 
   it('P3-b 取消（半截 attempt）→ textOutcome=partial，partialText 非空，stopReason=cancelled', async () => {
     const handle = await start(new MockProvider([{ textChunks: ['慢慢', '慢慢', '慢慢'], chunkDelayMs: 120 }]));
-    const root = tmpDir('h2-finaltext-cwd-');
+    const root = sessionCwd(handle);
     const sessionId = await createSession(handle, root);
     const client = new WsClient(`ws://127.0.0.1:${handle.port}/ws`);
     await client.open;

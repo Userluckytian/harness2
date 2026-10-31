@@ -1,7 +1,7 @@
 // write 工具：原子写文件（tmp+rename），自动建父目录。unsafe（独占执行，天然串行）。
-import { relative, resolve } from 'node:path';
+import { relative } from 'node:path';
 import type { ToolDefinition } from '../types.js';
-import { expectObject, expectString, writeAtomic } from './common.js';
+import { expectObject, expectString, resolveWithinCwd, writeAtomic } from './common.js';
 
 export const writeTool: ToolDefinition = {
   name: 'write',
@@ -22,10 +22,10 @@ export const writeTool: ToolDefinition = {
   cancelGuaranteed: true,
   execute: async (rawArgs, ctx) => {
     const args = expectObject(rawArgs, 'write');
-    const filePath = resolve(ctx.cwd, expectString(args, 'file_path', 'write'));
+    const filePath = resolveWithinCwd(ctx.cwd, expectString(args, 'file_path', 'write'), 'write');
     const content = expectString(args, 'content', 'write');
     writeAtomic(filePath, content);
-    // cwd 内显示相对路径；越界（..开头）或空时回退绝对路径（P2-4：slice 截位在盘符根等场景错位）
+    // cwd 内显示相对路径（resolveWithinCwd 已拒绝越界路径，.. 分支为防御性保留）
     const rel = relative(ctx.cwd, filePath);
     const display = rel !== '' && !rel.startsWith('..') ? rel : filePath;
     return { output: `wrote ${Buffer.byteLength(content, 'utf8')} bytes to ${display}` };

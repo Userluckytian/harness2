@@ -54,7 +54,7 @@ describe('hook matcher（复用 A16 matchGlob）', () => {
 describe('运行器：匹配与执行', () => {
   it('未配置/未启用 = 零行为（不 spawn）', async () => {
     const { hook, calls } = mockSpawn();
-    const runner = createHookRunner({ config: undefined, spawnHook: hook });
+    const runner = createHookRunner({ config: undefined, spawnHook: hook, admit: () => true });
     const res = await runner.run({ event: 'preTool', toolName: 'bash', cwd: 'C:/x' });
     expect(res.invocations).toEqual([]);
     expect(calls).toHaveLength(0);
@@ -70,6 +70,7 @@ describe('运行器：匹配与执行', () => {
         { event: 'postTool', command: 'hook-post' },
       ]),
       spawnHook: hook,
+      admit: () => true,
     });
     const res = await runner.run({ event: 'preTool', toolName: 'bash', args: { command: 'ls' }, cwd: 'C:/x' });
     expect(calls.map((c) => c.command)).toEqual(['hook-bash']);
@@ -84,7 +85,11 @@ describe('运行器：匹配与执行', () => {
 
   it('stdin 注入 JSON 上下文（含 tool_name / tool_input；postTool 带 tool_response）', async () => {
     const { hook, calls } = mockSpawn();
-    const runner = createHookRunner({ config: cfg([{ event: 'postTool', command: 'h' }]), spawnHook: hook });
+    const runner = createHookRunner({
+      config: cfg([{ event: 'postTool', command: 'h' }]),
+      spawnHook: hook,
+      admit: () => true,
+    });
     await runner.run({
       event: 'postTool',
       toolName: 'read',
@@ -107,6 +112,7 @@ describe('运行器：匹配与执行', () => {
     const runner = createHookRunner({
       config: cfg([{ event: 'preTool', command: 'h', timeoutMs: 1234 }], { maxOutputBytes: 777 }),
       spawnHook: hook,
+      admit: () => true,
     });
     await runner.run({ event: 'preTool', toolName: 'bash', cwd: 'C:/x' });
     expect(calls[0]!.timeoutMs).toBe(1234);
@@ -117,7 +123,11 @@ describe('运行器：匹配与执行', () => {
 describe('运行器：输出解释', () => {
   it('exit 0 + JSON additionalContext → 回注段', async () => {
     const { hook } = mockSpawn({ stdout: '{"additionalContext":"记得跑测试"}' });
-    const runner = createHookRunner({ config: cfg([{ event: 'postTool', command: 'h' }]), spawnHook: hook });
+    const runner = createHookRunner({
+      config: cfg([{ event: 'postTool', command: 'h' }]),
+      spawnHook: hook,
+      admit: () => true,
+    });
     const res = await runner.run({ event: 'postTool', toolName: 'bash', cwd: 'C:/x' });
     expect(res.additionalContexts).toEqual(['记得跑测试']);
     expect(res.blocked).toBeUndefined();
@@ -126,7 +136,11 @@ describe('运行器：输出解释', () => {
 
   it('preTool：continue:false → 拦截（原因取自 reason）', async () => {
     const { hook } = mockSpawn({ stdout: '{"continue":false,"reason":"危险命令"}' });
-    const runner = createHookRunner({ config: cfg([{ event: 'preTool', command: 'h' }]), spawnHook: hook });
+    const runner = createHookRunner({
+      config: cfg([{ event: 'preTool', command: 'h' }]),
+      spawnHook: hook,
+      admit: () => true,
+    });
     const res = await runner.run({ event: 'preTool', toolName: 'bash', cwd: 'C:/x' });
     expect(res.blocked).toEqual({ reason: '危险命令' });
     expect(res.invocations[0]!.outcome).toBe('success'); // exit 0；决策来自 JSON
@@ -138,28 +152,44 @@ describe('运行器：输出解释', () => {
         hookSpecificOutput: { hookEventName: 'preTool', permissionDecision: 'deny', permissionDecisionReason: '策略' },
       }),
     });
-    const runner = createHookRunner({ config: cfg([{ event: 'preTool', command: 'h' }]), spawnHook: hook });
+    const runner = createHookRunner({
+      config: cfg([{ event: 'preTool', command: 'h' }]),
+      spawnHook: hook,
+      admit: () => true,
+    });
     const res = await runner.run({ event: 'preTool', toolName: 'bash', cwd: 'C:/x' });
     expect(res.blocked?.reason).toBe('策略');
   });
 
   it('preTool：updatedInput 改写输入（顶层与 hookSpecificOutput 两形态）', async () => {
     const { hook } = mockSpawn({ stdout: '{"updatedInput":{"command":"echo safe"}}' });
-    const runner = createHookRunner({ config: cfg([{ event: 'preTool', command: 'h' }]), spawnHook: hook });
+    const runner = createHookRunner({
+      config: cfg([{ event: 'preTool', command: 'h' }]),
+      spawnHook: hook,
+      admit: () => true,
+    });
     const res = await runner.run({ event: 'preTool', toolName: 'bash', cwd: 'C:/x' });
     expect(res.updatedInput).toEqual({ command: 'echo safe' });
 
     const { hook: hook2 } = mockSpawn({
       stdout: JSON.stringify({ hookSpecificOutput: { hookEventName: 'preTool', updatedInput: { x: 1 } } }),
     });
-    const runner2 = createHookRunner({ config: cfg([{ event: 'preTool', command: 'h' }]), spawnHook: hook2 });
+    const runner2 = createHookRunner({
+      config: cfg([{ event: 'preTool', command: 'h' }]),
+      spawnHook: hook2,
+      admit: () => true,
+    });
     const res2 = await runner2.run({ event: 'preTool', toolName: 'bash', cwd: 'C:/x' });
     expect(res2.updatedInput).toEqual({ x: 1 });
   });
 
   it('非 JSON stdout（hook 打印日志）不失败、不解析（fail-open 语义）', async () => {
     const { hook } = mockSpawn({ stdout: 'just a log line' });
-    const runner = createHookRunner({ config: cfg([{ event: 'preTool', command: 'h' }]), spawnHook: hook });
+    const runner = createHookRunner({
+      config: cfg([{ event: 'preTool', command: 'h' }]),
+      spawnHook: hook,
+      admit: () => true,
+    });
     const res = await runner.run({ event: 'preTool', toolName: 'bash', cwd: 'C:/x' });
     expect(res.blocked).toBeUndefined();
     expect(res.invocations[0]!.outcome).toBe('success');
@@ -177,7 +207,11 @@ describe('运行器：输出解释', () => {
 describe('运行器：失败策略（fail-open）+ 拦截（exit 2）+ 超时', () => {
   it('exit 2（preTool）→ 拦截', async () => {
     const { hook } = mockSpawn({ exitCode: 2, stderr: '不允许' });
-    const runner = createHookRunner({ config: cfg([{ event: 'preTool', command: 'h' }]), spawnHook: hook });
+    const runner = createHookRunner({
+      config: cfg([{ event: 'preTool', command: 'h' }]),
+      spawnHook: hook,
+      admit: () => true,
+    });
     const res = await runner.run({ event: 'preTool', toolName: 'bash', cwd: 'C:/x' });
     expect(res.blocked).toEqual({ reason: '不允许' });
     expect(res.invocations[0]!.outcome).toBe('blocked');
@@ -187,7 +221,12 @@ describe('运行器：失败策略（fail-open）+ 拦截（exit 2）+ 超时', 
   it('其它非零退出 → fail-open（不拦截）+ 记录 failed + 告警', async () => {
     const { hook } = mockSpawn({ exitCode: 1, stderr: 'boom' });
     const warn = vi.fn();
-    const runner = createHookRunner({ config: cfg([{ event: 'preTool', command: 'h' }]), spawnHook: hook, warn });
+    const runner = createHookRunner({
+      config: cfg([{ event: 'preTool', command: 'h' }]),
+      spawnHook: hook,
+      warn,
+      admit: () => true,
+    });
     const res = await runner.run({ event: 'preTool', toolName: 'bash', cwd: 'C:/x' });
     expect(res.blocked).toBeUndefined();
     expect(res.invocations[0]!.outcome).toBe('failed');
@@ -197,7 +236,12 @@ describe('运行器：失败策略（fail-open）+ 拦截（exit 2）+ 超时', 
   it('超时 → 记录 timeout + fail-open + 告警', async () => {
     const { hook } = mockSpawn({ status: 'timeout', exitCode: null, errorMessage: 'timed out' });
     const warn = vi.fn();
-    const runner = createHookRunner({ config: cfg([{ event: 'postTool', command: 'h' }]), spawnHook: hook, warn });
+    const runner = createHookRunner({
+      config: cfg([{ event: 'postTool', command: 'h' }]),
+      spawnHook: hook,
+      warn,
+      admit: () => true,
+    });
     const res = await runner.run({ event: 'postTool', toolName: 'bash', cwd: 'C:/x' });
     expect(res.invocations[0]!.outcome).toBe('timeout');
     expect(warn).toHaveBeenCalledTimes(1);
@@ -208,7 +252,12 @@ describe('运行器：失败策略（fail-open）+ 拦截（exit 2）+ 超时', 
       throw new Error('ENOENT');
     };
     const warn = vi.fn();
-    const runner = createHookRunner({ config: cfg([{ event: 'preTool', command: 'h' }]), spawnHook: hook, warn });
+    const runner = createHookRunner({
+      config: cfg([{ event: 'preTool', command: 'h' }]),
+      spawnHook: hook,
+      warn,
+      admit: () => true,
+    });
     const res = await runner.run({ event: 'preTool', toolName: 'bash', cwd: 'C:/x' });
     expect(res.invocations[0]!.outcome).toBe('spawn_error');
     expect(res.blocked).toBeUndefined();
@@ -238,6 +287,7 @@ describe('运行器：失败策略（fail-open）+ 拦截（exit 2）+ 超时', 
     const runner = createHookRunner({
       config: cfg([{ event: 'preTool', command: 'h', async: true }]),
       spawnHook: hook,
+      admit: () => true,
     });
     const res = await runner.run({ event: 'preTool', toolName: 'bash', cwd: 'C:/x' });
     expect(res.invocations).toEqual([]);

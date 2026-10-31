@@ -234,12 +234,14 @@ describe('forkSession 内核语义', () => {
 
 describe('hub / HTTP / WS 分叉入口', () => {
   it('hub.fork：返回新会话；events 投影一致；busy 会话也可分叉（只读日志）', async () => {
+    // 安全修复 #297：会话 cwd 必须位于 serve root 内——root 兼作会话 cwd（rel === '' 合法）
+    const root = tmpDir('h2-fork-root-');
     const handle = await startServe({
       requireToken: false,
+      root,
       provider: new MockProvider([{ textChunks: ['回复。'] }, { textChunks: ['回复二。'] }]),
     });
     handles.push(handle);
-    const root = tmpDir('h2-fork-root-');
     const { id } = handle.hub.create(root);
     handle.hub.sendUserMessage(id, '第一句');
     handle.hub.sendUserMessage(id, '第二句');
@@ -258,9 +260,13 @@ describe('hub / HTTP / WS 分叉入口', () => {
   }, 20000);
 
   it('HTTP：POST /api/sessions/:id/fork → 200；未知会话 404；非法 atSeq 400', async () => {
-    const handle = await startServe({ requireToken: false, provider: new MockProvider([{ textChunks: ['回复。'] }]) });
+    const root = tmpDir('h2-fork-root-'); // root 兼作会话 cwd（#297 白名单）
+    const handle = await startServe({
+      requireToken: false,
+      root,
+      provider: new MockProvider([{ textChunks: ['回复。'] }]),
+    });
     handles.push(handle);
-    const root = tmpDir('h2-fork-root-');
     const created = await api(handle, 'POST', '/api/sessions', { cwd: root });
     const id = created.json.id as string;
     handle.hub.sendUserMessage(id, '第一句');
@@ -281,9 +287,13 @@ describe('hub / HTTP / WS 分叉入口', () => {
   }, 20000);
 
   it('WS：op fork → forked 帧（新会话 id + 血缘 + 事件数）', async () => {
-    const handle = await startServe({ requireToken: false, provider: new MockProvider([{ textChunks: ['回复。'] }]) });
+    const root = tmpDir('h2-fork-root-'); // root 兼作会话 cwd（#297 白名单）
+    const handle = await startServe({
+      requireToken: false,
+      root,
+      provider: new MockProvider([{ textChunks: ['回复。'] }]),
+    });
     handles.push(handle);
-    const root = tmpDir('h2-fork-root-');
     const { id } = handle.hub.create(root);
     handle.hub.sendUserMessage(id, '第一句');
     while (handle.hub.isBusy(id)) await sleep(30);

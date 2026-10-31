@@ -24,6 +24,37 @@ const MAX_CAPTURE_BYTES = 16 * 1024 * 1024; // 输出回收上限（防失控命
 
 const IS_WINDOWS = process.platform === 'win32';
 
+/**
+ * 构建子进程安全环境白名单（finding #305）：仅传递必要的系统变量，不透传应用密钥。
+ * bash/script 工具之前未传 env，子进程继承宿主 process.env（含 API 密钥），
+ * 模型可经 bash 读回上下文并进入日志/事件流。
+ */
+function buildSafeEnv(): NodeJS.ProcessEnv {
+  const env: NodeJS.ProcessEnv = {};
+  const whitelist = [
+    'PATH',
+    'HOME',
+    'TEMP',
+    'TMP',
+    'ComSpec',
+    'GIT_BASH',
+    'LANG',
+    'LC_ALL',
+    'USER',
+    'USERNAME',
+    'SYSTEMROOT',
+    'SYSTEMDRIVE',
+    'APPDATA',
+    'LOCALAPPDATA',
+  ];
+  for (const key of whitelist) {
+    if (process.env[key] !== undefined) {
+      env[key] = process.env[key];
+    }
+  }
+  return env;
+}
+
 /** 尽力杀死整棵进程树；失败不抛出（结果由 close 事件统一回收）。
  *  Windows：taskkill /T 按父子关系树杀（不依赖进程组，无需 detached）；
  *  POSIX：child 经 detached 成为组长，负 PID 杀整组。 */
@@ -33,7 +64,20 @@ function killTree(child: ChildProcess): void {
   if (IS_WINDOWS) {
     // /T = 树杀（shell 及全部子孙） /F = 强制。用 spawn 发起避免阻塞事件循环。
     try {
-      spawn('taskkill', ['/pid', String(pid), '/T', '/F'], { windowsHide: true, stdio: 'ignore' }).unref();
+      const taskkill = spawn('taskkill', ['/pid', String(pid), '/T', '/F'], {
+        windowsHide: true,
+        stdio: 'ignore',
+        env: buildSafeEnv(),
+      });
+      // 监听 error 事件：taskkill 异步失败时退回 child.kill()（finding #307）
+      taskkill.on('error', () => {
+        try {
+          child.kill();
+        } catch {
+          /* 已死 */
+        }
+      });
+      taskkill.unref();
     } catch {
       try {
         child.kill();
@@ -86,7 +130,13 @@ export const bashTool: ToolDefinition = {
       try {
         const args = expectObject(rawArgs, 'bash');
         command = expectString(args, 'command', 'bash');
-        timeoutMs = optionalNumber(args, 'timeoutMs') ?? DEFAULT_BASH_TIMEOUT_MS;
+        // finding #307：timeoutMs <= 0 会关闭超时保护（模型可传 0 让命令无限运行，
+        // 且 `0 ?? default` 不会回退到默认值），显式拒绝非正数，缺省才用默认值。
+        const parsedTimeout = optionalNumber(args, 'timeoutMs');
+        if (parsedTimeout !== undefined && parsedTimeout <= 0) {
+          throw new Error('bash: timeoutMs must be a positive number');
+        }
+        timeoutMs = parsedTimeout ?? DEFAULT_BASH_TIMEOUT_MS;
       } catch (e) {
         resolve({ error: (e as Error).message });
         return;
@@ -118,12 +168,14 @@ export const bashTool: ToolDefinition = {
             detached: !IS_WINDOWS,
             windowsHide: true,
             stdio: ['ignore', 'pipe', 'pipe'],
+            env: buildSafeEnv(),
           })
         : spawn(shell.executable, [...shell.argsPrefix, command], {
             cwd: ctx.cwd,
             detached: !IS_WINDOWS,
             windowsHide: true,
             stdio: ['ignore', 'pipe', 'pipe'],
+            env: buildSafeEnv(),
           });
 
       let timer: NodeJS.Timeout | undefined;
@@ -131,9 +183,16 @@ export const bashTool: ToolDefinition = {
         timer = setTimeout(() => {
           timedOut = true;
           killTree(child);
+          // 确保即使 killTree 失败（taskkill 异常/进程已死）也完成 Promise（finding #307）
+          setTimeout(() => finish(), 1000);
         }, timeoutMs);
       }
-      const onAbort = (): void => killTree(child);
+      // finding #307：abort 路径与超时路径同类缺口——killTree 失败（taskkill 异常/进程已死）
+      // 时 close 不触发，Promise 永不 resolve。补 1000ms 兜底 finish，settled 幂等守卫保证不重复结算。
+      const onAbort = (): void => {
+        killTree(child);
+        setTimeout(() => finish(), 1000);
+      };
       ctx.signal.addEventListener('abort', onAbort, { once: true });
 
       const finish = (): void => {

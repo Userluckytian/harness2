@@ -169,6 +169,16 @@ describe('bash 工具', () => {
     await sleep(4000);
     expect(existsSync(sideEffect)).toBe(false);
   });
+
+  it('P1-4 回归：timeoutMs 非正数被拒绝（finding #307）', async () => {
+    // timeoutMs: 0 / 负数会关闭超时保护（`0 ?? default` 不回退），必须显式拒绝。
+    const r0 = await run(bashTool, { command: 'echo hi', timeoutMs: 0 }, tmpDir());
+    expect(r0.ok).toBe(false);
+    expect(r0.error).toMatch(/positive number/);
+    const rneg = await run(bashTool, { command: 'echo hi', timeoutMs: -5 }, tmpDir());
+    expect(rneg.ok).toBe(false);
+    expect(rneg.error).toMatch(/positive number/);
+  }, 15000);
 });
 
 describe('read 工具', () => {
@@ -235,7 +245,7 @@ describe('write 工具', () => {
     expect(r.error).toMatch(/content/);
   });
 
-  it('P2-4 回归：成功消息 cwd 内显示相对路径、cwd 外回退绝对路径', async () => {
+  it('P2-4 回归：成功消息 cwd 内显示相对路径；cwd 外被拒绝（finding #5421 修复）', async () => {
     const dir = tmpDir();
     const inside = await run(writeTool, { file_path: join(dir, 'a', 'b.txt'), content: 'x' }, dir);
     expect(inside.ok).toBe(true);
@@ -243,8 +253,8 @@ describe('write 工具', () => {
 
     const other = tmpDir(); // cwd 之外（另一个临时目录）
     const outside = await run(writeTool, { file_path: join(other, 'x.txt'), content: 'y' }, dir);
-    expect(outside.ok).toBe(true);
-    expect(outside.output).toBe(`wrote 1 bytes to ${join(other, 'x.txt')}`);
+    expect(outside.ok).toBe(false);
+    expect(outside.error).toMatch(/escapes workspace/);
   });
 });
 

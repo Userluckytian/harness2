@@ -180,6 +180,29 @@ describe('R2 确定性回归：非 C 盘 / 无 Git Bash / 不误选 WSL', () => 
     });
     expect(spec.kind).toBe('cmd');
   });
+
+  it('安全修复 #304：非白名单/不存在的配置 shell 被忽略，display 附告警并回退默认探测', () => {
+    // bash 名字在白名单内但路径不存在 → 拒绝该配置，回退 cmd（display 附忽略告警）
+    const spec = resolveBashShell({
+      platform: 'win32',
+      configured: 'C:\\NoSuchShell\\bash.exe',
+      env: { PATH: 'C:\\Windows\\system32', ComSpec: 'C:\\Windows\\system32\\cmd.exe' },
+      exists: () => false,
+    });
+    expect(spec.kind).toBe('cmd');
+    expect(spec.display).toContain('已忽略非白名单 shell 配置');
+    expect(spec.display).toContain('C:\\NoSuchShell\\bash.exe');
+
+    // 任意可执行名不在白名单 → 同样拒绝（防工作区配置把 bash 劫持为任意程序）
+    const evil = resolveBashShell({
+      platform: 'win32',
+      configured: 'C:\\evil\\run.exe',
+      env: { PATH: 'C:\\Windows\\system32', ComSpec: 'C:\\Windows\\system32\\cmd.exe' },
+      exists: (p) => p === 'C:\\evil\\run.exe', // 仅 evil 自身存在；Git Bash 候选一律不存在 → 回退 cmd
+    });
+    expect(evil.kind).toBe('cmd');
+    expect(evil.display).toContain('已忽略非白名单 shell 配置');
+  });
 });
 
 describe.skipIf(!IS_WINDOWS)('Windows 真机：bash 工具走 Git Bash / cmd 回退', () => {
@@ -222,9 +245,11 @@ describe.skipIf(!IS_WINDOWS)('Windows 真机：bash 工具走 Git Bash / cmd 回
     expect(r.output).toBe('中文 😀');
   }, 30_000);
 
-  it('配置的 shell 路径不存在：spawn 失败错误里带实际使用的 shell，便于自纠', async () => {
+  it('配置的 shell 路径不存在：白名单校验拒绝该配置（#304），回退默认探测成功执行', async () => {
+    // 新语义：不存在的配置 shell 不再直接 spawn 失败，而是被白名单+存在性校验拒绝后
+    // 回退 Git Bash / cmd 默认探测——命令照常执行，配置错误经 display 告警暴露（见上方单测）
     const r = await runBash('echo hi', 'C:\\NoSuchShell\\bash.exe');
-    expect(r.error).toBeDefined();
-    expect(r.error).toContain('shell: C:\\NoSuchShell\\bash.exe');
+    expect(r.error).toBeUndefined();
+    expect(r.output).toContain('hi');
   }, 30_000);
 });

@@ -3,7 +3,7 @@
 // 审批上抛一路到父（task 内工具审批带 taskId/parentTaskId，父 pendingApprovalsFor 可见）；
 // queue continue 清场（paused 队列 continue 后能接受新 submit）；task/transition 落 runtime journal。
 import { afterEach, describe, expect, it } from 'vitest';
-import { existsSync, mkdtempSync, rmSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
@@ -209,7 +209,10 @@ describe('expectedId 陈旧 task cancel 被拒', () => {
 
 describe('审批上抛一路到父（task 内工具审批带 taskId/parentTaskId）', () => {
   it('子任务写工具审批：卡片带 taskId/parentTaskId；父 pendingApprovalsFor 可见；放行后完成', async () => {
-    const cwd = tmpDir('h2-subcoord-ap-');
+    // 安全修复 #297：会话 cwd 必须位于 hub root 内——root 下建子目录作工作区
+    const root = tmpDir('h2-subcoord-root-');
+    const cwd = join(root, 'ap');
+    mkdirSync(cwd, { recursive: true });
     const file = join(cwd, 'out.txt');
     const provider = new MockProvider([
       { toolCalls: [{ id: 'c-w', name: 'write', arguments: JSON.stringify({ file_path: file, content: 'x' }) }] },
@@ -223,7 +226,7 @@ describe('审批上抛一路到父（task 内工具审批带 taskId/parentTaskId
         registerBuiltinTools(r);
         return r;
       })(),
-      cwd: tmpDir('h2-subcoord-root-'),
+      cwd: root,
       decide: () => 'ask',
     });
     const pid = hub.create(cwd).id;

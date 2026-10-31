@@ -5,7 +5,7 @@
 //       pendingApprovals/queue）、旧 epoch 丢弃、重复 offset 丢弃、delta 带水位、cancel 三态 ack、
 //       submit ack、旧客户端帧不崩、S3c2 接线语义。
 import { afterEach, describe, expect, it } from 'vitest';
-import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { createServer } from 'node:http';
 import { join } from 'node:path';
@@ -38,6 +38,33 @@ afterEach(async () => {
 });
 
 const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
+
+/** serve root 登记（安全修复 #297：会话 cwd 白名单要求 cwd 位于 root 内） */
+const rootByHandle = new WeakMap<ServeHandle, string>();
+
+/** startServe 包装：缺省补建 root 并登记 handle → root（测试基建据此派生白名单内 cwd） */
+async function startServeTracked(opts: Parameters<typeof startServe>[0] = {}): Promise<ServeHandle> {
+  const serveRoot = opts.root ?? tmpDir('h2-resume-root-');
+  const handle = await startServe({ ...opts, root: serveRoot });
+  rootByHandle.set(handle, serveRoot);
+  return handle;
+}
+
+/** serve root 内的会话 cwd（#297 白名单）；同 serve 多会话可共用同一子目录 */
+function sessionCwd(handle: ServeHandle): string {
+  const d = join(rootByHandle.get(handle)!, 'ws');
+  mkdirSync(d, { recursive: true });
+  return d;
+}
+
+async function createSession(handle: ServeHandle, cwd?: string): Promise<string> {
+  const res = await fetch(`http://127.0.0.1:${handle.port}/api/sessions`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ cwd: cwd ?? sessionCwd(handle) }),
+  });
+  return ((await res.json()) as { id: string }).id;
+}
 
 class WsClient {
   readonly frames: WsServerMessage[] = [];
@@ -79,15 +106,6 @@ class WsClient {
   }
 }
 
-async function createSession(handle: ServeHandle, cwd?: string): Promise<string> {
-  const res = await fetch(`http://127.0.0.1:${handle.port}/api/sessions`, {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ cwd: cwd ?? tmpDir('h2-resume-cwd-') }),
-  });
-  return ((await res.json()) as { id: string }).id;
-}
-
 /** 可控注入的 resumeStateProvider（缺省未接线 → resume null / ack unknown） */
 function provider(over: Partial<ResumeStateProvider> = {}): ResumeStateProvider {
   const base: ResumeStateProvider = {
@@ -100,7 +118,7 @@ function provider(over: Partial<ResumeStateProvider> = {}): ResumeStateProvider 
 
 describe('resume-subscription → resume-snapshot（传输帧层）', () => {
   it('重连 replay 无缺口（磁盘投影 lastSeq 为准）与快照字段齐全', async () => {
-    const handle = await startServe({
+    const handle = await startServeTracked({
       requireToken: false,
       port: 0,
       home: tmpDir('h2-resume-home-'),
@@ -185,7 +203,7 @@ describe('resume-subscription → resume-snapshot（传输帧层）', () => {
 
 describe('cancel 三态 ack（传输帧层）', () => {
   it('stop 阶段 ack=stopping；确认后 ack=cancelled；未接线/未知=unknown', async () => {
-    const handle = await startServe({
+    const handle = await startServeTracked({
       requireToken: false,
       port: 0,
       home: tmpDir('h2-resume-home-'),
@@ -206,7 +224,7 @@ describe('cancel 三态 ack（传输帧层）', () => {
   });
 
   it('接线 provider 回 stopping → 转发原样；坏 expectedId 仍由 provider 决定；cancelled 端到端触发', async () => {
-    const handle = await startServe({
+    const handle = await startServeTracked({
       requireToken: false,
       port: 0,
       home: tmpDir('h2-resume-home-'),
@@ -245,7 +263,7 @@ describe('cancel 三态 ack（传输帧层）', () => {
 
 describe('submit 帧定义 + ack（传输帧层；实际入队归 S3c2）', () => {
   it('接线 provider 回 accepted/rejected；缺省回 unknown（≠rejected）', async () => {
-    const handle = await startServe({
+    const handle = await startServeTracked({
       requireToken: false,
       port: 0,
       home: tmpDir('h2-resume-home-'),
@@ -350,7 +368,7 @@ describe('delta 带水位 + 重复 offset 丢弃（传输层映射，纯逻辑�
 
 describe('旧客户端兼容（帧形状不变）', () => {
   it('旧 subscribe/user-message/turn-end 帧仍工作；新 op 未知才 error', async () => {
-    const handle = await startServe({
+    const handle = await startServeTracked({
       requireToken: false,
       port: 0,
       home: tmpDir('h2-resume-home-'),
@@ -372,7 +390,7 @@ describe('旧客户端兼容（帧形状不变）', () => {
 
 describe('S3c2：submit 幂等接线（durable-then-ack + 按序派发不重复）', () => {
   it('同 id 重复提交 → receipt 复用不重复派发；派发后活队列出队（D3）', async () => {
-    const handle = await startServe({
+    const handle = await startServeTracked({
       requireToken: false,
       port: 0,
       home: tmpDir('h2-resume-home-'),
@@ -430,7 +448,7 @@ describe('S3c2：queue 重启恢复（recoverQueue paused + 不自动执行）',
   it('durable accepted（未派发）重启后恢复为 paused；未重新提交不产生新 turn', async () => {
     const home = tmpDir('h2-resume-home-');
     const root = tmpDir('h2-resume-root-');
-    const A = await startServe({
+    const A = await startServeTracked({
       requireToken: false,
       port: 0,
       home,
@@ -453,7 +471,7 @@ describe('S3c2：queue 重启恢复（recoverQueue paused + 不自动执行）',
     journal.close();
     await A.close();
     // 重启 B：同一 home/root，会话目录按 id 恢复
-    const B = await startServe({
+    const B = await startServeTracked({
       requireToken: false,
       port: 0,
       home,
@@ -480,9 +498,11 @@ describe('S3c2：queue 重启恢复（recoverQueue paused + 不自动执行）',
 describe('S3c2：cancel 接线（不撤销已完成文件变更）', () => {
   it('write 提交后 cancel → stopping；turn cancelled；文件保留；二次 cancel=cancelled；未知=unknown', async () => {
     const root = tmpDir('h2-resume-root-');
-    const fileCwd = tmpDir('h2-resume-file-');
+    // #297 白名单：会话 cwd（写工具的工作区）必须在 serve root 内
+    const fileCwd = join(root, 'file');
+    mkdirSync(fileCwd, { recursive: true });
     const outPath = join(fileCwd, 'out.txt');
-    const handle = await startServe({
+    const handle = await startServeTracked({
       requireToken: false,
       port: 0,
       home: tmpDir('h2-resume-home-'),
@@ -540,7 +560,7 @@ describe('S3c2：cancel 接线（不撤销已完成文件变更）', () => {
 
 describe('S3c2：resume-snapshot 在途审批（activeAttempt waiting-approval + pendingApprovals）', () => {
   it('审批挂起中的 turn → 重连快照带 activeAttempt.wiating-approval 与 pendingApprovals', async () => {
-    const handle = await startServe({
+    const handle = await startServeTracked({
       requireToken: false,
       port: 0,
       home: tmpDir('h2-resume-home-'),
@@ -589,7 +609,7 @@ describe('S3c2：resume-snapshot 在途审批（activeAttempt waiting-approval +
 
 describe('S3c2：v2 连接带水位 delta + attempt-final（旧连接继续旧形状）', () => {
   it('resume 后 text-delta 连续（turnId/attemptId/chunkOffset）+ attempt-final completed；旧连接只收旧 delta', async () => {
-    const handle = await startServe({
+    const handle = await startServeTracked({
       requireToken: false,
       port: 0,
       home: tmpDir('h2-resume-home-'),
@@ -645,7 +665,7 @@ describe('S3c2：v2 连接带水位 delta + attempt-final（旧连接继续旧�
 // 这条断言在此固定该口径，防止未来误把查询参数当生效开关（那样会静默改变旧客户端的帧形状）。
 describe('protocolVersion 查询参数只作声明（不切帧；真正切 v2 靠 resume-subscription）', () => {
   it('带 ?protocolVersion=2 但未 resume 的连接仍收旧 delta；不带该参数但 resume 的连接收带水位帧', async () => {
-    const handle = await startServe({
+    const handle = await startServeTracked({
       requireToken: false,
       port: 0,
       home: tmpDir('h2-v2flag-home-'),

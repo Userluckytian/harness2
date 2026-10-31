@@ -1,6 +1,6 @@
 // 预定义工具共享助手：参数校验、输出截断、原子写。
 import { mkdirSync, renameSync, unlinkSync, writeFileSync } from 'node:fs';
-import { dirname } from 'node:path';
+import { dirname, isAbsolute, relative, resolve } from 'node:path';
 
 export function expectObject(args: unknown, tool: string): Record<string, unknown> {
   if (typeof args !== 'object' || args === null || Array.isArray(args)) {
@@ -29,6 +29,25 @@ export function optionalNumber(obj: Record<string, unknown>, key: string): numbe
 export function truncateText(s: string, maxChars: number): string {
   if (s.length <= maxChars) return s;
   return `${s.slice(0, maxChars)}\n...[truncated ${s.length - maxChars} chars]`;
+}
+
+/**
+ * 路径边界校验：把模型可控路径解析为 cwd 内的绝对路径。
+ * resolve(cwd, p) 后计算 relative(cwd, resolved)：
+ *   - ''（恰好是 cwd 本身）→ 允许（glob/grep 默认搜索根就是 cwd）
+ *   - 首段为 `..`（POSIX/Windows 分隔符均覆盖）→ 向上逃逸，拒绝
+ *   - isAbsolute(rel)（Windows 跨盘符/UNC 时 relative 返回绝对路径）→ 拒绝
+ * 越界时抛明确错误；调用方必须在执行任何 IO（readFileSync/fg/spawn/writeAtomic）之前调用，
+ * 且不得对越界路径做任何文件操作。
+ */
+export function resolveWithinCwd(cwd: string, userPath: string, tool: string): string {
+  const resolved = resolve(cwd, userPath);
+  const rel = relative(cwd, resolved);
+  const escaped = rel !== '' && (isAbsolute(rel) || rel.split(/[\\/]/)[0] === '..');
+  if (escaped) {
+    throw new Error(`${tool}: path escapes workspace (cwd): ${userPath}`);
+  }
+  return resolved;
 }
 
 /**

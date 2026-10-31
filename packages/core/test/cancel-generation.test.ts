@@ -6,7 +6,7 @@
 //   3) WS 级重连重放：旧连接 replay 旧帧（已结束 turn 的 id+代次）不打扰运行中的新 turn，
 //      新 turn 正常 end_turn 完成；旧帧无代次字段不崩（旧客户端兼容回退 target.id）。
 import { afterEach, describe, expect, it } from 'vitest';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
@@ -46,7 +46,10 @@ async function waitFor(pred: () => boolean, timeoutMs = 8000, step = 20): Promis
   }
 }
 
+/** 当前 makeHub 的 hub root（安全修复 #297：hub.create 的 cwd 必须位于 root 内） */
+let hubRoot = '';
 function makeHub(script: readonly MockReply[]) {
+  hubRoot = tmpDir('h2-cancel-gen-root-');
   const hub = new SessionHub({
     manager: new SessionManager(defaultSessionsRoot(tmpDir('h2-cancel-gen-home-'))),
     provider: new MockProvider(script),
@@ -55,9 +58,16 @@ function makeHub(script: readonly MockReply[]) {
       registerBuiltinTools(r);
       return r;
     })(),
-    cwd: tmpDir('h2-cancel-gen-root-'),
+    cwd: hubRoot,
   });
   return hub;
+}
+
+/** hub root 内的会话 cwd（#297 白名单） */
+function hubSessionCwd(name: string): string {
+  const d = join(hubRoot, name);
+  mkdirSync(d, { recursive: true });
+  return d;
 }
 
 /** 从 resume-snapshot 读运行中 attempt（含 FixB generation） */
@@ -138,7 +148,7 @@ describe('hub.cancelAck turn 代次守卫（真实运行 turn）', () => {
   it('旧代次 cancel → unknown 且不中止运行中 turn；正确代次 → stopping → cancelled', { timeout: 20000 }, async () => {
     // 第一轮快速完成 → 代次计数器推进（turn A = gen 1）；第二轮慢速流式保持运行（turn B = gen 2）
     const hub = makeHub([{ textChunks: ['A-fast'] }, { textChunks: ['B-1', 'B-2', 'B-3'], chunkDelayMs: 300 }]);
-    const id = hub.create(tmpDir('h2-cancel-gen-sess-')).id;
+    const id = hub.create(hubSessionCwd('sess')).id;
     try {
       hub.sendUserMessage(id, '第一轮（快）');
       await waitFor(() => !hub.isBusy(id)); // turn A 完成
@@ -187,7 +197,7 @@ describe('hub.cancelAck turn 代次守卫（真实运行 turn）', () => {
 
   it('旧帧无代次字段 → 不崩、回退 target.id（stopping/cancelled 语义不变）', { timeout: 20000 }, async () => {
     const hub = makeHub([{ textChunks: ['L-1', 'L-2', 'L-3'], chunkDelayMs: 300 }]);
-    const id = hub.create(tmpDir('h2-cancel-gen-legacy-')).id;
+    const id = hub.create(hubSessionCwd('legacy')).id;
     try {
       hub.sendUserMessage(id, '旧客户端帧');
       await waitFor(() => {
@@ -220,7 +230,7 @@ describe('hub.cancelAck turn 代次守卫（真实运行 turn）', () => {
 
   it('已取消 turn：带旧代次的确认帧 → unknown（代次记忆不串）', { timeout: 20000 }, async () => {
     const hub = makeHub([{ textChunks: ['C-1', 'C-2', 'C-3'], chunkDelayMs: 300 }]);
-    const id = hub.create(tmpDir('h2-cancel-gen-mem-')).id;
+    const id = hub.create(hubSessionCwd('mem')).id;
     try {
       hub.sendUserMessage(id, '跑一轮');
       await waitFor(() => {
@@ -265,21 +275,25 @@ describe('WS 重连重放：旧 cancel 帧不撞运行中的新 turn', () => {
     'turn A 取消后开启 turn B；重放 turn A 旧帧（id+代次）→ 不打扰 turn B，turn B 正常 end_turn',
     { timeout: 20000 },
     async () => {
+      const serveRoot = tmpDir('h2-cancel-gen-root-');
       const handle = await startServe({
         requireToken: false,
         port: 0,
         home: tmpDir('h2-cancel-gen-home-'),
-        root: tmpDir('h2-cancel-gen-root-'),
+        root: serveRoot,
         provider: new MockProvider([
           { textChunks: ['A-1', 'A-2', 'A-3'], chunkDelayMs: 300 },
           { textChunks: ['B-1', 'B-2', 'B-3'], chunkDelayMs: 300 },
         ]),
       });
       handles.push(handle);
+      // 安全修复 #297：会话 cwd 必须位于 serve root 内——root 下建子目录
+      const wsRoot = join(serveRoot, 'ws');
+      mkdirSync(wsRoot, { recursive: true });
       const res = await fetch(`http://127.0.0.1:${handle.port}/api/sessions`, {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ cwd: tmpDir('h2-cancel-gen-cwd-') }),
+        body: JSON.stringify({ cwd: wsRoot }),
       });
       const id = ((await res.json()) as { id: string }).id;
 
@@ -356,18 +370,22 @@ describe('WS 重连重放：旧 cancel 帧不撞运行中的新 turn', () => {
   );
 
   it('旧客户端 cancel 帧（无 expectedTurnGeneration）在 WS 层不崩，转发原样', { timeout: 20000 }, async () => {
+    const serveRoot = tmpDir('h2-cancel-gen-root-');
     const handle = await startServe({
       requireToken: false,
       port: 0,
       home: tmpDir('h2-cancel-gen-home-'),
-      root: tmpDir('h2-cancel-gen-root-'),
+      root: serveRoot,
       provider: new MockProvider([{ textChunks: ['L-1', 'L-2'], chunkDelayMs: 200 }]),
     });
     handles.push(handle);
+    // 安全修复 #297：会话 cwd 必须位于 serve root 内——root 下建子目录
+    const wsRoot = join(serveRoot, 'ws');
+    mkdirSync(wsRoot, { recursive: true });
     const res = await fetch(`http://127.0.0.1:${handle.port}/api/sessions`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ cwd: tmpDir('h2-cancel-gen-cwd-') }),
+      body: JSON.stringify({ cwd: wsRoot }),
     });
     const id = ((await res.json()) as { id: string }).id;
     const client = new WsClient(`ws://127.0.0.1:${handle.port}/ws`);

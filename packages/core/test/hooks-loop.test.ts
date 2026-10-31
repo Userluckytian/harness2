@@ -53,6 +53,7 @@ describe('preTool 拦截语义（对齐 ZCode：可阻止执行 / 改写输入�
     const hooks = createHookRunner({
       config: cfg([{ event: 'preTool', matcher: 'bash', command: 'guard' }]),
       spawnHook: spawnReturning({ guard: { stdout: '{"continue":false,"reason":"危险命令"}' } }),
+      admit: () => true,
     });
 
     const result = await runTurn(dir, { provider, tools: registry, cwd: dir, userText: '删库', hooks });
@@ -85,6 +86,7 @@ describe('preTool 拦截语义（对齐 ZCode：可阻止执行 / 改写输入�
     const hooks = createHookRunner({
       config: cfg([{ event: 'preTool', matcher: 'bash', command: 'rewrite' }]),
       spawnHook: spawnReturning({ rewrite: { stdout: '{"updatedInput":{"command":"echo safe"}}' } }),
+      admit: () => true,
     });
 
     await runTurn(dir, { provider, tools: registry, cwd: dir, userText: 'x', hooks });
@@ -104,6 +106,7 @@ describe('postTool 回注（结果文本随事件落盘，可从日志重建）'
     const hooks = createHookRunner({
       config: cfg([{ event: 'postTool', matcher: 'bash', command: 'ctx' }]),
       spawnHook: spawnReturning({ ctx: { stdout: '{"additionalContext":"记得提交"}' } }),
+      admit: () => true,
     });
 
     await runTurn(dir, { provider, tools: registry, cwd: dir, userText: 'x', hooks });
@@ -126,6 +129,7 @@ describe('postTool 回注（结果文本随事件落盘，可从日志重建）'
     const hooks = createHookRunner({
       config: cfg([{ event: 'postTool', matcher: 'bash', command: 'ctx' }]),
       spawnHook: spawnReturning({ ctx: { stdout: '{"additionalContext":"补丁提示"}' } }),
+      admit: () => true,
     });
     await runTurn(dir, { provider, tools: registry, cwd: dir, userText: 'x', hooks });
     const session = loadSession(dir);
@@ -151,6 +155,7 @@ describe('turnEnd / sessionStart / sessionEnd 触发 + hook/invocation 扩展事
         turns.push(input.command);
         return { status: 'completed', exitCode: 0, stdout: '', stderr: '' };
       },
+      admit: () => true,
     });
     const provider = new MockProvider([{ text: '你好' }]);
     await runTurn(dir, { provider, tools: new ToolRegistry(), cwd: dir, userText: 'hi', hooks });
@@ -186,6 +191,7 @@ describe('turnEnd / sessionStart / sessionEnd 触发 + hook/invocation 扩展事
         turns.push(input.command);
         return { status: 'completed', exitCode: 0, stdout: '', stderr: '' };
       },
+      admit: () => true,
     });
     await runTurn(dir, {
       provider: new MockProvider([{ text: '2' }]),

@@ -5,7 +5,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createServer, type Server } from 'node:http';
 import { mkdtempSync, existsSync, rmSync, statSync } from 'node:fs';
-import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
   BrowserNotInstalledError,
@@ -17,7 +16,8 @@ import type { ToolDefinition } from '../src/tools/types.js';
 
 const dirs: string[] = [];
 function tmpDir(): string {
-  const d = mkdtempSync(join(tmpdir(), 'h2-browser-'));
+  // 工作区内创建临时目录（finding #5422 边界校验后，screenshot 目标必须位于 cwd 内）
+  const d = mkdtempSync(join(process.cwd(), '.h2-browser-'));
   dirs.push(d);
   return d;
 }
@@ -133,6 +133,27 @@ describe('BrowserPool 资源管控（无需 chromium 的部分）', () => {
     const ctx = { signal: new AbortController().signal, cwd: process.cwd() };
     await expect(click.execute({ ref: '../../etc' }, ctx)).rejects.toThrow(/ref 非法/);
     await expect(click.execute({ ref: 'a b' }, ctx)).rejects.toThrow(/ref 非法/);
+  });
+
+  it('browser_screenshot 边界校验：工作区外路径被拒（finding #5422）', async () => {
+    const tools = createBrowserTools('s-bound', smallPool());
+    const shot = toolByName(tools, 'browser_screenshot');
+    // .. 逃逸：相对路径向上越界
+    const r1 = await runTool(shot, { path: '../outside.png' });
+    expect(r1.ok).toBe(false);
+    expect(r1.text).toContain('工作目录');
+    // 绝对路径越界：工作区外绝对路径
+    const r2 = await runTool(shot, { path: join(process.cwd(), '..', 'outside-evil.png') });
+    expect(r2.ok).toBe(false);
+    expect(r2.text).toContain('工作目录');
+    // 合法文件名 ..foo.png 不应被边界校验误拒（后续因 chromium 未启动而报 browser install 错误，非边界错误）。
+    // chromium 可用的真机上截图会真实落盘到 cwd——finally 清理，不给仓库留测试残渣。
+    try {
+      const r3 = await runTool(shot, { path: '..foo.png' });
+      expect(r3.text).not.toContain('工作目录');
+    } finally {
+      rmSync(join(process.cwd(), '..foo.png'), { force: true });
+    }
   });
 });
 

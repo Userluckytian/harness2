@@ -25,6 +25,8 @@ import { acquireServeLock, enforceLockFileMode } from '../src/server/http.js';
 
 const dirs: string[] = [];
 const handles: ServeHandle[] = [];
+/** serve root 登记（安全修复 #297：会话 cwd 白名单要求 cwd 位于 root 内，测试基建据此派生 cwd） */
+const rootByHandle = new WeakMap<ServeHandle, string>();
 function tmpDir(prefix = 'h2-serve-'): string {
   const d = mkdtempSync(join(tmpdir(), prefix));
   dirs.push(d);
@@ -101,19 +103,29 @@ interface StartOpts {
 }
 
 async function start(opts: StartOpts = {}): Promise<ServeHandle> {
+  const serveRoot = opts.root ?? tmpDir('h2-serve-root-');
   const handle = await startServe({
     requireToken: false,
     port: 0,
     home: opts.home ?? tmpDir('h2-serve-home-'),
-    root: opts.root ?? tmpDir('h2-serve-root-'),
+    root: serveRoot,
     provider: opts.provider ?? new MockProvider(opts.script ?? [{ textChunks: ['回复。'] }]),
     ...(opts.decide !== undefined ? { decide: opts.decide } : {}),
     ...(opts.approvalTimeoutMs !== undefined ? { approvalTimeoutMs: opts.approvalTimeoutMs } : {}),
     ...(opts.hooks !== undefined ? { hooks: opts.hooks } : {}),
     ...(opts.memory !== undefined ? { memory: opts.memory } : {}),
   });
+  rootByHandle.set(handle, serveRoot);
   handles.push(handle);
   return handle;
+}
+
+/** 会话 cwd（安全修复 #297 白名单）：在 serve root 下建子目录作为会话工作区 */
+function sessionCwd(handle: ServeHandle): string {
+  const d = join(rootByHandle.get(handle)!, `ws-${dirs.length}`);
+  mkdirSync(d, { recursive: true });
+  dirs.push(d);
+  return d;
 }
 
 async function api(
@@ -175,7 +187,9 @@ describe('serve 启动与 /api/config', () => {
       channel: 'ds',
       protocol: 'openai',
       baseUrl: 'https://api.test/v1',
-      envKey: 'DS_KEY',
+      // 安全修复 #302/#303：脱敏组件级匹配 fail-closed——envKey 变量名引用也按 *key 组件红掉
+      // （report.ts 防御口径：防 ${VAR} 误写值携带密钥；变量名本身不出服务进程）
+      envKey: '[REDACTED]',
       models: ['m-1'],
       keySource: 'auth.json',
     });
@@ -189,7 +203,7 @@ describe('serve 启动与 /api/config', () => {
 describe('sessions API', () => {
   it('POST 创建 → GET 列表（cwd 过滤与全库）→ GET /events 全量事件含 active 标记', async () => {
     const handle = await start();
-    const root = tmpDir('h2-serve-cwd-');
+    const root = sessionCwd(handle);
     const { status, json } = await api(handle, 'POST', '/api/sessions', { cwd: root });
     expect(status).toBe(200);
     expect(typeof json.id).toBe('string');
@@ -253,7 +267,7 @@ describe('undo/redo 经 HTTP 接入 Ph4 内核', () => {
   ): Promise<{ handle: ServeHandle; id: string; c: Captured }> {
     const { c, hooks } = captureHooks();
     const handle = await start({ ...opts, hooks });
-    const root = tmpDir('h2-serve-cwd-');
+    const root = sessionCwd(handle);
     const created = await api(handle, 'POST', '/api/sessions', { cwd: root });
     const id = created.json.id as string;
     handle.hub.sendUserMessage(id, '第一轮');
@@ -328,7 +342,7 @@ describe('undo/redo 经 HTTP 接入 Ph4 内核', () => {
       hooks,
       provider: new MockProvider([{ textChunks: ['慢', '慢', '慢'], chunkDelayMs: 80 }]),
     });
-    const root = tmpDir('h2-serve-cwd-');
+    const root = sessionCwd(handle);
     const id = (await api(handle, 'POST', '/api/sessions', { cwd: root })).json.id as string;
     handle.hub.sendUserMessage(id, '长任务');
     await sleep(30); // turn 已启动
@@ -371,7 +385,7 @@ describe('审批上抛（onAsk → 待处理请求表）', () => {
       decide: () => 'ask',
       approvalTimeoutMs: 60,
     });
-    const root = tmpDir('h2-serve-cwd-');
+    const root = sessionCwd(handle);
     const id = (await api(handle, 'POST', '/api/sessions', { cwd: root })).json.id as string;
     handle.hub.sendUserMessage(id, '触发审批');
 
@@ -392,7 +406,7 @@ describe('审批上抛（onAsk → 待处理请求表）', () => {
     const { c, hooks } = captureHooks();
     const script: MockScript = [...toolTurn('c-allow'), ...toolTurn('c-deny')];
     const handle = await start({ hooks, provider: new MockProvider(script), decide: () => 'ask' });
-    const root = tmpDir('h2-serve-cwd-');
+    const root = sessionCwd(handle);
     const id = (await api(handle, 'POST', '/api/sessions', { cwd: root })).json.id as string;
 
     // 第一轮：allow → 工具真实执行
@@ -433,7 +447,7 @@ describe('审批上抛（onAsk → 待处理请求表）', () => {
       { textChunks: ['不该到达'] },
     ];
     const handle = await start({ hooks, provider: new MockProvider(script), decide: () => 'ask' });
-    const root = tmpDir('h2-serve-cwd-');
+    const root = sessionCwd(handle);
     const id = (await api(handle, 'POST', '/api/sessions', { cwd: root })).json.id as string;
     handle.hub.sendUserMessage(id, '取消我');
     await waitFor(c.approvalRequests, 1);
@@ -537,7 +551,7 @@ describe('复审修复回归（P2）', () => {
     const { c, hooks } = captureHooks();
     const provider = new MockProvider([{ textChunks: ['一', '二'], chunkDelayMs: 300 }]);
     const handle = await start({ provider, hooks });
-    const root = tmpDir('h2-serve-cwd-');
+    const root = sessionCwd(handle);
     const id = (await api(handle, 'POST', '/api/sessions', { cwd: root })).json.id as string;
     handle.hub.sendUserMessage(id, '第一轮'); // turn 运行中（300ms/片）
     handle.hub.sendUserMessage(id, '第二轮'); // 排队
@@ -564,7 +578,7 @@ describe('复审修复回归（P2）', () => {
       hooks,
       memory: { store: throwingStore as unknown as MemoryStore, mode: 'auto', nudgeInterval: 100 },
     });
-    const root = tmpDir('h2-serve-cwd-');
+    const root = sessionCwd(handle);
     const id = (await api(handle, 'POST', '/api/sessions', { cwd: root })).json.id as string;
     handle.hub.sendUserMessage(id, '触发异常');
     await waitForTurnEnds(c, 1);

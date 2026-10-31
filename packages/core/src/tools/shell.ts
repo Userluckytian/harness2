@@ -80,7 +80,23 @@ function gitBashCandidates(env: NodeJS.ProcessEnv): string[] {
   return [...new Set(out)];
 }
 
-/** 探测顺序：config.bash.shell > Git Bash（GIT_BASH / 常见路径）> cmd 回退 */
+/**
+ * 判断配置的 shell 路径是否为已知安全 shell。
+ * 仅允许 cmd.exe / bash / sh 可执行文件，拒绝任意路径。
+ * 防止工作区配置文件把 bash 工具劫持为任意可执行文件（finding #304）。
+ */
+function isSafeConfiguredShell(value: string, exists: (path: string) => boolean): boolean {
+  const trimmed = value.trim();
+  if (trimmed.length === 0) return false;
+  if (isCmdExecutable(trimmed)) return true;
+  const basename = win32.basename(trimmed).toLowerCase();
+  if (basename === 'bash' || basename === 'bash.exe' || basename === 'sh' || basename === 'sh.exe') {
+    return exists(trimmed);
+  }
+  return false;
+}
+
+/** 探测顺序：config.bash.shell（白名单校验）> Git Bash（GIT_BASH / 常见路径）> cmd 回退 */
 export function resolveBashShell(options: ResolveBashShellOptions = {}): BashShellSpec {
   const platform = options.platform ?? process.platform;
   const env = options.env ?? process.env;
@@ -97,7 +113,13 @@ export function resolveBashShell(options: ResolveBashShellOptions = {}): BashShe
   }
 
   const configured = options.configured?.trim();
-  if (configured !== undefined && configured.length > 0) {
+  const configuredSafe = configured !== undefined && configured.length > 0 && isSafeConfiguredShell(configured, exists);
+  // 非白名单的 shell 配置不可信：忽略并回退默认探测（Git Bash / cmd.exe），display 附告警
+  const rejectedNote =
+    configured !== undefined && configured.length > 0 && !configuredSafe
+      ? `（已忽略非白名单 shell 配置：${configured}，回退默认探测）`
+      : '';
+  if (configuredSafe && configured !== undefined) {
     if (isCmdExecutable(configured)) {
       return {
         kind: 'configured',
@@ -121,7 +143,7 @@ export function resolveBashShell(options: ResolveBashShellOptions = {}): BashShe
       const fromEnv = candidate === normalizeGitBashEnv(env['GIT_BASH'] ?? '');
       return {
         kind: 'git-bash',
-        display: `${candidate}（Git Bash${fromEnv ? '，来自 GIT_BASH' : ''}）`,
+        display: `${candidate}（Git Bash${fromEnv ? '，来自 GIT_BASH' : ''}）${rejectedNote}`,
         executable: candidate,
         argsPrefix: ['-c'],
         useNodeShell: false,
@@ -132,7 +154,7 @@ export function resolveBashShell(options: ResolveBashShellOptions = {}): BashShe
   const cmd = env['ComSpec'] !== undefined && env['ComSpec'].trim().length > 0 ? env['ComSpec'] : 'cmd.exe';
   return {
     kind: 'cmd',
-    display: `${cmd}（未找到 Git Bash，回退 cmd.exe）`,
+    display: `${cmd}（未找到 Git Bash，回退 cmd.exe）${rejectedNote}`,
     executable: cmd,
     argsPrefix: [],
     useNodeShell: true,
@@ -166,7 +188,9 @@ export function loadConfiguredBashShell(startDir: string, env: NodeJS.ProcessEnv
       env,
       ...(projectPath !== undefined ? { projectPath } : {}),
     });
-    return loaded.config?.bash?.shell;
+    // 白名单校验：非白名单的 shell 配置不可信，拒绝返回（resolveBashShell 会回退默认探测）
+    const shell = loaded.config?.bash?.shell;
+    return shell !== undefined && isSafeConfiguredShell(shell, existsSync) ? shell : undefined;
   } catch {
     return undefined;
   }
