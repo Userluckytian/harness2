@@ -1,8 +1,25 @@
-# harness2 CI：三平台 matrix，typecheck + test（mock provider，零 API key）。
-# 远程：https://github.com/Userluckytian/harness2（public → Actions 分钟免费）。
-# 2026-10-24 ZS6-T4 案 B 退役：旧壳 desktop/ui-shared/web 三包删除 → test job 收敛为
-# core/gateway/cli（+zcode-adapter 经 workspace `pnpm build`/test 覆盖），desktop 打包 job
-# 移除（产品桌面端=ZCode 壳装配通道 `scripts/zs6/zs6-pack.ps1`，本地出包，不入 CI）。
+# harness2 CI：三 job 并行 —— quality（平台无关检查，单跑一次）+ test（三平台 matrix）+
+# audit（生产依赖漏洞门）。远程：https://github.com/Userluckytian/harness2（public → Actions 分钟免费）。
+#
+# F9（2026-10-31）：typecheck/eslint/prettier 平台无关，从三平台 matrix 拆到 quality 单跑
+# ——全仓 eslint 实测 36.4s、`pnpm -r build` 本机空闲 5.6s，三平台各跑一轮纯浪费；test matrix
+# 收敛为 install → chromium → build → 分包测试（fail-fast: false 保留）。
+#
+# F11（2026-10-31）：新增 audit job 门禁生产依赖漏洞（scripts/audit-gate.mjs：critical/high
+# 红灯；moderate/low 与 dev 依赖漏洞只报告——存量 dev 漏洞 19 条全在 vitest 工具链，挡门会
+# 让 CI 永红）。审计只读 pnpm-lock.yaml，无需 install（gate 脚本头注释有实测依据）。
+#
+# F8 假绿治理（2026-10-31）：原「Test zcode-adapter」跑包内 test script，但该 script 经
+# zs1-guard 门控——marker 是 scratch 区 Windows 绝对路径（D:/AI_Projects/harness2-zs1-build/
+# ZCode），三平台 runner 必不存在 → SKIP exit 0，0 用例却绿灯。改为 test:ci 只跑无 scratch
+# 依赖的 4 文件子集（23 用例，证据见 packages/zcode-adapter/vitest.ci.config.mts 头注释）；
+# 其余 16 文件依赖 ZS1 scratch 区（@zcode/* alias），CI 覆盖不到——zcode-adapter 的完整
+# 测试须本地 scratch 环境跑全门，结论以本地为准，CI 不再产出「zcode-adapter 测试全绿」假信号。
+# 2026-10-24 ZS6-T4 案 B 退役：旧壳 desktop/ui-shared/web 三包删除，desktop 打包 job 移除
+# （产品桌面端=ZCode 壳装配通道 `scripts/zs6/zs6-pack.ps1`，本地出包，不入 CI）。
+#
+# 权衡登记：on.push 不加 branches 过滤——现行工作流是「功能分支 CI 全绿再合」，过滤会让
+# 功能分支 push 失去 CI 信号；public 仓库 runner 分钟免费，暂可承受。复审时再议。
 # 本 workflow 只在 push/PR 时触发，本地未 push 的提交不会被 CI 验证。
 name: CI
 
@@ -15,13 +32,9 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  test:
-    name: test (${{ matrix.os }})
-    runs-on: ${{ matrix.os }}
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [windows-latest, ubuntu-latest, macos-latest]
+  quality:
+    name: quality (typecheck + lint)
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
 
@@ -36,12 +49,6 @@ jobs:
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
-
-      # 浏览器工具测试用（惰性依赖：chromium 二进制不随 npm 安装，测试对缺失自动 skip）。
-      # playwright 是 @harness2/core 的依赖，须在 core 包内 exec（根目录无该二进制，否则报
-      # "Command playwright not found"——2026-09-07 审查发现三平台 test job 卡在此步）
-      - name: Install chromium (browser tools tests)
-        run: pnpm --filter @harness2/core exec playwright install chromium
 
       # typecheck 必须在 build 之后：core 的 api-surface.test.ts 引用 dist/（gitignored），
       # 全新 runner 上 dist 不存在，先 build 才能让 typecheck 解析到 dist/index.js。
@@ -59,9 +66,8 @@ jobs:
       # projectService 需要解析各包 tsconfig，且 core 的 api-surface.test.ts 引用 dist/。
       #
       # 以下均拆成独立步骤（消除单点红掩盖：2026-09-11 CI #61 在 core 失败后，
-      # 其余包当次根本没跑到，见 docs/issue-log/OPEN.md）。
-      # 条件只看 build 成败：build 红则后续全跳（无意义）；其余步骤互不遮蔽
-      # —— typecheck/lint 红不挡测试，某一包红不挡其余包；任一步红则整个 job 红。
+      # 其余检查当次根本没跑到，见 docs/issue-log/OPEN.md）。
+      # 条件只看 build 成败：build 红则后续全跳（无意义）；typecheck/lint 互不遮蔽。
       - name: Lint (ESLint)
         if: ${{ !cancelled() && steps.build.outcome == 'success' }}
         run: pnpm exec eslint .
@@ -70,6 +76,38 @@ jobs:
         if: ${{ !cancelled() && steps.build.outcome == 'success' }}
         run: pnpm exec prettier --check .
 
+  test:
+    name: test (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, ubuntu-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: pnpm/action-setup@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      # 浏览器工具测试用（惰性依赖：chromium 二进制不随 npm 安装，测试对缺失自动 skip）。
+      # playwright 是 @harness2/core 的依赖，须在 core 包内 exec（根目录无该二进制，否则报
+      # "Command playwright not found"——2026-09-07 审查发现三平台 test job 卡在此步）
+      - name: Install chromium (browser tools tests)
+        run: pnpm --filter @harness2/core exec playwright install chromium
+
+      - name: Build packages
+        id: build
+        run: pnpm build
+
+      # 各步条件只看 build 成败：build 红则后续全跳；各测试步互不遮蔽
+      # （某一包红不挡其余包；任一步红则整个 job 红）。
       - name: Test core
         if: ${{ !cancelled() && steps.build.outcome == 'success' }}
         run: pnpm --filter @harness2/core test
@@ -83,10 +121,36 @@ jobs:
         if: ${{ !cancelled() && steps.build.outcome == 'success' }}
         run: pnpm --filter harness2 test
 
-      # zcode-adapter（ZS 内心装配，2026-10 起为活跃开发面）：与三包同口径独立步骤
-      - name: Test zcode-adapter
+      # zcode-adapter（ZS 内心装配，2026-10 起为活跃开发面）：F8 假绿治理——跑 test:ci
+      # （无 scratch 依赖子集）而非包内 test（zs1-guard 门控在 runner 上必 SKIP 假绿）；
+      # 口径见文件头注释与 vitest.ci.config.mts
+      - name: Test zcode-adapter (scratch-free subset)
         if: ${{ !cancelled() && steps.build.outcome == 'success' }}
-        run: pnpm --filter @harness2/zcode-adapter test
+        run: pnpm --filter @harness2/zcode-adapter test:ci
+
+  # F11（2026-10-31）：生产依赖漏洞门。critical/high 挡门、moderate/low 与 dev 只报告，
+  # 策略与实测依据见 scripts/audit-gate.mjs 头注释。
+  # 2026-10-31 首跑修正：audit job 原设计 install-free，但 pnpm/action-setup@v5 的 post
+  # 步骤（pnpm store prune）在无 store 的 job 上失败导致整体红（门禁步骤本身绿）——
+  # 补 install（与其他 job 同形）换取 post 步骤确定性，audit 只读 lockfile 语义不变。
+  audit:
+    name: audit (prod deps)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: pnpm/action-setup@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Production dependency audit gate
+        run: node scripts/audit-gate.mjs
 
   # 文档站（阶段 12 Task 2）：docsify 零构建单页（docs/site/index.html）+ 根/文档 md 拷贝暂存部署。
   # 开启前提：仓库 Settings → Pages 来源选 GitHub Actions（见 docs/issue-log/OPEN.md——待人类操作）。

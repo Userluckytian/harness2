@@ -126,19 +126,26 @@ describe('parseSchedule / computeNextRun（解析）', () => {
   it('computeNextRun：interval = from+周期；daily = 之后最近的本地 HH:MM', () => {
     const from = new Date('2026-09-06T08:00:00.000Z');
     expect(new Date(computeNextRun('5m', from)).getTime()).toBe(from.getTime() + 300_000);
-    // 本地时区构造：2026-09-06 10:30 local → daily 09:00 应为次日；daily 11:00 应为当天
+    // 本地时区构造：今天 10:30 local → daily 09:00 应为次日；daily 11:00 应为当天。
+    // 期望值用 setDate 日历推进构造（月末溢出安全），整瞬间相等 = 月/日/时/分/秒全部对齐
     const base = new Date();
     base.setHours(10, 30, 0, 0);
+    const expected900 = new Date(base);
+    expected900.setDate(expected900.getDate() + 1);
+    expected900.setHours(9, 0, 0, 0);
     const next900 = new Date(computeNextRun('daily 09:00', base));
-    expect(next900.getDate()).toBe(base.getDate() + 1);
     expect(next900.getHours()).toBe(9);
     expect(next900.getMinutes()).toBe(0);
+    expect(next900.getTime()).toBe(expected900.getTime());
     const next1100 = new Date(computeNextRun('daily 11:00', base));
     expect(next1100.getDate()).toBe(base.getDate());
     expect(next1100.getHours()).toBe(11);
     // 恰好等于 HH:MM → 推进到明天（严格大于）
+    const expectedExact = new Date(base);
+    expectedExact.setDate(expectedExact.getDate() + 1);
+    expectedExact.setHours(10, 30, 0, 0);
     const exact = new Date(computeNextRun('daily 10:30', base));
-    expect(exact.getDate()).toBe(base.getDate() + 1);
+    expect(exact.getTime()).toBe(expectedExact.getTime());
   });
 });
 

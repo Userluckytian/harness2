@@ -60,6 +60,11 @@ jobs:
       - name: Test cli
         run: pnpm --filter harness2 test
 
+      # 与 ci.yml 同口径（F8 假绿治理，2026-10-31）：test:ci 只跑无 scratch 依赖子集，
+      # 包内 test 经 zs1-guard 在 runner 上必 SKIP 假绿；口径见 ci.yml 头注释
+      - name: Test zcode-adapter (scratch-free subset)
+        run: pnpm --filter @harness2/zcode-adapter test:ci
+
       # ZS6-T4 退役（2026-10-24）：desktop/ui-shared/web 三包已删，测试步同步移除
 
   publish:

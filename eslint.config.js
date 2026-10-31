@@ -12,7 +12,6 @@
 const js = require('@eslint/js');
 const tseslint = require('typescript-eslint');
 const eslintConfigPrettier = require('eslint-config-prettier');
-const reactHooks = require('eslint-plugin-react-hooks');
 const globals = require('globals');
 
 /** 首轮保留为 error 的「明显错误」规则（其余推荐规则降 warn） */
@@ -90,17 +89,6 @@ module.exports = tseslint.config(
     files: ['**/test/**/*.ts', '**/test/**/*.tsx', '**/*.test.ts', '**/*.test.tsx'],
     rules: {
       '@typescript-eslint/no-explicit-any': 'warn',
-    },
-  },
-  {
-    // React（desktop renderer）：注册 plugin 让存量 eslint-disable react-hooks/* 注释可解析；
-    // 首轮两条规则均 warn（v7 recommended 新增的编译器类规则不启用，避免误标红存量组件）
-    name: 'harness2/react-hooks',
-    files: ['**/*.ts', '**/*.tsx'],
-    plugins: { 'react-hooks': reactHooks },
-    rules: {
-      'react-hooks/rules-of-hooks': 'warn',
-      'react-hooks/exhaustive-deps': 'warn',
     },
   },
   {
