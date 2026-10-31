@@ -3,9 +3,7 @@
   "compilerOptions": {
     "outDir": "dist",
     "rootDir": "src",
-    "types": ["node"],
-    "incremental": true,
-    "tsBuildInfoFile": "node_modules/.cache/tsbuildinfo/tsconfig.build.tsbuildinfo"
+    "types": ["node"]
   },
   "include": ["src"]
 }

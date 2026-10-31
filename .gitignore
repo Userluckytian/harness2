@@ -1,8 +1,6 @@
 node_modules/
 dist/
 coverage/
-# tsc 增量构建缓存（tsBuildInfoFile 实际落在 node_modules/.cache/，本条为防御性兜底）
-*.tsbuildinfo
 *.log
 .env
 .env.*
